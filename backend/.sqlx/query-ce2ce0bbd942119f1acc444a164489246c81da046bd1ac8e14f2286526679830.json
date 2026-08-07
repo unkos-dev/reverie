@@ -1,0 +1,112 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO user_preferences (user_id, hidden_columns, density, view, sort_stack)\n                VALUES ($1, $2, $3, $4, $5)\n           ON CONFLICT (user_id) DO UPDATE SET\n                hidden_columns = CASE WHEN $6 THEN EXCLUDED.hidden_columns\n                                      ELSE user_preferences.hidden_columns END,\n                density        = CASE WHEN $7 THEN EXCLUDED.density\n                                      ELSE user_preferences.density END,\n                view           = CASE WHEN $8 THEN EXCLUDED.view\n                                      ELSE user_preferences.view END,\n                sort_stack     = CASE WHEN $9 THEN EXCLUDED.sort_stack\n                                      ELSE user_preferences.sort_stack END,\n                updated_at     = now()\n             RETURNING hidden_columns,\n                       density AS \"density?: LibraryDensity\",\n                       view AS \"view?: LibraryView\",\n                       sort_stack",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "hidden_columns",
+        "type_info": "TextArray",
+        "origin": {
+          "Table": {
+            "table": "user_preferences",
+            "name": "hidden_columns"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "density?: LibraryDensity",
+        "type_info": {
+          "Custom": {
+            "name": "library_density",
+            "kind": {
+              "Enum": [
+                "comfortable",
+                "compact"
+              ]
+            }
+          }
+        },
+        "origin": {
+          "Table": {
+            "table": "user_preferences",
+            "name": "density"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "view?: LibraryView",
+        "type_info": {
+          "Custom": {
+            "name": "library_view",
+            "kind": {
+              "Enum": [
+                "grid",
+                "table"
+              ]
+            }
+          }
+        },
+        "origin": {
+          "Table": {
+            "table": "user_preferences",
+            "name": "view"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "sort_stack",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "user_preferences",
+            "name": "sort_stack"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "TextArray",
+        {
+          "Custom": {
+            "name": "library_density",
+            "kind": {
+              "Enum": [
+                "comfortable",
+                "compact"
+              ]
+            }
+          }
+        },
+        {
+          "Custom": {
+            "name": "library_view",
+            "kind": {
+              "Enum": [
+                "grid",
+                "table"
+              ]
+            }
+          }
+        },
+        "Text",
+        "Bool",
+        "Bool",
+        "Bool",
+        "Bool"
+      ]
+    },
+    "nullable": [
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "hash": "ce2ce0bbd942119f1acc444a164489246c81da046bd1ac8e14f2286526679830"
+}

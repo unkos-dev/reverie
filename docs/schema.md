@@ -15,6 +15,8 @@ users ─────────┬──── shelves ──── shelf_item
                │                                   │
                ├──── device_tokens                 │
                │                                   │
+               ├──── user_preferences              │
+               │                                   │
                └──── webhooks ──── webhook_deliveries
                                                    │
 works ────┬──── work_authors ──── authors           │
@@ -66,11 +68,17 @@ ingestion_jobs     (standalone)
 
 ### User Features
 
-| Table           | Purpose                  | Key Columns                                                   |
-| --------------- | ------------------------ | ------------------------------------------------------------- |
-| `shelves`       | Per-user collections     | `user_id`, `name`, `is_system`                                |
-| `shelf_items`   | Shelf-Manifestation join | `shelf_id`, `manifestation_id`, `position`                    |
-| `device_tokens` | OPDS/reader device auth  | `user_id`, `token_hash`, `revoked_at`, `scopes`, `expires_at` |
+| Table              | Purpose                          | Key Columns                                                       |
+| ------------------ | -------------------------------- | ----------------------------------------------------------------- |
+| `shelves`          | Per-user collections             | `user_id`, `name`, `is_system`                                    |
+| `shelf_items`      | Shelf-Manifestation join         | `shelf_id`, `manifestation_id`, `position`                        |
+| `device_tokens`    | OPDS/reader device auth          | `user_id`, `token_hash`, `revoked_at`, `scopes`, `expires_at`     |
+| `user_preferences` | Per-user library display choices | `user_id` (PK), `hidden_columns`, `density`, `view`, `sort_stack` |
+
+Every override column on `user_preferences` is nullable with no `DEFAULT`:
+`NULL` means the account has not customised that group and inherits the
+installation default, which the API resolves at read time. Rows are created
+lazily on first write, so a fresh account has no row at all.
 
 ### Auth & Identity
 
@@ -112,6 +120,8 @@ ingestion_jobs     (standalone)
 | `content_rating`         | everyone, teen, mature, adult, explicit         | `manifestations.content_rating`    |
 | `job_status`             | queued, running, complete, failed               | `ingestion_jobs.status`            |
 | `writeback_status`       | pending, in_progress, complete, failed, skipped | `writeback_jobs.status`            |
+| `library_density`        | comfortable, compact                            | `user_preferences.density`         |
+| `library_view`           | grid, table                                     | `user_preferences.view`            |
 
 **Note:** `ingestion_status` tracks per-file lifecycle on manifestations.
 `job_status` tracks batch orchestration on ingestion_jobs. These are intentionally
@@ -143,12 +153,14 @@ Has DML on: `works`, `authors`, `work_authors`, `manifestations`, `series`,
 `ingestion_jobs`.
 
 Denied: `users`, `user_identities`, `local_credentials`, `shelves`, `shelf_items`,
-`device_tokens`, `webhooks`, `webhook_deliveries`, `reading_sessions`,
-`reading_positions`.
+`device_tokens`, `user_preferences`, `webhooks`, `webhook_deliveries`,
+`reading_sessions`, `reading_positions`.
 
 ## Row Level Security (RLS)
 
-RLS is enabled on `manifestations` only. Six per-operation policies control access:
+### `manifestations`
+
+Six per-operation policies control access:
 
 | Policy                                 | Operation | Roles                             | Logic                            |
 | -------------------------------------- | --------- | --------------------------------- | -------------------------------- |
@@ -161,6 +173,20 @@ RLS is enabled on `manifestations` only. Six per-operation policies control acce
 
 Children cannot UPDATE or DELETE manifestations: these are shared library records.
 Children manage their visibility through `shelf_items` instead.
+
+### Owner-scoped tables
+
+Tables holding one row per user carry a single `ALL` policy keyed on the
+session variable, matching `user_id` in both `USING` and `WITH CHECK` so a
+caller can neither read nor write another account's row:
+
+| Policy                   | Operation | Roles                             | Logic                                  |
+| ------------------------ | --------- | --------------------------------- | -------------------------------------- |
+| `reading_state_owner`    | ALL       | `reverie_app`, `reverie_readonly` | `user_id` equals `app.current_user_id` |
+| `user_preferences_owner` | ALL       | `reverie_app`, `reverie_readonly` | `user_id` equals `app.current_user_id` |
+
+`reverie_ingestion` holds no grant on either table, so the pipeline cannot
+reach personal rows at all.
 
 ### Session Variable Contract
 

@@ -249,6 +249,7 @@ fn pilot_router() -> OpenApiRouter<AppState> {
         .merge(crate::routes::enrichment::router())
         .merge(crate::routes::ingestion::router())
         .merge(crate::routes::auth::router())
+        .merge(crate::routes::preferences::router())
         .merge(crate::routes::opds::covers_router())
 }
 

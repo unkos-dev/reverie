@@ -5077,6 +5077,133 @@
         }
       }
     },
+    "/auth/me/preferences": {
+      "get": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "`GET /auth/me/preferences`: the caller's display preferences.",
+        "description": "An account with no row reads as all-null overrides. The read is\ndeliberately non-materialising: rows appear on first write, so \"has this\nuser customised anything?\" stays answerable.\n\n# Errors\n- [`AppError::Internal`] on database errors.",
+        "operationId": "get_preferences",
+        "responses": {
+          "200": {
+            "description": "Caller's overrides plus the installation defaults; a null group means the default applies",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PreferencesResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session_cookie": [
+              "read"
+            ]
+          },
+          {
+            "device_token_bearer": [
+              "read"
+            ]
+          },
+          {
+            "oidc_jwt_bearer": [
+              "read"
+            ]
+          },
+          {
+            "opds_basic": [
+              "read"
+            ]
+          }
+        ]
+      },
+      "patch": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "`PATCH /auth/me/preferences`: merge a partial update into the caller's\npreferences, creating the row on first write.",
+        "description": "Last write wins, with no precondition header. A preferences row is\nwritten by exactly one person, so the only possible conflict is between\ntwo of that person's own tabs, where the later click is the intended\noutcome. Two tabs can therefore drift until one of them reloads; nothing\nis silently corrupted, and no partial merge is ever persisted, because\nthe whole patch is applied in one statement.\n\n# Errors\n- [`AppError::Validation`] when the body names no group, carries an\n  unknown density or view, submits a `sort_stack` outside the whitelisted\n  grammar, or submits column keys that are too many or out of shape.\n- [`AppError::Internal`] on database errors.",
+        "operationId": "patch_preferences",
+        "requestBody": {
+          "description": "RFC 7396 JSON Merge Patch: absent groups are unchanged, `null` resets a group to the installation default",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdatePreferencesRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Preferences after the merge, in the same shape as the read",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PreferencesResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Empty body, unknown density or view, or an out-of-range sort stack or column key",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session_cookie": [
+              "write"
+            ]
+          },
+          {
+            "device_token_bearer": [
+              "write"
+            ]
+          },
+          {
+            "oidc_jwt_bearer": [
+              "write"
+            ]
+          },
+          {
+            "opds_basic": [
+              "write"
+            ]
+          }
+        ]
+      }
+    },
     "/auth/me/theme": {
       "patch": {
         "tags": [
@@ -7593,6 +7720,22 @@
           "skipped"
         ]
       },
+      "LibraryDensity": {
+        "type": "string",
+        "description": "Row height for the library table view.",
+        "enum": [
+          "comfortable",
+          "compact"
+        ]
+      },
+      "LibraryView": {
+        "type": "string",
+        "description": "Which library presentation the user last chose.",
+        "enum": [
+          "grid",
+          "table"
+        ]
+      },
       "LocalLoginRequest": {
         "type": "object",
         "description": "Request body for `POST /auth/local/login`. Explicit allow-list (no\nmass-assignment): only the two credential fields are accepted.",
@@ -7845,6 +7988,103 @@
             "minimum": 0
           }
         }
+      },
+      "PreferenceDefaults": {
+        "type": "object",
+        "description": "The installation defaults, echoed alongside the overrides.",
+        "required": [
+          "hidden_columns",
+          "density",
+          "view",
+          "sort_stack"
+        ],
+        "properties": {
+          "density": {
+            "$ref": "#/components/schemas/LibraryDensity",
+            "description": "Density for an account that has not chosen."
+          },
+          "hidden_columns": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Columns hidden for an account that has not chosen."
+          },
+          "sort_stack": {
+            "type": "string",
+            "description": "Sort for an account that has not chosen."
+          },
+          "view": {
+            "$ref": "#/components/schemas/LibraryView",
+            "description": "View for an account that has not chosen."
+          }
+        }
+      },
+      "PreferenceOverrides": {
+        "type": "object",
+        "description": "The caller's overrides. A `None` group inherits the matching constant\nabove; the client is told which is which rather than being handed a\nresolved value, because per-group reset and any future \"has this user\ncustomised anything?\" question both need the distinction.",
+        "properties": {
+          "density": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/LibraryDensity",
+                "description": "Chosen row density; `null` to inherit."
+              }
+            ]
+          },
+          "hidden_columns": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string"
+            },
+            "description": "Column keys hidden in the table view; `null` to inherit."
+          },
+          "sort_stack": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Default sort in the `?sort=` wire grammar; `null` to inherit."
+          },
+          "view": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/LibraryView",
+                "description": "Chosen library view; `null` to inherit."
+              }
+            ]
+          }
+        }
+      },
+      "PreferencesResponse": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/PreferenceOverrides",
+            "description": "The caller's overrides; a `null` group inherits from `defaults`."
+          },
+          {
+            "type": "object",
+            "required": [
+              "defaults"
+            ],
+            "properties": {
+              "defaults": {
+                "$ref": "#/components/schemas/PreferenceDefaults",
+                "description": "Installation defaults in force for every group the caller has not\noverridden."
+              }
+            }
+          }
+        ],
+        "description": "Both endpoints answer with the caller's overrides and the installation\ndefaults together, so the client never has to hold a second copy of the\ndefaults and cannot drift from the server's."
       },
       "ProblemDetails": {
         "type": "object",
@@ -9122,6 +9362,51 @@
             "propertyNames": {
               "type": "string"
             }
+          }
+        }
+      },
+      "UpdatePreferencesRequest": {
+        "type": "object",
+        "description": "Body for `PATCH /auth/me/preferences`. RFC 7396 JSON Merge Patch: an\nabsent key leaves that group unchanged, an explicit `null` resets it to\nthe installation default.",
+        "properties": {
+          "density": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/LibraryDensity",
+                "description": "Row density. Absent = unchanged; `null` resets to the default."
+              }
+            ]
+          },
+          "hidden_columns": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string"
+            },
+            "description": "Column keys to hide. Absent = unchanged; `null` resets to the default."
+          },
+          "sort_stack": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Default sort in the `?sort=` wire grammar. Absent = unchanged; `null`\nresets to the default."
+          },
+          "view": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/LibraryView",
+                "description": "Library view. Absent = unchanged; `null` resets to the default."
+              }
+            ]
           }
         }
       },

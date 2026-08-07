@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE user_preferences SET hidden_columns = $2 WHERE user_id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "TextArray"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "3bb0cdc95cbccedc2be9387efb921ed8fb4280a74ba013a6b099322c31b4c345"
+}
