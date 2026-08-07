@@ -19,8 +19,10 @@ import { useSuspenseInfiniteQuery, type InfiniteData } from "@tanstack/react-que
 import { Loader2 } from "lucide-react";
 import {
   lazy,
+  memo,
   Suspense,
   useEffect,
+  useMemo,
   useRef,
   useState,
   type CSSProperties,
@@ -38,12 +40,6 @@ import {
 import { CoverArtwork } from "@/components/CoverArtwork";
 import { Atmosphere } from "@/components/library/Atmosphere";
 import { BookmarkRibbon } from "@/components/library/BookmarkRibbon";
-import {
-  filterResetToken,
-  makeFilterClear,
-  makeFilterCommit,
-  type EditTokens,
-} from "@/components/library/filter-commit";
 import { LibraryMasthead } from "@/components/library/LibraryMasthead";
 import { sortStackSummary } from "@/components/library/sort-summary";
 import { FilterRail, type SeriesFacetOption } from "@/components/shell/FilterRail";
@@ -53,17 +49,14 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sh
 import { Skeleton } from "@/components/ui/skeleton";
 import { useAuthMe } from "@/hooks/useAuthMe";
 import { useCinematicMode } from "@/hooks/useCinematicMode";
-import { useLiveSearchParams } from "@/lib/hooks/use-live-search-params";
+import { useLibraryFilters, useLibrarySearchParams } from "@/lib/hooks/use-library-filters";
 import { queryKeys } from "@/lib/query/keys";
 
 import {
-  applySortToSearchParams,
-  FILTER_PARAM_KEYS,
   filterStateToParams,
   hasActiveFilterState,
   paramsFromSearch,
   parseFilterParams,
-  PURGE_ONLY_PARAM_KEYS,
   viewFromSearch,
   type LibraryView,
 } from "@/routes/library-params";
@@ -103,26 +96,26 @@ export function LibraryPage(): ReactElement {
 }
 
 function LibraryContent(): ReactElement {
-  // Single URL write authority for the route: the rail's commits and the
-  // page's own writers (header sort, clear-all, view toggle, quick search,
-  // chip removal) all go through `applyParams`, so two writes landing in
-  // one frame cannot clobber each other (see the hook's docstring).
-  const { searchParams, applyParams, clearGen } = useLiveSearchParams();
+  // Reads come from the nuqs-aware view of the params, never React
+  // Router's: search-param writes land via `history.replaceState`, which
+  // the router's history does not observe, so its own `useSearchParams`
+  // would go stale against anything quick search writes.
+  const searchParams = useLibrarySearchParams();
+  const {
+    commitAll,
+    commitSort,
+    clearAll,
+    revertTypedEdits,
+    setView: setViewParam,
+  } = useLibraryFilters();
   // Drives cinematic mode via the document `data-cinematic` attribute (CSS
   // reads it); the boolean return is unused — visibility is CSS-only.
   useCinematicMode();
-  // One edit-token ref per page: the toolbar quick search and the rail's
-  // sections share the draft-survival protocol through it (filter-commit.ts).
-  const lastEdit = useRef<EditTokens | null>(null);
   const [overlay, setOverlay] = useState<OverlayState>(null);
   // The overlays open from state, not a Radix Trigger, so Radix has no
   // trigger to restore focus to on close; the opener is captured here and
   // restored via onCloseAutoFocus instead (WCAG 2.4.3).
   const overlayReturnFocus = useRef<HTMLElement | null>(null);
-  // Escape = abandon: bumped when the filter drawer closes via Escape so
-  // pending rail drafts die at fire time; scrim and close-button closes
-  // leave it alone and pending drafts flush on unmount (see FilterRail).
-  const railCancelGen = useRef(0);
   const [selectedIds, setSelectedIds] = useState<ReadonlySet<string>>(new Set());
   const [displayPrefs] = useState(readDisplayPreferences);
   const [density, setDensity] = useState<Density>(displayPrefs.density ?? "comfortable");
@@ -189,35 +182,23 @@ function LibraryContent(): ReactElement {
       console.error("[LibraryContent] failed to load the next page", fetchNextPageError);
   }, [isFetchNextPageError, fetchNextPageError]);
 
-  const items: BookListItem[] = data.pages.flatMap((p) => p.items);
+  // Stable across renders that did not refetch, so the memoised grid below
+  // can actually skip. The page re-renders on every keystroke in a filter
+  // input: the write authority subscribes to the pending values of every
+  // library key, and a keystroke changes one of them. Those renders are
+  // behaviourally inert here (every read on this page comes from the
+  // applied view), but re-rendering a card per loaded cover on each
+  // keystroke is not free.
+  const items: BookListItem[] = useMemo(() => data.pages.flatMap((p) => p.items), [data]);
 
   function setView(next: LibraryView): void {
     writeViewCookie(next);
-    applyParams((params) => {
-      if (next === "grid") params.delete("view");
-      else params.set("view", next);
-      return params;
-    });
+    setViewParam(next === "grid" ? null : next);
   }
 
   /** Table-header sort writes the same `?sort=` contract as the rail's sort section. */
   function setSortFromTable(levels: readonly SortLevelParam[]): void {
-    applyParams((params) => applySortToSearchParams(params, levels));
-  }
-
-  function clearAllFilters(): void {
-    lastEdit.current = null;
-    applyParams(
-      (params) => {
-        for (const key of FILTER_PARAM_KEYS) params.delete(key);
-        for (const key of PURGE_ONLY_PARAM_KEYS) params.delete(key);
-        params.delete("cursor");
-        return params;
-      },
-      // Pending drafts (quick search, rail sections) must die with the
-      // clear, or a due debounce could re-write a filter the user removed.
-      { clears: true },
-    );
+    commitSort(levels);
   }
 
   function setDensityPref(next: Density): void {
@@ -264,8 +245,7 @@ function LibraryContent(): ReactElement {
   /** Empty states first, then one branch per projection. */
   function renderBooks(): ReactElement {
     if (items.length === 0) {
-      if (hasActiveFilterState(filterState))
-        return <FilteredEmptyState onClear={clearAllFilters} />;
+      if (hasActiveFilterState(filterState)) return <FilteredEmptyState onClear={clearAll} />;
       return <EmptyState />;
     }
     if (viewMode === "grid") return <BookGrid items={items} />;
@@ -341,15 +321,6 @@ function LibraryContent(): ReactElement {
           <LibraryToolbar
             view={viewMode}
             onViewChange={setView}
-            searchValue={filterState.q ?? ""}
-            searchResetToken={filterResetToken(filterState)}
-            lastEdit={lastEdit}
-            clearGen={clearGen}
-            onSearchCommit={(q) => {
-              // Built inside the handler: the writer closes over the ref and
-              // may only touch it outside render (react-compiler contract).
-              makeFilterCommit(applyParams, lastEdit)((current) => ({ ...current, q }));
-            }}
             filtersOpen={overlay === "filters"}
             activeFilterCount={activeFilterCount}
             onOpenFilters={() => {
@@ -364,10 +335,8 @@ function LibraryContent(): ReactElement {
           <FilterChips
             filters={filterState}
             seriesNames={seriesById}
-            onRemove={(patch) => {
-              makeFilterClear(applyParams, lastEdit)(patch);
-            }}
-            onClearAll={clearAllFilters}
+            onRemove={commitAll}
+            onClearAll={clearAll}
           />
           <Separator className="mb-8" />
 
@@ -445,21 +414,16 @@ function LibraryContent(): ReactElement {
           side="right"
           aria-describedby={undefined}
           onCloseAutoFocus={restoreOverlayFocus}
-          onEscapeKeyDown={() => {
-            railCancelGen.current += 1;
-          }}
+          // Escape abandons: revert the typed slices to the URL's values,
+          // which cancels their pending writes. Scrim and close-button
+          // closes leave them alone, so those edits still settle.
+          onEscapeKeyDown={revertTypedEdits}
           className="w-[340px] max-w-[100vw] overflow-y-auto p-6"
         >
           <SheetHeader className="mb-2 p-0">
             <SheetTitle className="font-display text-2xl font-medium">Refine</SheetTitle>
           </SheetHeader>
-          <FilterRail
-            seriesOptions={seriesOptions}
-            applyParams={applyParams}
-            clearGen={clearGen}
-            lastEdit={lastEdit}
-            cancelGen={railCancelGen}
-          />
+          <FilterRail seriesOptions={seriesOptions} />
         </SheetContent>
       </Sheet>
       <BookDetailDrawer
@@ -477,7 +441,7 @@ interface BookGridProps {
   items: BookListItem[];
 }
 
-function BookGrid({ items }: BookGridProps): ReactElement {
+const BookGrid = memo(function BookGrid({ items }: BookGridProps): ReactElement {
   return (
     <ul
       data-testid="library-grid"
@@ -497,7 +461,7 @@ function BookGrid({ items }: BookGridProps): ReactElement {
       })}
     </ul>
   );
-}
+});
 
 interface BookCardProps {
   book: BookListItem;

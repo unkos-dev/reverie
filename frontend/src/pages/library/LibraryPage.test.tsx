@@ -2,7 +2,8 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, test, vi } from "vite-plus/test";
-import { RouterProvider, createMemoryRouter, useLocation, type RouteObject } from "react-router";
+import { NuqsAdapter, useOptimisticSearchParams } from "nuqs/adapters/react-router/v8";
+import { RouterProvider, createBrowserRouter, type RouteObject } from "react-router";
 import type { ReactElement } from "react";
 
 import type { BookDetail, BookListItem, BookListResponse, ListBooksParams } from "@/api";
@@ -23,6 +24,10 @@ vi.mock("@/lib/theme/ThemeProvider", () => ({
 // it unconditionally so one test's choice can't leak into the next.
 afterEach(() => {
   document.cookie = `${VIEW_COOKIE_NAME}=; Path=/; Max-Age=0`;
+  // Search-param state lives in the document URL, which is shared across
+  // tests in this file; without this a filter set by one test leaks into
+  // the next one's initial state.
+  window.history.replaceState(null, "", "/library");
 });
 
 function bookFixture(overrides: Partial<BookListItem> = {}): BookListItem {
@@ -136,28 +141,33 @@ function renderLibrary({
     client.setQueryData(queryKeys.books.detail(detail.id), detail);
   }
 
-  // Sibling probe exposing the live search string, since the memory router
-  // instance is scoped to this wrapper and not reachable from assertions.
+  // Sibling probe exposing the live search string. It reads the
+  // search-param view rather than the router's location: writes reach the
+  // URL via history.replaceState, which the router does not observe, so
+  // useLocation would never show a filter or sort change.
   function LocationProbe(): ReactElement {
-    const location = useLocation();
-    return <div data-testid="location-search">{location.search}</div>;
+    const search = useOptimisticSearchParams();
+    return <div data-testid="location-search">{search.toString()}</div>;
   }
+
+  // The real adapter over a browser router, matching production. A memory
+  // router keeps its location in memory, where search-param writes never
+  // land, so it would make every write invisible to the page.
+  window.history.replaceState(null, "", initialEntries?.[0] ?? "/library");
 
   function Wrapper(): ReactElement {
     const routes: RouteObject[] = [
       {
         path: "/library",
         element: (
-          <>
+          <NuqsAdapter>
             <LibraryPage />
             <LocationProbe />
-          </>
+          </NuqsAdapter>
         ),
       },
     ];
-    const router = createMemoryRouter(routes, {
-      initialEntries: initialEntries ?? ["/library"],
-    });
+    const router = createBrowserRouter(routes);
     return (
       <QueryClientProvider client={client}>
         <RouterProvider router={router} />
@@ -604,8 +614,17 @@ describe("LibraryPage", () => {
       pageParams: [undefined],
     });
     function Wrapper(): ReactElement {
-      const routes: RouteObject[] = [{ path: "/library", element: <LibraryPage /> }];
-      const router = createMemoryRouter(routes, { initialEntries: ["/library"] });
+      const routes: RouteObject[] = [
+        {
+          path: "/library",
+          element: (
+            <NuqsAdapter>
+              <LibraryPage />
+            </NuqsAdapter>
+          ),
+        },
+      ];
+      const router = createBrowserRouter(routes);
       return (
         <QueryClientProvider client={client}>
           <RouterProvider router={router} />
@@ -646,8 +665,17 @@ describe("LibraryPage", () => {
       pageParams: [undefined],
     });
     function Wrapper(): ReactElement {
-      const routes: RouteObject[] = [{ path: "/library", element: <LibraryPage /> }];
-      const router = createMemoryRouter(routes, { initialEntries: ["/library"] });
+      const routes: RouteObject[] = [
+        {
+          path: "/library",
+          element: (
+            <NuqsAdapter>
+              <LibraryPage />
+            </NuqsAdapter>
+          ),
+        },
+      ];
+      const router = createBrowserRouter(routes);
       return (
         <QueryClientProvider client={client}>
           <RouterProvider router={router} />

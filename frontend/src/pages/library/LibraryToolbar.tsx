@@ -3,18 +3,17 @@
  * switcher, and the Filters trigger in every mode; the density toggle and
  * Columns popover in table mode only, where they have something to drive.
  *
- * The toolbar owns no state: search commits through the shared filter
- * protocol (`filter-commit.ts`), the view switcher and Filters trigger
- * dispatch to the container, and display preferences arrive as props.
+ * The toolbar owns no state: quick search owns its own URL key, the view
+ * switcher and Filters trigger dispatch to the container, and display
+ * preferences arrive as props.
  */
 import { LayoutGrid, SlidersHorizontal, Table2 } from "lucide-react";
-import type { ReactElement, RefObject } from "react";
+import type { ReactElement } from "react";
 
 import { QuickSearch } from "@/components/library/QuickSearch";
 import { Button } from "@/components/ui/button";
 import type { LibraryView } from "@/routes/library-params";
 
-import type { EditTokens } from "@/components/library/filter-commit";
 import type { Density } from "./display-storage";
 import { ColumnsPopover } from "./ColumnsPopover";
 import { DENSITIES } from "./display-storage";
@@ -22,12 +21,6 @@ import { DENSITIES } from "./display-storage";
 type LibraryToolbarProps = {
   view: LibraryView;
   onViewChange: (view: LibraryView) => void;
-  /** Quick-search wiring; see `components/library/QuickSearch`. */
-  searchValue: string;
-  searchResetToken: string;
-  lastEdit: RefObject<EditTokens | null>;
-  clearGen: RefObject<number>;
-  onSearchCommit: (q: string | undefined) => void;
   /** Filters drawer trigger state. */
   filtersOpen: boolean;
   activeFilterCount: number;
@@ -48,11 +41,6 @@ const DENSITY_LABELS: Record<Density, string> = {
 export function LibraryToolbar({
   view,
   onViewChange,
-  searchValue,
-  searchResetToken,
-  lastEdit,
-  clearGen,
-  onSearchCommit,
   filtersOpen,
   activeFilterCount,
   onOpenFilters,
@@ -64,13 +52,7 @@ export function LibraryToolbar({
 }: LibraryToolbarProps): ReactElement {
   return (
     <div data-chrome="" className="mb-4 flex flex-wrap items-center gap-2">
-      <QuickSearch
-        value={searchValue}
-        resetToken={searchResetToken}
-        lastEdit={lastEdit}
-        clearGen={clearGen}
-        onCommit={onSearchCommit}
-      />
+      <QuickSearch />
       <div className="flex flex-wrap items-center gap-2">
         {view === "table" ? (
           <>
