@@ -2,6 +2,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, test, vi } from "vite-plus/test";
+import { NuqsTestingAdapter } from "nuqs/adapters/testing";
 import { RouterProvider, createMemoryRouter, useLocation, type RouteObject } from "react-router";
 import type { ReactElement } from "react";
 
@@ -155,12 +156,23 @@ function renderLibrary({
         ),
       },
     ];
+    const entry = initialEntries?.[0] ?? "/library";
+    const queryIndex = entry.indexOf("?");
     const router = createMemoryRouter(routes, {
       initialEntries: initialEntries ?? ["/library"],
     });
     return (
       <QueryClientProvider client={client}>
-        <RouterProvider router={router} />
+        {/* resetUrlUpdateQueueOnMount is off deliberately: on it, the queue
+            resets on every render rather than on mount, which drops queued
+            updates mid-batch and makes debounced writes flaky. Per-flush
+            hygiene still comes from autoResetQueueOnUpdate. */}
+        <NuqsTestingAdapter
+          searchParams={queryIndex === -1 ? "" : entry.slice(queryIndex)}
+          resetUrlUpdateQueueOnMount={false}
+        >
+          <RouterProvider router={router} />
+        </NuqsTestingAdapter>
       </QueryClientProvider>
     );
   }

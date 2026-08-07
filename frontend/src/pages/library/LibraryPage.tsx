@@ -38,12 +38,7 @@ import {
 import { CoverArtwork } from "@/components/CoverArtwork";
 import { Atmosphere } from "@/components/library/Atmosphere";
 import { BookmarkRibbon } from "@/components/library/BookmarkRibbon";
-import {
-  filterResetToken,
-  makeFilterClear,
-  makeFilterCommit,
-  type EditTokens,
-} from "@/components/library/filter-commit";
+import { makeFilterClear, type EditTokens } from "@/components/library/filter-commit";
 import { LibraryMasthead } from "@/components/library/LibraryMasthead";
 import { sortStackSummary } from "@/components/library/sort-summary";
 import { FilterRail, type SeriesFacetOption } from "@/components/shell/FilterRail";
@@ -53,6 +48,7 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sh
 import { Skeleton } from "@/components/ui/skeleton";
 import { useAuthMe } from "@/hooks/useAuthMe";
 import { useCinematicMode } from "@/hooks/useCinematicMode";
+import { useLibrarySearchParams, useQuickSearchFilter } from "@/lib/hooks/use-library-filters";
 import { useLiveSearchParams } from "@/lib/hooks/use-live-search-params";
 import { queryKeys } from "@/lib/query/keys";
 
@@ -103,11 +99,17 @@ export function LibraryPage(): ReactElement {
 }
 
 function LibraryContent(): ReactElement {
-  // Single URL write authority for the route: the rail's commits and the
-  // page's own writers (header sort, clear-all, view toggle, quick search,
-  // chip removal) all go through `applyParams`, so two writes landing in
-  // one frame cannot clobber each other (see the hook's docstring).
-  const { searchParams, applyParams, clearGen } = useLiveSearchParams();
+  // Reads come from the nuqs-aware view of the params, never React
+  // Router's: search-param writes land via `history.replaceState`, which
+  // the router's history does not observe, so its own `useSearchParams`
+  // would go stale against anything quick search writes.
+  const searchParams = useLibrarySearchParams();
+  // Write authority for the surfaces not yet migrated off it (the rail's
+  // commits, header sort, clear-all, view toggle, chip removal).
+  const { applyParams, clearGen } = useLiveSearchParams();
+  // Quick search owns `q`; the page only needs its clear path, so
+  // clear-all can cancel a keystroke still queued against that key.
+  const { clearQuery } = useQuickSearchFilter();
   // Drives cinematic mode via the document `data-cinematic` attribute (CSS
   // reads it); the boolean return is unused — visibility is CSS-only.
   useCinematicMode();
@@ -207,6 +209,9 @@ function LibraryContent(): ReactElement {
 
   function clearAllFilters(): void {
     lastEdit.current = null;
+    // Undebounced, so it cancels a queued quick-search keystroke that would
+    // otherwise land after the sweep below and resurrect the `q` condition.
+    clearQuery();
     applyParams(
       (params) => {
         for (const key of FILTER_PARAM_KEYS) params.delete(key);
@@ -341,15 +346,6 @@ function LibraryContent(): ReactElement {
           <LibraryToolbar
             view={viewMode}
             onViewChange={setView}
-            searchValue={filterState.q ?? ""}
-            searchResetToken={filterResetToken(filterState)}
-            lastEdit={lastEdit}
-            clearGen={clearGen}
-            onSearchCommit={(q) => {
-              // Built inside the handler: the writer closes over the ref and
-              // may only touch it outside render (react-compiler contract).
-              makeFilterCommit(applyParams, lastEdit)((current) => ({ ...current, q }));
-            }}
             filtersOpen={overlay === "filters"}
             activeFilterCount={activeFilterCount}
             onOpenFilters={() => {
