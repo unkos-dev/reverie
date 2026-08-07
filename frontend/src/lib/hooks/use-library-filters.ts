@@ -190,8 +190,20 @@ export const SLICE_KEYS = {
 
 export type FilterSlice = keyof typeof SLICE_KEYS;
 
-/** Every key clear-all sweeps: each slice's keys plus the dead params. */
-const ALL_FILTER_KEYS: readonly LibraryKey[] = [
+/**
+ * Every key clear-all sweeps: each slice's keys plus the dead params.
+ *
+ * This is a second census of a list the codec already owns, and the two
+ * must agree exactly or a condition becomes unclearable while still
+ * being parsed and sent. The type only proves each entry is a key this
+ * module can write; it cannot prove the list is complete against the
+ * codec, so a parity test holds that end and is the thing to fix first
+ * if it fails. Deriving this from `FILTER_PARAM_KEYS` instead would need
+ * a cast (that list is `readonly string[]`) or a runtime narrowing that
+ * would silently drop an unrecognised key, turning a loud drift into an
+ * invisible one.
+ */
+export const ALL_FILTER_KEYS: readonly LibraryKey[] = [
   "q",
   ...Object.values(SLICE_KEYS).flat(),
   "title_empty",

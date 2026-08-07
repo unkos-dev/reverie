@@ -5,7 +5,9 @@ import type { ReactElement } from "react";
 import { createBrowserRouter, RouterProvider } from "react-router";
 import { afterEach, describe, expect, test } from "vite-plus/test";
 
-import { useLibraryFilters } from "./use-library-filters";
+import { FILTER_PARAM_KEYS, PURGE_ONLY_PARAM_KEYS } from "@/routes/library-params";
+
+import { ALL_FILTER_KEYS, useLibraryFilters } from "./use-library-filters";
 
 function Probe(): ReactElement {
   const { commitSlice, clearAll } = useLibraryFilters();
@@ -38,6 +40,23 @@ function Probe(): ReactElement {
       </button>
       <button type="button" onClick={clearAll}>
         clear-all
+      </button>
+      <button
+        type="button"
+        onClick={() => {
+          // Two values in one set family, to prove the key survives as a
+          // repeated param rather than collapsing to the last one.
+          commitSlice("genres", (current) => ({
+            ...current,
+            genres: { ...current.genres, any: ["scifi", "fantasy"] },
+          }));
+          commitSlice("status", (current) => ({
+            ...current,
+            status: { ...current.status, any: ["reading", "finished"] },
+          }));
+        }}
+      >
+        pick-multi
       </button>
     </div>
   );
@@ -128,6 +147,37 @@ describe("useLibraryFilters", () => {
     await user.click(screen.getByRole("button", { name: "clear-all" }));
     await waitFor(() => {
       expect(currentSearch().get("title_empty")).toBeNull();
+    });
+  });
+
+  test("the clear-all census matches the codec's, in both directions", () => {
+    // The transport keeps its own list of every key it may write, because
+    // the codec's is `readonly string[]` and cannot be narrowed to this
+    // module's key union without a cast or a silent drop. Two lists means
+    // they can drift, so this holds them together: a filter the codec
+    // parses but clear-all never sweeps stays set forever, and a key here
+    // that the codec no longer knows is dead weight nothing will catch.
+    //
+    // Every entry having a parser is already proven by the type, so it is
+    // deliberately not re-asserted here.
+    const canonical = new Set([...FILTER_PARAM_KEYS, ...PURGE_ONLY_PARAM_KEYS]);
+    const census = new Set<string>(ALL_FILTER_KEYS);
+
+    expect([...canonical].filter((key) => !census.has(key))).toEqual([]);
+    expect([...census].filter((key) => !canonical.has(key))).toEqual([]);
+  });
+
+  test("every set-valued key round-trips as a repeated param", async () => {
+    renderProbe();
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "pick-multi" }));
+    await waitFor(() => {
+      const search = currentSearch();
+      // A key wired as a single-value parser would keep only the last
+      // value here, which the codec's clamped sets would then silently
+      // under-report rather than fail on.
+      expect(search.getAll("genre_any")).toEqual(["scifi", "fantasy"]);
+      expect(search.getAll("status_any")).toEqual(["reading", "finished"]);
     });
   });
 
