@@ -28,17 +28,6 @@
  * count, the chips) go through {@link useLibrarySearchParams} and the
  * codec in `routes/library-params`, which remains the one parser and
  * validator for every filter value. This module owns transport only.
- *
- * Every write runs inside a transition. The library's query key derives
- * from these params, and a suspense query suspends on a key it has no
- * data for; outside a transition that unwinds to the page's Suspense
- * boundary and repaints the whole browse surface as a skeleton on each
- * facet click. React holds the previous UI instead when the update is a
- * transition. This restores a property the surface used to inherit from
- * the router, whose navigations were transitions and whose loader
- * awaited the prefetch before the params changed; a shallow write runs
- * no loader. `placeholderData: keepPreviousData` is not an alternative
- * here, because suspense query options omit `placeholderData`.
  */
 import {
   debounce,
@@ -50,7 +39,6 @@ import {
   type Values,
 } from "nuqs";
 import { useOptimisticSearchParams } from "nuqs/adapters/react-router/v8";
-import { useTransition } from "react";
 
 import { parseSortParam, serializeSortParam, type SortLevelParam } from "@/api";
 import {
@@ -105,8 +93,7 @@ export type QuickSearchFilter = {
 /** The typing path for `q`. The only other writers are the whole-grammar
  *  clear affordances below, which sweep every filter key including this one. */
 export function useQuickSearchFilter(): QuickSearchFilter {
-  const [, startTransition] = useTransition();
-  const [{ q }, setParams] = useQueryStates(QUICK_SEARCH_KEYS, { startTransition });
+  const [{ q }, setParams] = useQueryStates(QUICK_SEARCH_KEYS);
   return {
     query: q,
     setQuery: (next) => {
@@ -341,8 +328,7 @@ const TYPED_SLICES: readonly FilterSlice[] = ["title", "subtitle", "isbn13", "pa
 /** The library's filter grammar. Every library write goes through this. */
 export function useLibraryFilters(): LibraryFilters {
   const applied = useLibrarySearchParams();
-  const [, startTransition] = useTransition();
-  const [values, setParams] = useQueryStates(LIBRARY_PARSERS, { startTransition });
+  const [values, setParams] = useQueryStates(LIBRARY_PARSERS);
   const filters = parseFilterParams(toSearch(values));
   return {
     filters,

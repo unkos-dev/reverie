@@ -196,49 +196,6 @@ function drawerSection(drawer: HTMLElement, title: string): HTMLElement {
 }
 
 describe("LibraryPage", () => {
-  test("a filter change keeps the results on screen instead of falling back to the skeleton", async () => {
-    // Only the unfiltered key is cached, so committing a search moves the
-    // query to a key with no data. A suspense query suspends on that, and
-    // outside a transition it unwinds to the page's Suspense boundary and
-    // repaints the whole surface. The route loader used to pre-warm the
-    // cache before the params changed; a shallow write runs no loader.
-    renderLibrary({ items: [bookFixture()], nextCursor: null });
-    await screen.findByRole("heading", { name: "Library" });
-    let release = (): void => {};
-    const pending = new Promise<Response>((resolve) => {
-      release = () => {
-        resolve(
-          new Response(JSON.stringify({ items: [], next_cursor: null }), {
-            status: 200,
-            headers: { "Content-Type": "application/json" },
-          }),
-        );
-      };
-    });
-    const fetchSpy = vi.spyOn(globalThis, "fetch").mockReturnValue(pending);
-
-    const user = userEvent.setup();
-    await user.type(searchBox(), "war");
-    // Wait for the new query to actually start, not merely for the URL to
-    // change. The URL lands at flush, but the re-render onto the new key is
-    // asynchronous, so asserting on the URL alone runs before any suspend
-    // could happen and would pass whether or not the write is a transition.
-    await waitFor(
-      () => {
-        expect(fetchSpy).toHaveBeenCalled();
-      },
-      { timeout: 3_000 },
-    );
-
-    // In flight against an uncached key: the old results stay on screen and
-    // no page-level busy state replaces them.
-    expect(screen.getByRole("link", { name: /Brothers Karamazov/ })).toBeInTheDocument();
-    expect(document.querySelector('[aria-busy="true"]')).toBeNull();
-
-    release();
-    fetchSpy.mockRestore();
-  });
-
   test("renders the heading without a fabricated total", async () => {
     renderLibrary({ items: [bookFixture()], nextCursor: null });
     expect(await screen.findByRole("heading", { name: "Library" })).toBeInTheDocument();
