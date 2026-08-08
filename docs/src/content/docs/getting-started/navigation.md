@@ -79,9 +79,22 @@ Two toolbar controls shape the table to your taste. The **density
 toggle** switches between comfortable rows (with a small cover beside
 each title) and compact ones. The **Columns** popover shows or hides
 individual columns; Title stays put because every row needs its
-anchor. Both are personal display preferences: they persist on this
-device and never travel in a shared link, which carries the query
-(filters, search, sort) instead.
+anchor. Both are personal display preferences, and so are your view
+choice and the sort you last chose: they belong to your account rather
+than to one browser, so they follow you to a second machine and survive
+signing out and back in. They never travel in a shared link, which
+carries the query (filters, search, sort) instead.
+
+**Reset to default** at the foot of the Columns popover clears your
+column choice rather than merely showing everything, so the table goes
+back to whatever this installation ships as its default and stays with
+that default if it later changes. It touches columns only: density,
+view, and sort keep whatever you chose. The control is greyed out when
+your columns already match the default.
+
+A preference set in one tab does not reach another tab that is already
+open; whichever you change last is what sticks, and reloading the other
+tab catches it up.
 
 Rows stream in as you scroll rather than loading all at once, which is
 why the table says "loaded": with a large library the first screen
@@ -93,8 +106,9 @@ through a column header press (see below), so the order is correct
 across the whole collection, not just the rows on screen.
 
 Your view choice travels in the URL (`?view=table`), so a shared link
-opens exactly what you see; Reverie also remembers your last choice
-and uses it the next time you open the Library without one.
+opens exactly what you see; Reverie also remembers your last choice on
+your account and uses it the next time you open the Library without
+one, on this machine or any other.
 
 ## Book details without leaving the list
 
@@ -145,6 +159,12 @@ a stray click collapses a stack you built.
 
 Books with nothing to sort on, no page count, no author yet, always
 sort to the end, whichever direction you're sorting in.
+
+The sort you choose becomes your default, on your account rather than
+on this browser, and it applies whenever you open the Library without a
+sort of its own. A link that carries one (`?sort=title`) still wins for
+as long as you are on it, and does not change your default; turning the
+sort off returns you to the order Reverie ships with.
 
 Multi-level sort exists so that a large library can be scanned in exactly
 the order you want, author then most recent within each author, for
