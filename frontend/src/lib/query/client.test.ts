@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from "vite-plus/test";
 
 import { ApiError } from "@/api";
+import { activeUserId, rememberActiveUser } from "@/lib/active-user";
 
 import { invokeUnauthenticatedHandler, queryClient, setUnauthenticatedHandler } from "./client";
 
@@ -122,5 +123,18 @@ describe("invokeUnauthenticatedHandler — once-guard", () => {
     setUnauthenticatedHandler(second);
     invokeUnauthenticatedHandler();
     expect(second).toHaveBeenCalledTimes(1);
+  });
+
+  test("a dead session forgets the browser's active user", () => {
+    // The expiry path never runs the sign-out flow, so this is the only
+    // hook that stops one account's per-user caches from resolving while
+    // a different account signs in next.
+    rememberActiveUser("user-a");
+    setUnauthenticatedHandler(() => {});
+
+    invokeUnauthenticatedHandler();
+
+    expect(activeUserId()).toBeNull();
+    localStorage.clear();
   });
 });

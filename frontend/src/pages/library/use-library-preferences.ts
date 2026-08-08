@@ -94,8 +94,12 @@ export type LibraryPreferences = {
   /** True when the effective sort is the inherited installation stack, which
    *  is what disables the sort reset control. */
   sortInherited: boolean;
-  /** Whether hiding nothing would actually change the table, which is what
-   *  the columns reset control offers to do. */
+  /**
+   * Whether a columns override exists to drop. An override whose value
+   * equals the installation default still counts: dropping it changes
+   * nothing visible today, but re-subscribes the reader to future changes
+   * of that default, which is the reset control's actual contract.
+   */
   canResetColumns: boolean;
   setDensity: (next: Density) => void;
   setHiddenColumns: (next: ReadonlySet<string>) => void;
@@ -125,7 +129,11 @@ export function useLibraryPreferences(): LibraryPreferences {
   });
 
   const [localDensity, setLocalDensity] = useState<Density | null>(null);
-  const [localColumns, setLocalColumns] = useState<readonly string[] | null>(null);
+  // Tri-state, like the server column: `undefined` means the reader has not
+  // acted this session, `null` means they reset to inherit, an array is
+  // their override. Two-state `value | null` would collapse "reset" into
+  // "untouched" and let the cached response resurrect a dropped override.
+  const [localColumns, setLocalColumns] = useState<readonly string[] | null | undefined>(undefined);
   const [localView, setLocalView] = useState<LibraryView | null>(null);
   const [localSort, setLocalSort] = useState<string | null>(null);
 
@@ -180,12 +188,28 @@ export function useLibraryPreferences(): LibraryPreferences {
   const density =
     localDensity ?? data?.density ?? data?.defaults.density ?? mirror.density ?? BOOTSTRAP.density;
   const view = localView ?? data?.view ?? data?.defaults.view ?? mirror.view ?? BOOTSTRAP.view;
+  const defaultColumns = data?.defaults.hidden_columns ?? BOOTSTRAP.hiddenColumns;
+  // Columns resolve like sort, not like density: `null` is a meaningful
+  // layer value (reset to inherit), so a bare `??` chain would fall through
+  // it and resurrect the override still cached beneath.
   const columnKeys =
-    localColumns ??
-    data?.hidden_columns ??
-    data?.defaults.hidden_columns ??
-    mirror.hiddenColumns ??
-    BOOTSTRAP.hiddenColumns;
+    localColumns !== undefined
+      ? (localColumns ?? defaultColumns)
+      : data !== undefined
+        ? (data.hidden_columns ?? data.defaults.hidden_columns)
+        : (mirror.hiddenColumns ?? BOOTSTRAP.hiddenColumns);
+  // Whether a columns override EXISTS, which is what the reset control acts
+  // on: an override whose value equals the installation default is still an
+  // override, and dropping it is a real change, because it re-subscribes
+  // the reader to future changes of that default. Only the pre-response
+  // window falls back to comparing values, since the mirror stores effective
+  // columns and cannot know override-ness.
+  const columnsOverridden =
+    localColumns !== undefined
+      ? localColumns !== null
+      : data !== undefined
+        ? data.hidden_columns !== null
+        : !sameKeys(columnKeys, defaultColumns);
   // Sort cannot use the chain above: an inherited sort resolves to "no
   // override", not to a value, so a `??` chain would fall through to the
   // mirror and resurrect an override the server has already dropped.
@@ -201,7 +225,6 @@ export function useLibraryPreferences(): LibraryPreferences {
   const effectiveSort = sortOverride !== "" ? sortOverride : (data?.defaults.sort_stack ?? "");
   const sortLevels = useMemo(() => parseSortParam(effectiveSort), [effectiveSort]);
 
-  const defaultColumns = data?.defaults.hidden_columns ?? BOOTSTRAP.hiddenColumns;
   const hiddenColumns = useMemo(() => new Set(columnKeys), [columnKeys]);
 
   // Refresh the mirror from whatever is currently effective, whichever medium
@@ -246,12 +269,12 @@ export function useLibraryPreferences(): LibraryPreferences {
   );
 
   const resetColumns = useCallback(() => {
-    // Pin the local value to the default rather than clearing it: clearing
-    // would fall back to the override still cached from the last response, so
-    // the hidden columns would reappear until the reset landed.
-    setLocalColumns(defaultColumns);
+    // `null` is "locally reset", a layer value in its own right: the
+    // resolution shows the defaults immediately (never the override still
+    // cached beneath) and the reset control greys out at once.
+    setLocalColumns(null);
     queue({ hidden_columns: null });
-  }, [defaultColumns, queue]);
+  }, [queue]);
 
   const setView = useCallback(
     (next: LibraryView) => {
@@ -277,7 +300,7 @@ export function useLibraryPreferences(): LibraryPreferences {
     sortOverride,
     sortLevels,
     sortInherited: sortOverride === "",
-    canResetColumns: !sameKeys(columnKeys, defaultColumns),
+    canResetColumns: columnsOverridden,
     setDensity,
     setHiddenColumns,
     resetColumns,

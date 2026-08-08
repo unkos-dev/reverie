@@ -4,6 +4,7 @@ import { createElement } from "react";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vite-plus/test";
 
 import { STUB_ME } from "@/__fixtures__/auth";
+import { activeUserId, forgetActiveUser } from "@/lib/active-user";
 
 import { useAuthMe } from "./useAuthMe";
 
@@ -101,5 +102,38 @@ describe("useAuthMe", () => {
       expect(result.current.isLoading).toBe(false);
     });
     expect(result.current.isError).toBe(false);
+  });
+
+  test("a confirmed identity is recorded as the browser's active user", async () => {
+    // This is the one convergence point for every auth mode, so per-user
+    // client caches (the library's first-paint mirror) learn whose they
+    // are here rather than in each login flow.
+    forgetActiveUser();
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      new Response(JSON.stringify(STUB_ME), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+
+    const { result } = renderHook(() => useAuthMe(), { wrapper: makeWrapper() });
+
+    await waitFor(() => {
+      expect(result.current.data).toBeDefined();
+    });
+    expect(activeUserId()).toBe(STUB_ME.id);
+    localStorage.clear();
+  });
+
+  test("a 401 does not record an active user", async () => {
+    forgetActiveUser();
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(new Response(null, { status: 401 }));
+
+    const { result } = renderHook(() => useAuthMe(), { wrapper: makeWrapper() });
+
+    await waitFor(() => {
+      expect(result.current.isLoading).toBe(false);
+    });
+    expect(activeUserId()).toBeNull();
   });
 });

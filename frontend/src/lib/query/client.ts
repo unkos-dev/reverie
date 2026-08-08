@@ -25,6 +25,7 @@
 import { QueryCache, QueryClient } from "@tanstack/react-query";
 
 import { ApiError } from "@/api";
+import { forgetActiveUser } from "@/lib/active-user";
 
 /**
  * Handler invoked by {@link queryClient}'s cache when a query rejects
@@ -72,6 +73,12 @@ export function setUnauthenticatedHandler(fn: () => void): void {
 export function invokeUnauthenticatedHandler(): void {
   if (redirecting) return;
   redirecting = true;
+  // The session is dead, so this browser no longer has a confirmed
+  // account; per-user caches stop resolving until the next sign-in names
+  // one. Without this, an expired session followed by a different account
+  // signing in would let the old account's cached presentation seed the
+  // new one's first paint.
+  forgetActiveUser();
   unauthenticatedHandler();
 }
 

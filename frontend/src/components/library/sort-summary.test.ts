@@ -3,8 +3,11 @@ import { describe, expect, test } from "vite-plus/test";
 import { sortStackSummary } from "./sort-summary";
 
 describe("sortStackSummary", () => {
-  test("an empty stack reads as unsorted", () => {
-    expect(sortStackSummary([])).toBe("Not sorted");
+  test("an empty stack names the installation order, never an unsorted state", () => {
+    // The library always has a total order; an empty stack only means the
+    // specific levels are not yet known (pre-response, or a failed
+    // preferences endpoint), so the summary must not claim otherwise.
+    expect(sortStackSummary([])).toBe("Sorted by the installation order");
   });
 
   test("a single level names the field and direction", () => {

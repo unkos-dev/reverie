@@ -16,7 +16,9 @@ import type {
 import type { AuthMe } from "@/hooks/useAuthMe";
 import { queryKeys } from "@/lib/query/keys";
 
-import { DISPLAY_STORAGE_KEY } from "./display-storage";
+import { rememberActiveUser } from "@/lib/active-user";
+
+import { displayStorageKey } from "./display-storage";
 import { LibraryPage } from "./LibraryPage";
 
 // The masthead reads the effective theme to pick its hero asset; these tests
@@ -1284,7 +1286,7 @@ describe("LibraryPage", () => {
       fetchSpy.mockRestore();
     });
 
-    test("the reset is offered only when the visible columns differ from the default", async () => {
+    test("the reset is offered only while an override exists to drop", async () => {
       renderLibrary({
         items: [bookFixture()],
         nextCursor: null,
@@ -1295,12 +1297,60 @@ describe("LibraryPage", () => {
       await user.click(screen.getByRole("button", { name: /Columns/ }));
       expect(await screen.findByRole("button", { name: "Reset to default" })).toBeDisabled();
     });
+
+    test("an override whose value equals the default still offers the reset", async () => {
+      // Hiding then unhiding a column stores `hidden_columns: []`, an
+      // override that matches today's default. Dropping it changes nothing
+      // visible now, but re-subscribes the reader to future changes of the
+      // installation default, so the control must stay live.
+      renderLibrary({
+        items: [bookFixture()],
+        nextCursor: null,
+        initialEntries: ["/library?view=table"],
+        preferences: preferencesFixture({ hidden_columns: [] }),
+      });
+      await screen.findByTestId("library-table");
+      const user = userEvent.setup();
+      await user.click(screen.getByRole("button", { name: /Columns/ }));
+      const reset = await screen.findByRole("button", { name: "Reset to default" });
+      expect(reset).toBeEnabled();
+      const fetchSpy = vi
+        .spyOn(globalThis, "fetch")
+        .mockResolvedValue(preferencesResponse(preferencesFixture()));
+      await user.click(reset);
+      await waitFor(() => {
+        expect(preferenceWrites(fetchSpy)).toEqual([{ hidden_columns: null }]);
+      });
+      // The override is gone, so the control greys out at once.
+      expect(screen.getByRole("button", { name: "Reset to default" })).toBeDisabled();
+      fetchSpy.mockRestore();
+    });
+
+    test("hiding then unhiding a column leaves the reset offered", async () => {
+      const fetchSpy = vi
+        .spyOn(globalThis, "fetch")
+        .mockResolvedValue(preferencesResponse(preferencesFixture({ hidden_columns: [] })));
+      renderLibrary({
+        items: [bookFixture()],
+        nextCursor: null,
+        initialEntries: ["/library?view=table"],
+      });
+      await screen.findByTestId("library-table");
+      const user = userEvent.setup();
+      await user.click(screen.getByRole("button", { name: /Columns/ }));
+      await user.click(await screen.findByRole("checkbox", { name: "Subtitle" }));
+      await user.click(screen.getByRole("checkbox", { name: "Subtitle" }));
+      // The visible set matches the default again, but the override exists.
+      expect(screen.getByRole("button", { name: "Reset to default" })).toBeEnabled();
+      fetchSpy.mockRestore();
+    });
   });
 
   describe("first paint and in-flight responses", () => {
     test("the mirror supplies columns and density before the response lands", async () => {
+      rememberActiveUser("mirror-user");
       localStorage.setItem(
-        DISPLAY_STORAGE_KEY,
+        displayStorageKey("mirror-user"),
         JSON.stringify({
           density: "compact",
           hiddenColumns: ["subtitle"],
@@ -1328,7 +1378,8 @@ describe("LibraryPage", () => {
     });
 
     test("a malformed mirror paints the defaults instead of throwing", async () => {
-      localStorage.setItem(DISPLAY_STORAGE_KEY, "{not json");
+      rememberActiveUser("mirror-user");
+      localStorage.setItem(displayStorageKey("mirror-user"), "{not json");
       renderLibrary({
         items: [bookFixture()],
         nextCursor: null,

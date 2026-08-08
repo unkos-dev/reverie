@@ -210,9 +210,11 @@ the drawer is closed, so the collection can never be silently narrower
 than it looks, and dropping one condition is one click instead of a
 trip into the drawer.
 
-Filters live in the URL the same way your view and sort do, so a
-filtered library is bookmarkable and shareable, and reloading the page
-brings back exactly the filters you had.
+Filters and search live in the URL, so a filtered library is
+bookmarkable and shareable, and reloading the page brings back exactly
+the filters you had. Whoever opens the link sees those same books in
+their own sort order, because ordering belongs to the account, not the
+address.
 
 ## Editing from the table
 

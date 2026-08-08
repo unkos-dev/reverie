@@ -2,7 +2,8 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vite-plus/tes
 
 import { queryClient } from "@/lib/query/client";
 import { queryKeys } from "@/lib/query/keys";
-import { DISPLAY_STORAGE_KEY } from "@/pages/library/display-storage";
+import { forgetActiveUser, rememberActiveUser } from "@/lib/active-user";
+import { displayStorageKey } from "@/pages/library/display-storage";
 
 import { loader } from "./library";
 
@@ -84,8 +85,9 @@ describe("library loader", () => {
     // The component derives its first-render key from the same mirror, so
     // seeding from it is what keeps the loader's prefetch a hit for a
     // reader whose sort override followed them onto this device.
+    rememberActiveUser("user-a");
     localStorage.setItem(
-      DISPLAY_STORAGE_KEY,
+      displayStorageKey("user-a"),
       JSON.stringify({ density: null, hiddenColumns: null, view: null, sortStack: "-pages" }),
     );
     try {
@@ -101,9 +103,33 @@ describe("library loader", () => {
     }
   });
 
-  test("a malformed mirrored sort degrades to the bare key instead of forking it", async () => {
+  test("a mirror left by a signed-out account never seeds the key", async () => {
+    // The mirror survives sign-out for its owner's return, but with no
+    // confirmed account it must not shape anyone's first request.
+    rememberActiveUser("user-a");
     localStorage.setItem(
-      DISPLAY_STORAGE_KEY,
+      displayStorageKey("user-a"),
+      JSON.stringify({ density: null, hiddenColumns: null, view: null, sortStack: "-pages" }),
+    );
+    forgetActiveUser();
+    try {
+      vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+        jsonResponse({ items: [], next_cursor: null }),
+      );
+
+      await loader(loaderArgs("http://localhost/library"));
+
+      expect(queryClient.getQueryData(queryKeys.books.list({}))).toBeDefined();
+      expect(queryClient.getQueryData(queryKeys.books.list({ sort: "-pages" }))).toBeUndefined();
+    } finally {
+      localStorage.clear();
+    }
+  });
+
+  test("a malformed mirrored sort degrades to the bare key instead of forking it", async () => {
+    rememberActiveUser("user-a");
+    localStorage.setItem(
+      displayStorageKey("user-a"),
       JSON.stringify({ density: null, hiddenColumns: null, view: null, sortStack: "bogus,," }),
     );
     try {

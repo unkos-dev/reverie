@@ -24,7 +24,9 @@ import { HIDEABLE_COLUMNS } from "./table-columns";
 type ColumnsPopoverProps = {
   hiddenColumns: ReadonlySet<string>;
   onToggleColumn: (key: string, hidden: boolean) => void;
-  /** False when the visible set already matches the installation default. */
+  /** True while a stored override exists to drop, even one whose value
+   *  matches the installation default: dropping it re-subscribes the
+   *  reader to future changes of that default. */
   canReset: boolean;
   onReset: () => void;
 };

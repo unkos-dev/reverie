@@ -420,6 +420,19 @@ describe("FilterRail sort section", () => {
     expect(within(sort).getByText("Added")).toBeInTheDocument();
   });
 
+  test("the last inherited level's remove control is disabled, never a dead press", () => {
+    renderRail();
+    // Removing it would dispatch a reset to the state already showing, a
+    // press that visibly does nothing; direction and reorder stay live.
+    expect(screen.getByRole("button", { name: "Remove Added from sort" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /Change Added sort direction/ })).toBeEnabled();
+  });
+
+  test("an override's sole level keeps a working remove: it is the reset gesture", () => {
+    renderRail("/library", [{ field: "pages", desc: true }]);
+    expect(screen.getByRole("button", { name: "Remove Pages from sort" })).toBeEnabled();
+  });
+
   test("editing an inherited level materialises it as the reader's override", async () => {
     renderRail();
     const user = userEvent.setup();

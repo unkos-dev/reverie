@@ -448,6 +448,11 @@ function SortSection({ levels, inherited, onChange }: Readonly<SortSectionProps>
                 size="icon-xs"
                 className="min-h-6 min-w-6"
                 aria-label={`Remove ${label} from sort`}
+                // Disabled, not hidden, matching the reorder arrows at the
+                // stack's ends: removing the last inherited level would
+                // dispatch a reset to the state already showing, a press
+                // that visibly does nothing.
+                disabled={inherited && levels.length === 1}
                 onClick={() => {
                   remove(index);
                 }}
