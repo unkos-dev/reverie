@@ -80,10 +80,11 @@ toggle** switches between comfortable rows (with a small cover beside
 each title) and compact ones. The **Columns** popover shows or hides
 individual columns; Title stays put because every row needs its
 anchor. Both are personal display preferences, and so are your view
-choice and the sort you last chose: they belong to your account rather
-than to one browser, so they follow you to a second machine and survive
-signing out and back in. They never travel in a shared link, which
-carries the query (filters, search, sort) instead.
+choice and your sort: they belong to your account rather than to one
+browser, so they follow you to a second machine and survive signing out
+and back in. They never travel in a shared link, which carries the
+query (filters and search) instead: someone opening your link sees the
+same books, arranged their own way.
 
 **Reset to default** at the foot of the Columns popover clears your
 column choice rather than merely showing everything, so the table goes
@@ -139,32 +140,37 @@ prevent.
 
 ## Sorting the library
 
+The library always has an order. Before you have chosen one it is the
+order Reverie ships with, newest additions first, and the Sort section
+shows exactly that, so what you see is always what is arranging the
+list. There is no "unsorted": a sort gesture changes the order, never
+switches ordering off.
+
 The filter drawer carries a **Sort** section in every view. Add up to
 three levels from its field picker, flip a level's direction, reorder
-levels, remove one, or clear the whole stack; none of it needs a
-modifier key. The grid sorts from here, and the section always shows
-the full stack, whichever surface built it. In the table, only the
-active sort shows a direction indicator on its header, so a glance at
-the header row tells you what orders the list without decoding every
-column.
+levels, or remove one; none of it needs a modifier key. The grid sorts
+from here, and the section always shows the full stack, whichever
+surface built it. In the table, only the active sort shows a direction
+indicator on its header, so a glance at the header row tells you what
+orders the list without decoding every column.
 
 The table keeps its faster gesture on top. Click a column header to
-sort by that column: the first click sorts ascending, the second
-descending, and a third turns the sort off. `⌘-click` / `Ctrl-click` a
-header adds it as another sort level instead of replacing the current
-one, so you can sort by author and then, within each author, by newest
-first. A plain click on any header resets the sort back down to that
-single column; the drawer's Sort section is the recovery surface when
-a stray click collapses a stack you built.
+sort by that column, and click again to reverse it. `⌘-click` /
+`Ctrl-click` a header adds it as another sort level instead of
+replacing the current one, so you can sort by author and then, within
+each author, by newest first. A plain click on any header resets the
+sort back down to that single column; the drawer's Sort section is the
+recovery surface when a stray click collapses a stack you built.
 
 Books with nothing to sort on, no page count, no author yet, always
 sort to the end, whichever direction you're sorting in.
 
-The sort you choose becomes your default, on your account rather than
-on this browser, and it applies whenever you open the Library without a
-sort of its own. A link that carries one (`?sort=title`) still wins for
-as long as you are on it, and does not change your default; turning the
-sort off returns you to the order Reverie ships with.
+The sort you choose sticks, on your account rather than on this
+browser: the library keeps that order until you sort differently,
+here or on any other machine. **Reset** beside the Sort section's
+title takes you back to the order Reverie ships with, and so does
+removing the stack's last level; the control only appears while you
+have a sort of your own to remove.
 
 Multi-level sort exists so that a large library can be scanned in exactly
 the order you want, author then most recent within each author, for

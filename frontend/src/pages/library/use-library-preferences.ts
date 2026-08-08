@@ -28,10 +28,12 @@
  * merged patch is the reader's latest intent. Two tabs can drift until one
  * reloads; nothing is corrupted, and a reload converges.
  *
- * No value here is ever written to the browser URL. The URL carries the
- * *current* filters, sort, and view; these are the reader's defaults, and a
- * second writer on that surface is the bug class the typed per-key params
- * exist to prevent.
+ * No value here is ever written to the browser URL. Filters and search are
+ * URL state with exactly one writer, and view's `?view=` param still wins
+ * over the stored choice while present. Sort has no URL form at all: it is
+ * a one-layer per-user preference, resolved here and sent explicitly on the
+ * list request (see `adr/2026-08-08-library-sort-per-user-preference.md`
+ * for why the two-layer URL-over-preference model was retired).
  */
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -43,6 +45,7 @@ import {
   updatePreferences,
   type Density,
   type LibraryView,
+  type SortLevelParam,
   type UpdatePreferencesFields,
 } from "@/api";
 import { queryKeys } from "@/lib/query/keys";
@@ -71,13 +74,26 @@ export type LibraryPreferences = {
   /** Effective view choice, which a `?view=` param still overrides. */
   view: LibraryView;
   /**
-   * The reader's own default sort in the `?sort=` wire grammar, or `""` when
-   * they have none. Empty means "send no `sort`", not "sort by nothing": an
-   * unsorted request already gets the installation default order from the
-   * list endpoint, so sending it would only fragment the query cache away
-   * from the route loader's prefetch.
+   * The reader's sort override in the `?sort=` wire grammar, or `""` when
+   * they inherit the installation order. This is the value the list request
+   * carries: an override is sent explicitly, and an inheriting reader sends
+   * no `sort` at all. The installation default is never serialized into a
+   * request it would not change, so an inheriting reader's query key stays
+   * equal to the route loader's URL-derived seed key.
    */
-  defaultSort: string;
+  sortOverride: string;
+  /**
+   * The effective sort stack, resolved as the override else the response's
+   * installation default. This is the one reading every sort surface renders
+   * and edits: the table headers, the rail's stack editor, and the live
+   * region cannot disagree, because none of them resolves independently.
+   * Empty only in the window before the first preferences response on a
+   * device with no override mirrored.
+   */
+  sortLevels: readonly SortLevelParam[];
+  /** True when the effective sort is the inherited installation stack, which
+   *  is what disables the sort reset control. */
+  sortInherited: boolean;
   /** Whether hiding nothing would actually change the table, which is what
    *  the columns reset control offers to do. */
   canResetColumns: boolean;
@@ -86,8 +102,15 @@ export type LibraryPreferences = {
   /** Drop the columns override so the group inherits the default again. */
   resetColumns: () => void;
   setView: (next: LibraryView) => void;
-  /** Persist the reader's default sort; `""` drops the override. */
-  setDefaultSort: (next: string) => void;
+  /**
+   * The one intent handler for every sort gesture: header clicks and the
+   * rail's stack editor both serialize through here. A non-empty stack is
+   * written as the reader's override; an empty stack (removing the last
+   * level, or the reset control) writes `null`, and the display visibly
+   * transitions to the installation stack it now inherits. There is no
+   * unsorted state to request: the library always has a total order.
+   */
+  setSortLevels: (levels: readonly SortLevelParam[]) => void;
 };
 
 export function useLibraryPreferences(): LibraryPreferences {
@@ -167,23 +190,41 @@ export function useLibraryPreferences(): LibraryPreferences {
   // override", not to a value, so a `??` chain would fall through to the
   // mirror and resurrect an override the server has already dropped.
   const storedSort = localSort ?? (data === undefined ? mirror.sortStack : data.sort_stack) ?? "";
-  // Normalised through the same codec the URL uses, so a mirror written
+  // Normalised through the same codec the request uses, so a mirror written
   // against an older schema can never put an unknown field on the wire.
-  const defaultSort = serializeSortParam(parseSortParam(storedSort));
+  const sortOverride = serializeSortParam(parseSortParam(storedSort));
+  // The one resolution every sort surface reads: the override when the
+  // reader has one, else the installation stack the response carries. The
+  // request deliberately does NOT follow this fallback (see sortOverride):
+  // display resolves to a value because the library always has an order,
+  // while the wire omits what the server would apply anyway.
+  const effectiveSort = sortOverride !== "" ? sortOverride : (data?.defaults.sort_stack ?? "");
+  const sortLevels = useMemo(() => parseSortParam(effectiveSort), [effectiveSort]);
 
   const defaultColumns = data?.defaults.hidden_columns ?? BOOTSTRAP.hiddenColumns;
   const hiddenColumns = useMemo(() => new Set(columnKeys), [columnKeys]);
 
   // Refresh the mirror from whatever is currently effective, whichever medium
   // supplied it, so the next cold load paints this and not the previous value.
+  // Sort mirrors the OVERRIDE, not the effective value: the route loader
+  // seeds the list query key from this field, and an inheriting reader's key
+  // must stay the bare one the loader derives from the URL alone.
   useEffect(() => {
     writeDisplayPreferences({
       density,
       hiddenColumns: [...hiddenColumns],
       view,
-      sortStack: defaultSort === "" ? null : defaultSort,
+      sortStack: sortOverride === "" ? null : sortOverride,
     });
-  }, [density, hiddenColumns, view, defaultSort]);
+  }, [density, hiddenColumns, view, sortOverride]);
+
+  // One-time expiry of the retired view cookie. Its writer was deleted when
+  // the view choice moved to the account, but a year-long cookie written by
+  // an earlier build keeps riding every same-origin request until told to
+  // stop. Removable once no client predating the preferences surface exists.
+  useEffect(() => {
+    document.cookie = "reverie_library_view=; Path=/; Max-Age=0";
+  }, []);
 
   // The setters are stable so a caller can depend on one from an effect
   // without re-running it every render.
@@ -220,10 +261,11 @@ export function useLibraryPreferences(): LibraryPreferences {
     [queue],
   );
 
-  const setDefaultSort = useCallback(
-    (next: string) => {
-      setLocalSort(next);
-      queue({ sort_stack: next === "" ? null : next });
+  const setSortLevels = useCallback(
+    (levels: readonly SortLevelParam[]) => {
+      const serialized = serializeSortParam(levels);
+      setLocalSort(serialized);
+      queue({ sort_stack: serialized === "" ? null : serialized });
     },
     [queue],
   );
@@ -232,13 +274,15 @@ export function useLibraryPreferences(): LibraryPreferences {
     density,
     hiddenColumns,
     view,
-    defaultSort,
+    sortOverride,
+    sortLevels,
+    sortInherited: sortOverride === "",
     canResetColumns: !sameKeys(columnKeys, defaultColumns),
     setDensity,
     setHiddenColumns,
     resetColumns,
     setView,
-    setDefaultSort,
+    setSortLevels,
   };
 }
 

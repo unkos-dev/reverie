@@ -184,6 +184,48 @@ const FIELD_BY_COLUMN: Partial<Record<string, SortField>> = Object.fromEntries(
   ),
 );
 
+/**
+ * Two-state header sorting over react-data-grid's native three-state cycle.
+ * The grid's third press removes a column from the sort, but the library
+ * has no unsorted state (the list always carries a total order), so a
+ * header press only ever toggles direction: a removal the grid reports is
+ * reinterpreted as a wrap back to ascending. Removing a level for real is
+ * the rail's stack editor's job.
+ *
+ * Two removal shapes reach this function. A press on the only descending
+ * column empties the stack (the grid's single-sort replace semantics drop
+ * the other levels too); the wrap resurrects that column alone, ascending,
+ * which is exactly what the press means under a two-state cycle. A
+ * ctrl-press on a descending level inside a multi-level stack drops just
+ * that level with the rest intact; the wrap flips it to ascending in
+ * place. Any other shape (replacing the stack with a new column, a plain
+ * direction toggle) passes through untouched. With several descending
+ * levels the emptied-stack shape cannot name which was pressed; the first
+ * descending level is taken, which is the primary in every ordinary case.
+ */
+function withTwoStateWrap(
+  current: readonly SortLevelParam[],
+  next: readonly SortLevelParam[],
+): readonly SortLevelParam[] {
+  if (next.length === 0) {
+    const pressed = current.find((level) => level.desc) ?? current.at(0);
+    return pressed === undefined ? next : [{ field: pressed.field, desc: false }];
+  }
+  if (next.length === current.length - 1) {
+    const missing = current.filter((level) => !next.some((n) => n.field === level.field));
+    const directionsKept = next.every((n) =>
+      current.some((level) => level.field === n.field && level.desc === n.desc),
+    );
+    if (missing.length === 1 && directionsKept && missing[0].desc) {
+      const at = current.findIndex((level) => level.field === missing[0].field);
+      const wrapped = [...next];
+      wrapped.splice(at, 0, { field: missing[0].field, desc: false });
+      return wrapped;
+    }
+  }
+  return next;
+}
+
 /** Renders the `created_at` RFC 3339 timestamp as a locale date for the
  *  read-only "Added" column and its plain-text export projection. */
 function formatAddedDate(iso: string): string {
@@ -497,7 +539,7 @@ export function LibraryTableView({
       }
       levels.push({ field, desc: entry.direction === "desc" });
     }
-    onSortChange(levels.slice(0, MAX_SORT_LEVELS));
+    onSortChange(withTwoStateWrap(sort, levels).slice(0, MAX_SORT_LEVELS));
   }
 
   function handleScroll(event: UIEvent<HTMLDivElement>): void {

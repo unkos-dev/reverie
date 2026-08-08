@@ -6,6 +6,8 @@ import { useState, type ReactElement } from "react";
 import { createBrowserRouter, RouterProvider } from "react-router";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vite-plus/test";
 
+import type { SortLevelParam } from "@/api";
+
 import { FilterRail } from "./FilterRail";
 
 const SERIES = [
@@ -56,13 +58,44 @@ function Providers({ children }: { children: ReactElement }): ReactElement {
   return <QueryClientProvider client={client}>{children}</QueryClientProvider>;
 }
 
+/** The installation sort stack the harness inherits when no override is set. */
+const DEFAULT_STACK: readonly SortLevelParam[] = [{ field: "created_at", desc: true }];
+
+/** Observes every sort gesture the rail dispatches, newest last. */
+let sortChanges: (readonly SortLevelParam[])[] = [];
+
+/**
+ * Stands in for the page's sort ownership: holds the override, resolves the
+ * effective stack (override else the installation stack), and treats an
+ * empty gesture as reset, exactly as `LibraryPage` does through the
+ * preferences hook. Sort deliberately does not flow through the URL here,
+ * because it has no URL form.
+ */
+function SortOwner({ initialOverride }: { initialOverride: readonly SortLevelParam[] | null }) {
+  const [override, setOverride] = useState<readonly SortLevelParam[] | null>(initialOverride);
+  return (
+    <FilterRail
+      seriesOptions={SERIES}
+      sortLevels={override ?? DEFAULT_STACK}
+      sortInherited={override === null}
+      onSortChange={(next) => {
+        sortChanges.push(next);
+        setOverride(next.length === 0 ? null : next);
+      }}
+    />
+  );
+}
+
 /**
  * The real adapter over a browser router, matching production: search-param
  * writes go through `history.replaceState`, so the assertions read the
  * document's own URL. A memory router cannot be used here, because it keeps
  * its location in memory where those writes never land.
  */
-function renderRail(initialEntry = "/library"): void {
+function renderRail(
+  initialEntry = "/library",
+  sortOverride: readonly SortLevelParam[] | null = null,
+): void {
   window.history.replaceState(null, "", initialEntry);
   const router = createBrowserRouter([
     {
@@ -70,7 +103,7 @@ function renderRail(initialEntry = "/library"): void {
       element: (
         <NuqsAdapter>
           <Providers>
-            <FilterRail seriesOptions={SERIES} />
+            <SortOwner initialOverride={sortOverride} />
           </Providers>
         </NuqsAdapter>
       ),
@@ -99,6 +132,7 @@ function sectionByTitle(title: string): HTMLElement {
 
 beforeEach(() => {
   mockFetchByUrl();
+  sortChanges = [];
 });
 
 afterEach(() => {
@@ -308,52 +342,105 @@ describe("FilterRail section state", () => {
 });
 
 describe("FilterRail sort section", () => {
-  test("adding a field appends a sort level", async () => {
+  test("adding a field appends a level to the effective stack", async () => {
     renderRail();
     const user = userEvent.setup();
     await user.click(screen.getByRole("combobox", { name: "Add sort field" }));
     await user.click(screen.getByRole("option", { name: "Title" }));
+    // The inherited installation stack is what the reader sees, so adding a
+    // field extends it: the whole effective stack materialises as their
+    // override, not a single-level stack that silently dropped the default.
     await waitFor(() => {
-      expect(currentSearch().get("sort")).toBe("title");
+      expect(sortChanges.at(-1)).toEqual([
+        { field: "created_at", desc: true },
+        { field: "title", desc: false },
+      ]);
     });
   });
 
-  test("direction toggle, reorder, and remove rewrite ?sort=", async () => {
-    renderRail("/library?sort=title,-created_at");
+  test("direction toggle, reorder, and remove dispatch the edited stack", async () => {
+    renderRail("/library", [
+      { field: "title", desc: false },
+      { field: "created_at", desc: true },
+    ]);
     const user = userEvent.setup();
     await user.click(screen.getByRole("button", { name: /Change Title sort direction/ }));
     await waitFor(() => {
-      expect(currentSearch().get("sort")).toBe("-title,-created_at");
+      expect(sortChanges.at(-1)).toEqual([
+        { field: "title", desc: true },
+        { field: "created_at", desc: true },
+      ]);
     });
     await user.click(screen.getByRole("button", { name: "Move Added earlier in sort priority" }));
     await waitFor(() => {
-      expect(currentSearch().get("sort")).toBe("-created_at,-title");
+      expect(sortChanges.at(-1)).toEqual([
+        { field: "created_at", desc: true },
+        { field: "title", desc: true },
+      ]);
     });
     await user.click(screen.getByRole("button", { name: "Remove Added from sort" }));
     await waitFor(() => {
-      expect(currentSearch().get("sort")).toBe("-title");
+      expect(sortChanges.at(-1)).toEqual([{ field: "title", desc: true }]);
     });
   });
 
-  test("sort clear empties the stack and drops the cursor", async () => {
-    renderRail("/library?sort=title,-created_at&cursor=abc");
+  test("reset dispatches an empty stack and the section returns to the inherited order", async () => {
+    renderRail("/library", [{ field: "pages", desc: true }]);
     const user = userEvent.setup();
-    await user.click(screen.getByRole("button", { name: "Clear Sort filters" }));
+    await user.click(screen.getByRole("button", { name: "Reset sort to the installation order" }));
     await waitFor(() => {
-      const search = currentSearch();
-      expect(search.get("sort")).toBeNull();
-      expect(search.get("cursor")).toBeNull();
+      expect(sortChanges.at(-1)).toEqual([]);
+    });
+    // The stack visibly becomes the installation order: never empty,
+    // because the library always has a total order.
+    const sort = sectionByTitle("Sort");
+    expect(within(sort).getByText("Added")).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Reset sort to the installation order" }),
+    ).not.toBeInTheDocument();
+  });
+
+  test("removing the last level is the reset gesture, not an unsorted state", async () => {
+    renderRail("/library", [{ field: "pages", desc: true }]);
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "Remove Pages from sort" }));
+    await waitFor(() => {
+      expect(sortChanges.at(-1)).toEqual([]);
+    });
+    const sort = sectionByTitle("Sort");
+    expect(within(sort).getByText("Added")).toBeInTheDocument();
+  });
+
+  test("an inherited stack reads as at rest: no badge, no reset control", () => {
+    renderRail();
+    const sort = sectionByTitle("Sort");
+    // The summary row is bare: no count badge, no reset control.
+    expect(sort.querySelector("summary")?.textContent).toBe("Sort");
+    // The effective stack still renders: the library is never unsorted.
+    expect(within(sort).getByText("Added")).toBeInTheDocument();
+  });
+
+  test("editing an inherited level materialises it as the reader's override", async () => {
+    renderRail();
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: /Change Added sort direction/ }));
+    await waitFor(() => {
+      expect(sortChanges.at(-1)).toEqual([{ field: "created_at", desc: false }]);
     });
   });
 
   test("the rail hosts no live region of its own; announcements are page-level", () => {
-    renderRail("/library?sort=-pages");
+    renderRail("/library", [{ field: "pages", desc: true }]);
     const rail = screen.getByRole("complementary", { name: "Filters" });
     expect(rail.querySelector("[aria-live]")).toBeNull();
   });
 
   test("the add-field picker hides fields already in the stack and caps the stack", () => {
-    renderRail("/library?sort=title,-created_at,pages");
+    renderRail("/library", [
+      { field: "title", desc: false },
+      { field: "created_at", desc: true },
+      { field: "pages", desc: false },
+    ]);
     expect(screen.queryByRole("combobox", { name: "Add sort field" })).not.toBeInTheDocument();
   });
 });

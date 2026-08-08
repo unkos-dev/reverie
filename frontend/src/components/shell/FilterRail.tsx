@@ -12,18 +12,21 @@
  * name, and carries a clear affordance; inactive sections mount collapsed
  * to keep the column scannable.
  *
- * URL state is canonical, and each section writes only the keys of its own
- * slice (see `lib/hooks/use-library-filters`). Free-text and numeric
- * sections debounce their writes, which defers the URL update without
- * deferring the value they render, so they hold no draft to reconcile. A
- * clear affordance writes immediately, and that is what cancels a
- * debounced write still queued on the same keys, so a pending keystroke
- * cannot resurrect a condition the user just cleared. Nothing here can
- * disturb a sibling section, because nothing here writes a sibling's keys.
+ * URL state is canonical for filters, and each section writes only the keys
+ * of its own slice (see `lib/hooks/use-library-filters`). Free-text and
+ * numeric sections debounce their writes, which defers the URL update
+ * without deferring the value they render, so they hold no draft to
+ * reconcile. A clear affordance writes immediately, and that is what
+ * cancels a debounced write still queued on the same keys, so a pending
+ * keystroke cannot resurrect a condition the user just cleared. Nothing
+ * here can disturb a sibling section, because nothing here writes a
+ * sibling's keys.
  *
- * The masthead summary is the read-only counterpart of this surface; the
- * table view's header click / ctrl-click sort is the one gesture that edits
- * the same URL state from outside the rail.
+ * Sort is the exception: it is a per-user preference with no URL form
+ * (adr/2026-08-08-library-sort-per-user-preference.md), so the sort section
+ * renders and edits the resolved stack the page passes down, and its
+ * gestures dispatch to the page's one sort intent handler. The table view's
+ * header click / ctrl-click edits the same stack through the same handler.
  */
 import { useQuery } from "@tanstack/react-query";
 import { ArrowDown, ArrowUp, ChevronDown, ChevronUp, X } from "lucide-react";
@@ -68,11 +71,23 @@ export interface SeriesFacetOption {
 interface FilterRailProps {
   /** Distinct series from the loaded pages. */
   seriesOptions: SeriesFacetOption[];
+  /** The resolved effective sort stack; see the module docstring. */
+  sortLevels: readonly SortLevelParam[];
+  /** True when the stack is the inherited installation order, which is when
+   *  the sort section offers no reset. */
+  sortInherited: boolean;
+  /** The page's one sort intent handler; an empty stack means reset. */
+  onSortChange: (levels: readonly SortLevelParam[]) => void;
 }
 
 /** The library's filter and sort editing surface; see the module docstring. */
-export function FilterRail({ seriesOptions }: Readonly<FilterRailProps>): ReactElement {
-  const { filters, sortLevels, commitSlice, commitSort } = useLibraryFilters();
+export function FilterRail({
+  seriesOptions,
+  sortLevels,
+  sortInherited,
+  onSortChange,
+}: Readonly<FilterRailProps>): ReactElement {
+  const { filters, commitSlice } = useLibraryFilters();
 
   const authorIds = [
     ...new Set([...filters.authors.all, ...filters.authors.any, ...filters.authors.none]),
@@ -119,7 +134,7 @@ export function FilterRail({ seriesOptions }: Readonly<FilterRailProps>): ReactE
 
   return (
     <aside aria-label="Filters" className="flex flex-col gap-4 text-sm">
-      <SortSection levels={sortLevels} onChange={commitSort} />
+      <SortSection levels={sortLevels} inherited={sortInherited} onChange={onSortChange} />
       <ShelfSection
         activeShelf={filters.shelf}
         onPick={(shelf) => {
@@ -261,6 +276,11 @@ type RailSectionProps = {
   /** Number of active conditions; positive renders the badge + clear control. */
   activeCount: number;
   onClear: () => void;
+  /** Label for the clear control; the sort section's clear is a reset. */
+  clearLabel?: string;
+  /** Accessible name for the clear control when the visible label needs
+   *  more context than `Clear <title> filters` would give. */
+  clearAriaLabel?: string;
   children: ReactNode;
 };
 
@@ -274,6 +294,8 @@ function RailSection({
   title,
   activeCount,
   onClear,
+  clearLabel = "Clear",
+  clearAriaLabel,
   children,
 }: Readonly<RailSectionProps>): ReactElement {
   const [initialOpen] = useState(activeCount > 0);
@@ -294,7 +316,7 @@ function RailSection({
         {active ? (
           <button
             type="button"
-            aria-label={`Clear ${title} filters`}
+            aria-label={clearAriaLabel ?? `Clear ${title} filters`}
             onClick={(event) => {
               // A summary click toggles the disclosure; clearing must not.
               event.preventDefault();
@@ -303,7 +325,7 @@ function RailSection({
             }}
             className="text-fg-muted hover:text-fg focus-visible:ring-accent ml-auto flex min-h-6 items-center rounded-sm px-2 font-mono text-xs uppercase tracking-wide transition-colors focus-visible:outline-none focus-visible:ring-2"
           >
-            Clear
+            {clearLabel}
           </button>
         ) : null}
       </summary>
@@ -314,6 +336,8 @@ function RailSection({
 
 type SortSectionProps = {
   levels: readonly SortLevelParam[];
+  /** True when the stack is the inherited installation order. */
+  inherited: boolean;
   onChange: (levels: readonly SortLevelParam[]) => void;
 };
 
@@ -324,8 +348,15 @@ type SortSectionProps = {
  * announcements are not this section's job: the aria-live sort summary is
  * mounted by `LibraryPage`, because the rail unmounts when collapsed and a
  * live region must stay mounted to announce.
+ *
+ * The stack shown is always the effective order, because the library is
+ * never unordered. When it is the inherited installation stack, the section
+ * reads as inactive and offers no reset: there is nothing to reset. Editing
+ * an inherited level materialises it as the reader's own override, and
+ * removing the last level or pressing Reset drops the override, visibly
+ * returning the stack to the installation order.
  */
-function SortSection({ levels, onChange }: Readonly<SortSectionProps>): ReactElement {
+function SortSection({ levels, inherited, onChange }: Readonly<SortSectionProps>): ReactElement {
   const remaining = SORT_FIELDS.filter((field) => !levels.some((level) => level.field === field));
 
   function toggleDirection(index: number): void {
@@ -353,7 +384,12 @@ function SortSection({ levels, onChange }: Readonly<SortSectionProps>): ReactEle
   return (
     <RailSection
       title="Sort"
-      activeCount={levels.length}
+      // The inherited installation stack is not an active condition: it
+      // shows no badge and offers no reset, so the section reads as "at
+      // rest" exactly when there is nothing of the reader's to remove.
+      activeCount={inherited ? 0 : levels.length}
+      clearLabel="Reset"
+      clearAriaLabel="Reset sort to the installation order"
       onClear={() => {
         onChange([]);
       }}

@@ -280,7 +280,7 @@ describe("LibraryPage", () => {
     renderLibrary({
       items: [bookFixture()],
       nextCursor: null,
-      initialEntries: ["/library?sort=title"],
+      preferences: preferencesFixture({ sort_stack: "title" }),
       cacheParams: { sort: "title" },
     });
     await screen.findByRole("heading", { name: "Library" });
@@ -423,24 +423,30 @@ describe("LibraryPage", () => {
     expect(screen.queryByTestId("library-table")).not.toBeInTheDocument();
   });
 
-  test("table header click writes ?sort= and clears any cursor param", async () => {
+  test("table header click persists the sort to the account and never touches the URL", async () => {
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(preferencesResponse(preferencesFixture({ sort_stack: "title" })));
     renderLibrary({
       items: [bookFixture()],
       nextCursor: null,
-      initialEntries: ["/library?view=table&cursor=stale123"],
+      initialEntries: ["/library?view=table"],
       extraCacheParams: [{ sort: "title" }],
     });
     await findLibraryTable();
     const user = userEvent.setup();
     await user.click(await screen.findByRole("columnheader", { name: "Title" }));
     await waitFor(() => {
-      const search = screen.getByTestId("location-search").textContent;
-      expect(search).toContain("sort=title");
-      expect(search).not.toContain("cursor=");
+      expect(preferenceWrites(fetchSpy)).toEqual([{ sort_stack: "title" }]);
     });
+    expect(screen.getByTestId("location-search").textContent).not.toContain("sort=");
+    fetchSpy.mockRestore();
   });
 
   test("a pending toolbar search and a header sort preserve each other (search first)", async () => {
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(preferencesResponse(preferencesFixture({ sort_stack: "title" })));
     renderLibrary({
       items: [bookFixture()],
       nextCursor: null,
@@ -452,13 +458,16 @@ describe("LibraryPage", () => {
     await user.type(searchBox(), "war");
     await user.click(await screen.findByRole("columnheader", { name: "Title" }));
     await waitFor(() => {
-      const search = screen.getByTestId("location-search").textContent;
-      expect(search).toContain("q=war");
-      expect(search).toContain("sort=title");
+      expect(screen.getByTestId("location-search").textContent).toContain("q=war");
+      expect(preferenceWrites(fetchSpy)).toEqual([{ sort_stack: "title" }]);
     });
+    fetchSpy.mockRestore();
   });
 
   test("a header sort and a following toolbar search preserve each other (sort first)", async () => {
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(preferencesResponse(preferencesFixture({ sort_stack: "title" })));
     renderLibrary({
       items: [bookFixture()],
       nextCursor: null,
@@ -470,10 +479,10 @@ describe("LibraryPage", () => {
     await user.click(await screen.findByRole("columnheader", { name: "Title" }));
     await user.type(searchBox(), "war");
     await waitFor(() => {
-      const search = screen.getByTestId("location-search").textContent;
-      expect(search).toContain("q=war");
-      expect(search).toContain("sort=title");
+      expect(screen.getByTestId("location-search").textContent).toContain("q=war");
+      expect(preferenceWrites(fetchSpy)).toEqual([{ sort_stack: "title" }]);
     });
+    fetchSpy.mockRestore();
   });
 
   test("the toolbar search writes ?q= and clears any cursor param", async () => {
@@ -647,7 +656,7 @@ describe("LibraryPage", () => {
     renderLibrary({
       items: [bookFixture()],
       nextCursor: null,
-      initialEntries: ["/library?sort=-pages"],
+      preferences: preferencesFixture({ sort_stack: "-pages" }),
       cacheParams: { sort: "-pages" },
     });
     await screen.findByRole("heading", { name: "Library" });
@@ -780,11 +789,12 @@ describe("LibraryPage", () => {
     expect(searchBox()).toHaveValue("");
   });
 
-  test("clearing all filters preserves the active view and sort params", async () => {
+  test("clearing all filters preserves the view param and the stored sort", async () => {
     renderLibrary({
       items: [],
       nextCursor: null,
-      initialEntries: ["/library?series=s-1&sort=title&view=table"],
+      initialEntries: ["/library?series=s-1&view=table"],
+      preferences: preferencesFixture({ sort_stack: "title" }),
       cacheParams: { series: "s-1", sort: "title" },
       extraCacheParams: [{ sort: "title" }],
     });
@@ -793,9 +803,10 @@ describe("LibraryPage", () => {
     await waitFor(() => {
       const search = screen.getByTestId("location-search").textContent;
       expect(search).toContain("view=table");
-      expect(search).toContain("sort=title");
       expect(search).not.toContain("series=");
     });
+    // The stored sort is not a filter: it survives clear-all untouched.
+    expect(screen.getByText("Sorted by Title ascending")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Table", pressed: true })).toBeInTheDocument();
   });
 
@@ -1372,8 +1383,8 @@ describe("LibraryPage", () => {
     });
   });
 
-  describe("default sort", () => {
-    test("an absent ?sort= falls back to the stored default sort", async () => {
+  describe("per-user sort", () => {
+    test("the stored sort applies on a bare URL", async () => {
       renderLibrary({
         items: [bookFixture()],
         nextCursor: null,
@@ -1384,25 +1395,34 @@ describe("LibraryPage", () => {
       expect(screen.getByText("Sorted by Pages descending")).toBeInTheDocument();
     });
 
-    test("a URL ?sort= wins over the stored default sort", async () => {
+    test("a stale URL ?sort= is inert: the stored sort still applies", async () => {
+      const fetchSpy = vi
+        .spyOn(globalThis, "fetch")
+        .mockResolvedValue(preferencesResponse(preferencesFixture({ sort_stack: "-pages" })));
       renderLibrary({
         items: [bookFixture()],
         nextCursor: null,
         initialEntries: ["/library?sort=title"],
         preferences: preferencesFixture({ sort_stack: "-pages" }),
-        cacheParams: { sort: "title" },
+        cacheParams: { sort: "-pages" },
       });
       await screen.findByRole("heading", { name: "Library" });
-      expect(screen.getByText("Sorted by Title ascending")).toBeInTheDocument();
+      expect(screen.getByText("Sorted by Pages descending")).toBeInTheDocument();
+      // The dead param also never redefines the stored sort.
+      await new Promise((resolve) => setTimeout(resolve, 600));
+      expect(preferenceWrites(fetchSpy)).toEqual([]);
+      fetchSpy.mockRestore();
     });
 
-    test("no stored default sort sends no sort, leaving the endpoint's own order", async () => {
+    test("an inheriting reader sees the installation order announced truthfully", async () => {
       renderLibrary({ items: [bookFixture()], nextCursor: null, cacheParams: {} });
       await screen.findByRole("heading", { name: "Library" });
-      expect(screen.getByText("Not sorted")).toBeInTheDocument();
+      // The library is never unsorted: with no override, the effective sort
+      // is the installation default the response carries.
+      expect(screen.getByText("Sorted by Added descending")).toBeInTheDocument();
     });
 
-    test("a sort chosen from the table header becomes the stored default", async () => {
+    test("a sort chosen from the table header becomes the stored sort", async () => {
       const fetchSpy = vi
         .spyOn(globalThis, "fetch")
         .mockResolvedValue(preferencesResponse(preferencesFixture({ sort_stack: "title" })));
@@ -1421,21 +1441,106 @@ describe("LibraryPage", () => {
       fetchSpy.mockRestore();
     });
 
-    test("arriving on a URL that already carries a sort persists nothing", async () => {
+    test("a header press on a descending sort wraps to ascending, never to unsorted", async () => {
+      // The regression the two-layer model shipped: with a descending stored
+      // sort and a bare URL, the clearing press did nothing. Under two-state
+      // headers the same press means ascending, and it must reach the wire.
+      // Title rather than Pages: the grid virtualises columns horizontally,
+      // and Pages sits outside the test viewport's rendered window.
+      const fetchSpy = vi
+        .spyOn(globalThis, "fetch")
+        .mockResolvedValue(preferencesResponse(preferencesFixture({ sort_stack: "title" })));
+      renderLibrary({
+        items: [bookFixture()],
+        nextCursor: null,
+        initialEntries: ["/library?view=table"],
+        preferences: preferencesFixture({ sort_stack: "-title" }),
+        cacheParams: { sort: "-title" },
+        extraCacheParams: [{ sort: "title" }],
+      });
+      await findLibraryTable();
+      const user = userEvent.setup();
+      await user.click(await screen.findByRole("columnheader", { name: "Title" }));
+      await waitFor(() => {
+        expect(preferenceWrites(fetchSpy)).toEqual([{ sort_stack: "title" }]);
+      });
+      expect(screen.getByText("Sorted by Title ascending")).toBeInTheDocument();
+      fetchSpy.mockRestore();
+    });
+
+    test("the rail's reset drops the override and returns to the installation order", async () => {
       const fetchSpy = vi
         .spyOn(globalThis, "fetch")
         .mockResolvedValue(preferencesResponse(preferencesFixture()));
       renderLibrary({
         items: [bookFixture()],
         nextCursor: null,
-        initialEntries: ["/library?sort=title"],
-        cacheParams: { sort: "title" },
+        preferences: preferencesFixture({ sort_stack: "-pages" }),
+        cacheParams: { sort: "-pages" },
+        extraCacheParams: [{}],
       });
       await screen.findByRole("heading", { name: "Library" });
-      // Past the debounce window: a sort the reader did not choose here must
-      // not redefine their default.
-      await new Promise((resolve) => setTimeout(resolve, 600));
-      expect(preferenceWrites(fetchSpy)).toEqual([]);
+      const user = userEvent.setup();
+      await user.click(screen.getByRole("button", { name: /^Filters/ }));
+      await screen.findByRole("dialog");
+      await user.click(
+        screen.getByRole("button", { name: "Reset sort to the installation order" }),
+      );
+      await waitFor(() => {
+        expect(preferenceWrites(fetchSpy)).toEqual([{ sort_stack: null }]);
+      });
+      // Visibly the installation order, not an unsorted state.
+      expect(screen.getByText("Sorted by Added descending")).toBeInTheDocument();
+      fetchSpy.mockRestore();
+    });
+
+    test("a preferences response landing after the loader's seed re-sorts the list once", async () => {
+      // The loader can only seed from the mirror; a device without one seeds
+      // the installation order. When the response reveals an override, the
+      // component asks for the sorted key: the sequence must reach the wire
+      // as one list request for the sorted slot, not a discarded duplicate
+      // of the seeded one.
+      let resolveRead: ((value: Response) => void) | undefined;
+      const listCalls: string[] = [];
+      const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation((input, init) => {
+        const url =
+          typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+        if (url.includes(PREFERENCES_PATH) && init?.method !== "PATCH") {
+          return new Promise<Response>((resolve) => {
+            resolveRead = resolve;
+          });
+        }
+        if (url.includes("/api/v1/books")) {
+          listCalls.push(url);
+          return Promise.resolve(
+            new Response(
+              JSON.stringify({
+                items: [bookFixture({ id: "sorted", title: "A Sorted Row" })],
+                next_cursor: null,
+              }),
+              { status: 200, headers: { "Content-Type": "application/json" } },
+            ),
+          );
+        }
+        return Promise.reject(new Error(`unexpected fetch: ${url}`));
+      });
+      // Only the loader's unsorted seed exists, exactly as a first visit on
+      // a new device would leave the cache.
+      renderLibrary({
+        items: [bookFixture({ title: "The Seeded Row" })],
+        nextCursor: null,
+        preferences: null,
+        cacheParams: {},
+      });
+      expect(await screen.findByText("The Seeded Row")).toBeInTheDocument();
+      await waitFor(() => {
+        expect(resolveRead).toBeDefined();
+      });
+      resolveRead?.(preferencesResponse(preferencesFixture({ sort_stack: "-pages" })));
+      // The corrected key fetches once, and its rows replace the seed.
+      expect(await screen.findByText("A Sorted Row")).toBeInTheDocument();
+      expect(listCalls).toHaveLength(1);
+      expect(listCalls[0]).toContain("sort=-pages");
       fetchSpy.mockRestore();
     });
   });
