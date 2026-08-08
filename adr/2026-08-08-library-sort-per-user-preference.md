@@ -71,16 +71,17 @@ between devices without a second source of truth?
 Chosen option: **B**, validated against the category before adoption.
 
 A survey of comparable products found no counterexample to option B's shape.
-Calibre persists a `(column, direction)` sort history whose encoding cannot
-express an unsorted state; Jellyfin and Plex remember a field-plus-direction
-selection per library with no "off" choice; BookOrbit, the closest
-architectural comparable (self-hosted, multi-format, reading sync), was
-exercised hands-on: it keeps sort out of the URL entirely, sends the resolved
-stack explicitly in the body of every list request, offers a multi-level
-stack editor with no empty state, and treats removing the last level as a
-visible transition to the library default. Products that do put sort in the
-URL (issue trackers, storefronts) are link-first products with anonymous
-traffic, which this is not.
+The longest-established desktop library manager persists its sort as
+`(column, direction)` pairs, an encoding that cannot express an unsorted
+state; the dominant self-hosted media servers remember a field-plus-direction
+selection per library with no "off" choice; and the closest comparable, a
+self-hosted multi-format book platform, was exercised hands-on: it keeps
+sort out of the URL entirely, sends the resolved stack explicitly in the
+body of every list request, offers a multi-level stack editor with no empty
+state, and treats removing the last level as a visible transition to the
+library default. Products that do put sort in the URL (issue trackers,
+storefronts) are link-first products with anonymous traffic, which this is
+not.
 
 The decision:
 
@@ -112,10 +113,9 @@ The decision:
   no read split, no unclearable state, no loader key mismatch for inheriting
   readers, no absent-versus-off ambiguity.
 - Good, because a changed installation default reaches every reader who has
-  not overridden sort, which the materialize-on-write alternative (and
-  BookOrbit) cannot do.
-- Good, because cross-device sort is a capability the nearest comparable
-  ships without: its persistence is device-local.
+  not overridden sort, which a materialize-on-write store cannot do.
+- Good, because cross-device sort is a capability the closest surveyed
+  comparable ships without: its sort persistence is device-local.
 - Bad, because a link can no longer carry a sort and the back button no
   longer steps through sort states. Both follow the category convention, and
   link sharing is an explicit non-goal of this deployment shape.
@@ -172,7 +172,8 @@ inherited descending default from each sort surface must reach the wire as
 
 ### D: Device-local persistence only
 
-- Good, because it is the least machinery and what BookOrbit ships.
+- Good, because it is the least machinery, and what the closest surveyed
+  comparable ships.
 - Bad, because sort then fails the requirement that display preferences
   follow the reader between devices, which is the reason the server tier
   exists.
