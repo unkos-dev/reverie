@@ -51,8 +51,10 @@ between devices without a second source of truth?
 - **Loader compatibility.** The route loader prefetches the first page; the
   component must ask for the key the loader seeded, or every navigation pays
   a discarded request.
-- **Category convention.** This is a self-hosted household library, not a
-  link-first product. Its interaction patterns should match its category.
+- **Deployment shape.** This is a self-hosted household instance: no
+  anonymous traffic, and links are not a distribution channel. URL state
+  earns its costs only where sharing or statelessness is the point, and
+  neither applies to a reader's own ordering.
 
 ## Considered Options
 
@@ -68,20 +70,7 @@ between devices without a second source of truth?
 
 ## Decision Outcome
 
-Chosen option: **B**, validated against the category before adoption.
-
-A survey of comparable products found no counterexample to option B's shape.
-The longest-established desktop library manager persists its sort as
-`(column, direction)` pairs, an encoding that cannot express an unsorted
-state; the dominant self-hosted media servers remember a field-plus-direction
-selection per library with no "off" choice; and the closest comparable, a
-self-hosted multi-format book platform, was exercised hands-on: it keeps
-sort out of the URL entirely, sends the resolved stack explicitly in the
-body of every list request, offers a multi-level stack editor with no empty
-state, and treats removing the last level as a visible transition to the
-library default. Products that do put sort in the URL (issue trackers,
-storefronts) are link-first products with anonymous traffic, which this is
-not.
+Chosen option: **B**.
 
 The decision:
 
@@ -114,18 +103,17 @@ The decision:
   readers, no absent-versus-off ambiguity.
 - Good, because a changed installation default reaches every reader who has
   not overridden sort, which a materialize-on-write store cannot do.
-- Good, because cross-device sort is a capability the closest surveyed
-  comparable ships without: its sort persistence is device-local.
 - Bad, because a link can no longer carry a sort and the back button no
-  longer steps through sort states. Both follow the category convention, and
-  link sharing is an explicit non-goal of this deployment shape.
+  longer steps through sort states. Link sharing is an explicit non-goal of
+  this deployment shape, and stepping history through orderings has no
+  meaning for a durable personal preference.
 - Bad, because a reader with a sort override pays one visible correction on
   a device whose local mirror is missing or stale: the first page renders in
   the seeded order, then re-sorts when the preference arrives. The
   first-paint contract already accepts this for every preference group.
-- Neutral, because every exploratory sort becomes the durable preference.
-  That is the category's sticky-last-choice semantic and matches how the
-  view toggle already behaves.
+- Neutral, because every exploratory sort becomes the durable preference,
+  matching how the view toggle already behaves: the last choice is the
+  standing choice.
 
 ### Confirmation
 
@@ -167,13 +155,13 @@ inherited descending default from each sort surface must reach the wire as
 - Bad, because every sort gesture becomes a serialized write-then-refetch,
   and a failed write makes the gesture itself visibly do nothing.
 - Bad, because the catalog's core list endpoint becomes nondeterministic per
-  caller, which the comparable products deliberately avoid by sending sort
-  explicitly from client-persisted settings.
+  caller: the same request from the same caller returns different orderings
+  as hidden state changes, and every future consumer must know that omitting
+  sort means "caller's preference" rather than "canonical order".
 
 ### D: Device-local persistence only
 
-- Good, because it is the least machinery, and what the closest surveyed
-  comparable ships.
+- Good, because it is the least machinery.
 - Bad, because sort then fails the requirement that display preferences
   follow the reader between devices, which is the reason the server tier
   exists.
