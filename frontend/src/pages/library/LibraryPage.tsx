@@ -33,6 +33,7 @@ import { Link } from "react-router";
 import {
   listBooks,
   parseSortParam,
+  serializeSortParam,
   type BookListItem,
   type BookListResponse,
   type SortLevelParam,
@@ -63,11 +64,10 @@ import {
 
 import { BatchBar } from "./BatchBar";
 import { BookDetailDrawer } from "./BookDetailDrawer";
-import { readDisplayPreferences, writeDisplayPreferences, type Density } from "./display-storage";
 import { FilterChips } from "./FilterChips";
 import { LibraryToolbar } from "./LibraryToolbar";
 import { TableChunkBoundary } from "./TableChunkBoundary";
-import { readViewCookie, writeViewCookie } from "./view-cookie";
+import { useLibraryPreferences } from "./use-library-preferences";
 
 /**
  * The table view carries the grid vendor chunk, so it loads lazily: cover
@@ -117,16 +117,21 @@ function LibraryContent(): ReactElement {
   // restored via onCloseAutoFocus instead (WCAG 2.4.3).
   const overlayReturnFocus = useRef<HTMLElement | null>(null);
   const [selectedIds, setSelectedIds] = useState<ReadonlySet<string>>(new Set());
-  const [displayPrefs] = useState(readDisplayPreferences);
-  const [density, setDensity] = useState<Density>(displayPrefs.density ?? "comfortable");
-  const [hiddenColumns, setHiddenColumns] = useState<ReadonlySet<string>>(
-    new Set(displayPrefs.hiddenColumns ?? []),
-  );
+  const preferences = useLibraryPreferences();
+  const { density, hiddenColumns, defaultSort, setDefaultSort } = preferences;
+  // Normalised through the same codec the request uses, so a malformed
+  // `?sort=` reads as no sort rather than as a change worth persisting.
+  const urlSort = serializeSortParam(parseSortParam(searchParams.get("sort") ?? ""));
 
-  // URL param is canonical (shareable); the cookie only supplies the default
-  // when the param is absent, so a chosen view survives leaving and returning.
-  const viewMode: LibraryView = viewFromSearch(searchParams) ?? readViewCookie() ?? "grid";
+  // URL param is canonical for the current projection; the stored preference
+  // only supplies the default when the param is absent, so a chosen view
+  // survives leaving and returning, and now also survives a change of device.
+  const viewMode: LibraryView = viewFromSearch(searchParams) ?? preferences.view;
   const params = paramsFromSearch(searchParams);
+  // The reader's default sort applies only when the URL names none, so a
+  // `?sort=` always wins. It reaches the request, never the URL: the library's
+  // search params keep exactly one writer.
+  if (params.sort === undefined && defaultSort !== "") params.sort = defaultSort;
   const filterState = parseFilterParams(searchParams);
   // Strip cursor from the cache key — Load more is driven by react-query's pageParam.
   const cacheParams = { ...params };
@@ -174,6 +179,19 @@ function LibraryContent(): ReactElement {
     getNextPageParam: (lastPage) => lastPage.next_cursor ?? undefined,
   });
 
+  // The reader's default sort follows the sort they last chose. Both sort
+  // gestures (the table header and the rail's sort section) write `?sort=`,
+  // so watching the applied param catches either from one place, and nothing
+  // writes a preference back into the URL, so this cannot loop. What the page
+  // mounted with is deliberately not persisted: arriving on a URL that
+  // already carries a sort is not a choice made here.
+  const mountedSort = useRef(urlSort);
+  useEffect(() => {
+    if (urlSort === mountedSort.current) return;
+    mountedSort.current = urlSort;
+    setDefaultSort(urlSort);
+  }, [urlSort, setDefaultSort]);
+
   // The user-facing Load-more error is rendered below; this routes the raw
   // error to the console too (QueryCache.onError only forwards 401s), so a
   // 500 / parse failure leaves a developer breadcrumb.
@@ -192,7 +210,7 @@ function LibraryContent(): ReactElement {
   const items: BookListItem[] = useMemo(() => data.pages.flatMap((p) => p.items), [data]);
 
   function setView(next: LibraryView): void {
-    writeViewCookie(next);
+    preferences.setView(next);
     setViewParam(next === "grid" ? null : next);
   }
 
@@ -201,24 +219,11 @@ function LibraryContent(): ReactElement {
     commitSort(levels);
   }
 
-  function setDensityPref(next: Density): void {
-    setDensity(next);
-    writeDisplayPreferences({ density: next });
-  }
-
   function toggleColumn(key: string, hidden: boolean): void {
-    setHiddenColumns((current) => {
-      const next = new Set(current);
-      if (hidden) next.add(key);
-      else next.delete(key);
-      writeDisplayPreferences({ hiddenColumns: [...next] });
-      return next;
-    });
-  }
-
-  function resetColumns(): void {
-    setHiddenColumns(new Set());
-    writeDisplayPreferences({ hiddenColumns: [] });
+    const next = new Set(hiddenColumns);
+    if (hidden) next.add(key);
+    else next.delete(key);
+    preferences.setHiddenColumns(next);
   }
 
   // Counted on the wire projection, not raw URL keys: a param the codec
@@ -327,10 +332,11 @@ function LibraryContent(): ReactElement {
               openOverlay("filters");
             }}
             density={density}
-            onDensityChange={setDensityPref}
+            onDensityChange={preferences.setDensity}
             hiddenColumns={hiddenColumns}
             onToggleColumn={toggleColumn}
-            onResetColumns={resetColumns}
+            canResetColumns={preferences.canResetColumns}
+            onResetColumns={preferences.resetColumns}
           />
           <FilterChips
             filters={filterState}

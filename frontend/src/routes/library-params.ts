@@ -18,21 +18,20 @@
  * result rows; every condition round-trips to the server.
  */
 import {
+  isLibraryView,
   parseSortParam,
   ReadingStatusSchema,
   serializeSortParam,
   type ArrayParamKey,
+  type LibraryView,
   type ListBooksParams,
 } from "@/api";
 
-const LIBRARY_VIEWS = ["grid", "table"] as const;
-/** The library's browse presentation modes. */
-export type LibraryView = (typeof LIBRARY_VIEWS)[number];
-
-/** Type guard narrowing an arbitrary string into the `LibraryView` union. */
-export function isLibraryView(value: string): value is LibraryView {
-  return LIBRARY_VIEWS.some((view) => view === value);
-}
+// The view vocabulary is a Postgres enum on the preferences resource, so it
+// is declared once at the API boundary and re-exported here for the `?view=`
+// codec's existing consumers.
+export { isLibraryView };
+export type { LibraryView };
 
 /**
  * Parse `?view=` into a {@link LibraryView}, or `null` when the param is

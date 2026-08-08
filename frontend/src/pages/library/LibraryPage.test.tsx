@@ -6,13 +6,18 @@ import { NuqsAdapter, useOptimisticSearchParams } from "nuqs/adapters/react-rout
 import { RouterProvider, createBrowserRouter, type RouteObject } from "react-router";
 import type { ReactElement } from "react";
 
-import type { BookDetail, BookListItem, BookListResponse, ListBooksParams } from "@/api";
+import type {
+  BookDetail,
+  BookListItem,
+  BookListResponse,
+  ListBooksParams,
+  Preferences,
+} from "@/api";
 import type { AuthMe } from "@/hooks/useAuthMe";
 import { queryKeys } from "@/lib/query/keys";
 
 import { DISPLAY_STORAGE_KEY } from "./display-storage";
 import { LibraryPage } from "./LibraryPage";
-import { VIEW_COOKIE_NAME } from "./view-cookie";
 
 // The masthead reads the effective theme to pick its hero asset; these tests
 // exercise the page, not theme resolution, so the provider is stubbed.
@@ -20,10 +25,10 @@ vi.mock("@/lib/theme/ThemeProvider", () => ({
   useTheme: () => ({ preference: "system", effective: "dark", setPreference: vi.fn() }),
 }));
 
-// Any test that toggles the view writes the cookie as a side effect; expire
-// it unconditionally so one test's choice can't leak into the next.
 afterEach(() => {
-  document.cookie = `${VIEW_COOKIE_NAME}=; Path=/; Max-Age=0`;
+  // The page mirrors its effective preferences to localStorage on every
+  // change, so one test's choice would otherwise seed the next one's paint.
+  localStorage.clear();
   // Search-param state lives in the document URL, which is shared across
   // tests in this file; without this a filter set by one test leaks into
   // the next one's initial state.
@@ -94,10 +99,58 @@ function meFixture(overrides: Partial<AuthMe> = {}): AuthMe {
   };
 }
 
+/** Installation defaults as `backend/src/models/user_preferences.rs` serves them. */
+const PREFERENCE_DEFAULTS: Preferences["defaults"] = {
+  hidden_columns: [],
+  density: "comfortable",
+  view: "grid",
+  sort_stack: "-created_at",
+};
+
+function preferencesFixture(overrides: Partial<Preferences> = {}): Preferences {
+  return {
+    hidden_columns: null,
+    density: null,
+    view: null,
+    sort_stack: null,
+    defaults: PREFERENCE_DEFAULTS,
+    ...overrides,
+  };
+}
+
+function preferencesResponse(body: Preferences): Response {
+  return new Response(JSON.stringify(body), {
+    status: 200,
+    headers: { "Content-Type": "application/json" },
+  });
+}
+
+type FetchCall = [input: RequestInfo | URL, init?: RequestInit];
+
+/** The preference PATCH bodies a spied `fetch` observed, oldest first. */
+function preferenceWrites(spy: { mock: { calls: FetchCall[] } }): unknown[] {
+  return spy.mock.calls
+    .filter(([input, init]) => input === PREFERENCES_PATH && init?.method === "PATCH")
+    .map(([, init]) => parseJsonBody(init?.body));
+}
+
+function parseJsonBody(body: BodyInit | null | undefined): unknown {
+  if (typeof body !== "string") throw new Error("expected a stringified JSON body");
+  return JSON.parse(body) as unknown;
+}
+
+const PREFERENCES_PATH = "/auth/me/preferences";
+
 interface RenderOpts {
   items: BookListItem[];
   nextCursor: string | null;
   initialEntries?: string[];
+  /**
+   * Preferences to serve from cache. `null` leaves the slot empty, which is
+   * how a test exercises the window before the response lands; the test then
+   * owns the fetch mock for it.
+   */
+  preferences?: Preferences | null;
   /** Params shape to prefill cache under. Defaults to the empty-params slot. */
   cacheParams?: ListBooksParams;
   /** Additional cache slots to prefill (e.g. a post-interaction sort key). */
@@ -116,6 +169,7 @@ function renderLibrary({
   items,
   nextCursor,
   initialEntries,
+  preferences,
   cacheParams,
   extraCacheParams = [],
   me,
@@ -135,6 +189,9 @@ function renderLibrary({
       pages: [response],
       pageParams: [undefined],
     });
+  }
+  if (preferences !== null) {
+    client.setQueryData(queryKeys.auth.preferences(), preferences ?? preferencesFixture());
   }
   if (me !== undefined) client.setQueryData(queryKeys.auth.me(), me);
   for (const detail of details) {
@@ -323,15 +380,13 @@ describe("LibraryPage", () => {
     expect(await findLibraryTable()).toBeInTheDocument();
   });
 
-  test("cookie default mounts the table view when ?view= is absent", async () => {
-    document.cookie = `${VIEW_COOKIE_NAME}=table; Path=/`;
-    try {
-      renderLibrary({ items: [bookFixture()], nextCursor: null });
-      expect(await findLibraryTable()).toBeInTheDocument();
-    } finally {
-      // Explicit expiry so the cookie can't leak into a later test in this file.
-      document.cookie = `${VIEW_COOKIE_NAME}=; Path=/; Max-Age=0`;
-    }
+  test("the stored view preference mounts the table when ?view= is absent", async () => {
+    renderLibrary({
+      items: [bookFixture()],
+      nextCursor: null,
+      preferences: preferencesFixture({ view: "table" }),
+    });
+    expect(await findLibraryTable()).toBeInTheDocument();
   });
 
   test("stale ?view=list and unknown values fall back to grid", async () => {
@@ -343,31 +398,29 @@ describe("LibraryPage", () => {
     expect(await screen.findByTestId("library-grid")).toBeInTheDocument();
   });
 
-  test("clicking a view toggle persists the choice to the cookie", async () => {
-    try {
-      renderLibrary({ items: [bookFixture()], nextCursor: null });
-      const group = await screen.findByRole("group", { name: "View mode" });
-      const user = userEvent.setup();
-      await user.click(within(group).getByRole("button", { name: "Table" }));
-      expect(document.cookie).toContain(`${VIEW_COOKIE_NAME}=table`);
-    } finally {
-      document.cookie = `${VIEW_COOKIE_NAME}=; Path=/; Max-Age=0`;
-    }
+  test("clicking a view toggle persists the choice to the account", async () => {
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(preferencesResponse(preferencesFixture({ view: "table" })));
+    renderLibrary({ items: [bookFixture()], nextCursor: null });
+    const group = await screen.findByRole("group", { name: "View mode" });
+    const user = userEvent.setup();
+    await user.click(within(group).getByRole("button", { name: "Table" }));
+    await waitFor(() => {
+      expect(preferenceWrites(fetchSpy)).toEqual([{ view: "table" }]);
+    });
+    fetchSpy.mockRestore();
   });
 
-  test("URL ?view= beats the cookie default", async () => {
-    document.cookie = `${VIEW_COOKIE_NAME}=table; Path=/`;
-    try {
-      renderLibrary({
-        items: [bookFixture({ title: "Stoner" })],
-        nextCursor: null,
-        initialEntries: ["/library?view=grid"],
-      });
-      expect(await screen.findByTestId("library-grid")).toBeInTheDocument();
-      expect(screen.queryByTestId("library-table")).not.toBeInTheDocument();
-    } finally {
-      document.cookie = `${VIEW_COOKIE_NAME}=; Path=/; Max-Age=0`;
-    }
+  test("URL ?view= beats the stored view preference", async () => {
+    renderLibrary({
+      items: [bookFixture({ title: "Stoner" })],
+      nextCursor: null,
+      initialEntries: ["/library?view=grid"],
+      preferences: preferencesFixture({ view: "table" }),
+    });
+    expect(await screen.findByTestId("library-grid")).toBeInTheDocument();
+    expect(screen.queryByTestId("library-table")).not.toBeInTheDocument();
   });
 
   test("table header click writes ?sort= and clears any cursor param", async () => {
@@ -613,6 +666,9 @@ describe("LibraryPage", () => {
       pages: [{ items: [bookFixture()], next_cursor: "eyJ4Ijox" }],
       pageParams: [undefined],
     });
+    // Prefilled so the preferences read never reaches the scripted fetch
+    // mock, which belongs to the paging assertions below.
+    client.setQueryData(queryKeys.auth.preferences(), preferencesFixture());
     function Wrapper(): ReactElement {
       const routes: RouteObject[] = [
         {
@@ -664,6 +720,9 @@ describe("LibraryPage", () => {
       ],
       pageParams: [undefined],
     });
+    // Prefilled so the preferences read never reaches the scripted fetch
+    // mock, which belongs to the paging assertions below.
+    client.setQueryData(queryKeys.auth.preferences(), preferencesFixture());
     function Wrapper(): ReactElement {
       const routes: RouteObject[] = [
         {
@@ -1099,69 +1158,285 @@ describe("LibraryPage", () => {
       expect(screen.queryByRole("button", { name: /Columns/ })).not.toBeInTheDocument();
     });
 
-    test("the density toggle switches and persists the preference", async () => {
-      try {
-        renderLibrary({
-          items: [bookFixture()],
-          nextCursor: null,
-          initialEntries: ["/library?view=table"],
-        });
-        await screen.findByTestId("library-table");
-        const group = screen.getByRole("group", { name: "Table density" });
-        expect(
-          within(group).getByRole("button", { name: "Comfortable", pressed: true }),
-        ).toBeInTheDocument();
-        const user = userEvent.setup();
-        await user.click(within(group).getByRole("button", { name: "Compact" }));
-        expect(
-          within(group).getByRole("button", { name: "Compact", pressed: true }),
-        ).toBeInTheDocument();
-        expect(localStorage.getItem(DISPLAY_STORAGE_KEY)).toContain('"compact"');
-      } finally {
-        localStorage.removeItem(DISPLAY_STORAGE_KEY);
-      }
+    test("the density toggle switches and persists the preference to the account", async () => {
+      const fetchSpy = vi
+        .spyOn(globalThis, "fetch")
+        .mockResolvedValue(preferencesResponse(preferencesFixture({ density: "compact" })));
+      renderLibrary({
+        items: [bookFixture()],
+        nextCursor: null,
+        initialEntries: ["/library?view=table"],
+      });
+      await screen.findByTestId("library-table");
+      const group = screen.getByRole("group", { name: "Table density" });
+      expect(
+        within(group).getByRole("button", { name: "Comfortable", pressed: true }),
+      ).toBeInTheDocument();
+      const user = userEvent.setup();
+      await user.click(within(group).getByRole("button", { name: "Compact" }));
+      expect(
+        within(group).getByRole("button", { name: "Compact", pressed: true }),
+      ).toBeInTheDocument();
+      await waitFor(() => {
+        expect(preferenceWrites(fetchSpy)).toEqual([{ density: "compact" }]);
+      });
+      fetchSpy.mockRestore();
     });
 
     test("the Columns popover hides a column, locks Title, and persists the choice", async () => {
-      try {
-        renderLibrary({
-          items: [bookFixture()],
-          nextCursor: null,
-          initialEntries: ["/library?view=table"],
-        });
-        await screen.findByTestId("library-table");
-        expect(screen.getByRole("columnheader", { name: /^Subtitle/ })).toBeInTheDocument();
-        const user = userEvent.setup();
-        await user.click(screen.getByRole("button", { name: /Columns/ }));
-        const title = await screen.findByRole("checkbox", { name: "Title" });
-        expect(title).toBeDisabled();
-        await user.click(screen.getByRole("checkbox", { name: "Subtitle" }));
-        await waitFor(() => {
-          expect(screen.queryByRole("columnheader", { name: /^Subtitle/ })).not.toBeInTheDocument();
-        });
-        expect(localStorage.getItem(DISPLAY_STORAGE_KEY)).toContain("subtitle");
-      } finally {
-        localStorage.removeItem(DISPLAY_STORAGE_KEY);
-      }
+      const fetchSpy = vi
+        .spyOn(globalThis, "fetch")
+        .mockResolvedValue(
+          preferencesResponse(preferencesFixture({ hidden_columns: ["subtitle"] })),
+        );
+      renderLibrary({
+        items: [bookFixture()],
+        nextCursor: null,
+        initialEntries: ["/library?view=table"],
+      });
+      await screen.findByTestId("library-table");
+      expect(screen.getByRole("columnheader", { name: /^Subtitle/ })).toBeInTheDocument();
+      const user = userEvent.setup();
+      await user.click(screen.getByRole("button", { name: /Columns/ }));
+      const title = await screen.findByRole("checkbox", { name: "Title" });
+      expect(title).toBeDisabled();
+      await user.click(screen.getByRole("checkbox", { name: "Subtitle" }));
+      await waitFor(() => {
+        expect(screen.queryByRole("columnheader", { name: /^Subtitle/ })).not.toBeInTheDocument();
+      });
+      await waitFor(() => {
+        expect(preferenceWrites(fetchSpy)).toEqual([{ hidden_columns: ["subtitle"] }]);
+      });
+      fetchSpy.mockRestore();
     });
 
-    test("a persisted hidden column seeds the table without it", async () => {
+    test("a stored hidden column seeds the table without it", async () => {
+      renderLibrary({
+        items: [bookFixture()],
+        nextCursor: null,
+        initialEntries: ["/library?view=table"],
+        preferences: preferencesFixture({ hidden_columns: ["subtitle"] }),
+      });
+      await screen.findByTestId("library-table");
+      expect(screen.queryByRole("columnheader", { name: /^Subtitle/ })).not.toBeInTheDocument();
+      expect(screen.getByRole("columnheader", { name: /^Title/ })).toBeInTheDocument();
+    });
+
+    test("several column toggles inside the debounce window send one merged patch", async () => {
+      const fetchSpy = vi
+        .spyOn(globalThis, "fetch")
+        .mockResolvedValue(preferencesResponse(preferencesFixture()));
+      renderLibrary({
+        items: [bookFixture()],
+        nextCursor: null,
+        initialEntries: ["/library?view=table"],
+      });
+      await screen.findByTestId("library-table");
+      const user = userEvent.setup();
+      await user.click(screen.getByRole("button", { name: /Columns/ }));
+      await user.click(await screen.findByRole("checkbox", { name: "Subtitle" }));
+      await user.click(screen.getByRole("checkbox", { name: "Pages" }));
+      await waitFor(() => {
+        expect(preferenceWrites(fetchSpy)).toEqual([{ hidden_columns: ["subtitle", "pages"] }]);
+      });
+      fetchSpy.mockRestore();
+    });
+  });
+
+  describe("preference reset", () => {
+    test("resetting the columns restores the default and leaves density alone", async () => {
+      const fetchSpy = vi
+        .spyOn(globalThis, "fetch")
+        .mockResolvedValue(preferencesResponse(preferencesFixture({ density: "compact" })));
+      renderLibrary({
+        items: [bookFixture()],
+        nextCursor: null,
+        initialEntries: ["/library?view=table"],
+        preferences: preferencesFixture({ hidden_columns: ["subtitle"], density: "compact" }),
+      });
+      await screen.findByTestId("library-table");
+      expect(screen.queryByRole("columnheader", { name: /^Subtitle/ })).not.toBeInTheDocument();
+      const user = userEvent.setup();
+      await user.click(screen.getByRole("button", { name: /Columns/ }));
+      await user.click(await screen.findByRole("button", { name: "Reset to default" }));
+
+      // The hidden group returns to the installation default...
+      expect(await screen.findByRole("columnheader", { name: /^Subtitle/ })).toBeInTheDocument();
+      // ...and only that group is named on the wire, so density survives.
+      await waitFor(() => {
+        expect(preferenceWrites(fetchSpy)).toEqual([{ hidden_columns: null }]);
+      });
+      const group = screen.getByRole("group", { name: "Table density" });
+      expect(
+        within(group).getByRole("button", { name: "Compact", pressed: true }),
+      ).toBeInTheDocument();
+      fetchSpy.mockRestore();
+    });
+
+    test("the reset is offered only when the visible columns differ from the default", async () => {
+      renderLibrary({
+        items: [bookFixture()],
+        nextCursor: null,
+        initialEntries: ["/library?view=table"],
+      });
+      await screen.findByTestId("library-table");
+      const user = userEvent.setup();
+      await user.click(screen.getByRole("button", { name: /Columns/ }));
+      expect(await screen.findByRole("button", { name: "Reset to default" })).toBeDisabled();
+    });
+  });
+
+  describe("first paint and in-flight responses", () => {
+    test("the mirror supplies columns and density before the response lands", async () => {
       localStorage.setItem(
         DISPLAY_STORAGE_KEY,
-        JSON.stringify({ density: "comfortable", hiddenColumns: ["subtitle"] }),
+        JSON.stringify({
+          density: "compact",
+          hiddenColumns: ["subtitle"],
+          view: null,
+          sortStack: null,
+        }),
       );
-      try {
-        renderLibrary({
-          items: [bookFixture()],
-          nextCursor: null,
-          initialEntries: ["/library?view=table"],
-        });
-        await screen.findByTestId("library-table");
-        expect(screen.queryByRole("columnheader", { name: /^Subtitle/ })).not.toBeInTheDocument();
-        expect(screen.getByRole("columnheader", { name: /^Title/ })).toBeInTheDocument();
-      } finally {
-        localStorage.removeItem(DISPLAY_STORAGE_KEY);
-      }
+      // A never-settling fetch pins the page in the pre-response window.
+      const fetchSpy = vi
+        .spyOn(globalThis, "fetch")
+        .mockImplementation(() => new Promise(() => undefined));
+      renderLibrary({
+        items: [bookFixture()],
+        nextCursor: null,
+        initialEntries: ["/library?view=table"],
+        preferences: null,
+      });
+      await screen.findByTestId("library-table");
+      expect(screen.queryByRole("columnheader", { name: /^Subtitle/ })).not.toBeInTheDocument();
+      const group = screen.getByRole("group", { name: "Table density" });
+      expect(
+        within(group).getByRole("button", { name: "Compact", pressed: true }),
+      ).toBeInTheDocument();
+      fetchSpy.mockRestore();
+    });
+
+    test("a malformed mirror paints the defaults instead of throwing", async () => {
+      localStorage.setItem(DISPLAY_STORAGE_KEY, "{not json");
+      renderLibrary({
+        items: [bookFixture()],
+        nextCursor: null,
+        initialEntries: ["/library?view=table"],
+      });
+      await screen.findByTestId("library-table");
+      expect(screen.getByRole("columnheader", { name: /^Subtitle/ })).toBeInTheDocument();
+      const group = screen.getByRole("group", { name: "Table density" });
+      expect(
+        within(group).getByRole("button", { name: "Comfortable", pressed: true }),
+      ).toBeInTheDocument();
+    });
+
+    test("a response landing after a change does not overwrite what the reader chose", async () => {
+      // Declared without an initialiser so it stays callable: initialising it
+      // to null would narrow the type to null at the call site below, since
+      // the only assignment happens inside a callback.
+      let resolveRead: ((value: Response) => void) | undefined;
+      const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation((input, init) => {
+        if (input === PREFERENCES_PATH && init?.method !== "PATCH") {
+          return new Promise<Response>((resolve) => {
+            resolveRead = resolve;
+          });
+        }
+        return Promise.resolve(preferencesResponse(preferencesFixture()));
+      });
+      renderLibrary({
+        items: [bookFixture()],
+        nextCursor: null,
+        initialEntries: ["/library?view=table"],
+        preferences: null,
+      });
+      await screen.findByTestId("library-table");
+      const user = userEvent.setup();
+      const group = screen.getByRole("group", { name: "Table density" });
+      await user.click(within(group).getByRole("button", { name: "Compact" }));
+
+      // The read was already in flight when the reader chose; it answers with
+      // the pre-change state, which must not win.
+      await waitFor(() => {
+        expect(resolveRead).toBeDefined();
+      });
+      resolveRead?.(preferencesResponse(preferencesFixture({ density: "comfortable" })));
+
+      await waitFor(() => {
+        expect(preferenceWrites(fetchSpy)).toEqual([{ density: "compact" }]);
+      });
+      expect(
+        within(group).getByRole("button", { name: "Compact", pressed: true }),
+      ).toBeInTheDocument();
+      fetchSpy.mockRestore();
+    });
+  });
+
+  describe("default sort", () => {
+    test("an absent ?sort= falls back to the stored default sort", async () => {
+      renderLibrary({
+        items: [bookFixture()],
+        nextCursor: null,
+        preferences: preferencesFixture({ sort_stack: "-pages" }),
+        cacheParams: { sort: "-pages" },
+      });
+      await screen.findByRole("heading", { name: "Library" });
+      expect(screen.getByText("Sorted by Pages descending")).toBeInTheDocument();
+    });
+
+    test("a URL ?sort= wins over the stored default sort", async () => {
+      renderLibrary({
+        items: [bookFixture()],
+        nextCursor: null,
+        initialEntries: ["/library?sort=title"],
+        preferences: preferencesFixture({ sort_stack: "-pages" }),
+        cacheParams: { sort: "title" },
+      });
+      await screen.findByRole("heading", { name: "Library" });
+      expect(screen.getByText("Sorted by Title ascending")).toBeInTheDocument();
+    });
+
+    test("no stored default sort sends no sort, leaving the endpoint's own order", async () => {
+      renderLibrary({ items: [bookFixture()], nextCursor: null, cacheParams: {} });
+      await screen.findByRole("heading", { name: "Library" });
+      expect(screen.getByText("Not sorted")).toBeInTheDocument();
+    });
+
+    test("a sort chosen from the table header becomes the stored default", async () => {
+      const fetchSpy = vi
+        .spyOn(globalThis, "fetch")
+        .mockResolvedValue(preferencesResponse(preferencesFixture({ sort_stack: "title" })));
+      renderLibrary({
+        items: [bookFixture()],
+        nextCursor: null,
+        initialEntries: ["/library?view=table"],
+        extraCacheParams: [{ sort: "title" }],
+      });
+      await findLibraryTable();
+      const user = userEvent.setup();
+      await user.click(await screen.findByRole("columnheader", { name: "Title" }));
+      await waitFor(() => {
+        expect(preferenceWrites(fetchSpy)).toEqual([{ sort_stack: "title" }]);
+      });
+      fetchSpy.mockRestore();
+    });
+
+    test("arriving on a URL that already carries a sort persists nothing", async () => {
+      const fetchSpy = vi
+        .spyOn(globalThis, "fetch")
+        .mockResolvedValue(preferencesResponse(preferencesFixture()));
+      renderLibrary({
+        items: [bookFixture()],
+        nextCursor: null,
+        initialEntries: ["/library?sort=title"],
+        cacheParams: { sort: "title" },
+      });
+      await screen.findByRole("heading", { name: "Library" });
+      // Past the debounce window: a sort the reader did not choose here must
+      // not redefine their default.
+      await new Promise((resolve) => setTimeout(resolve, 600));
+      expect(preferenceWrites(fetchSpy)).toEqual([]);
+      fetchSpy.mockRestore();
     });
   });
 });

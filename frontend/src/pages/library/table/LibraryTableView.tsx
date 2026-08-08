@@ -18,13 +18,18 @@ import { Link } from "react-router";
 
 import { Button } from "@/components/ui/button";
 
-import { MAX_SORT_LEVELS, type BookListItem, type SortField, type SortLevelParam } from "@/api";
+import {
+  MAX_SORT_LEVELS,
+  type BookListItem,
+  type Density,
+  type SortField,
+  type SortLevelParam,
+} from "@/api";
 import { ReactDataGridBinding } from "@/lib/grid/ReactDataGridBinding";
 import { useMediaQuery } from "@/lib/hooks/use-media-query";
 import type { BooksListKey } from "@/lib/query/keys";
 import type { GridColumn, GridEditorProps, SortState } from "@/lib/grid/types";
 
-import type { Density } from "../display-storage";
 import { LOCKED_COLUMN_KEYS, MOBILE_COLUMN_KEYS, TABLE_MOBILE_MEDIA_QUERY } from "../table-columns";
 
 import { AuthorsCellEditor } from "./editors/AuthorsCellEditor";
