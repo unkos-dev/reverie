@@ -52,6 +52,8 @@ pub mod theme_preference;
 pub mod user;
 /// External-provider identity links keyed on `(issuer, subject)`.
 pub mod user_identities;
+/// Per-user library display preferences and the installation defaults.
+pub mod user_preferences;
 /// Closed value set for the `validation_status` Postgres `ENUM`.
 pub mod validation_status;
 /// Work matching, stub creation, and ISBN-driven rematch.
