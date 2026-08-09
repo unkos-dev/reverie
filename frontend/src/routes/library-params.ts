@@ -18,21 +18,18 @@
  * result rows; every condition round-trips to the server.
  */
 import {
-  parseSortParam,
+  isLibraryView,
   ReadingStatusSchema,
-  serializeSortParam,
   type ArrayParamKey,
+  type LibraryView,
   type ListBooksParams,
 } from "@/api";
 
-const LIBRARY_VIEWS = ["grid", "table"] as const;
-/** The library's browse presentation modes. */
-export type LibraryView = (typeof LIBRARY_VIEWS)[number];
-
-/** Type guard narrowing an arbitrary string into the `LibraryView` union. */
-export function isLibraryView(value: string): value is LibraryView {
-  return LIBRARY_VIEWS.some((view) => view === value);
-}
+// The view vocabulary is a Postgres enum on the preferences resource, so it
+// is declared once at the API boundary and re-exported here for the `?view=`
+// codec's existing consumers.
+export { isLibraryView };
+export type { LibraryView };
 
 /**
  * Parse `?view=` into a {@link LibraryView}, or `null` when the param is
@@ -471,16 +468,15 @@ export function hasActiveFilterState(state: FilterState): boolean {
 }
 
 /**
- * Parse the URL search params into a {@link ListBooksParams}. `sort` is
- * round-tripped through `parseSortParam`/`serializeSortParam` so invalid levels
- * (unknown fields, duplicates, a stack past the cap) are normalized out; an
- * absent or all-invalid `sort` omits the key so the backend applies its default
- * order. Filter params flow through the tolerant {@link parseFilterParams} codec.
+ * Parse the URL search params into a {@link ListBooksParams}. Filter params
+ * flow through the tolerant {@link parseFilterParams} codec. `sort` is
+ * deliberately not read: the library's sort is a per-user preference with no
+ * URL form (`adr/2026-08-08-library-sort-per-user-preference.md`), so a
+ * stale `?sort=` from an old bookmark is inert and the caller supplies any
+ * sort override from the preference surface instead.
  */
 export function paramsFromSearch(search: URLSearchParams): ListBooksParams {
   const params = filterStateToParams(parseFilterParams(search));
-  const sort = serializeSortParam(parseSortParam(search.get("sort") ?? ""));
-  if (sort !== "") params.sort = sort;
   const cursor = search.get("cursor");
   if (cursor !== null) params.cursor = cursor;
   return params;

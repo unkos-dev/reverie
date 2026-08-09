@@ -40,7 +40,6 @@ import {
 } from "nuqs";
 import { useOptimisticSearchParams } from "nuqs/adapters/react-router/v8";
 
-import { parseSortParam, serializeSortParam, type SortLevelParam } from "@/api";
 import {
   parseFilterParams,
   serializeFilterParams,
@@ -126,7 +125,9 @@ const MULTI = parseAsNativeArrayOf(parseAsString);
 const LIBRARY_PARSERS = {
   q: parseAsString,
   cursor: parseAsString,
-  sort: parseAsString,
+  // No `sort` key: the library's sort is a per-user preference with no URL
+  // form (adr/2026-08-08-library-sort-per-user-preference.md). A stale
+  // `?sort=` from an old bookmark is inert, like the dead text params below.
   view: parseAsString,
   series: parseAsString,
   shelf: parseAsString,
@@ -295,11 +296,6 @@ export type LibraryFilters = {
     patch: (current: FilterState) => FilterState,
     options?: { debounced?: boolean },
   ) => void;
-  /** The committed sort stack. */
-  sortLevels: readonly SortLevelParam[];
-  /** Replace the sort stack. Ordering is not a filter, but it invalidates
-   *  the cursor the same way. */
-  commitSort: (levels: readonly SortLevelParam[]) => void;
   /**
    * Write the whole grammar at once, for the clear affordances that are not
    * scoped to a slice (chip removal). Never debounced, so it cancels any
@@ -332,7 +328,6 @@ export function useLibraryFilters(): LibraryFilters {
   const filters = parseFilterParams(toSearch(values));
   return {
     filters,
-    sortLevels: parseSortParam(values.sort ?? ""),
     commitSlice: (slice, patch, options) => {
       void setParams(
         // `cursor` rides along because a changed condition invalidates the
@@ -342,13 +337,6 @@ export function useLibraryFilters(): LibraryFilters {
           limitUrlUpdates:
             options?.debounced === true ? debounce(FILTER_DEBOUNCE_MS) : defaultRateLimit,
         },
-      );
-    },
-    commitSort: (levels) => {
-      const serialised = serializeSortParam(levels);
-      void setParams(
-        { sort: serialised === "" ? null : serialised, cursor: null },
-        { limitUrlUpdates: defaultRateLimit },
       );
     },
     commitAll: (patch) => {

@@ -79,9 +79,23 @@ Two toolbar controls shape the table to your taste. The **density
 toggle** switches between comfortable rows (with a small cover beside
 each title) and compact ones. The **Columns** popover shows or hides
 individual columns; Title stays put because every row needs its
-anchor. Both are personal display preferences: they persist on this
-device and never travel in a shared link, which carries the query
-(filters, search, sort) instead.
+anchor. Both are personal display preferences, and so are your view
+choice and your sort: they belong to your account rather than to one
+browser, so they follow you to a second machine and survive signing out
+and back in. They never travel in a shared link, which carries the
+query (filters and search) instead: someone opening your link sees the
+same books, arranged their own way.
+
+**Reset to default** at the foot of the Columns popover clears your
+column choice rather than merely showing everything, so the table goes
+back to whatever this installation ships as its default and stays with
+that default if it later changes. It touches columns only: density,
+view, and sort keep whatever you chose. The control is greyed out when
+your columns already match the default.
+
+A preference set in one tab does not reach another tab that is already
+open; whichever you change last is what sticks, and reloading the other
+tab catches it up.
 
 Rows stream in as you scroll rather than loading all at once, which is
 why the table says "loaded": with a large library the first screen
@@ -93,8 +107,9 @@ through a column header press (see below), so the order is correct
 across the whole collection, not just the rows on screen.
 
 Your view choice travels in the URL (`?view=table`), so a shared link
-opens exactly what you see; Reverie also remembers your last choice
-and uses it the next time you open the Library without one.
+opens exactly what you see; Reverie also remembers your last choice on
+your account and uses it the next time you open the Library without
+one, on this machine or any other.
 
 ## Book details without leaving the list
 
@@ -125,26 +140,37 @@ prevent.
 
 ## Sorting the library
 
+The library always has an order. Before you have chosen one it is the
+order Reverie ships with, newest additions first, and the Sort section
+shows exactly that, so what you see is always what is arranging the
+list. There is no "unsorted": a sort gesture changes the order, never
+switches ordering off.
+
 The filter drawer carries a **Sort** section in every view. Add up to
 three levels from its field picker, flip a level's direction, reorder
-levels, remove one, or clear the whole stack; none of it needs a
-modifier key. The grid sorts from here, and the section always shows
-the full stack, whichever surface built it. In the table, only the
-active sort shows a direction indicator on its header, so a glance at
-the header row tells you what orders the list without decoding every
-column.
+levels, or remove one; none of it needs a modifier key. The grid sorts
+from here, and the section always shows the full stack, whichever
+surface built it. In the table, only the active sort shows a direction
+indicator on its header, so a glance at the header row tells you what
+orders the list without decoding every column.
 
 The table keeps its faster gesture on top. Click a column header to
-sort by that column: the first click sorts ascending, the second
-descending, and a third turns the sort off. `⌘-click` / `Ctrl-click` a
-header adds it as another sort level instead of replacing the current
-one, so you can sort by author and then, within each author, by newest
-first. A plain click on any header resets the sort back down to that
-single column; the drawer's Sort section is the recovery surface when
-a stray click collapses a stack you built.
+sort by that column, and click again to reverse it. `⌘-click` /
+`Ctrl-click` a header adds it as another sort level instead of
+replacing the current one, so you can sort by author and then, within
+each author, by newest first. A plain click on any header resets the
+sort back down to that single column; the drawer's Sort section is the
+recovery surface when a stray click collapses a stack you built.
 
 Books with nothing to sort on, no page count, no author yet, always
 sort to the end, whichever direction you're sorting in.
+
+The sort you choose sticks, on your account rather than on this
+browser: the library keeps that order until you sort differently,
+here or on any other machine. **Reset** beside the Sort section's
+title takes you back to the order Reverie ships with, and so does
+removing the stack's last level; the control only appears while you
+have a sort of your own to remove.
 
 Multi-level sort exists so that a large library can be scanned in exactly
 the order you want, author then most recent within each author, for
@@ -184,9 +210,11 @@ the drawer is closed, so the collection can never be silently narrower
 than it looks, and dropping one condition is one click instead of a
 trip into the drawer.
 
-Filters live in the URL the same way your view and sort do, so a
-filtered library is bookmarkable and shareable, and reloading the page
-brings back exactly the filters you had.
+Filters and search live in the URL, so a filtered library is
+bookmarkable and shareable, and reloading the page brings back exactly
+the filters you had. Whoever opens the link sees those same books in
+their own sort order, because ordering belongs to the account, not the
+address.
 
 ## Editing from the table
 

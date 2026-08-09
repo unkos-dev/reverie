@@ -10,13 +10,12 @@
 import { LayoutGrid, SlidersHorizontal, Table2 } from "lucide-react";
 import type { ReactElement } from "react";
 
+import { DENSITIES, type Density } from "@/api";
 import { QuickSearch } from "@/components/library/QuickSearch";
 import { Button } from "@/components/ui/button";
 import type { LibraryView } from "@/routes/library-params";
 
-import type { Density } from "./display-storage";
 import { ColumnsPopover } from "./ColumnsPopover";
-import { DENSITIES } from "./display-storage";
 
 type LibraryToolbarProps = {
   view: LibraryView;
@@ -30,6 +29,7 @@ type LibraryToolbarProps = {
   onDensityChange: (density: Density) => void;
   hiddenColumns: ReadonlySet<string>;
   onToggleColumn: (key: string, hidden: boolean) => void;
+  canResetColumns: boolean;
   onResetColumns: () => void;
 };
 
@@ -48,6 +48,7 @@ export function LibraryToolbar({
   onDensityChange,
   hiddenColumns,
   onToggleColumn,
+  canResetColumns,
   onResetColumns,
 }: LibraryToolbarProps): ReactElement {
   return (
@@ -82,6 +83,7 @@ export function LibraryToolbar({
             <ColumnsPopover
               hiddenColumns={hiddenColumns}
               onToggleColumn={onToggleColumn}
+              canReset={canResetColumns}
               onReset={onResetColumns}
             />
           </>

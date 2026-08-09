@@ -1,12 +1,12 @@
 /**
  * Production `/library` page.
  *
- * One route, one query, two projections: filters, search, and sort live
- * in the URL and apply identically to the cover grid and the table; the
- * view switcher changes the projection, never the query. The toolbar is
- * view-neutral (search, view switcher, Filters trigger) with table-only
- * display controls (density, columns); active filters render as
- * removable chips under it.
+ * One route, one query, two projections: filters and search live in the
+ * URL, sort rides the reader's account preference, and all of it applies
+ * identically to the cover grid and the table; the view switcher changes
+ * the projection, never the query. The toolbar is view-neutral (search,
+ * view switcher, Filters trigger) with table-only display controls
+ * (density, columns); active filters render as removable chips under it.
  *
  * Two right-side overlays share one slot: the filter drawer and the
  * book-detail drawer are mutually exclusive by construction, with the
@@ -21,6 +21,7 @@ import {
   lazy,
   memo,
   Suspense,
+  useDeferredValue,
   useEffect,
   useMemo,
   useRef,
@@ -30,13 +31,7 @@ import {
 } from "react";
 import { Link } from "react-router";
 
-import {
-  listBooks,
-  parseSortParam,
-  type BookListItem,
-  type BookListResponse,
-  type SortLevelParam,
-} from "@/api";
+import { listBooks, type BookListItem, type BookListResponse, type SortLevelParam } from "@/api";
 import { CoverArtwork } from "@/components/CoverArtwork";
 import { Atmosphere } from "@/components/library/Atmosphere";
 import { BookmarkRibbon } from "@/components/library/BookmarkRibbon";
@@ -63,11 +58,10 @@ import {
 
 import { BatchBar } from "./BatchBar";
 import { BookDetailDrawer } from "./BookDetailDrawer";
-import { readDisplayPreferences, writeDisplayPreferences, type Density } from "./display-storage";
 import { FilterChips } from "./FilterChips";
 import { LibraryToolbar } from "./LibraryToolbar";
 import { TableChunkBoundary } from "./TableChunkBoundary";
-import { readViewCookie, writeViewCookie } from "./view-cookie";
+import { useLibraryPreferences } from "./use-library-preferences";
 
 /**
  * The table view carries the grid vendor chunk, so it loads lazily: cover
@@ -101,13 +95,7 @@ function LibraryContent(): ReactElement {
   // the router's history does not observe, so its own `useSearchParams`
   // would go stale against anything quick search writes.
   const searchParams = useLibrarySearchParams();
-  const {
-    commitAll,
-    commitSort,
-    clearAll,
-    revertTypedEdits,
-    setView: setViewParam,
-  } = useLibraryFilters();
+  const { commitAll, clearAll, revertTypedEdits, setView: setViewParam } = useLibraryFilters();
   // Drives cinematic mode via the document `data-cinematic` attribute (CSS
   // reads it); the boolean return is unused — visibility is CSS-only.
   useCinematicMode();
@@ -117,16 +105,23 @@ function LibraryContent(): ReactElement {
   // restored via onCloseAutoFocus instead (WCAG 2.4.3).
   const overlayReturnFocus = useRef<HTMLElement | null>(null);
   const [selectedIds, setSelectedIds] = useState<ReadonlySet<string>>(new Set());
-  const [displayPrefs] = useState(readDisplayPreferences);
-  const [density, setDensity] = useState<Density>(displayPrefs.density ?? "comfortable");
-  const [hiddenColumns, setHiddenColumns] = useState<ReadonlySet<string>>(
-    new Set(displayPrefs.hiddenColumns ?? []),
-  );
+  const preferences = useLibraryPreferences();
+  const { density, hiddenColumns, sortOverride, sortLevels, setSortLevels } = preferences;
 
-  // URL param is canonical (shareable); the cookie only supplies the default
-  // when the param is absent, so a chosen view survives leaving and returning.
-  const viewMode: LibraryView = viewFromSearch(searchParams) ?? readViewCookie() ?? "grid";
+  // URL param is canonical for the current projection; the stored preference
+  // only supplies the default when the param is absent, so a chosen view
+  // survives leaving and returning, and now also survives a change of device.
+  const viewMode: LibraryView = viewFromSearch(searchParams) ?? preferences.view;
   const params = paramsFromSearch(searchParams);
+  // Sort has no URL form: the reader's override rides the request explicitly,
+  // and an inheriting reader sends none, taking the installation order the
+  // list endpoint applies anyway. Deferred so a sort gesture keeps the
+  // current rows on screen while the re-sorted page loads, instead of
+  // dropping the whole page to the Suspense skeleton; the controls flip
+  // immediately from `sortLevels` and `sortPending` marks the list stale.
+  const deferredSortOverride = useDeferredValue(sortOverride);
+  const sortPending = deferredSortOverride !== sortOverride;
+  if (deferredSortOverride !== "") params.sort = deferredSortOverride;
   const filterState = parseFilterParams(searchParams);
   // Strip cursor from the cache key — Load more is driven by react-query's pageParam.
   const cacheParams = { ...params };
@@ -134,13 +129,16 @@ function LibraryContent(): ReactElement {
 
   // Selection lifecycle: a changed query identity (filters, search, sort)
   // or projection switch clears it — the selected rows may no longer be in
-  // the result set, and a batch action on hidden rows is worse than
-  // re-selecting. Paging appends to the same query and keeps it. Render-
-  // phase state adjustment, the compiler-accepted alternative to a sync
-  // effect.
+  // the result set or may land far from where they were, and a batch action
+  // on rows the reader can no longer see is worse than re-selecting. Paging
+  // appends to the same query and keeps it. Sort joins the token explicitly
+  // now that it is not a URL param; the immediate (not deferred) value, so
+  // the selection clears at gesture time. Render-phase state adjustment, the
+  // compiler-accepted alternative to a sync effect.
   const queryToken = (() => {
     const token = new URLSearchParams(searchParams);
     token.delete("cursor");
+    token.set("sort", sortOverride);
     token.sort();
     return token.toString();
   })();
@@ -192,33 +190,26 @@ function LibraryContent(): ReactElement {
   const items: BookListItem[] = useMemo(() => data.pages.flatMap((p) => p.items), [data]);
 
   function setView(next: LibraryView): void {
-    writeViewCookie(next);
+    preferences.setView(next);
     setViewParam(next === "grid" ? null : next);
   }
 
-  /** Table-header sort writes the same `?sort=` contract as the rail's sort section. */
-  function setSortFromTable(levels: readonly SortLevelParam[]): void {
-    commitSort(levels);
-  }
-
-  function setDensityPref(next: Density): void {
-    setDensity(next);
-    writeDisplayPreferences({ density: next });
+  /**
+   * The one sort intent handler: the table header and the rail's stack
+   * editor both land here, and here alone. The gesture writes the reader's
+   * preference directly; nothing infers sort intent from URL diffs, because
+   * sort has no URL form. An empty stack is the reset gesture: it drops the
+   * override and the display visibly becomes the installation stack.
+   */
+  function handleSortChange(levels: readonly SortLevelParam[]): void {
+    setSortLevels(levels);
   }
 
   function toggleColumn(key: string, hidden: boolean): void {
-    setHiddenColumns((current) => {
-      const next = new Set(current);
-      if (hidden) next.add(key);
-      else next.delete(key);
-      writeDisplayPreferences({ hiddenColumns: [...next] });
-      return next;
-    });
-  }
-
-  function resetColumns(): void {
-    setHiddenColumns(new Set());
-    writeDisplayPreferences({ hiddenColumns: [] });
+    const next = new Set(hiddenColumns);
+    if (hidden) next.add(key);
+    else next.delete(key);
+    preferences.setHiddenColumns(next);
   }
 
   // Counted on the wire projection, not raw URL keys: a param the codec
@@ -252,14 +243,18 @@ function LibraryContent(): ReactElement {
     return (
       <TableChunkBoundary
         onFallbackToGrid={() => {
-          setView("grid");
+          // Session-local escape from a device-local failure: the explicit
+          // `?view=grid` param wins over the stored preference without
+          // touching it, so a transient chunk-load error on one device
+          // cannot rewrite the reader's view on every device.
+          setViewParam("grid");
         }}
       >
         <Suspense fallback={<Skeleton className="h-96 w-full" />}>
           <LibraryTableView
             items={items}
-            sort={parseSortParam(params.sort ?? "")}
-            onSortChange={setSortFromTable}
+            sort={sortLevels}
+            onSortChange={handleSortChange}
             hasNextPage={hasNextPage}
             isFetchingNextPage={isFetchingNextPage}
             isFetchNextPageError={isFetchNextPageError}
@@ -314,9 +309,11 @@ function LibraryContent(): ReactElement {
           {/* Sort announcements stay mounted here: the filter drawer (which
               carries the sort section) unmounts when closed, and an
               unmounted live region is silent, which would leave
-              header-driven sorts unannounced. */}
+              header-driven sorts unannounced. Announces the effective stack
+              (immediate, not deferred): intent is voiced at gesture time,
+              while the rows carry `aria-busy` until the new order lands. */}
           <p className="sr-only" aria-live="polite">
-            {sortStackSummary(parseSortParam(params.sort ?? ""))}
+            {sortStackSummary(sortLevels)}
           </p>
           <LibraryToolbar
             view={viewMode}
@@ -327,10 +324,11 @@ function LibraryContent(): ReactElement {
               openOverlay("filters");
             }}
             density={density}
-            onDensityChange={setDensityPref}
+            onDensityChange={preferences.setDensity}
             hiddenColumns={hiddenColumns}
             onToggleColumn={toggleColumn}
-            onResetColumns={resetColumns}
+            canResetColumns={preferences.canResetColumns}
+            onResetColumns={preferences.resetColumns}
           />
           <FilterChips
             filters={filterState}
@@ -340,7 +338,12 @@ function LibraryContent(): ReactElement {
           />
           <Separator className="mb-8" />
 
-          {renderBooks()}
+          {/* `aria-busy` while a sort gesture's re-sorted page is loading:
+              the deferred query key keeps the previous rows visible, and
+              this is the stale-content marker for that window. */}
+          <div aria-busy={sortPending || undefined} className={sortPending ? "opacity-60" : ""}>
+            {renderBooks()}
+          </div>
 
           {viewMode === "table" ? (
             <BatchBar
@@ -423,7 +426,12 @@ function LibraryContent(): ReactElement {
           <SheetHeader className="mb-2 p-0">
             <SheetTitle className="font-display text-2xl font-medium">Refine</SheetTitle>
           </SheetHeader>
-          <FilterRail seriesOptions={seriesOptions} />
+          <FilterRail
+            seriesOptions={seriesOptions}
+            sortLevels={sortLevels}
+            sortInherited={preferences.sortInherited}
+            onSortChange={handleSortChange}
+          />
         </SheetContent>
       </Sheet>
       <BookDetailDrawer
