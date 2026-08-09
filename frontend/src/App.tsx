@@ -1,3 +1,4 @@
+import { NuqsAdapter } from "nuqs/adapters/react-router/v8";
 import { useEffect, type ReactElement } from "react";
 import { Outlet } from "react-router";
 
@@ -59,6 +60,13 @@ async function resolveLoginRedirect(): Promise<string> {
  * into the same redirect, so a lapsed first-party session recovers
  * (silent re-auth, or the local form) instead of stranding the user on
  * a degraded shell.
+ *
+ * `NuqsAdapter` wraps the shell because typed search-param state is read
+ * and written below it. It must mount INSIDE the router (it consumes
+ * router context), which is why it lives here rather than around
+ * `RouterProvider` in `main.tsx`. Consequence worth knowing: the
+ * pre-auth screens are siblings of this root route, not children, so
+ * they sit outside the adapter and cannot use search-param state.
  */
 function App(): ReactElement {
   useEffect(() => {
@@ -81,12 +89,12 @@ function App(): ReactElement {
   useSessionRecovery();
 
   return (
-    <>
+    <NuqsAdapter>
       <AppShell>
         <Outlet />
       </AppShell>
       <CommandPalette />
-    </>
+    </NuqsAdapter>
   );
 }
 

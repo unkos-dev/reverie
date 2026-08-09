@@ -2,8 +2,14 @@
  * Column-visibility control for the library table: a popover with one
  * checkbox per hideable column plus a reset. Title never appears here
  * (it anchors every row), and the selection and details columns are not
- * columns in the catalog at all. Visibility is a display preference:
- * the container persists it to localStorage, never to the URL.
+ * columns in the catalog at all. Visibility is a per-user display
+ * preference: the container persists it to the reader's account, never to
+ * the URL.
+ *
+ * The reset drops the reader's override rather than clearing the set, so the
+ * group inherits the installation default again. The two coincide today,
+ * where nothing is hidden by default; `canReset` is what keeps the control
+ * honest if that default ever changes.
  */
 import { Columns3 } from "lucide-react";
 import type { ReactElement } from "react";
@@ -18,12 +24,17 @@ import { HIDEABLE_COLUMNS } from "./table-columns";
 type ColumnsPopoverProps = {
   hiddenColumns: ReadonlySet<string>;
   onToggleColumn: (key: string, hidden: boolean) => void;
+  /** True while a stored override exists to drop, even one whose value
+   *  matches the installation default: dropping it re-subscribes the
+   *  reader to future changes of that default. */
+  canReset: boolean;
   onReset: () => void;
 };
 
 export function ColumnsPopover({
   hiddenColumns,
   onToggleColumn,
+  canReset,
   onReset,
 }: ColumnsPopoverProps): ReactElement {
   return (
@@ -69,10 +80,10 @@ export function ColumnsPopover({
           variant="ghost"
           size="sm"
           className="mt-3 w-full"
-          disabled={hiddenColumns.size === 0}
+          disabled={!canReset}
           onClick={onReset}
         >
-          Reset to all columns
+          Reset to default
         </Button>
       </PopoverContent>
     </Popover>

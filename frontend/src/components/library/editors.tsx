@@ -63,7 +63,24 @@ type TextFilterEditorProps = {
 export function TextFilterEditor({ value, ops, onChange }: TextFilterEditorProps): ReactElement {
   const id = useId();
   const [op, setOp] = useState<TextOp>(() => deriveTextOp(value, ops));
-  const text = value.contains ?? value.eq ?? value.ne ?? "";
+  const committed = value.contains ?? value.eq ?? value.ne ?? "";
+  // The box holds raw input, not the committed value. Committed values are
+  // trimmed, so rendering one straight back would delete the space between
+  // two words the instant it is typed and put every multi-word filter out
+  // of reach. A value that is normalised on its way back to the input
+  // needs a local buffer to survive the round trip; trimming is that
+  // normalisation here.
+  const [text, setText] = useState(committed);
+  const [syncedCommitted, setSyncedCommitted] = useState(committed);
+  // Resync only when the committed value moved somewhere this box did not
+  // put it: a clear affordance, or navigation. Comparing it against what
+  // the current text commits to tells that apart from our own write
+  // landing. Render-phase state adjustment, the compiler-accepted
+  // alternative to a sync effect.
+  if (committed !== syncedCommitted) {
+    setSyncedCommitted(committed);
+    if (committed !== text.trim()) setText(committed);
+  }
 
   function changeOp(next: TextOp): void {
     setOp(next);
@@ -100,6 +117,7 @@ export function TextFilterEditor({ value, ops, onChange }: TextFilterEditorProps
             aria-label="Filter value"
             value={text}
             onChange={(event) => {
+              setText(event.target.value);
               onChange(textFilterFor(op, event.target.value));
             }}
           />

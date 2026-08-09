@@ -1,0 +1,84 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT hidden_columns,\n                  density AS \"density?: LibraryDensity\",\n                  view AS \"view?: LibraryView\",\n                  sort_stack\n             FROM user_preferences\n            WHERE user_id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "hidden_columns",
+        "type_info": "TextArray",
+        "origin": {
+          "Table": {
+            "table": "user_preferences",
+            "name": "hidden_columns"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "density?: LibraryDensity",
+        "type_info": {
+          "Custom": {
+            "name": "library_density",
+            "kind": {
+              "Enum": [
+                "comfortable",
+                "compact"
+              ]
+            }
+          }
+        },
+        "origin": {
+          "Table": {
+            "table": "user_preferences",
+            "name": "density"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "view?: LibraryView",
+        "type_info": {
+          "Custom": {
+            "name": "library_view",
+            "kind": {
+              "Enum": [
+                "grid",
+                "table"
+              ]
+            }
+          }
+        },
+        "origin": {
+          "Table": {
+            "table": "user_preferences",
+            "name": "view"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "sort_stack",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "user_preferences",
+            "name": "sort_stack"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "hash": "55a68da0d56acbf99c6a540eed882385453956c3021b95f989782791d510d2af"
+}

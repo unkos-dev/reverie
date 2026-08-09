@@ -1,8 +1,8 @@
 /**
  * Contextual filter rail for browse surfaces: the editing surface for the
  * library's filter grammar and sort stack. Quick search lives in the page
- * toolbar (`components/library/QuickSearch`) and shares this rail's
- * draft-survival protocol through the container-owned `lastEdit` ref.
+ * toolbar (`components/library/QuickSearch`) and owns its own URL key, so
+ * the two surfaces share no state and need no protocol between them.
  *
  * One collapsible section per editable concern: the sort stack, the shelf
  * and series facets, the vocabulary families (authors, tags, genres,
@@ -12,34 +12,27 @@
  * name, and carries a clear affordance; inactive sections mount collapsed
  * to keep the column scannable.
  *
- * URL state is canonical: the rail parses the search params it edits and
- * every write goes through the filter codec (or the sort helper) and the
- * page-owned `applyParams` write authority, always dropping `cursor`
- * because a changed filter or sort invalidates the keyset position.
- * Free-text and numeric inputs edit a local draft committed after a
- * debounce. A clear affordance or an external committed change (navigation,
- * the page's clear-all) resyncs those drafts, so a pending keystroke can
- * never resurrect a cleared condition; the rail's own edits in other
- * sections leave them alone, so a sibling's commit never eats in-flight
- * keystrokes.
- * The masthead summary is the read-only counterpart of this surface; the
- * table view's header click / ctrl-click sort is the one gesture that edits
- * the same URL state from outside the rail.
+ * URL state is canonical for filters, and each section writes only the keys
+ * of its own slice (see `lib/hooks/use-library-filters`). Free-text and
+ * numeric sections debounce their writes, which defers the URL update
+ * without deferring the value they render, so they hold no draft to
+ * reconcile. A clear affordance writes immediately, and that is what
+ * cancels a debounced write still queued on the same keys, so a pending
+ * keystroke cannot resurrect a condition the user just cleared. Nothing
+ * here can disturb a sibling section, because nothing here writes a
+ * sibling's keys.
+ *
+ * Sort is the exception: it is a per-user preference with no URL form
+ * (adr/2026-08-08-library-sort-per-user-preference.md), so the sort section
+ * renders and edits the resolved stack the page passes down, and its
+ * gestures dispatch to the page's one sort intent handler. The table view's
+ * header click / ctrl-click edits the same stack through the same handler.
  */
 import { useQuery } from "@tanstack/react-query";
 import { ArrowDown, ArrowUp, ChevronDown, ChevronUp, X } from "lucide-react";
-import { useEffect, useState, type ReactElement, type ReactNode, type RefObject } from "react";
+import { useEffect, useState, type ReactElement, type ReactNode } from "react";
 
-import { useSearchParams } from "react-router";
-
-import {
-  listShelves,
-  MAX_SORT_LEVELS,
-  parseSortParam,
-  SORT_FIELDS,
-  type Shelf,
-  type SortLevelParam,
-} from "@/api";
+import { listShelves, MAX_SORT_LEVELS, SORT_FIELDS, type Shelf, type SortLevelParam } from "@/api";
 import { Button } from "@/components/ui/button";
 import {
   Select,
@@ -48,22 +41,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import {
-  FILTER_DEBOUNCE_MS,
-  fullFilterToken,
-  makeFilterClear,
-  makeFilterCommit,
-  type EditTokens,
-} from "@/components/library/filter-commit";
 import { SORT_FIELD_LABELS } from "@/components/library/sort-summary";
 import { useAuthorLabels } from "@/lib/hooks/use-author-labels";
-import { useDebouncedCommit } from "@/lib/hooks/use-debounced-commit";
-import type { ApplyParams } from "@/lib/hooks/use-live-search-params";
+import { useLibraryFilters, type FilterSlice } from "@/lib/hooks/use-library-filters";
 import { queryKeys } from "@/lib/query/keys";
 import {
-  applySortToSearchParams,
-  parseFilterParams,
   TEXT_COLUMN_OPS,
+  type FilterState,
   type RangeFilter,
   type TextFilter,
   type TextOp,
@@ -84,134 +68,37 @@ export interface SeriesFacetOption {
   name: string;
 }
 
-function textSliceToken(value: TextFilter): string {
-  return [value.contains, value.eq, value.ne, value.empty]
-    .map((part) => (part === undefined ? "" : String(part)))
-    .join("|");
-}
-
-function rangeSliceToken(value: RangeFilter): string {
-  return [value.gte, value.lte, value.empty]
-    .map((part) => (part === undefined ? "" : String(part)))
-    .join("|");
-}
-
-/**
- * Local draft over one committed filter slice, committed after a debounce.
- * `fullToken` is the committed-state serialization; a change resyncs the
- * draft to the committed value, cancelling a pending debounce so a stale
- * draft cannot resurrect a condition the user just cleared. The one
- * exception: when `lastEdit` shows the change is the rail's own edit in a
- * different section (this slice untouched), the draft survives, so a
- * sibling's debounced commit never eats in-flight keystrokes.
- */
-function useDraftSlice<T>(
-  committed: T,
-  fullToken: string,
-  sliceToken: (value: T) => string,
-  commit: (next: T) => void,
-  lastEdit: RefObject<EditTokens | null>,
-  clearGen: RefObject<number>,
-): { draft: T; setDraft: (next: T) => void } {
-  // The generation is captured when the draft is EDITED, not per render:
-  // a clearing write (or the drawer's Escape = abandon) bumps it after
-  // the edit, so the fire-time check below vetoes the stale draft even
-  // if a passive re-render (e.g. the drawer's closing pass) happens
-  // between the bump and the timer or unmount flush.
-  const [draftState, setDraftState] = useState(() => ({
-    value: committed,
-    gen: clearGen.current,
-  }));
-  const [synced, setSynced] = useState({ full: fullToken, slice: sliceToken(committed) });
-  // Render-phase state adjustment, the compiler-accepted alternative to a
-  // sync effect.
-  if (fullToken !== synced.full) {
-    const nextSlice = sliceToken(committed);
-    const editElsewhere = lastEdit.current?.full === fullToken && nextSlice === synced.slice;
-    setSynced({ full: fullToken, slice: nextSlice });
-    if (!editElsewhere) setDraftState({ value: committed, gen: clearGen.current });
-  }
-  const draft = draftState.value;
-  // A clear bumps the generation synchronously, but the render that resyncs
-  // the draft (and cancels the timer) rides a router transition, which an
-  // already-due timer can beat; the fire-time check keeps a stale draft from
-  // re-writing the condition the clear just removed.
-  useDebouncedCommit(
-    sliceToken(draft),
-    sliceToken(committed),
-    () => {
-      commit(draft);
-    },
-    FILTER_DEBOUNCE_MS,
-    () => clearGen.current !== draftState.gen,
-    // The rail unmounts when its drawer closes; a pending draft then
-    // commits (the user typed it deliberately) unless a generation bump
-    // (clear-all, or the drawer's Escape = abandon) vetoed it above.
-    true,
-  );
-  return {
-    draft,
-    setDraft: (next: T) => {
-      setDraftState({ value: next, gen: clearGen.current });
-    },
-  };
-}
-
 interface FilterRailProps {
   /** Distinct series from the loaded pages. */
   seriesOptions: SeriesFacetOption[];
-  /** The page-owned URL write authority; every rail write goes through it
-   *  so rail and page writers cannot clobber each other in one frame. */
-  applyParams: ApplyParams;
-  /** The write authority's clearing-write generation; pending debounced
-   *  drafts check it at fire time so any clearing writer, including the
-   *  page's clear-all, invalidates them. */
-  clearGen: RefObject<number>;
-  /** The container-owned edit-token ref shared with the toolbar quick
-   *  search; one instance per page or the draft-survival protocol splits
-   *  (see `filter-commit.ts`). */
-  lastEdit: RefObject<EditTokens | null>;
-  /** Drawer-close abandon generation: the host bumps it when the drawer
-   *  closes via Escape, so pending drafts die instead of flushing. Other
-   *  close paths leave it alone and pending drafts commit on unmount. */
-  cancelGen: RefObject<number>;
+  /** The resolved effective sort stack; see the module docstring. */
+  sortLevels: readonly SortLevelParam[];
+  /** True when the stack is the inherited installation order, which is when
+   *  the sort section offers no reset. */
+  sortInherited: boolean;
+  /** The page's one sort intent handler; an empty stack means reset. */
+  onSortChange: (levels: readonly SortLevelParam[]) => void;
 }
 
 /** The library's filter and sort editing surface; see the module docstring. */
 export function FilterRail({
   seriesOptions,
-  applyParams,
-  clearGen,
-  lastEdit,
-  cancelGen,
+  sortLevels,
+  sortInherited,
+  onSortChange,
 }: Readonly<FilterRailProps>): ReactElement {
-  const [searchParams] = useSearchParams();
-  const filters = parseFilterParams(searchParams);
-  const sortLevels = parseSortParam(searchParams.get("sort") ?? "");
-  const fullToken = fullFilterToken(filters);
+  const { filters, commitSlice } = useLibraryFilters();
 
   const authorIds = [
     ...new Set([...filters.authors.all, ...filters.authors.any, ...filters.authors.none]),
   ];
   const authorNames = useAuthorLabels(authorIds);
 
-  const commitFilters = makeFilterCommit(applyParams, lastEdit);
-  const clearFilters = makeFilterClear(applyParams, lastEdit);
-
-  // One generation ref for the sections' fire-time staleness check,
-  // covering both invalidation sources: clearing writes (clearGen) and
-  // the drawer's Escape = abandon (cancelGen). Both only ever increment,
-  // so the sum changes whenever either does; a getter keeps reads live
-  // without threading a second ref through every section.
-  const [staleGen] = useState(() => ({
-    get current(): number {
-      return clearGen.current + cancelGen.current;
-    },
-  }));
-
-  function commitSort(levels: readonly SortLevelParam[]): void {
-    applyParams((params) => applySortToSearchParams(params, levels));
-  }
+  /** Typed inputs debounce; every other gesture writes immediately, which
+   *  is also what cancels a debounced write still queued on those keys. */
+  const commitTyped = (slice: FilterSlice, patch: (current: FilterState) => FilterState): void => {
+    commitSlice(slice, patch, { debounced: true });
+  };
 
   const setCount = (set: { all: string[]; any: string[]; none: string[] }): number =>
     set.all.length + set.any.length + set.none.length;
@@ -225,7 +112,10 @@ export function FilterRail({
       title={title}
       activeCount={setCount(filters[family])}
       onClear={() => {
-        clearFilters((current) => ({ ...current, [family]: { all: [], any: [], none: [] } }));
+        commitSlice(family, (current) => ({
+          ...current,
+          [family]: { all: [], any: [], none: [] },
+        }));
       }}
     >
       <VocabEditor
@@ -235,7 +125,7 @@ export function FilterRail({
           // Take only this editor's family from its output: the rest of the
           // editor's state is a render snapshot and must not overwrite a
           // commit that landed since.
-          commitFilters((current) => ({ ...current, [family]: next[family] }));
+          commitSlice(family, (current) => ({ ...current, [family]: next[family] }));
         }}
         resolveAuthorLabel={authorNames.labelFor}
       />
@@ -244,21 +134,21 @@ export function FilterRail({
 
   return (
     <aside aria-label="Filters" className="flex flex-col gap-4 text-sm">
-      <SortSection levels={sortLevels} onChange={commitSort} />
+      <SortSection levels={sortLevels} inherited={sortInherited} onChange={onSortChange} />
       <ShelfSection
         activeShelf={filters.shelf}
         onPick={(shelf) => {
-          commitFilters((current) => ({ ...current, shelf }));
+          commitSlice("shelf", (current) => ({ ...current, shelf }));
         }}
         onClear={() => {
-          clearFilters((current) => ({ ...current, shelf: undefined }));
+          commitSlice("shelf", (current) => ({ ...current, shelf: undefined }));
         }}
       />
       <RailSection
         title="Series"
         activeCount={filters.series === undefined ? 0 : 1}
         onClear={() => {
-          clearFilters((current) => ({ ...current, series: undefined }));
+          commitSlice("series", (current) => ({ ...current, series: undefined }));
         }}
       >
         <FacetList
@@ -266,7 +156,7 @@ export function FilterRail({
           active={filters.series}
           emptyText="No series in view."
           onPick={(series) => {
-            commitFilters((current) => ({ ...current, series }));
+            commitSlice("series", (current) => ({ ...current, series }));
           }}
         />
       </RailSection>
@@ -278,90 +168,78 @@ export function FilterRail({
         title="Status"
         activeCount={filters.status.any.length + filters.status.none.length}
         onClear={() => {
-          clearFilters((current) => ({ ...current, status: { any: [], none: [] } }));
+          commitSlice("status", (current) => ({ ...current, status: { any: [], none: [] } }));
         }}
       >
         <StatusEditor
           value={filters.status.any}
           onChange={(any) => {
-            commitFilters((current) => ({ ...current, status: { ...current.status, any } }));
+            commitSlice("status", (current) => ({
+              ...current,
+              status: { ...current.status, any },
+            }));
           }}
         />
       </RailSection>
       <TextSection
         title="Title"
         ops={TEXT_COLUMN_OPS.title}
-        committed={filters.title}
-        fullToken={fullToken}
-        lastEdit={lastEdit}
-        clearGen={staleGen}
+        value={filters.title}
         activeCount={textCount(filters.title)}
-        onCommit={(title) => {
-          commitFilters((current) => ({ ...current, title }));
+        onChange={(title) => {
+          commitTyped("title", (current) => ({ ...current, title }));
         }}
         onClear={() => {
-          clearFilters((current) => ({ ...current, title: {} }));
+          commitSlice("title", (current) => ({ ...current, title: {} }));
         }}
       />
       <TextSection
         title="Subtitle"
         ops={TEXT_COLUMN_OPS.subtitle}
-        committed={filters.subtitle}
-        fullToken={fullToken}
-        lastEdit={lastEdit}
-        clearGen={staleGen}
+        value={filters.subtitle}
         activeCount={textCount(filters.subtitle)}
-        onCommit={(subtitle) => {
-          commitFilters((current) => ({ ...current, subtitle }));
+        onChange={(subtitle) => {
+          commitTyped("subtitle", (current) => ({ ...current, subtitle }));
         }}
         onClear={() => {
-          clearFilters((current) => ({ ...current, subtitle: {} }));
+          commitSlice("subtitle", (current) => ({ ...current, subtitle: {} }));
         }}
       />
       <TextSection
         title="ISBN"
         ops={TEXT_COLUMN_OPS.isbn_13}
-        committed={filters.isbn13}
-        fullToken={fullToken}
-        lastEdit={lastEdit}
-        clearGen={staleGen}
+        value={filters.isbn13}
         activeCount={textCount(filters.isbn13)}
-        onCommit={(isbn13) => {
-          commitFilters((current) => ({ ...current, isbn13 }));
+        onChange={(isbn13) => {
+          commitTyped("isbn13", (current) => ({ ...current, isbn13 }));
         }}
         onClear={() => {
-          clearFilters((current) => ({ ...current, isbn13: {} }));
+          commitSlice("isbn13", (current) => ({ ...current, isbn13: {} }));
         }}
       />
       <RangeSection
         title="Pages"
         min={0}
-        committed={filters.pages}
-        fullToken={fullToken}
-        lastEdit={lastEdit}
-        clearGen={staleGen}
+        value={filters.pages}
         activeCount={rangeCount(filters.pages)}
-        onCommit={(pages) => {
-          commitFilters((current) => ({ ...current, pages }));
+        onChange={(pages) => {
+          commitTyped("pages", (current) => ({ ...current, pages }));
         }}
         onClear={() => {
-          clearFilters((current) => ({ ...current, pages: {} }));
+          commitSlice("pages", (current) => ({ ...current, pages: {} }));
         }}
       />
       <RangeSection
         title="Rating"
         min={1}
         max={5}
-        committed={filters.rating}
-        fullToken={fullToken}
-        lastEdit={lastEdit}
-        clearGen={staleGen}
+        value={filters.rating}
         activeCount={rangeCount(filters.rating)}
-        onCommit={(rating) => {
-          commitFilters((current) => ({ ...current, rating }));
+        onChange={(rating) => {
+          commitTyped("rating", (current) => ({ ...current, rating }));
         }}
         onClear={() => {
-          clearFilters((current) => ({ ...current, rating: {} }));
+          commitSlice("rating", (current) => ({ ...current, rating: {} }));
         }}
       />
       <RailSection
@@ -370,7 +248,7 @@ export function FilterRail({
           (filters.addedAfter === undefined ? 0 : 1) + (filters.addedBefore === undefined ? 0 : 1)
         }
         onClear={() => {
-          clearFilters((current) => ({
+          commitSlice("added", (current) => ({
             ...current,
             addedAfter: undefined,
             addedBefore: undefined,
@@ -381,7 +259,11 @@ export function FilterRail({
           after={filters.addedAfter}
           before={filters.addedBefore}
           onChange={({ after, before }) => {
-            commitFilters((current) => ({ ...current, addedAfter: after, addedBefore: before }));
+            commitSlice("added", (current) => ({
+              ...current,
+              addedAfter: after,
+              addedBefore: before,
+            }));
           }}
         />
       </RailSection>
@@ -394,6 +276,11 @@ type RailSectionProps = {
   /** Number of active conditions; positive renders the badge + clear control. */
   activeCount: number;
   onClear: () => void;
+  /** Label for the clear control; the sort section's clear is a reset. */
+  clearLabel?: string;
+  /** Accessible name for the clear control when the visible label needs
+   *  more context than `Clear <title> filters` would give. */
+  clearAriaLabel?: string;
   children: ReactNode;
 };
 
@@ -407,6 +294,8 @@ function RailSection({
   title,
   activeCount,
   onClear,
+  clearLabel = "Clear",
+  clearAriaLabel,
   children,
 }: Readonly<RailSectionProps>): ReactElement {
   const [initialOpen] = useState(activeCount > 0);
@@ -427,7 +316,7 @@ function RailSection({
         {active ? (
           <button
             type="button"
-            aria-label={`Clear ${title} filters`}
+            aria-label={clearAriaLabel ?? `Clear ${title} filters`}
             onClick={(event) => {
               // A summary click toggles the disclosure; clearing must not.
               event.preventDefault();
@@ -436,7 +325,7 @@ function RailSection({
             }}
             className="text-fg-muted hover:text-fg focus-visible:ring-accent ml-auto flex min-h-6 items-center rounded-sm px-2 font-mono text-xs uppercase tracking-wide transition-colors focus-visible:outline-none focus-visible:ring-2"
           >
-            Clear
+            {clearLabel}
           </button>
         ) : null}
       </summary>
@@ -447,6 +336,8 @@ function RailSection({
 
 type SortSectionProps = {
   levels: readonly SortLevelParam[];
+  /** True when the stack is the inherited installation order. */
+  inherited: boolean;
   onChange: (levels: readonly SortLevelParam[]) => void;
 };
 
@@ -457,8 +348,15 @@ type SortSectionProps = {
  * announcements are not this section's job: the aria-live sort summary is
  * mounted by `LibraryPage`, because the rail unmounts when collapsed and a
  * live region must stay mounted to announce.
+ *
+ * The stack shown is always the effective order, because the library is
+ * never unordered. When it is the inherited installation stack, the section
+ * reads as inactive and offers no reset: there is nothing to reset. Editing
+ * an inherited level materialises it as the reader's own override, and
+ * removing the last level or pressing Reset drops the override, visibly
+ * returning the stack to the installation order.
  */
-function SortSection({ levels, onChange }: Readonly<SortSectionProps>): ReactElement {
+function SortSection({ levels, inherited, onChange }: Readonly<SortSectionProps>): ReactElement {
   const remaining = SORT_FIELDS.filter((field) => !levels.some((level) => level.field === field));
 
   function toggleDirection(index: number): void {
@@ -486,7 +384,12 @@ function SortSection({ levels, onChange }: Readonly<SortSectionProps>): ReactEle
   return (
     <RailSection
       title="Sort"
-      activeCount={levels.length}
+      // The inherited installation stack is not an active condition: it
+      // shows no badge and offers no reset, so the section reads as "at
+      // rest" exactly when there is nothing of the reader's to remove.
+      activeCount={inherited ? 0 : levels.length}
+      clearLabel="Reset"
+      clearAriaLabel="Reset sort to the installation order"
       onClear={() => {
         onChange([]);
       }}
@@ -545,6 +448,11 @@ function SortSection({ levels, onChange }: Readonly<SortSectionProps>): ReactEle
                 size="icon-xs"
                 className="min-h-6 min-w-6"
                 aria-label={`Remove ${label} from sort`}
+                // Disabled, not hidden, matching the reorder arrows at the
+                // stack's ends: removing the last inherited level would
+                // dispatch a reset to the state already showing, a press
+                // that visibly does nothing.
+                disabled={inherited && levels.length === 1}
                 onClick={() => {
                   remove(index);
                 }}
@@ -654,38 +562,27 @@ function ShelfSection({ activeShelf, onPick, onClear }: Readonly<ShelfSectionPro
 type TextSectionProps = {
   title: string;
   ops: readonly TextOp[];
-  committed: TextFilter;
-  fullToken: string;
-  lastEdit: RefObject<EditTokens | null>;
-  clearGen: RefObject<number>;
+  value: TextFilter;
   activeCount: number;
-  onCommit: (next: TextFilter) => void;
-  /** Clear-affordance path, distinct from `onCommit` so it resets drafts. */
+  onChange: (next: TextFilter) => void;
+  /** Clear affordance, undebounced, so it cancels a pending typed write. */
   onClear: () => void;
 };
 
+/** The editor renders the slice's own state directly: there is no draft to
+ *  hold, because a debounced write updates that state at once and defers
+ *  only the URL. */
 function TextSection({
   title,
   ops,
-  committed,
-  fullToken,
-  lastEdit,
-  clearGen,
+  value,
   activeCount,
-  onCommit,
+  onChange,
   onClear,
 }: Readonly<TextSectionProps>): ReactElement {
-  const { draft, setDraft } = useDraftSlice(
-    committed,
-    fullToken,
-    textSliceToken,
-    onCommit,
-    lastEdit,
-    clearGen,
-  );
   return (
     <RailSection title={title} activeCount={activeCount} onClear={onClear}>
-      <TextFilterEditor value={draft} ops={ops} onChange={setDraft} />
+      <TextFilterEditor value={value} ops={ops} onChange={onChange} />
     </RailSection>
   );
 }
@@ -694,13 +591,10 @@ type RangeSectionProps = {
   title: string;
   min?: number;
   max?: number;
-  committed: RangeFilter;
-  fullToken: string;
-  lastEdit: RefObject<EditTokens | null>;
-  clearGen: RefObject<number>;
+  value: RangeFilter;
   activeCount: number;
-  onCommit: (next: RangeFilter) => void;
-  /** Clear-affordance path, distinct from `onCommit` so it resets drafts. */
+  onChange: (next: RangeFilter) => void;
+  /** Clear affordance, undebounced, so it cancels a pending typed write. */
   onClear: () => void;
 };
 
@@ -708,25 +602,14 @@ function RangeSection({
   title,
   min,
   max,
-  committed,
-  fullToken,
-  lastEdit,
-  clearGen,
+  value,
   activeCount,
-  onCommit,
+  onChange,
   onClear,
 }: Readonly<RangeSectionProps>): ReactElement {
-  const { draft, setDraft } = useDraftSlice(
-    committed,
-    fullToken,
-    rangeSliceToken,
-    onCommit,
-    lastEdit,
-    clearGen,
-  );
   return (
     <RailSection title={title} activeCount={activeCount} onClear={onClear}>
-      <RangeFilterEditor value={draft} min={min} max={max} allowEmpty onChange={setDraft} />
+      <RangeFilterEditor value={value} min={min} max={max} allowEmpty onChange={onChange} />
     </RailSection>
   );
 }

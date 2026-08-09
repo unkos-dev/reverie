@@ -7,7 +7,7 @@ import { QueryClientProvider } from "@tanstack/react-query";
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vite-plus/test";
-import { createMemoryRouter, Navigate, RouterProvider, type RouteObject } from "react-router";
+import { createBrowserRouter, Navigate, RouterProvider, type RouteObject } from "react-router";
 import type { ReactElement } from "react";
 
 import App from "./App";
@@ -159,7 +159,10 @@ function stubFetch(role: string): void {
   });
 }
 
-function renderApp(): { router: ReturnType<typeof createMemoryRouter> } {
+// A browser router, so the document URL is the one truth: navigation goes
+// through the router, while search-param writes go through
+// history.replaceState. A memory router would see only the first of those.
+function renderApp(): { router: ReturnType<typeof createBrowserRouter> } {
   const routes: RouteObject[] = [
     {
       path: "/",
@@ -176,7 +179,8 @@ function renderApp(): { router: ReturnType<typeof createMemoryRouter> } {
       ],
     },
   ];
-  const router = createMemoryRouter(routes, { initialEntries: ["/library"] });
+  window.history.replaceState(null, "", "/library");
+  const router = createBrowserRouter(routes);
   function Wrapper(): ReactElement {
     return (
       <QueryClientProvider client={queryClient}>
@@ -282,10 +286,15 @@ describe("shell navigation — click reachability (admin)", () => {
   });
 });
 
-describe("filter rail — param-write to loader-refetch seam", () => {
+// A filter write is a shallow history update, so it starts no navigation
+// and the route loader does not re-run. What this covers is the seam below
+// it: the param write changes the query key and the component-level fetch
+// re-fires. The loader path is exercised on a fresh load and on
+// back/forward, not here.
+describe("filter rail — param-write to component-refetch seam", () => {
   test("selecting a series facet refetches the grid with the filter applied", async () => {
     stubFetch("admin");
-    const { router } = renderApp();
+    renderApp();
     const user = userEvent.setup();
 
     expect(await screen.findByRole("link", { name: /Guards! Guards!/ })).toBeInTheDocument();
@@ -298,7 +307,7 @@ describe("filter rail — param-write to loader-refetch seam", () => {
     await user.click(await screen.findByRole("checkbox", { name: "Discworld" }));
     await waitFor(
       () => {
-        expect(new URLSearchParams(router.state.location.search).get("series")).toBe("series-1");
+        expect(new URLSearchParams(window.location.search).get("series")).toBe("series-1");
       },
       { timeout: 5000 },
     );
@@ -327,7 +336,7 @@ describe("filter rail — param-write to loader-refetch seam", () => {
     await user.click(activeBox);
     await waitFor(
       () => {
-        expect(new URLSearchParams(router.state.location.search).get("series")).toBeNull();
+        expect(new URLSearchParams(window.location.search).get("series")).toBeNull();
       },
       { timeout: 5000 },
     );

@@ -66,5 +66,19 @@ export {
   adminResetPassword,
 } from "./users";
 export type { User, Role as UserRole, UpdateUserFields, CreateUserInput } from "./users";
+export {
+  getPreferences,
+  updatePreferences,
+  isLibraryView,
+  DENSITIES,
+  LIBRARY_VIEWS,
+} from "./preferences";
+export type {
+  Density,
+  LibraryView,
+  Preferences,
+  PreferenceDefaults,
+  UpdatePreferencesFields,
+} from "./preferences";
 export { listTokens, createToken, revokeToken, SCOPE_VALUES } from "./tokens";
 export type { Token, Scope as TokenScope, CreateTokenInput, CreateTokenResponse } from "./tokens";

@@ -35,6 +35,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { useAuthMe } from "@/hooks/useAuthMe";
+import { forgetActiveUser } from "@/lib/active-user";
 import { useTheme } from "@/lib/theme/ThemeProvider";
 import type { ThemePreference } from "@/lib/theme/cookie";
 
@@ -59,6 +60,10 @@ export function UserChip(): ReactElement | null {
         // either way; keep the operator-actionable detail in console.
         console.error("[UserMenu] logout request failed", error);
       }
+      // Whatever the request did, this browser no longer has a confirmed
+      // account: per-user caches must stop resolving until the next
+      // sign-in names one. The caches themselves stay for that return.
+      forgetActiveUser();
       window.location.assign("/login");
     })();
   }

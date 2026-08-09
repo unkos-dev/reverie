@@ -265,6 +265,40 @@ export default defineConfig({
         plugins: ["typescript"],
       },
       {
+        // The library browse surface owns its filter, sort and view state as
+        // typed search params (frontend/src/lib/hooks/use-library-filters.ts).
+        // Those writes reach the URL through history.replaceState, which React
+        // Router's history does not observe, so useSearchParams cannot see
+        // them: a read through it returns a snapshot that goes stale the
+        // moment anything writes, and a write through it lands somewhere the
+        // surface cannot read. The ban covers both directions, which is why it
+        // is on the import rather than on the setter alone.
+        //
+        // The design-system pages under pages/design/** are deliberately out
+        // of scope: they are standalone specimens with their own local params
+        // and no shared filter state.
+        files: [
+          "frontend/src/pages/library/**",
+          "frontend/src/components/library/**",
+          "frontend/src/components/shell/FilterRail.tsx",
+        ],
+        rules: {
+          "no-restricted-imports": [
+            "error",
+            {
+              paths: [
+                {
+                  name: "react-router",
+                  importNames: ["useSearchParams"],
+                  message:
+                    "The library surface reads and writes search params through lib/hooks/use-library-filters. useSearchParams cannot observe those writes, so it would return stale filter state.",
+                },
+              ],
+            },
+          ],
+        },
+      },
+      {
         // Vendored Radix color engine (see its file header): upstream is
         // written against looser colorjs.io typings, so the type-aware rules
         // and the @ts-nocheck escape are exempted for this one file. The
