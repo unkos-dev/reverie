@@ -1,34 +1,32 @@
-# zizmor configuration (UNK-327). Documented suppressions for the workflow-
-# security gate (the `workflow-security` job in .github/workflows/ci.yml). Each
-# entry suppresses a tool false-positive, NOT an accepted security risk — the
-# underlying issue is genuinely absent, zizmor's heuristic just can't confirm
-# it. Every entry carries a justification; this file is the audit trail.
+# zizmor configuration (UNK-327). Documented exceptions for the workflow-
+# security gate (the `workflow-security` job in .github/workflows/ci.yml).
+# Every entry carries a justification; this file is the audit trail.
+#
+# An `ignore` entry suppresses a tool false-positive, NOT an accepted security
+# risk: the underlying issue is genuinely absent and zizmor's heuristic cannot
+# confirm that. A `disable` entry is different in kind, gives up real coverage,
+# and states what is lost.
 rules:
   ref-version-mismatch:
-    ignore:
-      # The repo pins every action by immutable commit SHA (the supply-chain
-      # control, enforced by Renovate's helpers:pinGitHubActionDigests and the
-      # SHA-pinning policy) and annotates each with a major-version comment
-      # (`# v2`, `# v4`) that Renovate maintains. ref-version-mismatch wants the
-      # comment to name the exact tag the SHA resolves to; when a major tag
-      # later moves past the pinned SHA, the `# vN` comment reads as "mismatched"
-      # even though the SHA is correct and current per our pinning convention.
-      # The exact-version comment it wants conflicts with that deliberate,
-      # Renovate-managed convention and adds nothing over the SHA pin itself, so
-      # the audit is disabled for the affected files. Action staleness is
-      # Renovate's job. The audit fires per-instance only once a major tag has
-      # actually moved PAST the pinned SHA (so the `# vN` comment no longer
-      # resolves to that SHA) — not on the mere presence of a major-version
-      # comment. These files are the ones currently drifted; other
-      # workflows use the same SHA+`# vN` convention but were clean at triage
-      # because their tags had not yet moved. zizmor ignores are per-file (no
-      # glob), so add a file here if a future run flags it.
-      - ci.yml
-      - codeql.yml
-      - docker-publish.yml
-      - scheduled-audit.yml
-      - scorecard.yml
-      - snyk.yml
+    # The repo pins every action by immutable commit SHA (the supply-chain
+    # control, enforced by Renovate's helpers:pinGitHubActionDigests and the
+    # SHA-pinning policy) and annotates each with a major-version comment
+    # (`# v2`, `# v4`) that Renovate maintains. This audit wants the comment to
+    # name the exact tag the SHA resolves to, which is incompatible with that
+    # convention: an upstream major tag that moves past a pinned SHA leaves the
+    # `# vN` comment reading as mismatched even though the SHA is correct, and
+    # the finding then blocks every open pull request until the digest bump
+    # lands. Renovate raises that bump on its own schedule, so the gate fails
+    # for a window nobody in this repo controls.
+    #
+    # What this gives up: the audit also catches a missing version comment, and
+    # one naming a different major than the SHA resolves to, which could mask a
+    # downgrade. Accepted because the SHA is the control the supply-chain policy
+    # actually rests on and Renovate owns the comments. Per-file ignores were
+    # the previous shape and covered six of the workflows already, so the audit
+    # was mostly off in practice while still needing a hand edit after every
+    # upstream tag move.
+    disable: true
   cache-poisoning:
     ignore:
       # docs.yml's build job uses actions/setup-node, and the same workflow

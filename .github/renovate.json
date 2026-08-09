@@ -75,6 +75,12 @@
       "automerge": true
     },
     {
+      "description": "Exempt action digest updates from the release-age hold. The hold earns its keep against a newly published version that has not been in the wild long enough to be trusted. A digest update is not that: it re-pins an action to the commit its already-pinned major tag now names, which is the version this repo has been trusting by tag all along. Holding it only means carrying a knowingly stale pin for three days and occupying a prConcurrentLimit slot while it waits.",
+      "matchManagers": ["github-actions"],
+      "matchUpdateTypes": ["digest"],
+      "minimumReleaseAge": null
+    },
+    {
       "description": "Automerge stable cargo and npm patch updates; keep pre-1.0 updates manual.",
       "matchManagers": ["cargo", "npm"],
       "matchUpdateTypes": ["patch"],
