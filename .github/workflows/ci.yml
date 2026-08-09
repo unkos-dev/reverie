@@ -90,7 +90,7 @@ jobs:
           fi
           echo "version=${version}" >> "$GITHUB_OUTPUT"
 
-      - uses: dorny/paths-filter@7b450fff21473bca461d4b92ce414b9d0420d706 # v4
+      - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4
         id: filter
         with:
           # On merge_group events paths-filter's default base (HEAD~1) sees
@@ -1132,7 +1132,7 @@ jobs:
       # PRs outside that scope skip the step entirely. The plan-ref guard
       # that runs alongside it stays changed-files only.
       - name: Detect changed source and docs
-        uses: dorny/paths-filter@7b450fff21473bca461d4b92ce414b9d0420d706 # v4
+        uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4
         id: source-changed
         with:
           base: ${{ github.event.merge_group.base_sha || github.base_ref }}
