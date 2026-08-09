@@ -89,7 +89,7 @@ jobs:
             >>"$GITHUB_STEP_SUMMARY"
 
       - name: Upload to code-scanning
-        uses: github/codeql-action/upload-sarif@f205ea1c3313d32999d8d6a48b4f6530d4437b38 # v4
+        uses: github/codeql-action/upload-sarif@5595ccaf912efad79be6eef63a5619ff05969be3 # v4
         with:
           sarif_file: snyk-code-filtered.sarif
           category: snyk-code
@@ -161,7 +161,7 @@ jobs:
         run: scripts/sanitize-sarif-severities.sh snyk-oss.sarif snyk-oss-clean.sarif
 
       - name: Upload to code-scanning
-        uses: github/codeql-action/upload-sarif@f205ea1c3313d32999d8d6a48b4f6530d4437b38 # v4
+        uses: github/codeql-action/upload-sarif@5595ccaf912efad79be6eef63a5619ff05969be3 # v4
         with:
           sarif_file: snyk-oss-clean.sarif
           category: snyk-open-source
@@ -332,7 +332,7 @@ jobs:
 
       - name: Upload to code-scanning
         if: steps.image.outputs.present == 'true'
-        uses: github/codeql-action/upload-sarif@f205ea1c3313d32999d8d6a48b4f6530d4437b38 # v4
+        uses: github/codeql-action/upload-sarif@5595ccaf912efad79be6eef63a5619ff05969be3 # v4
         with:
           sarif_file: snyk-container-filtered.sarif
           category: snyk-container
