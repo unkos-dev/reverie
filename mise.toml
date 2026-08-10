@@ -20,8 +20,10 @@ zizmor = "1.29.0"
 # `npm install` nor any lefthook step that shells out to npm. CI is not a
 # backstop: every job installs through `vp install`, which never consults
 # devEngines. `npm-pin-drift` holds this in lockstep with package.json.
-# node stays unpinned here because CI single-sources NODE_VERSION and
-# `tool-pin-drift` rejects a workflow pin of any mise-managed tool.
+# mise owns the node pin the same way it owns npm above: CI provisions node
+# through jdx/mise-action, which reads this table, and setup-vp is told not
+# to manage node (node-manager: false) so the two installers cannot disagree.
+node = "24.18.1"
 "npm:npm" = "12.0.2"
 
 # SQL linter for backend/migrations, run by `just infra::sqruff`. No mise

@@ -13,13 +13,11 @@ mkdir -p "${tmp}/.github/workflows" "${tmp}/frontend"
 REF="0.2.6"
 ALIAS="npm:@voidzero-dev/vite-plus-core@${REF}"
 
-NODE="24.18.0"
-
-# A workflow the guard should discover: it installs vp with no version:
-# input and carries a NODE_VERSION pin.
+# A workflow that installs vp with no version: input, carrying no env block.
+# node is provisioned through mise now, so a workflow installing vp has
+# nothing left for this guard to check.
 workflow() {
-  printf 'env:\n  NODE_VERSION: "%s"\njobs:\n  build:\n    steps:\n      - uses: voidzero-dev/setup-vp@250f29c\n' \
-    "$1" >"$2"
+  printf 'jobs:\n  build:\n    steps:\n      - uses: voidzero-dev/setup-vp@250f29c\n' >"$1"
 }
 
 baseline() {
@@ -32,7 +30,7 @@ baseline() {
   rm -f "${tmp}"/.github/workflows/*.yml "${tmp}"/.github/workflows/*.yaml
   local f
   for f in ci docs-build scheduled-audit; do
-    workflow "$NODE" "${tmp}/.github/workflows/${f}.yml"
+    workflow "${tmp}/.github/workflows/${f}.yml"
   done
 }
 
@@ -100,51 +98,6 @@ edit_json "${tmp}/package.json" 'del(.overrides.vite)'
 expect "missing override rejected" 1
 
 baseline
-workflow "24.17.0" "${tmp}/.github/workflows/scheduled-audit.yml"
-expect "workflow NODE_VERSION disagreeing rejected" 1
-
-# The census is discovered, not listed, so a workflow added later is covered
-# without touching this guard.
-baseline
-workflow "24.17.0" "${tmp}/.github/workflows/newcomer.yml"
-expect "newly added workflow discovered and its disagreeing pin rejected" 1
-
-baseline
-workflow "$NODE" "${tmp}/.github/workflows/newcomer.yml"
-expect "newly added workflow with agreeing pins passes" 0
-
-# Discovery must not sweep in workflows that do not install vp.
-baseline
-printf 'jobs:\n  build:\n    steps:\n      - uses: actions/checkout@v7\n' \
-  >"${tmp}/.github/workflows/unrelated.yml"
-expect "workflow that does not install vp ignored" 0
-
-# yq prints "null" for an absent key, so pins missing everywhere would agree
-# with each other; setup-vp then resolves the latest LTS node instead.
-baseline
-for f in ci docs-build scheduled-audit; do
-  printf 'jobs:\n  build:\n    steps:\n      - uses: voidzero-dev/setup-vp@250f29c\n' \
-    >"${tmp}/.github/workflows/${f}.yml"
-done
-expect "NODE_VERSION missing from every workflow rejected" 1
-
-baseline
-printf 'jobs:\n  build:\n    steps:\n      - uses: voidzero-dev/setup-vp@250f29c\n' \
-  >"${tmp}/.github/workflows/docs-build.yml"
-expect "NODE_VERSION missing from one workflow rejected" 1
-
-baseline
-workflow "24" "${tmp}/.github/workflows/ci.yml"
-expect "NODE_VERSION without a patch level rejected" 1
-
-# An empty census means the discovery pattern went stale, not that the pins
-# agree, so the guard must fail rather than report success having checked
-# nothing.
-baseline
-rm -f "${tmp}"/.github/workflows/*.yml
-expect "empty census rejected" 1
-
-baseline
 edit_json "${tmp}/package.json" '.devDependencies["vite-plus"] = "workspace:*"'
 expect "unparsable reference version rejected" 1
 
@@ -163,7 +116,7 @@ consistent_tree() {
     >"${tmp}/frontend/package.json"
   rm -f "${tmp}"/.github/workflows/*.yml "${tmp}"/.github/workflows/*.yaml
   for f in ci docs-build scheduled-audit; do
-    workflow "${2:-$NODE}" "${tmp}/.github/workflows/${f}.yml"
+    workflow "${tmp}/.github/workflows/${f}.yml"
   done
 }
 
@@ -172,37 +125,20 @@ for bad in "0.2.6-beta" "0.2.6junk" "0x.2.6" "0.2.6.7" "0.2" "v0.2.6" "0-2-6"; d
   expect "malformed vite-plus version (${bad}) rejected in every copy" 1
 done
 
-# The same shapes in NODE_VERSION, which setup-vp hands to actions verbatim
-# and which resolves to nothing once it stops naming a published release.
-for bad in "24.18.0-rc" "24.18.0junk" "24x.18.0" "24.18.0.1" "v24.18.0"; do
-  baseline
-  for f in ci docs-build scheduled-audit; do
-    workflow "$bad" "${tmp}/.github/workflows/${f}.yml"
-  done
-  expect "malformed NODE_VERSION (${bad}) rejected" 1
-done
-
-# Positive controls. A matcher tightened past the accepted set would reject
-# these too while every rejection case above still passed, so rejection alone
+# Positive control. A matcher tightened past the accepted set would reject
+# this too while every rejection case above still passed, so rejection alone
 # does not prove the shape check is right.
-consistent_tree "10.200.3000" "100.0.1"
-expect "multi-digit components accepted on both pins" 0
+consistent_tree "10.200.3000"
+expect "multi-digit components accepted" 0
 
-consistent_tree "0.0.0" "0.0.0"
-expect "all-zero versions accepted on both pins" 0
+consistent_tree "0.0.0"
+expect "all-zero version accepted" 0
 
 # Failing closed is not enough: the message has to name the cause, or a
 # maintainer who deliberately pinned a prerelease goes looking for a parse bug
 # in a guard that is in fact enforcing a policy.
 consistent_tree "0.2.6-beta"
 expect_message "prerelease vite-plus pin names itself as the cause" \
-  "prereleases are rejected by policy"
-
-baseline
-for f in ci docs-build scheduled-audit; do
-  workflow "24.18.0-rc" "${tmp}/.github/workflows/${f}.yml"
-done
-expect_message "prerelease NODE_VERSION names itself as the cause" \
   "prereleases are rejected by policy"
 
 # Negative controls on the hint itself. `case` arms are ordered, so a
@@ -225,12 +161,5 @@ for typo in "0-2-6" "0.2-6" "npm:@voidzero-dev/vite-plus-core@0.2.6"; do
   expect_no_message "malformed vite-plus pin (${typo}) is not called a prerelease" \
     "prereleases are rejected"
 done
-
-baseline
-for f in ci docs-build scheduled-audit; do
-  workflow "24-18-0" "${tmp}/.github/workflows/${f}.yml"
-done
-expect_no_message "malformed NODE_VERSION (24-18-0) is not called a prerelease" \
-  "prereleases are rejected"
 
 exit "$fail"

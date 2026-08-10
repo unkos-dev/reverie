@@ -180,14 +180,6 @@
       "datasourceTemplate": "crate"
     },
     {
-      "description": "Track checksum-verified lint tools; version bumps require the corresponding checksum to be updated manually.",
-      "customType": "regex",
-      "managerFilePatterns": ["/^\\.github/workflows/[^/]+\\.ya?ml$/"],
-      "matchStrings": [
-        "# renovate: datasource=(?<datasource>\\S+) depName=(?<depName>\\S+)(?: extractVersion=(?<extractVersion>\\S+))?\\s+\\w+_VERSION:\\s*\"(?<currentValue>[^\"]+)\""
-      ]
-    },
-    {
       "description": "Track annotated version pins in workflows (TruffleHog's image tag, mise itself, and the remaining install-pinned-tool binaries). When a sha256 line follows the version, the github-release-attachments datasource rewrites it alongside the bump, keeping the checksum control without the manual repin step.",
       "customType": "regex",
       "managerFilePatterns": ["/^\\.github/workflows/[^/]+\\.ya?ml$/"],
