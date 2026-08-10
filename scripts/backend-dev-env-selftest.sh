@@ -79,6 +79,18 @@ printf 'DATABASE_URL=first\nDATABASE_URL=second\n' >"$last_wins_fixture"
 badport_fixture="${tmp}/badport-fixture"
 printf 'REVERIE_PORT=not-a-port\n' >"$badport_fixture"
 
+# A key with no recipe-known dev default (the regression this suite exists to
+# catch: the file pass must export every key it parses, not only the handful
+# dev_env_default names).
+arbitrary_key_fixture="${tmp}/arbitrary-key-fixture"
+printf 'REVERIE_LIBRARY_PATH=/somewhere\n' >"$arbitrary_key_fixture"
+
+# Lines that are not a valid KEY=value assignment must be skipped, not fail
+# the source: a space in the key and a leading digit are both invalid shell
+# identifiers.
+garbage_fixture="${tmp}/garbage-fixture"
+printf 'not a var=x\n2FOO=bar\nDATABASE_URL=postgres://after-garbage/x\n' >"$garbage_fixture"
+
 # No file at REVERIE_DEV_ENV (the default-path-absent case): the dev defaults
 # make a fresh clone work out of the box.
 check "default DSN with no file" \
@@ -108,12 +120,33 @@ check "the export form is accepted" \
 check "last assignment for a key wins" \
   "second" "$(resolve DATABASE_URL REVERIE_DEV_ENV="$last_wins_fixture")"
 
+# A key with no dev-default call is still exported from the file: the file
+# pass, not dev_env_default, is what makes every file key reach the server.
+check "a file key with no dev default is exported" \
+  "/somewhere" \
+  "$(resolve REVERIE_LIBRARY_PATH REVERIE_DEV_ENV="$arbitrary_key_fixture")"
+
 # Environment wins over the file, and over the default.
 check "an environment DSN wins over the file" \
   "postgres://env:pw@localhost/x" \
   "$(resolve DATABASE_URL REVERIE_DEV_ENV="$fixture" DATABASE_URL=postgres://env:pw@localhost/x)"
 check "an environment port wins over the file" \
   "3202" "$(resolve REVERIE_PORT REVERIE_DEV_ENV="$fixture" REVERIE_PORT=3202)"
+check "an environment value wins over a file key with no dev default" \
+  "/fromenv" \
+  "$(resolve REVERIE_LIBRARY_PATH REVERIE_DEV_ENV="$arbitrary_key_fixture" REVERIE_LIBRARY_PATH=/fromenv)"
+
+# A garbage line (invalid shell identifier as the key) is skipped rather than
+# aborting the source, and a valid assignment after it still resolves.
+check "an invalid-identifier line is ignored, later valid lines still resolve" \
+  "postgres://after-garbage/x" \
+  "$(resolve DATABASE_URL REVERIE_DEV_ENV="$garbage_fixture")"
+if ! resolve_status REVERIE_DEV_ENV="$garbage_fixture"; then
+  echo "FAIL a garbage line does not fail the source: expected success, got failure"
+  fail=1
+else
+  echo "ok   a garbage line does not fail the source"
+fi
 
 # The port is read from the file and re-exported (not merely left alone),
 # because the readiness probe and the server must agree on one resolved

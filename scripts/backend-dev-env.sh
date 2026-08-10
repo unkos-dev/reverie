@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Resolve the backend's dev configuration, then export only what is missing.
+# Resolve the backend's dev configuration and export it into the environment.
 # Sourced by the rust plane's dev recipes; not executable on its own.
 #
 # The server discovers no env file itself: `cargo run` reads only the process
@@ -10,6 +10,12 @@
 # in the process environment is never overwritten by the file, and a value in
 # the file is never overwritten by the default. Getting this backwards would
 # silently clobber whatever the developer already had set.
+#
+# Every key the file defines is exported, not only the ones with a
+# recipe-known dev default (DATABASE_URL, REVERIE_PUBLIC_URL,
+# DATABASE_URL_MIGRATION): the file pass below exports each parsed key that
+# the environment does not already define, then dev_env_default only fills in
+# the handful of keys the recipes need a fallback for.
 
 # Executing this file would resolve the configuration into a shell that exits
 # immediately, which looks like success and changes nothing.
@@ -30,9 +36,10 @@ if [ -n "$_dev_env_explicit" ] && [ ! -f "$REVERIE_DEV_ENV" ]; then
 fi
 
 # Parse the env file into an associative array so a later assignment for the
-# same key overwrites an earlier one (last assignment wins). Nothing is
-# exported here; export happens in dev_env_default so environment precedence
-# is enforced in one place.
+# same key overwrites an earlier one (last assignment wins), then export every
+# parsed key the environment does not already define. A key with no valid
+# shell-identifier form is skipped rather than attempted: a malformed line
+# must not make `export` fail and abort the sourcing recipe under `set -e`.
 declare -A _dev_file_vals=()
 if [ -f "$REVERIE_DEV_ENV" ]; then
   while IFS= read -r _line || [ -n "$_line" ]; do
@@ -45,6 +52,7 @@ if [ -f "$REVERIE_DEV_ENV" ]; then
       _line="${_line#export }"
     fi
     _key="${_line%%=*}"
+    [[ "$_key" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || continue
     _val="${_line#*=}"
     case "$_val" in
       \"*\") _val="${_val#\"}" && _val="${_val%\"}" ;;
@@ -53,24 +61,17 @@ if [ -f "$REVERIE_DEV_ENV" ]; then
     _dev_file_vals["$_key"]="$_val"
   done < "$REVERIE_DEV_ENV"
 fi
+for _key in "${!_dev_file_vals[@]}"; do
+  [[ -v "$_key" ]] || export "${_key}=${_dev_file_vals[$_key]}"
+done
 
-# Whether the file assigns KEY, for callers that need to distinguish
-# "defaulted" from "file-supplied" without exporting.
-dev_env_defines() {
-  [[ -v "_dev_file_vals[$1]" ]]
-}
-
-# Export KEY only when the process environment does not already define it
-# (even to an empty string): environment wins over the file, and the file
-# wins over the caller's default.
+# Export KEY to default_value when neither the environment nor the file pass
+# above has already set it. The file pass already exported every key the file
+# defines, so this only ever fires for a key the file left unset.
 dev_env_default() {
   local key="$1" default_value="$2"
   [[ -v "$key" ]] && return 0
-  if dev_env_defines "$key"; then
-    export "${key}=${_dev_file_vals[$key]}"
-  else
-    export "${key}=${default_value}"
-  fi
+  export "${key}=${default_value}"
 }
 
 # RLS-enforced runtime identity. Overriding it is a matter of setting
@@ -86,9 +87,8 @@ dev_env_default REVERIE_PUBLIC_URL "http://localhost:3000"
 # needs the same three-way precedence as every other dev default.
 dev_env_default DATABASE_URL_MIGRATION "postgres://reverie_migrator:reverie_migrator@localhost:5432/reverie_dev"
 
-if [ -z "${REVERIE_PORT:-}" ] && dev_env_defines REVERIE_PORT; then
-  REVERIE_PORT="${_dev_file_vals[REVERIE_PORT]}"
-fi
+# The file pass above already exported REVERIE_PORT if the file defines it
+# and the environment did not; this just supplies the last-resort default.
 REVERIE_PORT="${REVERIE_PORT:-3000}"
 # A port the probe cannot parse would send it to the wrong port and time out
 # against a healthy server, so refuse rather than guess.
