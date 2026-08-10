@@ -6,11 +6,15 @@ checker="${root}/scripts/npm-pin-drift.sh"
 tmp="$(mktemp -d)"
 trap 'rm -rf "${tmp}"' EXIT
 
+
+# node is included after "npm:npm" so the passing path exercises the two
+# entries coexisting in the order the guard requires, not just the npm pin
+# in isolation.
 write_pins() {
   jq -n --arg v "$1" \
     '{devEngines: {packageManager: {name: "npm", version: $v, onFail: "download"}}}' \
     >"${tmp}/package.json"
-  printf '[tools]\n"npm:npm" = "%s"\n' "$2" >"${tmp}/mise.toml"
+  printf '[tools]\n"npm:npm" = "%s"\nnode = "24.18.1"\n' "$2" >"${tmp}/mise.toml"
 }
 
 fail=0
@@ -152,5 +156,22 @@ for typo in "11-18-0" "11.18-0" "npm@11.18.0"; do
   write_pins "$typo" "$typo"
   expect_no_message "hyphenated typo (${typo}) is not called a prerelease" "prereleases are rejected"
 done
+
+# mise resolves a contested npm/npx bin to the first tool in table order, so
+# node listed before "npm:npm" lets node's bundled npm shadow the pin.
+write_pins "11.18.0" "11.18.0"
+printf '[tools]\nnode = "24.18.1"\n"npm:npm" = "11.18.0"\n' >"${tmp}/mise.toml"
+expect "node before npm:npm rejected" 1
+expect_message "node before npm:npm names the shadowing cause" "node's bundled npm shadows the pin"
+
+write_pins "11.18.0" "11.18.0"
+printf '[tools]\n"npm:npm" = "11.18.0"\nnode = "24.18.1"\n' >"${tmp}/mise.toml"
+expect "npm:npm before node accepted" 0
+
+# No node entry at all means nothing can shadow the pin, so the ordering
+# check has nothing to compare and passes silently.
+write_pins "11.18.0" "11.18.0"
+printf '[tools]\n"npm:npm" = "11.18.0"\n' >"${tmp}/mise.toml"
+expect "no node entry passes" 0
 
 exit "$fail"

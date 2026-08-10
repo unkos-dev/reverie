@@ -11,8 +11,9 @@
 #     `npm install`, and no lefthook step that shells out to npm.
 #
 # Only the pair working together fixes the drift, and only this guard keeps
-# them a pair. CI is not a backstop for the mismatch: every job installs via
-# `vp install`, which never consults devEngines.
+# them a pair. CI is not a backstop for the mismatch either: the JS jobs
+# provision node and this npm through mise-action and then run bare `npx`,
+# which does consult devEngines, so the same drift breaks CI too.
 set -euo pipefail
 
 fail=0
@@ -117,6 +118,20 @@ fi
 
 if [ "$provisioned" != "$declared" ]; then
   err mise.toml "\"npm:npm\" pins ${provisioned} but package.json declares ${declared}; npm rejects every direct invocation with EBADDEVENGINES when the two disagree"
+fi
+
+# Both node and "npm:npm" ship npm and npx bins, and mise resolves a
+# contested bin to the first tool listed in mise.toml's [tools] table, for
+# shims and for the PATH order `mise env` exports. If node is listed first,
+# its bundled npm shadows this pin and every direct npm/npx invocation fails
+# with EBADDEVENGINES, so the order matters as much as the version agreement
+# checked above. The node entry is absent from a fixture that only exercises
+# the npm pin, and that is fine: with no node entry there is nothing to
+# shadow the pin, so the check passes silently.
+node_line="$( (grep -n '^node[[:space:]]*=' mise.toml || true) | head -n1 | cut -d: -f1)"
+npm_line="$( (grep -n -E '^"npm:npm"[[:space:]]*=|^\[tools\."npm:npm"\]' mise.toml || true) | head -n1 | cut -d: -f1)"
+if [ -n "$node_line" ] && [ -n "$npm_line" ] && [ "$node_line" -lt "$npm_line" ]; then
+  err mise.toml "node lists before \"npm:npm\"; mise resolves the contested npm and npx bins to the first tool in table order, so node's bundled npm shadows the pin and direct npm invocations fail with EBADDEVENGINES. Keep \"npm:npm\" listed before node"
 fi
 
 if [ "$fail" -ne 0 ]; then
