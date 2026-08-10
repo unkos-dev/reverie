@@ -56,7 +56,7 @@ SELECT
     'Seeded Tome ' || lpad(g.n::text, 5, '0') AS title,
     'Seeded Tome ' || lpad(g.n::text, 5, '0') AS sort_title,
     'Seeded Scrivener ' || lpad((((g.n - 1) % 500) + 1)::text, 3, '0')
-    AS first_author_sort_name
+        AS first_author_sort_name
 FROM generate_series(1, 50000) AS g (n);
 
 -- One author per work. Joined on `sort_name` (unique among the 500
