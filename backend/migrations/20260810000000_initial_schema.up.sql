@@ -1623,7 +1623,7 @@ ALTER TABLE public.manifestation_external_identifiers ENABLE ROW LEVEL SECURITY;
 CREATE POLICY manifestation_external_identifiers_delete ON public.manifestation_external_identifiers FOR DELETE
 TO reverie_app USING (((EXISTS (
     SELECT 1
-    FROM public.manifestations m
+    FROM public.manifestations AS m
     WHERE (m.id = manifestation_external_identifiers.manifestation_id))) AND (EXISTS (
     SELECT 1
     FROM public.users
@@ -1644,7 +1644,7 @@ TO reverie_ingestion USING (true) WITH CHECK (true);
 CREATE POLICY manifestation_external_identifiers_insert ON public.manifestation_external_identifiers FOR INSERT
 TO reverie_app WITH CHECK (((EXISTS (
     SELECT 1
-    FROM public.manifestations m
+    FROM public.manifestations AS m
     WHERE (m.id = manifestation_external_identifiers.manifestation_id))) AND (EXISTS (
     SELECT 1
     FROM public.users
@@ -1663,14 +1663,14 @@ CREATE POLICY manifestation_external_identifiers_select ON public.manifestation_
 TO reverie_app,
 reverie_readonly USING ((EXISTS (
     SELECT 1
-    FROM public.manifestations m
+    FROM public.manifestations AS m
     WHERE (m.id = manifestation_external_identifiers.manifestation_id)
 )));
 
 CREATE POLICY manifestation_external_identifiers_update ON public.manifestation_external_identifiers FOR UPDATE
 TO reverie_app USING (((EXISTS (
     SELECT 1
-    FROM public.manifestations m
+    FROM public.manifestations AS m
     WHERE (m.id = manifestation_external_identifiers.manifestation_id))) AND (EXISTS (
     SELECT 1
     FROM public.users
@@ -1685,7 +1685,7 @@ TO reverie_app USING (((EXISTS (
     ])))
 )))) WITH CHECK (((EXISTS (
     SELECT 1
-    FROM public.manifestations m
+    FROM public.manifestations AS m
     WHERE (m.id = manifestation_external_identifiers.manifestation_id))) AND (EXISTS (
     SELECT 1
     FROM public.users
@@ -1708,7 +1708,7 @@ TO reverie_ingestion USING (true) WITH CHECK (true);
 CREATE POLICY manifestation_external_ratings_select ON public.manifestation_external_ratings FOR SELECT TO reverie_app,
 reverie_readonly USING ((EXISTS (
     SELECT 1
-    FROM public.manifestations m
+    FROM public.manifestations AS m
     WHERE (m.id = manifestation_external_ratings.manifestation_id)
 )));
 
@@ -1772,10 +1772,8 @@ reverie_readonly USING (((EXISTS (
     ))::uuid) AND (users.role = 'child'::public.user_role))
 )) AND (EXISTS (
     SELECT 1
-    FROM (
-        public.shelf_items si
-        JOIN public.shelves s ON ((s.id = si.shelf_id))
-    )
+    FROM public.shelf_items AS si
+    JOIN public.shelves AS s ON ((s.id = si.shelf_id))
     WHERE (
         (si.manifestation_id = manifestations.id)
         AND (s.user_id = ((
@@ -1854,7 +1852,7 @@ ALTER TABLE public.work_external_identifiers ENABLE ROW LEVEL SECURITY;
 CREATE POLICY work_external_identifiers_delete ON public.work_external_identifiers FOR DELETE TO reverie_app
 USING (((EXISTS (
     SELECT 1
-    FROM public.manifestations m
+    FROM public.manifestations AS m
     WHERE (m.work_id = work_external_identifiers.work_id))) AND (EXISTS (
     SELECT 1
     FROM public.users
@@ -1875,7 +1873,7 @@ USING (true) WITH CHECK (true);
 CREATE POLICY work_external_identifiers_insert ON public.work_external_identifiers FOR INSERT TO reverie_app WITH
 CHECK (((EXISTS (
     SELECT 1
-    FROM public.manifestations m
+    FROM public.manifestations AS m
     WHERE (m.work_id = work_external_identifiers.work_id))) AND (EXISTS (
     SELECT 1
     FROM public.users
@@ -1893,14 +1891,14 @@ CHECK (((EXISTS (
 CREATE POLICY work_external_identifiers_select ON public.work_external_identifiers FOR SELECT TO reverie_app,
 reverie_readonly USING ((EXISTS (
     SELECT 1
-    FROM public.manifestations m
+    FROM public.manifestations AS m
     WHERE (m.work_id = work_external_identifiers.work_id)
 )));
 
 CREATE POLICY work_external_identifiers_update ON public.work_external_identifiers FOR UPDATE TO reverie_app
 USING (((EXISTS (
     SELECT 1
-    FROM public.manifestations m
+    FROM public.manifestations AS m
     WHERE (m.work_id = work_external_identifiers.work_id))) AND (EXISTS (
     SELECT 1
     FROM public.users
@@ -1915,7 +1913,7 @@ USING (((EXISTS (
     ])))
 )))) WITH CHECK (((EXISTS (
     SELECT 1
-    FROM public.manifestations m
+    FROM public.manifestations AS m
     WHERE (m.work_id = work_external_identifiers.work_id))) AND (EXISTS (
     SELECT 1
     FROM public.users
