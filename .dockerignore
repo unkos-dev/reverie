@@ -16,6 +16,12 @@ dist
 # Static-guard allowlists are lint policy read by scripts/backend-guards.sh,
 # never build input.
 backend/guards
+# User library/ingestion/quarantine data, when a dev override points a config
+# path (REVERIE_LIBRARY_PATH etc.) inside the checkout. Never build input,
+# and keeps user-uploaded content out of the build context.
+backend/library
+backend/ingestion
+backend/quarantine
 *.md
 !README.md
 LICENSE
