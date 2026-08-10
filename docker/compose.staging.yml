@@ -139,6 +139,17 @@ services:
     env_file:
       - path: .env.runtime
         required: true
+    # Host paths for the fixed container defaults the app now ships
+    # (/data/library, /data/ingestion, /data/quarantine,
+    # /data/recovery-pins — backend/src/config/mod.rs). Fixed container
+    # paths mean the runtime env never needs to carry them; only the host
+    # side is operator-configured, via `docker/.env` like REVERIE_VERSION.
+    # The one-shot migrate service needs none of these mounts.
+    volumes:
+      - ${REVERIE_LIBRARY_HOST_PATH:?required}:/data/library
+      - ${REVERIE_INGESTION_HOST_PATH:?required}:/data/ingestion
+      - ${REVERIE_QUARANTINE_HOST_PATH:?required}:/data/quarantine
+      - ${REVERIE_RECOVERY_PINS_HOST_PATH:?required}:/data/recovery-pins
     depends_on:
       reverie-postgres:
         condition: service_healthy
