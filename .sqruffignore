@@ -1,4 +1,3 @@
-# A psql script rather than SQL. Its `\gset` meta-command and `:'name'` variable
-# substitution are client-side constructs the SQL grammar cannot represent, and
-# sqruff's fixes rewrite both into forms psql no longer resolves.
+# psql scripts, not SQL: sqruff's fixes break `\gset` and `:'name'` substitution.
 docker/init-roles.sql
+backend/scripts/seed_library_50k.sql
