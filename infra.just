@@ -25,6 +25,14 @@ typos:
 yamllint:
     git ls-files -z '*.yml' '*.yaml' | xargs -0 -r yamllint
 
+# --config is explicit because sqruff also auto-discovers `.sqlfluff`. That file
+# belongs to Codacy, and any key `.sqruff` leaves unset would otherwise be taken
+# from it.
+# Lint every tracked SQL file against `.sqruff`.
+[group('infra')]
+sqruff:
+    git ls-files -z '*.sql' | xargs -0 -r sqruff lint --config .sqruff
+
 # Lint GitHub Actions workflow files.
 [group('infra')]
 actionlint:
@@ -269,7 +277,7 @@ no-plan-refs *files:
 #
 # Whole repo-lint surface (mirrors the CI repo-lint job).
 [group('infra')]
-lint: shellcheck hadolint typos yamllint actionlint prose vale-selftest vale-scope-test dco-selftest no-plan-refs-selftest no-issue-refs-selftest tool-pin-drift tool-pin-drift-selftest vp-pin-drift vp-pin-drift-selftest npm-pin-drift npm-pin-drift-selftest renovate-npm-manager-selftest just-reference-drift adr-frontmatter-selftest sanitize-sarif-severities-selftest filter-sarif-test-rules-selftest filter-sarif-unfixable-os-selftest greptile-config compose-dev-invariants compose-dev-invariants-selftest recipe-secret-echo-test dev-server-selftest backend-dev-env-selftest doctor-selftest db-ready-selftest require-disk-backed-selftest worktree-selftest worktree-base-selftest preflight-scope-selftest gate-run-selftest gate-detach-selftest cargo-locked-guard cargo-locked-guard-selftest lefthook-validate
+lint: shellcheck hadolint typos yamllint sqruff actionlint prose vale-selftest vale-scope-test dco-selftest no-plan-refs-selftest no-issue-refs-selftest tool-pin-drift tool-pin-drift-selftest vp-pin-drift vp-pin-drift-selftest npm-pin-drift npm-pin-drift-selftest renovate-npm-manager-selftest just-reference-drift adr-frontmatter-selftest sanitize-sarif-severities-selftest filter-sarif-test-rules-selftest filter-sarif-unfixable-os-selftest greptile-config compose-dev-invariants compose-dev-invariants-selftest recipe-secret-echo-test dev-server-selftest backend-dev-env-selftest doctor-selftest db-ready-selftest require-disk-backed-selftest worktree-selftest worktree-base-selftest preflight-scope-selftest gate-run-selftest gate-detach-selftest cargo-locked-guard cargo-locked-guard-selftest lefthook-validate
 
 # Infra has no formatter (oxfmt owns formatting via the JS plane), so check == lint.
 [group('infra')]

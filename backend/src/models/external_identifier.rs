@@ -1,7 +1,6 @@
 //! External-source identifier registry: work-level and manifestation-level
 //! tables holding one `external_id` per `(entity, scheme)`.
 //!
-//! Schema lives in migration `20260724120000_external_identifiers_ratings`.
 //! Unlike the ratings cache, identifiers are journal-integrated (each row
 //! carries a `source_version_id` pointer into `metadata_versions`) and are
 //! hand-editable through the metadata PATCH pipeline. Both tables enforce

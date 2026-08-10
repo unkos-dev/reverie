@@ -986,7 +986,7 @@ jobs:
         with:
           # renovate: datasource=github-releases depName=jdx/mise extractVersion=^v(?<version>.+)$
           version: "2026.8.2"
-          install_args: just shellcheck hadolint typos vale yamllint
+          install_args: just shellcheck hadolint typos vale yamllint github:quarylabs/sqruff
 
       - name: Shell lint (shellcheck)
         run: just infra::shellcheck
@@ -1029,6 +1029,9 @@ jobs:
 
       - name: YAML lint (yamllint)
         run: just infra::yamllint
+
+      - name: SQL lint (sqruff)
+        run: just infra::sqruff
 
       - uses: voidzero-dev/setup-vp@313600b80b104eadebb9111787d37a2e83e014ca # v1.17.0
         with:

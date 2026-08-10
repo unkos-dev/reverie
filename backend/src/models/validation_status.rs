@@ -26,14 +26,9 @@
 //! `adr/2026-05-28-validation-status-vocabulary.md`.
 //!
 //! Wire formats:
-//! - Postgres: `validation_status` ENUM type (see migration
-//!   `20260528153728_rename_validation_status_valid_to_clean.up.sql`, which
-//!   renames the value first created in
-//!   `20260526000000_initial_schema.up.sql`).
+//! - Postgres: `validation_status` ENUM type.
 //! - JSON: lowercase string —
-//!   `"pending"` | `"clean"` | `"repaired"` | `"degraded"` | `"failed"`
-//!   (`failed` added by migration
-//!   `20260610180000_validation_status_add_failed.up.sql`).
+//!   `"pending"` | `"clean"` | `"repaired"` | `"degraded"` | `"failed"`.
 
 /// Outcome of structural validation for a single manifestation.
 ///

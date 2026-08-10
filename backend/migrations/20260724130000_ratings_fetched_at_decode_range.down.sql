@@ -1,2 +1,0 @@
-ALTER TABLE public.manifestation_external_ratings
-    DROP CONSTRAINT manifestation_external_ratings_fetched_at_ts_decode_range;

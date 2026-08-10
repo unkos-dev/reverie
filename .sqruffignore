@@ -1,0 +1,3 @@
+# psql scripts, not SQL: sqruff's fixes break `\gset` and `:'name'` substitution.
+docker/init-roles.sql
+backend/scripts/seed_library_50k.sql

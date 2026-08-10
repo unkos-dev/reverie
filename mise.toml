@@ -24,6 +24,12 @@ zizmor = "1.29.0"
 # `tool-pin-drift` rejects a workflow pin of any mise-managed tool.
 "npm:npm" = "12.0.2"
 
+# SQL linter for backend/migrations, run by `just infra::sqruff`. No mise
+# registry shorthand exists, so it takes the explicit GitHub backend form.
+[tools."github:quarylabs/sqruff"]
+version = "0.39.0"
+filter_bins = "sqruff"
+
 # Prebuilt Rust tools used by local recipes. The GitHub backend enables
 # checksum and provenance verification when upstream publishes them.
 [tools."github:nextest-rs/nextest"]
