@@ -47,12 +47,10 @@ SELECT
     'Seeded Scrivener ' || lpad(a.n::text, 3, '0') AS sort_name
 FROM generate_series(1, 500) AS a (n);
 
--- 50,000 works. `first_author_sort_name` is app-maintained (no trigger --
--- see backend/src/models/work.rs::refresh_first_author_sort and the
--- backfill in migrations/20260706120000_contributors_subtitle_pages.up.sql),
--- so it is set directly here from the same deterministic author mapping
--- used for the work_authors insert below, rather than refreshed after the
--- fact.
+-- 50,000 works. `first_author_sort_name` is app-maintained, with no trigger
+-- behind it (see backend/src/models/work.rs::refresh_first_author_sort), so it
+-- is set directly here from the same deterministic author mapping used for the
+-- work_authors insert below.
 INSERT INTO works (title, sort_title, first_author_sort_name)
 SELECT
     'Seeded Tome ' || lpad(g.n::text, 5, '0') AS title,

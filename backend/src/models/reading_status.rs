@@ -2,8 +2,7 @@
 //! applied to `reading_state.status`.
 //!
 //! Wire formats:
-//! - Postgres: `reading_status` ENUM type (see migration
-//!   `20260703120000_reading_domain.up.sql`).
+//! - Postgres: `reading_status` ENUM type.
 //! - JSON: `snake_case` string:
 //!   `"want_to_read"` | `"reading"` | `"on_hold"` | `"finished"` | `"abandoned"`.
 

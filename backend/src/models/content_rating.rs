@@ -2,8 +2,7 @@
 //! applied to `manifestations.content_rating`.
 //!
 //! Wire formats:
-//! - Postgres: `content_rating` ENUM type (see migration
-//!   `20260707120000_genres_moods_content_rating.up.sql`).
+//! - Postgres: `content_rating` ENUM type.
 //! - JSON: `snake_case` string:
 //!   `"everyone"` | `"teen"` | `"mature"` | `"adult"` | `"explicit"`.
 

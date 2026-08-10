@@ -8,7 +8,7 @@
 //!
 //! Wire formats:
 //! - Postgres: `library_density` / `library_view` ENUM types and a nullable
-//!   `text` `sort_stack` (see migration `20260807120000_user_preferences`).
+//!   `text` `sort_stack`.
 //! - JSON: lowercase string literals.
 
 use crate::routes::sort_spec::{SortSpec, SortSpecError};

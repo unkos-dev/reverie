@@ -2,8 +2,7 @@
 //! applied to `work_authors.role`.
 //!
 //! Wire formats:
-//! - Postgres: `author_role` ENUM type (see migration
-//!   `20260526000000_initial_schema.up.sql`).
+//! - Postgres: `author_role` ENUM type.
 //! - JSON: `snake_case` string:
 //!   `"author"` | `"editor"` | `"translator"` | `"narrator"`.
 

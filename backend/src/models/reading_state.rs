@@ -1,11 +1,9 @@
 //! Reading state: per-`(user, manifestation)` status, rating, notes,
 //! progress, and reading dates.
 //!
-//! Schema lives in migration `20260428000001_activate_reading_state`
-//! (progress/last-read) extended by `20260703120000_reading_domain`
-//! (status/rating/notes/started_at/finished_at). Queries live in
-//! `routes::reading` and `routes::library`, not here; this module carries
-//! the wire DTOs, plus schema-level tests against the migrations.
+//! Queries live in `routes::reading` and `routes::library`, not here; this
+//! module carries the wire DTOs, plus schema-level tests against the
+//! migrations.
 //!
 //! Wire-format conventions follow the JSON-API conventions ADR
 //! (`adr/2026-05-22-json-api-conventions.md`): snake_case field names,

@@ -1,7 +1,8 @@
-# Local SQL lint config, used by `just infra::sqruff`. Codacy's SQLFluff reads
-# `.sqlfluff` instead; the two are kept consistent by hand, and the recipe names
-# this file explicitly so sqruff never falls back to the other one.
-[sqruff]
+# Config for Codacy's hosted SQLFluff analysis. Local linting uses sqruff and
+# `.sqruff`; the two files are kept consistent by hand.
+[sqlfluff]
+# Without an explicit dialect, Postgres DDL parses as ANSI SQL and valid syntax
+# is reported as parse errors.
 dialect = postgres
 # sqlx applies migration files literally, so no templating layer exists. The
 # default Jinja templater would fail any migration whose string literals
@@ -9,6 +10,6 @@ dialect = postgres
 templater = raw
 max_line_length = 120
 
-[sqruff:indentation]
+[sqlfluff:indentation]
 # Mirrors .editorconfig, which gives SQL the unqualified four-space indent.
 tab_space_size = 4

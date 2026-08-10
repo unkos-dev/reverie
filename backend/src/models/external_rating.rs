@@ -1,6 +1,5 @@
 //! Per-source aggregate ratings cache, keyed `(manifestation_id, source)`.
 //!
-//! Schema lives in migration `20260724120000_external_identifiers_ratings`.
 //! Ratings are a refreshable multi-source cache, deliberately modeled unlike
 //! identifiers: each provider is independently authoritative for its own
 //! scale, so there is no single canonical value to
