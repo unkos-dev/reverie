@@ -190,7 +190,8 @@ recipe-secret-echo-test:
 dev-server-selftest:
     scripts/dev-server-selftest.sh
 
-# Assert the backend dev recipes defer to `.env` instead of overriding it.
+# Assert the backend dev recipes resolve REVERIE_DEV_ENV without overriding
+# an already-set variable.
 [group('infra')]
 backend-dev-env-selftest:
     scripts/backend-dev-env-selftest.sh
