@@ -25,10 +25,13 @@ typos:
 yamllint:
     git ls-files -z '*.yml' '*.yaml' | xargs -0 -r yamllint
 
+# --config is explicit because sqruff also auto-discovers `.sqlfluff`. That file
+# belongs to Codacy, and any key `.sqruff` leaves unset would otherwise be taken
+# from it.
 # Lint every tracked SQL file against `.sqruff`.
 [group('infra')]
 sqruff:
-    git ls-files -z '*.sql' | xargs -0 -r sqruff lint
+    git ls-files -z '*.sql' | xargs -0 -r sqruff lint --config .sqruff
 
 # Lint GitHub Actions workflow files.
 [group('infra')]
