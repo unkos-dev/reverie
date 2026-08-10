@@ -3,7 +3,10 @@ dialect = postgres
 templater = raw
 
 rules = all
-exclude_rules = AL07,ST05,ST06
+# LT02 is excluded pending quarylabs/sqruff#2747: on a file this size sqruff
+# reports CREATE TABLE bodies as needing no indentation. SQLFluff still enforces
+# it via Codacy, so indentation stays checked.
+exclude_rules = AL07,ST05,ST06,LT02
 
 output_line_length = 120
 max_line_length = 120
