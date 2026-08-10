@@ -3,10 +3,8 @@
 # reliably reaches, and the copies fail in different ways when they disagree:
 #
 #   - `devDependencies.vite-plus` in the root and the frontend package drive
-#     the local node_modules/.bin/vp that every just recipe runs.
-#   - Each workflow carries its own VP_VERSION for the global vp setup-vp
-#     installs; a reusable or standalone workflow does not inherit ci.yml's
-#     env, so the pins are hand-copied.
+#     the local node_modules/.bin/vp that every just recipe runs, and are the
+#     version setup-vp resolves for CI when its `version:` input is omitted.
 #   - vp ships its vite fork under an npm alias, so both package files repeat
 #     the same version inside a `npm:@voidzero-dev/vite-plus-core@<v>` spec.
 #   - `overrides.vite` names the same package again. Renovate does not manage
@@ -17,6 +15,10 @@
 #     Renovate artifacts step and then every job that installs. Expressing it
 #     as npm's `$vite` reference makes the two impossible to desync; this
 #     guard keeps it in that form.
+#
+# Each workflow that installs vp also carries its own NODE_VERSION, because a
+# reusable or standalone workflow does not inherit ci.yml's env; those copies
+# are checked for consistency with each other below.
 set -euo pipefail
 
 fail=0
@@ -89,12 +91,11 @@ fi
 
 # Discover the workflows to check rather than listing them: a hand-kept census
 # silently excludes the next workflow someone adds, which is the one most
-# likely to carry a lagging copy. A file qualifies either by installing vp or
-# by declaring the pin, so neither half can hide from the other.
+# likely to carry a lagging NODE_VERSION copy.
 shopt -s nullglob
 workflows=()
 for f in .github/workflows/*.yml .github/workflows/*.yaml; do
-  if grep -q 'voidzero-dev/setup-vp' "$f" || [ "$(yq '.env.VP_VERSION' "$f")" != "null" ]; then
+  if grep -q 'voidzero-dev/setup-vp' "$f"; then
     workflows+=("$f")
   fi
 done
@@ -104,18 +105,14 @@ shopt -u nullglob
 # success having checked nothing, so treat "found none" as the discovery
 # pattern having gone stale, not as agreement.
 if [ "${#workflows[@]}" -eq 0 ]; then
-  echo "::error::no workflow installs vp or declares VP_VERSION, so this guard checked nothing; update the discovery pattern if setup-vp moved" >&2
+  echo "::error::no workflow installs vp, so this guard checked nothing; update the discovery pattern if setup-vp moved" >&2
   exit 1
 fi
 
 node_ref=""
 node_ref_file=""
 for f in "${workflows[@]}"; do
-  vp="$(yq '.env.VP_VERSION' "$f")"
   node_pin="$(yq '.env.NODE_VERSION' "$f")"
-  if [ "$vp" != "$ref" ]; then
-    err "$f" "VP_VERSION (${vp}) != vite-plus in package.json (${ref}); every workflow that installs vp carries its own copy, so keep them in lockstep"
-  fi
   # Shape-check before comparing. yq prints the string "null" for an absent
   # key, so pins missing everywhere would agree with each other and pass,
   # and setup-vp falls back to the latest LTS node when given no version:

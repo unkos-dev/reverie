@@ -14,8 +14,6 @@ on:
 permissions: {}
 
 env:
-  # renovate: datasource=npm depName=vite-plus
-  VP_VERSION: "0.2.8"
   # renovate: datasource=node-version depName=node
   NODE_VERSION: "24.18.1"
 
@@ -32,7 +30,6 @@ jobs:
 
       - uses: voidzero-dev/setup-vp@313600b80b104eadebb9111787d37a2e83e014ca # v1.17.0
         with:
-          version: ${{ env.VP_VERSION }}
           node-version: ${{ env.NODE_VERSION }}
           cache: true
 
