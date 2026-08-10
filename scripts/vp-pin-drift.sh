@@ -16,9 +16,10 @@
 #     as npm's `$vite` reference makes the two impossible to desync; this
 #     guard keeps it in that form.
 #
-# Each workflow that installs vp also carries its own NODE_VERSION, because a
-# reusable or standalone workflow does not inherit ci.yml's env; those copies
-# are checked for consistency with each other below.
+# This guard covers only the two package.json copies of the vite-plus
+# version, the vite alias spec each carries, and the overrides.vite
+# reference. node no longer has a copy here: it is pinned once in mise.toml
+# and tool-pin-drift.sh rejects any workflow re-pin of it.
 set -euo pipefail
 
 fail=0
@@ -89,47 +90,7 @@ if [ "$override" != "\$vite" ]; then
   err package.json "overrides.vite is '${override}', not the '\$vite' reference to the direct dependency; a literal spec lags the next vite-plus bump and npm then rejects the tree with EOVERRIDE"
 fi
 
-# Discover the workflows to check rather than listing them: a hand-kept census
-# silently excludes the next workflow someone adds, which is the one most
-# likely to carry a lagging NODE_VERSION copy.
-shopt -s nullglob
-workflows=()
-for f in .github/workflows/*.yml .github/workflows/*.yaml; do
-  if grep -q 'voidzero-dev/setup-vp' "$f"; then
-    workflows+=("$f")
-  fi
-done
-shopt -u nullglob
-
-# Fail closed. An empty census would make the loop below a no-op and report
-# success having checked nothing, so treat "found none" as the discovery
-# pattern having gone stale, not as agreement.
-if [ "${#workflows[@]}" -eq 0 ]; then
-  echo "::error::no workflow installs vp, so this guard checked nothing; update the discovery pattern if setup-vp moved" >&2
-  exit 1
-fi
-
-node_ref=""
-node_ref_file=""
-for f in "${workflows[@]}"; do
-  node_pin="$(yq '.env.NODE_VERSION' "$f")"
-  # Shape-check before comparing. yq prints the string "null" for an absent
-  # key, so pins missing everywhere would agree with each other and pass,
-  # and setup-vp falls back to the latest LTS node when given no version:
-  # the floating runtime the pin exists to prevent.
-  if ! exact_version "$node_pin"; then
-    err "$f" "NODE_VERSION is '${node_pin}': $(shape_hint "$node_pin"). Without a usable pin setup-vp resolves whatever node is latest LTS that day"
-    continue
-  fi
-  if [ -z "$node_ref" ]; then
-    node_ref="$node_pin"
-    node_ref_file="$f"
-  elif [ "$node_pin" != "$node_ref" ]; then
-    err "$f" "NODE_VERSION (${node_pin}) != the pin in ${node_ref_file} (${node_ref}); keep the node pins in lockstep"
-  fi
-done
-
 if [ "$fail" -ne 0 ]; then
   exit 1
 fi
-echo "vp pins agree (${ref}) across both package.json files, the vite alias, the npm override, and ${#workflows[@]} discovered workflows; node pins (${node_ref}) consistent"
+echo "vp pins agree (${ref}) across both package.json files, the vite alias, and the npm override"

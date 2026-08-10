@@ -55,4 +55,11 @@ expect "inline backend-prefixed inline pin rejected" 1 'run: npm install -g npm@
 expect "inline backend-prefixed annotation rejected" 1 '# renovate: datasource=npm depName=npm'
 expect "tool name without a version still passes" 0 'run: npm ci'
 
+# node is a mise-managed tool, so a workflow line re-pinning it must be
+# rejected like any other, in both shapes this guard matches: the depName
+# annotation and a literal at-pin.
+printf '[tools]\nnode = "24.18.1"\n' >"${tmp}/mise.toml"
+expect "node annotation pin rejected" 1 '# renovate: datasource=node-version depName=node'
+expect "node inline at-pin rejected" 1 'tool: node@24'
+
 exit "$fail"
