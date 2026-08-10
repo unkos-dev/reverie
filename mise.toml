@@ -17,9 +17,11 @@ zizmor = "1.29.0"
 # disagrees rather than honouring the declared `onFail: download`. Without
 # this entry a checkout falls through to whatever npm the ambient config
 # supplies, so a machine whose global pin has moved ahead can run neither
-# `npm install` nor any lefthook step that shells out to npm. CI is not a
-# backstop: every job installs through `vp install`, which never consults
-# devEngines. `npm-pin-drift` holds this in lockstep with package.json.
+# `npm install` nor any lefthook step that shells out to npm. The JS jobs in
+# CI hit the same wall through their bare `npx` invocations, because the npm
+# bundled with node lags this pin, so mise-action installs this entry
+# alongside node and the shim outranks the bundled copy on PATH.
+# `npm-pin-drift` holds this in lockstep with package.json.
 # mise owns the node pin the same way it owns npm above: CI provisions node
 # through jdx/mise-action, which reads this table, and setup-vp is told not
 # to manage node (node-manager: false) so the two installers cannot disagree.

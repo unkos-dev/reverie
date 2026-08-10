@@ -34,7 +34,7 @@ jobs:
         with:
           # renovate: datasource=github-releases depName=jdx/mise extractVersion=^v(?<version>.+)$
           version: "2026.8.2"
-          install_args: node
+          install_args: node "npm:npm"
           add_shims_to_path: true
 
       # No dependency cache: the deploy lane feeds the privileged Pages
