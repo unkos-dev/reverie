@@ -15,7 +15,7 @@ permissions: {}
 
 env:
   # renovate: datasource=npm depName=vite-plus
-  VP_VERSION: "0.2.7"
+  VP_VERSION: "0.2.8"
   # renovate: datasource=node-version depName=node
   NODE_VERSION: "24.18.1"
 
