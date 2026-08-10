@@ -723,11 +723,6 @@ fn resolve_migration_dsn(var: Option<String>) -> anyhow::Result<String> {
 ///   is treated as unset, mirroring [`Config::from_figment`]).
 /// - If the migration run fails (see [`db::MigrationError`]).
 pub async fn run_migrate() -> anyhow::Result<()> {
-    // run_migrate bypasses Config::from_env, which is where dotenv is normally
-    // loaded — so load it here too, or `cargo run -- migrate` would ignore a
-    // DATABASE_URL_MIGRATION set in the project .env and fail spuriously.
-    dotenvy::dotenv().ok();
-
     // run_migrate bypasses run(), where the tracing subscriber is normally
     // installed. Without one here, every event in this function AND inside
     // db::run_migrations drops silently, leaving the operator with only an
@@ -826,7 +821,6 @@ async fn seed_admin_if_configured(
 ///
 /// Returns an error on configuration load, database connection, or seed failure.
 pub async fn run_bootstrap() -> anyhow::Result<()> {
-    dotenvy::dotenv().ok();
     tracing_subscriber::fmt().try_init().ok();
     let config = config::Config::from_env().context("load configuration")?;
     let pool = db::init_pool(&config.database_url, 1)
@@ -854,7 +848,6 @@ pub async fn run_bootstrap() -> anyhow::Result<()> {
 /// Returns an error when the account is unknown, or on configuration, database,
 /// hashing, or file-write failure.
 pub async fn run_reset_password(email: &str) -> anyhow::Result<()> {
-    dotenvy::dotenv().ok();
     tracing_subscriber::fmt().try_init().ok();
     let config = config::Config::from_env().context("load configuration")?;
     let pool = db::init_pool(&config.database_url, 1)
@@ -909,7 +902,6 @@ pub async fn run_reset_password(email: &str) -> anyhow::Result<()> {
 ///
 /// Returns an error on configuration, database connection, or update failure.
 pub async fn run_unlock_account(email: &str) -> anyhow::Result<()> {
-    dotenvy::dotenv().ok();
     tracing_subscriber::fmt().try_init().ok();
     let config = config::Config::from_env().context("load configuration")?;
     let pool = db::init_pool(&config.database_url, 1)

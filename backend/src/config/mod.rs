@@ -114,14 +114,14 @@ pub struct Config {
     /// transactions through [`crate::db::acquire_with_rls`].
     pub database_url: String,
     /// Filesystem root for persisted manifestation files
-    /// (`REVERIE_LIBRARY_PATH`, default `./library`). The OPDS download
+    /// (`REVERIE_LIBRARY_PATH`, default `/data/library`). The OPDS download
     /// handler canonicalises file paths against this root.
     pub library_path: String,
     /// Watched ingestion drop directory (`REVERIE_INGESTION_PATH`,
-    /// default `./ingestion`). The watcher consumes files from here.
+    /// default `/data/ingestion`). The watcher consumes files from here.
     pub ingestion_path: String,
     /// Failed-ingestion quarantine directory
-    /// (`REVERIE_QUARANTINE_PATH`, default `./quarantine`).
+    /// (`REVERIE_QUARANTINE_PATH`, default `/data/quarantine`).
     pub quarantine_path: String,
     /// Log-filter directive resolved from the environment with cascading
     /// precedence: `REVERIE_LOG_LEVEL` > `RUST_LOG` > `"info"`. The
@@ -201,7 +201,7 @@ pub struct Config {
     /// Directory the clear recovery PIN is written into, one file per user at
     /// `<dir>/<user_id>.pin` (file mode 0600, directory mode 0700), for an
     /// operator to read and relay (`REVERIE_RECOVERY_PIN_DIR`, default
-    /// `./reverie-recovery`). Per-user files keep concurrent recoveries from
+    /// `/data/recovery-pins`). Per-user files keep concurrent recoveries from
     /// colliding. MUST be outside any web-served directory; the database stores
     /// only the PIN's Argon2id hash.
     pub recovery_pin_dir: String,
@@ -474,8 +474,10 @@ pub enum ConfigError {
 }
 
 impl Config {
-    /// Public entry point for production: loads `.env` (best-effort) then
-    /// reads from the process environment through the figment pipeline.
+    /// Public entry point for production: reads from the process environment
+    /// through the figment pipeline. The binary discovers no env file itself;
+    /// populating the process environment is the caller's responsibility (a
+    /// container's declared environment, or a sourced dev env file).
     ///
     /// # Errors
     ///
@@ -489,7 +491,6 @@ impl Config {
     /// variant carries the offending variable name so the surfaced
     /// operator-facing message is actionable.
     pub fn from_env() -> Result<Self, ConfigError> {
-        dotenvy::dotenv().ok();
         Self::from_figment(&Figment::from(EnvProvider::from_process_env()))
     }
 
@@ -804,9 +805,9 @@ impl Default for Config {
             port: 3000,
             // REQUIRED — empty sentinel; reviewer handles MissingVar (GOTCHA-REQUIRED).
             database_url: String::new(),
-            library_path: "./library".into(),
-            ingestion_path: "./ingestion".into(),
-            quarantine_path: "./quarantine".into(),
+            library_path: "/data/library".into(),
+            ingestion_path: "/data/ingestion".into(),
+            quarantine_path: "/data/quarantine".into(),
             log_level: "info".into(),
             db_max_connections: 10,
             login_rate_per_min: 10,
@@ -819,7 +820,7 @@ impl Default for Config {
             password_breach_check_url: "https://api.pwnedpasswords.com/range".into(),
             self_registration_enabled: false,
             recovery_pin_ttl_secs: 900,
-            recovery_pin_dir: "./reverie-recovery".into(),
+            recovery_pin_dir: "/data/recovery-pins".into(),
             trusted_client_ip_header: None,
             // REQUIRED — empty sentinels.
             oidc_issuer_url: String::new(),
@@ -964,9 +965,10 @@ mod tests {
         let config = cfg_from(BASE_VARS).unwrap();
         assert_eq!(config.port, 3000);
         assert_eq!(config.database_url, "postgres://test@localhost/reverie_dev");
-        assert_eq!(config.library_path, "./library");
-        assert_eq!(config.ingestion_path, "./ingestion");
-        assert_eq!(config.quarantine_path, "./quarantine");
+        assert_eq!(config.library_path, "/data/library");
+        assert_eq!(config.ingestion_path, "/data/ingestion");
+        assert_eq!(config.quarantine_path, "/data/quarantine");
+        assert_eq!(config.recovery_pin_dir, "/data/recovery-pins");
         // BASE_VARS exports DATABASE_URL_MIGRATION but leaves REVERIE_AUTO_MIGRATE
         // unset (off), so the DSN is intentionally NOT carried into Config.
         assert_eq!(config.migration_database_url, None);
