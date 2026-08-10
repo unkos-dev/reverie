@@ -43,9 +43,9 @@ END $$;
 -- sort=author has realistic cardinality instead of one giant tie group.
 INSERT INTO authors (name, sort_name)
 SELECT
-    'Seeded Scrivener ' || lpad(a.n::text, 3, '0'),
-    'Seeded Scrivener ' || lpad(a.n::text, 3, '0')
-FROM generate_series(1, 500) AS a(n);
+    'Seeded Scrivener ' || lpad(a.n::text, 3, '0') AS name,
+    'Seeded Scrivener ' || lpad(a.n::text, 3, '0') AS sort_name
+FROM generate_series(1, 500) AS a (n);
 
 -- 50,000 works. `first_author_sort_name` is app-maintained (no trigger --
 -- see backend/src/models/work.rs::refresh_first_author_sort and the
@@ -55,10 +55,11 @@ FROM generate_series(1, 500) AS a(n);
 -- fact.
 INSERT INTO works (title, sort_title, first_author_sort_name)
 SELECT
-    'Seeded Tome ' || lpad(g.n::text, 5, '0'),
-    'Seeded Tome ' || lpad(g.n::text, 5, '0'),
+    'Seeded Tome ' || lpad(g.n::text, 5, '0') AS title,
+    'Seeded Tome ' || lpad(g.n::text, 5, '0') AS sort_title,
     'Seeded Scrivener ' || lpad((((g.n - 1) % 500) + 1)::text, 3, '0')
-FROM generate_series(1, 50000) AS g(n);
+    AS first_author_sort_name
+FROM generate_series(1, 50000) AS g (n);
 
 -- One author per work. Joined on `sort_name` (unique among the 500
 -- seeded authors) rather than a row_number()/uuidv7 ordering trick --
@@ -67,11 +68,16 @@ FROM generate_series(1, 50000) AS g(n);
 -- against the `first_author_sort_name` already set above. Matching on
 -- the value we deterministically derived keeps both self-consistent.
 INSERT INTO work_authors (work_id, author_id, role, position)
-SELECT w.id, a.id, 'author'::author_role, 0
+SELECT
+    w.id AS work_id,
+    a.id AS author_id,
+    'author'::author_role AS role,
+    0 AS position
 FROM works w
 JOIN authors a
-    ON a.sort_name = w.first_author_sort_name
-   AND a.name LIKE 'Seeded Scrivener %'
+    ON
+        a.sort_name = w.first_author_sort_name
+        AND a.name LIKE 'Seeded Scrivener %'
 WHERE w.title LIKE 'Seeded Tome %';
 
 -- 50,000 manifestations, one per seeded work. `file_path` and both hash
@@ -79,17 +85,19 @@ WHERE w.title LIKE 'Seeded Tome %';
 -- id isn't available until after the row exists, and one manifestation
 -- per work makes the work id equally unique per row.
 INSERT INTO manifestations
-    (work_id, format, file_path, ingestion_file_hash, current_file_hash,
-     file_size_bytes, ingestion_status, validation_status)
+(
+    work_id, format, file_path, ingestion_file_hash, current_file_hash,
+    file_size_bytes, ingestion_status, validation_status
+)
 SELECT
-    w.id,
-    'epub'::manifestation_format,
-    '/seed/seed-' || w.id || '.epub',
-    'seed-hash-' || w.id,
-    'seed-hash-' || w.id,
-    1000,
-    'complete'::ingestion_status,
-    'clean'::validation_status
+    w.id AS work_id,
+    'epub'::manifestation_format AS format,
+    '/seed/seed-' || w.id || '.epub' AS file_path,
+    'seed-hash-' || w.id AS ingestion_file_hash,
+    'seed-hash-' || w.id AS current_file_hash,
+    1000 AS file_size_bytes,
+    'complete'::ingestion_status AS ingestion_status,
+    'clean'::validation_status AS validation_status
 FROM works w
 WHERE w.title LIKE 'Seeded Tome %';
 

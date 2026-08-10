@@ -1,0 +1,12 @@
+# Local SQL lint config. Codacy's SQLFluff analysis is configured in Codacy and
+# reads nothing from this repository.
+[sqruff]
+dialect = postgres
+# sqlx applies migration files literally, so no templating layer exists. The
+# default Jinja templater would fail any migration whose string literals
+# contain a Jinja delimiter.
+templater = raw
+
+[sqruff:indentation]
+# Mirrors .editorconfig, which gives SQL the unqualified four-space indent.
+tab_space_size = 4

@@ -1,0 +1,4 @@
+# A psql script rather than SQL. Its `\gset` meta-command and `:'name'` variable
+# substitution are client-side constructs the SQL grammar cannot represent, and
+# sqruff's fixes rewrite both into forms psql no longer resolves.
+docker/init-roles.sql
