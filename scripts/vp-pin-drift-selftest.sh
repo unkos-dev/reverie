@@ -15,10 +15,11 @@ ALIAS="npm:@voidzero-dev/vite-plus-core@${REF}"
 
 NODE="24.18.0"
 
-# A workflow the guard should discover: it installs vp and carries both pins.
+# A workflow the guard should discover: it installs vp with no version:
+# input and carries a NODE_VERSION pin.
 workflow() {
-  printf 'env:\n  VP_VERSION: "%s"\n  NODE_VERSION: "%s"\njobs:\n  build:\n    steps:\n      - uses: voidzero-dev/setup-vp@250f29c\n' \
-    "$1" "$2" >"$3"
+  printf 'env:\n  NODE_VERSION: "%s"\njobs:\n  build:\n    steps:\n      - uses: voidzero-dev/setup-vp@250f29c\n' \
+    "$1" >"$2"
 }
 
 baseline() {
@@ -31,7 +32,7 @@ baseline() {
   rm -f "${tmp}"/.github/workflows/*.yml "${tmp}"/.github/workflows/*.yaml
   local f
   for f in ci docs-build scheduled-audit; do
-    workflow "$REF" "$NODE" "${tmp}/.github/workflows/${f}.yml"
+    workflow "$NODE" "${tmp}/.github/workflows/${f}.yml"
   done
 }
 
@@ -99,45 +100,41 @@ edit_json "${tmp}/package.json" 'del(.overrides.vite)'
 expect "missing override rejected" 1
 
 baseline
-workflow "0.2.5" "$NODE" "${tmp}/.github/workflows/docs-build.yml"
-expect "workflow VP_VERSION lagging rejected" 1
-
-baseline
-workflow "$REF" "24.17.0" "${tmp}/.github/workflows/scheduled-audit.yml"
+workflow "24.17.0" "${tmp}/.github/workflows/scheduled-audit.yml"
 expect "workflow NODE_VERSION disagreeing rejected" 1
 
 # The census is discovered, not listed, so a workflow added later is covered
 # without touching this guard.
 baseline
-workflow "0.2.5" "$NODE" "${tmp}/.github/workflows/newcomer.yml"
-expect "newly added workflow discovered and its lagging pin rejected" 1
+workflow "24.17.0" "${tmp}/.github/workflows/newcomer.yml"
+expect "newly added workflow discovered and its disagreeing pin rejected" 1
 
 baseline
-workflow "$REF" "$NODE" "${tmp}/.github/workflows/newcomer.yml"
+workflow "$NODE" "${tmp}/.github/workflows/newcomer.yml"
 expect "newly added workflow with agreeing pins passes" 0
 
-# Discovery must not sweep in workflows that neither install vp nor pin it.
+# Discovery must not sweep in workflows that do not install vp.
 baseline
 printf 'jobs:\n  build:\n    steps:\n      - uses: actions/checkout@v7\n' \
   >"${tmp}/.github/workflows/unrelated.yml"
-expect "workflow that neither installs nor pins vp ignored" 0
+expect "workflow that does not install vp ignored" 0
 
 # yq prints "null" for an absent key, so pins missing everywhere would agree
 # with each other; setup-vp then resolves the latest LTS node instead.
 baseline
 for f in ci docs-build scheduled-audit; do
-  printf 'env:\n  VP_VERSION: "%s"\njobs:\n  build:\n    steps:\n      - uses: voidzero-dev/setup-vp@250f29c\n' \
-    "$REF" >"${tmp}/.github/workflows/${f}.yml"
+  printf 'jobs:\n  build:\n    steps:\n      - uses: voidzero-dev/setup-vp@250f29c\n' \
+    >"${tmp}/.github/workflows/${f}.yml"
 done
 expect "NODE_VERSION missing from every workflow rejected" 1
 
 baseline
-printf 'env:\n  VP_VERSION: "%s"\njobs:\n  build:\n    steps:\n      - uses: voidzero-dev/setup-vp@250f29c\n' \
-  "$REF" >"${tmp}/.github/workflows/docs-build.yml"
+printf 'jobs:\n  build:\n    steps:\n      - uses: voidzero-dev/setup-vp@250f29c\n' \
+  >"${tmp}/.github/workflows/docs-build.yml"
 expect "NODE_VERSION missing from one workflow rejected" 1
 
 baseline
-workflow "$REF" "24" "${tmp}/.github/workflows/ci.yml"
+workflow "24" "${tmp}/.github/workflows/ci.yml"
 expect "NODE_VERSION without a patch level rejected" 1
 
 # An empty census means the discovery pattern went stale, not that the pins
@@ -166,7 +163,7 @@ consistent_tree() {
     >"${tmp}/frontend/package.json"
   rm -f "${tmp}"/.github/workflows/*.yml "${tmp}"/.github/workflows/*.yaml
   for f in ci docs-build scheduled-audit; do
-    workflow "$v" "${2:-$NODE}" "${tmp}/.github/workflows/${f}.yml"
+    workflow "${2:-$NODE}" "${tmp}/.github/workflows/${f}.yml"
   done
 }
 
@@ -180,7 +177,7 @@ done
 for bad in "24.18.0-rc" "24.18.0junk" "24x.18.0" "24.18.0.1" "v24.18.0"; do
   baseline
   for f in ci docs-build scheduled-audit; do
-    workflow "$REF" "$bad" "${tmp}/.github/workflows/${f}.yml"
+    workflow "$bad" "${tmp}/.github/workflows/${f}.yml"
   done
   expect "malformed NODE_VERSION (${bad}) rejected" 1
 done
@@ -203,7 +200,7 @@ expect_message "prerelease vite-plus pin names itself as the cause" \
 
 baseline
 for f in ci docs-build scheduled-audit; do
-  workflow "$REF" "24.18.0-rc" "${tmp}/.github/workflows/${f}.yml"
+  workflow "24.18.0-rc" "${tmp}/.github/workflows/${f}.yml"
 done
 expect_message "prerelease NODE_VERSION names itself as the cause" \
   "prereleases are rejected by policy"
@@ -231,7 +228,7 @@ done
 
 baseline
 for f in ci docs-build scheduled-audit; do
-  workflow "$REF" "24-18-0" "${tmp}/.github/workflows/${f}.yml"
+  workflow "24-18-0" "${tmp}/.github/workflows/${f}.yml"
 done
 expect_no_message "malformed NODE_VERSION (24-18-0) is not called a prerelease" \
   "prereleases are rejected"

@@ -23,12 +23,6 @@ concurrency:
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 env:
-  # Single source for the global vp version setup-vp installs. The repo-lint
-  # drift guard ties it to package.json's vite-plus devDependency (the local
-  # node_modules/.bin/vp every recipe actually runs); Renovate bumps both in
-  # the grouped vite-plus PR.
-  # renovate: datasource=npm depName=vite-plus
-  VP_VERSION: "0.2.8"
   # Single node pin for CI, replacing the seven hand-copied node-version
   # inputs Renovate never tracked. engines.node and the Dockerfile base image
   # stay separately Renovate-managed.
@@ -841,7 +835,6 @@ jobs:
 
       - uses: voidzero-dev/setup-vp@313600b80b104eadebb9111787d37a2e83e014ca # v1.17.0
         with:
-          version: ${{ env.VP_VERSION }}
           node-version: ${{ env.NODE_VERSION }}
           cache: true
 
@@ -1035,7 +1028,6 @@ jobs:
 
       - uses: voidzero-dev/setup-vp@313600b80b104eadebb9111787d37a2e83e014ca # v1.17.0
         with:
-          version: ${{ env.VP_VERSION }}
           node-version: ${{ env.NODE_VERSION }}
           cache: true
 
@@ -1181,7 +1173,6 @@ jobs:
 
       - uses: voidzero-dev/setup-vp@313600b80b104eadebb9111787d37a2e83e014ca # v1.17.0
         with:
-          version: ${{ env.VP_VERSION }}
           node-version: ${{ env.NODE_VERSION }}
           cache: true
 
@@ -1255,7 +1246,6 @@ jobs:
 
       - uses: voidzero-dev/setup-vp@313600b80b104eadebb9111787d37a2e83e014ca # v1.17.0
         with:
-          version: ${{ env.VP_VERSION }}
           node-version: ${{ env.NODE_VERSION }}
           cache: true
 
@@ -1550,7 +1540,6 @@ jobs:
 
       - uses: voidzero-dev/setup-vp@313600b80b104eadebb9111787d37a2e83e014ca # v1.17.0
         with:
-          version: ${{ env.VP_VERSION }}
           node-version: ${{ env.NODE_VERSION }}
           cache: true
 
