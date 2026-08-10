@@ -71,8 +71,8 @@ SELECT
     a.id AS author_id,
     'author'::author_role AS role,
     0 AS position
-FROM works w
-JOIN authors a
+FROM works AS w
+JOIN authors AS a
     ON
         a.sort_name = w.first_author_sort_name
         AND a.name LIKE 'Seeded Scrivener %'
@@ -96,7 +96,7 @@ SELECT
     1000 AS file_size_bytes,
     'complete'::ingestion_status AS ingestion_status,
     'clean'::validation_status AS validation_status
-FROM works w
+FROM works AS w
 WHERE w.title LIKE 'Seeded Tome %';
 
 ANALYZE works, manifestations, work_authors;
