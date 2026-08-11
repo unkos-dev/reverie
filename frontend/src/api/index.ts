@@ -4,7 +4,7 @@
  * naming the submodule. Internal helpers (request building, CSRF
  * cache mutation) stay private to their own files.
  */
-export { ApiError } from "./errors";
+export { ApiError, IF_MATCH_MISMATCH_SLUG, isIfMatchMismatch } from "./errors";
 export { apiFetch } from "./fetch";
 export { getCsrfToken, refreshCsrfToken } from "./csrf";
 export {

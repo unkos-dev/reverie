@@ -190,6 +190,25 @@ function getUndoAction(callIndex: number): () => void {
   };
 }
 
+/** Same extraction as {@link getUndoAction}, for the conflict toast raised
+ *  through `toast.error` rather than `toast.success`. */
+function getErrorAction(callIndex: number): () => void {
+  const call = vi.mocked(toast.error).mock.calls[callIndex];
+  const action = call[1]?.action;
+  if (
+    action === undefined ||
+    action === null ||
+    typeof action !== "object" ||
+    !("onClick" in action)
+  ) {
+    throw new Error("expected a reload action on this toast");
+  }
+  const { onClick } = action;
+  return () => {
+    onClick({} as MouseEvent<HTMLButtonElement>);
+  };
+}
+
 describe("useCellEdit", () => {
   test("a metadata column commits through updateBookMetadata, never updateReadingState", async () => {
     const client = makeClient();
@@ -921,5 +940,94 @@ describe("useCellEdit", () => {
     await waitFor(() => {
       expect(revertField).toHaveBeenCalledWith(row.id, "subtitle", "v-prev");
     });
+  });
+
+  test("a 412 metadata conflict offers a reload action instead of the generic error, and does not push an undo entry", async () => {
+    const client = makeClient();
+    const invalidateSpy = vi.spyOn(client, "invalidateQueries");
+    const row = rowFixture();
+    seedCache(client, [row]);
+    vi.mocked(updateBookMetadata).mockRejectedValue(
+      new ApiError(
+        412,
+        "https://reverie.example/probs/if-match-mismatch",
+        "Precondition Failed",
+        "",
+      ),
+    );
+    const report: CellEditReport<BookListItem> = {
+      row: { ...row, title: "New Title" },
+      previousRow: row,
+      columnKey: "title",
+    };
+    renderHarness(client, [report]);
+    await userEvent.setup().click(screen.getByRole("button", { name: "edit-0" }));
+
+    await waitFor(() => {
+      expect(toast.error).toHaveBeenCalledWith(
+        "This book changed elsewhere. Reload to see the latest values before retrying.",
+        expect.objectContaining({ action: expect.anything() as unknown }),
+      );
+    });
+
+    getErrorAction(0)();
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: LIST_KEY });
+    // "title" is work-scoped, so the reload fans out to the whole detail
+    // family rather than a single manifestation's key.
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: queryKeys.books.detailsAll });
+    // No Ctrl+Z affordance for a write that never applied.
+    fireEvent.keyDown(screen.getByTestId("wrapper"), { key: "z", ctrlKey: true });
+    expect(updateBookMetadata).toHaveBeenCalledTimes(1);
+  });
+
+  test("a 412 reading conflict offers a reload action scoped to the manifestation's own detail query", async () => {
+    const client = makeClient();
+    const invalidateSpy = vi.spyOn(client, "invalidateQueries");
+    const row = rowFixture({
+      reading_state: {
+        status: "reading",
+        rating: 3,
+        progress_pct: 40,
+        started_at: null,
+        finished_at: null,
+      },
+    });
+    seedCache(client, [row]);
+    vi.mocked(updateReadingState).mockRejectedValue(
+      new ApiError(
+        412,
+        "https://reverie.example/probs/if-match-mismatch",
+        "Precondition Failed",
+        "",
+      ),
+    );
+    const report: CellEditReport<BookListItem> = {
+      row: {
+        ...row,
+        reading_state: {
+          status: "reading",
+          rating: 5,
+          progress_pct: 40,
+          started_at: null,
+          finished_at: null,
+        },
+      },
+      previousRow: row,
+      columnKey: "rating",
+    };
+    renderHarness(client, [report]);
+    await userEvent.setup().click(screen.getByRole("button", { name: "edit-0" }));
+
+    await waitFor(() => {
+      expect(toast.error).toHaveBeenCalledWith(
+        "This book changed elsewhere. Reload to see the latest values before retrying.",
+        expect.objectContaining({ action: expect.anything() as unknown }),
+      );
+    });
+
+    getErrorAction(0)();
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: LIST_KEY });
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: queryKeys.books.detail(row.id) });
+    expect(invalidateSpy).not.toHaveBeenCalledWith({ queryKey: queryKeys.books.detailsAll });
   });
 });

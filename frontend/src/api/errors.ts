@@ -1,4 +1,13 @@
 /**
+ * Problem-type slug for an `If-Match` optimistic-concurrency conflict.
+ * Emitted with HTTP 412 by `backend/src/routes/etag.rs`'s protected PATCH
+ * surfaces (reading state, metadata); the 412 response also carries the
+ * resource's current `ETag` so the caller can resync without a follow-up
+ * GET.
+ */
+export const IF_MATCH_MISMATCH_SLUG = "if-match-mismatch";
+
+/**
  * Typed error class for failed API requests.
  *
  * Parses RFC 9457 Problem Details responses (`application/problem+json`)
@@ -56,4 +65,11 @@ export class ApiError extends Error {
     const i = this.type.lastIndexOf("/");
     return i >= 0 ? this.type.slice(i + 1) : this.type;
   }
+}
+
+/** True when `err` is a 412 `If-Match` conflict from a protected PATCH. */
+export function isIfMatchMismatch(err: unknown): boolean {
+  return (
+    err instanceof ApiError && err.status === 412 && err.problemSlug === IF_MATCH_MISMATCH_SLUG
+  );
 }

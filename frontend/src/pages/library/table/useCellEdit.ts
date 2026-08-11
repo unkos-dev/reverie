@@ -25,6 +25,7 @@ import { toast } from "sonner";
 
 import {
   ApiError,
+  isIfMatchMismatch,
   revertField,
   updateBookMetadata,
   type BookListItem,
@@ -417,6 +418,22 @@ export function useCellEdit({ listKey, columns }: UseCellEditOptions): UseCellEd
     }
   }
 
+  /** A stale If-Match: the row's cached value predates a write from
+   *  elsewhere. There is no merge UI, so the affordance is a reload of the
+   *  caches this edit would otherwise have touched, offered rather than
+   *  applied automatically since the operator was mid-edit. */
+  function announceConflict(manifestationId: string, workScoped: boolean): void {
+    toast.error("This book changed elsewhere. Reload to see the latest values before retrying.", {
+      action: {
+        label: "Reload",
+        onClick: () => {
+          void queryClient.invalidateQueries({ queryKey: listKey });
+          invalidateAffectedDetails(queryClient, manifestationId, workScoped);
+        },
+      },
+    });
+  }
+
   function announceSuccess(columnKey: EditableColumnKey, entry: UndoEntry | null): void {
     const label = COLUMN_LABELS[columnKey];
     if (entry === null) {
@@ -480,7 +497,11 @@ export function useCellEdit({ listKey, columns }: UseCellEditOptions): UseCellEd
       } catch (err) {
         clearPending(key);
         console.error("[useCellEdit.onCellEdit] metadata mutation failed", err);
-        toast.error(formatError(err));
+        if (isIfMatchMismatch(err)) {
+          announceConflict(row.id, route.workScoped);
+        } else {
+          toast.error(formatError(err));
+        }
       }
       return;
     }
@@ -511,7 +532,11 @@ export function useCellEdit({ listKey, columns }: UseCellEditOptions): UseCellEd
     } catch (err) {
       clearPending(key);
       console.error("[useCellEdit.onCellEdit] reading mutation failed", err);
-      toast.error(formatError(err));
+      if (isIfMatchMismatch(err)) {
+        announceConflict(row.id, false);
+      } else {
+        toast.error(formatError(err));
+      }
     }
   }
 

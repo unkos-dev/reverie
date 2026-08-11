@@ -18,6 +18,14 @@
  *    funnelled into {@link ApiError} so callers branch on `.status` /
  *    `.problemSlug` instead of re-parsing JSON.
  *
+ * 4. **If-Match ETag retention** — a GET or PATCH response carrying an
+ *    `ETag` for a protected resource (the reading-state and metadata PATCH
+ *    surfaces; see `etags.ts`) is cached by resource identity and echoed
+ *    back as `If-Match` on that resource's next PATCH. Captured from every
+ *    response regardless of status, so a `412`'s current tag replaces a
+ *    stale one without a follow-up GET. Every other endpoint, including
+ *    the shelves reorder PUT's own `If-Match` scheme, is untouched.
+ *
  * Out of scope: route-level retries, request deduplication (react-query
  * owns that), suspense/loading state (react-query owns that too).
  */
@@ -25,6 +33,7 @@ import { z } from "zod";
 
 import { ApiError } from "./errors";
 import { getCsrfToken, refreshCsrfToken } from "./csrf";
+import { etagKeyForPath, getRememberedEtag, rememberEtag } from "./etags";
 
 const MUTATING_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 
@@ -81,6 +90,7 @@ export async function apiFetch(input: RequestInfo | URL, init?: RequestInit): Pr
   if (mutating && getCsrfToken() === null) await refreshCsrfToken(init?.signal ?? undefined);
 
   const response = await sendRequest(input, init, method, mutating);
+  captureEtag(input, response);
   if ((response.status === 403 || response.status === 428) && mutating) {
     const problem = await peekProblem(response);
     const slug = problem?.type;
@@ -95,11 +105,31 @@ export async function apiFetch(input: RequestInfo | URL, init?: RequestInit): Pr
       // Signal forwarded so an abort mid-retry cancels the refresh too.
       await refreshCsrfToken(init?.signal ?? undefined);
       const retried = await sendRequest(input, init, method, mutating);
+      captureEtag(input, retried);
       return decodeSuccess(retried);
     }
     throw problemToApiError(response.status, response.statusText, problem);
   }
   return decodeSuccess(response);
+}
+
+/** Resolve a `fetch()` input to the pathname `etagKeyForPath` matches on. */
+function pathnameOf(input: RequestInfo | URL): string {
+  const url = typeof input === "string" || input instanceof URL ? input : input.url;
+  return new URL(url, window.location.origin).pathname;
+}
+
+/**
+ * Cache a response's `ETag` header against its request path, when the path
+ * is one of the resources `etags.ts` protects. Called for every response
+ * regardless of status: a `412`'s current tag must overwrite the stale one
+ * that provoked it, same as a `200`'s.
+ */
+function captureEtag(input: RequestInfo | URL, response: Response): void {
+  const etag = response.headers.get("ETag");
+  if (etag === null) return;
+  const key = etagKeyForPath(pathnameOf(input));
+  if (key !== null) rememberEtag(key, etag);
 }
 
 /**
@@ -162,6 +192,17 @@ async function sendRequest(
     // not authenticated" rather than silently sending a blank header.
     if (!headers.has("Content-Type") && init?.body !== undefined && init.body !== null) {
       headers.set("Content-Type", "application/json");
+    }
+  }
+  // Auto-echo a retained ETag as If-Match on that resource's own PATCH.
+  // Scoped to PATCH so the shelves reorder PUT (which sets its own
+  // timestamp-derived If-Match) is never touched, and a caller-set header
+  // always wins over the cache.
+  if (method === "PATCH" && !headers.has("If-Match")) {
+    const key = etagKeyForPath(pathnameOf(input));
+    if (key !== null) {
+      const etag = getRememberedEtag(key);
+      if (etag !== null) headers.set("If-Match", etag);
     }
   }
   // Re-tag method explicitly so callers that omit `method` still emit

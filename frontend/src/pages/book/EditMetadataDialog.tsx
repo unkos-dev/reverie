@@ -23,6 +23,7 @@ import { toast } from "sonner";
 import {
   ApiError,
   UpdateBookMetadataFieldsSchema,
+  isIfMatchMismatch,
   updateBookMetadata,
   type UpdateBookMetadataFields,
 } from "@/api";
@@ -136,6 +137,19 @@ function EditMetadataForm({
     },
     onError: (err: unknown) => {
       console.error("[EditMetadataDialog.updateBookMetadata] mutation failed", err);
+      if (isIfMatchMismatch(err)) {
+        // The 412 already carries the current ETag (captured by apiFetch),
+        // so a plain refetch is enough to resync; no merge UI. The sheet
+        // closes because its fields seed from `book` at mount time and
+        // won't pick up the refetch while still open.
+        void queryClient.invalidateQueries({
+          queryKey: queryKeys.books.detail(manifestationId),
+        });
+        toast.error("This book's metadata changed elsewhere.", {
+          action: { label: "Reload latest", onClick: onDone },
+        });
+        return;
+      }
       toast.error(formatError(err));
     },
   });
