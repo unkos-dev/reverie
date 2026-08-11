@@ -1,0 +1,161 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT w.id             AS \"work_id!\",\n               w.title          AS \"title!\",\n               w.subtitle       AS subtitle,\n               w.description    AS description,\n               w.language       AS language,\n               m.publisher      AS publisher,\n               m.pub_date       AS pub_date,\n               m.isbn_10        AS isbn_10,\n               m.isbn_13        AS isbn_13,\n               m.pages          AS pages,\n               m.content_rating AS \"content_rating: ContentRating\"\n          FROM manifestations m\n          JOIN works w ON w.id = m.work_id\n         WHERE m.id = $1\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "work_id!",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "works",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "title!",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "works",
+            "name": "title"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "subtitle",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "works",
+            "name": "subtitle"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "description",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "works",
+            "name": "description"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "language",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "works",
+            "name": "language"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "publisher",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "manifestations",
+            "name": "publisher"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "pub_date",
+        "type_info": "Date",
+        "origin": {
+          "Table": {
+            "table": "manifestations",
+            "name": "pub_date"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "isbn_10",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "manifestations",
+            "name": "isbn_10"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "isbn_13",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "manifestations",
+            "name": "isbn_13"
+          }
+        }
+      },
+      {
+        "ordinal": 9,
+        "name": "pages",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "manifestations",
+            "name": "pages"
+          }
+        }
+      },
+      {
+        "ordinal": 10,
+        "name": "content_rating: ContentRating",
+        "type_info": {
+          "Custom": {
+            "name": "content_rating",
+            "kind": {
+              "Enum": [
+                "everyone",
+                "teen",
+                "mature",
+                "adult",
+                "explicit"
+              ]
+            }
+          }
+        },
+        "origin": {
+          "Table": {
+            "table": "manifestations",
+            "name": "content_rating"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "hash": "e84ba935e41a4726edfb0fc03509fc354949860f1d13c73bbc8e7707ffa8606d"
+}

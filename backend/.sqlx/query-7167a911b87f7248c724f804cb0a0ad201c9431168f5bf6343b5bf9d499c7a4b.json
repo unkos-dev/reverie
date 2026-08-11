@@ -1,0 +1,35 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT wa.role::text AS \"role!\", a.name AS \"name!\"\n             FROM work_authors wa\n             JOIN authors a ON a.id = wa.author_id\n            WHERE wa.work_id = $1\n              AND wa.role = ANY(ARRAY['author', 'editor', 'translator']::author_role[])\n            ORDER BY wa.role, wa.position ASC",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "role!",
+        "type_info": "Text",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 1,
+        "name": "name!",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "authors",
+            "name": "name"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      null,
+      false
+    ]
+  },
+  "hash": "7167a911b87f7248c724f804cb0a0ad201c9431168f5bf6343b5bf9d499c7a4b"
+}
