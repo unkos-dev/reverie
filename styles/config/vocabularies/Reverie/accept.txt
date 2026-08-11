@@ -72,6 +72,7 @@ checkboxes
 checksums
 chroma
 chromedriver
+chrono
 CI
 clippy
 closable
@@ -100,6 +101,7 @@ curation
 customContext
 customRules
 cutover
+datetime
 debuggability
 declaratively
 decrypted
@@ -111,6 +113,7 @@ dependents
 deps
 dereference
 deserialise
+deserialisation
 deserialization
 deserialize
 deserializers
@@ -403,6 +406,7 @@ Unkovich
 unlayered
 unmerged
 unprefixed
+Unprocessable
 unresolvable
 unscanned
 unscoped
