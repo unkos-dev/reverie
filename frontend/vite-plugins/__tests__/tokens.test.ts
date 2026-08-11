@@ -18,12 +18,18 @@ const primitivesCss = readFileSync(resolve(THEMES_DIR, "primitives.generated.css
 const indexCss = readFileSync(resolve(THEMES_DIR, "index.css"), "utf8");
 
 function rule(css: string, selector: string): string {
-  const match = css.match(new RegExp(`${selector}\\s*\\{[^}]*\\}`));
+  const match = css.match(new RegExp(`^${selector}\\s*\\{[^}]*\\}`, "m"));
   if (!match) throw new Error(`selector not found: ${selector}`);
   return match[0];
 }
 
 describe("global body typography", () => {
+  it("does not mistake a class suffix for the body selector", () => {
+    const css = ".card-body { font-family: var(--font-body); }\nbody { font-family: inherit; }";
+
+    expect(rule(css, "body")).toBe("body { font-family: inherit; }");
+  });
+
   it("applies the canonical Satoshi body token to document text", () => {
     expect(rule(indexCss, "body")).toMatch(/font-family:\s*var\(--font-body\)/);
   });
