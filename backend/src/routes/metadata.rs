@@ -8,7 +8,7 @@ use std::collections::BTreeMap;
 
 use axum::extract::{Path, State};
 use axum::http::header::ETAG;
-use axum::http::{HeaderMap, HeaderValue, StatusCode};
+use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -98,8 +98,7 @@ struct MetadataRow {
     security(("session_cookie" = ["read"]), ("device_token_bearer" = ["read"]), ("oidc_jwt_bearer" = ["read"]), ("opds_basic" = ["read"])),
     params(("id" = Uuid, Path, description = "Manifestation id")),
     responses(
-        (status = 200, description = "Metadata version rows for the manifestation, newest first (empty when the manifestation is missing or RLS-hidden)", body = [MetadataRow],
-         headers(("ETag" = String, description = "Strong entity-tag hashing every PATCH-modifiable field of this manifestation's metadata; omitted when the manifestation does not exist. Echo as If-Match on PATCH /api/v1/books/{id}/metadata"))),
+        (status = 200, description = "Metadata version rows for the manifestation, newest first (empty when the manifestation is missing or RLS-hidden)", body = [MetadataRow]),
         (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails),
         (status = 403, description = "Caller is a child account", body = crate::openapi::ProblemDetails)
     )
@@ -114,15 +113,7 @@ async fn get_manifestation_metadata(
         .await
         .map_err(|e| AppError::Internal(e.into()))?;
     let rows = load_versions(&mut tx, id).await?;
-    let etag = metadata_etag(&mut tx, id).await?;
-    tx.commit()
-        .await
-        .map_err(|e| AppError::Internal(e.into()))?;
-    let mut headers = HeaderMap::new();
-    if let Some(etag) = etag {
-        headers.insert(ETAG, etag);
-    }
-    Ok((headers, axum::Json(rows)))
+    Ok(axum::Json(rows))
 }
 
 /// `GET /api/v1/works/{id}/metadata` — review queue across every
@@ -218,150 +209,6 @@ async fn load_versions(
             observation_count: r.observation_count,
         })
         .collect())
-}
-
-// ── ETag / If-Match (manifestation-scoped metadata representation) ────────
-
-/// Fixed-field-order hash input for a manifestation's metadata `ETag`.
-/// Covers every field `PATCH /api/v1/books/{id}/metadata` can modify across
-/// `works`, `manifestations`, and `work_authors`. List fields are stored
-/// (and re-read) in a stable order: vocabulary alphabetically, contributors
-/// by their `position` column, so the hash is stable across repeated GETs
-/// with no intervening write.
-#[derive(Debug, Serialize)]
-struct MetadataEtagFields {
-    title: String,
-    subtitle: Option<String>,
-    description: Option<String>,
-    language: Option<String>,
-    publisher: Option<String>,
-    pub_date: Option<chrono::NaiveDate>,
-    isbn_10: Option<String>,
-    isbn_13: Option<String>,
-    pages: Option<i32>,
-    content_rating: Option<ContentRating>,
-    genres: Vec<String>,
-    moods: Vec<String>,
-    tags: Vec<String>,
-    authors: Vec<String>,
-    editors: Vec<String>,
-    translators: Vec<String>,
-    work_identifiers: BTreeMap<String, String>,
-    manifestation_identifiers: BTreeMap<String, String>,
-}
-
-/// Compute the `ETag` for a manifestation's editable metadata, shared by
-/// `GET /api/v1/manifestations/{id}/metadata` and
-/// `PATCH /api/v1/books/{id}/metadata` (both keyed by manifestation id).
-///
-/// `Ok(None)` when the manifestation or its parent work does not exist:
-/// mirrors the review-queue GET, which tolerates a missing manifestation by
-/// returning an empty list rather than 404.
-async fn metadata_etag(
-    tx: &mut Transaction<'_, Postgres>,
-    manifestation_id: Uuid,
-) -> Result<Option<HeaderValue>, AppError> {
-    let Some(core) = sqlx::query!(
-        r#"
-        SELECT w.id             AS "work_id!",
-               w.title          AS "title!",
-               w.subtitle       AS subtitle,
-               w.description    AS description,
-               w.language       AS language,
-               m.publisher      AS publisher,
-               m.pub_date       AS pub_date,
-               m.isbn_10        AS isbn_10,
-               m.isbn_13        AS isbn_13,
-               m.pages          AS pages,
-               m.content_rating AS "content_rating: ContentRating"
-          FROM manifestations m
-          JOIN works w ON w.id = m.work_id
-         WHERE m.id = $1
-        "#,
-        manifestation_id,
-    )
-    .fetch_optional(&mut **tx)
-    .await
-    .map_err(|e| AppError::Internal(e.into()))?
-    else {
-        return Ok(None);
-    };
-
-    let ids = std::slice::from_ref(&manifestation_id);
-    let mut genres = load_genres_for_manifestations(tx, ids).await?;
-    let mut moods = load_moods_for_manifestations(tx, ids).await?;
-    let mut tags = load_tags_for_manifestations(tx, ids).await?;
-
-    let contributor_rows = sqlx::query!(
-        r#"SELECT wa.role::text AS "role!", a.name AS "name!"
-             FROM work_authors wa
-             JOIN authors a ON a.id = wa.author_id
-            WHERE wa.work_id = $1
-            ORDER BY wa.role, wa.position ASC"#,
-        core.work_id,
-    )
-    .fetch_all(&mut **tx)
-    .await
-    .map_err(|e| AppError::Internal(e.into()))?;
-    let mut authors = Vec::new();
-    let mut editors = Vec::new();
-    let mut translators = Vec::new();
-    for row in contributor_rows {
-        match row.role.as_str() {
-            "author" => authors.push(row.name),
-            "editor" => editors.push(row.name),
-            "translator" => translators.push(row.name),
-            other => {
-                return Err(AppError::Internal(anyhow::anyhow!(
-                    "unexpected author_role '{other}' in work_authors"
-                )));
-            }
-        }
-    }
-
-    let work_identifiers: BTreeMap<String, String> = sqlx::query!(
-        "SELECT scheme, external_id FROM work_external_identifiers WHERE work_id = $1",
-        core.work_id,
-    )
-    .fetch_all(&mut **tx)
-    .await
-    .map_err(|e| AppError::Internal(e.into()))?
-    .into_iter()
-    .map(|r| (r.scheme, r.external_id))
-    .collect();
-
-    let manifestation_identifiers: BTreeMap<String, String> = sqlx::query!(
-        "SELECT scheme, external_id FROM manifestation_external_identifiers WHERE manifestation_id = $1",
-        manifestation_id,
-    )
-    .fetch_all(&mut **tx)
-    .await
-    .map_err(|e| AppError::Internal(e.into()))?
-    .into_iter()
-    .map(|r| (r.scheme, r.external_id))
-    .collect();
-
-    let fields = MetadataEtagFields {
-        title: core.title,
-        subtitle: core.subtitle,
-        description: core.description,
-        language: core.language,
-        publisher: core.publisher,
-        pub_date: core.pub_date,
-        isbn_10: core.isbn_10,
-        isbn_13: core.isbn_13,
-        pages: core.pages,
-        content_rating: core.content_rating,
-        genres: genres.remove(&manifestation_id).unwrap_or_default(),
-        moods: moods.remove(&manifestation_id).unwrap_or_default(),
-        tags: tags.remove(&manifestation_id).unwrap_or_default(),
-        authors,
-        editors,
-        translators,
-        work_identifiers,
-        manifestation_identifiers,
-    };
-    Ok(Some(hash_etag(&fields)?))
 }
 
 // ── accept / reject / revert / lock ────────────────────────────────────────
@@ -2012,40 +1859,18 @@ struct BookMetadata {
     manifestation_identifiers: BTreeMap<String, String>,
 }
 
-/// `GET /api/v1/books/{id}/metadata` — the editable metadata span for one
-/// manifestation: the matched-pair read for [`update_book_metadata`], same
-/// URI and id key, so a read-modify-write flow targets one resource.
+/// Load the editable metadata span for one manifestation, in exactly the
+/// shape [`get_book_metadata`] serves and [`update_book_metadata`] hashes.
+/// Sharing this assembly means the precondition check, the post-write
+/// `ETag`, and the matched `GET` all hash the identical representation
+/// through one code path rather than three independently maintained ones.
 ///
-/// # Errors
-/// - [`AppError::Forbidden`] when the caller is a child account.
-/// - [`AppError::NotFound`] when the manifestation is missing or hidden by
-///   RLS for the current user (existence-not-leaked).
-/// - [`AppError::Internal`] on database errors.
-#[utoipa::path(
-    get,
-    path = "/api/v1/books/{id}/metadata",
-    tag = "metadata",
-    security(("session_cookie" = ["read"]), ("device_token_bearer" = ["read"]), ("oidc_jwt_bearer" = ["read"]), ("opds_basic" = ["read"])),
-    params(("id" = Uuid, Path, description = "Manifestation id")),
-    responses(
-        (status = 200, description = "The editable metadata span, matching what PATCH accepts", body = BookMetadata),
-        (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails),
-        (status = 403, description = "Caller is a child account", body = crate::openapi::ProblemDetails),
-        (status = 404, description = "Manifestation missing or RLS-hidden (existence-not-leaked)", body = crate::openapi::ProblemDetails)
-    )
-)]
-async fn get_book_metadata(
-    current_user: CurrentUser,
-    State(state): State<AppState>,
-    Path(manifestation_id): Path<Uuid>,
-) -> Result<impl IntoResponse, AppError> {
-    current_user.require_not_child()?;
-
-    let mut tx = db::acquire_with_rls(&state.pool, current_user.user_id)
-        .await
-        .map_err(|e| AppError::Internal(e.into()))?;
-
-    let core = sqlx::query!(
+/// `Ok(None)` when the manifestation or its parent work does not exist.
+async fn load_book_metadata(
+    tx: &mut Transaction<'_, Postgres>,
+    manifestation_id: Uuid,
+) -> Result<Option<BookMetadata>, AppError> {
+    let Some(core) = sqlx::query!(
         r#"
         SELECT w.id             AS "work_id!",
                w.title          AS "title!",
@@ -2064,25 +1889,22 @@ async fn get_book_metadata(
         "#,
         manifestation_id,
     )
-    .fetch_optional(&mut *tx)
+    .fetch_optional(&mut **tx)
     .await
     .map_err(|e| AppError::Internal(e.into()))?
-    .ok_or(AppError::NotFound)?;
+    else {
+        return Ok(None);
+    };
 
     let ids = std::slice::from_ref(&manifestation_id);
-    let mut genres = load_genres_for_manifestations(&mut tx, ids).await?;
-    let mut moods = load_moods_for_manifestations(&mut tx, ids).await?;
-    let mut tags = load_tags_for_manifestations(&mut tx, ids).await?;
-    let contributors = load_contributors_for_work(&mut tx, core.work_id).await?;
-    let work_identifiers = load_work_identifiers(&mut tx, core.work_id).await?;
-    let manifestation_identifiers =
-        load_manifestation_identifiers(&mut tx, manifestation_id).await?;
+    let mut genres = load_genres_for_manifestations(tx, ids).await?;
+    let mut moods = load_moods_for_manifestations(tx, ids).await?;
+    let mut tags = load_tags_for_manifestations(tx, ids).await?;
+    let contributors = load_contributors_for_work(tx, core.work_id).await?;
+    let work_identifiers = load_work_identifiers(tx, core.work_id).await?;
+    let manifestation_identifiers = load_manifestation_identifiers(tx, manifestation_id).await?;
 
-    tx.commit()
-        .await
-        .map_err(|e| AppError::Internal(e.into()))?;
-
-    Ok(axum::Json(BookMetadata {
+    Ok(Some(BookMetadata {
         title: core.title,
         subtitle: core.subtitle,
         description: core.description,
@@ -2100,6 +1922,54 @@ async fn get_book_metadata(
         work_identifiers,
         manifestation_identifiers,
     }))
+}
+
+/// `GET /api/v1/books/{id}/metadata` — the editable metadata span for one
+/// manifestation: the matched-pair read for [`update_book_metadata`], same
+/// URI and id key, so a read-modify-write flow targets one resource.
+///
+/// # Errors
+/// - [`AppError::Forbidden`] when the caller is a child account.
+/// - [`AppError::NotFound`] when the manifestation is missing or hidden by
+///   RLS for the current user (existence-not-leaked).
+/// - [`AppError::Internal`] on database errors.
+#[utoipa::path(
+    get,
+    path = "/api/v1/books/{id}/metadata",
+    tag = "metadata",
+    security(("session_cookie" = ["read"]), ("device_token_bearer" = ["read"]), ("oidc_jwt_bearer" = ["read"]), ("opds_basic" = ["read"])),
+    params(("id" = Uuid, Path, description = "Manifestation id")),
+    responses(
+        (status = 200, description = "The editable metadata span, matching what PATCH accepts", body = BookMetadata,
+         headers(("ETag" = String, description = "Strong entity-tag hashing this response body. Echo as If-Match on PATCH /api/v1/books/{id}/metadata"))),
+        (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails),
+        (status = 403, description = "Caller is a child account", body = crate::openapi::ProblemDetails),
+        (status = 404, description = "Manifestation missing or RLS-hidden (existence-not-leaked)", body = crate::openapi::ProblemDetails)
+    )
+)]
+async fn get_book_metadata(
+    current_user: CurrentUser,
+    State(state): State<AppState>,
+    Path(manifestation_id): Path<Uuid>,
+) -> Result<impl IntoResponse, AppError> {
+    current_user.require_not_child()?;
+
+    let mut tx = db::acquire_with_rls(&state.pool, current_user.user_id)
+        .await
+        .map_err(|e| AppError::Internal(e.into()))?;
+
+    let metadata = load_book_metadata(&mut tx, manifestation_id)
+        .await?
+        .ok_or(AppError::NotFound)?;
+    let etag = hash_etag(&metadata)?;
+
+    tx.commit()
+        .await
+        .map_err(|e| AppError::Internal(e.into()))?;
+
+    let mut headers = HeaderMap::new();
+    headers.insert(ETAG, etag);
+    Ok((headers, axum::Json(metadata)))
 }
 
 /// Author/editor/translator names for a work, each ordered by stored
@@ -2287,15 +2157,16 @@ async fn update_book_metadata(
     // Compared under the row lock just taken above, so a concurrent editor
     // cannot slip a change in between this check and the writes below.
     if let Some(im) = &if_match {
-        let current = metadata_etag(&mut tx, manifestation_id)
+        let current = load_book_metadata(&mut tx, manifestation_id)
             .await?
             .ok_or_else(|| {
                 AppError::Internal(anyhow::anyhow!(
-                    "metadata_etag returned None for a manifestation just locked"
+                    "load_book_metadata returned None for a manifestation just locked"
                 ))
             })?;
-        if current.as_bytes() != im.as_bytes() {
-            return Ok(if_match_mismatch(&current));
+        let current_etag = hash_etag(&current)?;
+        if current_etag.as_bytes() != im.as_bytes() {
+            return Ok(if_match_mismatch(&current_etag));
         }
     }
 
@@ -2370,13 +2241,14 @@ async fn update_book_metadata(
     // Computed before commit, inside the same transaction as the writes
     // above, so the emitted ETag reflects exactly the representation this
     // PATCH just committed.
-    let new_etag = metadata_etag(&mut tx, manifestation_id)
+    let new_metadata = load_book_metadata(&mut tx, manifestation_id)
         .await?
         .ok_or_else(|| {
             AppError::Internal(anyhow::anyhow!(
-                "metadata_etag returned None for a manifestation just written"
+                "load_book_metadata returned None for a manifestation just written"
             ))
         })?;
+    let new_etag = hash_etag(&new_metadata)?;
 
     tx.commit()
         .await
@@ -6846,7 +6718,26 @@ mod tests {
     }
 
     #[sqlx::test(migrations = "./migrations")]
-    async fn get_manifestation_metadata_emits_etag(pool: sqlx::PgPool) {
+    async fn get_book_metadata_emits_etag(pool: sqlx::PgPool) {
+        let app_pool = test_support::db::app_pool_for(&pool).await;
+        let ing_pool = test_support::db::ingestion_pool_for(&pool).await;
+        let (_admin_id, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+        let marker = Uuid::new_v4().simple().to_string();
+        let (_work_id, m_id) =
+            test_support::db::insert_work_and_manifestation(&ing_pool, &marker).await;
+        let server = test_support::db::server_with_real_pools(&app_pool, &ing_pool);
+
+        let r = server
+            .get(&format!("/api/v1/books/{m_id}/metadata"))
+            .add_header(AUTHORIZATION, basic)
+            .await;
+        assert_eq!(r.status_code(), StatusCode::OK);
+        let etag = etag_value(r.headers());
+        assert!(etag.starts_with('"') && etag.ends_with('"'));
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn get_manifestation_metadata_emits_no_etag(pool: sqlx::PgPool) {
         let app_pool = test_support::db::app_pool_for(&pool).await;
         let ing_pool = test_support::db::ingestion_pool_for(&pool).await;
         let (_admin_id, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
@@ -6860,12 +6751,14 @@ mod tests {
             .add_header(AUTHORIZATION, basic)
             .await;
         assert_eq!(r.status_code(), StatusCode::OK);
-        let etag = etag_value(r.headers());
-        assert!(etag.starts_with('"') && etag.ends_with('"'));
+        assert!(
+            r.headers().get(axum::http::header::ETAG).is_none(),
+            "the review-queue GET is unprotected and must not carry an ETag"
+        );
     }
 
     #[sqlx::test(migrations = "./migrations")]
-    async fn get_manifestation_metadata_etag_stable_across_identical_reads(pool: sqlx::PgPool) {
+    async fn get_book_metadata_etag_stable_across_identical_reads(pool: sqlx::PgPool) {
         let app_pool = test_support::db::app_pool_for(&pool).await;
         let ing_pool = test_support::db::ingestion_pool_for(&pool).await;
         let (_admin_id, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
@@ -6875,11 +6768,11 @@ mod tests {
         let server = test_support::db::server_with_real_pools(&app_pool, &ing_pool);
 
         let first = server
-            .get(&format!("/api/v1/manifestations/{m_id}/metadata"))
+            .get(&format!("/api/v1/books/{m_id}/metadata"))
             .add_header(AUTHORIZATION, basic.clone())
             .await;
         let second = server
-            .get(&format!("/api/v1/manifestations/{m_id}/metadata"))
+            .get(&format!("/api/v1/books/{m_id}/metadata"))
             .add_header(AUTHORIZATION, basic)
             .await;
         assert_eq!(etag_value(first.headers()), etag_value(second.headers()));
@@ -6896,7 +6789,7 @@ mod tests {
         let server = test_support::db::server_with_real_pools(&app_pool, &ing_pool);
 
         let before = server
-            .get(&format!("/api/v1/manifestations/{m_id}/metadata"))
+            .get(&format!("/api/v1/books/{m_id}/metadata"))
             .add_header(AUTHORIZATION, basic.clone())
             .await;
         let before_etag = etag_value(before.headers());
@@ -6944,7 +6837,7 @@ mod tests {
         let server = test_support::db::server_with_real_pools(&app_pool, &ing_pool);
 
         let initial = server
-            .get(&format!("/api/v1/manifestations/{m_id}/metadata"))
+            .get(&format!("/api/v1/books/{m_id}/metadata"))
             .add_header(AUTHORIZATION, basic.clone())
             .await;
         let etag = etag_value(initial.headers());
@@ -6972,7 +6865,7 @@ mod tests {
         let server = test_support::db::server_with_real_pools(&app_pool, &ing_pool);
 
         let initial = server
-            .get(&format!("/api/v1/manifestations/{m_id}/metadata"))
+            .get(&format!("/api/v1/books/{m_id}/metadata"))
             .add_header(AUTHORIZATION, basic.clone())
             .await;
         let stale_etag = etag_value(initial.headers());

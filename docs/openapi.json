@@ -953,6 +953,14 @@
         "responses": {
           "200": {
             "description": "The editable metadata span, matching what PATCH accepts",
+            "headers": {
+              "ETag": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "Strong entity-tag hashing this response body. Echo as If-Match on PATCH /api/v1/books/{id}/metadata"
+              }
+            },
             "content": {
               "application/json": {
                 "schema": {
@@ -1937,14 +1945,6 @@
         "responses": {
           "200": {
             "description": "Metadata version rows for the manifestation, newest first (empty when the manifestation is missing or RLS-hidden)",
-            "headers": {
-              "ETag": {
-                "schema": {
-                  "type": "string"
-                },
-                "description": "Strong entity-tag hashing every PATCH-modifiable field of this manifestation's metadata; omitted when the manifestation does not exist. Echo as If-Match on PATCH /api/v1/books/{id}/metadata"
-              }
-            },
             "content": {
               "application/json": {
                 "schema": {
