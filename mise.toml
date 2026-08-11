@@ -33,7 +33,7 @@ zizmor = "1.29.0"
 # through jdx/mise-action, which reads this table, and setup-vp is told not
 # to manage node (node-manager: false) so the two installers cannot disagree.
 "npm:npm" = "12.0.2"
-node = "24.18.1"
+node = "24.19.0"
 
 # SQL linter for backend/migrations, run by `just infra::sqruff`. No mise
 # registry shorthand exists, so it takes the explicit GitHub backend form.
