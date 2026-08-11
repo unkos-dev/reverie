@@ -55,7 +55,10 @@ pub fn hash_etag<T: Serialize>(state: &T) -> Result<HeaderValue, AppError> {
 /// callers compare it byte-for-byte against a freshly computed
 /// [`hash_etag`] value.
 ///
-/// - `Ok(None)`: header absent, callers in this phase proceed unprotected.
+/// - `Ok(None)`: header absent. Every current caller treats this as
+///   `AppError::IfMatchRequired` (428) via `.ok_or(...)`; `None` stays a
+///   distinct case here so parsing and precondition enforcement remain
+///   separately testable.
 /// - `Ok(Some(_))`: a well-formed strong entity-tag, still quoted.
 /// - `Err(AppError::MalformedHeader)`: malformed value, a weak validator
 ///   (`W/"..."`) (RFC 9110 §13.1.2 requires strong comparison for

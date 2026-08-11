@@ -8,6 +8,13 @@
 export const IF_MATCH_MISMATCH_SLUG = "if-match-mismatch";
 
 /**
+ * Problem-type slug for a missing `If-Match` header on a precondition-
+ * protected PATCH. Emitted with HTTP 428 by the same endpoints as
+ * {@link IF_MATCH_MISMATCH_SLUG}.
+ */
+export const IF_MATCH_REQUIRED_SLUG = "if-match-required";
+
+/**
  * Typed error class for failed API requests.
  *
  * Parses RFC 9457 Problem Details responses (`application/problem+json`)
@@ -71,5 +78,17 @@ export class ApiError extends Error {
 export function isIfMatchMismatch(err: unknown): boolean {
   return (
     err instanceof ApiError && err.status === 412 && err.problemSlug === IF_MATCH_MISMATCH_SLUG
+  );
+}
+
+/**
+ * True when `err` is a 428 missing-`If-Match` rejection from a protected
+ * PATCH. Reachable when an ETag-priming fetch loses the race with a very
+ * fast commit; callers treat it the same as {@link isIfMatchMismatch} since
+ * the remedy (reload, then retry) is identical.
+ */
+export function isIfMatchRequired(err: unknown): boolean {
+  return (
+    err instanceof ApiError && err.status === 428 && err.problemSlug === IF_MATCH_REQUIRED_SLUG
   );
 }

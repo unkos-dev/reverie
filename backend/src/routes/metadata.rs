@@ -2074,9 +2074,10 @@ async fn load_manifestation_identifiers(
 /// - [`AppError::NotFound`] when the manifestation is missing or hidden
 ///   by RLS for the current user (existence-not-leaked).
 /// - [`AppError::Forbidden`] when the caller is a child account.
-/// - [`AppError::IfMatchMismatch`] (412) when `If-Match` is present and does
-///   not match the manifestation's current metadata `ETag`; the response
-///   carries the current `ETag` so the caller can resync in one round trip.
+/// - [`AppError::IfMatchRequired`] (428) when `If-Match` is absent.
+/// - [`AppError::IfMatchMismatch`] (412) when `If-Match` does not match the
+///   manifestation's current metadata `ETag`; the response carries the
+///   current `ETag` so the caller can resync in one round trip.
 /// - [`AppError::Internal`] on database errors.
 #[utoipa::path(
     patch,
@@ -2085,7 +2086,7 @@ async fn load_manifestation_identifiers(
     security(("session_cookie" = ["write"]), ("device_token_bearer" = ["write"]), ("oidc_jwt_bearer" = ["write"]), ("opds_basic" = ["write"])),
     params(
         ("id" = Uuid, Path, description = "Manifestation id"),
-        ("If-Match" = Option<String>, Header, description = "A single quoted strong entity-tag, as returned in a prior GET or PATCH response's ETag header. Optional in this phase: absent means proceed unprotected; present and stale means 412")
+        ("If-Match" = String, Header, description = "A single quoted strong entity-tag, as returned in a prior GET or PATCH response's ETag header. Required: absent means 428; stale means 412")
     ),
     request_body(content = UpdateMetadataFields, description = "RFC 7396 JSON Merge Patch: absent fields are unchanged, `null` clears (except `title`)"),
     responses(
@@ -2097,7 +2098,8 @@ async fn load_manifestation_identifiers(
         (status = 412, description = "If-Match does not match the manifestation's current metadata ETag", body = crate::openapi::ProblemDetails,
          headers(("ETag" = String, description = "Current entity-tag, so the caller can resync without a follow-up GET"))),
         (status = 400, description = "Malformed If-Match header", body = crate::openapi::ProblemDetails),
-        (status = 422, description = "No populated fields, ISBN/date parse failure, or attempt to clear title", body = crate::openapi::ProblemDetails)
+        (status = 422, description = "No populated fields, ISBN/date parse failure, or attempt to clear title", body = crate::openapi::ProblemDetails),
+        (status = 428, description = "If-Match header absent", body = crate::openapi::ProblemDetails)
     )
 )]
 #[expect(
@@ -2113,7 +2115,7 @@ async fn update_book_metadata(
 ) -> Result<Response, AppError> {
     current_user.require_scope(Scope::Write)?;
     current_user.require_not_child()?;
-    let if_match = parse_if_match(&headers_in)?;
+    let if_match = parse_if_match(&headers_in)?.ok_or(AppError::IfMatchRequired)?;
     let axum::Json(mut req_fields) = body.map_err(|e| AppError::Validation(e.body_text()))?;
     // Extract contributors BEFORE populated() consumes the struct — it is
     // handled separately from the other (scalar) fields.
@@ -2158,18 +2160,16 @@ async fn update_book_metadata(
 
     // Compared under the row lock just taken above, so a concurrent editor
     // cannot slip a change in between this check and the writes below.
-    if let Some(im) = &if_match {
-        let current = load_book_metadata(&mut tx, manifestation_id)
-            .await?
-            .ok_or_else(|| {
-                AppError::Internal(anyhow::anyhow!(
-                    "load_book_metadata returned None for a manifestation just locked"
-                ))
-            })?;
-        let current_etag = hash_etag(&current)?;
-        if current_etag.as_bytes() != im.as_bytes() {
-            return Ok(if_match_mismatch(&current_etag));
-        }
+    let current = load_book_metadata(&mut tx, manifestation_id)
+        .await?
+        .ok_or_else(|| {
+            AppError::Internal(anyhow::anyhow!(
+                "load_book_metadata returned None for a manifestation just locked"
+            ))
+        })?;
+    let current_etag = hash_etag(&current)?;
+    if current_etag.as_bytes() != if_match.as_bytes() {
+        return Ok(if_match_mismatch(&current_etag));
     }
 
     let mut response_fields: BTreeMap<String, FieldVersionChange> = BTreeMap::new();
@@ -2821,9 +2821,18 @@ mod tests {
         let author = format!("Round Trip Author {marker}");
 
         let server = test_support::db::server_with_real_pools(&app_pool, &ing_pool);
+        let initial = server
+            .get(&format!("/api/v1/books/{m_id}/metadata"))
+            .add_header(AUTHORIZATION, basic.clone())
+            .await;
+        let etag = etag_value(initial.headers());
         let patch_response = server
             .patch(&format!("/api/v1/books/{m_id}/metadata"))
             .add_header(AUTHORIZATION, basic.clone())
+            .add_header(
+                axum::http::header::IF_MATCH,
+                axum::http::HeaderValue::from_str(&etag).unwrap(),
+            )
             .json(&serde_json::json!({
                 "subtitle": subtitle,
                 "publisher": "Round Trip Press",
@@ -3201,6 +3210,10 @@ mod tests {
         let response = server
             .patch(&format!("/api/v1/books/{m_id}/metadata"))
             .add_header(AUTHORIZATION, basic)
+            .add_header(
+                axum::http::header::IF_MATCH,
+                axum::http::HeaderValue::from_static("\"dummy\""),
+            )
             .json(&serde_json::json!({"fields": {"title": "Enveloped"}}))
             .await;
         assert_eq!(
@@ -3222,9 +3235,18 @@ mod tests {
 
         let new_title = format!("Manual Title {marker}");
         let server = test_support::db::server_with_real_pools(&app_pool, &ing_pool);
+        let initial = server
+            .get(&format!("/api/v1/books/{m_id}/metadata"))
+            .add_header(AUTHORIZATION, basic.clone())
+            .await;
+        let etag = etag_value(initial.headers());
         let response = server
             .patch(&format!("/api/v1/books/{m_id}/metadata"))
             .add_header(AUTHORIZATION, basic)
+            .add_header(
+                axum::http::header::IF_MATCH,
+                axum::http::HeaderValue::from_str(&etag).unwrap(),
+            )
             .json(&serde_json::json!({"title": new_title}))
             .await;
         assert_eq!(
@@ -3293,20 +3315,34 @@ mod tests {
             test_support::db::insert_work_and_manifestation(&ing_pool, &marker).await;
         let server = test_support::db::server_with_real_pools(&app_pool, &ing_pool);
 
+        let initial = server
+            .get(&format!("/api/v1/books/{m_id}/metadata"))
+            .add_header(AUTHORIZATION, basic.clone())
+            .await;
+        let etag = etag_value(initial.headers());
         let first_title = format!("First Title {marker}");
         let first_response = server
             .patch(&format!("/api/v1/books/{m_id}/metadata"))
             .add_header(AUTHORIZATION, basic.clone())
+            .add_header(
+                axum::http::header::IF_MATCH,
+                axum::http::HeaderValue::from_str(&etag).unwrap(),
+            )
             .json(&serde_json::json!({"title": first_title}))
             .await;
         assert_eq!(first_response.status_code(), StatusCode::OK);
         let first_body: serde_json::Value = first_response.json();
         let first_version_id = version_id_of(&first_body, "title");
+        let etag = etag_value(first_response.headers());
 
         let second_title = format!("Second Title {marker}");
         let second_response = server
             .patch(&format!("/api/v1/books/{m_id}/metadata"))
             .add_header(AUTHORIZATION, basic)
+            .add_header(
+                axum::http::header::IF_MATCH,
+                axum::http::HeaderValue::from_str(&etag).unwrap(),
+            )
             .json(&serde_json::json!({"title": second_title}))
             .await;
         assert_eq!(second_response.status_code(), StatusCode::OK);
@@ -3328,18 +3364,32 @@ mod tests {
             test_support::db::insert_work_and_manifestation(&ing_pool, &marker).await;
         let server = test_support::db::server_with_real_pools(&app_pool, &ing_pool);
 
+        let initial = server
+            .get(&format!("/api/v1/books/{m_id}/metadata"))
+            .add_header(AUTHORIZATION, basic.clone())
+            .await;
+        let etag = etag_value(initial.headers());
         let first_title = format!("First Title {marker}");
         let first_response = server
             .patch(&format!("/api/v1/books/{m_id}/metadata"))
             .add_header(AUTHORIZATION, basic.clone())
+            .add_header(
+                axum::http::header::IF_MATCH,
+                axum::http::HeaderValue::from_str(&etag).unwrap(),
+            )
             .json(&serde_json::json!({"title": first_title.clone()}))
             .await;
         assert_eq!(first_response.status_code(), StatusCode::OK);
+        let etag = etag_value(first_response.headers());
 
         let second_title = format!("Second Title {marker}");
         let second_response = server
             .patch(&format!("/api/v1/books/{m_id}/metadata"))
             .add_header(AUTHORIZATION, basic.clone())
+            .add_header(
+                axum::http::header::IF_MATCH,
+                axum::http::HeaderValue::from_str(&etag).unwrap(),
+            )
             .json(&serde_json::json!({"title": second_title}))
             .await;
         assert_eq!(second_response.status_code(), StatusCode::OK);
@@ -3396,9 +3446,18 @@ mod tests {
         .expect("seed description");
 
         let server = test_support::db::server_with_real_pools(&app_pool, &ing_pool);
+        let initial = server
+            .get(&format!("/api/v1/books/{m_id}/metadata"))
+            .add_header(AUTHORIZATION, basic.clone())
+            .await;
+        let etag = etag_value(initial.headers());
         let response = server
             .patch(&format!("/api/v1/books/{m_id}/metadata"))
             .add_header(AUTHORIZATION, basic)
+            .add_header(
+                axum::http::header::IF_MATCH,
+                axum::http::HeaderValue::from_str(&etag).unwrap(),
+            )
             .json(&serde_json::json!({"description": serde_json::Value::Null}))
             .await;
         assert_eq!(
@@ -3448,6 +3507,10 @@ mod tests {
         let response = server
             .patch(&format!("/api/v1/books/{m_id}/metadata"))
             .add_header(AUTHORIZATION, basic)
+            .add_header(
+                axum::http::header::IF_MATCH,
+                axum::http::HeaderValue::from_static("\"dummy\""),
+            )
             .json(&serde_json::json!({}))
             .await;
         assert_eq!(response.status_code(), StatusCode::UNPROCESSABLE_ENTITY);
@@ -3474,9 +3537,18 @@ mod tests {
                 .expect("fetch title before");
 
         let server = test_support::db::server_with_real_pools(&app_pool, &ing_pool);
+        let initial = server
+            .get(&format!("/api/v1/books/{m_id}/metadata"))
+            .add_header(AUTHORIZATION, basic.clone())
+            .await;
+        let etag = etag_value(initial.headers());
         let response = server
             .patch(&format!("/api/v1/books/{m_id}/metadata"))
             .add_header(AUTHORIZATION, basic)
+            .add_header(
+                axum::http::header::IF_MATCH,
+                axum::http::HeaderValue::from_str(&etag).unwrap(),
+            )
             .json(&serde_json::json!({"title": serde_json::Value::Null}))
             .await;
         assert_eq!(
@@ -3554,9 +3626,18 @@ mod tests {
         .await;
 
         let server = test_support::db::server_with_real_pools(&app_pool, &ing_pool);
+        let initial = server
+            .get(&format!("/api/v1/books/{m_id}/metadata"))
+            .add_header(AUTHORIZATION, basic.clone())
+            .await;
+        let etag = etag_value(initial.headers());
         let response = server
             .patch(&format!("/api/v1/books/{m_id}/metadata"))
             .add_header(AUTHORIZATION, basic)
+            .add_header(
+                axum::http::header::IF_MATCH,
+                axum::http::HeaderValue::from_str(&etag).unwrap(),
+            )
             .json(&serde_json::json!({"title": "Operator-chosen"}))
             .await;
         assert_eq!(response.status_code(), StatusCode::OK);
@@ -3587,6 +3668,10 @@ mod tests {
         let response = server
             .patch(&format!("/api/v1/books/{fake}/metadata"))
             .add_header(AUTHORIZATION, basic)
+            .add_header(
+                axum::http::header::IF_MATCH,
+                axum::http::HeaderValue::from_static("\"dummy\""),
+            )
             .json(&serde_json::json!({"title": "ghost"}))
             .await;
         assert_eq!(response.status_code(), StatusCode::NOT_FOUND);
@@ -3621,9 +3706,18 @@ mod tests {
         .await
         .expect("seed isbn_a");
 
+        let initial = server
+            .get(&format!("/api/v1/books/{m_b}/metadata"))
+            .add_header(AUTHORIZATION, basic.clone())
+            .await;
+        let etag = etag_value(initial.headers());
         let response = server
             .patch(&format!("/api/v1/books/{m_b}/metadata"))
             .add_header(AUTHORIZATION, basic)
+            .add_header(
+                axum::http::header::IF_MATCH,
+                axum::http::HeaderValue::from_str(&etag).unwrap(),
+            )
             .json(&serde_json::json!({"isbn_13": isbn}))
             .await;
         assert_eq!(
@@ -3660,10 +3754,20 @@ mod tests {
         let marker = Uuid::new_v4().simple().to_string();
         let (_work, m) = test_support::db::insert_work_and_manifestation(&ing_pool, &marker).await;
 
+        let initial = server
+            .get(&format!("/api/v1/books/{m}/metadata"))
+            .add_header(AUTHORIZATION, basic.clone())
+            .await;
+        let etag = etag_value(initial.headers());
+
         // 13 digits, correct length, wrong check digit (valid form ends 7).
         let response = server
             .patch(&format!("/api/v1/books/{m}/metadata"))
             .add_header(AUTHORIZATION, basic)
+            .add_header(
+                axum::http::header::IF_MATCH,
+                axum::http::HeaderValue::from_str(&etag).unwrap(),
+            )
             .json(&serde_json::json!({"isbn_13": "9780306406150"}))
             .await;
         assert_eq!(
@@ -3683,9 +3787,19 @@ mod tests {
         let marker = Uuid::new_v4().simple().to_string();
         let (_work, m) = test_support::db::insert_work_and_manifestation(&ing_pool, &marker).await;
 
+        let initial = server
+            .get(&format!("/api/v1/books/{m}/metadata"))
+            .add_header(AUTHORIZATION, basic.clone())
+            .await;
+        let etag = etag_value(initial.headers());
+
         let response = server
             .patch(&format!("/api/v1/books/{m}/metadata"))
             .add_header(AUTHORIZATION, basic)
+            .add_header(
+                axum::http::header::IF_MATCH,
+                axum::http::HeaderValue::from_str(&etag).unwrap(),
+            )
             .json(&serde_json::json!({"isbn_10": "12345"}))
             .await;
         assert_eq!(
@@ -3705,10 +3819,20 @@ mod tests {
         let marker = Uuid::new_v4().simple().to_string();
         let (_work, m) = test_support::db::insert_work_and_manifestation(&ing_pool, &marker).await;
 
+        let initial = server
+            .get(&format!("/api/v1/books/{m}/metadata"))
+            .add_header(AUTHORIZATION, basic.clone())
+            .await;
+        let etag = etag_value(initial.headers());
+
         // 13 chars, but a letter where a digit must be.
         let response = server
             .patch(&format!("/api/v1/books/{m}/metadata"))
             .add_header(AUTHORIZATION, basic)
+            .add_header(
+                axum::http::header::IF_MATCH,
+                axum::http::HeaderValue::from_str(&etag).unwrap(),
+            )
             .json(&serde_json::json!({"isbn_13": "978030640615X"}))
             .await;
         assert_eq!(
@@ -3729,9 +3853,18 @@ mod tests {
         let (_work, m) = test_support::db::insert_work_and_manifestation(&ing_pool, &marker).await;
 
         // Valid ISBN-10 (check digit 2) must pass the new guard.
+        let initial = server
+            .get(&format!("/api/v1/books/{m}/metadata"))
+            .add_header(AUTHORIZATION, basic.clone())
+            .await;
+        let etag = etag_value(initial.headers());
         let response = server
             .patch(&format!("/api/v1/books/{m}/metadata"))
             .add_header(AUTHORIZATION, basic)
+            .add_header(
+                axum::http::header::IF_MATCH,
+                axum::http::HeaderValue::from_str(&etag).unwrap(),
+            )
             .json(&serde_json::json!({"isbn_10": "0306406152"}))
             .await;
         assert_eq!(
@@ -3751,9 +3884,18 @@ mod tests {
         let marker = Uuid::new_v4().simple().to_string();
         let (_work, m) = test_support::db::insert_work_and_manifestation(&ing_pool, &marker).await;
 
+        let initial = server
+            .get(&format!("/api/v1/books/{m}/metadata"))
+            .add_header(AUTHORIZATION, basic.clone())
+            .await;
+        let etag = etag_value(initial.headers());
         let response = server
             .patch(&format!("/api/v1/books/{m}/metadata"))
             .add_header(AUTHORIZATION, basic)
+            .add_header(
+                axum::http::header::IF_MATCH,
+                axum::http::HeaderValue::from_str(&etag).unwrap(),
+            )
             .json(&serde_json::json!({"isbn_13": "978-0-306-40615-7"}))
             .await;
         assert_eq!(
@@ -3805,9 +3947,18 @@ mod tests {
         .await
         .expect("seed isbn_a");
 
+        let initial = server
+            .get(&format!("/api/v1/books/{m_b}/metadata"))
+            .add_header(AUTHORIZATION, basic.clone())
+            .await;
+        let etag = etag_value(initial.headers());
         let response = server
             .patch(&format!("/api/v1/books/{m_b}/metadata"))
             .add_header(AUTHORIZATION, basic)
+            .add_header(
+                axum::http::header::IF_MATCH,
+                axum::http::HeaderValue::from_str(&etag).unwrap(),
+            )
             .json(&serde_json::json!({"isbn_13": "978-0-306-40615-7"}))
             .await;
         assert_eq!(
@@ -3948,9 +4099,18 @@ mod tests {
         .expect("seed description");
 
         let server = test_support::db::server_with_real_pools(&app_pool, &ing_pool);
+        let initial = server
+            .get(&format!("/api/v1/books/{m_id}/metadata"))
+            .add_header(AUTHORIZATION, basic.clone())
+            .await;
+        let etag = etag_value(initial.headers());
         let response = server
             .patch(&format!("/api/v1/books/{m_id}/metadata"))
             .add_header(AUTHORIZATION, basic.clone())
+            .add_header(
+                axum::http::header::IF_MATCH,
+                axum::http::HeaderValue::from_str(&etag).unwrap(),
+            )
             .json(&serde_json::json!({"description": serde_json::Value::Null}))
             .await;
         assert_eq!(response.status_code(), StatusCode::OK);
@@ -4002,11 +4162,20 @@ mod tests {
         .expect("seed description");
 
         let server = test_support::db::server_with_real_pools(&app_pool, &ing_pool);
+        let initial = server
+            .get(&format!("/api/v1/books/{m_id}/metadata"))
+            .add_header(AUTHORIZATION, basic.clone())
+            .await;
+        let etag = etag_value(initial.headers());
         // PATCH description -> null. Creates a `new_value = 'null'`
         // audit row + clears the canonical column.
         let r = server
             .patch(&format!("/api/v1/books/{m_id}/metadata"))
             .add_header(AUTHORIZATION, basic.clone())
+            .add_header(
+                axum::http::header::IF_MATCH,
+                axum::http::HeaderValue::from_str(&etag).unwrap(),
+            )
             .json(&serde_json::json!({"description": serde_json::Value::Null}))
             .await;
         assert_eq!(r.status_code(), StatusCode::OK);
@@ -4066,9 +4235,18 @@ mod tests {
         let server = test_support::db::server_with_real_pools(&app_pool, &ing_pool);
 
         // First save.
+        let initial = server
+            .get(&format!("/api/v1/books/{m_id}/metadata"))
+            .add_header(AUTHORIZATION, basic.clone())
+            .await;
+        let etag = etag_value(initial.headers());
         let r1 = server
             .patch(&format!("/api/v1/books/{m_id}/metadata"))
             .add_header(AUTHORIZATION, basic.clone())
+            .add_header(
+                axum::http::header::IF_MATCH,
+                axum::http::HeaderValue::from_str(&etag).unwrap(),
+            )
             .json(&serde_json::json!({"title": value.clone()}))
             .await;
         assert_eq!(r1.status_code(), StatusCode::OK);
@@ -4092,9 +4270,14 @@ mod tests {
         .expect("mark rejected");
 
         // Second save of the same value — should reset to pending.
+        let etag = etag_value(r1.headers());
         let r2 = server
             .patch(&format!("/api/v1/books/{m_id}/metadata"))
             .add_header(AUTHORIZATION, basic)
+            .add_header(
+                axum::http::header::IF_MATCH,
+                axum::http::HeaderValue::from_str(&etag).unwrap(),
+            )
             .json(&serde_json::json!({"title": value}))
             .await;
         assert_eq!(r2.status_code(), StatusCode::OK);
@@ -4125,9 +4308,18 @@ mod tests {
             test_support::db::insert_work_and_manifestation(&ing_pool, &marker).await;
 
         let server = test_support::db::server_with_real_pools(&app_pool, &ing_pool);
+        let initial = server
+            .get(&format!("/api/v1/books/{m_id}/metadata"))
+            .add_header(AUTHORIZATION, basic.clone())
+            .await;
+        let etag = etag_value(initial.headers());
         let response = server
             .patch(&format!("/api/v1/books/{m_id}/metadata"))
             .add_header(AUTHORIZATION, basic)
+            .add_header(
+                axum::http::header::IF_MATCH,
+                axum::http::HeaderValue::from_str(&etag).unwrap(),
+            )
             .json(&serde_json::json!({"publisher": "  Acme Press  "}))
             .await;
         assert_eq!(response.status_code(), StatusCode::OK);
@@ -4163,11 +4355,20 @@ mod tests {
             test_support::db::insert_work_and_manifestation(&ing_pool, &marker).await;
 
         let server = test_support::db::server_with_real_pools(&app_pool, &ing_pool);
+        let initial = server
+            .get(&format!("/api/v1/books/{m_id}/metadata"))
+            .add_header(AUTHORIZATION, basic.clone())
+            .await;
+        let mut etag = etag_value(initial.headers());
         // Same logical publisher, divergent leading/trailing whitespace.
         for publisher in ["Penguin Random House", "  Penguin Random House  "] {
             let response = server
                 .patch(&format!("/api/v1/books/{m_id}/metadata"))
                 .add_header(AUTHORIZATION, basic.clone())
+                .add_header(
+                    axum::http::header::IF_MATCH,
+                    axum::http::HeaderValue::from_str(&etag).unwrap(),
+                )
                 .json(&serde_json::json!({"publisher": publisher}))
                 .await;
             assert_eq!(
@@ -4176,6 +4377,7 @@ mod tests {
                 "body = {}",
                 response.text()
             );
+            etag = etag_value(response.headers());
         }
 
         let rows = sqlx::query!(
@@ -4209,6 +4411,11 @@ mod tests {
             test_support::db::insert_work_and_manifestation(&ing_pool, &marker).await;
 
         let server = test_support::db::server_with_real_pools(&app_pool, &ing_pool);
+        let initial = server
+            .get(&format!("/api/v1/books/{m_id}/metadata"))
+            .add_header(AUTHORIZATION, basic.clone())
+            .await;
+        let mut etag = etag_value(initial.headers());
         // Same calendar date — one bare ISO date, one with a time suffix. The
         // canonical normaliser coerces both to the YYYY-MM-DD prefix, so the
         // second save must dedup rather than open a parallel journal row.
@@ -4216,9 +4423,14 @@ mod tests {
             let response = server
                 .patch(&format!("/api/v1/books/{m_id}/metadata"))
                 .add_header(AUTHORIZATION, basic.clone())
+                .add_header(
+                    axum::http::header::IF_MATCH,
+                    axum::http::HeaderValue::from_str(&etag).unwrap(),
+                )
                 .json(&serde_json::json!({"pub_date": pub_date}))
                 .await;
             assert_eq!(response.status_code(), StatusCode::OK);
+            etag = etag_value(response.headers());
         }
 
         let rows = sqlx::query!(
@@ -4256,9 +4468,18 @@ mod tests {
         let name_a = format!("Alpha Author {marker}");
         let name_b = format!("Beta Author {marker}");
         let server = test_support::db::server_with_real_pools(&app_pool, &ing_pool);
+        let initial = server
+            .get(&format!("/api/v1/books/{m_id}/metadata"))
+            .add_header(AUTHORIZATION, basic.clone())
+            .await;
+        let etag = etag_value(initial.headers());
         let response = server
             .patch(&format!("/api/v1/books/{m_id}/metadata"))
             .add_header(AUTHORIZATION, basic)
+            .add_header(
+                axum::http::header::IF_MATCH,
+                axum::http::HeaderValue::from_str(&etag).unwrap(),
+            )
             .json(&serde_json::json!({"contributors": {"author": [name_a, name_b]}}))
             .await;
         assert_eq!(
@@ -4334,11 +4555,20 @@ mod tests {
             test_support::db::insert_work_and_manifestation(&ing_pool, &marker).await;
         let server = test_support::db::server_with_real_pools(&app_pool, &ing_pool);
 
+        let initial = server
+            .get(&format!("/api/v1/books/{m_id}/metadata"))
+            .add_header(AUTHORIZATION, basic.clone())
+            .await;
+        let etag = etag_value(initial.headers());
         let name_a = format!("Alpha Author {marker}");
         let name_b = format!("Beta Author {marker}");
         let first_response = server
             .patch(&format!("/api/v1/books/{m_id}/metadata"))
             .add_header(AUTHORIZATION, basic.clone())
+            .add_header(
+                axum::http::header::IF_MATCH,
+                axum::http::HeaderValue::from_str(&etag).unwrap(),
+            )
             .json(
                 &serde_json::json!({"contributors": {"author": [name_a.clone(), name_b.clone()]}}),
             )
@@ -4346,11 +4576,16 @@ mod tests {
         assert_eq!(first_response.status_code(), StatusCode::OK);
         let first_body: serde_json::Value = first_response.json();
         let first_version_id = version_id_of(&first_body, "contributors.author");
+        let etag = etag_value(first_response.headers());
 
         let name_c = format!("Gamma Author {marker}");
         let second_response = server
             .patch(&format!("/api/v1/books/{m_id}/metadata"))
             .add_header(AUTHORIZATION, basic.clone())
+            .add_header(
+                axum::http::header::IF_MATCH,
+                axum::http::HeaderValue::from_str(&etag).unwrap(),
+            )
             .json(&serde_json::json!({"contributors": {"author": [name_c]}}))
             .await;
         assert_eq!(second_response.status_code(), StatusCode::OK);
@@ -4415,10 +4650,19 @@ mod tests {
             test_support::db::insert_work_and_manifestation(&ing_pool, &marker).await;
         let server = test_support::db::server_with_real_pools(&app_pool, &ing_pool);
 
+        let initial = server
+            .get(&format!("/api/v1/books/{m_id}/metadata"))
+            .add_header(AUTHORIZATION, basic.clone())
+            .await;
+        let etag = etag_value(initial.headers());
         let name = format!("Solo Author {marker}");
         let patch_response = server
             .patch(&format!("/api/v1/books/{m_id}/metadata"))
             .add_header(AUTHORIZATION, basic.clone())
+            .add_header(
+                axum::http::header::IF_MATCH,
+                axum::http::HeaderValue::from_str(&etag).unwrap(),
+            )
             .json(&serde_json::json!({"contributors": {"author": [name]}}))
             .await;
         assert_eq!(patch_response.status_code(), StatusCode::OK);
@@ -4448,10 +4692,19 @@ mod tests {
             test_support::db::insert_work_and_manifestation(&ing_pool, &marker).await;
         let server = test_support::db::server_with_real_pools(&app_pool, &ing_pool);
 
+        let initial = server
+            .get(&format!("/api/v1/books/{m_id}/metadata"))
+            .add_header(AUTHORIZATION, basic.clone())
+            .await;
+        let etag = etag_value(initial.headers());
         let translator = format!("Translator Name {marker}");
         let patch_response = server
             .patch(&format!("/api/v1/books/{m_id}/metadata"))
             .add_header(AUTHORIZATION, basic.clone())
+            .add_header(
+                axum::http::header::IF_MATCH,
+                axum::http::HeaderValue::from_str(&etag).unwrap(),
+            )
             .json(&serde_json::json!({"contributors": {"translator": [translator]}}))
             .await;
         assert_eq!(patch_response.status_code(), StatusCode::OK);
@@ -4504,10 +4757,19 @@ mod tests {
 
         // Patch title via manifestation A: journals a version under A and
         // wires it as the work's canonical title_version_id.
+        let initial_a = server
+            .get(&format!("/api/v1/books/{m_a}/metadata"))
+            .add_header(AUTHORIZATION, basic.clone())
+            .await;
+        let etag_a = etag_value(initial_a.headers());
         let title_a = format!("Title Via A {marker}");
         let patch_a = server
             .patch(&format!("/api/v1/books/{m_a}/metadata"))
             .add_header(AUTHORIZATION, basic.clone())
+            .add_header(
+                axum::http::header::IF_MATCH,
+                axum::http::HeaderValue::from_str(&etag_a).unwrap(),
+            )
             .json(&serde_json::json!({"title": title_a}))
             .await;
         assert_eq!(patch_a.status_code(), StatusCode::OK);
@@ -4517,10 +4779,19 @@ mod tests {
         // Patch title via manifestation B: the canonical pointer is
         // work-scoped, so B's response must report A's version as the
         // prior pointer even though the row was journaled under A.
+        let initial_b = server
+            .get(&format!("/api/v1/books/{m_b}/metadata"))
+            .add_header(AUTHORIZATION, basic.clone())
+            .await;
+        let etag_b = etag_value(initial_b.headers());
         let title_b = format!("Title Via B {marker}");
         let patch_b = server
             .patch(&format!("/api/v1/books/{m_b}/metadata"))
             .add_header(AUTHORIZATION, basic.clone())
+            .add_header(
+                axum::http::header::IF_MATCH,
+                axum::http::HeaderValue::from_str(&etag_b).unwrap(),
+            )
             .json(&serde_json::json!({"title": title_b}))
             .await;
         assert_eq!(patch_b.status_code(), StatusCode::OK);
@@ -4573,9 +4844,18 @@ mod tests {
         let server = test_support::db::server_with_real_pools(&app_pool, &ing_pool);
 
         // Patch pages (manifestation-scoped) via A.
+        let initial_a = server
+            .get(&format!("/api/v1/books/{m_a}/metadata"))
+            .add_header(AUTHORIZATION, basic.clone())
+            .await;
+        let etag_a = etag_value(initial_a.headers());
         let patch_a = server
             .patch(&format!("/api/v1/books/{m_a}/metadata"))
             .add_header(AUTHORIZATION, basic.clone())
+            .add_header(
+                axum::http::header::IF_MATCH,
+                axum::http::HeaderValue::from_str(&etag_a).unwrap(),
+            )
             .json(&serde_json::json!({"pages": 250}))
             .await;
         assert_eq!(patch_a.status_code(), StatusCode::OK);
@@ -4615,20 +4895,38 @@ mod tests {
         let m_b = insert_sibling_manifestation(&ing_pool, work_id).await;
         let server = test_support::db::server_with_real_pools(&app_pool, &ing_pool);
 
+        let initial_a = server
+            .get(&format!("/api/v1/books/{m_a}/metadata"))
+            .add_header(AUTHORIZATION, basic.clone())
+            .await;
+        let etag_a = etag_value(initial_a.headers());
         let name_a = format!("Alpha Author {marker}");
         let patch_a = server
             .patch(&format!("/api/v1/books/{m_a}/metadata"))
             .add_header(AUTHORIZATION, basic.clone())
+            .add_header(
+                axum::http::header::IF_MATCH,
+                axum::http::HeaderValue::from_str(&etag_a).unwrap(),
+            )
             .json(&serde_json::json!({"contributors": {"author": [name_a.clone()]}}))
             .await;
         assert_eq!(patch_a.status_code(), StatusCode::OK);
         let body_a: serde_json::Value = patch_a.json();
         let version_a = version_id_of(&body_a, "contributors.author");
 
+        let initial_b = server
+            .get(&format!("/api/v1/books/{m_b}/metadata"))
+            .add_header(AUTHORIZATION, basic.clone())
+            .await;
+        let etag_b = etag_value(initial_b.headers());
         let name_b = format!("Beta Author {marker}");
         let patch_b = server
             .patch(&format!("/api/v1/books/{m_b}/metadata"))
             .add_header(AUTHORIZATION, basic.clone())
+            .add_header(
+                axum::http::header::IF_MATCH,
+                axum::http::HeaderValue::from_str(&etag_b).unwrap(),
+            )
             .json(&serde_json::json!({"contributors": {"author": [name_b]}}))
             .await;
         assert_eq!(patch_b.status_code(), StatusCode::OK);
@@ -4676,10 +4974,19 @@ mod tests {
             test_support::db::insert_work_and_manifestation(&ing_pool, &marker).await;
         let server = test_support::db::server_with_real_pools(&app_pool, &ing_pool);
 
+        let initial = server
+            .get(&format!("/api/v1/books/{m_id}/metadata"))
+            .add_header(AUTHORIZATION, basic.clone())
+            .await;
+        let etag = etag_value(initial.headers());
         let name_a = format!("Alpha Author {marker}");
         let first = server
             .patch(&format!("/api/v1/books/{m_id}/metadata"))
             .add_header(AUTHORIZATION, basic.clone())
+            .add_header(
+                axum::http::header::IF_MATCH,
+                axum::http::HeaderValue::from_str(&etag).unwrap(),
+            )
             .json(&serde_json::json!({"contributors": {"author": [name_a]}}))
             .await;
         assert_eq!(first.status_code(), StatusCode::OK);
@@ -4690,11 +4997,16 @@ mod tests {
             "the work's first author edit has no prior single stamp to report"
         );
         let first_version_id = version_id_of(&first_body, "contributors.author");
+        let etag = etag_value(first.headers());
 
         let name_b = format!("Beta Author {marker}");
         let second = server
             .patch(&format!("/api/v1/books/{m_id}/metadata"))
             .add_header(AUTHORIZATION, basic)
+            .add_header(
+                axum::http::header::IF_MATCH,
+                axum::http::HeaderValue::from_str(&etag).unwrap(),
+            )
             .json(&serde_json::json!({"contributors": {"author": [name_b]}}))
             .await;
         assert_eq!(second.status_code(), StatusCode::OK);
@@ -4717,9 +5029,18 @@ mod tests {
             test_support::db::insert_work_and_manifestation(&ing_pool, &marker).await;
 
         let server = test_support::db::server_with_real_pools(&app_pool, &ing_pool);
+        let initial = server
+            .get(&format!("/api/v1/books/{m_id}/metadata"))
+            .add_header(AUTHORIZATION, basic.clone())
+            .await;
+        let etag = etag_value(initial.headers());
         let response = server
             .patch(&format!("/api/v1/books/{m_id}/metadata"))
             .add_header(AUTHORIZATION, basic)
+            .add_header(
+                axum::http::header::IF_MATCH,
+                axum::http::HeaderValue::from_str(&etag).unwrap(),
+            )
             .json(&serde_json::json!({"contributors": {}}))
             .await;
         assert_eq!(
@@ -4752,9 +5073,18 @@ mod tests {
             .map(|i| format!("Cap Name {i} {marker}"))
             .collect();
         let server = test_support::db::server_with_real_pools(&app_pool, &ing_pool);
+        let initial = server
+            .get(&format!("/api/v1/books/{m_id}/metadata"))
+            .add_header(AUTHORIZATION, basic.clone())
+            .await;
+        let etag = etag_value(initial.headers());
         let response = server
             .patch(&format!("/api/v1/books/{m_id}/metadata"))
             .add_header(AUTHORIZATION, basic)
+            .add_header(
+                axum::http::header::IF_MATCH,
+                axum::http::HeaderValue::from_str(&etag).unwrap(),
+            )
             .json(&serde_json::json!({"contributors": {"author": names}}))
             .await;
         assert_eq!(
@@ -4777,18 +5107,32 @@ mod tests {
         let name_b = format!("Journal Beta {marker}");
 
         let server = test_support::db::server_with_real_pools(&app_pool, &ing_pool);
+        let initial = server
+            .get(&format!("/api/v1/books/{m_id}/metadata"))
+            .add_header(AUTHORIZATION, basic.clone())
+            .await;
+        let etag = etag_value(initial.headers());
         let response = server
             .patch(&format!("/api/v1/books/{m_id}/metadata"))
             .add_header(AUTHORIZATION, basic.clone())
+            .add_header(
+                axum::http::header::IF_MATCH,
+                axum::http::HeaderValue::from_str(&etag).unwrap(),
+            )
             .json(&serde_json::json!({"contributors": {"author": [&name_a, &name_b]}}))
             .await;
         assert_eq!(response.status_code(), StatusCode::OK);
+        let etag = etag_value(response.headers());
 
         // The reorder hashes identically (order-insensitive normalisation),
         // collides with the first row, and must refresh its new_value.
         let response = server
             .patch(&format!("/api/v1/books/{m_id}/metadata"))
             .add_header(AUTHORIZATION, basic)
+            .add_header(
+                axum::http::header::IF_MATCH,
+                axum::http::HeaderValue::from_str(&etag).unwrap(),
+            )
             .json(&serde_json::json!({"contributors": {"author": [&name_b, &name_a]}}))
             .await;
         assert_eq!(response.status_code(), StatusCode::OK);
@@ -4824,9 +5168,18 @@ mod tests {
         test_support::db::insert_contributor(&ing_pool, work_id, &name_b, "author", 1).await;
 
         let server = test_support::db::server_with_real_pools(&app_pool, &ing_pool);
+        let initial = server
+            .get(&format!("/api/v1/books/{m_id}/metadata"))
+            .add_header(AUTHORIZATION, basic.clone())
+            .await;
+        let etag = etag_value(initial.headers());
         let response = server
             .patch(&format!("/api/v1/books/{m_id}/metadata"))
             .add_header(AUTHORIZATION, basic)
+            .add_header(
+                axum::http::header::IF_MATCH,
+                axum::http::HeaderValue::from_str(&etag).unwrap(),
+            )
             .json(&serde_json::json!({"contributors": {"author": [name_b, name_a]}}))
             .await;
         assert_eq!(response.status_code(), StatusCode::OK);
@@ -4860,9 +5213,18 @@ mod tests {
 
         let editor_name = format!("New Editor {marker}");
         let server = test_support::db::server_with_real_pools(&app_pool, &ing_pool);
+        let initial = server
+            .get(&format!("/api/v1/books/{m_id}/metadata"))
+            .add_header(AUTHORIZATION, basic.clone())
+            .await;
+        let etag = etag_value(initial.headers());
         let response = server
             .patch(&format!("/api/v1/books/{m_id}/metadata"))
             .add_header(AUTHORIZATION, basic)
+            .add_header(
+                axum::http::header::IF_MATCH,
+                axum::http::HeaderValue::from_str(&etag).unwrap(),
+            )
             .json(&serde_json::json!({"contributors": {"editor": [editor_name]}}))
             .await;
         assert_eq!(
@@ -4901,9 +5263,18 @@ mod tests {
         .await;
 
         let server = test_support::db::server_with_real_pools(&app_pool, &ing_pool);
+        let initial = server
+            .get(&format!("/api/v1/books/{m_id}/metadata"))
+            .add_header(AUTHORIZATION, basic.clone())
+            .await;
+        let etag = etag_value(initial.headers());
         let response = server
             .patch(&format!("/api/v1/books/{m_id}/metadata"))
             .add_header(AUTHORIZATION, basic)
+            .add_header(
+                axum::http::header::IF_MATCH,
+                axum::http::HeaderValue::from_str(&etag).unwrap(),
+            )
             .json(&serde_json::json!({"contributors": {"editor": null}}))
             .await;
         assert_eq!(response.status_code(), StatusCode::OK);
@@ -4948,9 +5319,18 @@ mod tests {
         .await;
 
         let server = test_support::db::server_with_real_pools(&app_pool, &ing_pool);
+        let initial = server
+            .get(&format!("/api/v1/books/{m_id}/metadata"))
+            .add_header(AUTHORIZATION, basic.clone())
+            .await;
+        let etag = etag_value(initial.headers());
         let response = server
             .patch(&format!("/api/v1/books/{m_id}/metadata"))
             .add_header(AUTHORIZATION, basic)
+            .add_header(
+                axum::http::header::IF_MATCH,
+                axum::http::HeaderValue::from_str(&etag).unwrap(),
+            )
             .json(&serde_json::json!({"contributors": {"translator": []}}))
             .await;
         assert_eq!(response.status_code(), StatusCode::OK);
@@ -4984,9 +5364,18 @@ mod tests {
         .await;
 
         let server = test_support::db::server_with_real_pools(&app_pool, &ing_pool);
+        let initial = server
+            .get(&format!("/api/v1/books/{m_id}/metadata"))
+            .add_header(AUTHORIZATION, basic.clone())
+            .await;
+        let etag = etag_value(initial.headers());
         let response = server
             .patch(&format!("/api/v1/books/{m_id}/metadata"))
             .add_header(AUTHORIZATION, basic)
+            .add_header(
+                axum::http::header::IF_MATCH,
+                axum::http::HeaderValue::from_str(&etag).unwrap(),
+            )
             .json(&serde_json::json!({"contributors": serde_json::Value::Null}))
             .await;
         assert_eq!(
@@ -5028,9 +5417,18 @@ mod tests {
         .await;
 
         let server = test_support::db::server_with_real_pools(&app_pool, &ing_pool);
+        let initial = server
+            .get(&format!("/api/v1/books/{m_id}/metadata"))
+            .add_header(AUTHORIZATION, basic.clone())
+            .await;
+        let etag = etag_value(initial.headers());
         let response = server
             .patch(&format!("/api/v1/books/{m_id}/metadata"))
             .add_header(AUTHORIZATION, basic)
+            .add_header(
+                axum::http::header::IF_MATCH,
+                axum::http::HeaderValue::from_str(&etag).unwrap(),
+            )
             .json(&serde_json::json!({"contributors": serde_json::Value::Null}))
             .await;
         assert_eq!(
@@ -5065,9 +5463,18 @@ mod tests {
             test_support::db::insert_work_and_manifestation(&ing_pool, &marker).await;
 
         let server = test_support::db::server_with_real_pools(&app_pool, &ing_pool);
+        let initial = server
+            .get(&format!("/api/v1/books/{m_id}/metadata"))
+            .add_header(AUTHORIZATION, basic.clone())
+            .await;
+        let etag = etag_value(initial.headers());
         let response = server
             .patch(&format!("/api/v1/books/{m_id}/metadata"))
             .add_header(AUTHORIZATION, basic)
+            .add_header(
+                axum::http::header::IF_MATCH,
+                axum::http::HeaderValue::from_str(&etag).unwrap(),
+            )
             .json(&serde_json::json!({"contributors": {"author": []}}))
             .await;
         assert_eq!(
@@ -5089,9 +5496,18 @@ mod tests {
         let name = format!("Dup Name {marker}");
 
         let server = test_support::db::server_with_real_pools(&app_pool, &ing_pool);
+        let initial = server
+            .get(&format!("/api/v1/books/{m_id}/metadata"))
+            .add_header(AUTHORIZATION, basic.clone())
+            .await;
+        let etag = etag_value(initial.headers());
         let response = server
             .patch(&format!("/api/v1/books/{m_id}/metadata"))
             .add_header(AUTHORIZATION, basic)
+            .add_header(
+                axum::http::header::IF_MATCH,
+                axum::http::HeaderValue::from_str(&etag).unwrap(),
+            )
             .json(&serde_json::json!({"contributors": {"author": [name.clone(), name]}}))
             .await;
         assert_eq!(response.status_code(), StatusCode::UNPROCESSABLE_ENTITY);
@@ -5107,9 +5523,18 @@ mod tests {
             test_support::db::insert_work_and_manifestation(&ing_pool, &marker).await;
 
         let server = test_support::db::server_with_real_pools(&app_pool, &ing_pool);
+        let initial = server
+            .get(&format!("/api/v1/books/{m_id}/metadata"))
+            .add_header(AUTHORIZATION, basic.clone())
+            .await;
+        let etag = etag_value(initial.headers());
         let response = server
             .patch(&format!("/api/v1/books/{m_id}/metadata"))
             .add_header(AUTHORIZATION, basic)
+            .add_header(
+                axum::http::header::IF_MATCH,
+                axum::http::HeaderValue::from_str(&etag).unwrap(),
+            )
             .json(&serde_json::json!({"contributors": {"author": ["   "]}}))
             .await;
         assert_eq!(response.status_code(), StatusCode::UNPROCESSABLE_ENTITY);
@@ -5126,9 +5551,18 @@ mod tests {
         let long_name = "A".repeat(501);
 
         let server = test_support::db::server_with_real_pools(&app_pool, &ing_pool);
+        let initial = server
+            .get(&format!("/api/v1/books/{m_id}/metadata"))
+            .add_header(AUTHORIZATION, basic.clone())
+            .await;
+        let etag = etag_value(initial.headers());
         let response = server
             .patch(&format!("/api/v1/books/{m_id}/metadata"))
             .add_header(AUTHORIZATION, basic)
+            .add_header(
+                axum::http::header::IF_MATCH,
+                axum::http::HeaderValue::from_str(&etag).unwrap(),
+            )
             .json(&serde_json::json!({"contributors": {"author": [long_name]}}))
             .await;
         assert_eq!(response.status_code(), StatusCode::UNPROCESSABLE_ENTITY);
@@ -5147,6 +5581,10 @@ mod tests {
         let response = server
             .patch(&format!("/api/v1/books/{m_id}/metadata"))
             .add_header(AUTHORIZATION, basic)
+            .add_header(
+                axum::http::header::IF_MATCH,
+                axum::http::HeaderValue::from_static("\"dummy\""),
+            )
             .json(&serde_json::json!({"contributors": {"narrator": ["Someone"]}}))
             .await;
         assert_eq!(
@@ -5168,9 +5606,18 @@ mod tests {
         let body = serde_json::to_vec(&serde_json::json!({"subtitle": subtitle})).unwrap();
 
         let server = test_support::db::server_with_real_pools(&app_pool, &ing_pool);
+        let initial = server
+            .get(&format!("/api/v1/books/{m_id}/metadata"))
+            .add_header(AUTHORIZATION, basic.clone())
+            .await;
+        let etag = etag_value(initial.headers());
         let response = server
             .patch(&format!("/api/v1/books/{m_id}/metadata"))
             .add_header(AUTHORIZATION, basic)
+            .add_header(
+                axum::http::header::IF_MATCH,
+                axum::http::HeaderValue::from_str(&etag).unwrap(),
+            )
             .content_type("application/merge-patch+json")
             .bytes(body.into())
             .await;
@@ -5193,9 +5640,18 @@ mod tests {
         let subtitle = format!("A New Subtitle {marker}");
 
         let server = test_support::db::server_with_real_pools(&app_pool, &ing_pool);
+        let initial = server
+            .get(&format!("/api/v1/books/{m_id}/metadata"))
+            .add_header(AUTHORIZATION, basic.clone())
+            .await;
+        let etag = etag_value(initial.headers());
         let response = server
             .patch(&format!("/api/v1/books/{m_id}/metadata"))
             .add_header(AUTHORIZATION, basic.clone())
+            .add_header(
+                axum::http::header::IF_MATCH,
+                axum::http::HeaderValue::from_str(&etag).unwrap(),
+            )
             .json(&serde_json::json!({"subtitle": subtitle}))
             .await;
         assert_eq!(response.status_code(), StatusCode::OK);
@@ -5210,11 +5666,16 @@ mod tests {
         assert_eq!(row.subtitle.as_deref(), Some(subtitle.as_str()));
         assert!(row.subtitle_version_id.is_some());
         let set_version_id = row.subtitle_version_id.expect("subtitle_version_id wired");
+        let etag = etag_value(response.headers());
 
         // Clear round-trip.
         let response = server
             .patch(&format!("/api/v1/books/{m_id}/metadata"))
             .add_header(AUTHORIZATION, basic)
+            .add_header(
+                axum::http::header::IF_MATCH,
+                axum::http::HeaderValue::from_str(&etag).unwrap(),
+            )
             .json(&serde_json::json!({"subtitle": serde_json::Value::Null}))
             .await;
         assert_eq!(response.status_code(), StatusCode::OK);
@@ -5260,9 +5721,18 @@ mod tests {
         // write has already been issued inside the transaction when the
         // invalid ISBN rejects the patch: this pins genuine rollback of an
         // in-flight write, not just fail-fast ordering.
+        let initial = server
+            .get(&format!("/api/v1/books/{m_id}/metadata"))
+            .add_header(AUTHORIZATION, basic.clone())
+            .await;
+        let etag = etag_value(initial.headers());
         let response = server
             .patch(&format!("/api/v1/books/{m_id}/metadata"))
             .add_header(AUTHORIZATION, basic)
+            .add_header(
+                axum::http::header::IF_MATCH,
+                axum::http::HeaderValue::from_str(&etag).unwrap(),
+            )
             .json(&serde_json::json!({"description": "New", "isbn_13": "not-an-isbn"}))
             .await;
         assert_eq!(
@@ -5289,9 +5759,18 @@ mod tests {
             test_support::db::insert_work_and_manifestation(&ing_pool, &marker).await;
 
         let server = test_support::db::server_with_real_pools(&app_pool, &ing_pool);
+        let initial = server
+            .get(&format!("/api/v1/books/{m_id}/metadata"))
+            .add_header(AUTHORIZATION, basic.clone())
+            .await;
+        let etag = etag_value(initial.headers());
         let response = server
             .patch(&format!("/api/v1/books/{m_id}/metadata"))
             .add_header(AUTHORIZATION, basic.clone())
+            .add_header(
+                axum::http::header::IF_MATCH,
+                axum::http::HeaderValue::from_str(&etag).unwrap(),
+            )
             .json(&serde_json::json!({"pages": 353}))
             .await;
         assert_eq!(response.status_code(), StatusCode::OK);
@@ -5306,9 +5785,14 @@ mod tests {
         assert_eq!(row.pages, Some(353));
         assert!(row.pages_version_id.is_some());
 
+        let etag = etag_value(response.headers());
         let response = server
             .patch(&format!("/api/v1/books/{m_id}/metadata"))
             .add_header(AUTHORIZATION, basic)
+            .add_header(
+                axum::http::header::IF_MATCH,
+                axum::http::HeaderValue::from_str(&etag).unwrap(),
+            )
             .json(&serde_json::json!({"pages": serde_json::Value::Null}))
             .await;
         assert_eq!(response.status_code(), StatusCode::OK);
@@ -5334,9 +5818,18 @@ mod tests {
             test_support::db::insert_work_and_manifestation(&ing_pool, &marker).await;
 
         let server = test_support::db::server_with_real_pools(&app_pool, &ing_pool);
+        let initial = server
+            .get(&format!("/api/v1/books/{m_id}/metadata"))
+            .add_header(AUTHORIZATION, basic.clone())
+            .await;
+        let etag = etag_value(initial.headers());
         let response = server
             .patch(&format!("/api/v1/books/{m_id}/metadata"))
             .add_header(AUTHORIZATION, basic)
+            .add_header(
+                axum::http::header::IF_MATCH,
+                axum::http::HeaderValue::from_str(&etag).unwrap(),
+            )
             .json(&serde_json::json!({"pages": 0}))
             .await;
         assert_eq!(response.status_code(), StatusCode::UNPROCESSABLE_ENTITY);
@@ -5355,6 +5848,10 @@ mod tests {
         let response = server
             .patch(&format!("/api/v1/books/{m_id}/metadata"))
             .add_header(AUTHORIZATION, basic)
+            .add_header(
+                axum::http::header::IF_MATCH,
+                axum::http::HeaderValue::from_static("\"dummy\""),
+            )
             .json(&serde_json::json!({"pages": "not-a-number"}))
             .await;
         assert_eq!(response.status_code(), StatusCode::UNPROCESSABLE_ENTITY);
@@ -5382,9 +5879,18 @@ mod tests {
 
         let name = format!("Locked Field Author {marker}");
         let server = test_support::db::server_with_real_pools(&app_pool, &ing_pool);
+        let initial = server
+            .get(&format!("/api/v1/books/{m_id}/metadata"))
+            .add_header(AUTHORIZATION, basic.clone())
+            .await;
+        let etag = etag_value(initial.headers());
         let response = server
             .patch(&format!("/api/v1/books/{m_id}/metadata"))
             .add_header(AUTHORIZATION, basic)
+            .add_header(
+                axum::http::header::IF_MATCH,
+                axum::http::HeaderValue::from_str(&etag).unwrap(),
+            )
             .json(&serde_json::json!({"contributors": {"author": [name.clone()]}}))
             .await;
         assert_eq!(
@@ -5421,9 +5927,18 @@ mod tests {
 
         let name = format!("Timestamp Author {marker}");
         let server = test_support::db::server_with_real_pools(&app_pool, &ing_pool);
+        let initial = server
+            .get(&format!("/api/v1/books/{m_id}/metadata"))
+            .add_header(AUTHORIZATION, basic.clone())
+            .await;
+        let etag = etag_value(initial.headers());
         let response = server
             .patch(&format!("/api/v1/books/{m_id}/metadata"))
             .add_header(AUTHORIZATION, basic)
+            .add_header(
+                axum::http::header::IF_MATCH,
+                axum::http::HeaderValue::from_str(&etag).unwrap(),
+            )
             .json(&serde_json::json!({"contributors": {"author": [name]}}))
             .await;
         assert_eq!(response.status_code(), StatusCode::OK);
@@ -5506,9 +6021,18 @@ mod tests {
             test_support::db::insert_work_and_manifestation(&ing_pool, &marker).await;
 
         let server = test_support::db::server_with_real_pools(&app_pool, &ing_pool);
+        let initial = server
+            .get(&format!("/api/v1/books/{m_id}/metadata"))
+            .add_header(AUTHORIZATION, basic.clone())
+            .await;
+        let etag = etag_value(initial.headers());
         let response = server
             .patch(&format!("/api/v1/books/{m_id}/metadata"))
             .add_header(AUTHORIZATION, basic)
+            .add_header(
+                axum::http::header::IF_MATCH,
+                axum::http::HeaderValue::from_str(&etag).unwrap(),
+            )
             .json(&serde_json::json!({"genres": ["Astrophysics", "Carpentry"]}))
             .await;
         assert_eq!(
@@ -5573,16 +6097,30 @@ mod tests {
             test_support::db::insert_work_and_manifestation(&ing_pool, &marker).await;
 
         let server = test_support::db::server_with_real_pools(&app_pool, &ing_pool);
+        let initial = server
+            .get(&format!("/api/v1/books/{m_id}/metadata"))
+            .add_header(AUTHORIZATION, basic.clone())
+            .await;
+        let etag = etag_value(initial.headers());
         let first = server
             .patch(&format!("/api/v1/books/{m_id}/metadata"))
             .add_header(AUTHORIZATION, basic.clone())
+            .add_header(
+                axum::http::header::IF_MATCH,
+                axum::http::HeaderValue::from_str(&etag).unwrap(),
+            )
             .json(&serde_json::json!({"genres": ["Astrophysics", "Carpentry"]}))
             .await;
         assert_eq!(first.status_code(), StatusCode::OK);
+        let etag = etag_value(first.headers());
 
         let second = server
             .patch(&format!("/api/v1/books/{m_id}/metadata"))
             .add_header(AUTHORIZATION, basic)
+            .add_header(
+                axum::http::header::IF_MATCH,
+                axum::http::HeaderValue::from_str(&etag).unwrap(),
+            )
             .json(&serde_json::json!({"genres": ["Numismatics"]}))
             .await;
         assert_eq!(second.status_code(), StatusCode::OK);
@@ -5625,9 +6163,18 @@ mod tests {
             test_support::db::insert_work_and_manifestation(&ing_pool, &marker).await;
 
         let server = test_support::db::server_with_real_pools(&app_pool, &ing_pool);
+        let initial = server
+            .get(&format!("/api/v1/books/{m_id}/metadata"))
+            .add_header(AUTHORIZATION, basic.clone())
+            .await;
+        let etag = etag_value(initial.headers());
         let response = server
             .patch(&format!("/api/v1/books/{m_id}/metadata"))
             .add_header(AUTHORIZATION, basic)
+            .add_header(
+                axum::http::header::IF_MATCH,
+                axum::http::HeaderValue::from_str(&etag).unwrap(),
+            )
             .json(&serde_json::json!({"moods": ["Gloomy"], "tags": ["Signed"]}))
             .await;
         assert_eq!(
@@ -5671,15 +6218,29 @@ mod tests {
         let marker_a = Uuid::new_v4().simple().to_string();
         let (_work_a, m_a) =
             test_support::db::insert_work_and_manifestation(&ing_pool, &marker_a).await;
+        let initial_a = server
+            .get(&format!("/api/v1/books/{m_a}/metadata"))
+            .add_header(AUTHORIZATION, basic.clone())
+            .await;
+        let etag_a = etag_value(initial_a.headers());
         let set_a = server
             .patch(&format!("/api/v1/books/{m_a}/metadata"))
             .add_header(AUTHORIZATION, basic.clone())
+            .add_header(
+                axum::http::header::IF_MATCH,
+                axum::http::HeaderValue::from_str(&etag_a).unwrap(),
+            )
             .json(&serde_json::json!({"genres": ["Origami"]}))
             .await;
         assert_eq!(set_a.status_code(), StatusCode::OK);
+        let etag_a = etag_value(set_a.headers());
         let clear_a = server
             .patch(&format!("/api/v1/books/{m_a}/metadata"))
             .add_header(AUTHORIZATION, basic.clone())
+            .add_header(
+                axum::http::header::IF_MATCH,
+                axum::http::HeaderValue::from_str(&etag_a).unwrap(),
+            )
             .json(&serde_json::json!({"genres": serde_json::Value::Null}))
             .await;
         assert_eq!(clear_a.status_code(), StatusCode::OK);
@@ -5708,15 +6269,29 @@ mod tests {
         let marker_b = Uuid::new_v4().simple().to_string();
         let (_work_b, m_b) =
             test_support::db::insert_work_and_manifestation(&ing_pool, &marker_b).await;
+        let initial_b = server
+            .get(&format!("/api/v1/books/{m_b}/metadata"))
+            .add_header(AUTHORIZATION, basic.clone())
+            .await;
+        let etag_b = etag_value(initial_b.headers());
         let set_b = server
             .patch(&format!("/api/v1/books/{m_b}/metadata"))
             .add_header(AUTHORIZATION, basic.clone())
+            .add_header(
+                axum::http::header::IF_MATCH,
+                axum::http::HeaderValue::from_str(&etag_b).unwrap(),
+            )
             .json(&serde_json::json!({"genres": ["Beekeeping"]}))
             .await;
         assert_eq!(set_b.status_code(), StatusCode::OK);
+        let etag_b = etag_value(set_b.headers());
         let clear_b = server
             .patch(&format!("/api/v1/books/{m_b}/metadata"))
             .add_header(AUTHORIZATION, basic)
+            .add_header(
+                axum::http::header::IF_MATCH,
+                axum::http::HeaderValue::from_str(&etag_b).unwrap(),
+            )
             .json(&serde_json::json!({"genres": []}))
             .await;
         assert_eq!(clear_b.status_code(), StatusCode::OK);
@@ -5752,9 +6327,18 @@ mod tests {
             test_support::db::insert_work_and_manifestation(&ing_pool, &marker).await;
 
         let server = test_support::db::server_with_real_pools(&app_pool, &ing_pool);
+        let initial = server
+            .get(&format!("/api/v1/books/{m_id}/metadata"))
+            .add_header(AUTHORIZATION, basic.clone())
+            .await;
+        let etag = etag_value(initial.headers());
         let response = server
             .patch(&format!("/api/v1/books/{m_id}/metadata"))
             .add_header(AUTHORIZATION, basic)
+            .add_header(
+                axum::http::header::IF_MATCH,
+                axum::http::HeaderValue::from_str(&etag).unwrap(),
+            )
             .json(&serde_json::json!({"genres": ["SciFi", "scifi"]}))
             .await;
         assert_eq!(response.status_code(), StatusCode::UNPROCESSABLE_ENTITY);
@@ -5771,9 +6355,18 @@ mod tests {
 
         let terms: Vec<String> = (0..51).map(|i| format!("VocabTerm{i}")).collect();
         let server = test_support::db::server_with_real_pools(&app_pool, &ing_pool);
+        let initial = server
+            .get(&format!("/api/v1/books/{m_id}/metadata"))
+            .add_header(AUTHORIZATION, basic.clone())
+            .await;
+        let etag = etag_value(initial.headers());
         let response = server
             .patch(&format!("/api/v1/books/{m_id}/metadata"))
             .add_header(AUTHORIZATION, basic)
+            .add_header(
+                axum::http::header::IF_MATCH,
+                axum::http::HeaderValue::from_str(&etag).unwrap(),
+            )
             .json(&serde_json::json!({"genres": terms}))
             .await;
         assert_eq!(response.status_code(), StatusCode::UNPROCESSABLE_ENTITY);
@@ -5789,15 +6382,25 @@ mod tests {
             test_support::db::insert_work_and_manifestation(&ing_pool, &marker).await;
 
         let server = test_support::db::server_with_real_pools(&app_pool, &ing_pool);
+        let initial = server
+            .get(&format!("/api/v1/books/{m_id}/metadata"))
+            .add_header(AUTHORIZATION, basic.clone())
+            .await;
+        let mut etag = etag_value(initial.headers());
 
         // Same order twice — must dedupe onto one journal row via observation_count.
         for _ in 0..2 {
             let response = server
                 .patch(&format!("/api/v1/books/{m_id}/metadata"))
                 .add_header(AUTHORIZATION, basic.clone())
+                .add_header(
+                    axum::http::header::IF_MATCH,
+                    axum::http::HeaderValue::from_str(&etag).unwrap(),
+                )
                 .json(&serde_json::json!({"genres": ["Falconry", "Glassblowing"]}))
                 .await;
             assert_eq!(response.status_code(), StatusCode::OK);
+            etag = etag_value(response.headers());
         }
 
         // A distinct set, submitted, then reordered — the order-insensitive
@@ -5805,12 +6408,21 @@ mod tests {
         let first_order = server
             .patch(&format!("/api/v1/books/{m_id}/metadata"))
             .add_header(AUTHORIZATION, basic.clone())
+            .add_header(
+                axum::http::header::IF_MATCH,
+                axum::http::HeaderValue::from_str(&etag).unwrap(),
+            )
             .json(&serde_json::json!({"genres": ["Alchemy", "Basketry"]}))
             .await;
         assert_eq!(first_order.status_code(), StatusCode::OK);
+        let etag = etag_value(first_order.headers());
         let reordered = server
             .patch(&format!("/api/v1/books/{m_id}/metadata"))
             .add_header(AUTHORIZATION, basic)
+            .add_header(
+                axum::http::header::IF_MATCH,
+                axum::http::HeaderValue::from_str(&etag).unwrap(),
+            )
             .json(&serde_json::json!({"genres": ["Basketry", "Alchemy"]}))
             .await;
         assert_eq!(reordered.status_code(), StatusCode::OK);
@@ -5859,9 +6471,18 @@ mod tests {
             test_support::db::insert_work_and_manifestation(&ing_pool, &marker).await;
 
         let server = test_support::db::server_with_real_pools(&app_pool, &ing_pool);
+        let initial = server
+            .get(&format!("/api/v1/books/{m_id}/metadata"))
+            .add_header(AUTHORIZATION, basic.clone())
+            .await;
+        let etag = etag_value(initial.headers());
         let set_response = server
             .patch(&format!("/api/v1/books/{m_id}/metadata"))
             .add_header(AUTHORIZATION, basic.clone())
+            .add_header(
+                axum::http::header::IF_MATCH,
+                axum::http::HeaderValue::from_str(&etag).unwrap(),
+            )
             .json(&serde_json::json!({"content_rating": "teen"}))
             .await;
         assert_eq!(
@@ -5895,9 +6516,14 @@ mod tests {
         assert_eq!(version.source, "manual");
         assert_eq!(version.field_name, "content_rating");
 
+        let etag = etag_value(set_response.headers());
         let clear_response = server
             .patch(&format!("/api/v1/books/{m_id}/metadata"))
             .add_header(AUTHORIZATION, basic)
+            .add_header(
+                axum::http::header::IF_MATCH,
+                axum::http::HeaderValue::from_str(&etag).unwrap(),
+            )
             .json(&serde_json::json!({"content_rating": serde_json::Value::Null}))
             .await;
         assert_eq!(clear_response.status_code(), StatusCode::OK);
@@ -5928,6 +6554,10 @@ mod tests {
         let response = server
             .patch(&format!("/api/v1/books/{m_id}/metadata"))
             .add_header(AUTHORIZATION, basic)
+            .add_header(
+                axum::http::header::IF_MATCH,
+                axum::http::HeaderValue::from_static("\"dummy\""),
+            )
             .json(&serde_json::json!({"content_rating": "ultra_violent"}))
             .await;
         assert_eq!(response.status_code(), StatusCode::UNPROCESSABLE_ENTITY);
@@ -5958,9 +6588,18 @@ mod tests {
             lock_response.text()
         );
 
+        let initial = server
+            .get(&format!("/api/v1/books/{m_id}/metadata"))
+            .add_header(AUTHORIZATION, basic.clone())
+            .await;
+        let etag = etag_value(initial.headers());
         let patch_response = server
             .patch(&format!("/api/v1/books/{m_id}/metadata"))
             .add_header(AUTHORIZATION, basic)
+            .add_header(
+                axum::http::header::IF_MATCH,
+                axum::http::HeaderValue::from_str(&etag).unwrap(),
+            )
             .json(&serde_json::json!({"content_rating": "mature"}))
             .await;
         assert_eq!(
@@ -6127,11 +6766,20 @@ mod tests {
         set_enrichment_backoff(&ing_pool, m_id).await;
 
         let server = test_support::db::server_with_real_pools(&app_pool, &ing_pool);
+        let initial = server
+            .get(&format!("/api/v1/books/{m_id}/metadata"))
+            .add_header(AUTHORIZATION, basic.clone())
+            .await;
+        let etag = etag_value(initial.headers());
         // Lower-case input: the parser canonicalises Open Library ids to
         // upper case before journaling and storage.
         let response = server
             .patch(&format!("/api/v1/books/{m_id}/metadata"))
             .add_header(AUTHORIZATION, basic)
+            .add_header(
+                axum::http::header::IF_MATCH,
+                axum::http::HeaderValue::from_str(&etag).unwrap(),
+            )
             .json(&serde_json::json!({"work_identifiers": {"openlibrary": "ol45804w"}}))
             .await;
         assert_eq!(
@@ -6213,9 +6861,18 @@ mod tests {
         set_enrichment_backoff(&ing_pool, m_id).await;
 
         let server = test_support::db::server_with_real_pools(&app_pool, &ing_pool);
+        let initial = server
+            .get(&format!("/api/v1/books/{m_id}/metadata"))
+            .add_header(AUTHORIZATION, basic.clone())
+            .await;
+        let etag = etag_value(initial.headers());
         let response = server
             .patch(&format!("/api/v1/books/{m_id}/metadata"))
             .add_header(AUTHORIZATION, basic)
+            .add_header(
+                axum::http::header::IF_MATCH,
+                axum::http::HeaderValue::from_str(&etag).unwrap(),
+            )
             .json(
                 &serde_json::json!({"manifestation_identifiers": {"googlebooks": "zyTZAAAAYAAJ"}}),
             )
@@ -6281,9 +6938,18 @@ mod tests {
         .expect("preset in_progress state");
 
         let server = test_support::db::server_with_real_pools(&app_pool, &ing_pool);
+        let initial = server
+            .get(&format!("/api/v1/books/{m_id}/metadata"))
+            .add_header(AUTHORIZATION, basic.clone())
+            .await;
+        let etag = etag_value(initial.headers());
         let response = server
             .patch(&format!("/api/v1/books/{m_id}/metadata"))
             .add_header(AUTHORIZATION, basic)
+            .add_header(
+                axum::http::header::IF_MATCH,
+                axum::http::HeaderValue::from_str(&etag).unwrap(),
+            )
             .json(
                 &serde_json::json!({"manifestation_identifiers": {"googlebooks": "zyTZAAAAYAAJ"}}),
             )
@@ -6333,18 +6999,32 @@ mod tests {
             test_support::db::insert_work_and_manifestation(&ing_pool, &marker).await;
         let server = test_support::db::server_with_real_pools(&app_pool, &ing_pool);
 
+        let initial = server
+            .get(&format!("/api/v1/books/{m_id}/metadata"))
+            .add_header(AUTHORIZATION, basic.clone())
+            .await;
+        let etag = etag_value(initial.headers());
         let first = server
             .patch(&format!("/api/v1/books/{m_id}/metadata"))
             .add_header(AUTHORIZATION, basic.clone())
+            .add_header(
+                axum::http::header::IF_MATCH,
+                axum::http::HeaderValue::from_str(&etag).unwrap(),
+            )
             .json(&serde_json::json!({"work_identifiers": {"openlibrary": "OL111W"}}))
             .await;
         assert_eq!(first.status_code(), StatusCode::OK);
         let first_body: serde_json::Value = first.json();
         let first_version = version_id_of(&first_body, "identifiers.work.openlibrary");
+        let etag = etag_value(first.headers());
 
         let second = server
             .patch(&format!("/api/v1/books/{m_id}/metadata"))
             .add_header(AUTHORIZATION, basic)
+            .add_header(
+                axum::http::header::IF_MATCH,
+                axum::http::HeaderValue::from_str(&etag).unwrap(),
+            )
             .json(&serde_json::json!({"work_identifiers": {"openlibrary": "OL222W"}}))
             .await;
         assert_eq!(second.status_code(), StatusCode::OK);
@@ -6380,16 +7060,30 @@ mod tests {
             test_support::db::insert_work_and_manifestation(&ing_pool, &marker).await;
         let server = test_support::db::server_with_real_pools(&app_pool, &ing_pool);
 
+        let initial = server
+            .get(&format!("/api/v1/books/{m_id}/metadata"))
+            .add_header(AUTHORIZATION, basic.clone())
+            .await;
+        let etag = etag_value(initial.headers());
         let set = server
             .patch(&format!("/api/v1/books/{m_id}/metadata"))
             .add_header(AUTHORIZATION, basic.clone())
+            .add_header(
+                axum::http::header::IF_MATCH,
+                axum::http::HeaderValue::from_str(&etag).unwrap(),
+            )
             .json(&serde_json::json!({"manifestation_identifiers": {"asin": "B004GXAX8C"}}))
             .await;
         assert_eq!(set.status_code(), StatusCode::OK);
+        let etag = etag_value(set.headers());
 
         let clear = server
             .patch(&format!("/api/v1/books/{m_id}/metadata"))
             .add_header(AUTHORIZATION, basic)
+            .add_header(
+                axum::http::header::IF_MATCH,
+                axum::http::HeaderValue::from_str(&etag).unwrap(),
+            )
             .json(&serde_json::json!({"manifestation_identifiers": {"asin": null}}))
             .await;
         assert_eq!(
@@ -6443,6 +7137,11 @@ mod tests {
         let (_work_id, m_id) =
             test_support::db::insert_work_and_manifestation(&ing_pool, &marker).await;
         let server = test_support::db::server_with_real_pools(&app_pool, &ing_pool);
+        let initial = server
+            .get(&format!("/api/v1/books/{m_id}/metadata"))
+            .add_header(AUTHORIZATION, basic.clone())
+            .await;
+        let etag = etag_value(initial.headers());
 
         // `manual` is a provenance source, not an identifier scheme; clearing
         // an unknown scheme is rejected identically to setting one.
@@ -6453,6 +7152,10 @@ mod tests {
             let response = server
                 .patch(&format!("/api/v1/books/{m_id}/metadata"))
                 .add_header(AUTHORIZATION, basic.clone())
+                .add_header(
+                    axum::http::header::IF_MATCH,
+                    axum::http::HeaderValue::from_str(&etag).unwrap(),
+                )
                 .json(&payload)
                 .await;
             assert_eq!(
@@ -6473,6 +7176,11 @@ mod tests {
         let (_work_id, m_id) =
             test_support::db::insert_work_and_manifestation(&ing_pool, &marker).await;
         let server = test_support::db::server_with_real_pools(&app_pool, &ing_pool);
+        let initial = server
+            .get(&format!("/api/v1/books/{m_id}/metadata"))
+            .add_header(AUTHORIZATION, basic.clone())
+            .await;
+        let etag = etag_value(initial.headers());
 
         for payload in [
             // A Google Books volume id has no work-level form.
@@ -6484,6 +7192,10 @@ mod tests {
             let response = server
                 .patch(&format!("/api/v1/books/{m_id}/metadata"))
                 .add_header(AUTHORIZATION, basic.clone())
+                .add_header(
+                    axum::http::header::IF_MATCH,
+                    axum::http::HeaderValue::from_str(&etag).unwrap(),
+                )
                 .json(&payload)
                 .await;
             assert_eq!(
@@ -6504,11 +7216,20 @@ mod tests {
         let (_work_id, m_id) =
             test_support::db::insert_work_and_manifestation(&ing_pool, &marker).await;
         let server = test_support::db::server_with_real_pools(&app_pool, &ing_pool);
+        let initial = server
+            .get(&format!("/api/v1/books/{m_id}/metadata"))
+            .add_header(AUTHORIZATION, basic.clone())
+            .await;
+        let etag = etag_value(initial.headers());
 
         for bad in ["OL45804W/../x", "OL45804W?x=1", "OL45804W\u{0}", "OL४५W"] {
             let response = server
                 .patch(&format!("/api/v1/books/{m_id}/metadata"))
                 .add_header(AUTHORIZATION, basic.clone())
+                .add_header(
+                    axum::http::header::IF_MATCH,
+                    axum::http::HeaderValue::from_str(&etag).unwrap(),
+                )
                 .json(&serde_json::json!({"work_identifiers": {"openlibrary": bad}}))
                 .await;
             assert_eq!(
@@ -6579,18 +7300,32 @@ mod tests {
             test_support::db::insert_work_and_manifestation(&ing_pool, &marker).await;
         let server = test_support::db::server_with_real_pools(&app_pool, &ing_pool);
 
+        let initial = server
+            .get(&format!("/api/v1/books/{m_id}/metadata"))
+            .add_header(AUTHORIZATION, basic.clone())
+            .await;
+        let etag = etag_value(initial.headers());
         let first = server
             .patch(&format!("/api/v1/books/{m_id}/metadata"))
             .add_header(AUTHORIZATION, basic.clone())
+            .add_header(
+                axum::http::header::IF_MATCH,
+                axum::http::HeaderValue::from_str(&etag).unwrap(),
+            )
             .json(&serde_json::json!({"work_identifiers": {"openlibrary": "OL111W"}}))
             .await;
         assert_eq!(first.status_code(), StatusCode::OK);
         let first_body: serde_json::Value = first.json();
         let first_version = version_id_of(&first_body, "identifiers.work.openlibrary");
+        let etag = etag_value(first.headers());
 
         let second = server
             .patch(&format!("/api/v1/books/{m_id}/metadata"))
             .add_header(AUTHORIZATION, basic.clone())
+            .add_header(
+                axum::http::header::IF_MATCH,
+                axum::http::HeaderValue::from_str(&etag).unwrap(),
+            )
             .json(&serde_json::json!({"work_identifiers": {"openlibrary": "OL222W"}}))
             .await;
         assert_eq!(second.status_code(), StatusCode::OK);
@@ -6631,9 +7366,18 @@ mod tests {
             test_support::db::insert_work_and_manifestation(&ing_pool, &marker).await;
         let server = test_support::db::server_with_real_pools(&app_pool, &ing_pool);
 
+        let initial = server
+            .get(&format!("/api/v1/books/{m_id}/metadata"))
+            .add_header(AUTHORIZATION, basic.clone())
+            .await;
+        let etag = etag_value(initial.headers());
         let set = server
             .patch(&format!("/api/v1/books/{m_id}/metadata"))
             .add_header(AUTHORIZATION, basic.clone())
+            .add_header(
+                axum::http::header::IF_MATCH,
+                axum::http::HeaderValue::from_str(&etag).unwrap(),
+            )
             .json(&serde_json::json!({"manifestation_identifiers": {"goodreads": "5907"}}))
             .await;
         assert_eq!(set.status_code(), StatusCode::OK);
@@ -6683,9 +7427,18 @@ mod tests {
         let m_b = insert_sibling_manifestation(&ing_pool, work_id).await;
         let server = test_support::db::server_with_real_pools(&app_pool, &ing_pool);
 
+        let initial = server
+            .get(&format!("/api/v1/books/{m_a}/metadata"))
+            .add_header(AUTHORIZATION, basic.clone())
+            .await;
+        let etag = etag_value(initial.headers());
         let set = server
             .patch(&format!("/api/v1/books/{m_a}/metadata"))
             .add_header(AUTHORIZATION, basic.clone())
+            .add_header(
+                axum::http::header::IF_MATCH,
+                axum::http::HeaderValue::from_str(&etag).unwrap(),
+            )
             .json(&serde_json::json!({"work_identifiers": {"openlibrary": "OL333W"}}))
             .await;
         assert_eq!(set.status_code(), StatusCode::OK);
@@ -6799,6 +7552,10 @@ mod tests {
         let r = server
             .patch(&format!("/api/v1/books/{m_id}/metadata"))
             .add_header(AUTHORIZATION, basic)
+            .add_header(
+                axum::http::header::IF_MATCH,
+                axum::http::HeaderValue::from_str(&before_etag).unwrap(),
+            )
             .json(&serde_json::json!({"title": format!("Bumped {marker}")}))
             .await;
         assert_eq!(r.status_code(), StatusCode::OK, "body: {}", r.text());
@@ -6810,7 +7567,7 @@ mod tests {
     }
 
     #[sqlx::test(migrations = "./migrations")]
-    async fn patch_metadata_without_if_match_still_succeeds(pool: sqlx::PgPool) {
+    async fn patch_metadata_without_if_match_returns_428(pool: sqlx::PgPool) {
         let app_pool = test_support::db::app_pool_for(&pool).await;
         let ing_pool = test_support::db::ingestion_pool_for(&pool).await;
         let (_admin_id, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
@@ -6819,13 +7576,16 @@ mod tests {
             test_support::db::insert_work_and_manifestation(&ing_pool, &marker).await;
         let server = test_support::db::server_with_real_pools(&app_pool, &ing_pool);
 
-        // No If-Match header at all: this PR's compatibility guarantee.
         let r = server
             .patch(&format!("/api/v1/books/{m_id}/metadata"))
             .add_header(AUTHORIZATION, basic)
             .json(&serde_json::json!({"title": format!("No If-Match {marker}")}))
             .await;
-        assert_eq!(r.status_code(), StatusCode::OK, "body: {}", r.text());
+        test_support::assert_problem(
+            &r,
+            problems::IF_MATCH_REQUIRED,
+            StatusCode::PRECONDITION_REQUIRED,
+        );
     }
 
     #[sqlx::test(migrations = "./migrations")]
@@ -6876,6 +7636,10 @@ mod tests {
         server
             .patch(&format!("/api/v1/books/{m_id}/metadata"))
             .add_header(AUTHORIZATION, basic.clone())
+            .add_header(
+                axum::http::header::IF_MATCH,
+                axum::http::HeaderValue::from_str(&stale_etag).unwrap(),
+            )
             .json(&serde_json::json!({"title": format!("Raced {marker}")}))
             .await;
 

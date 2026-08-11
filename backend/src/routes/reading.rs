@@ -263,9 +263,10 @@ fn apply_patch(existing: ReadingStateRow, req: &UpdateReadingRequest) -> Reading
 ///   malformed.
 /// - [`AppError::NotFound`] when the manifestation is missing or hidden by
 ///   RLS for the current user (existence-not-leaked).
-/// - [`AppError::IfMatchMismatch`] (412) when `If-Match` is present and does
-///   not match the caller's current reading-state `ETag`; the response
-///   carries the current `ETag` so the caller can resync in one round trip.
+/// - [`AppError::IfMatchRequired`] (428) when `If-Match` is absent.
+/// - [`AppError::IfMatchMismatch`] (412) when `If-Match` does not match the
+///   caller's current reading-state `ETag`; the response carries the
+///   current `ETag` so the caller can resync in one round trip.
 /// - [`AppError::Internal`] on database errors.
 #[utoipa::path(
     patch,
@@ -274,7 +275,7 @@ fn apply_patch(existing: ReadingStateRow, req: &UpdateReadingRequest) -> Reading
     security(("session_cookie" = ["write"]), ("device_token_bearer" = ["write"]), ("oidc_jwt_bearer" = ["write"]), ("opds_basic" = ["write"])),
     params(
         ("id" = Uuid, Path, description = "Manifestation id"),
-        ("If-Match" = Option<String>, Header, description = "A single quoted strong entity-tag, as returned in a prior GET or PATCH response's ETag header. Optional in this phase: absent means proceed unprotected; present and stale means 412")
+        ("If-Match" = String, Header, description = "A single quoted strong entity-tag, as returned in a prior GET or PATCH response's ETag header. Required: absent means 428; stale means 412")
     ),
     request_body(content = UpdateReadingRequest, description = "RFC 7396 JSON Merge Patch: absent fields are unchanged, `null` clears"),
     responses(
@@ -285,7 +286,8 @@ fn apply_patch(existing: ReadingStateRow, req: &UpdateReadingRequest) -> Reading
         (status = 412, description = "If-Match does not match the caller's current reading-state ETag", body = crate::openapi::ProblemDetails,
          headers(("ETag" = String, description = "Current entity-tag, so the caller can resync without a follow-up GET"))),
         (status = 400, description = "Malformed If-Match header", body = crate::openapi::ProblemDetails),
-        (status = 422, description = "Empty patch, rating outside 1-5, or notes over 10000 characters", body = crate::openapi::ProblemDetails)
+        (status = 422, description = "Empty patch, rating outside 1-5, or notes over 10000 characters", body = crate::openapi::ProblemDetails),
+        (status = 428, description = "If-Match header absent", body = crate::openapi::ProblemDetails)
     )
 )]
 async fn patch_reading(
@@ -296,7 +298,7 @@ async fn patch_reading(
     body: Result<axum::Json<UpdateReadingRequest>, axum::extract::rejection::JsonRejection>,
 ) -> Result<Response, AppError> {
     current_user.require_scope(Scope::Write)?;
-    let if_match = parse_if_match(&headers_in)?;
+    let if_match = parse_if_match(&headers_in)?.ok_or(AppError::IfMatchRequired)?;
     let axum::Json(req) = body.map_err(|e| AppError::Validation(e.body_text()))?;
 
     if req.status.is_none() && req.rating.is_none() && req.notes.is_none() {
@@ -352,11 +354,9 @@ async fn patch_reading(
     // Compared under the same row lock the patch applies against, so a
     // concurrent writer cannot slip a change in between this check and the
     // update below.
-    if let Some(im) = &if_match {
-        let current = existing.etag()?;
-        if current.as_bytes() != im.as_bytes() {
-            return Ok(if_match_mismatch(&current));
-        }
+    let current = existing.etag()?;
+    if current.as_bytes() != if_match.as_bytes() {
+        return Ok(if_match_mismatch(&current));
     }
 
     let merged = apply_patch(existing, &req);
@@ -491,6 +491,10 @@ mod tests {
         let r = server
             .patch(&format!("/api/v1/books/{}/reading", Uuid::new_v4()))
             .add_header(auth(&basic).0, auth(&basic).1)
+            .add_header(
+                axum::http::header::IF_MATCH,
+                HeaderValue::from_static("\"dummy\""),
+            )
             .json(&json!({"status": "reading"}))
             .await;
         test_support::assert_problem(&r, problems::NOT_FOUND, StatusCode::NOT_FOUND);
@@ -506,9 +510,19 @@ mod tests {
             test_support::db::create_adult_and_basic_auth(&app_pool, "upsert").await;
         let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
 
+        let initial = server
+            .get(&format!("/api/v1/books/{m_id}/reading"))
+            .add_header(auth(&basic).0.clone(), auth(&basic).1.clone())
+            .await;
+        let etag = etag_value(initial.headers());
+
         let r = server
             .patch(&format!("/api/v1/books/{m_id}/reading"))
             .add_header(auth(&basic).0, auth(&basic).1)
+            .add_header(
+                axum::http::header::IF_MATCH,
+                HeaderValue::from_str(&etag).unwrap(),
+            )
             .json(&json!({"status": "want_to_read", "rating": 4, "notes": "looks good"}))
             .await;
         assert_eq!(r.status_code(), StatusCode::OK, "body: {}", r.text());
@@ -528,15 +542,30 @@ mod tests {
             test_support::db::create_adult_and_basic_auth(&app_pool, "partial").await;
         let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
 
-        server
+        let initial = server
+            .get(&format!("/api/v1/books/{m_id}/reading"))
+            .add_header(auth(&basic).0.clone(), auth(&basic).1.clone())
+            .await;
+        let etag = etag_value(initial.headers());
+
+        let first = server
             .patch(&format!("/api/v1/books/{m_id}/reading"))
             .add_header(auth(&basic).0.clone(), auth(&basic).1.clone())
+            .add_header(
+                axum::http::header::IF_MATCH,
+                HeaderValue::from_str(&etag).unwrap(),
+            )
             .json(&json!({"status": "on_hold", "rating": 3, "notes": "original"}))
             .await;
+        let etag = etag_value(first.headers());
 
         let r = server
             .patch(&format!("/api/v1/books/{m_id}/reading"))
             .add_header(auth(&basic).0, auth(&basic).1)
+            .add_header(
+                axum::http::header::IF_MATCH,
+                HeaderValue::from_str(&etag).unwrap(),
+            )
             .json(&json!({"rating": 5}))
             .await;
         assert_eq!(r.status_code(), StatusCode::OK, "body: {}", r.text());
@@ -562,15 +591,30 @@ mod tests {
             test_support::db::create_adult_and_basic_auth(&app_pool, "clear").await;
         let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
 
-        server
+        let initial = server
+            .get(&format!("/api/v1/books/{m_id}/reading"))
+            .add_header(auth(&basic).0.clone(), auth(&basic).1.clone())
+            .await;
+        let etag = etag_value(initial.headers());
+
+        let first = server
             .patch(&format!("/api/v1/books/{m_id}/reading"))
             .add_header(auth(&basic).0.clone(), auth(&basic).1.clone())
+            .add_header(
+                axum::http::header::IF_MATCH,
+                HeaderValue::from_str(&etag).unwrap(),
+            )
             .json(&json!({"notes": "temporary"}))
             .await;
+        let etag = etag_value(first.headers());
 
         let r = server
             .patch(&format!("/api/v1/books/{m_id}/reading"))
             .add_header(auth(&basic).0, auth(&basic).1)
+            .add_header(
+                axum::http::header::IF_MATCH,
+                HeaderValue::from_str(&etag).unwrap(),
+            )
             .json(&json!({"notes": null}))
             .await;
         assert_eq!(r.status_code(), StatusCode::OK, "body: {}", r.text());
@@ -588,11 +632,22 @@ mod tests {
             test_support::db::create_adult_and_basic_auth(&app_pool, "started-once").await;
         let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
 
+        let initial = server
+            .get(&format!("/api/v1/books/{m_id}/reading"))
+            .add_header(auth(&basic).0.clone(), auth(&basic).1.clone())
+            .await;
+        let etag = etag_value(initial.headers());
+
         let first = server
             .patch(&format!("/api/v1/books/{m_id}/reading"))
             .add_header(auth(&basic).0.clone(), auth(&basic).1.clone())
+            .add_header(
+                axum::http::header::IF_MATCH,
+                HeaderValue::from_str(&etag).unwrap(),
+            )
             .json(&json!({"status": "reading"}))
             .await;
+        let etag = etag_value(first.headers());
         let first_body: serde_json::Value = first.json();
         let started_at_1 = first_body["started_at"]
             .as_str()
@@ -604,6 +659,10 @@ mod tests {
         let second = server
             .patch(&format!("/api/v1/books/{m_id}/reading"))
             .add_header(auth(&basic).0, auth(&basic).1)
+            .add_header(
+                axum::http::header::IF_MATCH,
+                HeaderValue::from_str(&etag).unwrap(),
+            )
             .json(&json!({"status": "reading"}))
             .await;
         let second_body: serde_json::Value = second.json();
@@ -624,9 +683,19 @@ mod tests {
             test_support::db::create_adult_and_basic_auth(&app_pool, "finished").await;
         let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
 
+        let initial = server
+            .get(&format!("/api/v1/books/{m_id}/reading"))
+            .add_header(auth(&basic).0.clone(), auth(&basic).1.clone())
+            .await;
+        let etag = etag_value(initial.headers());
+
         let r = server
             .patch(&format!("/api/v1/books/{m_id}/reading"))
             .add_header(auth(&basic).0, auth(&basic).1)
+            .add_header(
+                axum::http::header::IF_MATCH,
+                HeaderValue::from_str(&etag).unwrap(),
+            )
             .json(&json!({"status": "finished"}))
             .await;
         assert_eq!(r.status_code(), StatusCode::OK, "body: {}", r.text());
@@ -647,11 +716,22 @@ mod tests {
             test_support::db::create_adult_and_basic_auth(&app_pool, "clear-after-finish").await;
         let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
 
+        let initial = server
+            .get(&format!("/api/v1/books/{m_id}/reading"))
+            .add_header(auth(&basic).0.clone(), auth(&basic).1.clone())
+            .await;
+        let etag = etag_value(initial.headers());
+
         let finished = server
             .patch(&format!("/api/v1/books/{m_id}/reading"))
             .add_header(auth(&basic).0.clone(), auth(&basic).1.clone())
+            .add_header(
+                axum::http::header::IF_MATCH,
+                HeaderValue::from_str(&etag).unwrap(),
+            )
             .json(&json!({"status": "finished"}))
             .await;
+        let etag = etag_value(finished.headers());
         let finished_body: serde_json::Value = finished.json();
         let finished_at = finished_body["finished_at"]
             .as_str()
@@ -661,6 +741,10 @@ mod tests {
         let cleared = server
             .patch(&format!("/api/v1/books/{m_id}/reading"))
             .add_header(auth(&basic).0, auth(&basic).1)
+            .add_header(
+                axum::http::header::IF_MATCH,
+                HeaderValue::from_str(&etag).unwrap(),
+            )
             .json(&json!({"status": null}))
             .await;
         assert_eq!(
@@ -701,11 +785,22 @@ mod tests {
             test_support::db::create_adult_and_basic_auth(&app_pool, "stamp-guard").await;
         let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
 
+        let initial = server
+            .get(&format!("/api/v1/books/{m_id}/reading"))
+            .add_header(auth(&basic).0.clone(), auth(&basic).1.clone())
+            .await;
+        let etag = etag_value(initial.headers());
+
         let finished = server
             .patch(&format!("/api/v1/books/{m_id}/reading"))
             .add_header(auth(&basic).0.clone(), auth(&basic).1.clone())
+            .add_header(
+                axum::http::header::IF_MATCH,
+                HeaderValue::from_str(&etag).unwrap(),
+            )
             .json(&json!({"status": "finished"}))
             .await;
+        let etag = etag_value(finished.headers());
         let finished_body: serde_json::Value = finished.json();
         let finished_at = finished_body["finished_at"]
             .as_str()
@@ -721,6 +816,10 @@ mod tests {
         let r = server
             .patch(&format!("/api/v1/books/{m_id}/reading"))
             .add_header(auth(&basic).0, auth(&basic).1)
+            .add_header(
+                axum::http::header::IF_MATCH,
+                HeaderValue::from_str(&etag).unwrap(),
+            )
             .json(&json!({"rating": 4}))
             .await;
         assert_eq!(r.status_code(), StatusCode::OK, "body: {}", r.text());
@@ -749,17 +848,67 @@ mod tests {
             test_support::db::create_adult_and_basic_auth(&app_pool, "merge-race").await;
         let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
 
+        let initial = server
+            .get(&format!("/api/v1/books/{m_id}/reading"))
+            .add_header(auth(&basic).0.clone(), auth(&basic).1.clone())
+            .await;
+        let etag = etag_value(initial.headers());
+
         let rating_patch = server
             .patch(&format!("/api/v1/books/{m_id}/reading"))
             .add_header(auth(&basic).0, auth(&basic).1)
+            .add_header(
+                axum::http::header::IF_MATCH,
+                HeaderValue::from_str(&etag).unwrap(),
+            )
             .json(&json!({"rating": 4}));
         let notes_patch = server
             .patch(&format!("/api/v1/books/{m_id}/reading"))
             .add_header(auth(&basic).0, auth(&basic).1)
+            .add_header(
+                axum::http::header::IF_MATCH,
+                HeaderValue::from_str(&etag).unwrap(),
+            )
             .json(&json!({"notes": "kept"}));
         let (a, b) = tokio::join!(rating_patch, notes_patch);
-        assert_eq!(a.status_code(), StatusCode::OK, "body: {}", a.text());
-        assert_eq!(b.status_code(), StatusCode::OK, "body: {}", b.text());
+        // Both racers carry the same tag, so exactly one lands and the
+        // other is told to re-read: the lost-update window is closed.
+        let mut statuses = [a.status_code(), b.status_code()];
+        statuses.sort();
+        assert_eq!(
+            statuses,
+            [StatusCode::OK, StatusCode::PRECONDITION_FAILED],
+            "bodies: {} / {}",
+            a.text(),
+            b.text()
+        );
+        let (winner, loser) = if a.status_code() == StatusCode::OK {
+            (a, b)
+        } else {
+            (b, a)
+        };
+        let current = etag_value(winner.headers());
+        let retry_body = if winner.json::<serde_json::Value>()["rating"] == 4 {
+            json!({"notes": "kept"})
+        } else {
+            json!({"rating": 4})
+        };
+        assert_ne!(etag_value(loser.headers()), etag, "412 carries current tag");
+        let retry = server
+            .patch(&format!("/api/v1/books/{m_id}/reading"))
+            .add_header(auth(&basic).0, auth(&basic).1)
+            .add_header(
+                axum::http::header::IF_MATCH,
+                HeaderValue::from_str(&current).unwrap(),
+            )
+            .json(&retry_body)
+            .await;
+        assert_eq!(
+            retry.status_code(),
+            StatusCode::OK,
+            "body: {}",
+            retry.text()
+        );
 
         let r = server
             .get(&format!("/api/v1/books/{m_id}/reading"))
@@ -791,6 +940,10 @@ mod tests {
         let r = server
             .patch(&format!("/api/v1/books/{m_id}/reading"))
             .add_header(auth(&child_basic).0, auth(&child_basic).1)
+            .add_header(
+                axum::http::header::IF_MATCH,
+                HeaderValue::from_static("\"dummy\""),
+            )
             .json(&json!({"status": "reading"}))
             .await;
         test_support::assert_problem(&r, problems::NOT_FOUND, StatusCode::NOT_FOUND);
@@ -809,6 +962,10 @@ mod tests {
         let r = server
             .patch(&format!("/api/v1/books/{m_id}/reading"))
             .add_header(auth(&basic).0, auth(&basic).1)
+            .add_header(
+                axum::http::header::IF_MATCH,
+                HeaderValue::from_static("\"dummy\""),
+            )
             .json(&json!({"notes": "n".repeat(10_001)}))
             .await;
         test_support::assert_problem(&r, problems::VALIDATION, StatusCode::UNPROCESSABLE_ENTITY);
@@ -828,6 +985,10 @@ mod tests {
             let r = server
                 .patch(&format!("/api/v1/books/{m_id}/reading"))
                 .add_header(auth(&basic).0.clone(), auth(&basic).1.clone())
+                .add_header(
+                    axum::http::header::IF_MATCH,
+                    HeaderValue::from_static("\"dummy\""),
+                )
                 .json(&json!({"rating": bad_rating}))
                 .await;
             test_support::assert_problem(
@@ -851,6 +1012,10 @@ mod tests {
         let r = server
             .patch(&format!("/api/v1/books/{m_id}/reading"))
             .add_header(auth(&basic).0, auth(&basic).1)
+            .add_header(
+                axum::http::header::IF_MATCH,
+                HeaderValue::from_static("\"dummy\""),
+            )
             .json(&json!({}))
             .await;
         test_support::assert_problem(&r, problems::VALIDATION, StatusCode::UNPROCESSABLE_ENTITY);
@@ -868,9 +1033,19 @@ mod tests {
             test_support::db::create_adult_and_basic_auth(&app_pool, "isolation-b").await;
         let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
 
+        let initial = server
+            .get(&format!("/api/v1/books/{m_id}/reading"))
+            .add_header(auth(&a_basic).0.clone(), auth(&a_basic).1.clone())
+            .await;
+        let etag = etag_value(initial.headers());
+
         server
             .patch(&format!("/api/v1/books/{m_id}/reading"))
             .add_header(auth(&a_basic).0, auth(&a_basic).1)
+            .add_header(
+                axum::http::header::IF_MATCH,
+                HeaderValue::from_str(&etag).unwrap(),
+            )
             .json(&json!({"status": "finished", "rating": 5}))
             .await;
 
@@ -902,9 +1077,19 @@ mod tests {
         test_support::db::add_to_shelf(&app_pool, shelf_id, m_id).await;
         let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
 
+        let initial = server
+            .get(&format!("/api/v1/books/{m_id}/reading"))
+            .add_header(auth(&child_basic).0.clone(), auth(&child_basic).1.clone())
+            .await;
+        let etag = etag_value(initial.headers());
+
         let patched = server
             .patch(&format!("/api/v1/books/{m_id}/reading"))
             .add_header(auth(&child_basic).0.clone(), auth(&child_basic).1.clone())
+            .add_header(
+                axum::http::header::IF_MATCH,
+                HeaderValue::from_str(&etag).unwrap(),
+            )
             .json(&json!({"status": "reading", "rating": 5}))
             .await;
         assert_eq!(
@@ -953,9 +1138,19 @@ mod tests {
             test_support::db::create_adult_and_basic_auth(&app_pool, "etag-stable").await;
         let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
 
+        let initial = server
+            .get(&format!("/api/v1/books/{m_id}/reading"))
+            .add_header(auth(&basic).0.clone(), auth(&basic).1.clone())
+            .await;
+        let etag = etag_value(initial.headers());
+
         server
             .patch(&format!("/api/v1/books/{m_id}/reading"))
             .add_header(auth(&basic).0.clone(), auth(&basic).1.clone())
+            .add_header(
+                axum::http::header::IF_MATCH,
+                HeaderValue::from_str(&etag).unwrap(),
+            )
             .json(&json!({"rating": 3}))
             .await;
 
@@ -989,6 +1184,10 @@ mod tests {
         let r = server
             .patch(&format!("/api/v1/books/{m_id}/reading"))
             .add_header(auth(&basic).0, auth(&basic).1)
+            .add_header(
+                axum::http::header::IF_MATCH,
+                HeaderValue::from_str(&before_etag).unwrap(),
+            )
             .json(&json!({"rating": 4}))
             .await;
         assert_eq!(r.status_code(), StatusCode::OK, "body: {}", r.text());
@@ -1000,7 +1199,7 @@ mod tests {
     }
 
     #[sqlx::test(migrations = "./migrations")]
-    async fn patch_reading_without_if_match_still_succeeds(pool: PgPool) {
+    async fn patch_reading_without_if_match_returns_428(pool: PgPool) {
         let app_pool = test_support::db::app_pool_for(&pool).await;
         let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
         let (_work, m_id) =
@@ -1009,13 +1208,16 @@ mod tests {
             test_support::db::create_adult_and_basic_auth(&app_pool, "no-if-match").await;
         let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
 
-        // No If-Match header at all: this PR's compatibility guarantee.
         let r = server
             .patch(&format!("/api/v1/books/{m_id}/reading"))
             .add_header(auth(&basic).0, auth(&basic).1)
             .json(&json!({"rating": 2}))
             .await;
-        assert_eq!(r.status_code(), StatusCode::OK, "body: {}", r.text());
+        test_support::assert_problem(
+            &r,
+            problems::IF_MATCH_REQUIRED,
+            StatusCode::PRECONDITION_REQUIRED,
+        );
     }
 
     #[sqlx::test(migrations = "./migrations")]
@@ -1068,6 +1270,10 @@ mod tests {
         server
             .patch(&format!("/api/v1/books/{m_id}/reading"))
             .add_header(auth(&basic).0.clone(), auth(&basic).1.clone())
+            .add_header(
+                axum::http::header::IF_MATCH,
+                HeaderValue::from_str(&stale_etag).unwrap(),
+            )
             .json(&json!({"rating": 5}))
             .await;
 
