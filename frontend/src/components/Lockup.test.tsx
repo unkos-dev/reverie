@@ -14,29 +14,21 @@ describe("Lockup", () => {
     expect(lockup).toBeInTheDocument();
   });
 
-  it("hides the inline glyph SVG from assistive tech (the parent has the label)", () => {
+  it("hides the canonical glyph asset from assistive tech (the parent has the label)", () => {
     const { container } = render(<Lockup />);
-    const glyph = container.querySelector("svg");
+    const glyph = container.querySelector("img");
     expect(glyph).not.toBeNull();
     expect(glyph).toHaveAttribute("aria-hidden", "true");
   });
 
-  it("renders the locked Slot construction inside the inline glyph", () => {
+  it("uses the canonical standard Slot asset", () => {
     const { container } = render(<Lockup />);
-    const glyph = container.querySelector("svg");
-    expect(glyph).toHaveAttribute("viewBox", "0 0 32 32");
-    const rects = glyph?.querySelectorAll("rect");
-    expect(rects?.length).toBe(2);
-    expect(rects?.[0]).toHaveAttribute("x", "4");
-    expect(rects?.[0]).toHaveAttribute("y", "4");
-    expect(rects?.[0]).toHaveAttribute("width", "24");
-    expect(rects?.[0]).toHaveAttribute("height", "24");
-    expect(rects?.[0]).toHaveAttribute("fill", "#C9A961");
-    expect(rects?.[1]).toHaveAttribute("x", "8");
-    expect(rects?.[1]).toHaveAttribute("y", "17");
-    expect(rects?.[1]).toHaveAttribute("width", "16");
-    expect(rects?.[1]).toHaveAttribute("height", "2");
-    expect(rects?.[1]).toHaveAttribute("fill", "#0E0D0A");
+    expect(container.querySelector("img")).toHaveAttribute("src", "/brand/glyph/slot.svg");
+  });
+
+  it("uses the canonical thick-slot asset below 24px", () => {
+    const { container } = render(<Lockup size={13} />);
+    expect(container.querySelector("img")).toHaveAttribute("src", "/brand/glyph/slot-favicon.svg");
   });
 
   it("uses cream wordmark on dark theme (default)", () => {
@@ -51,11 +43,17 @@ describe("Lockup", () => {
     expect(word).toHaveStyle({ color: "rgb(14, 13, 10)" }); // #0E0D0A
   });
 
-  it("scales glyph to 0.95 × size", () => {
+  it("sizes the glyph and wordmark gap from cap height", () => {
     const { container } = render(<Lockup size={40} />);
-    const glyph = container.querySelector("svg");
-    expect(glyph).toHaveAttribute("width", "38"); // 40 * 0.95
-    expect(glyph).toHaveAttribute("height", "38");
+    expect(container.firstElementChild).toHaveStyle({ fontSize: "40px", gap: "0.5cap" });
+    expect(container.querySelector("img")).toHaveAttribute(
+      "style",
+      expect.stringContaining("width: 0.95cap"),
+    );
+    expect(container.querySelector("img")).toHaveAttribute(
+      "style",
+      expect.stringContaining("height: 0.95cap"),
+    );
   });
 
   it("forwards className to the lockup element", () => {

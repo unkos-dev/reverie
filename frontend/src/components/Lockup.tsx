@@ -1,31 +1,23 @@
 import type { CSSProperties, ReactElement } from "react";
 
-interface LockupProps {
+type LockupProps = {
   size?: number;
   theme?: "dark" | "light";
   className?: string;
-}
+};
 
-const REVERIE_GOLD = "#C9A961";
 const INK = "#0E0D0A";
 const CREAM = "#E8E0D0";
 
 /**
- * Brand lockup (glyph + wordmark "Reverie"). The hex brand constants and
- * the self-contained inline `style` blocks are intentional: the lockup must
- * render correctly even when the theme tree has not resolved yet (e.g. on
- * the OIDC error page where the canonical token CSS may not yet be on the
- * wire), so it cannot rely on token CSS variables or an external stylesheet.
- * Two-token glyph (gold square + ink slot) and the Satoshi wordmark are
- * baked in.
+ * Brand lockup (Slot glyph plus the Reverie wordmark). Inline styles keep the
+ * wordmark correct before the theme tree resolves, while the glyph always
+ * loads from the canonical shipped asset.
  *
- * @param props.size - Wordmark font-size in pixels. Glyph scales to
- *   `0.95 * size` and the column gap to `0.5 * size`. Defaults to 28px to
- *   match the canonical app-shell header height.
+ * @param props.size - Wordmark font size in pixels. Glyph size and gap scale
+ *   from Satoshi's cap height. Defaults to 28px to match the app-shell header.
  * @param props.theme - Selects the wordmark colour: `"dark"` uses the
- *   cream tint (for dark surfaces); `"light"` uses ink (for light
- *   surfaces). Glyph colours are constant — the gold square + ink slot
- *   stay readable on both surface families.
+ *   cream tint (for dark surfaces); `"light"` uses ink (for light surfaces).
  * @param props.className - Optional `className` forwarded to the outer
  *   `<span>` so callers can layout the lockup within their own grid.
  * @returns A semantic `role="img"` span with `aria-label="Reverie"`. The
@@ -33,20 +25,25 @@ const CREAM = "#E8E0D0";
  *   the brand name once.
  */
 export function Lockup({ size = 28, theme = "dark", className }: LockupProps): ReactElement {
-  const glyphSize = size * 0.95;
-  const gap = size * 0.5;
+  const glyphSource = size < 24 ? "/brand/glyph/slot-favicon.svg" : "/brand/glyph/slot.svg";
   const wordColor = theme === "dark" ? CREAM : INK;
 
   const containerStyle: CSSProperties = {
     display: "inline-flex",
     alignItems: "center",
-    gap: `${String(gap)}px`,
-  };
-
-  const wordStyle: CSSProperties = {
+    gap: "0.5cap",
     fontFamily: '"Satoshi Variable", "Satoshi", system-ui, sans-serif',
     fontWeight: 700,
     fontSize: `${String(size)}px`,
+  };
+
+  const glyphStyle: CSSProperties = {
+    width: "0.95cap",
+    height: "0.95cap",
+    flex: "none",
+  };
+
+  const wordStyle: CSSProperties = {
     letterSpacing: "0.32em",
     textTransform: "uppercase",
     paddingLeft: "0.32em",
@@ -56,10 +53,7 @@ export function Lockup({ size = 28, theme = "dark", className }: LockupProps): R
 
   return (
     <span className={className} style={containerStyle} role="img" aria-label="Reverie">
-      <svg width={glyphSize} height={glyphSize} viewBox="0 0 32 32" aria-hidden="true">
-        <rect x="4" y="4" width="24" height="24" fill={REVERIE_GOLD} />
-        <rect x="8" y="17" width="16" height="2" fill={INK} />
-      </svg>
+      <img src={glyphSource} alt="" aria-hidden="true" style={glyphStyle} />
       <span style={wordStyle}>Reverie</span>
     </span>
   );
