@@ -27,6 +27,7 @@ import {
   ApiError,
   getBookMetadata,
   isIfMatchMismatch,
+  isIfMatchRequired,
   revertField,
   updateBookMetadata,
   type BookListItem,
@@ -424,12 +425,14 @@ export function useCellEdit({ listKey, columns }: UseCellEditOptions): UseCellEd
     }
   }
 
-  /** A stale If-Match: the row's cached value predates a write from
-   *  elsewhere. There is no merge UI, so the affordance is a reload of the
-   *  caches this edit would otherwise have touched, offered rather than
-   *  applied automatically since the operator was mid-edit. Also re-fires
-   *  the pipeline's own GET so the primed ETag cache resyncs alongside the
-   *  displayed values, not just the list/detail caches. */
+  /** A stale or missing If-Match: either the row's cached value predates a
+   *  write from elsewhere (412), or the commit outran the mount-time ETag
+   *  priming fetch (428). Both share the same remedy, so they share this
+   *  affordance: a reload of the caches this edit would otherwise have
+   *  touched, offered rather than applied automatically since the operator
+   *  was mid-edit. Also re-fires the pipeline's own GET so the primed ETag
+   *  cache resyncs alongside the displayed values, not just the
+   *  list/detail caches. */
   function announceConflict(
     manifestationId: string,
     workScoped: boolean,
@@ -516,7 +519,7 @@ export function useCellEdit({ listKey, columns }: UseCellEditOptions): UseCellEd
       } catch (err) {
         clearPending(key);
         console.error("[useCellEdit.onCellEdit] metadata mutation failed", err);
-        if (isIfMatchMismatch(err)) {
+        if (isIfMatchMismatch(err) || isIfMatchRequired(err)) {
           announceConflict(row.id, route.workScoped, "metadata");
         } else {
           toast.error(formatError(err));
@@ -551,7 +554,7 @@ export function useCellEdit({ listKey, columns }: UseCellEditOptions): UseCellEd
     } catch (err) {
       clearPending(key);
       console.error("[useCellEdit.onCellEdit] reading mutation failed", err);
-      if (isIfMatchMismatch(err)) {
+      if (isIfMatchMismatch(err) || isIfMatchRequired(err)) {
         announceConflict(row.id, false, "reading");
       } else {
         toast.error(formatError(err));

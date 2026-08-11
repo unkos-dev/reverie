@@ -2835,9 +2835,20 @@ async fn manual_vocab_patch_does_not_inflate_pending_count(pool: PgPool) {
     let (_work_id, m_id) = insert_book(&ingestion_pool, "vocab-pending", "Basalt Compendium").await;
     let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
 
+    let initial = server
+        .get(&format!("/api/v1/books/{m_id}/metadata"))
+        .add_header(AUTHORIZATION, basic.clone())
+        .await;
+    let etag = initial
+        .headers()
+        .get(axum::http::header::ETAG)
+        .expect("ETag header present")
+        .clone();
+
     let patch = server
         .patch(&format!("/api/v1/books/{m_id}/metadata"))
         .add_header(AUTHORIZATION, basic.clone())
+        .add_header(axum::http::header::IF_MATCH, etag)
         .json(&serde_json::json!({
             "genres": ["Falconry"], "moods": ["Wistful"], "tags": ["Heirloom"]
         }))
@@ -3663,9 +3674,19 @@ async fn list_endpoint_reading_state_is_caller_scoped(pool: PgPool) {
     let (_work, m_id) = insert_book(&ingestion_pool, "reading-list", "Reading List Book").await;
     let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
 
+    let a_read = server
+        .get(&format!("/api/v1/books/{m_id}/reading"))
+        .add_header(AUTHORIZATION, a_basic.clone())
+        .await;
+    let a_etag = a_read
+        .headers()
+        .get(axum::http::header::ETAG)
+        .expect("ETag header present")
+        .clone();
     server
         .patch(&format!("/api/v1/books/{m_id}/reading"))
         .add_header(AUTHORIZATION, a_basic.clone())
+        .add_header(axum::http::header::IF_MATCH, a_etag)
         .json(&serde_json::json!({"status": "reading", "rating": 4}))
         .await;
 
@@ -3715,14 +3736,30 @@ async fn list_endpoint_reading_summary_carries_reading_dates(pool: PgPool) {
 
     // Real write path: entering `reading` stamps started_at, entering
     // `finished` stamps finished_at — the summary must carry both stamps.
-    server
+    let a_read = server
+        .get(&format!("/api/v1/books/{m_id}/reading"))
+        .add_header(AUTHORIZATION, a_basic.clone())
+        .await;
+    let a_etag = a_read
+        .headers()
+        .get(axum::http::header::ETAG)
+        .expect("ETag header present")
+        .clone();
+    let first = server
         .patch(&format!("/api/v1/books/{m_id}/reading"))
         .add_header(AUTHORIZATION, a_basic.clone())
+        .add_header(axum::http::header::IF_MATCH, a_etag)
         .json(&serde_json::json!({"status": "reading", "notes": "loved the first act"}))
         .await;
+    let a_etag = first
+        .headers()
+        .get(axum::http::header::ETAG)
+        .expect("ETag header present")
+        .clone();
     server
         .patch(&format!("/api/v1/books/{m_id}/reading"))
         .add_header(AUTHORIZATION, a_basic.clone())
+        .add_header(axum::http::header::IF_MATCH, a_etag)
         .json(&serde_json::json!({"status": "finished"}))
         .await;
 
@@ -3751,9 +3788,19 @@ async fn list_endpoint_reading_summary_carries_reading_dates(pool: PgPool) {
     }
 
     // A rating-only row keeps the new slots as explicit nulls.
+    let b_read = server
+        .get(&format!("/api/v1/books/{m_id}/reading"))
+        .add_header(AUTHORIZATION, b_basic.clone())
+        .await;
+    let b_etag = b_read
+        .headers()
+        .get(axum::http::header::ETAG)
+        .expect("ETag header present")
+        .clone();
     server
         .patch(&format!("/api/v1/books/{m_id}/reading"))
         .add_header(AUTHORIZATION, b_basic.clone())
+        .add_header(axum::http::header::IF_MATCH, b_etag)
         .json(&serde_json::json!({"rating": 3}))
         .await;
     let b_list = server

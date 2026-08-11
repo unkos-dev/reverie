@@ -1067,4 +1067,37 @@ describe("useCellEdit", () => {
     expect(getReadingState).toHaveBeenCalledWith(row.id);
     expect(getBookMetadata).not.toHaveBeenCalled();
   });
+
+  test("a 428 missing-If-Match error (priming lost the race) resolves through the same reload action as a 412", async () => {
+    const client = makeClient();
+    const invalidateSpy = vi.spyOn(client, "invalidateQueries");
+    const row = rowFixture();
+    seedCache(client, [row]);
+    vi.mocked(updateBookMetadata).mockRejectedValue(
+      new ApiError(
+        428,
+        "https://reverie.example/probs/if-match-required",
+        "Precondition Required",
+        "",
+      ),
+    );
+    const report: CellEditReport<BookListItem> = {
+      row: { ...row, subtitle: "New Subtitle" },
+      previousRow: row,
+      columnKey: "subtitle",
+    };
+    renderHarness(client, [report]);
+    await userEvent.setup().click(screen.getByRole("button", { name: "edit-0" }));
+
+    await waitFor(() => {
+      expect(toast.error).toHaveBeenCalledWith(
+        "This book changed elsewhere. Reload to see the latest values before retrying.",
+        expect.objectContaining({ action: expect.anything() as unknown }),
+      );
+    });
+
+    getErrorAction(0)();
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: LIST_KEY });
+    expect(getBookMetadata).toHaveBeenCalledWith(row.id);
+  });
 });
