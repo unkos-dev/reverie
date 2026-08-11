@@ -183,6 +183,10 @@
    A [data-theme="dark"] block belongs here only if a token must differ
    structurally on dark — none currently do. */
 
+body {
+  font-family: var(--font-body);
+}
+
 /* Loading-pulse keyframe — philosophy §11A loading-state expression.
    Loading state communicates via opacity pulse on the loading region,
    not a separate `--color-loading` token. */
