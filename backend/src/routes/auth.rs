@@ -194,7 +194,10 @@ async fn callback(
         .ok_or_else(|| AppError::Internal(anyhow::anyhow!("missing ID token")))?;
     let claims = id_token
         .claims(&oidc_client.id_token_verifier(), &Nonce::new(stored_nonce))
-        .map_err(|e| AppError::Internal(anyhow::anyhow!("ID token validation failed: {e}")))?;
+        .map_err(|e| {
+            tracing::warn!(error = %e, "ID token claims verification failed");
+            AppError::Unauthorized
+        })?;
 
     let subject = claims.subject().as_str();
     // Verified `iss` from the ID-token claims namespaces the subject. For a
@@ -1499,6 +1502,77 @@ mod tests {
             me_body_2.get("csrf_token").and_then(|v| v.as_str()),
             Some(token),
             "csrf_token must be stable across /auth/me reads in same session"
+        );
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn callback_with_mismatched_nonce_returns_401(pool: sqlx::PgPool) {
+        use crate::state::AppState;
+        use crate::test_support::oidc_mock::MockOidcProvider;
+        use tower_sessions::session::Id as SessionId;
+        use tower_sessions::{MemoryStore, SessionStore};
+
+        let app_pool = test_support::db::app_pool_for(&pool).await;
+        let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+
+        let mock = MockOidcProvider::start("").await;
+        let oidc_client = Some(mock.client("http://localhost:3000/auth/callback"));
+
+        let store = MemoryStore::default();
+        let state = AppState {
+            pool: app_pool.clone(),
+            ingestion_pool,
+            config: test_support::test_config(),
+            oidc_client,
+            jwt_validator: None,
+            login_limiter: test_support::test_login_limiter(),
+            settings: test_support::test_settings(),
+            last_settings_reload: std::sync::Arc::new(tokio::sync::RwLock::new(None)),
+        };
+        let app = crate::build_router_with_session_store(state, store.clone());
+        let mut server = axum_test::TestServer::new(app);
+        server.save_cookies();
+
+        let login_resp = server.get("/auth/oidc/login").await;
+        assert_eq!(login_resp.status_code(), StatusCode::TEMPORARY_REDIRECT);
+
+        let session_cookie_value = login_resp.cookie("id").value().to_string();
+        let session_id: SessionId = session_cookie_value.parse().expect("parse session id");
+        let record = store
+            .load(&session_id)
+            .await
+            .expect("load session record")
+            .expect("session record present");
+        let csrf: String = serde_json::from_value(
+            record
+                .data
+                .get("oidc_csrf_state")
+                .expect("oidc_csrf_state in session")
+                .clone(),
+        )
+        .expect("oidc_csrf_state is string");
+
+        // Sign the ID token with a nonce that does not match the one
+        // /auth/oidc/login stored in this session, so `claims()`
+        // rejects it during verification.
+        mock.mount_token_endpoint(
+            "test-subject-mismatch",
+            Some("mallory@example.com"),
+            Some("Mallory"),
+            "wrong-nonce-value",
+        )
+        .await;
+
+        let cb_resp = server
+            .get("/auth/callback")
+            .add_query_param("code", "mock-auth-code")
+            .add_query_param("state", &csrf)
+            .await;
+
+        test_support::assert_problem(
+            &cb_resp,
+            crate::error::problems::UNAUTHORIZED,
+            StatusCode::UNAUTHORIZED,
         );
     }
 

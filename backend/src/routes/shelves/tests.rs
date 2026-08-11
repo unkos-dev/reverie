@@ -649,7 +649,7 @@ async fn reorder_rejects_partial_list(pool: PgPool) {
 }
 
 #[sqlx::test(migrations = "./migrations")]
-async fn reorder_with_non_quoted_if_match_returns_422(pool: PgPool) {
+async fn reorder_with_non_quoted_if_match_returns_400(pool: PgPool) {
     let app_pool = test_support::db::app_pool_for(&pool).await;
     let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
     let (_uid, basic, shelf_id, ids) =
@@ -664,11 +664,11 @@ async fn reorder_with_non_quoted_if_match_returns_422(pool: PgPool) {
         )
         .json(&json!({"items": [ids[1], ids[0]]}))
         .await;
-    test_support::assert_problem(&r, problems::VALIDATION, StatusCode::UNPROCESSABLE_ENTITY);
+    test_support::assert_problem(&r, problems::MALFORMED_HEADER, StatusCode::BAD_REQUEST);
 }
 
 #[sqlx::test(migrations = "./migrations")]
-async fn reorder_with_weak_etag_if_match_returns_422(pool: PgPool) {
+async fn reorder_with_weak_etag_if_match_returns_400(pool: PgPool) {
     let app_pool = test_support::db::app_pool_for(&pool).await;
     let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
     let (_uid, basic, shelf_id, ids) =
@@ -683,11 +683,11 @@ async fn reorder_with_weak_etag_if_match_returns_422(pool: PgPool) {
         )
         .json(&json!({"items": [ids[1], ids[0]]}))
         .await;
-    test_support::assert_problem(&r, problems::VALIDATION, StatusCode::UNPROCESSABLE_ENTITY);
+    test_support::assert_problem(&r, problems::MALFORMED_HEADER, StatusCode::BAD_REQUEST);
 }
 
 #[sqlx::test(migrations = "./migrations")]
-async fn reorder_with_malformed_timestamp_if_match_returns_422(pool: PgPool) {
+async fn reorder_with_malformed_timestamp_if_match_returns_400(pool: PgPool) {
     let app_pool = test_support::db::app_pool_for(&pool).await;
     let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
     let (_uid, basic, shelf_id, ids) =
@@ -699,7 +699,7 @@ async fn reorder_with_malformed_timestamp_if_match_returns_422(pool: PgPool) {
         .add_header(header::IF_MATCH, HeaderValue::from_static("\"garbage\""))
         .json(&json!({"items": [ids[1], ids[0]]}))
         .await;
-    test_support::assert_problem(&r, problems::VALIDATION, StatusCode::UNPROCESSABLE_ENTITY);
+    test_support::assert_problem(&r, problems::MALFORMED_HEADER, StatusCode::BAD_REQUEST);
 }
 
 #[sqlx::test(migrations = "./migrations")]

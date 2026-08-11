@@ -82,33 +82,33 @@ fn etag_header(updated_at: DateTime<Utc>) -> Result<HeaderValue, AppError> {
 /// - `Ok(None)` when the header is absent (handler typically responds
 ///   with [`AppError::IfMatchRequired`]).
 /// - `Ok(Some(_))` on a well-formed entity-tag.
-/// - `Err(AppError::Validation)` when the value is malformed.
+/// - `Err(AppError::MalformedHeader)` when the value is malformed.
 fn parse_if_match(headers: &HeaderMap) -> Result<Option<DateTime<Utc>>, AppError> {
     let Some(raw) = headers.get(IF_MATCH) else {
         return Ok(None);
     };
     let value = raw
         .to_str()
-        .map_err(|_| AppError::Validation("If-Match header must be ASCII".into()))?;
+        .map_err(|_| AppError::MalformedHeader("If-Match header must be ASCII".into()))?;
     let trimmed = value.trim();
     // RFC 9110 §13.1.2: If-Match requires strong comparison. Weak
     // validators (`W/"..."`) are semantically wrong for optimistic
     // concurrency and reject explicitly rather than silently being
     // promoted to strong.
     if trimmed.starts_with("W/") {
-        return Err(AppError::Validation(
+        return Err(AppError::MalformedHeader(
             "weak entity-tags (W/\"...\") not accepted for If-Match".into(),
         ));
     }
     // Strong tag MUST be wrapped in double quotes per RFC 9110 §8.8.3.
     let Some(stripped) = trimmed.strip_prefix('"').and_then(|s| s.strip_suffix('"')) else {
-        return Err(AppError::Validation(
+        return Err(AppError::MalformedHeader(
             "If-Match value must be a quoted entity-tag".into(),
         ));
     };
     let ts = DateTime::parse_from_rfc3339(stripped)
         .map_err(|e| {
-            AppError::Validation(format!(
+            AppError::MalformedHeader(format!(
                 "If-Match value is not a valid RFC3339 entity-tag: {e}"
             ))
         })?
@@ -868,9 +868,9 @@ struct ReorderItemsRequest {
 ///
 /// # Errors
 /// - [`AppError::IfMatchRequired`] (428) when the header is absent.
-/// - [`AppError::Validation`] when the header is malformed or the
-///   posted items list contains UUIDs that are not currently on the
-///   shelf.
+/// - [`AppError::MalformedHeader`] when the `If-Match` header is malformed.
+/// - [`AppError::Validation`] when the posted items list does not
+///   exactly cover the shelf.
 /// - [`AppError::NotFound`] when the shelf is missing / not owned.
 /// - [`AppError::IfMatchMismatch`] (412) when the `ETag` does not match.
 /// - [`AppError::Internal`] on database errors.
@@ -887,10 +887,11 @@ struct ReorderItemsRequest {
     responses(
         (status = 204, description = "Positions rewritten; shelf ETag bumped",
          headers(("ETag" = String, description = "Entity-tag carrying the shelf's new updated_at (RFC 3339, quoted per RFC 9110)"))),
+        (status = 400, description = "Malformed If-Match header", body = crate::openapi::ProblemDetails),
         (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails),
         (status = 404, description = "Shelf missing or owned by another user (existence-not-leaked)", body = crate::openapi::ProblemDetails),
         (status = 412, description = "If-Match does not match the shelf's current updated_at", body = crate::openapi::ProblemDetails),
-        (status = 422, description = "Malformed If-Match, or items list does not exactly cover the shelf", body = crate::openapi::ProblemDetails),
+        (status = 422, description = "Items list does not exactly cover the shelf", body = crate::openapi::ProblemDetails),
         (status = 428, description = "If-Match header absent", body = crate::openapi::ProblemDetails)
     )
 )]

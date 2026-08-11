@@ -3620,7 +3620,7 @@
           "shelves"
         ],
         "summary": "`PUT /api/v1/shelves/{id}/items` — transactionally rewrite\n`shelf_items.position` based on the supplied order.",
-        "description": "Optimistic-concurrency: requires `If-Match: \"<updated_at>\"`\nheader matching the shelf's current `updated_at`; otherwise 412.\n\n# Errors\n- [`AppError::IfMatchRequired`] (428) when the header is absent.\n- [`AppError::Validation`] when the header is malformed or the\n  posted items list contains UUIDs that are not currently on the\n  shelf.\n- [`AppError::NotFound`] when the shelf is missing / not owned.\n- [`AppError::IfMatchMismatch`] (412) when the `ETag` does not match.\n- [`AppError::Internal`] on database errors.",
+        "description": "Optimistic-concurrency: requires `If-Match: \"<updated_at>\"`\nheader matching the shelf's current `updated_at`; otherwise 412.\n\n# Errors\n- [`AppError::IfMatchRequired`] (428) when the header is absent.\n- [`AppError::MalformedHeader`] when the `If-Match` header is malformed.\n- [`AppError::Validation`] when the posted items list does not\n  exactly cover the shelf.\n- [`AppError::NotFound`] when the shelf is missing / not owned.\n- [`AppError::IfMatchMismatch`] (412) when the `ETag` does not match.\n- [`AppError::Internal`] on database errors.",
         "operationId": "reorder_shelf_items",
         "parameters": [
           {
@@ -3665,6 +3665,16 @@
               }
             }
           },
+          "400": {
+            "description": "Malformed If-Match header",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
           "401": {
             "description": "Authentication required",
             "content": {
@@ -3696,7 +3706,7 @@
             }
           },
           "422": {
-            "description": "Malformed If-Match, or items list does not exactly cover the shelf",
+            "description": "Items list does not exactly cover the shelf",
             "content": {
               "application/json": {
                 "schema": {
