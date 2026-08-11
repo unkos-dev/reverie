@@ -7,8 +7,9 @@
 use std::collections::BTreeMap;
 
 use axum::extract::{Path, State};
-use axum::http::StatusCode;
-use axum::response::IntoResponse;
+use axum::http::header::ETAG;
+use axum::http::{HeaderMap, HeaderValue, StatusCode};
+use axum::response::{IntoResponse, Response};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sqlx::{Postgres, Transaction};
@@ -26,6 +27,7 @@ use crate::models::external_identifier::{
     upsert_manifestation_identifier, upsert_work_identifier,
 };
 use crate::models::work;
+use crate::routes::etag::{hash_etag, if_match_mismatch, parse_if_match};
 use crate::routes::library::{
     load_genres_for_manifestations, load_moods_for_manifestations, load_tags_for_manifestations,
 };
@@ -96,7 +98,8 @@ struct MetadataRow {
     security(("session_cookie" = ["read"]), ("device_token_bearer" = ["read"]), ("oidc_jwt_bearer" = ["read"]), ("opds_basic" = ["read"])),
     params(("id" = Uuid, Path, description = "Manifestation id")),
     responses(
-        (status = 200, description = "Metadata version rows for the manifestation, newest first (empty when the manifestation is missing or RLS-hidden)", body = [MetadataRow]),
+        (status = 200, description = "Metadata version rows for the manifestation, newest first (empty when the manifestation is missing or RLS-hidden)", body = [MetadataRow],
+         headers(("ETag" = String, description = "Strong entity-tag hashing every PATCH-modifiable field of this manifestation's metadata; omitted when the manifestation does not exist. Echo as If-Match on PATCH /api/v1/books/{id}/metadata"))),
         (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails),
         (status = 403, description = "Caller is a child account", body = crate::openapi::ProblemDetails)
     )
@@ -111,7 +114,15 @@ async fn get_manifestation_metadata(
         .await
         .map_err(|e| AppError::Internal(e.into()))?;
     let rows = load_versions(&mut tx, id).await?;
-    Ok(axum::Json(rows))
+    let etag = metadata_etag(&mut tx, id).await?;
+    tx.commit()
+        .await
+        .map_err(|e| AppError::Internal(e.into()))?;
+    let mut headers = HeaderMap::new();
+    if let Some(etag) = etag {
+        headers.insert(ETAG, etag);
+    }
+    Ok((headers, axum::Json(rows)))
 }
 
 /// `GET /api/v1/works/{id}/metadata` — review queue across every
@@ -207,6 +218,150 @@ async fn load_versions(
             observation_count: r.observation_count,
         })
         .collect())
+}
+
+// ── ETag / If-Match (manifestation-scoped metadata representation) ────────
+
+/// Fixed-field-order hash input for a manifestation's metadata `ETag`.
+/// Covers every field `PATCH /api/v1/books/{id}/metadata` can modify across
+/// `works`, `manifestations`, and `work_authors`. List fields are stored
+/// (and re-read) in a stable order: vocabulary alphabetically, contributors
+/// by their `position` column, so the hash is stable across repeated GETs
+/// with no intervening write.
+#[derive(Debug, Serialize)]
+struct MetadataEtagFields {
+    title: String,
+    subtitle: Option<String>,
+    description: Option<String>,
+    language: Option<String>,
+    publisher: Option<String>,
+    pub_date: Option<chrono::NaiveDate>,
+    isbn_10: Option<String>,
+    isbn_13: Option<String>,
+    pages: Option<i32>,
+    content_rating: Option<ContentRating>,
+    genres: Vec<String>,
+    moods: Vec<String>,
+    tags: Vec<String>,
+    authors: Vec<String>,
+    editors: Vec<String>,
+    translators: Vec<String>,
+    work_identifiers: BTreeMap<String, String>,
+    manifestation_identifiers: BTreeMap<String, String>,
+}
+
+/// Compute the `ETag` for a manifestation's editable metadata, shared by
+/// `GET /api/v1/manifestations/{id}/metadata` and
+/// `PATCH /api/v1/books/{id}/metadata` (both keyed by manifestation id).
+///
+/// `Ok(None)` when the manifestation or its parent work does not exist:
+/// mirrors the review-queue GET, which tolerates a missing manifestation by
+/// returning an empty list rather than 404.
+async fn metadata_etag(
+    tx: &mut Transaction<'_, Postgres>,
+    manifestation_id: Uuid,
+) -> Result<Option<HeaderValue>, AppError> {
+    let Some(core) = sqlx::query!(
+        r#"
+        SELECT w.id             AS "work_id!",
+               w.title          AS "title!",
+               w.subtitle       AS subtitle,
+               w.description    AS description,
+               w.language       AS language,
+               m.publisher      AS publisher,
+               m.pub_date       AS pub_date,
+               m.isbn_10        AS isbn_10,
+               m.isbn_13        AS isbn_13,
+               m.pages          AS pages,
+               m.content_rating AS "content_rating: ContentRating"
+          FROM manifestations m
+          JOIN works w ON w.id = m.work_id
+         WHERE m.id = $1
+        "#,
+        manifestation_id,
+    )
+    .fetch_optional(&mut **tx)
+    .await
+    .map_err(|e| AppError::Internal(e.into()))?
+    else {
+        return Ok(None);
+    };
+
+    let ids = std::slice::from_ref(&manifestation_id);
+    let mut genres = load_genres_for_manifestations(tx, ids).await?;
+    let mut moods = load_moods_for_manifestations(tx, ids).await?;
+    let mut tags = load_tags_for_manifestations(tx, ids).await?;
+
+    let contributor_rows = sqlx::query!(
+        r#"SELECT wa.role::text AS "role!", a.name AS "name!"
+             FROM work_authors wa
+             JOIN authors a ON a.id = wa.author_id
+            WHERE wa.work_id = $1
+            ORDER BY wa.role, wa.position ASC"#,
+        core.work_id,
+    )
+    .fetch_all(&mut **tx)
+    .await
+    .map_err(|e| AppError::Internal(e.into()))?;
+    let mut authors = Vec::new();
+    let mut editors = Vec::new();
+    let mut translators = Vec::new();
+    for row in contributor_rows {
+        match row.role.as_str() {
+            "author" => authors.push(row.name),
+            "editor" => editors.push(row.name),
+            "translator" => translators.push(row.name),
+            other => {
+                return Err(AppError::Internal(anyhow::anyhow!(
+                    "unexpected author_role '{other}' in work_authors"
+                )));
+            }
+        }
+    }
+
+    let work_identifiers: BTreeMap<String, String> = sqlx::query!(
+        "SELECT scheme, external_id FROM work_external_identifiers WHERE work_id = $1",
+        core.work_id,
+    )
+    .fetch_all(&mut **tx)
+    .await
+    .map_err(|e| AppError::Internal(e.into()))?
+    .into_iter()
+    .map(|r| (r.scheme, r.external_id))
+    .collect();
+
+    let manifestation_identifiers: BTreeMap<String, String> = sqlx::query!(
+        "SELECT scheme, external_id FROM manifestation_external_identifiers WHERE manifestation_id = $1",
+        manifestation_id,
+    )
+    .fetch_all(&mut **tx)
+    .await
+    .map_err(|e| AppError::Internal(e.into()))?
+    .into_iter()
+    .map(|r| (r.scheme, r.external_id))
+    .collect();
+
+    let fields = MetadataEtagFields {
+        title: core.title,
+        subtitle: core.subtitle,
+        description: core.description,
+        language: core.language,
+        publisher: core.publisher,
+        pub_date: core.pub_date,
+        isbn_10: core.isbn_10,
+        isbn_13: core.isbn_13,
+        pages: core.pages,
+        content_rating: core.content_rating,
+        genres: genres.remove(&manifestation_id).unwrap_or_default(),
+        moods: moods.remove(&manifestation_id).unwrap_or_default(),
+        tags: tags.remove(&manifestation_id).unwrap_or_default(),
+        authors,
+        editors,
+        translators,
+        work_identifiers,
+        manifestation_identifiers,
+    };
+    Ok(Some(hash_etag(&fields)?))
 }
 
 // ── accept / reject / revert / lock ────────────────────────────────────────
@@ -2042,25 +2197,35 @@ async fn load_manifestation_identifiers(
 /// - [`AppError::Validation`] when the body has no populated fields,
 ///   when an ISBN/date value fails parsing, when a vocabulary list
 ///   (`genres`/`moods`/`tags`) contains an empty, duplicate, or
-///   over-length term, or when the operator tries to clear `title`
-///   (canonical title is `NOT NULL` on `works`).
+///   over-length term, when the operator tries to clear `title`
+///   (canonical title is `NOT NULL` on `works`), or when `If-Match` is
+///   present but malformed.
 /// - [`AppError::NotFound`] when the manifestation is missing or hidden
 ///   by RLS for the current user (existence-not-leaked).
 /// - [`AppError::Forbidden`] when the caller is a child account.
+/// - [`AppError::IfMatchMismatch`] (412) when `If-Match` is present and does
+///   not match the manifestation's current metadata `ETag`; the response
+///   carries the current `ETag` so the caller can resync in one round trip.
 /// - [`AppError::Internal`] on database errors.
 #[utoipa::path(
     patch,
     path = "/api/v1/books/{id}/metadata",
     tag = "metadata",
     security(("session_cookie" = ["write"]), ("device_token_bearer" = ["write"]), ("oidc_jwt_bearer" = ["write"]), ("opds_basic" = ["write"])),
-    params(("id" = Uuid, Path, description = "Manifestation id")),
+    params(
+        ("id" = Uuid, Path, description = "Manifestation id"),
+        ("If-Match" = Option<String>, Header, description = "Strong entity-tag from a prior GET/PATCH response. Optional in this phase: absent means proceed unprotected; present and stale means 412")
+    ),
     request_body(content = UpdateMetadataFields, description = "RFC 7396 JSON Merge Patch: absent fields are unchanged, `null` clears (except `title`)"),
     responses(
-        (status = 200, description = "Manual edit recorded as a `manual` metadata version and promoted to canonical (or cleared); body carries the applied value and version pointers per field", body = UpdateMetadataResponse),
+        (status = 200, description = "Manual edit recorded as a `manual` metadata version and promoted to canonical (or cleared); body carries the applied value and version pointers per field", body = UpdateMetadataResponse,
+         headers(("ETag" = String, description = "Strong entity-tag hashing every PATCH-modifiable field, reflecting the state after this write"))),
         (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails),
         (status = 403, description = "Caller is a child account", body = crate::openapi::ProblemDetails),
         (status = 404, description = "Manifestation missing or RLS-hidden (existence-not-leaked)", body = crate::openapi::ProblemDetails),
-        (status = 422, description = "No populated fields, ISBN/date parse failure, or attempt to clear title", body = crate::openapi::ProblemDetails)
+        (status = 412, description = "If-Match does not match the manifestation's current metadata ETag", body = crate::openapi::ProblemDetails,
+         headers(("ETag" = String, description = "Current entity-tag, so the caller can resync without a follow-up GET"))),
+        (status = 422, description = "No populated fields, ISBN/date parse failure, attempt to clear title, or malformed If-Match", body = crate::openapi::ProblemDetails)
     )
 )]
 #[expect(
@@ -2071,10 +2236,12 @@ async fn update_book_metadata(
     current_user: CurrentUser,
     State(state): State<AppState>,
     Path(manifestation_id): Path<Uuid>,
+    headers_in: HeaderMap,
     body: Result<axum::Json<UpdateMetadataFields>, axum::extract::rejection::JsonRejection>,
-) -> Result<impl IntoResponse, AppError> {
+) -> Result<Response, AppError> {
     current_user.require_scope(Scope::Write)?;
     current_user.require_not_child()?;
+    let if_match = parse_if_match(&headers_in)?;
     let axum::Json(mut req_fields) = body.map_err(|e| AppError::Validation(e.body_text()))?;
     // Extract contributors BEFORE populated() consumes the struct — it is
     // handled separately from the other (scalar) fields.
@@ -2116,6 +2283,21 @@ async fn update_book_metadata(
     .await
     .map_err(|e| AppError::Internal(e.into()))?;
     let work_id = work_id.ok_or(AppError::NotFound)?;
+
+    // Compared under the row lock just taken above, so a concurrent editor
+    // cannot slip a change in between this check and the writes below.
+    if let Some(im) = &if_match {
+        let current = metadata_etag(&mut tx, manifestation_id)
+            .await?
+            .ok_or_else(|| {
+                AppError::Internal(anyhow::anyhow!(
+                    "metadata_etag returned None for a manifestation just locked"
+                ))
+            })?;
+        if current.as_bytes() != im.as_bytes() {
+            return Ok(if_match_mismatch(&current));
+        }
+    }
 
     let mut response_fields: BTreeMap<String, FieldVersionChange> = BTreeMap::new();
     let mut touched_isbn = false;
@@ -2185,15 +2367,31 @@ async fn update_book_metadata(
             .map_err(|e| AppError::Internal(e.into()))?;
     }
 
+    // Computed before commit, inside the same transaction as the writes
+    // above, so the emitted ETag reflects exactly the representation this
+    // PATCH just committed.
+    let new_etag = metadata_etag(&mut tx, manifestation_id)
+        .await?
+        .ok_or_else(|| {
+            AppError::Internal(anyhow::anyhow!(
+                "metadata_etag returned None for a manifestation just written"
+            ))
+        })?;
+
     tx.commit()
         .await
         .map_err(|e| AppError::Internal(e.into()))?;
+
+    let mut headers = HeaderMap::new();
+    headers.insert(ETAG, new_etag);
     Ok((
         StatusCode::OK,
+        headers,
         axum::Json(UpdateMetadataResponse {
             fields: response_fields,
         }),
-    ))
+    )
+        .into_response())
 }
 
 /// Journal + apply one scalar field from the manual PATCH surface.
@@ -2505,6 +2703,7 @@ fn parse_iso_date(s: &str) -> Result<chrono::NaiveDate, PubDateError> {
 #[cfg(test)]
 mod tests {
     use super::parse_iso_date;
+    use crate::error::problems;
     use crate::models::content_rating::ContentRating;
     use crate::test_support;
     use axum::http::StatusCode;
@@ -6632,6 +6831,177 @@ mod tests {
             StatusCode::OK,
             "work-scoped identifier version journaled under a sibling must be accepted; body = {}",
             revert.text()
+        );
+    }
+
+    // ── ETag / If-Match ───────────────────────────────────────────────────
+
+    fn etag_value(headers: &axum::http::HeaderMap) -> String {
+        headers
+            .get(axum::http::header::ETAG)
+            .expect("ETag header present")
+            .to_str()
+            .expect("ETag ascii")
+            .to_owned()
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn get_manifestation_metadata_emits_etag(pool: sqlx::PgPool) {
+        let app_pool = test_support::db::app_pool_for(&pool).await;
+        let ing_pool = test_support::db::ingestion_pool_for(&pool).await;
+        let (_admin_id, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+        let marker = Uuid::new_v4().simple().to_string();
+        let (_work_id, m_id) =
+            test_support::db::insert_work_and_manifestation(&ing_pool, &marker).await;
+        let server = test_support::db::server_with_real_pools(&app_pool, &ing_pool);
+
+        let r = server
+            .get(&format!("/api/v1/manifestations/{m_id}/metadata"))
+            .add_header(AUTHORIZATION, basic)
+            .await;
+        assert_eq!(r.status_code(), StatusCode::OK);
+        let etag = etag_value(r.headers());
+        assert!(etag.starts_with('"') && etag.ends_with('"'));
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn get_manifestation_metadata_etag_stable_across_identical_reads(pool: sqlx::PgPool) {
+        let app_pool = test_support::db::app_pool_for(&pool).await;
+        let ing_pool = test_support::db::ingestion_pool_for(&pool).await;
+        let (_admin_id, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+        let marker = Uuid::new_v4().simple().to_string();
+        let (_work_id, m_id) =
+            test_support::db::insert_work_and_manifestation(&ing_pool, &marker).await;
+        let server = test_support::db::server_with_real_pools(&app_pool, &ing_pool);
+
+        let first = server
+            .get(&format!("/api/v1/manifestations/{m_id}/metadata"))
+            .add_header(AUTHORIZATION, basic.clone())
+            .await;
+        let second = server
+            .get(&format!("/api/v1/manifestations/{m_id}/metadata"))
+            .add_header(AUTHORIZATION, basic)
+            .await;
+        assert_eq!(etag_value(first.headers()), etag_value(second.headers()));
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn patch_metadata_bumps_etag_after_write(pool: sqlx::PgPool) {
+        let app_pool = test_support::db::app_pool_for(&pool).await;
+        let ing_pool = test_support::db::ingestion_pool_for(&pool).await;
+        let (_admin_id, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+        let marker = Uuid::new_v4().simple().to_string();
+        let (_work_id, m_id) =
+            test_support::db::insert_work_and_manifestation(&ing_pool, &marker).await;
+        let server = test_support::db::server_with_real_pools(&app_pool, &ing_pool);
+
+        let before = server
+            .get(&format!("/api/v1/manifestations/{m_id}/metadata"))
+            .add_header(AUTHORIZATION, basic.clone())
+            .await;
+        let before_etag = etag_value(before.headers());
+
+        let r = server
+            .patch(&format!("/api/v1/books/{m_id}/metadata"))
+            .add_header(AUTHORIZATION, basic)
+            .json(&serde_json::json!({"title": format!("Bumped {marker}")}))
+            .await;
+        assert_eq!(r.status_code(), StatusCode::OK, "body: {}", r.text());
+        let after_etag = etag_value(r.headers());
+        assert_ne!(
+            before_etag, after_etag,
+            "a real field change must change the ETag"
+        );
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn patch_metadata_without_if_match_still_succeeds(pool: sqlx::PgPool) {
+        let app_pool = test_support::db::app_pool_for(&pool).await;
+        let ing_pool = test_support::db::ingestion_pool_for(&pool).await;
+        let (_admin_id, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+        let marker = Uuid::new_v4().simple().to_string();
+        let (_work_id, m_id) =
+            test_support::db::insert_work_and_manifestation(&ing_pool, &marker).await;
+        let server = test_support::db::server_with_real_pools(&app_pool, &ing_pool);
+
+        // No If-Match header at all: this PR's compatibility guarantee.
+        let r = server
+            .patch(&format!("/api/v1/books/{m_id}/metadata"))
+            .add_header(AUTHORIZATION, basic)
+            .json(&serde_json::json!({"title": format!("No If-Match {marker}")}))
+            .await;
+        assert_eq!(r.status_code(), StatusCode::OK, "body: {}", r.text());
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn patch_metadata_with_matching_if_match_succeeds(pool: sqlx::PgPool) {
+        let app_pool = test_support::db::app_pool_for(&pool).await;
+        let ing_pool = test_support::db::ingestion_pool_for(&pool).await;
+        let (_admin_id, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+        let marker = Uuid::new_v4().simple().to_string();
+        let (_work_id, m_id) =
+            test_support::db::insert_work_and_manifestation(&ing_pool, &marker).await;
+        let server = test_support::db::server_with_real_pools(&app_pool, &ing_pool);
+
+        let initial = server
+            .get(&format!("/api/v1/manifestations/{m_id}/metadata"))
+            .add_header(AUTHORIZATION, basic.clone())
+            .await;
+        let etag = etag_value(initial.headers());
+
+        let r = server
+            .patch(&format!("/api/v1/books/{m_id}/metadata"))
+            .add_header(AUTHORIZATION, basic)
+            .add_header(
+                axum::http::header::IF_MATCH,
+                axum::http::HeaderValue::from_str(&etag).unwrap(),
+            )
+            .json(&serde_json::json!({"title": format!("Matched {marker}")}))
+            .await;
+        assert_eq!(r.status_code(), StatusCode::OK, "body: {}", r.text());
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn patch_metadata_with_stale_if_match_returns_412_with_current_etag(pool: sqlx::PgPool) {
+        let app_pool = test_support::db::app_pool_for(&pool).await;
+        let ing_pool = test_support::db::ingestion_pool_for(&pool).await;
+        let (_admin_id, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+        let marker = Uuid::new_v4().simple().to_string();
+        let (_work_id, m_id) =
+            test_support::db::insert_work_and_manifestation(&ing_pool, &marker).await;
+        let server = test_support::db::server_with_real_pools(&app_pool, &ing_pool);
+
+        let initial = server
+            .get(&format!("/api/v1/manifestations/{m_id}/metadata"))
+            .add_header(AUTHORIZATION, basic.clone())
+            .await;
+        let stale_etag = etag_value(initial.headers());
+
+        // Someone else's write lands first, invalidating the captured tag.
+        server
+            .patch(&format!("/api/v1/books/{m_id}/metadata"))
+            .add_header(AUTHORIZATION, basic.clone())
+            .json(&serde_json::json!({"title": format!("Raced {marker}")}))
+            .await;
+
+        let r = server
+            .patch(&format!("/api/v1/books/{m_id}/metadata"))
+            .add_header(AUTHORIZATION, basic)
+            .add_header(
+                axum::http::header::IF_MATCH,
+                axum::http::HeaderValue::from_str(&stale_etag).unwrap(),
+            )
+            .json(&serde_json::json!({"title": format!("Should not land {marker}")}))
+            .await;
+        test_support::assert_problem(
+            &r,
+            problems::IF_MATCH_MISMATCH,
+            StatusCode::PRECONDITION_FAILED,
+        );
+        let current_etag = etag_value(r.headers());
+        assert_ne!(
+            current_etag, stale_etag,
+            "412 must carry the current, not the stale, ETag"
         );
     }
 }

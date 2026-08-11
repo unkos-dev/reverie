@@ -15,6 +15,10 @@ pub mod cursor;
 pub mod dashboard;
 /// Manifestation enrichment trigger / dry-run / status endpoints.
 pub mod enrichment;
+/// Shared hash-based `ETag` / `If-Match` mechanics for the metadata and
+/// reading endpoints (`crate::routes::shelves` keeps its own timestamp
+/// scheme, out of scope here).
+pub mod etag;
 /// Liveness + readiness probes.
 pub mod health;
 /// Library-scan trigger endpoint.
