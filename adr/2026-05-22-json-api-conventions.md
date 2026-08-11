@@ -81,10 +81,11 @@ Atom feed (Atom's `<updated>` and `<published>` use the same shape
 per RFC 4287 §3.3) so the two surfaces stay consistent for any
 operator who reads both.
 
-### Error envelope: RFC 7807 `application/problem+json` (CHANGED)
+### Error envelope: RFC 9457 `application/problem+json` (CHANGED)
 
-Errors emit `application/problem+json` per RFC 7807 with the
-following body shape:
+Errors emit `application/problem+json` per RFC 9457 (formerly
+RFC 7807; same wire format, `application/problem+json` unchanged)
+with the following body shape:
 
 ```json
 {
@@ -100,7 +101,7 @@ following body shape:
   (`not-found`, `unauthorized`, `forbidden`, `validation`,
   `csrf-missing`, `csrf-mismatch`, `if-match-required`,
   `if-match-mismatch`, `system-shelf-immutable`, `internal`).
-  Per RFC 7807 §3.1 the URI
+  Per RFC 9457 §3.1 the URI
   identifies the problem type and does not need to dereference at
   first; we register concrete URIs as the deployment story
   matures. `reverie.example` is a placeholder host until that
@@ -109,10 +110,10 @@ following body shape:
   numeric code.
 - `detail` is the caller-visible message, what was previously
   the singular `"error"` field.
-- `instance` is the request path (RFC 7807 §3.1 makes this
+- `instance` is the request path (RFC 9457 §3.1 makes this
   optional but recommended; we always include it for debuggability).
 - Content-Type is `application/problem+json`, not
-  `application/json`. This signals to RFC 7807-aware clients that
+  `application/json`. This signals to RFC 9457-aware clients that
   the body is a Problem Details document and not a domain object
   with an `error` field: important for `fetch().then(res =>
 res.json())` flows that branch on shape.
@@ -124,7 +125,7 @@ bodies. Migration is Task 1b of Sub-phase 11a: rewrite
 `AppError::IntoResponse` to centralise the new envelope; audit
 `rg '"error":' backend/src` to find any handler bypassing it.
 
-Rationale for the migration: RFC 7807 is the only IETF-blessed
+Rationale for the migration: RFC 9457 is the only IETF-blessed
 JSON error envelope. Problem-type URIs allow the frontend to
 discriminate errors by stable identifier instead of brittle
 status-code + string-prefix sniffing. The current
@@ -153,8 +154,46 @@ reserved-prefix typos (`/api/__nope__`, `/auth/__nope__`) emitted
 by `composite_fallback` carry the `instance` field too. The slot is
 `None` outside an HTTP request (e.g. unit tests calling
 `AppError::Validation(...).into_response()` directly), in which
-case `instance` is omitted from the body, RFC 7807 §3.1 permits
+case `instance` is omitted from the body, RFC 9457 §3.1 permits
 omission.
+
+### Status code selection
+
+Status codes are assigned by failure class, per the definitions in
+RFC 9110 §15.5. Syntax failures at the decode boundary
+(extractors, query/path deserialisation: the request cannot be
+parsed into the shape the handler expects) are 400 Bad Request
+(RFC 9110 §15.5.1), mapped by `AppError::MalformedQuery`.
+Requests that parse but violate the documented contract (header
+grammar, unknown or invalid field values, business-rule
+rejections) are 422 Unprocessable Content (RFC 9110 §15.5.21),
+mapped by `AppError::Validation`. Semantic codes are reserved for
+well-formed requests that fail against current server state
+rather than against their own shape: 404 for existence (including
+the deliberate 404-over-403 ownership convention above), 409 for
+conflict, 412 Precondition Failed when a precondition evaluates
+false (RFC 9110 §13.1), and 428 Precondition Required when a
+required precondition is missing entirely (RFC 6585 §3).
+
+Any new error path is checked against two tests before it picks a
+status code:
+
+- **Recovery-guidance test**: a status code whose standard
+  recovery action cannot succeed for that input is the wrong code.
+  The motivating shape: an `If-Match` header that is syntactically
+  malformed (not a well-formed entity-tag) once fell through to 412. A 412's implied recovery (refresh the tag and retry) can
+  never succeed against a grammar error, since no refreshed tag
+  will ever parse; that failure belongs in 422.
+- **Closed-domain test**: input or stored data that is valid
+  within its own domain (a database enum variant, a schema-legal
+  document) must never surface as 500. Internal errors are
+  reserved for genuine invariant violations, not for values the
+  domain already accepts as legitimate members.
+
+The deliberate, documented exceptions to these tests stand: the
+schema-drift decode boundary in the library module intentionally
+fails loudly, and the existence-hiding 404s above are a security
+choice, not drift.
 
 ### Null shape: `Option<T>::None` → JSON `null` (NEVER `skip_serializing_if`)
 
@@ -323,17 +362,17 @@ content negotiation, the handler picks it up at that point.
   already grounded in a public spec; reviewer ceremony around
   "why this shape" collapses.
 - **Good**: frontend `src/api/` client and backend handlers
-  share one shape definition: snake_case, RFC 7807 body, RFC 8288
+  share one shape definition: snake_case, RFC 9457 body, RFC 8288
   pagination, RFC 7396 patches. Cross-cutting drift between
   backend and frontend types is structurally bounded.
-- **Good**: the migration from `{"error": "<msg>"}` to RFC 7807
+- **Good**: the migration from `{"error": "<msg>"}` to RFC 9457
   is the only inherited-divergence-to-standard move; it is
   surgical (single `IntoResponse` impl + a `test_support` helper).
 - **Good**: adopting the synchronizer token during the
   greenfield phase is cheap. Retrofitting after production
   cookie-authed mutation traffic existed would be a months-long
   rollout.
-- **Bad**: RFC 7807 migration breaks every existing test that
+- **Bad**: RFC 9457 migration breaks every existing test that
   asserts `body["error"]`. The `assert_problem` helper collapses
   the diff but the PR still touches several existing test files
   (auth, ingestion, enrichment, metadata, tokens). Sub-phase 11a's
@@ -343,7 +382,7 @@ content negotiation, the handler picks it up at that point.
   documented as deliberate.
 - **Bad**: `instance` field requires a tokio task-local + a
   tower middleware. ~30 LOC including tests; acceptable cost for
-  RFC 7807 conformance and request-path debuggability.
+  RFC 9457 conformance and request-path debuggability.
 - **Neutral**: `csrf_token` adds one field to the `/auth/me`
   response (12-line shape diff in `backend/src/models/user.rs`).
   Frontend consumes it via a module-level setter; no API surface
@@ -351,7 +390,7 @@ content negotiation, the handler picks it up at that point.
 
 ## Confirmation
 
-- The RFC 7807 envelope governs **every** error on the JSON API surface
+- The RFC 9457 envelope governs **every** error on the JSON API surface
   (`/api/v1/*`), including query-parameter rejections: handlers extract
   `Result<Query<T>, QueryRejection>` (`axum_extra`) and `?`-propagate, so a
   malformed query returns `application/problem+json`
@@ -362,7 +401,7 @@ content negotiation, the handler picks it up at that point.
 
 ## Alternatives Considered
 
-### Keep `{"error": "<msg>"}` error envelope; defer RFC 7807
+### Keep `{"error": "<msg>"}` error envelope; defer RFC 9457
 
 Cheaper: zero test churn. Frontend would parse a `{status,
 error}` pair into `ApiError`.
@@ -371,7 +410,7 @@ Rejected on standards-default grounds. The frontend has to grow
 typed error handling either way (problem-slug discrimination
 matters for CSRF rotation retry, role-changed retry, etc.).
 Building that on top of a non-standard envelope means a future
-adopter coming from any other RFC 7807-aware stack has to learn
+adopter coming from any other RFC 9457-aware stack has to learn
 Reverie's shape. Migrating later means re-versioning every
 endpoint that uses the old shape. Cheaper to do it once, now.
 
@@ -434,7 +473,7 @@ session entirely and thus don't need CSRF, verified in
 Pick `https://reverie.unkos.dev/probs/...` or
 `https://reverie.example.com/...`.
 
-Deferred. RFC 7807 §3.1 explicitly says the URI does not need to
+Deferred. RFC 9457 §3.1 explicitly says the URI does not need to
 dereference at first; we use `reverie.example` as a placeholder
 because nothing today depends on the URI resolving. When the OSS
 release lands a canonical project URL, a single sed pass through
@@ -451,7 +490,7 @@ their slugs.
   threat model is the multi-user exposed instance.
 - Industry-standard default principle:
   [`feedback_industry_standard_default.md`](../.claude/projects/-home-coder-reverie/memory/feedback_industry_standard_default.md).
-- IETF specs cited: RFC 7807 (Problem Details),
+- IETF specs cited: RFC 9457 (Problem Details, formerly RFC 7807),
   RFC 8288 (Web Linking / Link header), RFC 7396 (JSON Merge
   Patch), RFC 9110 §12 (Content negotiation), RFC 9110 §13.1
   (`If-Match`), RFC 3339 (date format), RFC 8259 (JSON).

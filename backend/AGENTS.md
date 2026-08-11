@@ -25,7 +25,7 @@ These rules define the Rust, Axum, and sqlx architecture. Do not deviate.
 <api_design>
 
 - **RESTful Naming:** URLs must be plural, kebab-case nouns. NEVER use verbs in URLs (e.g., `/getUsers`).
-- **Semantic Status Codes:** Return 201 for creation, 422 for validation, 204 for deletion. Do not return 200 for everything.
+- **Semantic Status Codes:** Return 201 for creation, 422 for validation, 204 for deletion. Do not return 200 for everything; status codes are assigned by failure class, see the JSON API conventions ADR.
   </api_design>
 
 <axum_invariants>
