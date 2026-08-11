@@ -16,10 +16,11 @@ import { resolve } from "node:path";
 const THEMES_DIR = resolve(__dirname, "..", "..", "src", "styles", "themes");
 const primitivesCss = readFileSync(resolve(THEMES_DIR, "primitives.generated.css"), "utf8");
 const indexCss = readFileSync(resolve(THEMES_DIR, "index.css"), "utf8");
+const BODY_RULE = /^body\s*\{[^}]*\}/m;
 
-function rule(css: string, selector: string): string {
-  const match = css.match(new RegExp(`^${selector}\\s*\\{[^}]*\\}`, "m"));
-  if (!match) throw new Error(`selector not found: ${selector}`);
+function bodyRule(css: string): string {
+  const match = css.match(BODY_RULE);
+  if (!match) throw new Error("selector not found: body");
   return match[0];
 }
 
@@ -27,15 +28,15 @@ describe("global body typography", () => {
   it("does not mistake a class suffix for the body selector", () => {
     const css = ".card-body { font-family: var(--font-body); }\nbody { font-family: inherit; }";
 
-    expect(rule(css, "body")).toBe("body { font-family: inherit; }");
+    expect(bodyRule(css)).toBe("body { font-family: inherit; }");
   });
 
   it("applies the canonical Satoshi body token to document text", () => {
-    expect(rule(indexCss, "body")).toMatch(/font-family:\s*var\(--font-body\)/);
+    expect(bodyRule(indexCss)).toMatch(/font-family:\s*var\(--font-body\)/);
   });
 
   it("does not duplicate a fallback stack outside the canonical body token", () => {
-    expect(rule(indexCss, "body")).not.toMatch(/system-ui|Satoshi Variable/);
+    expect(bodyRule(indexCss)).not.toMatch(/system-ui|Satoshi Variable/);
   });
 });
 
