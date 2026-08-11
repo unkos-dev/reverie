@@ -2681,7 +2681,7 @@ mod tests {
     }
 
     #[sqlx::test(migrations = "./migrations")]
-    async fn get_book_metadata_excludes_narrator_contributors(pool: sqlx::PgPool) {
+    async fn get_book_metadata_returns_writable_roles_and_excludes_narrator(pool: sqlx::PgPool) {
         let app_pool = test_support::db::app_pool_for(&pool).await;
         let ing_pool = test_support::db::ingestion_pool_for(&pool).await;
         let (_admin_id, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
@@ -2689,8 +2689,13 @@ mod tests {
         let (work_id, m_id) =
             test_support::db::insert_work_and_manifestation(&ing_pool, &marker).await;
         let author_name = format!("Author {marker}");
+        let editor_name = format!("Editor {marker}");
+        let translator_name = format!("Translator {marker}");
         let narrator_name = format!("Narrator {marker}");
         test_support::db::insert_contributor(&ing_pool, work_id, &author_name, "author", 0).await;
+        test_support::db::insert_contributor(&ing_pool, work_id, &editor_name, "editor", 0).await;
+        test_support::db::insert_contributor(&ing_pool, work_id, &translator_name, "translator", 0)
+            .await;
         test_support::db::insert_contributor(&ing_pool, work_id, &narrator_name, "narrator", 0)
             .await;
 
@@ -2709,6 +2714,14 @@ mod tests {
         assert_eq!(
             body["contributors"]["author"],
             serde_json::json!([author_name])
+        );
+        assert_eq!(
+            body["contributors"]["editor"],
+            serde_json::json!([editor_name])
+        );
+        assert_eq!(
+            body["contributors"]["translator"],
+            serde_json::json!([translator_name])
         );
         let contributors = body["contributors"]
             .as_object()
