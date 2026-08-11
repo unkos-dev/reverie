@@ -79,19 +79,32 @@ const EMPTY_READING_STATE: NonNullable<BookListItem["reading_state"]> = {
   finished_at: null,
 };
 
+/** True for the `AbortError` `DOMException` a cancelled fetch rejects with. */
+function isAbortError(err: unknown): boolean {
+  return err instanceof DOMException && err.name === "AbortError";
+}
+
 /**
  * Warms the If-Match ETag cache the moment a protected cell's editor
  * mounts, so the eventual commit's PATCH already carries a fresh tag
  * instead of racing the row's first keystroke. Renders nothing; errors are
  * logged rather than surfaced, since the PATCH's own 412 handling is
  * already the correctness backstop when priming fails or loses a race to a
- * concurrent write elsewhere.
+ * concurrent write elsewhere. The request is aborted on unmount so a slow
+ * response arriving after the editor has closed cannot overwrite a fresher
+ * tag captured by a commit that already landed; the resulting abort is
+ * expected cancellation, not a priming failure, so it is not logged.
  */
 function MetadataEtagPrimer({ manifestationId }: { manifestationId: string }): null {
   useEffect(() => {
-    getBookMetadata(manifestationId).catch((err: unknown) => {
+    const controller = new AbortController();
+    getBookMetadata(manifestationId, controller.signal).catch((err: unknown) => {
+      if (isAbortError(err)) return;
       console.error("[LibraryTableView] metadata ETag priming failed", err);
     });
+    return () => {
+      controller.abort();
+    };
   }, [manifestationId]);
   return null;
 }
@@ -99,9 +112,14 @@ function MetadataEtagPrimer({ manifestationId }: { manifestationId: string }): n
 /** Reading-column counterpart to {@link MetadataEtagPrimer}. */
 function ReadingEtagPrimer({ manifestationId }: { manifestationId: string }): null {
   useEffect(() => {
-    getReadingState(manifestationId).catch((err: unknown) => {
+    const controller = new AbortController();
+    getReadingState(manifestationId, controller.signal).catch((err: unknown) => {
+      if (isAbortError(err)) return;
       console.error("[LibraryTableView] reading ETag priming failed", err);
     });
+    return () => {
+      controller.abort();
+    };
   }, [manifestationId]);
   return null;
 }

@@ -7,6 +7,12 @@ import { useState, type ComponentProps, type ReactElement } from "react";
 
 import type { BookListItem, SortLevelParam } from "@/api";
 import { getBookMetadata } from "@/api/books";
+import {
+  __resetEtagCacheForTesting,
+  etagKeyForPath,
+  getRememberedEtag,
+  rememberEtag,
+} from "@/api/etags";
 import { getReadingState, updateReadingState } from "@/api/reading";
 import type { SortState } from "@/lib/grid/types";
 import { queryKeys } from "@/lib/query/keys";
@@ -39,6 +45,7 @@ vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 
 beforeEach(() => {
   vi.resetAllMocks();
+  __resetEtagCacheForTesting();
   // Priming calls fire as a side effect whenever a protected column's
   // editor mounts; resolve them so a stray unhandled rejection can't fail
   // an unrelated test.
@@ -618,8 +625,78 @@ describe("LibraryTableView", () => {
       // and never gates the input.
       await user.type(input, "z");
       expect(input).toHaveValue(`${row.subtitle ?? ""}z`);
-      expect(getBookMetadata).toHaveBeenCalledWith(row.id);
+      expect(getBookMetadata).toHaveBeenCalledWith(row.id, expect.any(AbortSignal));
       expect(getReadingState).not.toHaveBeenCalled();
+    });
+
+    test("closing the editor aborts priming so a late response cannot clobber a fresher ETag", async () => {
+      const row = editableRowFixture();
+      const etagKey = etagKeyForPath(`/api/v1/books/${row.id}/metadata`);
+      if (etagKey === null) throw new Error("expected a metadata etag key for this path");
+
+      // Stands in for `apiFetch`: resolving calls `rememberEtag` the way a
+      // real response's `captureEtag` would, but only while the signal is
+      // still live. A real aborted `fetch()` never delivers a late
+      // response for `captureEtag` to observe, so a response that arrives
+      // after abort must not touch the cache either.
+      let capturedSignal: AbortSignal | undefined;
+      let deliverPrimingResponse: (() => void) | undefined;
+      vi.mocked(getBookMetadata).mockImplementation((_id, signal) => {
+        capturedSignal = signal;
+        return new Promise((resolve, reject) => {
+          signal?.addEventListener("abort", () => {
+            reject(new DOMException("Aborted", "AbortError"));
+          });
+          deliverPrimingResponse = () => {
+            if (signal?.aborted) return;
+            rememberEtag(etagKey, "stale-priming-etag");
+            resolve({
+              title: "Book Title",
+              subtitle: null,
+              description: null,
+              language: null,
+              publisher: null,
+              pub_date: null,
+              isbn_10: null,
+              isbn_13: null,
+              pages: null,
+              content_rating: null,
+              genres: [],
+              moods: [],
+              tags: [],
+              contributors: { author: [], editor: [], translator: [] },
+              work_identifiers: {},
+              manifestation_identifiers: {},
+            });
+          };
+        });
+      });
+      const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+      renderTableView({ items: [row] });
+      const user = userEvent.setup();
+      const subtitleCell = await screen.findByText(row.subtitle ?? "");
+      await user.click(subtitleCell);
+      await user.keyboard("{Enter}");
+      await screen.findByRole("textbox");
+      expect(capturedSignal).toBeInstanceOf(AbortSignal);
+
+      await user.keyboard("{Escape}");
+      await waitFor(() => {
+        expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
+      });
+      expect(capturedSignal?.aborted).toBe(true);
+
+      // A commit elsewhere (the PATCH's own response) captures a fresher
+      // tag for the same resource while the aborted GET is still
+      // unsettled.
+      rememberEtag(etagKey, "fresh-patch-etag");
+
+      deliverPrimingResponse?.();
+      await Promise.resolve();
+
+      expect(getRememberedEtag(etagKey)).toBe("fresh-patch-etag");
+      expect(consoleError).not.toHaveBeenCalled();
     });
 
     test("Enter opens the ISBN text editor", async () => {
@@ -672,7 +749,7 @@ describe("LibraryTableView", () => {
       await user.click(cell);
       await user.keyboard("{Enter}");
       await screen.findByRole("combobox");
-      expect(getReadingState).toHaveBeenCalledWith(row.id);
+      expect(getReadingState).toHaveBeenCalledWith(row.id, expect.any(AbortSignal));
       expect(getBookMetadata).not.toHaveBeenCalled();
     });
 
