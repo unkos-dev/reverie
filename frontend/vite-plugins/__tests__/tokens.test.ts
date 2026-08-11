@@ -17,6 +17,22 @@ const THEMES_DIR = resolve(__dirname, "..", "..", "src", "styles", "themes");
 const primitivesCss = readFileSync(resolve(THEMES_DIR, "primitives.generated.css"), "utf8");
 const indexCss = readFileSync(resolve(THEMES_DIR, "index.css"), "utf8");
 
+function rule(css: string, selector: string): string {
+  const match = css.match(new RegExp(`${selector}\\s*\\{[^}]*\\}`));
+  if (!match) throw new Error(`selector not found: ${selector}`);
+  return match[0];
+}
+
+describe("global body typography", () => {
+  it("applies the canonical Satoshi body token to document text", () => {
+    expect(rule(indexCss, "body")).toMatch(/font-family:\s*var\(--font-body\)/);
+  });
+
+  it("does not duplicate a fallback stack outside the canonical body token", () => {
+    expect(rule(indexCss, "body")).not.toMatch(/system-ui|Satoshi Variable/);
+  });
+});
+
 // --- WCAG 2.1 relative-luminance contrast (pure; no color lib) ---
 function channel(c: number): number {
   const s = c / 255;
