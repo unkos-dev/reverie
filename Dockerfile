@@ -57,7 +57,7 @@ RUN cargo auditable build --release --locked
 # requires a .git directory the build context deliberately excludes; the
 # frontend build tools ship platform binaries as scriptless optional deps,
 # so nothing in the install relies on lifecycle scripts.
-FROM node:24.18.1-slim@sha256:235600a8101ab264e117b1768e925532262668dc9b581ef1dd7d96ced463b8e7 AS frontend-builder
+FROM node:24.19.0-slim@sha256:3638d9a6fe4030bd716be989438248074489337ba3275657f93595428be4fc03 AS frontend-builder
 # vp's native binary initializes an HTTPS client at startup and aborts when
 # the system has no CA store; the slim base ships none.
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates \
