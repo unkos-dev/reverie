@@ -99,8 +99,9 @@ with the following body shape:
 
 - `type` is a stable URI per error variant
   (`not-found`, `unauthorized`, `forbidden`, `validation`,
-  `csrf-missing`, `csrf-mismatch`, `if-match-required`,
-  `if-match-mismatch`, `system-shelf-immutable`, `internal`).
+  `malformed-header`, `csrf-missing`, `csrf-mismatch`,
+  `if-match-required`, `if-match-mismatch`,
+  `system-shelf-immutable`, `internal`).
   Per RFC 9457 §3.1 the URI
   identifies the problem type and does not need to dereference at
   first; we register concrete URIs as the deployment story
@@ -160,14 +161,24 @@ omission.
 ### Status code selection
 
 Status codes are assigned by failure class, per the definitions in
-RFC 9110 §15.5. Syntax failures at the decode boundary
-(extractors, query/path deserialisation: the request cannot be
-parsed into the shape the handler expects) are 400 Bad Request
-(RFC 9110 §15.5.1), mapped by `AppError::MalformedQuery`.
-Requests that parse but violate the documented contract (header
-grammar, unknown or invalid field values, business-rule
-rejections) are 422 Unprocessable Content (RFC 9110 §15.5.21),
-mapped by `AppError::Validation`. Semantic codes are reserved for
+RFC 9110 §15.5. §15.5.1 (400 Bad Request) covers a request the
+server cannot or will not process due to a client error in the
+request's own grammar, and two failure classes map here. Syntax
+failures at the decode boundary (extractors, query/path
+deserialisation: the request cannot be parsed into the shape the
+handler expects) are mapped by `AppError::MalformedQuery`. Header
+failures are mapped by `AppError::MalformedHeader` with problem
+type `malformed-header`: this covers both malformed header field
+syntax and a syntactically valid header form the API refuses by
+policy (an `If-Match` wildcard, an entity-tag list, or a repeated
+header instance), the latter under §15.5.1's broader "cannot or
+will not process the request due to a client error" clause rather
+than a grammar violation as such. RFC 9110 defines "content" as
+the message body, so 422 Unprocessable Content (RFC 9110 §15.5.21)
+stays scoped to the body: requests whose content parses correctly
+but whose instructions violate the documented contract (unknown or
+invalid field values, business-rule rejections) are 422, mapped by
+`AppError::Validation`. Semantic codes are reserved for
 well-formed requests that fail against current server state
 rather than against their own shape: 404 for existence (including
 the deliberate 404-over-403 ownership convention above), 409 for
@@ -183,7 +194,8 @@ status code:
   The motivating shape: an `If-Match` header that is syntactically
   malformed (not a well-formed entity-tag) once fell through to 412. A 412's implied recovery (refresh the tag and retry) can
   never succeed against a grammar error, since no refreshed tag
-  will ever parse; that failure belongs in 422.
+  will ever parse; that failure belongs in 400, the defect is in
+  the request's own grammar, not its instructions.
 - **Closed-domain test**: input or stored data that is valid
   within its own domain (a database enum variant, a schema-legal
   document) must never surface as 500. Internal errors are
