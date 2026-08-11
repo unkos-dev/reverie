@@ -1044,7 +1044,7 @@
           {
             "name": "If-Match",
             "in": "header",
-            "description": "Strong entity-tag from a prior GET/PATCH response. Optional in this phase: absent means proceed unprotected; present and stale means 412",
+            "description": "A single quoted strong entity-tag, as returned in a prior GET or PATCH response's ETag header. Optional in this phase: absent means proceed unprotected; present and stale means 412",
             "required": false,
             "schema": {
               "type": [
@@ -1271,7 +1271,7 @@
           {
             "name": "If-Match",
             "in": "header",
-            "description": "Strong entity-tag from a prior GET/PATCH response. Optional in this phase: absent means proceed unprotected; present and stale means 412",
+            "description": "A single quoted strong entity-tag, as returned in a prior GET or PATCH response's ETag header. Optional in this phase: absent means proceed unprotected; present and stale means 412",
             "required": false,
             "schema": {
               "type": [

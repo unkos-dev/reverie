@@ -2084,7 +2084,7 @@ async fn load_manifestation_identifiers(
     security(("session_cookie" = ["write"]), ("device_token_bearer" = ["write"]), ("oidc_jwt_bearer" = ["write"]), ("opds_basic" = ["write"])),
     params(
         ("id" = Uuid, Path, description = "Manifestation id"),
-        ("If-Match" = Option<String>, Header, description = "Strong entity-tag from a prior GET/PATCH response. Optional in this phase: absent means proceed unprotected; present and stale means 412")
+        ("If-Match" = Option<String>, Header, description = "A single quoted strong entity-tag, as returned in a prior GET or PATCH response's ETag header. Optional in this phase: absent means proceed unprotected; present and stale means 412")
     ),
     request_body(content = UpdateMetadataFields, description = "RFC 7396 JSON Merge Patch: absent fields are unchanged, `null` clears (except `title`)"),
     responses(

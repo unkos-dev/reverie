@@ -42,15 +42,24 @@ pub fn hash_etag<T: Serialize>(state: &T) -> Result<HeaderValue, AppError> {
 
 /// Parse a strong `If-Match` entity-tag from the request headers.
 ///
+/// The accepted grammar is exactly one quoted strong entity-tag. RFC 9110's
+/// `*` wildcard form is deliberately rejected: this API's
+/// optimistic-concurrency contract is a single tag echoing a prior
+/// response's `ETag`, and accepting the wildcard would let a caller opt out
+/// of the freshness check it exists to enforce. The comma-separated
+/// entity-tag list form is unsupported rather than rejected: a list passes
+/// the quote check but can never equal a computed tag, so it fails the
+/// precondition instead of the parse.
+///
 /// Returns the header's quoted wire form verbatim (not the inner bytes) so
 /// callers compare it byte-for-byte against a freshly computed
 /// [`hash_etag`] value.
 ///
 /// - `Ok(None)`: header absent, callers in this phase proceed unprotected.
 /// - `Ok(Some(_))`: a well-formed strong entity-tag, still quoted.
-/// - `Err(AppError::Validation)`: malformed value, or a weak validator
-///   (`W/"..."`), RFC 9110 §13.1.2 requires strong comparison for
-///   `If-Match`.
+/// - `Err(AppError::Validation)`: malformed value, a weak validator
+///   (`W/"..."`) (RFC 9110 §13.1.2 requires strong comparison for
+///   `If-Match`), or the `*` wildcard.
 pub fn parse_if_match(headers: &HeaderMap) -> Result<Option<String>, AppError> {
     let Some(raw) = headers.get(IF_MATCH) else {
         return Ok(None);
