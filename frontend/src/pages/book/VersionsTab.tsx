@@ -59,16 +59,13 @@ export function VersionsTab({ book }: VersionsTabProps): ReactElement {
   const [editOpen, setEditOpen] = useState(false);
   const grouped = groupByField(book.metadata_versions);
   const fieldsWithDrafts = Object.keys(grouped).sort();
-  // Editable fields cover every canonical column now surfaced on
-  // `BookDetail`. 11d expanded the wire shape to include
-  // `publisher` + `pub_date`, so the AlertDialog clear-confirm flow
-  // covers them too (gates on `canonical !== null`).
-  const canonicalEditableFields = (
+  // Name/label defs only: EditMetadataDialog seeds each field's canonical
+  // value itself from a fresh GET, not from this (possibly stale) `book`.
+  const editableFields = (
     ["title", "description", "language", "publisher", "pub_date", "isbn_10", "isbn_13"] as const
   ).map((name) => ({
     name,
     label: FIELD_LABEL[name] ?? name,
-    canonical: canonicalValue(book, name),
   }));
 
   return (
@@ -107,7 +104,7 @@ export function VersionsTab({ book }: VersionsTabProps): ReactElement {
         manifestationId={book.id}
         open={editOpen}
         onOpenChange={setEditOpen}
-        fields={canonicalEditableFields}
+        fields={editableFields}
       />
     </div>
   );

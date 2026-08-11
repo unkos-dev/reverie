@@ -4,13 +4,14 @@
  * naming the submodule. Internal helpers (request building, CSRF
  * cache mutation) stay private to their own files.
  */
-export { ApiError } from "./errors";
+export { ApiError, IF_MATCH_MISMATCH_SLUG, isIfMatchMismatch } from "./errors";
 export { apiFetch } from "./fetch";
 export { getCsrfToken, refreshCsrfToken } from "./csrf";
 export {
   listBooks,
   getBook,
   getWork,
+  getBookMetadata,
   updateBookMetadata,
   UpdateBookMetadataFieldsSchema,
   parseSortParam,
@@ -23,6 +24,7 @@ export type {
   BookListItem,
   BookListResponse,
   BookDetail,
+  BookMetadata,
   WorkDetail,
   WorkManifestation,
   SeriesRef,

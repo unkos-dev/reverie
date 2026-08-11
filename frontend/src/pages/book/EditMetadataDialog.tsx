@@ -12,18 +12,27 @@
  * two: a touched field with an empty input emits `null`; a touched
  * field with a non-empty input emits the string value.
  *
+ * On open, the form fetches `GET /api/v1/books/{id}/metadata` itself
+ * rather than seeding from the list/detail cache the caller may be
+ * holding: only that response's `ETag` (captured by `apiFetch`) is
+ * guaranteed current for the submit's `If-Match`, so a stale cached
+ * canonical value would both seed the form wrong and risk a spurious 412.
+ *
  * A confirmation `<AlertDialog>` interposes when the change would
  * clear an already-populated field, mirroring the per-row Clear
  * affordance on [`VersionsTab`].
  */
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState, type ReactElement } from "react";
 import { toast } from "sonner";
 
 import {
   ApiError,
   UpdateBookMetadataFieldsSchema,
+  getBookMetadata,
+  isIfMatchMismatch,
   updateBookMetadata,
+  type BookMetadata,
   type UpdateBookMetadataFields,
 } from "@/api";
 import {
@@ -50,14 +59,14 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { queryKeys } from "@/lib/query/keys";
 
-/** One editable field on the edit form. */
+/** One editable field on the edit form. Its canonical value seeds from a
+ *  fresh `GET`, not from a caller-supplied snapshot. */
 export interface EditableField {
-  /** Wire name — must match a key in [`UpdateBookMetadataFields`]. */
+  /** Wire name — must match a key in [`UpdateBookMetadataFields`] and a
+   *  scalar field on [`BookMetadata`]. */
   name: keyof UpdateBookMetadataFields;
   /** Display label shown above the input. */
   label: string;
-  /** Current canonical value (null = unset). */
-  canonical: string | null;
 }
 
 interface EditMetadataDialogProps {
@@ -65,6 +74,36 @@ interface EditMetadataDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   fields: readonly EditableField[];
+}
+
+/** Reads one editable field's canonical value off a fresh `BookMetadata`
+ *  read. Limited to the scalar string fields [`VersionsTab`] currently
+ *  offers; an unmapped field (e.g. `contributors`) has no single string
+ *  representation and seeds empty. */
+function canonicalValue(
+  metadata: BookMetadata,
+  field: keyof UpdateBookMetadataFields,
+): string | null {
+  switch (field) {
+    case "title":
+      return metadata.title;
+    case "subtitle":
+      return metadata.subtitle;
+    case "description":
+      return metadata.description;
+    case "language":
+      return metadata.language;
+    case "publisher":
+      return metadata.publisher;
+    case "pub_date":
+      return metadata.pub_date;
+    case "isbn_10":
+      return metadata.isbn_10;
+    case "isbn_13":
+      return metadata.isbn_13;
+    default:
+      return null;
+  }
 }
 
 type FieldState = Partial<
@@ -114,13 +153,70 @@ interface EditMetadataFormProps {
   onDone: () => void;
 }
 
+/**
+ * Fetches a fresh metadata read before rendering anything editable: the
+ * form's seed values and the eventual PATCH's `If-Match` both depend on
+ * this response, not on whatever the caller happens to have cached.
+ */
 function EditMetadataForm({
   manifestationId,
   fields,
   onDone,
 }: EditMetadataFormProps): ReactElement {
+  const metadataQuery = useQuery({
+    queryKey: queryKeys.books.metadata(manifestationId),
+    queryFn: ({ signal }) => getBookMetadata(manifestationId, signal),
+  });
+
+  if (metadataQuery.isPending) {
+    return (
+      <div className="text-fg-muted flex flex-1 items-center justify-center px-4 py-8 text-sm">
+        Loading current metadata…
+      </div>
+    );
+  }
+  if (metadataQuery.isError) {
+    return (
+      <div className="flex flex-1 flex-col items-center justify-center gap-3 px-4 py-8">
+        <p className="text-fg-muted text-sm">Couldn&apos;t load the latest metadata.</p>
+        <Button
+          type="button"
+          variant="outline"
+          onClick={() => {
+            void metadataQuery.refetch();
+          }}
+        >
+          Retry
+        </Button>
+      </div>
+    );
+  }
+
+  return (
+    <EditMetadataFields
+      manifestationId={manifestationId}
+      fields={fields}
+      metadata={metadataQuery.data}
+      onDone={onDone}
+    />
+  );
+}
+
+interface EditMetadataFieldsProps {
+  manifestationId: string;
+  fields: readonly EditableField[];
+  metadata: BookMetadata;
+  onDone: () => void;
+}
+
+function EditMetadataFields({
+  manifestationId,
+  fields,
+  metadata,
+  onDone,
+}: EditMetadataFieldsProps): ReactElement {
   const queryClient = useQueryClient();
-  const [state, setState] = useState<FieldState>(() => buildInitialState(fields));
+  const [state, setState] = useState<FieldState>(() => buildInitialState(fields, metadata));
   const [pendingClearConfirm, setPendingClearConfirm] = useState<UpdateBookMetadataFields | null>(
     null,
   );
@@ -136,6 +232,22 @@ function EditMetadataForm({
     },
     onError: (err: unknown) => {
       console.error("[EditMetadataDialog.updateBookMetadata] mutation failed", err);
+      if (isIfMatchMismatch(err)) {
+        // The 412 already carries the current ETag (captured by apiFetch),
+        // so invalidating both caches is enough to resync on reopen; no
+        // merge UI. The sheet closes because its fields seed fresh from
+        // `getBookMetadata` on the next open, not from either cache here.
+        void queryClient.invalidateQueries({
+          queryKey: queryKeys.books.detail(manifestationId),
+        });
+        void queryClient.invalidateQueries({
+          queryKey: queryKeys.books.metadata(manifestationId),
+        });
+        toast.error("This book's metadata changed elsewhere.", {
+          action: { label: "Reload latest", onClick: onDone },
+        });
+        return;
+      }
       toast.error(formatError(err));
     },
   });
@@ -149,7 +261,7 @@ function EditMetadataForm({
       const trimmed = slot.value.trim();
       if (trimmed.length === 0) {
         raw[field.name] = null;
-        if (field.canonical !== null) clears.push(field.label);
+        if (canonicalValue(metadata, field.name) !== null) clears.push(field.label);
       } else {
         raw[field.name] = trimmed;
       }
@@ -193,6 +305,7 @@ function EditMetadataForm({
             <FieldRow
               key={field.name}
               field={field}
+              hasCanonicalValue={canonicalValue(metadata, field.name) !== null}
               state={state[field.name] ?? { value: "", touched: false }}
               onChange={(value) => {
                 setState((prev) => ({
@@ -261,11 +374,12 @@ function EditMetadataForm({
 
 interface FieldRowProps {
   field: EditableField;
+  hasCanonicalValue: boolean;
   state: { value: string; touched: boolean };
   onChange: (value: string) => void;
 }
 
-function FieldRow({ field, state, onChange }: FieldRowProps): ReactElement {
+function FieldRow({ field, hasCanonicalValue, state, onChange }: FieldRowProps): ReactElement {
   const id = `edit-${field.name}`;
   const useTextarea = FIELDS_AS_TEXTAREA.has(field.name);
   return (
@@ -289,17 +403,15 @@ function FieldRow({ field, state, onChange }: FieldRowProps): ReactElement {
           }}
         />
       )}
-      {field.canonical === null ? (
-        <p className="text-fg-muted text-xs">No canonical value yet.</p>
-      ) : null}
+      {hasCanonicalValue ? null : <p className="text-fg-muted text-xs">No canonical value yet.</p>}
     </div>
   );
 }
 
-function buildInitialState(fields: readonly EditableField[]): FieldState {
+function buildInitialState(fields: readonly EditableField[], metadata: BookMetadata): FieldState {
   const out: FieldState = {};
   for (const field of fields) {
-    out[field.name] = { value: field.canonical ?? "", touched: false };
+    out[field.name] = { value: canonicalValue(metadata, field.name) ?? "", touched: false };
   }
   return out;
 }

@@ -9,9 +9,11 @@
 //! visible under the caller's adult/child policy.
 
 use axum::extract::{Path, State};
-use axum::response::IntoResponse;
+use axum::http::HeaderMap;
+use axum::http::header::ETAG;
+use axum::response::{IntoResponse, Response};
 use chrono::{DateTime, Utc};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use utoipa_axum::router::OpenApiRouter;
 use utoipa_axum::routes;
 use uuid::Uuid;
@@ -22,6 +24,7 @@ use crate::db;
 use crate::error::AppError;
 use crate::models::reading_state::ReadingState;
 use crate::models::reading_status::ReadingStatus;
+use crate::routes::etag::{hash_etag, if_match_mismatch, parse_if_match};
 use crate::state::AppState;
 
 /// Build the `/api/v1/books/{id}/reading` router as an [`OpenApiRouter`].
@@ -82,6 +85,36 @@ impl From<ReadingStateRow> for ReadingState {
     }
 }
 
+/// Fixed-field-order hash input for a `reading_state` row's `ETag`. Covers
+/// every field `PATCH /api/v1/books/{id}/reading` can modify. The all-`None`
+/// default (no row yet) still hashes to a stable value, so a client can
+/// protect a first write with `If-Match` against the "unread" `ETag` from a
+/// prior GET.
+#[derive(Serialize)]
+struct ReadingEtagFields<'a> {
+    status: Option<ReadingStatus>,
+    rating: Option<i16>,
+    notes: Option<&'a str>,
+    progress_pct: Option<f32>,
+    started_at: Option<DateTime<Utc>>,
+    finished_at: Option<DateTime<Utc>>,
+    last_read_at: Option<DateTime<Utc>>,
+}
+
+impl ReadingStateRow {
+    fn etag(&self) -> Result<axum::http::HeaderValue, AppError> {
+        hash_etag(&ReadingEtagFields {
+            status: self.status,
+            rating: self.rating,
+            notes: self.notes.as_deref(),
+            progress_pct: self.progress_pct,
+            started_at: self.started_at,
+            finished_at: self.finished_at,
+            last_read_at: self.last_read_at,
+        })
+    }
+}
+
 /// `GET /api/v1/books/{id}/reading`: the caller's reading state for one
 /// book.
 ///
@@ -96,7 +129,8 @@ impl From<ReadingStateRow> for ReadingState {
     security(("session_cookie" = ["read"]), ("device_token_bearer" = ["read"]), ("oidc_jwt_bearer" = ["read"]), ("opds_basic" = ["read"])),
     params(("id" = Uuid, Path, description = "Manifestation id")),
     responses(
-        (status = 200, description = "Caller's reading state; all-null fields mean unread (no row yet)", body = ReadingState),
+        (status = 200, description = "Caller's reading state; all-null fields mean unread (no row yet)", body = ReadingState,
+         headers(("ETag" = String, description = "Strong entity-tag hashing every PATCH-modifiable field; echo as If-Match on a protected write"))),
         (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails),
         (status = 404, description = "Manifestation missing or RLS-hidden (existence-not-leaked)", body = crate::openapi::ProblemDetails)
     )
@@ -129,7 +163,10 @@ async fn get_reading(
         .await
         .map_err(|e| AppError::Internal(e.into()))?;
 
-    Ok(axum::Json(ReadingState::from(row.unwrap_or_default())))
+    let row = row.unwrap_or_default();
+    let mut headers = HeaderMap::new();
+    headers.insert(ETAG, row.etag()?);
+    Ok((headers, axum::Json(ReadingState::from(row))))
 }
 
 /// Body for `PATCH /api/v1/books/{id}/reading`. RFC 7396 JSON Merge Patch:
@@ -222,20 +259,32 @@ fn apply_patch(existing: ReadingStateRow, req: &UpdateReadingRequest) -> Reading
 /// # Errors
 /// - [`AppError::Validation`] when the body has no populated fields,
 ///   `rating` is outside `1..=5`, or `notes` exceeds 10000 characters.
+/// - [`AppError::MalformedHeader`] when `If-Match` is present but
+///   malformed.
 /// - [`AppError::NotFound`] when the manifestation is missing or hidden by
 ///   RLS for the current user (existence-not-leaked).
+/// - [`AppError::IfMatchMismatch`] (412) when `If-Match` is present and does
+///   not match the caller's current reading-state `ETag`; the response
+///   carries the current `ETag` so the caller can resync in one round trip.
 /// - [`AppError::Internal`] on database errors.
 #[utoipa::path(
     patch,
     path = "/api/v1/books/{id}/reading",
     tag = "reading",
     security(("session_cookie" = ["write"]), ("device_token_bearer" = ["write"]), ("oidc_jwt_bearer" = ["write"]), ("opds_basic" = ["write"])),
-    params(("id" = Uuid, Path, description = "Manifestation id")),
+    params(
+        ("id" = Uuid, Path, description = "Manifestation id"),
+        ("If-Match" = Option<String>, Header, description = "A single quoted strong entity-tag, as returned in a prior GET or PATCH response's ETag header. Optional in this phase: absent means proceed unprotected; present and stale means 412")
+    ),
     request_body(content = UpdateReadingRequest, description = "RFC 7396 JSON Merge Patch: absent fields are unchanged, `null` clears"),
     responses(
-        (status = 200, description = "Reading state after the patch and any transition stamps", body = ReadingState),
+        (status = 200, description = "Reading state after the patch and any transition stamps", body = ReadingState,
+         headers(("ETag" = String, description = "Strong entity-tag hashing every PATCH-modifiable field, reflecting the state after this write"))),
         (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails),
         (status = 404, description = "Manifestation missing or RLS-hidden (existence-not-leaked)", body = crate::openapi::ProblemDetails),
+        (status = 412, description = "If-Match does not match the caller's current reading-state ETag", body = crate::openapi::ProblemDetails,
+         headers(("ETag" = String, description = "Current entity-tag, so the caller can resync without a follow-up GET"))),
+        (status = 400, description = "Malformed If-Match header", body = crate::openapi::ProblemDetails),
         (status = 422, description = "Empty patch, rating outside 1-5, or notes over 10000 characters", body = crate::openapi::ProblemDetails)
     )
 )]
@@ -243,9 +292,11 @@ async fn patch_reading(
     current_user: CurrentUser,
     State(state): State<AppState>,
     Path(manifestation_id): Path<Uuid>,
+    headers_in: HeaderMap,
     body: Result<axum::Json<UpdateReadingRequest>, axum::extract::rejection::JsonRejection>,
-) -> Result<impl IntoResponse, AppError> {
+) -> Result<Response, AppError> {
     current_user.require_scope(Scope::Write)?;
+    let if_match = parse_if_match(&headers_in)?;
     let axum::Json(req) = body.map_err(|e| AppError::Validation(e.body_text()))?;
 
     if req.status.is_none() && req.rating.is_none() && req.notes.is_none() {
@@ -298,6 +349,16 @@ async fn patch_reading(
     .await
     .map_err(|e| AppError::Internal(e.into()))?;
 
+    // Compared under the same row lock the patch applies against, so a
+    // concurrent writer cannot slip a change in between this check and the
+    // update below.
+    if let Some(im) = &if_match {
+        let current = existing.etag()?;
+        if current.as_bytes() != im.as_bytes() {
+            return Ok(if_match_mismatch(&current));
+        }
+    }
+
     let merged = apply_patch(existing, &req);
 
     let row = sqlx::query_as!(
@@ -333,7 +394,9 @@ async fn patch_reading(
         .await
         .map_err(|e| AppError::Internal(e.into()))?;
 
-    Ok(axum::Json(ReadingState::from(row)))
+    let mut headers = HeaderMap::new();
+    headers.insert(ETAG, row.etag()?);
+    Ok((headers, axum::Json(ReadingState::from(row))).into_response())
 }
 
 #[cfg(test)]
@@ -351,6 +414,15 @@ mod tests {
             axum::http::header::AUTHORIZATION,
             HeaderValue::from_str(header).expect("ascii auth header"),
         )
+    }
+
+    fn etag_value(headers: &axum::http::HeaderMap) -> String {
+        headers
+            .get(axum::http::header::ETAG)
+            .expect("ETag header present")
+            .to_str()
+            .expect("ETag ascii")
+            .to_owned()
     }
 
     #[sqlx::test(migrations = "./migrations")]
@@ -850,5 +922,173 @@ mod tests {
         let body: serde_json::Value = r.json();
         assert_eq!(body["status"], "reading");
         assert_eq!(body["rating"], 5);
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn get_reading_emits_etag_for_unread_default(pool: PgPool) {
+        let app_pool = test_support::db::app_pool_for(&pool).await;
+        let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+        let (_work, m_id) =
+            test_support::db::insert_work_and_manifestation(&ingestion_pool, "etag-default").await;
+        let (_user_id, basic) =
+            test_support::db::create_adult_and_basic_auth(&app_pool, "etag-default").await;
+        let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+
+        let r = server
+            .get(&format!("/api/v1/books/{m_id}/reading"))
+            .add_header(auth(&basic).0, auth(&basic).1)
+            .await;
+        assert_eq!(r.status_code(), StatusCode::OK);
+        let etag = etag_value(r.headers());
+        assert!(etag.starts_with('"') && etag.ends_with('"'));
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn get_reading_etag_stable_across_identical_reads(pool: PgPool) {
+        let app_pool = test_support::db::app_pool_for(&pool).await;
+        let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+        let (_work, m_id) =
+            test_support::db::insert_work_and_manifestation(&ingestion_pool, "etag-stable").await;
+        let (_user_id, basic) =
+            test_support::db::create_adult_and_basic_auth(&app_pool, "etag-stable").await;
+        let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+
+        server
+            .patch(&format!("/api/v1/books/{m_id}/reading"))
+            .add_header(auth(&basic).0.clone(), auth(&basic).1.clone())
+            .json(&json!({"rating": 3}))
+            .await;
+
+        let first = server
+            .get(&format!("/api/v1/books/{m_id}/reading"))
+            .add_header(auth(&basic).0.clone(), auth(&basic).1.clone())
+            .await;
+        let second = server
+            .get(&format!("/api/v1/books/{m_id}/reading"))
+            .add_header(auth(&basic).0, auth(&basic).1)
+            .await;
+        assert_eq!(etag_value(first.headers()), etag_value(second.headers()));
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn patch_reading_bumps_etag_after_write(pool: PgPool) {
+        let app_pool = test_support::db::app_pool_for(&pool).await;
+        let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+        let (_work, m_id) =
+            test_support::db::insert_work_and_manifestation(&ingestion_pool, "etag-bump").await;
+        let (_user_id, basic) =
+            test_support::db::create_adult_and_basic_auth(&app_pool, "etag-bump").await;
+        let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+
+        let before = server
+            .get(&format!("/api/v1/books/{m_id}/reading"))
+            .add_header(auth(&basic).0.clone(), auth(&basic).1.clone())
+            .await;
+        let before_etag = etag_value(before.headers());
+
+        let r = server
+            .patch(&format!("/api/v1/books/{m_id}/reading"))
+            .add_header(auth(&basic).0, auth(&basic).1)
+            .json(&json!({"rating": 4}))
+            .await;
+        assert_eq!(r.status_code(), StatusCode::OK, "body: {}", r.text());
+        let after_etag = etag_value(r.headers());
+        assert_ne!(
+            before_etag, after_etag,
+            "a real field change must change the ETag"
+        );
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn patch_reading_without_if_match_still_succeeds(pool: PgPool) {
+        let app_pool = test_support::db::app_pool_for(&pool).await;
+        let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+        let (_work, m_id) =
+            test_support::db::insert_work_and_manifestation(&ingestion_pool, "no-if-match").await;
+        let (_user_id, basic) =
+            test_support::db::create_adult_and_basic_auth(&app_pool, "no-if-match").await;
+        let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+
+        // No If-Match header at all: this PR's compatibility guarantee.
+        let r = server
+            .patch(&format!("/api/v1/books/{m_id}/reading"))
+            .add_header(auth(&basic).0, auth(&basic).1)
+            .json(&json!({"rating": 2}))
+            .await;
+        assert_eq!(r.status_code(), StatusCode::OK, "body: {}", r.text());
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn patch_reading_with_matching_if_match_succeeds(pool: PgPool) {
+        let app_pool = test_support::db::app_pool_for(&pool).await;
+        let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+        let (_work, m_id) =
+            test_support::db::insert_work_and_manifestation(&ingestion_pool, "match-ok").await;
+        let (_user_id, basic) =
+            test_support::db::create_adult_and_basic_auth(&app_pool, "match-ok").await;
+        let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+
+        // The "unread" default ETag protects a first write, before any row
+        // exists.
+        let initial = server
+            .get(&format!("/api/v1/books/{m_id}/reading"))
+            .add_header(auth(&basic).0.clone(), auth(&basic).1.clone())
+            .await;
+        let etag = etag_value(initial.headers());
+
+        let r = server
+            .patch(&format!("/api/v1/books/{m_id}/reading"))
+            .add_header(auth(&basic).0, auth(&basic).1)
+            .add_header(
+                axum::http::header::IF_MATCH,
+                HeaderValue::from_str(&etag).unwrap(),
+            )
+            .json(&json!({"status": "want_to_read"}))
+            .await;
+        assert_eq!(r.status_code(), StatusCode::OK, "body: {}", r.text());
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn patch_reading_with_stale_if_match_returns_412_with_current_etag(pool: PgPool) {
+        let app_pool = test_support::db::app_pool_for(&pool).await;
+        let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+        let (_work, m_id) =
+            test_support::db::insert_work_and_manifestation(&ingestion_pool, "stale-match").await;
+        let (_user_id, basic) =
+            test_support::db::create_adult_and_basic_auth(&app_pool, "stale-match").await;
+        let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+
+        let initial = server
+            .get(&format!("/api/v1/books/{m_id}/reading"))
+            .add_header(auth(&basic).0.clone(), auth(&basic).1.clone())
+            .await;
+        let stale_etag = etag_value(initial.headers());
+
+        // Someone else's write lands first, invalidating the captured tag.
+        server
+            .patch(&format!("/api/v1/books/{m_id}/reading"))
+            .add_header(auth(&basic).0.clone(), auth(&basic).1.clone())
+            .json(&json!({"rating": 5}))
+            .await;
+
+        let r = server
+            .patch(&format!("/api/v1/books/{m_id}/reading"))
+            .add_header(auth(&basic).0, auth(&basic).1)
+            .add_header(
+                axum::http::header::IF_MATCH,
+                HeaderValue::from_str(&stale_etag).unwrap(),
+            )
+            .json(&json!({"rating": 1}))
+            .await;
+        test_support::assert_problem(
+            &r,
+            problems::IF_MATCH_MISMATCH,
+            StatusCode::PRECONDITION_FAILED,
+        );
+        let current_etag = etag_value(r.headers());
+        assert_ne!(
+            current_etag, stale_etag,
+            "412 must carry the current, not the stale, ETag"
+        );
     }
 }

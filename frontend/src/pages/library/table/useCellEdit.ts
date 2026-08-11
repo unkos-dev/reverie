@@ -25,6 +25,8 @@ import { toast } from "sonner";
 
 import {
   ApiError,
+  getBookMetadata,
+  isIfMatchMismatch,
   revertField,
   updateBookMetadata,
   type BookListItem,
@@ -32,7 +34,12 @@ import {
   type UpdateBookMetadataFields,
 } from "@/api";
 import type { FieldVersionChange } from "@/api/books";
-import { updateReadingState, type ReadingState, type UpdateReadingFields } from "@/api/reading";
+import {
+  getReadingState,
+  updateReadingState,
+  type ReadingState,
+  type UpdateReadingFields,
+} from "@/api/reading";
 import type { CellEditReport, GridColumn } from "@/lib/grid/types";
 import { queryKeys, type BooksListKey } from "@/lib/query/keys";
 
@@ -417,6 +424,35 @@ export function useCellEdit({ listKey, columns }: UseCellEditOptions): UseCellEd
     }
   }
 
+  /** A stale If-Match: the row's cached value predates a write from
+   *  elsewhere. There is no merge UI, so the affordance is a reload of the
+   *  caches this edit would otherwise have touched, offered rather than
+   *  applied automatically since the operator was mid-edit. Also re-fires
+   *  the pipeline's own GET so the primed ETag cache resyncs alongside the
+   *  displayed values, not just the list/detail caches. */
+  function announceConflict(
+    manifestationId: string,
+    workScoped: boolean,
+    pipeline: "metadata" | "reading",
+  ): void {
+    toast.error("This book changed elsewhere. Reload to see the latest values before retrying.", {
+      action: {
+        label: "Reload",
+        onClick: () => {
+          void queryClient.invalidateQueries({ queryKey: listKey });
+          invalidateAffectedDetails(queryClient, manifestationId, workScoped);
+          const refetch =
+            pipeline === "metadata"
+              ? getBookMetadata(manifestationId)
+              : getReadingState(manifestationId);
+          refetch.catch((err: unknown) => {
+            console.error("[useCellEdit.announceConflict] resync GET failed", err);
+          });
+        },
+      },
+    });
+  }
+
   function announceSuccess(columnKey: EditableColumnKey, entry: UndoEntry | null): void {
     const label = COLUMN_LABELS[columnKey];
     if (entry === null) {
@@ -480,7 +516,11 @@ export function useCellEdit({ listKey, columns }: UseCellEditOptions): UseCellEd
       } catch (err) {
         clearPending(key);
         console.error("[useCellEdit.onCellEdit] metadata mutation failed", err);
-        toast.error(formatError(err));
+        if (isIfMatchMismatch(err)) {
+          announceConflict(row.id, route.workScoped, "metadata");
+        } else {
+          toast.error(formatError(err));
+        }
       }
       return;
     }
@@ -511,7 +551,11 @@ export function useCellEdit({ listKey, columns }: UseCellEditOptions): UseCellEd
     } catch (err) {
       clearPending(key);
       console.error("[useCellEdit.onCellEdit] reading mutation failed", err);
-      toast.error(formatError(err));
+      if (isIfMatchMismatch(err)) {
+        announceConflict(row.id, false, "reading");
+      } else {
+        toast.error(formatError(err));
+      }
     }
   }
 

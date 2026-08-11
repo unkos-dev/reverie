@@ -142,6 +142,17 @@ pub enum AppError {
     /// context.
     #[error("{0}")]
     MalformedQuery(String),
+    /// A request header failed to satisfy its grammar or usage contract
+    /// (e.g. a malformed, weak, or list-form `If-Match` entity-tag). RFC
+    /// 9457 `type` [`problems::MALFORMED_HEADER`]. HTTP 400 Bad Request.
+    /// RFC 9110 scopes 422 to request *content* (the body), so a rejected
+    /// header value is a syntactic decode failure at the request-line
+    /// level, not a business-rule rejection, and belongs with
+    /// [`Self::MalformedQuery`] rather than [`Self::Validation`]. The
+    /// inner string is emitted verbatim as the `detail` field (the
+    /// `#[error]` Display is not used on the wire).
+    #[error("{0}")]
+    MalformedHeader(String),
     /// Per-source login rate limit exceeded (governor, per client IP). RFC 9457
     /// `type` [`problems::RATE_LIMITED`]. HTTP 429 Too Many Requests. Raised by
     /// the login / recovery handlers; the per-account backoff is separate.
@@ -266,6 +277,12 @@ impl IntoResponse for AppError {
             Self::MalformedQuery(msg) => (
                 StatusCode::BAD_REQUEST,
                 problems::MALFORMED_QUERY,
+                "Bad Request",
+                msg,
+            ),
+            Self::MalformedHeader(msg) => (
+                StatusCode::BAD_REQUEST,
+                problems::MALFORMED_HEADER,
                 "Bad Request",
                 msg,
             ),
@@ -457,6 +474,20 @@ mod tests {
         assert_eq!(
             json["detail"].as_str().unwrap(),
             "malformed query parameter: x"
+        );
+    }
+
+    #[tokio::test]
+    async fn malformed_header_returns_400_with_message_in_detail() {
+        let (status, _, json) = parse_problem(AppError::MalformedHeader(
+            "If-Match header must be ASCII".into(),
+        ))
+        .await;
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+        assert_problem_shape(&json, problems::MALFORMED_HEADER, 400, "Bad Request");
+        assert_eq!(
+            json["detail"].as_str().unwrap(),
+            "If-Match header must be ASCII"
         );
     }
 

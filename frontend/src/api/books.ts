@@ -444,6 +444,58 @@ export const UpdateMetadataResponseSchema = z.object({
  */
 export type UpdateMetadataResponse = z.infer<typeof UpdateMetadataResponseSchema>;
 
+const BookMetadataContributorsSchema = z.object({
+  author: z.array(z.string()),
+  editor: z.array(z.string()),
+  translator: z.array(z.string()),
+});
+
+const BookMetadataSchema = z.object({
+  title: z.string(),
+  subtitle: z.string().nullable(),
+  description: z.string().nullable(),
+  language: z.string().nullable(),
+  publisher: z.string().nullable(),
+  pub_date: z.string().nullable(),
+  isbn_10: z.string().nullable(),
+  isbn_13: z.string().nullable(),
+  pages: z.number().int().nullable(),
+  content_rating: ContentRatingSchema.nullable(),
+  genres: z.array(z.string()),
+  moods: z.array(z.string()),
+  tags: z.array(z.string()),
+  contributors: BookMetadataContributorsSchema,
+  work_identifiers: z.record(z.string(), z.string()),
+  manifestation_identifiers: z.record(z.string(), z.string()),
+});
+/**
+ * `GET /api/v1/books/{id}/metadata` response: the editable metadata span,
+ * field for field the same shape `PATCH` accepts. Mirrors `BookMetadata` in
+ * `backend/src/routes/metadata.rs`.
+ */
+export type BookMetadata = z.infer<typeof BookMetadataSchema>;
+
+export { BookMetadataSchema };
+
+/**
+ * Fetch the editable metadata span for one book (manifestation) — the
+ * matched-pair read for {@link updateBookMetadata}, same URI and id key.
+ * Callers that need a fresh representation before editing (an edit dialog
+ * opening, a grid cell entering edit mode) should call this rather than
+ * seed from a cached list/detail projection, since only this response's
+ * `ETag` is guaranteed current for the following `PATCH`'s `If-Match`.
+ *
+ * Throws an `ApiError` with `status === 404` when the manifestation is
+ * missing or RLS-hidden (existence-not-leaked).
+ */
+export async function getBookMetadata(id: string, signal?: AbortSignal): Promise<BookMetadata> {
+  const body = await apiFetch(
+    `/api/v1/books/${encodeURIComponent(id)}/metadata`,
+    signal ? { method: "GET", signal } : { method: "GET" },
+  );
+  return BookMetadataSchema.parse(body);
+}
+
 /**
  * Manually edit canonical metadata for a book. Each touched field
  * lands as a new `metadata_versions` row (`source = 'manual'`) and the

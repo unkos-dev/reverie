@@ -7,9 +7,9 @@ import { beforeEach, describe, expect, test, vi } from "vite-plus/test";
 
 import { ApiError, type BookListItem, type BookListResponse } from "@/api";
 import type { FieldVersionChange, UpdateMetadataResponse } from "@/api/books";
-import { updateBookMetadata } from "@/api/books";
+import { getBookMetadata, updateBookMetadata } from "@/api/books";
 import { revertField } from "@/api/metadata";
-import { updateReadingState } from "@/api/reading";
+import { getReadingState, updateReadingState } from "@/api/reading";
 import type { ReadingState } from "@/api/reading";
 import type { CellEditReport, GridColumn } from "@/lib/grid/types";
 import { queryKeys, type BooksListKey } from "@/lib/query/keys";
@@ -24,11 +24,11 @@ import { useCellEdit } from "./useCellEdit";
 // that.
 vi.mock("@/api/books", async (importOriginal) => {
   const original = await importOriginal<Record<string, unknown>>();
-  return { ...original, updateBookMetadata: vi.fn() };
+  return { ...original, getBookMetadata: vi.fn(), updateBookMetadata: vi.fn() };
 });
 vi.mock("@/api/reading", async (importOriginal) => {
   const original = await importOriginal<Record<string, unknown>>();
-  return { ...original, updateReadingState: vi.fn() };
+  return { ...original, getReadingState: vi.fn(), updateReadingState: vi.fn() };
 });
 vi.mock("@/api/metadata", async (importOriginal) => {
   const original = await importOriginal<Record<string, unknown>>();
@@ -44,6 +44,36 @@ vi.mock("sonner", () => ({
 
 beforeEach(() => {
   vi.resetAllMocks();
+  // Priming/resync calls: most tests never trigger these (only the 412
+  // reload-action tests below do), but a benign default avoids an
+  // unhandled rejection from a mock that otherwise resolves to `undefined`.
+  vi.mocked(getBookMetadata).mockResolvedValue({
+    title: "Original Title",
+    subtitle: null,
+    description: null,
+    language: null,
+    publisher: null,
+    pub_date: null,
+    isbn_10: null,
+    isbn_13: "9780000000001",
+    pages: null,
+    content_rating: null,
+    genres: [],
+    moods: [],
+    tags: [],
+    contributors: { author: [], editor: [], translator: [] },
+    work_identifiers: {},
+    manifestation_identifiers: {},
+  });
+  vi.mocked(getReadingState).mockResolvedValue({
+    status: "reading",
+    rating: 3,
+    notes: null,
+    progress_pct: 40,
+    started_at: null,
+    finished_at: null,
+    last_read_at: null,
+  });
 });
 
 const LIST_KEY: BooksListKey = queryKeys.books.list({});
@@ -183,6 +213,25 @@ function getUndoAction(callIndex: number): () => void {
     !("onClick" in action)
   ) {
     throw new Error("expected an undo action on this toast");
+  }
+  const { onClick } = action;
+  return () => {
+    onClick({} as MouseEvent<HTMLButtonElement>);
+  };
+}
+
+/** Same extraction as {@link getUndoAction}, for the conflict toast raised
+ *  through `toast.error` rather than `toast.success`. */
+function getErrorAction(callIndex: number): () => void {
+  const call = vi.mocked(toast.error).mock.calls[callIndex];
+  const action = call[1]?.action;
+  if (
+    action === undefined ||
+    action === null ||
+    typeof action !== "object" ||
+    !("onClick" in action)
+  ) {
+    throw new Error("expected a reload action on this toast");
   }
   const { onClick } = action;
   return () => {
@@ -921,5 +970,101 @@ describe("useCellEdit", () => {
     await waitFor(() => {
       expect(revertField).toHaveBeenCalledWith(row.id, "subtitle", "v-prev");
     });
+  });
+
+  test("a 412 metadata conflict offers a reload action instead of the generic error, and does not push an undo entry", async () => {
+    const client = makeClient();
+    const invalidateSpy = vi.spyOn(client, "invalidateQueries");
+    const row = rowFixture();
+    seedCache(client, [row]);
+    vi.mocked(updateBookMetadata).mockRejectedValue(
+      new ApiError(
+        412,
+        "https://reverie.example/probs/if-match-mismatch",
+        "Precondition Failed",
+        "",
+      ),
+    );
+    const report: CellEditReport<BookListItem> = {
+      row: { ...row, title: "New Title" },
+      previousRow: row,
+      columnKey: "title",
+    };
+    renderHarness(client, [report]);
+    await userEvent.setup().click(screen.getByRole("button", { name: "edit-0" }));
+
+    await waitFor(() => {
+      expect(toast.error).toHaveBeenCalledWith(
+        "This book changed elsewhere. Reload to see the latest values before retrying.",
+        expect.objectContaining({ action: expect.anything() as unknown }),
+      );
+    });
+
+    getErrorAction(0)();
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: LIST_KEY });
+    // "title" is work-scoped, so the reload fans out to the whole detail
+    // family rather than a single manifestation's key.
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: queryKeys.books.detailsAll });
+    // The reload also re-fires the metadata GET, so the ETag cache resyncs
+    // alongside the invalidated display values.
+    expect(getBookMetadata).toHaveBeenCalledWith(row.id);
+    expect(getReadingState).not.toHaveBeenCalled();
+    // No Ctrl+Z affordance for a write that never applied.
+    fireEvent.keyDown(screen.getByTestId("wrapper"), { key: "z", ctrlKey: true });
+    expect(updateBookMetadata).toHaveBeenCalledTimes(1);
+  });
+
+  test("a 412 reading conflict offers a reload action scoped to the manifestation's own detail query", async () => {
+    const client = makeClient();
+    const invalidateSpy = vi.spyOn(client, "invalidateQueries");
+    const row = rowFixture({
+      reading_state: {
+        status: "reading",
+        rating: 3,
+        progress_pct: 40,
+        started_at: null,
+        finished_at: null,
+      },
+    });
+    seedCache(client, [row]);
+    vi.mocked(updateReadingState).mockRejectedValue(
+      new ApiError(
+        412,
+        "https://reverie.example/probs/if-match-mismatch",
+        "Precondition Failed",
+        "",
+      ),
+    );
+    const report: CellEditReport<BookListItem> = {
+      row: {
+        ...row,
+        reading_state: {
+          status: "reading",
+          rating: 5,
+          progress_pct: 40,
+          started_at: null,
+          finished_at: null,
+        },
+      },
+      previousRow: row,
+      columnKey: "rating",
+    };
+    renderHarness(client, [report]);
+    await userEvent.setup().click(screen.getByRole("button", { name: "edit-0" }));
+
+    await waitFor(() => {
+      expect(toast.error).toHaveBeenCalledWith(
+        "This book changed elsewhere. Reload to see the latest values before retrying.",
+        expect.objectContaining({ action: expect.anything() as unknown }),
+      );
+    });
+
+    getErrorAction(0)();
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: LIST_KEY });
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: queryKeys.books.detail(row.id) });
+    expect(invalidateSpy).not.toHaveBeenCalledWith({ queryKey: queryKeys.books.detailsAll });
+    // The reload also re-fires the reading GET, not the metadata one.
+    expect(getReadingState).toHaveBeenCalledWith(row.id);
+    expect(getBookMetadata).not.toHaveBeenCalled();
   });
 });

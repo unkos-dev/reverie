@@ -62,6 +62,13 @@ pub const SYSTEM_SHELF_IMMUTABLE: &str = "system-shelf-immutable";
 /// HTTP 400 Bad Request.
 pub const MALFORMED_QUERY: &str = "malformed-query";
 
+/// A request header failed its grammar or usage contract (e.g. a
+/// malformed, weak, or list-form `If-Match` entity-tag). RFC 9110 scopes
+/// 422 to request content, so a rejected header value is a syntactic
+/// decode failure, not a business-rule rejection, and maps to HTTP 400
+/// Bad Request like [`MALFORMED_QUERY`] rather than [`VALIDATION`].
+pub const MALFORMED_HEADER: &str = "malformed-header";
+
 /// Per-source login rate limit exceeded
 /// ([`crate::error::AppError::RateLimited`]). HTTP 429.
 pub const RATE_LIMITED: &str = "rate-limited";

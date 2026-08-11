@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from "vite-plus/test";
 
 import { __resetCsrfTokenForTesting } from "./csrf";
+import { __resetEtagCacheForTesting } from "./etags";
 import { ApiError } from "./errors";
 import { apiFetch } from "./fetch";
 
@@ -28,11 +29,13 @@ function problemResponse(
 
 beforeEach(() => {
   __resetCsrfTokenForTesting();
+  __resetEtagCacheForTesting();
   vi.restoreAllMocks();
 });
 
 afterEach(() => {
   __resetCsrfTokenForTesting();
+  __resetEtagCacheForTesting();
 });
 
 async function seedCsrf(token: string): Promise<void> {
@@ -415,5 +418,158 @@ describe("apiFetch — body decoding", () => {
     const result = await apiFetch("/api/v1/books/1", { method: "DELETE" });
     expect(result).toBeUndefined();
     expect(fetchSpy).toHaveBeenCalledTimes(3);
+  });
+});
+
+function withEtag(body: unknown, etag: string): Response {
+  return new Response(JSON.stringify(body), {
+    status: 200,
+    headers: { "Content-Type": "application/json", ETag: etag },
+  });
+}
+
+function mismatchResponse(currentEtag: string): Response {
+  return new Response(
+    JSON.stringify({
+      type: "https://reverie.example/probs/if-match-mismatch",
+      title: "Precondition Failed",
+      status: 412,
+    }),
+    {
+      status: 412,
+      headers: { "Content-Type": "application/problem+json", ETag: currentEtag },
+    },
+  );
+}
+
+describe("apiFetch — If-Match ETag retention", () => {
+  test("a GET response's ETag is echoed as If-Match on that resource's PATCH", async () => {
+    await seedCsrf(SAMPLE_TOKEN);
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(withEtag({ status: null }, '"etag-1"'))
+      .mockResolvedValueOnce(withEtag({ status: "reading" }, '"etag-2"'));
+
+    await apiFetch("/api/v1/books/book-1/reading");
+    await apiFetch("/api/v1/books/book-1/reading", {
+      method: "PATCH",
+      body: JSON.stringify({ status: "reading" }),
+    });
+
+    const patchHeaders = new Headers(fetchSpy.mock.calls[1]?.[1]?.headers);
+    expect(patchHeaders.get("If-Match")).toBe('"etag-1"');
+  });
+
+  test("a successful PATCH's own ETag replaces the retained tag for the next PATCH", async () => {
+    await seedCsrf(SAMPLE_TOKEN);
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(withEtag({ status: null }, '"etag-1"'))
+      .mockResolvedValueOnce(withEtag({ status: "reading" }, '"etag-2"'))
+      .mockResolvedValueOnce(withEtag({ status: "read" }, '"etag-3"'));
+
+    await apiFetch("/api/v1/books/book-1/reading");
+    await apiFetch("/api/v1/books/book-1/reading", {
+      method: "PATCH",
+      body: JSON.stringify({ status: "reading" }),
+    });
+    await apiFetch("/api/v1/books/book-1/reading", {
+      method: "PATCH",
+      body: JSON.stringify({ status: "read" }),
+    });
+
+    const secondPatchHeaders = new Headers(fetchSpy.mock.calls[2]?.[1]?.headers);
+    expect(secondPatchHeaders.get("If-Match")).toBe('"etag-2"');
+  });
+
+  test("a 412's current ETag replaces the stale retained tag", async () => {
+    await seedCsrf(SAMPLE_TOKEN);
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(withEtag({ status: null }, '"stale"'))
+      .mockResolvedValueOnce(mismatchResponse('"current"'))
+      .mockResolvedValueOnce(withEtag({ status: "read" }, '"current-after-retry"'));
+
+    await apiFetch("/api/v1/books/book-1/reading");
+    await expect(
+      apiFetch("/api/v1/books/book-1/reading", {
+        method: "PATCH",
+        body: JSON.stringify({ status: "reading" }),
+      }),
+    ).rejects.toMatchObject({ status: 412 });
+
+    await apiFetch("/api/v1/books/book-1/reading", {
+      method: "PATCH",
+      body: JSON.stringify({ status: "read" }),
+    });
+
+    const retryHeaders = new Headers(fetchSpy.mock.calls[2]?.[1]?.headers);
+    expect(retryHeaders.get("If-Match")).toBe('"current"');
+  });
+
+  test("a resource with no retained tag PATCHes without If-Match", async () => {
+    await seedCsrf(SAMPLE_TOKEN);
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(jsonResponse({ status: "reading" }));
+
+    await apiFetch("/api/v1/books/never-read/reading", {
+      method: "PATCH",
+      body: JSON.stringify({ status: "reading" }),
+    });
+
+    const headers = new Headers(fetchSpy.mock.calls[0]?.[1]?.headers);
+    expect(headers.has("If-Match")).toBe(false);
+  });
+
+  test("a retained tag on a manifestation's metadata resource is not sent for an unrelated shelves PATCH", async () => {
+    await seedCsrf(SAMPLE_TOKEN);
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(withEtag({ fields: {} }, '"meta-etag"'))
+      .mockResolvedValueOnce(jsonResponse({ id: "shelf-1", name: "Renamed" }));
+
+    await apiFetch("/api/v1/books/book-1/metadata");
+    await apiFetch("/api/v1/shelves/shelf-1", {
+      method: "PATCH",
+      body: JSON.stringify({ name: "Renamed" }),
+    });
+
+    const headers = new Headers(fetchSpy.mock.calls[1]?.[1]?.headers);
+    expect(headers.has("If-Match")).toBe(false);
+  });
+
+  test("a GET and a PATCH on the shared books metadata path share a retained tag", async () => {
+    await seedCsrf(SAMPLE_TOKEN);
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(withEtag({ title: "Original" }, '"meta-etag"'))
+      .mockResolvedValueOnce(withEtag({ fields: {} }, '"meta-etag-2"'));
+
+    await apiFetch("/api/v1/books/book-1/metadata");
+    await apiFetch("/api/v1/books/book-1/metadata", {
+      method: "PATCH",
+      body: JSON.stringify({ title: "New" }),
+    });
+
+    const headers = new Headers(fetchSpy.mock.calls[1]?.[1]?.headers);
+    expect(headers.get("If-Match")).toBe('"meta-etag"');
+  });
+
+  test("the unprotected metadata review-queue GET does not seed a retained tag", async () => {
+    await seedCsrf(SAMPLE_TOKEN);
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(jsonResponse([]))
+      .mockResolvedValueOnce(jsonResponse({ fields: {} }));
+
+    await apiFetch("/api/v1/manifestations/book-1/metadata");
+    await apiFetch("/api/v1/books/book-1/metadata", {
+      method: "PATCH",
+      body: JSON.stringify({ title: "New" }),
+    });
+
+    const headers = new Headers(fetchSpy.mock.calls[1]?.[1]?.headers);
+    expect(headers.has("If-Match")).toBe(false);
   });
 });

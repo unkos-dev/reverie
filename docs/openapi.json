@@ -953,6 +953,14 @@
         "responses": {
           "200": {
             "description": "The editable metadata span, matching what PATCH accepts",
+            "headers": {
+              "ETag": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "Strong entity-tag hashing this response body. Echo as If-Match on PATCH /api/v1/books/{id}/metadata"
+              }
+            },
             "content": {
               "application/json": {
                 "schema": {
@@ -1020,7 +1028,7 @@
           "metadata"
         ],
         "summary": "`PATCH /api/v1/books/{id}/metadata` — manual operator edit.",
-        "description": "Bare RFC 7396 JSON Merge Patch body (no envelope): absent keys are\nunchanged, `null` clears (except `title`). Accepts both\n`application/json` and `application/merge-patch+json`: axum's `Json`\nextractor already treats any `+json`-suffixed content type as JSON.\n\nFor each touched field the handler inserts a `metadata_versions` row\nwith `source = 'manual'` and then either promotes that row to canonical\nvia [`apply_version`] (when a value is supplied) or clears the\ncanonical column via [`clear_field`] (when the value is `null`). The\npending AI/OPF drafts on the same field stay `status = 'pending'`, so the\noperator can revert to one of them later. The response carries the\napplied (normalized) value plus the new and previous version pointers\nper field, so a caller can offer undo without a follow-up read.\n\n# Errors\n- [`AppError::Validation`] when the body has no populated fields,\n  when an ISBN/date value fails parsing, when a vocabulary list\n  (`genres`/`moods`/`tags`) contains an empty, duplicate, or\n  over-length term, or when the operator tries to clear `title`\n  (canonical title is `NOT NULL` on `works`).\n- [`AppError::NotFound`] when the manifestation is missing or hidden\n  by RLS for the current user (existence-not-leaked).\n- [`AppError::Forbidden`] when the caller is a child account.\n- [`AppError::Internal`] on database errors.",
+        "description": "Bare RFC 7396 JSON Merge Patch body (no envelope): absent keys are\nunchanged, `null` clears (except `title`). Accepts both\n`application/json` and `application/merge-patch+json`: axum's `Json`\nextractor already treats any `+json`-suffixed content type as JSON.\n\nFor each touched field the handler inserts a `metadata_versions` row\nwith `source = 'manual'` and then either promotes that row to canonical\nvia [`apply_version`] (when a value is supplied) or clears the\ncanonical column via [`clear_field`] (when the value is `null`). The\npending AI/OPF drafts on the same field stay `status = 'pending'`, so the\noperator can revert to one of them later. The response carries the\napplied (normalized) value plus the new and previous version pointers\nper field, so a caller can offer undo without a follow-up read.\n\n# Errors\n- [`AppError::Validation`] when the body has no populated fields,\n  when an ISBN/date value fails parsing, when a vocabulary list\n  (`genres`/`moods`/`tags`) contains an empty, duplicate, or\n  over-length term, or when the operator tries to clear `title`\n  (canonical title is `NOT NULL` on `works`).\n- [`AppError::MalformedHeader`] when `If-Match` is present but\n  malformed.\n- [`AppError::NotFound`] when the manifestation is missing or hidden\n  by RLS for the current user (existence-not-leaked).\n- [`AppError::Forbidden`] when the caller is a child account.\n- [`AppError::IfMatchMismatch`] (412) when `If-Match` is present and does\n  not match the manifestation's current metadata `ETag`; the response\n  carries the current `ETag` so the caller can resync in one round trip.\n- [`AppError::Internal`] on database errors.",
         "operationId": "update_book_metadata",
         "parameters": [
           {
@@ -1031,6 +1039,18 @@
             "schema": {
               "type": "string",
               "format": "uuid"
+            }
+          },
+          {
+            "name": "If-Match",
+            "in": "header",
+            "description": "A single quoted strong entity-tag, as returned in a prior GET or PATCH response's ETag header. Optional in this phase: absent means proceed unprotected; present and stale means 412",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
             }
           }
         ],
@@ -1048,10 +1068,28 @@
         "responses": {
           "200": {
             "description": "Manual edit recorded as a `manual` metadata version and promoted to canonical (or cleared); body carries the applied value and version pointers per field",
+            "headers": {
+              "ETag": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "Strong entity-tag hashing every PATCH-modifiable field, reflecting the state after this write"
+              }
+            },
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/UpdateMetadataResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Malformed If-Match header",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
                 }
               }
             }
@@ -1078,6 +1116,24 @@
           },
           "404": {
             "description": "Manifestation missing or RLS-hidden (existence-not-leaked)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "412": {
+            "description": "If-Match does not match the manifestation's current metadata ETag",
+            "headers": {
+              "ETag": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "Current entity-tag, so the caller can resync without a follow-up GET"
+              }
+            },
             "content": {
               "application/json": {
                 "schema": {
@@ -1144,6 +1200,14 @@
         "responses": {
           "200": {
             "description": "Caller's reading state; all-null fields mean unread (no row yet)",
+            "headers": {
+              "ETag": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "Strong entity-tag hashing every PATCH-modifiable field; echo as If-Match on a protected write"
+              }
+            },
             "content": {
               "application/json": {
                 "schema": {
@@ -1201,7 +1265,7 @@
           "reading"
         ],
         "summary": "`PATCH /api/v1/books/{id}/reading`: upsert the caller's reading state.",
-        "description": "Transition stamps fire only when the patch itself carries a non-null\n`status` (no before/after diff, so repeating the current status\nre-applies its stamp; a patch without `status` never touches stamps):\n- patched `status = reading` → `started_at := COALESCE(started_at, now())`\n- patched `status = finished` → `finished_at := now()`,\n  `progress_pct := 100`, `last_read_at := now()`\n- any other patched `status`, an explicit `null` clear, or a patch\n  without `status` → no stamps; `progress_pct` / `started_at` /\n  `finished_at` / `last_read_at` carry over unchanged\n\n# Errors\n- [`AppError::Validation`] when the body has no populated fields,\n  `rating` is outside `1..=5`, or `notes` exceeds 10000 characters.\n- [`AppError::NotFound`] when the manifestation is missing or hidden by\n  RLS for the current user (existence-not-leaked).\n- [`AppError::Internal`] on database errors.",
+        "description": "Transition stamps fire only when the patch itself carries a non-null\n`status` (no before/after diff, so repeating the current status\nre-applies its stamp; a patch without `status` never touches stamps):\n- patched `status = reading` → `started_at := COALESCE(started_at, now())`\n- patched `status = finished` → `finished_at := now()`,\n  `progress_pct := 100`, `last_read_at := now()`\n- any other patched `status`, an explicit `null` clear, or a patch\n  without `status` → no stamps; `progress_pct` / `started_at` /\n  `finished_at` / `last_read_at` carry over unchanged\n\n# Errors\n- [`AppError::Validation`] when the body has no populated fields,\n  `rating` is outside `1..=5`, or `notes` exceeds 10000 characters.\n- [`AppError::MalformedHeader`] when `If-Match` is present but\n  malformed.\n- [`AppError::NotFound`] when the manifestation is missing or hidden by\n  RLS for the current user (existence-not-leaked).\n- [`AppError::IfMatchMismatch`] (412) when `If-Match` is present and does\n  not match the caller's current reading-state `ETag`; the response\n  carries the current `ETag` so the caller can resync in one round trip.\n- [`AppError::Internal`] on database errors.",
         "operationId": "patch_reading",
         "parameters": [
           {
@@ -1212,6 +1276,18 @@
             "schema": {
               "type": "string",
               "format": "uuid"
+            }
+          },
+          {
+            "name": "If-Match",
+            "in": "header",
+            "description": "A single quoted strong entity-tag, as returned in a prior GET or PATCH response's ETag header. Optional in this phase: absent means proceed unprotected; present and stale means 412",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
             }
           }
         ],
@@ -1229,10 +1305,28 @@
         "responses": {
           "200": {
             "description": "Reading state after the patch and any transition stamps",
+            "headers": {
+              "ETag": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "Strong entity-tag hashing every PATCH-modifiable field, reflecting the state after this write"
+              }
+            },
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ReadingState"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Malformed If-Match header",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
                 }
               }
             }
@@ -1249,6 +1343,24 @@
           },
           "404": {
             "description": "Manifestation missing or RLS-hidden (existence-not-leaked)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "412": {
+            "description": "If-Match does not match the caller's current reading-state ETag",
+            "headers": {
+              "ETag": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "Current entity-tag, so the caller can resync without a follow-up GET"
+              }
+            },
             "content": {
               "application/json": {
                 "schema": {
