@@ -59,8 +59,14 @@ pub fn hash_etag<T: Serialize>(state: &T) -> Result<HeaderValue, AppError> {
 /// - `Ok(Some(_))`: a well-formed strong entity-tag, still quoted.
 /// - `Err(AppError::Validation)`: malformed value, a weak validator
 ///   (`W/"..."`) (RFC 9110 §13.1.2 requires strong comparison for
-///   `If-Match`), a list of entity-tags, or the `*` wildcard.
+///   `If-Match`), a list of entity-tags, the `*` wildcard, or the header
+///   sent as more than one instance (semantically the same list form).
 pub fn parse_if_match(headers: &HeaderMap) -> Result<Option<String>, AppError> {
+    if headers.get_all(IF_MATCH).iter().count() > 1 {
+        return Err(AppError::Validation(
+            "If-Match must be sent as a single header instance carrying one entity-tag".into(),
+        ));
+    }
     let Some(raw) = headers.get(IF_MATCH) else {
         return Ok(None);
     };
@@ -158,5 +164,13 @@ mod tests {
             parse_if_match(&headers).unwrap(),
             Some("\"abc\"".to_owned())
         );
+    }
+
+    #[test]
+    fn parse_if_match_rejects_repeated_header_instances() {
+        let mut headers = HeaderMap::new();
+        headers.append(IF_MATCH, HeaderValue::from_static("\"abc\""));
+        headers.append(IF_MATCH, HeaderValue::from_static("\"def\""));
+        assert!(parse_if_match(&headers).is_err());
     }
 }
