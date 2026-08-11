@@ -169,7 +169,7 @@ pub const ENV_MAP: &[(&str, &str)] = &[
 ///    env. Stock `Env` reads only [`std::env::vars`]; testing it means
 ///    `Jail`/`temp-env`/`set_var`, all of which mutate global env under a lock
 ///    — serializing those tests and racing the suite's other env readers
-///    (`dotenvy`, [`Self::from_process_env`]), the `getenv`/`setenv` data race
+///    ([`Self::from_process_env`]), the `getenv`/`setenv` data race
 ///    that makes `set_var` `unsafe`. `from_pairs` touches no process env.
 ///    Production
 ///    ([`Self::from_process_env`]) runs through the same code so tests exercise

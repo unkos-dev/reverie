@@ -166,6 +166,18 @@ dev:
     source ../scripts/backend-dev-env.sh
     exec cargo run --locked
 
+# DB: needs the local dev Postgres up (`just db-up`). The binary no longer
+# self-loads any env file (backend/src/lib.rs run_migrate), so the migration
+# DSN must come from the sourced dev env, mirroring `rust::dev`.
+#
+# Apply pending database migrations against the resolved dev DSN, then exit.
+[group('rust')]
+migrate:
+    #!/usr/bin/env bash
+    set -ueo pipefail
+    source ../scripts/backend-dev-env.sh
+    exec cargo run --locked -- migrate
+
 # Shared lifecycle plumbing for dev-start/dev-stop/dev-status. The script owns
 # the ownership and race checks (see scripts/dev-server.sh); this sets the
 # backend knobs: the resolved port for both the server and the readiness probe,
@@ -175,8 +187,10 @@ dev:
 # and advice strings that name the rust recipes.
 #
 # The dev configuration the server needs comes from scripts/backend-dev-env.sh,
-# which defers to `.env` instead of overriding it. A shebang body keeps the
-# dev-default DSN out of just's per-line echo, which shebang recipes do not get.
+# which resolves an out-of-tree env file (REVERIE_DEV_ENV, default
+# ~/reverie/dev/env) without overriding an already-set variable. A shebang
+# body keeps the dev-default DSN out of just's per-line echo, which shebang
+# recipes do not get.
 _dev-lifecycle action:
     #!/usr/bin/env bash
     set -ueo pipefail

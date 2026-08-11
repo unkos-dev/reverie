@@ -89,3 +89,11 @@ SDL.md
 backend/.dev-server.pid
 backend/.dev-server.lock
 backend/.dev-server.log
+
+# User library/ingestion/quarantine data, when a dev override points a config
+# path (REVERIE_LIBRARY_PATH etc.) inside the checkout instead of at the
+# shipped /data/* container default. Keeps user-uploaded content out of
+# commits regardless of where a developer points those paths.
+backend/library/
+backend/ingestion/
+backend/quarantine/

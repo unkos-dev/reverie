@@ -139,6 +139,41 @@ services:
     env_file:
       - path: .env.runtime
         required: true
+    # Host paths for the fixed container defaults the app now ships
+    # (/data/library, /data/ingestion, /data/quarantine,
+    # /data/recovery-pins; see backend/src/config/mod.rs). Fixed container
+    # paths mean the runtime env never needs to carry them; only the host
+    # side is operator-configured, via `docker/.env` like REVERIE_VERSION.
+    # The one-shot migrate service needs none of these mounts.
+    #
+    # The image runs as UID 10001 (Dockerfile), so the operator must
+    # pre-create each host directory and make it writable by that UID
+    # before the first deploy. `create_host_path: false` refuses to
+    # auto-create a missing directory, which Compose otherwise does as
+    # root, leaving a mount the app process cannot write to. A missing
+    # directory then fails `docker compose up` loudly instead of starting
+    # an app that cannot persist any data.
+    volumes:
+      - type: bind
+        source: ${REVERIE_LIBRARY_HOST_PATH:?required}
+        target: /data/library
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${REVERIE_INGESTION_HOST_PATH:?required}
+        target: /data/ingestion
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${REVERIE_QUARANTINE_HOST_PATH:?required}
+        target: /data/quarantine
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${REVERIE_RECOVERY_PINS_HOST_PATH:?required}
+        target: /data/recovery-pins
+        bind:
+          create_host_path: false
     depends_on:
       reverie-postgres:
         condition: service_healthy

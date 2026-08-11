@@ -57,20 +57,22 @@ Set `REVERIE_COMPOSE_ENV` to run a second, deliberately separate stack with
 its own volume and database (`REVERIE_COMPOSE_ENV=stage` gives project
 `reverie_stage` and volume `reverie_stage_pgdata`). Export it in your shell or
 put it in `docker/.env`, which is the dotenv file Compose loads for this
-project; the repository root `.env` is read by the backend, not by Compose, so
-setting it there has no effect. Environment stacks still share the published
+project; the backend discovers no env file of its own, so a repository
+`.env` has no effect on it. Environment stacks still share the published
 `127.0.0.1:5432`, so only one can run at a time and the port bind conflict is
 the guard.
 
 Backend only (requires the Rust toolchain; the minimum supported version is declared as `rust-version` in [`backend/Cargo.toml`](../backend/Cargo.toml) and enforced in CI):
 
 ```bash
-cd backend && cargo run
+just rust::dev
 ```
 
-> Run `cargo run -- migrate` once to initialise the schema before the first
-> `cargo run`; the server verifies the schema and refuses to start if it is
-> fresh or behind.
+> Run `just rust::migrate` once to initialise the schema before the first
+> `just rust::dev`; the server verifies the schema and refuses to start if it
+> is fresh or behind. Both recipes source the dev env file described below;
+> a bare `cd backend && cargo run` has no config unless you export it
+> yourself.
 
 Native toolchains, whole stack in the background:
 
@@ -87,7 +89,8 @@ is stateful and shared with the test suite; stop it with `just db-down`.
 
 The backend recipes supply the dev configuration the server needs when nothing
 else does: the RLS-enforced `reverie_app` DSN and the `REVERIE_PUBLIC_URL` that
-OPDS requires. They defer to the repository root `.env` (copy `.env.example` to
+OPDS requires. They resolve an out-of-tree env file at `~/reverie/dev/env`
+(override the location with `REVERIE_DEV_ENV`; copy `.env.example` there to
 start one), so a value you set there is the one the server uses.
 
 Frontend only (Node.js at or above the `engines.node` floor in `package.json`; install at the repository root, where npm workspaces hoist every plane's dependencies):

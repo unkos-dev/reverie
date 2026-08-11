@@ -81,14 +81,14 @@
       "default": ""
     },
     "ingestion_path": {
-      "description": "Watched ingestion drop directory (`REVERIE_INGESTION_PATH`,\ndefault `./ingestion`). The watcher consumes files from here.",
+      "description": "Watched ingestion drop directory (`REVERIE_INGESTION_PATH`,\ndefault `/data/ingestion`). The watcher consumes files from here.",
       "type": "string",
-      "default": "./ingestion"
+      "default": "/data/ingestion"
     },
     "library_path": {
-      "description": "Filesystem root for persisted manifestation files\n(`REVERIE_LIBRARY_PATH`, default `./library`). The OPDS download\nhandler canonicalises file paths against this root.",
+      "description": "Filesystem root for persisted manifestation files\n(`REVERIE_LIBRARY_PATH`, default `/data/library`). The OPDS download\nhandler canonicalises file paths against this root.",
       "type": "string",
-      "default": "./library"
+      "default": "/data/library"
     },
     "local_auth_enabled": {
       "description": "Whether local email+password authentication is enabled\n(`REVERIE_LOCAL_AUTH_ENABLED`, default `true`). Reverie is local-first out\nof the box (ADR `2026-06-23-auth-identity-pluggable-providers`), so this\ndefaults on. Setting it `false` without configuring OIDC is rejected at\nstartup (Gate 4): at least one auth provider must remain usable or the\ninstance locks everyone out.",
@@ -207,14 +207,14 @@
       "minimum": 0
     },
     "quarantine_path": {
-      "description": "Failed-ingestion quarantine directory\n(`REVERIE_QUARANTINE_PATH`, default `./quarantine`).",
+      "description": "Failed-ingestion quarantine directory\n(`REVERIE_QUARANTINE_PATH`, default `/data/quarantine`).",
       "type": "string",
-      "default": "./quarantine"
+      "default": "/data/quarantine"
     },
     "recovery_pin_dir": {
-      "description": "Directory the clear recovery PIN is written into, one file per user at\n`<dir>/<user_id>.pin` (file mode 0600, directory mode 0700), for an\noperator to read and relay (`REVERIE_RECOVERY_PIN_DIR`, default\n`./reverie-recovery`). Per-user files keep concurrent recoveries from\ncolliding. MUST be outside any web-served directory; the database stores\nonly the PIN's Argon2id hash.",
+      "description": "Directory the clear recovery PIN is written into, one file per user at\n`<dir>/<user_id>.pin` (file mode 0600, directory mode 0700), for an\noperator to read and relay (`REVERIE_RECOVERY_PIN_DIR`, default\n`/data/recovery-pins`). Per-user files keep concurrent recoveries from\ncolliding. MUST be outside any web-served directory; the database stores\nonly the PIN's Argon2id hash.",
       "type": "string",
-      "default": "./reverie-recovery"
+      "default": "/data/recovery-pins"
     },
     "recovery_pin_ttl_secs": {
       "description": "Lifetime of a forgot-password recovery PIN, seconds\n(`REVERIE_RECOVERY_PIN_TTL_SECS`, default `900` = 15 minutes). Short by\ndesign: the PIN is single-use and rate-limited.",

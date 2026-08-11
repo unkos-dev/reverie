@@ -67,7 +67,7 @@ log path to replay afterward.
 | ------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `just infra::actionlint`                         | Lint GitHub Actions workflow files.                                                                                                              |
 | `just infra::adr-frontmatter-selftest`           | Validate canonical ADR frontmatter and lifecycle index coverage.                                                                                 |
-| `just infra::backend-dev-env-selftest`           | Assert the backend dev recipes defer to `.env` instead of overriding it.                                                                         |
+| `just infra::backend-dev-env-selftest`           | Assert the backend dev recipes resolve REVERIE_DEV_ENV without overriding an already-set variable.                                               |
 | `just infra::cargo-locked-guard`                 | Every dependency-resolving cargo invocation in the just recipes must pass --locked; the package-ingress ADR records why.                         |
 | `just infra::cargo-locked-guard-selftest`        | Self-test scripts/cargo-locked-guard.sh against clean and violating fixtures, then the real recipes.                                             |
 | `just infra::check`                              | Infra has no formatter (oxfmt owns formatting via the JS plane), so check == lint.                                                               |
@@ -158,6 +158,7 @@ log path to replay afterward.
 | `just rust::guards`       | Backend static allowlist and prose guards.                                        |
 | `just rust::lint`         | Backend lint surface: clippy + doc-lint.                                          |
 | `just rust::machete`      | Fail on unused workspace dependencies.                                            |
+| `just rust::migrate`      | Apply pending database migrations against the resolved dev DSN, then exit.        |
 | `just rust::regen`        | Regenerate the OpenAPI spec, config reference, and config schema in place.        |
 | `just rust::sqlx-check`   | DB: sqlx query-cache freshness against the live schema.                           |
 | `just rust::sqlx-prepare` | DB: regenerate the sqlx offline query cache from the live schema.                 |

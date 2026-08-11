@@ -39,7 +39,6 @@ base64ct = { version = "1.8.3", features = ["std"] }
 # See adr/2026-08-05-first-party-datetime-crate.md.
 chrono = { version = "0.4.44", features = ["serde"] }
 crc = "3.4.0"
-dotenvy = "0.15.7"
 email_address = "0.2.9"
 encoding_rs = "0.8.35"
 futures = "0.3.32"

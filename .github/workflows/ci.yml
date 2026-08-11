@@ -1351,6 +1351,10 @@ jobs:
             -e 's|^REVERIE_READONLY_PASSWORD=.*|REVERIE_READONLY_PASSWORD=smoke_ro_pw_4|' \
             -e 's|^REVERIE_MIGRATOR_PASSWORD=.*|REVERIE_MIGRATOR_PASSWORD=smoke_mig_pw_5|' \
             -e 's|^REVERIE_VERSION=.*|REVERIE_VERSION=smoke-test|' \
+            -e 's|^REVERIE_LIBRARY_HOST_PATH=.*|REVERIE_LIBRARY_HOST_PATH=/tmp/smoke-library|' \
+            -e 's|^REVERIE_INGESTION_HOST_PATH=.*|REVERIE_INGESTION_HOST_PATH=/tmp/smoke-ingestion|' \
+            -e 's|^REVERIE_QUARANTINE_HOST_PATH=.*|REVERIE_QUARANTINE_HOST_PATH=/tmp/smoke-quarantine|' \
+            -e 's|^REVERIE_RECOVERY_PINS_HOST_PATH=.*|REVERIE_RECOVERY_PINS_HOST_PATH=/tmp/smoke-recovery-pins|' \
             .env
 
       - name: Bring up postgres service
