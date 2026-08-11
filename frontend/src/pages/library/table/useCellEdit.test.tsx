@@ -7,9 +7,9 @@ import { beforeEach, describe, expect, test, vi } from "vite-plus/test";
 
 import { ApiError, type BookListItem, type BookListResponse } from "@/api";
 import type { FieldVersionChange, UpdateMetadataResponse } from "@/api/books";
-import { updateBookMetadata } from "@/api/books";
+import { getBookMetadata, updateBookMetadata } from "@/api/books";
 import { revertField } from "@/api/metadata";
-import { updateReadingState } from "@/api/reading";
+import { getReadingState, updateReadingState } from "@/api/reading";
 import type { ReadingState } from "@/api/reading";
 import type { CellEditReport, GridColumn } from "@/lib/grid/types";
 import { queryKeys, type BooksListKey } from "@/lib/query/keys";
@@ -24,11 +24,11 @@ import { useCellEdit } from "./useCellEdit";
 // that.
 vi.mock("@/api/books", async (importOriginal) => {
   const original = await importOriginal<Record<string, unknown>>();
-  return { ...original, updateBookMetadata: vi.fn() };
+  return { ...original, getBookMetadata: vi.fn(), updateBookMetadata: vi.fn() };
 });
 vi.mock("@/api/reading", async (importOriginal) => {
   const original = await importOriginal<Record<string, unknown>>();
-  return { ...original, updateReadingState: vi.fn() };
+  return { ...original, getReadingState: vi.fn(), updateReadingState: vi.fn() };
 });
 vi.mock("@/api/metadata", async (importOriginal) => {
   const original = await importOriginal<Record<string, unknown>>();
@@ -44,6 +44,36 @@ vi.mock("sonner", () => ({
 
 beforeEach(() => {
   vi.resetAllMocks();
+  // Priming/resync calls: most tests never trigger these (only the 412
+  // reload-action tests below do), but a benign default avoids an
+  // unhandled rejection from a mock that otherwise resolves to `undefined`.
+  vi.mocked(getBookMetadata).mockResolvedValue({
+    title: "Original Title",
+    subtitle: null,
+    description: null,
+    language: null,
+    publisher: null,
+    pub_date: null,
+    isbn_10: null,
+    isbn_13: "9780000000001",
+    pages: null,
+    content_rating: null,
+    genres: [],
+    moods: [],
+    tags: [],
+    contributors: { author: [], editor: [], translator: [] },
+    work_identifiers: {},
+    manifestation_identifiers: {},
+  });
+  vi.mocked(getReadingState).mockResolvedValue({
+    status: "reading",
+    rating: 3,
+    notes: null,
+    progress_pct: 40,
+    started_at: null,
+    finished_at: null,
+    last_read_at: null,
+  });
 });
 
 const LIST_KEY: BooksListKey = queryKeys.books.list({});
@@ -975,6 +1005,10 @@ describe("useCellEdit", () => {
     // "title" is work-scoped, so the reload fans out to the whole detail
     // family rather than a single manifestation's key.
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: queryKeys.books.detailsAll });
+    // The reload also re-fires the metadata GET, so the ETag cache resyncs
+    // alongside the invalidated display values.
+    expect(getBookMetadata).toHaveBeenCalledWith(row.id);
+    expect(getReadingState).not.toHaveBeenCalled();
     // No Ctrl+Z affordance for a write that never applied.
     fireEvent.keyDown(screen.getByTestId("wrapper"), { key: "z", ctrlKey: true });
     expect(updateBookMetadata).toHaveBeenCalledTimes(1);
@@ -1029,5 +1063,8 @@ describe("useCellEdit", () => {
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: LIST_KEY });
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: queryKeys.books.detail(row.id) });
     expect(invalidateSpy).not.toHaveBeenCalledWith({ queryKey: queryKeys.books.detailsAll });
+    // The reload also re-fires the reading GET, not the metadata one.
+    expect(getReadingState).toHaveBeenCalledWith(row.id);
+    expect(getBookMetadata).not.toHaveBeenCalled();
   });
 });

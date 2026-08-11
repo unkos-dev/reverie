@@ -6,7 +6,8 @@ import { beforeEach, describe, expect, test, vi } from "vite-plus/test";
 import { useState, type ComponentProps, type ReactElement } from "react";
 
 import type { BookListItem, SortLevelParam } from "@/api";
-import { updateReadingState } from "@/api/reading";
+import { getBookMetadata } from "@/api/books";
+import { getReadingState, updateReadingState } from "@/api/reading";
 import type { SortState } from "@/lib/grid/types";
 import { queryKeys } from "@/lib/query/keys";
 
@@ -14,19 +15,21 @@ import { TABLE_MOBILE_MEDIA_QUERY } from "../table-columns";
 import { LibraryTableView } from "./LibraryTableView";
 
 // Cell-edit orchestration (`useCellEdit`) fires through these clients on
-// commit; none of these tests exercise a real network call, so the
-// network-calling export of each is stubbed. Real exports are preserved via
-// `importOriginal`: `@/api/reading` calls `.nullable()` on `@/api/books`'s
-// `ReadingStatusSchema` at module load, which a bare automock would break
-// (automocking drops the zod prototype). `sonner` is stubbed too since a
-// commit path always calls `toast.success`/`toast.error`.
+// commit, and a protected column's editor primes its ETag through
+// `getBookMetadata`/`getReadingState` on mount; none of these tests exercise
+// a real network call, so the network-calling export of each is stubbed.
+// Real exports are preserved via `importOriginal`: `@/api/reading` calls
+// `.nullable()` on `@/api/books`'s `ReadingStatusSchema` at module load,
+// which a bare automock would break (automocking drops the zod prototype).
+// `sonner` is stubbed too since a commit path always calls
+// `toast.success`/`toast.error`.
 vi.mock("@/api/books", async (importOriginal) => {
   const original = await importOriginal<Record<string, unknown>>();
-  return { ...original, updateBookMetadata: vi.fn() };
+  return { ...original, getBookMetadata: vi.fn(), updateBookMetadata: vi.fn() };
 });
 vi.mock("@/api/reading", async (importOriginal) => {
   const original = await importOriginal<Record<string, unknown>>();
-  return { ...original, updateReadingState: vi.fn() };
+  return { ...original, getReadingState: vi.fn(), updateReadingState: vi.fn() };
 });
 vi.mock("@/api/metadata", async (importOriginal) => {
   const original = await importOriginal<Record<string, unknown>>();
@@ -36,6 +39,36 @@ vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 
 beforeEach(() => {
   vi.resetAllMocks();
+  // Priming calls fire as a side effect whenever a protected column's
+  // editor mounts; resolve them so a stray unhandled rejection can't fail
+  // an unrelated test.
+  vi.mocked(getBookMetadata).mockResolvedValue({
+    title: "Book Title",
+    subtitle: null,
+    description: null,
+    language: null,
+    publisher: null,
+    pub_date: null,
+    isbn_10: null,
+    isbn_13: null,
+    pages: null,
+    content_rating: null,
+    genres: [],
+    moods: [],
+    tags: [],
+    contributors: { author: [], editor: [], translator: [] },
+    work_identifiers: {},
+    manifestation_identifiers: {},
+  });
+  vi.mocked(getReadingState).mockResolvedValue({
+    status: null,
+    rating: null,
+    notes: null,
+    progress_pct: null,
+    started_at: null,
+    finished_at: null,
+    last_read_at: null,
+  });
 });
 
 type TableProps = ComponentProps<typeof LibraryTableView>;
@@ -573,6 +606,22 @@ describe("LibraryTableView", () => {
       expect(await screen.findByRole("textbox")).toHaveValue(row.title);
     });
 
+    test("entering edit mode on a metadata cell primes the metadata ETag without blocking typing", async () => {
+      const row = editableRowFixture();
+      renderTableView({ items: [row] });
+      const user = userEvent.setup();
+      const subtitleCell = await screen.findByText(row.subtitle ?? "");
+      await user.click(subtitleCell);
+      await user.keyboard("{Enter}");
+      const input = await screen.findByRole("textbox");
+      // Typing works immediately; priming runs entirely in the background
+      // and never gates the input.
+      await user.type(input, "z");
+      expect(input).toHaveValue(`${row.subtitle ?? ""}z`);
+      expect(getBookMetadata).toHaveBeenCalledWith(row.id);
+      expect(getReadingState).not.toHaveBeenCalled();
+    });
+
     test("Enter opens the ISBN text editor", async () => {
       const row = editableRowFixture();
       renderTableView({ items: [row] });
@@ -610,6 +659,21 @@ describe("LibraryTableView", () => {
       await user.click(cell);
       await user.keyboard("{Enter}");
       expect(await screen.findByRole("combobox")).toHaveValue("want_to_read");
+    });
+
+    test("entering edit mode on a reading cell primes the reading ETag, not the metadata one", async () => {
+      const row = editableRowFixture();
+      renderTableView({ items: [row] });
+      const grid = await screen.findByRole("grid");
+      scrollToRevealRightColumns(grid);
+      scrollToRevealTrailingColumns(grid);
+      const user = userEvent.setup();
+      const cell = await within(grid).findByText("want to read");
+      await user.click(cell);
+      await user.keyboard("{Enter}");
+      await screen.findByRole("combobox");
+      expect(getReadingState).toHaveBeenCalledWith(row.id);
+      expect(getBookMetadata).not.toHaveBeenCalled();
     });
 
     test("Enter opens the rating star editor", async () => {

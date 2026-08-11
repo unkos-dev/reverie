@@ -16,24 +16,15 @@ describe("etagKeyForPath", () => {
     expect(etagKeyForPath("/api/v1/books/abc-123/reading")).toBe("reading:abc-123");
   });
 
-  test("matches the metadata review-queue GET path", () => {
-    expect(etagKeyForPath("/api/v1/manifestations/abc-123/metadata")).toBe("metadata:abc-123");
-  });
-
-  test("matches the metadata PATCH path", () => {
+  test("matches the metadata GET and PATCH path", () => {
     expect(etagKeyForPath("/api/v1/books/abc-123/metadata")).toBe("metadata:abc-123");
   });
 
-  test("the metadata GET and PATCH paths resolve to the same key for the same id", () => {
-    expect(etagKeyForPath("/api/v1/manifestations/xyz/metadata")).toBe(
-      etagKeyForPath("/api/v1/books/xyz/metadata"),
-    );
-  });
-
-  test("does not match unrelated paths", () => {
+  test("does not match unrelated paths, including the unprotected review-queue GET", () => {
     expect(etagKeyForPath("/api/v1/shelves/abc-123")).toBeNull();
     expect(etagKeyForPath("/api/v1/books/abc-123")).toBeNull();
     expect(etagKeyForPath("/api/v1/works/abc-123/metadata")).toBeNull();
+    expect(etagKeyForPath("/api/v1/manifestations/abc-123/metadata")).toBeNull();
   });
 });
 

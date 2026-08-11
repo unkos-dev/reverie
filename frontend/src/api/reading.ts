@@ -41,6 +41,24 @@ export type UpdateReadingFields = {
 };
 
 /**
+ * Fetch the caller's reading state for one book. All-null fields mean
+ * unread (no row yet). Callers that need a fresh representation before
+ * editing (a grid cell entering edit mode) should call this rather than
+ * rely on a cached row, since only this response's `ETag` is guaranteed
+ * current for a following `PATCH`'s `If-Match`.
+ *
+ * Throws an `ApiError` with `status === 404` when the manifestation is
+ * missing or RLS-hidden (existence-not-leaked).
+ */
+export async function getReadingState(id: string, signal?: AbortSignal): Promise<ReadingState> {
+  const body = await apiFetch(
+    `/api/v1/books/${encodeURIComponent(id)}/reading`,
+    signal ? { method: "GET", signal } : { method: "GET" },
+  );
+  return ReadingStateSchema.parse(body);
+}
+
+/**
  * Update the caller's reading state for one book. The body is a bare
  * RFC 7396 merge patch, no envelope, matching the wire shape of
  * `UpdateReadingRequest` on the backend.

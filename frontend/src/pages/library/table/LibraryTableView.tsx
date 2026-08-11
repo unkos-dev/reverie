@@ -13,18 +13,27 @@
  * filter rail's sort section edits, via `onSortChange`.
  */
 import { Loader2, PanelRight } from "lucide-react";
-import { useMemo, useState, type ReactElement, type ReactNode, type UIEvent } from "react";
+import {
+  useEffect,
+  useMemo,
+  useState,
+  type ReactElement,
+  type ReactNode,
+  type UIEvent,
+} from "react";
 import { Link } from "react-router";
 
 import { Button } from "@/components/ui/button";
 
 import {
   MAX_SORT_LEVELS,
+  getBookMetadata,
   type BookListItem,
   type Density,
   type SortField,
   type SortLevelParam,
 } from "@/api";
+import { getReadingState } from "@/api/reading";
 import { ReactDataGridBinding } from "@/lib/grid/ReactDataGridBinding";
 import { useMediaQuery } from "@/lib/hooks/use-media-query";
 import type { BooksListKey } from "@/lib/query/keys";
@@ -70,92 +79,140 @@ const EMPTY_READING_STATE: NonNullable<BookListItem["reading_state"]> = {
   finished_at: null,
 };
 
+/**
+ * Warms the If-Match ETag cache the moment a protected cell's editor
+ * mounts, so the eventual commit's PATCH already carries a fresh tag
+ * instead of racing the row's first keystroke. Renders nothing; errors are
+ * logged rather than surfaced, since the PATCH's own 412 handling is
+ * already the correctness backstop when priming fails or loses a race to a
+ * concurrent write elsewhere.
+ */
+function MetadataEtagPrimer({ manifestationId }: { manifestationId: string }): null {
+  useEffect(() => {
+    getBookMetadata(manifestationId).catch((err: unknown) => {
+      console.error("[LibraryTableView] metadata ETag priming failed", err);
+    });
+  }, [manifestationId]);
+  return null;
+}
+
+/** Reading-column counterpart to {@link MetadataEtagPrimer}. */
+function ReadingEtagPrimer({ manifestationId }: { manifestationId: string }): null {
+  useEffect(() => {
+    getReadingState(manifestationId).catch((err: unknown) => {
+      console.error("[LibraryTableView] reading ETag priming failed", err);
+    });
+  }, [manifestationId]);
+  return null;
+}
+
 function renderTitleEditCell(editorProps: GridEditorProps<BookListItem>): ReactElement {
   return (
-    <TextCellEditor
-      value={editorProps.row.title}
-      kind="text"
-      required
-      onDraft={(value) => {
-        editorProps.update({ ...editorProps.row, title: value ?? editorProps.row.title });
-      }}
-    />
+    <>
+      <MetadataEtagPrimer manifestationId={editorProps.row.id} />
+      <TextCellEditor
+        value={editorProps.row.title}
+        kind="text"
+        required
+        onDraft={(value) => {
+          editorProps.update({ ...editorProps.row, title: value ?? editorProps.row.title });
+        }}
+      />
+    </>
   );
 }
 
 function renderSubtitleEditCell(editorProps: GridEditorProps<BookListItem>): ReactElement {
   return (
-    <TextCellEditor
-      value={editorProps.row.subtitle}
-      kind="text"
-      onDraft={(value) => {
-        editorProps.update({ ...editorProps.row, subtitle: value });
-      }}
-    />
+    <>
+      <MetadataEtagPrimer manifestationId={editorProps.row.id} />
+      <TextCellEditor
+        value={editorProps.row.subtitle}
+        kind="text"
+        onDraft={(value) => {
+          editorProps.update({ ...editorProps.row, subtitle: value });
+        }}
+      />
+    </>
   );
 }
 
 function renderIsbnEditCell(editorProps: GridEditorProps<BookListItem>): ReactElement {
   return (
-    <TextCellEditor
-      value={editorProps.row.isbn_13}
-      kind="text"
-      onDraft={(value) => {
-        editorProps.update({ ...editorProps.row, isbn_13: value });
-      }}
-    />
+    <>
+      <MetadataEtagPrimer manifestationId={editorProps.row.id} />
+      <TextCellEditor
+        value={editorProps.row.isbn_13}
+        kind="text"
+        onDraft={(value) => {
+          editorProps.update({ ...editorProps.row, isbn_13: value });
+        }}
+      />
+    </>
   );
 }
 
 function renderPagesEditCell(editorProps: GridEditorProps<BookListItem>): ReactElement {
   const { pages } = editorProps.row;
   return (
-    <TextCellEditor
-      value={pages === null ? null : String(pages)}
-      kind="positive-int"
-      onDraft={(value) => {
-        editorProps.update({
-          ...editorProps.row,
-          pages: value === null ? null : Number(value),
-        });
-      }}
-    />
+    <>
+      <MetadataEtagPrimer manifestationId={editorProps.row.id} />
+      <TextCellEditor
+        value={pages === null ? null : String(pages)}
+        kind="positive-int"
+        onDraft={(value) => {
+          editorProps.update({
+            ...editorProps.row,
+            pages: value === null ? null : Number(value),
+          });
+        }}
+      />
+    </>
   );
 }
 
 function renderAuthorsEditCell(editorProps: GridEditorProps<BookListItem>): ReactElement {
   return (
-    <AuthorsCellEditor
-      authors={editorProps.row.authors}
-      onCommit={(authors) => {
-        editorProps.commit({ ...editorProps.row, authors });
-      }}
-      onCancel={editorProps.cancel}
-    />
+    <>
+      <MetadataEtagPrimer manifestationId={editorProps.row.id} />
+      <AuthorsCellEditor
+        authors={editorProps.row.authors}
+        onCommit={(authors) => {
+          editorProps.commit({ ...editorProps.row, authors });
+        }}
+        onCancel={editorProps.cancel}
+      />
+    </>
   );
 }
 
 function renderStatusEditCell(editorProps: GridEditorProps<BookListItem>): ReactElement {
   const readingState = editorProps.row.reading_state ?? EMPTY_READING_STATE;
   return (
-    <StatusCellEditor
-      value={readingState.status}
-      onCommit={(status) => {
-        editorProps.commit({ ...editorProps.row, reading_state: { ...readingState, status } });
-      }}
-    />
+    <>
+      <ReadingEtagPrimer manifestationId={editorProps.row.id} />
+      <StatusCellEditor
+        value={readingState.status}
+        onCommit={(status) => {
+          editorProps.commit({ ...editorProps.row, reading_state: { ...readingState, status } });
+        }}
+      />
+    </>
   );
 }
 
 function renderRatingEditCell(editorProps: GridEditorProps<BookListItem>): ReactElement {
   const readingState = editorProps.row.reading_state ?? EMPTY_READING_STATE;
   return (
-    <RatingCellEditor
-      value={readingState.rating}
-      onCommit={(rating) => {
-        editorProps.commit({ ...editorProps.row, reading_state: { ...readingState, rating } });
-      }}
-    />
+    <>
+      <ReadingEtagPrimer manifestationId={editorProps.row.id} />
+      <RatingCellEditor
+        value={readingState.rating}
+        onCommit={(rating) => {
+          editorProps.commit({ ...editorProps.row, reading_state: { ...readingState, rating } });
+        }}
+      />
+    </>
   );
 }
 

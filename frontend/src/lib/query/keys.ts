@@ -21,6 +21,8 @@ export type BooksListKey = readonly ["books", "list", ListBooksParams];
 export type BookDetailsAllKey = readonly ["books", "detail"];
 /** Tuple for the books-detail cache slot, keyed by manifestation id. */
 export type BookDetailKey = readonly ["books", "detail", string];
+/** Tuple for the editable-metadata GET cache slot, keyed by manifestation id. */
+export type BookMetadataKey = readonly ["books", "metadata", string];
 /** Tuple for the works-detail cache slot, keyed by work id. */
 export type WorkDetailKey = readonly ["works", "detail", string];
 /** Tuple for the search cache slot, keyed by the trimmed query string. */
@@ -93,6 +95,10 @@ export const queryKeys = {
     detailsAll: ["books", "detail"] as const satisfies BookDetailsAllKey,
     /** Detail endpoint for one manifestation. */
     detail: (id: string): BookDetailKey => ["books", "detail", id] as const,
+    /** Editable-metadata GET, the fresh-representation read primed on edit
+     *  entry (edit dialog open, grid cell edit mode) rather than served
+     *  from `detail`'s cache. */
+    metadata: (id: string): BookMetadataKey => ["books", "metadata", id] as const,
   },
   works: {
     /** Detail endpoint for one work + its visible manifestations. */

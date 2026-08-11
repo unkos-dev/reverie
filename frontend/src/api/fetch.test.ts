@@ -529,7 +529,7 @@ describe("apiFetch — If-Match ETag retention", () => {
       .mockResolvedValueOnce(withEtag({ fields: {} }, '"meta-etag"'))
       .mockResolvedValueOnce(jsonResponse({ id: "shelf-1", name: "Renamed" }));
 
-    await apiFetch("/api/v1/manifestations/book-1/metadata");
+    await apiFetch("/api/v1/books/book-1/metadata");
     await apiFetch("/api/v1/shelves/shelf-1", {
       method: "PATCH",
       body: JSON.stringify({ name: "Renamed" }),
@@ -539,12 +539,29 @@ describe("apiFetch — If-Match ETag retention", () => {
     expect(headers.has("If-Match")).toBe(false);
   });
 
-  test("a GET on the metadata review-queue path and a PATCH on the books metadata path share a retained tag", async () => {
+  test("a GET and a PATCH on the shared books metadata path share a retained tag", async () => {
     await seedCsrf(SAMPLE_TOKEN);
     const fetchSpy = vi
       .spyOn(globalThis, "fetch")
-      .mockResolvedValueOnce(withEtag([], '"meta-etag"'))
+      .mockResolvedValueOnce(withEtag({ title: "Original" }, '"meta-etag"'))
       .mockResolvedValueOnce(withEtag({ fields: {} }, '"meta-etag-2"'));
+
+    await apiFetch("/api/v1/books/book-1/metadata");
+    await apiFetch("/api/v1/books/book-1/metadata", {
+      method: "PATCH",
+      body: JSON.stringify({ title: "New" }),
+    });
+
+    const headers = new Headers(fetchSpy.mock.calls[1]?.[1]?.headers);
+    expect(headers.get("If-Match")).toBe('"meta-etag"');
+  });
+
+  test("the unprotected metadata review-queue GET does not seed a retained tag", async () => {
+    await seedCsrf(SAMPLE_TOKEN);
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(jsonResponse([]))
+      .mockResolvedValueOnce(jsonResponse({ fields: {} }));
 
     await apiFetch("/api/v1/manifestations/book-1/metadata");
     await apiFetch("/api/v1/books/book-1/metadata", {
@@ -553,6 +570,6 @@ describe("apiFetch — If-Match ETag retention", () => {
     });
 
     const headers = new Headers(fetchSpy.mock.calls[1]?.[1]?.headers);
-    expect(headers.get("If-Match")).toBe('"meta-etag"');
+    expect(headers.has("If-Match")).toBe(false);
   });
 });

@@ -18,25 +18,20 @@
 const cache = new Map<string, string>();
 
 const READING_PATH = /^\/api\/v1\/books\/([^/]+)\/reading$/;
-const METADATA_GET_PATH = /^\/api\/v1\/manifestations\/([^/]+)\/metadata$/;
-const METADATA_PATCH_PATH = /^\/api\/v1\/books\/([^/]+)\/metadata$/;
+const METADATA_PATH = /^\/api\/v1\/books\/([^/]+)\/metadata$/;
 
 /**
  * Resolve a request path to its ETag cache key, or `null` when the path is
  * not one of the protected resource families.
  *
- * The metadata GET and PATCH live under different URL prefixes
- * (`/api/v1/manifestations/{id}/metadata` vs `/api/v1/books/{id}/metadata`)
- * but address the same manifestation row (see `metadata.ts`'s module
- * docstring), so both resolve to the same `metadata:{id}` key.
+ * The metadata GET and PATCH share one URI (`/api/v1/books/{id}/metadata`),
+ * so a single pattern keys both to the same `metadata:{id}` slot.
  */
 export function etagKeyForPath(pathname: string): string | null {
   const reading = READING_PATH.exec(pathname);
   if (reading) return `reading:${reading[1]}`;
-  const metadataGet = METADATA_GET_PATH.exec(pathname);
-  if (metadataGet) return `metadata:${metadataGet[1]}`;
-  const metadataPatch = METADATA_PATCH_PATH.exec(pathname);
-  if (metadataPatch) return `metadata:${metadataPatch[1]}`;
+  const metadata = METADATA_PATH.exec(pathname);
+  if (metadata) return `metadata:${metadata[1]}`;
   return null;
 }
 
