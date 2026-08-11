@@ -57,13 +57,13 @@ pub fn hash_etag<T: Serialize>(state: &T) -> Result<HeaderValue, AppError> {
 ///
 /// - `Ok(None)`: header absent, callers in this phase proceed unprotected.
 /// - `Ok(Some(_))`: a well-formed strong entity-tag, still quoted.
-/// - `Err(AppError::Validation)`: malformed value, a weak validator
+/// - `Err(AppError::MalformedHeader)`: malformed value, a weak validator
 ///   (`W/"..."`) (RFC 9110 §13.1.2 requires strong comparison for
 ///   `If-Match`), a list of entity-tags, the `*` wildcard, or the header
 ///   sent as more than one instance (semantically the same list form).
 pub fn parse_if_match(headers: &HeaderMap) -> Result<Option<String>, AppError> {
     if headers.get_all(IF_MATCH).iter().count() > 1 {
-        return Err(AppError::Validation(
+        return Err(AppError::MalformedHeader(
             "If-Match must be sent as a single header instance carrying one entity-tag".into(),
         ));
     }
@@ -72,20 +72,20 @@ pub fn parse_if_match(headers: &HeaderMap) -> Result<Option<String>, AppError> {
     };
     let value = raw
         .to_str()
-        .map_err(|_| AppError::Validation("If-Match header must be ASCII".into()))?
+        .map_err(|_| AppError::MalformedHeader("If-Match header must be ASCII".into()))?
         .trim();
     if value.starts_with("W/") {
-        return Err(AppError::Validation(
+        return Err(AppError::MalformedHeader(
             "weak entity-tags (W/\"...\") not accepted for If-Match".into(),
         ));
     }
     if value.len() < 2 || !value.starts_with('"') || !value.ends_with('"') {
-        return Err(AppError::Validation(
+        return Err(AppError::MalformedHeader(
             "If-Match value must be a quoted entity-tag".into(),
         ));
     }
     if value[1..value.len() - 1].contains('"') {
-        return Err(AppError::Validation(
+        return Err(AppError::MalformedHeader(
             "If-Match value must be a single quoted entity-tag".into(),
         ));
     }

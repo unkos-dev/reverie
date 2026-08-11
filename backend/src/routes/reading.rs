@@ -258,8 +258,9 @@ fn apply_patch(existing: ReadingStateRow, req: &UpdateReadingRequest) -> Reading
 ///
 /// # Errors
 /// - [`AppError::Validation`] when the body has no populated fields,
-///   `rating` is outside `1..=5`, `notes` exceeds 10000 characters, or
-///   `If-Match` is present but malformed.
+///   `rating` is outside `1..=5`, or `notes` exceeds 10000 characters.
+/// - [`AppError::MalformedHeader`] when `If-Match` is present but
+///   malformed.
 /// - [`AppError::NotFound`] when the manifestation is missing or hidden by
 ///   RLS for the current user (existence-not-leaked).
 /// - [`AppError::IfMatchMismatch`] (412) when `If-Match` is present and does
@@ -283,7 +284,8 @@ fn apply_patch(existing: ReadingStateRow, req: &UpdateReadingRequest) -> Reading
         (status = 404, description = "Manifestation missing or RLS-hidden (existence-not-leaked)", body = crate::openapi::ProblemDetails),
         (status = 412, description = "If-Match does not match the caller's current reading-state ETag", body = crate::openapi::ProblemDetails,
          headers(("ETag" = String, description = "Current entity-tag, so the caller can resync without a follow-up GET"))),
-        (status = 422, description = "Empty patch, rating outside 1-5, notes over 10000 characters, or malformed If-Match", body = crate::openapi::ProblemDetails)
+        (status = 400, description = "Malformed If-Match header", body = crate::openapi::ProblemDetails),
+        (status = 422, description = "Empty patch, rating outside 1-5, or notes over 10000 characters", body = crate::openapi::ProblemDetails)
     )
 )]
 async fn patch_reading(

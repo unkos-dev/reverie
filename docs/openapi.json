@@ -1028,7 +1028,7 @@
           "metadata"
         ],
         "summary": "`PATCH /api/v1/books/{id}/metadata` — manual operator edit.",
-        "description": "Bare RFC 7396 JSON Merge Patch body (no envelope): absent keys are\nunchanged, `null` clears (except `title`). Accepts both\n`application/json` and `application/merge-patch+json`: axum's `Json`\nextractor already treats any `+json`-suffixed content type as JSON.\n\nFor each touched field the handler inserts a `metadata_versions` row\nwith `source = 'manual'` and then either promotes that row to canonical\nvia [`apply_version`] (when a value is supplied) or clears the\ncanonical column via [`clear_field`] (when the value is `null`). The\npending AI/OPF drafts on the same field stay `status = 'pending'`, so the\noperator can revert to one of them later. The response carries the\napplied (normalized) value plus the new and previous version pointers\nper field, so a caller can offer undo without a follow-up read.\n\n# Errors\n- [`AppError::Validation`] when the body has no populated fields,\n  when an ISBN/date value fails parsing, when a vocabulary list\n  (`genres`/`moods`/`tags`) contains an empty, duplicate, or\n  over-length term, when the operator tries to clear `title`\n  (canonical title is `NOT NULL` on `works`), or when `If-Match` is\n  present but malformed.\n- [`AppError::NotFound`] when the manifestation is missing or hidden\n  by RLS for the current user (existence-not-leaked).\n- [`AppError::Forbidden`] when the caller is a child account.\n- [`AppError::IfMatchMismatch`] (412) when `If-Match` is present and does\n  not match the manifestation's current metadata `ETag`; the response\n  carries the current `ETag` so the caller can resync in one round trip.\n- [`AppError::Internal`] on database errors.",
+        "description": "Bare RFC 7396 JSON Merge Patch body (no envelope): absent keys are\nunchanged, `null` clears (except `title`). Accepts both\n`application/json` and `application/merge-patch+json`: axum's `Json`\nextractor already treats any `+json`-suffixed content type as JSON.\n\nFor each touched field the handler inserts a `metadata_versions` row\nwith `source = 'manual'` and then either promotes that row to canonical\nvia [`apply_version`] (when a value is supplied) or clears the\ncanonical column via [`clear_field`] (when the value is `null`). The\npending AI/OPF drafts on the same field stay `status = 'pending'`, so the\noperator can revert to one of them later. The response carries the\napplied (normalized) value plus the new and previous version pointers\nper field, so a caller can offer undo without a follow-up read.\n\n# Errors\n- [`AppError::Validation`] when the body has no populated fields,\n  when an ISBN/date value fails parsing, when a vocabulary list\n  (`genres`/`moods`/`tags`) contains an empty, duplicate, or\n  over-length term, or when the operator tries to clear `title`\n  (canonical title is `NOT NULL` on `works`).\n- [`AppError::MalformedHeader`] when `If-Match` is present but\n  malformed.\n- [`AppError::NotFound`] when the manifestation is missing or hidden\n  by RLS for the current user (existence-not-leaked).\n- [`AppError::Forbidden`] when the caller is a child account.\n- [`AppError::IfMatchMismatch`] (412) when `If-Match` is present and does\n  not match the manifestation's current metadata `ETag`; the response\n  carries the current `ETag` so the caller can resync in one round trip.\n- [`AppError::Internal`] on database errors.",
         "operationId": "update_book_metadata",
         "parameters": [
           {
@@ -1084,6 +1084,16 @@
               }
             }
           },
+          "400": {
+            "description": "Malformed If-Match header",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
           "401": {
             "description": "Authentication required",
             "content": {
@@ -1133,7 +1143,7 @@
             }
           },
           "422": {
-            "description": "No populated fields, ISBN/date parse failure, attempt to clear title, or malformed If-Match",
+            "description": "No populated fields, ISBN/date parse failure, or attempt to clear title",
             "content": {
               "application/json": {
                 "schema": {
@@ -1255,7 +1265,7 @@
           "reading"
         ],
         "summary": "`PATCH /api/v1/books/{id}/reading`: upsert the caller's reading state.",
-        "description": "Transition stamps fire only when the patch itself carries a non-null\n`status` (no before/after diff, so repeating the current status\nre-applies its stamp; a patch without `status` never touches stamps):\n- patched `status = reading` → `started_at := COALESCE(started_at, now())`\n- patched `status = finished` → `finished_at := now()`,\n  `progress_pct := 100`, `last_read_at := now()`\n- any other patched `status`, an explicit `null` clear, or a patch\n  without `status` → no stamps; `progress_pct` / `started_at` /\n  `finished_at` / `last_read_at` carry over unchanged\n\n# Errors\n- [`AppError::Validation`] when the body has no populated fields,\n  `rating` is outside `1..=5`, `notes` exceeds 10000 characters, or\n  `If-Match` is present but malformed.\n- [`AppError::NotFound`] when the manifestation is missing or hidden by\n  RLS for the current user (existence-not-leaked).\n- [`AppError::IfMatchMismatch`] (412) when `If-Match` is present and does\n  not match the caller's current reading-state `ETag`; the response\n  carries the current `ETag` so the caller can resync in one round trip.\n- [`AppError::Internal`] on database errors.",
+        "description": "Transition stamps fire only when the patch itself carries a non-null\n`status` (no before/after diff, so repeating the current status\nre-applies its stamp; a patch without `status` never touches stamps):\n- patched `status = reading` → `started_at := COALESCE(started_at, now())`\n- patched `status = finished` → `finished_at := now()`,\n  `progress_pct := 100`, `last_read_at := now()`\n- any other patched `status`, an explicit `null` clear, or a patch\n  without `status` → no stamps; `progress_pct` / `started_at` /\n  `finished_at` / `last_read_at` carry over unchanged\n\n# Errors\n- [`AppError::Validation`] when the body has no populated fields,\n  `rating` is outside `1..=5`, or `notes` exceeds 10000 characters.\n- [`AppError::MalformedHeader`] when `If-Match` is present but\n  malformed.\n- [`AppError::NotFound`] when the manifestation is missing or hidden by\n  RLS for the current user (existence-not-leaked).\n- [`AppError::IfMatchMismatch`] (412) when `If-Match` is present and does\n  not match the caller's current reading-state `ETag`; the response\n  carries the current `ETag` so the caller can resync in one round trip.\n- [`AppError::Internal`] on database errors.",
         "operationId": "patch_reading",
         "parameters": [
           {
@@ -1311,6 +1321,16 @@
               }
             }
           },
+          "400": {
+            "description": "Malformed If-Match header",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
           "401": {
             "description": "Authentication required",
             "content": {
@@ -1350,7 +1370,7 @@
             }
           },
           "422": {
-            "description": "Empty patch, rating outside 1-5, notes over 10000 characters, or malformed If-Match",
+            "description": "Empty patch, rating outside 1-5, or notes over 10000 characters",
             "content": {
               "application/json": {
                 "schema": {

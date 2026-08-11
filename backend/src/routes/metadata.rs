@@ -2067,9 +2067,10 @@ async fn load_manifestation_identifiers(
 /// - [`AppError::Validation`] when the body has no populated fields,
 ///   when an ISBN/date value fails parsing, when a vocabulary list
 ///   (`genres`/`moods`/`tags`) contains an empty, duplicate, or
-///   over-length term, when the operator tries to clear `title`
-///   (canonical title is `NOT NULL` on `works`), or when `If-Match` is
-///   present but malformed.
+///   over-length term, or when the operator tries to clear `title`
+///   (canonical title is `NOT NULL` on `works`).
+/// - [`AppError::MalformedHeader`] when `If-Match` is present but
+///   malformed.
 /// - [`AppError::NotFound`] when the manifestation is missing or hidden
 ///   by RLS for the current user (existence-not-leaked).
 /// - [`AppError::Forbidden`] when the caller is a child account.
@@ -2095,7 +2096,8 @@ async fn load_manifestation_identifiers(
         (status = 404, description = "Manifestation missing or RLS-hidden (existence-not-leaked)", body = crate::openapi::ProblemDetails),
         (status = 412, description = "If-Match does not match the manifestation's current metadata ETag", body = crate::openapi::ProblemDetails,
          headers(("ETag" = String, description = "Current entity-tag, so the caller can resync without a follow-up GET"))),
-        (status = 422, description = "No populated fields, ISBN/date parse failure, attempt to clear title, or malformed If-Match", body = crate::openapi::ProblemDetails)
+        (status = 400, description = "Malformed If-Match header", body = crate::openapi::ProblemDetails),
+        (status = 422, description = "No populated fields, ISBN/date parse failure, or attempt to clear title", body = crate::openapi::ProblemDetails)
     )
 )]
 #[expect(
