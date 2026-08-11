@@ -293,6 +293,17 @@ support exists across every client language we are likely to
 care about. RFC 7396 is explicitly limited to merging object
 trees (no array merging), which is what we need.
 
+### Matched GET for every writable resource
+
+Every endpoint that accepts a PATCH exposes a `GET` at the same
+URI returning the same representation, field for field, so a
+read-modify-write flow and any HTTP precondition layered on top
+of it (see `If-Match` below) both target one resource instead of
+two shapes that can drift apart. The action-style endpoints under
+the enrichment review queue (accept, reject, revert, lock/unlock)
+are the documented exception: they are verbs, not resource state,
+and have no matching representation to read back.
+
 ### HTTP precondition: RFC 9110 §13.1 `If-Match` / 412 / 428
 
 Optimistic-concurrency endpoints (shelf reorder in 11d, future

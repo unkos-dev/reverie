@@ -26,6 +26,9 @@ use crate::models::external_identifier::{
     upsert_manifestation_identifier, upsert_work_identifier,
 };
 use crate::models::work;
+use crate::routes::library::{
+    load_genres_for_manifestations, load_moods_for_manifestations, load_tags_for_manifestations,
+};
 use crate::services::enrichment::field_lock::{self, EntityType};
 use crate::services::enrichment::value_hash;
 use crate::services::metadata::{external_id, isbn};
@@ -56,7 +59,7 @@ pub fn router() -> OpenApiRouter<AppState> {
         .routes(routes!(revert_manifestation))
         .routes(routes!(lock_field))
         .routes(routes!(unlock_field))
-        .routes(routes!(update_book_metadata))
+        .routes(routes!(get_book_metadata, update_book_metadata))
 }
 
 /// One `metadata_versions` row in the review queue view.
@@ -1804,6 +1807,218 @@ impl UpdateMetadataFields {
     }
 }
 
+/// Contributor names by role, mirroring [`ContributorsPatch`]'s roles for
+/// the matched-GET response.
+#[derive(Debug, Serialize, utoipa::ToSchema)]
+struct MetadataContributors {
+    /// Ordered author names.
+    author: Vec<String>,
+    /// Ordered editor names.
+    editor: Vec<String>,
+    /// Ordered translator names.
+    translator: Vec<String>,
+}
+
+/// Response body for `GET /api/v1/books/{id}/metadata` — exactly the span
+/// [`UpdateMetadataFields`] can write, field for field.
+#[derive(Debug, Serialize, utoipa::ToSchema)]
+struct BookMetadata {
+    /// Canonical title (work-level, `NOT NULL`).
+    title: String,
+    /// Subtitle; `null` when unset.
+    subtitle: Option<String>,
+    /// Description; `null` when unset.
+    description: Option<String>,
+    /// Language; `null` when unset.
+    language: Option<String>,
+    /// Publisher; `null` when unset.
+    publisher: Option<String>,
+    /// Publication date (`YYYY-MM-DD`); `null` when unset.
+    pub_date: Option<String>,
+    /// ISBN-10; `null` when unset.
+    isbn_10: Option<String>,
+    /// ISBN-13; `null` when unset.
+    isbn_13: Option<String>,
+    /// Page count; `null` when unset.
+    pages: Option<i32>,
+    /// Content rating tier; `null` when unset.
+    content_rating: Option<ContentRating>,
+    /// Genre names, alphabetical; empty when none are set.
+    genres: Vec<String>,
+    /// Mood names, alphabetical; empty when none are set.
+    moods: Vec<String>,
+    /// Tag names, alphabetical; empty when none are set.
+    tags: Vec<String>,
+    /// Author/editor/translator names, each in stored position order.
+    contributors: MetadataContributors,
+    /// Work-level external identifiers keyed by scheme.
+    work_identifiers: BTreeMap<String, String>,
+    /// Manifestation-level external identifiers keyed by scheme.
+    manifestation_identifiers: BTreeMap<String, String>,
+}
+
+/// `GET /api/v1/books/{id}/metadata` — the editable metadata span for one
+/// manifestation: the matched-pair read for [`update_book_metadata`], same
+/// URI and id key, so a read-modify-write flow targets one resource.
+///
+/// # Errors
+/// - [`AppError::Forbidden`] when the caller is a child account.
+/// - [`AppError::NotFound`] when the manifestation is missing or hidden by
+///   RLS for the current user (existence-not-leaked).
+/// - [`AppError::Internal`] on database errors.
+#[utoipa::path(
+    get,
+    path = "/api/v1/books/{id}/metadata",
+    tag = "metadata",
+    security(("session_cookie" = ["read"]), ("device_token_bearer" = ["read"]), ("oidc_jwt_bearer" = ["read"]), ("opds_basic" = ["read"])),
+    params(("id" = Uuid, Path, description = "Manifestation id")),
+    responses(
+        (status = 200, description = "The editable metadata span, matching what PATCH accepts", body = BookMetadata),
+        (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails),
+        (status = 403, description = "Caller is a child account", body = crate::openapi::ProblemDetails),
+        (status = 404, description = "Manifestation missing or RLS-hidden (existence-not-leaked)", body = crate::openapi::ProblemDetails)
+    )
+)]
+async fn get_book_metadata(
+    current_user: CurrentUser,
+    State(state): State<AppState>,
+    Path(manifestation_id): Path<Uuid>,
+) -> Result<impl IntoResponse, AppError> {
+    current_user.require_not_child()?;
+
+    let mut tx = db::acquire_with_rls(&state.pool, current_user.user_id)
+        .await
+        .map_err(|e| AppError::Internal(e.into()))?;
+
+    let core = sqlx::query!(
+        r#"
+        SELECT w.id             AS "work_id!",
+               w.title          AS "title!",
+               w.subtitle       AS subtitle,
+               w.description    AS description,
+               w.language       AS language,
+               m.publisher      AS publisher,
+               m.pub_date       AS pub_date,
+               m.isbn_10        AS isbn_10,
+               m.isbn_13        AS isbn_13,
+               m.pages          AS pages,
+               m.content_rating AS "content_rating: ContentRating"
+          FROM manifestations m
+          JOIN works w ON w.id = m.work_id
+         WHERE m.id = $1
+        "#,
+        manifestation_id,
+    )
+    .fetch_optional(&mut *tx)
+    .await
+    .map_err(|e| AppError::Internal(e.into()))?
+    .ok_or(AppError::NotFound)?;
+
+    let ids = std::slice::from_ref(&manifestation_id);
+    let mut genres = load_genres_for_manifestations(&mut tx, ids).await?;
+    let mut moods = load_moods_for_manifestations(&mut tx, ids).await?;
+    let mut tags = load_tags_for_manifestations(&mut tx, ids).await?;
+    let contributors = load_contributors_for_work(&mut tx, core.work_id).await?;
+    let work_identifiers = load_work_identifiers(&mut tx, core.work_id).await?;
+    let manifestation_identifiers =
+        load_manifestation_identifiers(&mut tx, manifestation_id).await?;
+
+    tx.commit()
+        .await
+        .map_err(|e| AppError::Internal(e.into()))?;
+
+    Ok(axum::Json(BookMetadata {
+        title: core.title,
+        subtitle: core.subtitle,
+        description: core.description,
+        language: core.language,
+        publisher: core.publisher,
+        pub_date: core.pub_date.map(|d| d.format("%Y-%m-%d").to_string()),
+        isbn_10: core.isbn_10,
+        isbn_13: core.isbn_13,
+        pages: core.pages,
+        content_rating: core.content_rating,
+        genres: genres.remove(&manifestation_id).unwrap_or_default(),
+        moods: moods.remove(&manifestation_id).unwrap_or_default(),
+        tags: tags.remove(&manifestation_id).unwrap_or_default(),
+        contributors,
+        work_identifiers,
+        manifestation_identifiers,
+    }))
+}
+
+/// Author/editor/translator names for a work, each ordered by stored
+/// `work_authors.position` within the role.
+async fn load_contributors_for_work(
+    tx: &mut Transaction<'_, Postgres>,
+    work_id: Uuid,
+) -> Result<MetadataContributors, AppError> {
+    let rows = sqlx::query!(
+        r#"SELECT wa.role::text AS "role!", a.name AS "name!"
+             FROM work_authors wa
+             JOIN authors a ON a.id = wa.author_id
+            WHERE wa.work_id = $1
+            ORDER BY wa.role, wa.position ASC"#,
+        work_id,
+    )
+    .fetch_all(&mut **tx)
+    .await
+    .map_err(|e| AppError::Internal(e.into()))?;
+    let mut contributors = MetadataContributors {
+        author: Vec::new(),
+        editor: Vec::new(),
+        translator: Vec::new(),
+    };
+    for row in rows {
+        match row.role.as_str() {
+            "author" => contributors.author.push(row.name),
+            "editor" => contributors.editor.push(row.name),
+            "translator" => contributors.translator.push(row.name),
+            other => {
+                return Err(AppError::Internal(anyhow::anyhow!(
+                    "unexpected author_role '{other}' in work_authors"
+                )));
+            }
+        }
+    }
+    Ok(contributors)
+}
+
+/// Work-level external identifiers keyed by scheme.
+async fn load_work_identifiers(
+    tx: &mut Transaction<'_, Postgres>,
+    work_id: Uuid,
+) -> Result<BTreeMap<String, String>, AppError> {
+    Ok(sqlx::query!(
+        "SELECT scheme, external_id FROM work_external_identifiers WHERE work_id = $1",
+        work_id,
+    )
+    .fetch_all(&mut **tx)
+    .await
+    .map_err(|e| AppError::Internal(e.into()))?
+    .into_iter()
+    .map(|r| (r.scheme, r.external_id))
+    .collect())
+}
+
+/// Manifestation-level external identifiers keyed by scheme.
+async fn load_manifestation_identifiers(
+    tx: &mut Transaction<'_, Postgres>,
+    manifestation_id: Uuid,
+) -> Result<BTreeMap<String, String>, AppError> {
+    Ok(sqlx::query!(
+        "SELECT scheme, external_id FROM manifestation_external_identifiers \
+         WHERE manifestation_id = $1",
+        manifestation_id,
+    )
+    .fetch_all(&mut **tx)
+    .await
+    .map_err(|e| AppError::Internal(e.into()))?
+    .into_iter()
+    .map(|r| (r.scheme, r.external_id))
+    .collect())
+}
+
 /// `PATCH /api/v1/books/{id}/metadata` — manual operator edit.
 ///
 /// Bare RFC 7396 JSON Merge Patch body (no envelope): absent keys are
@@ -2372,6 +2587,157 @@ mod tests {
             .get(&format!("/api/v1/manifestations/{id}/metadata"))
             .await;
         assert_eq!(response.status_code(), StatusCode::UNAUTHORIZED);
+    }
+
+    #[tokio::test]
+    async fn get_book_metadata_requires_auth() {
+        let server = test_support::test_server();
+        let id = Uuid::new_v4();
+        let response = server.get(&format!("/api/v1/books/{id}/metadata")).await;
+        assert_eq!(response.status_code(), StatusCode::UNAUTHORIZED);
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn get_book_metadata_unknown_manifestation_returns_404(pool: sqlx::PgPool) {
+        let app_pool = test_support::db::app_pool_for(&pool).await;
+        let ing_pool = test_support::db::ingestion_pool_for(&pool).await;
+        let (_admin_id, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+
+        let server = test_support::db::server_with_real_pools(&app_pool, &ing_pool);
+        let id = Uuid::new_v4();
+        let response = server
+            .get(&format!("/api/v1/books/{id}/metadata"))
+            .add_header(AUTHORIZATION, basic)
+            .await;
+        assert_eq!(response.status_code(), StatusCode::NOT_FOUND);
+        let body: serde_json::Value = response.json();
+        assert_eq!(body["type"], "https://reverie.example/probs/not-found");
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn get_book_metadata_returns_empty_collections_not_errors(pool: sqlx::PgPool) {
+        let app_pool = test_support::db::app_pool_for(&pool).await;
+        let ing_pool = test_support::db::ingestion_pool_for(&pool).await;
+        let (_admin_id, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+        let marker = Uuid::new_v4().simple().to_string();
+        let (_work_id, m_id) =
+            test_support::db::insert_work_and_manifestation(&ing_pool, &marker).await;
+
+        let server = test_support::db::server_with_real_pools(&app_pool, &ing_pool);
+        let response = server
+            .get(&format!("/api/v1/books/{m_id}/metadata"))
+            .add_header(AUTHORIZATION, basic)
+            .await;
+        assert_eq!(
+            response.status_code(),
+            StatusCode::OK,
+            "body = {}",
+            response.text()
+        );
+        let body: serde_json::Value = response.json();
+        assert_eq!(body["title"], "");
+        assert_eq!(body["subtitle"], serde_json::Value::Null);
+        assert_eq!(body["genres"], serde_json::json!([]));
+        assert_eq!(body["moods"], serde_json::json!([]));
+        assert_eq!(body["tags"], serde_json::json!([]));
+        assert_eq!(body["contributors"]["author"], serde_json::json!([]));
+        assert_eq!(body["contributors"]["editor"], serde_json::json!([]));
+        assert_eq!(body["contributors"]["translator"], serde_json::json!([]));
+        assert_eq!(body["work_identifiers"], serde_json::json!({}));
+        assert_eq!(body["manifestation_identifiers"], serde_json::json!({}));
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn get_book_metadata_contributors_in_stored_position_order(pool: sqlx::PgPool) {
+        let app_pool = test_support::db::app_pool_for(&pool).await;
+        let ing_pool = test_support::db::ingestion_pool_for(&pool).await;
+        let (_admin_id, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+        let marker = Uuid::new_v4().simple().to_string();
+        let (work_id, m_id) =
+            test_support::db::insert_work_and_manifestation(&ing_pool, &marker).await;
+        let name_last = format!("Zed Last {marker}");
+        let name_first = format!("Alpha First {marker}");
+        // Deliberately insert in reverse alphabetical order so a name-sorted
+        // response would fail this assertion; only stored `position` must
+        // determine the returned order.
+        test_support::db::insert_contributor(&ing_pool, work_id, &name_last, "author", 0).await;
+        test_support::db::insert_contributor(&ing_pool, work_id, &name_first, "author", 1).await;
+
+        let server = test_support::db::server_with_real_pools(&app_pool, &ing_pool);
+        let response = server
+            .get(&format!("/api/v1/books/{m_id}/metadata"))
+            .add_header(AUTHORIZATION, basic)
+            .await;
+        assert_eq!(response.status_code(), StatusCode::OK);
+        let body: serde_json::Value = response.json();
+        assert_eq!(
+            body["contributors"]["author"],
+            serde_json::json!([name_last, name_first]),
+            "authors must come back in stored position order, not name order"
+        );
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn get_book_metadata_round_trips_with_patch(pool: sqlx::PgPool) {
+        let app_pool = test_support::db::app_pool_for(&pool).await;
+        let ing_pool = test_support::db::ingestion_pool_for(&pool).await;
+        let (_admin_id, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+        let marker = Uuid::new_v4().simple().to_string();
+        let (_work_id, m_id) =
+            test_support::db::insert_work_and_manifestation(&ing_pool, &marker).await;
+        let subtitle = format!("Round Trip Subtitle {marker}");
+        let genre = format!("Genre {marker}");
+        let author = format!("Round Trip Author {marker}");
+
+        let server = test_support::db::server_with_real_pools(&app_pool, &ing_pool);
+        let patch_response = server
+            .patch(&format!("/api/v1/books/{m_id}/metadata"))
+            .add_header(AUTHORIZATION, basic.clone())
+            .json(&serde_json::json!({
+                "subtitle": subtitle,
+                "publisher": "Round Trip Press",
+                "pub_date": "2020-05-01",
+                "pages": 321,
+                "content_rating": "teen",
+                "genres": [genre],
+                "contributors": {"author": [author]},
+                "work_identifiers": {"openlibrary": "OL333W"},
+                "manifestation_identifiers": {"googlebooks": "zyTZAAAAYAAJ"},
+            }))
+            .await;
+        assert_eq!(
+            patch_response.status_code(),
+            StatusCode::OK,
+            "body = {}",
+            patch_response.text()
+        );
+
+        let response = server
+            .get(&format!("/api/v1/books/{m_id}/metadata"))
+            .add_header(AUTHORIZATION, basic)
+            .await;
+        assert_eq!(
+            response.status_code(),
+            StatusCode::OK,
+            "body = {}",
+            response.text()
+        );
+        let body: serde_json::Value = response.json();
+        assert_eq!(body["subtitle"], subtitle);
+        assert_eq!(body["publisher"], "Round Trip Press");
+        assert_eq!(body["pub_date"], "2020-05-01");
+        assert_eq!(body["pages"], 321);
+        assert_eq!(body["content_rating"], "teen");
+        assert_eq!(body["genres"], serde_json::json!([genre]));
+        assert_eq!(body["contributors"]["author"], serde_json::json!([author]));
+        assert_eq!(
+            body["work_identifiers"],
+            serde_json::json!({"openlibrary": "OL333W"})
+        );
+        assert_eq!(
+            body["manifestation_identifiers"],
+            serde_json::json!({"googlebooks": "zyTZAAAAYAAJ"})
+        );
     }
 
     #[tokio::test]

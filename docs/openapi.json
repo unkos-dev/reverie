@@ -931,6 +931,90 @@
       }
     },
     "/api/v1/books/{id}/metadata": {
+      "get": {
+        "tags": [
+          "metadata"
+        ],
+        "summary": "`GET /api/v1/books/{id}/metadata` — the editable metadata span for one\nmanifestation: the matched-pair read for [`update_book_metadata`], same\nURI and id key, so a read-modify-write flow targets one resource.",
+        "description": "# Errors\n- [`AppError::Forbidden`] when the caller is a child account.\n- [`AppError::NotFound`] when the manifestation is missing or hidden by\n  RLS for the current user (existence-not-leaked).\n- [`AppError::Internal`] on database errors.",
+        "operationId": "get_book_metadata",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Manifestation id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The editable metadata span, matching what PATCH accepts",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BookMetadata"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Caller is a child account",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Manifestation missing or RLS-hidden (existence-not-leaked)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session_cookie": [
+              "read"
+            ]
+          },
+          {
+            "device_token_bearer": [
+              "read"
+            ]
+          },
+          {
+            "oidc_jwt_bearer": [
+              "read"
+            ]
+          },
+          {
+            "opds_basic": [
+              "read"
+            ]
+          }
+        ]
+      },
       "patch": {
         "tags": [
           "metadata"
@@ -7272,6 +7356,138 @@
           }
         }
       },
+      "BookMetadata": {
+        "type": "object",
+        "description": "Response body for `GET /api/v1/books/{id}/metadata` — exactly the span\n[`UpdateMetadataFields`] can write, field for field.",
+        "required": [
+          "title",
+          "genres",
+          "moods",
+          "tags",
+          "contributors",
+          "work_identifiers",
+          "manifestation_identifiers"
+        ],
+        "properties": {
+          "content_rating": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/ContentRating",
+                "description": "Content rating tier; `null` when unset."
+              }
+            ]
+          },
+          "contributors": {
+            "$ref": "#/components/schemas/MetadataContributors",
+            "description": "Author/editor/translator names, each in stored position order."
+          },
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Description; `null` when unset."
+          },
+          "genres": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Genre names, alphabetical; empty when none are set."
+          },
+          "isbn_10": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "ISBN-10; `null` when unset."
+          },
+          "isbn_13": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "ISBN-13; `null` when unset."
+          },
+          "language": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Language; `null` when unset."
+          },
+          "manifestation_identifiers": {
+            "type": "object",
+            "description": "Manifestation-level external identifiers keyed by scheme.",
+            "additionalProperties": {
+              "type": "string"
+            },
+            "propertyNames": {
+              "type": "string"
+            }
+          },
+          "moods": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Mood names, alphabetical; empty when none are set."
+          },
+          "pages": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "description": "Page count; `null` when unset."
+          },
+          "pub_date": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Publication date (`YYYY-MM-DD`); `null` when unset."
+          },
+          "publisher": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Publisher; `null` when unset."
+          },
+          "subtitle": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Subtitle; `null` when unset."
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Tag names, alphabetical; empty when none are set."
+          },
+          "title": {
+            "type": "string",
+            "description": "Canonical title (work-level, `NOT NULL`)."
+          },
+          "work_identifiers": {
+            "type": "object",
+            "description": "Work-level external identifiers keyed by scheme.",
+            "additionalProperties": {
+              "type": "string"
+            },
+            "propertyNames": {
+              "type": "string"
+            }
+          }
+        }
+      },
       "ChangePasswordRequest": {
         "type": "object",
         "description": "Body for `POST /api/v1/account/password`.",
@@ -7830,6 +8046,38 @@
           "theme_preference": {
             "$ref": "#/components/schemas/ThemePreference",
             "description": "Persisted UI theme preference."
+          }
+        }
+      },
+      "MetadataContributors": {
+        "type": "object",
+        "description": "Contributor names by role, mirroring [`ContributorsPatch`]'s roles for\nthe matched-GET response.",
+        "required": [
+          "author",
+          "editor",
+          "translator"
+        ],
+        "properties": {
+          "author": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Ordered author names."
+          },
+          "editor": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Ordered editor names."
+          },
+          "translator": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Ordered translator names."
           }
         }
       },
