@@ -1948,7 +1948,9 @@ async fn get_book_metadata(
 }
 
 /// Author/editor/translator names for a work, each ordered by stored
-/// `work_authors.position` within the role.
+/// `work_authors.position` within the role. Only these three PATCH-writable
+/// roles are included; narrators are stored but excluded from this
+/// representation.
 async fn load_contributors_for_work(
     tx: &mut Transaction<'_, Postgres>,
     work_id: Uuid,
@@ -1958,6 +1960,7 @@ async fn load_contributors_for_work(
              FROM work_authors wa
              JOIN authors a ON a.id = wa.author_id
             WHERE wa.work_id = $1
+              AND wa.role = ANY(ARRAY['author', 'editor', 'translator']::author_role[])
             ORDER BY wa.role, wa.position ASC"#,
         work_id,
     )
@@ -2674,6 +2677,48 @@ mod tests {
             body["contributors"]["author"],
             serde_json::json!([name_last, name_first]),
             "authors must come back in stored position order, not name order"
+        );
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn get_book_metadata_excludes_narrator_contributors(pool: sqlx::PgPool) {
+        let app_pool = test_support::db::app_pool_for(&pool).await;
+        let ing_pool = test_support::db::ingestion_pool_for(&pool).await;
+        let (_admin_id, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+        let marker = Uuid::new_v4().simple().to_string();
+        let (work_id, m_id) =
+            test_support::db::insert_work_and_manifestation(&ing_pool, &marker).await;
+        let author_name = format!("Author {marker}");
+        let narrator_name = format!("Narrator {marker}");
+        test_support::db::insert_contributor(&ing_pool, work_id, &author_name, "author", 0).await;
+        test_support::db::insert_contributor(&ing_pool, work_id, &narrator_name, "narrator", 0)
+            .await;
+
+        let server = test_support::db::server_with_real_pools(&app_pool, &ing_pool);
+        let response = server
+            .get(&format!("/api/v1/books/{m_id}/metadata"))
+            .add_header(AUTHORIZATION, basic)
+            .await;
+        assert_eq!(
+            response.status_code(),
+            StatusCode::OK,
+            "body = {}",
+            response.text()
+        );
+        let body: serde_json::Value = response.json();
+        assert_eq!(
+            body["contributors"]["author"],
+            serde_json::json!([author_name])
+        );
+        let contributors = body["contributors"]
+            .as_object()
+            .expect("contributors object");
+        let mut keys: Vec<&str> = contributors.keys().map(String::as_str).collect();
+        keys.sort_unstable();
+        assert_eq!(keys, ["author", "editor", "translator"]);
+        assert!(
+            !body.to_string().contains(&narrator_name),
+            "narrator name must not appear anywhere in the response"
         );
     }
 

@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT wa.role::text AS \"role!\", a.name AS \"name!\"\n             FROM work_authors wa\n             JOIN authors a ON a.id = wa.author_id\n            WHERE wa.work_id = $1\n            ORDER BY wa.role, wa.position ASC",
+  "query": "SELECT wa.role::text AS \"role!\", a.name AS \"name!\"\n             FROM work_authors wa\n             JOIN authors a ON a.id = wa.author_id\n            WHERE wa.work_id = $1\n              AND wa.role = ANY(ARRAY['author', 'editor', 'translator']::author_role[])\n            ORDER BY wa.role, wa.position ASC",
   "describe": {
     "columns": [
       {
@@ -31,5 +31,5 @@
       false
     ]
   },
-  "hash": "13a318230dfb98b1cc66c70a82bade341a81121de13e6a898412cba902e76f9a"
+  "hash": "7167a911b87f7248c724f804cb0a0ad201c9431168f5bf6343b5bf9d499c7a4b"
 }
