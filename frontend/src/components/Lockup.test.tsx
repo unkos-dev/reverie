@@ -1,6 +1,8 @@
 import { describe, it, expect } from "vite-plus/test";
 import { render, screen } from "@testing-library/react";
 import { Lockup } from "./Lockup";
+import slotFaviconSvg from "../../public/brand/glyph/slot-favicon.svg?raw";
+import slotSvg from "../../public/brand/glyph/slot.svg?raw";
 
 describe("Lockup", () => {
   it("renders the wordmark text", () => {
@@ -26,9 +28,32 @@ describe("Lockup", () => {
     expect(container.querySelector("img")).toHaveAttribute("src", "/brand/glyph/slot.svg");
   });
 
-  it("uses the canonical thick-slot asset below 24px", () => {
+  it("uses the canonical thick-slot asset when the glyph renders below 24px", () => {
     const { container } = render(<Lockup size={13} />);
     expect(container.querySelector("img")).toHaveAttribute("src", "/brand/glyph/slot-favicon.svg");
+  });
+
+  it("switches variant on the rendered glyph size, not the wordmark size", () => {
+    const thick = render(<Lockup size={17} />);
+    expect(thick.container.querySelector("img")).toHaveAttribute(
+      "src",
+      "/brand/glyph/slot-favicon.svg",
+    );
+
+    const standard = render(<Lockup size={18} />);
+    expect(standard.container.querySelector("img")).toHaveAttribute("src", "/brand/glyph/slot.svg");
+  });
+
+  // The component names its assets as absolute request paths, which nothing
+  // else validates: Vite copies the public directory verbatim without
+  // checking that anything referencing it resolves. Importing the files here
+  // fails the suite at transform time if either one moves or is renamed.
+  it("ships knockout artwork for both glyph sources", () => {
+    for (const svg of [slotSvg, slotFaviconSvg]) {
+      expect(svg).toContain('fill-rule="evenodd"');
+      expect(svg).toContain('fill="#C9A961"');
+      expect(svg).not.toContain("<rect");
+    }
   });
 
   it("uses cream wordmark on dark theme (default)", () => {
@@ -43,16 +68,16 @@ describe("Lockup", () => {
     expect(word).toHaveStyle({ color: "rgb(14, 13, 10)" }); // #0E0D0A
   });
 
-  it("sizes the glyph and wordmark gap from cap height", () => {
+  it("sizes the glyph and wordmark gap from the wordmark type size", () => {
     const { container } = render(<Lockup size={40} />);
-    expect(container.firstElementChild).toHaveStyle({ fontSize: "40px", gap: "0.5cap" });
+    expect(container.firstElementChild).toHaveStyle({ fontSize: "40px", gap: "0.48em" });
     expect(container.querySelector("img")).toHaveAttribute(
       "style",
-      expect.stringContaining("width: 0.95cap"),
+      expect.stringContaining("width: 1.4em"),
     );
     expect(container.querySelector("img")).toHaveAttribute(
       "style",
-      expect.stringContaining("height: 0.95cap"),
+      expect.stringContaining("height: 1.4em"),
     );
   });
 
