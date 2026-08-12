@@ -1,9 +1,9 @@
 /**
  * Production `/b/:id` page.
  *
- * Sticky cover aside + Tabs layout, mirroring the dev hero
- * (`/design/hero/book`). Data sourced from `GET /api/v1/books/{id}` via
- * `useSuspenseQuery`; the loader has already primed the cache.
+ * Sticky cover aside + Tabs layout. Data sourced from
+ * `GET /api/v1/books/{id}` via `useSuspenseQuery`; the loader has
+ * already primed the cache.
  *
  * The Versions tab is implemented in [`VersionsTab`] (sub-phase 11c):
  * per-field pending rows with accept / reject / revert affordances

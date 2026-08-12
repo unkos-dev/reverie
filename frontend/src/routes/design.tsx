@@ -1,7 +1,5 @@
 import type { RouteObject } from "react-router";
 import DesignSystemPage from "@/pages/design/system";
-import HeroLibraryPage from "@/pages/design/library";
-import HeroBookPage from "@/pages/design/book";
 import GridSpikeHarness, { GridSpikeError } from "@/pages/design/grid-spike/GridSpikeHarness";
 
 /**
@@ -16,7 +14,5 @@ import GridSpikeHarness, { GridSpikeError } from "@/pages/design/grid-spike/Grid
  */
 export const designRoutes: RouteObject[] = [
   { path: "/design/system", element: <DesignSystemPage /> },
-  { path: "/design/hero/library", element: <HeroLibraryPage /> },
-  { path: "/design/hero/book", element: <HeroBookPage /> },
   { path: "/design/grid-spike", element: <GridSpikeHarness />, errorElement: <GridSpikeError /> },
 ];

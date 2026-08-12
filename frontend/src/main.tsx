@@ -10,7 +10,7 @@
  * dev-only `ReactQueryDevtoolsPanel` and `<Toaster />` as siblings of
  * the router so their state survives navigation.
  *
- * Dev-only design routes (`/design/system`, `/design/hero/*`) are
+ * Dev-only design routes (`/design/system`, `/design/grid-spike`) are
  * lazy-imported behind `import.meta.env.DEV` so the route module and
  * everything reachable from `pages/design/**` is dead code in
  * production builds — Vite's `manualChunks` config in

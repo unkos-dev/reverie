@@ -10,8 +10,8 @@ const WCAG_TAGS = ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa"];
 
 // Same env contract as the retired runner: comma-separated, root-relative
 // paths. parseTargets fails closed on an empty list or an off-origin target.
-// Future targets (/design/hero/*, authed Home/Library/Detail) are added here as
-// they become scannable.
+// Future targets (authed Home/Library/Detail) are added here as they become
+// scannable.
 const TARGETS = parseTargets(process.env.A11Y_TARGETS);
 
 for (const target of TARGETS) {
