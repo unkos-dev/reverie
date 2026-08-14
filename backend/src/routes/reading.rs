@@ -259,8 +259,12 @@ fn apply_patch(existing: ReadingStateRow, req: &UpdateReadingRequest) -> Reading
 /// # Errors
 /// - [`AppError::Validation`] when the body has no populated fields,
 ///   `rating` is outside `1..=5`, or `notes` exceeds 10000 characters.
-/// - [`AppError::MalformedHeader`] when `If-Match` is present but
-///   malformed.
+///   Reached only once `If-Match` has matched, so a stale tag yields 412
+///   rather than a body error.
+/// - [`AppError::MalformedHeader`] when `If-Match` violates the RFC 9110
+///   §8.8.3 entity-tag grammar, or carries a form this API refuses by
+///   policy: the `*` wildcard, an entity-tag list, a weak validator, or
+///   more than one instance of the field.
 /// - [`AppError::NotFound`] when the manifestation is missing or hidden by
 ///   RLS for the current user (existence-not-leaked).
 /// - [`AppError::IfMatchRequired`] (428) when `If-Match` is absent.
@@ -275,7 +279,7 @@ fn apply_patch(existing: ReadingStateRow, req: &UpdateReadingRequest) -> Reading
     security(("session_cookie" = ["write"]), ("device_token_bearer" = ["write"]), ("oidc_jwt_bearer" = ["write"]), ("opds_basic" = ["write"])),
     params(
         ("id" = Uuid, Path, description = "Manifestation id"),
-        ("If-Match" = String, Header, description = "A single quoted strong entity-tag, as returned in a prior GET or PATCH response's ETag header. Required: absent means 428; stale means 412")
+        ("If-Match" = String, Header, description = "Exactly one quoted strong entity-tag, as returned in a prior GET or PATCH response's ETag header. Opaque content follows the full RFC 9110 8.8.3 grammar, obs-text included. The * wildcard, entity-tag lists, weak tags, and repeated instances of this field are refused with 400. Required: absent means 428; unequal means 412")
     ),
     request_body(content = UpdateReadingRequest, description = "RFC 7396 JSON Merge Patch: absent fields are unchanged, `null` clears"),
     responses(
@@ -285,8 +289,8 @@ fn apply_patch(existing: ReadingStateRow, req: &UpdateReadingRequest) -> Reading
         (status = 404, description = "Manifestation missing or RLS-hidden (existence-not-leaked)", body = crate::openapi::ProblemDetails),
         (status = 412, description = "If-Match does not match the caller's current reading-state ETag", body = crate::openapi::ProblemDetails,
          headers(("ETag" = String, description = "Current entity-tag, so the caller can resync without a follow-up GET"))),
-        (status = 400, description = "Malformed If-Match header", body = crate::openapi::ProblemDetails),
-        (status = 422, description = "Empty patch, rating outside 1-5, or notes over 10000 characters", body = crate::openapi::ProblemDetails),
+        (status = 400, description = "If-Match is malformed, or carries a form this API refuses by policy: the * wildcard, an entity-tag list, a weak tag, or a repeated header instance", body = crate::openapi::ProblemDetails),
+        (status = 422, description = "Empty patch, rating outside 1-5, or notes over 10000 characters. Evaluated only after If-Match has matched, so a stale tag returns 412 instead", body = crate::openapi::ProblemDetails),
         (status = 428, description = "If-Match header absent", body = crate::openapi::ProblemDetails)
     )
 )]
@@ -300,24 +304,6 @@ async fn patch_reading(
     current_user.require_scope(Scope::Write)?;
     let if_match = parse_if_match(&headers_in)?.ok_or(AppError::IfMatchRequired)?;
     let axum::Json(req) = body.map_err(|e| AppError::Validation(e.body_text()))?;
-
-    if req.status.is_none() && req.rating.is_none() && req.notes.is_none() {
-        return Err(AppError::Validation("no fields".into()));
-    }
-    if let Some(Some(rating)) = req.rating
-        && !(1..=5).contains(&rating)
-    {
-        return Err(AppError::Validation(
-            "rating must be between 1 and 5".into(),
-        ));
-    }
-    if let Some(Some(notes)) = &req.notes
-        && notes.chars().count() > NOTES_MAX_CHARS
-    {
-        return Err(AppError::Validation(
-            "notes must be at most 10000 characters".into(),
-        ));
-    }
 
     let mut tx = db::acquire_with_rls(&state.pool, current_user.user_id)
         .await
@@ -355,8 +341,33 @@ async fn patch_reading(
     // concurrent writer cannot slip a change in between this check and the
     // update below.
     let current = existing.etag()?;
-    if current.as_bytes() != if_match.as_bytes() {
+    if !if_match.matches(&current) {
         return Ok(if_match_mismatch(&current));
+    }
+
+    // Semantic body validation runs only once the precondition has held.
+    // RFC 9110 §13.2.1 places precondition evaluation after the normal
+    // request checks (auth, existence) and before the request content is
+    // processed, so a caller holding a stale representation learns that
+    // first and refetches, rather than being sent to fix a body that a
+    // concurrent write may already have made irrelevant. Returning here
+    // drops `tx`, so the seed insert above rolls back.
+    if req.status.is_none() && req.rating.is_none() && req.notes.is_none() {
+        return Err(AppError::Validation("no fields".into()));
+    }
+    if let Some(Some(rating)) = req.rating
+        && !(1..=5).contains(&rating)
+    {
+        return Err(AppError::Validation(
+            "rating must be between 1 and 5".into(),
+        ));
+    }
+    if let Some(Some(notes)) = &req.notes
+        && notes.chars().count() > NOTES_MAX_CHARS
+    {
+        return Err(AppError::Validation(
+            "notes must be at most 10000 characters".into(),
+        ));
     }
 
     let merged = apply_patch(existing, &req);
@@ -959,12 +970,19 @@ mod tests {
             test_support::db::create_adult_and_basic_auth(&app_pool, "notes-limit").await;
         let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
 
+        // A matching tag, so the request reaches body validation: the
+        // precondition is evaluated before the content.
+        let initial = server
+            .get(&format!("/api/v1/books/{m_id}/reading"))
+            .add_header(auth(&basic).0.clone(), auth(&basic).1.clone())
+            .await;
+        let etag = etag_value(initial.headers());
         let r = server
             .patch(&format!("/api/v1/books/{m_id}/reading"))
             .add_header(auth(&basic).0, auth(&basic).1)
             .add_header(
                 axum::http::header::IF_MATCH,
-                HeaderValue::from_static("\"dummy\""),
+                HeaderValue::from_str(&etag).unwrap(),
             )
             .json(&json!({"notes": "n".repeat(10_001)}))
             .await;
@@ -981,13 +999,22 @@ mod tests {
             test_support::db::create_adult_and_basic_auth(&app_pool, "rating-range").await;
         let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
 
+        // A matching tag, so each request reaches body validation: the
+        // precondition is evaluated before the content. No rejected patch
+        // writes, so the tag stays current across the loop.
+        let initial = server
+            .get(&format!("/api/v1/books/{m_id}/reading"))
+            .add_header(auth(&basic).0.clone(), auth(&basic).1.clone())
+            .await;
+        let etag = etag_value(initial.headers());
+
         for bad_rating in [0, 6] {
             let r = server
                 .patch(&format!("/api/v1/books/{m_id}/reading"))
                 .add_header(auth(&basic).0.clone(), auth(&basic).1.clone())
                 .add_header(
                     axum::http::header::IF_MATCH,
-                    HeaderValue::from_static("\"dummy\""),
+                    HeaderValue::from_str(&etag).unwrap(),
                 )
                 .json(&json!({"rating": bad_rating}))
                 .await;
@@ -1009,12 +1036,19 @@ mod tests {
             test_support::db::create_adult_and_basic_auth(&app_pool, "empty-patch").await;
         let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
 
+        // A matching tag, so the request reaches body validation: the
+        // precondition is evaluated before the content.
+        let initial = server
+            .get(&format!("/api/v1/books/{m_id}/reading"))
+            .add_header(auth(&basic).0.clone(), auth(&basic).1.clone())
+            .await;
+        let etag = etag_value(initial.headers());
         let r = server
             .patch(&format!("/api/v1/books/{m_id}/reading"))
             .add_header(auth(&basic).0, auth(&basic).1)
             .add_header(
                 axum::http::header::IF_MATCH,
-                HeaderValue::from_static("\"dummy\""),
+                HeaderValue::from_str(&etag).unwrap(),
             )
             .json(&json!({}))
             .await;
@@ -1295,6 +1329,128 @@ mod tests {
         assert_ne!(
             current_etag, stale_etag,
             "412 must carry the current, not the stale, ETag"
+        );
+    }
+
+    // Reading shares the metadata parser, so it owes the same status
+    // contract: refused header forms are 400, never the 412 a false
+    // precondition earns.
+    #[sqlx::test(migrations = "./migrations")]
+    async fn patch_reading_with_refused_if_match_returns_400(pool: PgPool) {
+        let app_pool = test_support::db::app_pool_for(&pool).await;
+        let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+        let (_work, m_id) =
+            test_support::db::insert_work_and_manifestation(&ingestion_pool, "refused-match").await;
+        let (_user_id, basic) =
+            test_support::db::create_adult_and_basic_auth(&app_pool, "refused-match").await;
+        let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+
+        for (label, if_match) in [
+            ("SP is not etagc", "\"a b\""),
+            ("wildcard", "*"),
+            ("entity-tag list", "\"abc\", \"def\""),
+            ("weak validator", "W/\"abc\""),
+            ("unquoted", "abc"),
+        ] {
+            let r = server
+                .patch(&format!("/api/v1/books/{m_id}/reading"))
+                .add_header(auth(&basic).0, auth(&basic).1)
+                .add_header(
+                    axum::http::header::IF_MATCH,
+                    HeaderValue::from_str(if_match).unwrap(),
+                )
+                .json(&json!({"rating": 2}))
+                .await;
+            assert_eq!(
+                r.status_code(),
+                StatusCode::BAD_REQUEST,
+                "{label}: body: {}",
+                r.text()
+            );
+            test_support::assert_problem(&r, problems::MALFORMED_HEADER, StatusCode::BAD_REQUEST);
+        }
+    }
+
+    // `obs-text` is valid entity-tag content, so such a tag is compared
+    // rather than refused, and compares unequal against Reverie's ASCII
+    // validators.
+    #[sqlx::test(migrations = "./migrations")]
+    async fn patch_reading_with_obs_text_if_match_reaches_comparison(pool: PgPool) {
+        let app_pool = test_support::db::app_pool_for(&pool).await;
+        let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+        let (_work, m_id) =
+            test_support::db::insert_work_and_manifestation(&ingestion_pool, "obs-text").await;
+        let (_user_id, basic) =
+            test_support::db::create_adult_and_basic_auth(&app_pool, "obs-text").await;
+        let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+
+        let r = server
+            .patch(&format!("/api/v1/books/{m_id}/reading"))
+            .add_header(auth(&basic).0, auth(&basic).1)
+            .add_header(
+                axum::http::header::IF_MATCH,
+                HeaderValue::from_bytes(b"\"\x80obs-text\"").unwrap(),
+            )
+            .json(&json!({"rating": 2}))
+            .await;
+        test_support::assert_problem(
+            &r,
+            problems::IF_MATCH_MISMATCH,
+            StatusCode::PRECONDITION_FAILED,
+        );
+    }
+
+    // An accepted tag is compared before the content is processed, so the
+    // same invalid body resolves differently by precondition outcome: the
+    // matching tag reaches body validation and earns 422, while the stale
+    // tag stops at the precondition and earns 412. Evaluating the body
+    // first would collapse both rows to 422 and hide a stale representation
+    // behind a body error.
+    #[sqlx::test(migrations = "./migrations")]
+    async fn patch_reading_precondition_is_evaluated_before_the_body(pool: PgPool) {
+        let app_pool = test_support::db::app_pool_for(&pool).await;
+        let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+        let (_work, m_id) =
+            test_support::db::insert_work_and_manifestation(&ingestion_pool, "body-422").await;
+        let (_user_id, basic) =
+            test_support::db::create_adult_and_basic_auth(&app_pool, "body-422").await;
+        let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+
+        let initial = server
+            .get(&format!("/api/v1/books/{m_id}/reading"))
+            .add_header(auth(&basic).0.clone(), auth(&basic).1.clone())
+            .await;
+        let matching = etag_value(initial.headers());
+
+        let r = server
+            .patch(&format!("/api/v1/books/{m_id}/reading"))
+            .add_header(auth(&basic).0.clone(), auth(&basic).1.clone())
+            .add_header(
+                axum::http::header::IF_MATCH,
+                HeaderValue::from_str(&matching).unwrap(),
+            )
+            .json(&json!({"rating": 9}))
+            .await;
+        assert_eq!(
+            r.status_code(),
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "matching tag must reach body validation, body: {}",
+            r.text()
+        );
+
+        let r = server
+            .patch(&format!("/api/v1/books/{m_id}/reading"))
+            .add_header(auth(&basic).0, auth(&basic).1)
+            .add_header(
+                axum::http::header::IF_MATCH,
+                HeaderValue::from_static("\"stale\""),
+            )
+            .json(&json!({"rating": 9}))
+            .await;
+        test_support::assert_problem(
+            &r,
+            problems::IF_MATCH_MISMATCH,
+            StatusCode::PRECONDITION_FAILED,
         );
     }
 }
