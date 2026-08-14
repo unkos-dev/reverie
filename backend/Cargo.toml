@@ -85,6 +85,10 @@ thiserror = "2.0.18"
 time = "0.3.51"
 tokio = { version = "1.52.3", features = ["full"] }
 tokio-util = "0.7.18"
+# `util` supplies ServiceExt::oneshot, which lets the composite fallback
+# drive a ServeDir for a single request before deciding whether the path
+# is a real dist file or an SPA route.
+tower = { version = "0.5.3", features = ["util"] }
 tower-http = { version = "0.7.0", features = ["cors", "fs", "trace"] }
 # tower-sessions core is the maintained session-lifecycle primitive (kept);
 # the abandoned axum-login + tower-sessions-sqlx-store wrappers were replaced

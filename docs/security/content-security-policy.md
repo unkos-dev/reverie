@@ -19,6 +19,11 @@ A `Content-Security-Policy` differentiated by route class:
 - **HTML responses** (`/` and SPA deep links): a hash-based CSP that permits
   one known inline FOUC script (via `'sha256-...'`). No `'unsafe-inline'` for
   scripts.
+- **Static build output** (`/assets/*`, plus everything Vite copies from
+  `public/` to the dist root such as `/brand/*` and `/fonts/*`): the same
+  HTML CSP. A path served as a file and the same path served as an SPA route
+  therefore carry identical policy, so a file that stops existing cannot
+  silently change the policy on its URL.
 - **API responses** (`/api/*`, `/auth/*`, `/health/*`, `/opds/*`):
   `default-src 'none'; frame-ancestors 'none'; base-uri 'none'`, APIs never
   render, so everything is locked down.

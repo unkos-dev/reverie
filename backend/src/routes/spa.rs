@@ -9,10 +9,20 @@
 //! dispatches between JSON-404 for reserved-prefix misses and SPA
 //! `index.html` for everything else. This router is therefore limited to
 //! matched `/assets/*` requests.
+//!
+//! The rest of the dist tree does not live under `/assets`: Vite copies
+//! `public/` to the dist root, so the fonts, the brand assets and the
+//! favicons are served from paths this router never matches. Those requests
+//! reach the composite fallback, which calls `try_dist_file` below before
+//! deciding the path is an SPA route.
 
 use std::path::Path;
 
 use axum::Router;
+use axum::body::Body;
+use axum::http::Request;
+use axum::response::Response;
+use tower::ServiceExt as _;
 use tower_http::services::ServeDir;
 
 use crate::state::AppState;
@@ -24,4 +34,34 @@ pub fn router_enabled(dist_path: Option<&Path>) -> Option<Router<AppState>> {
     let dist = dist_path?;
     let assets_dir = dist.join("assets");
     Some(Router::new().nest_service("/assets", ServeDir::new(assets_dir)))
+}
+
+/// Serve `req` from the dist tree, or return `None` when it names no file
+/// there.
+///
+/// `None` is the SPA-route answer: a deep link like `/library/anything`
+/// matches no file and must receive `index.html` so the client router can
+/// resolve it. Callers therefore cannot treat `None` as an error.
+///
+/// Directory requests deliberately do not resolve to their `index.html`.
+/// Without that, `/` would be answered from here rather than by the
+/// caller's SPA path, splitting one response into two code paths that
+/// would have to be kept in step.
+///
+/// THREAT: this widens byte-serving from `/assets` to the whole dist tree,
+/// so path traversal is the risk that matters. `ServeDir` resolves the
+/// request path against the root and rejects anything that escapes it,
+/// including percent-encoded traversal, which is why the traversal defence
+/// is delegated rather than hand-rolled here.
+pub async fn try_dist_file(dist: &Path, req: Request<Body>) -> Option<Response> {
+    let resp = ServeDir::new(dist)
+        .append_index_html_on_directories(false)
+        .oneshot(req)
+        .await
+        .ok()?;
+    if resp.status().is_success() {
+        Some(resp.map(Body::new))
+    } else {
+        None
+    }
 }
