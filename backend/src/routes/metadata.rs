@@ -2069,8 +2069,10 @@ async fn load_manifestation_identifiers(
 ///   (`genres`/`moods`/`tags`) contains an empty, duplicate, or
 ///   over-length term, or when the operator tries to clear `title`
 ///   (canonical title is `NOT NULL` on `works`).
-/// - [`AppError::MalformedHeader`] when `If-Match` is present but
-///   malformed.
+/// - [`AppError::MalformedHeader`] when `If-Match` violates the RFC 9110
+///   §8.8.3 entity-tag grammar, or carries a form this API refuses by
+///   policy: the `*` wildcard, an entity-tag list, a weak validator, or
+///   more than one instance of the field.
 /// - [`AppError::NotFound`] when the manifestation is missing or hidden
 ///   by RLS for the current user (existence-not-leaked).
 /// - [`AppError::Forbidden`] when the caller is a child account.
@@ -2086,7 +2088,7 @@ async fn load_manifestation_identifiers(
     security(("session_cookie" = ["write"]), ("device_token_bearer" = ["write"]), ("oidc_jwt_bearer" = ["write"]), ("opds_basic" = ["write"])),
     params(
         ("id" = Uuid, Path, description = "Manifestation id"),
-        ("If-Match" = String, Header, description = "A single quoted strong entity-tag, as returned in a prior GET or PATCH response's ETag header. Required: absent means 428; stale means 412")
+        ("If-Match" = String, Header, description = "Exactly one quoted strong entity-tag, as returned in a prior GET or PATCH response's ETag header. Opaque content follows the full RFC 9110 8.8.3 grammar, obs-text included. The * wildcard, entity-tag lists, weak tags, and repeated instances of this field are refused with 400. Required: absent means 428; unequal means 412")
     ),
     request_body(content = UpdateMetadataFields, description = "RFC 7396 JSON Merge Patch: absent fields are unchanged, `null` clears (except `title`)"),
     responses(
@@ -2097,7 +2099,7 @@ async fn load_manifestation_identifiers(
         (status = 404, description = "Manifestation missing or RLS-hidden (existence-not-leaked)", body = crate::openapi::ProblemDetails),
         (status = 412, description = "If-Match does not match the manifestation's current metadata ETag", body = crate::openapi::ProblemDetails,
          headers(("ETag" = String, description = "Current entity-tag, so the caller can resync without a follow-up GET"))),
-        (status = 400, description = "Malformed If-Match header", body = crate::openapi::ProblemDetails),
+        (status = 400, description = "If-Match is malformed, or carries a form this API refuses by policy: the * wildcard, an entity-tag list, a weak tag, or a repeated header instance", body = crate::openapi::ProblemDetails),
         (status = 422, description = "No populated fields, ISBN/date parse failure, or attempt to clear title", body = crate::openapi::ProblemDetails),
         (status = 428, description = "If-Match header absent", body = crate::openapi::ProblemDetails)
     )
@@ -2168,7 +2170,7 @@ async fn update_book_metadata(
             ))
         })?;
     let current_etag = hash_etag(&current)?;
-    if current_etag.as_bytes() != if_match.as_bytes() {
+    if !if_match.matches(&current_etag) {
         return Ok(if_match_mismatch(&current_etag));
     }
 
@@ -7661,6 +7663,136 @@ mod tests {
         assert_ne!(
             current_etag, stale_etag,
             "412 must carry the current, not the stale, ETag"
+        );
+    }
+
+    // Both grammar violations and the well-formed forms this API refuses by
+    // policy are defects in the request's own shape, so they are 400 rather
+    // than the 412 a false precondition earns. No refreshed tag would make
+    // any of these parse.
+    #[sqlx::test(migrations = "./migrations")]
+    async fn patch_metadata_with_refused_if_match_returns_400(pool: sqlx::PgPool) {
+        let app_pool = test_support::db::app_pool_for(&pool).await;
+        let ing_pool = test_support::db::ingestion_pool_for(&pool).await;
+        let (_admin_id, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+        let marker = Uuid::new_v4().simple().to_string();
+        let (_work_id, m_id) =
+            test_support::db::insert_work_and_manifestation(&ing_pool, &marker).await;
+        let server = test_support::db::server_with_real_pools(&app_pool, &ing_pool);
+
+        for (label, if_match) in [
+            ("SP is not etagc", "\"a b\""),
+            ("wildcard", "*"),
+            ("entity-tag list", "\"abc\", \"def\""),
+            ("weak validator", "W/\"abc\""),
+            ("unquoted", "abc"),
+        ] {
+            let r = server
+                .patch(&format!("/api/v1/books/{m_id}/metadata"))
+                .add_header(AUTHORIZATION, basic.clone())
+                .add_header(
+                    axum::http::header::IF_MATCH,
+                    axum::http::HeaderValue::from_str(if_match).unwrap(),
+                )
+                .json(&serde_json::json!({"title": format!("Refused {marker}")}))
+                .await;
+            assert_eq!(
+                r.status_code(),
+                StatusCode::BAD_REQUEST,
+                "{label}: body: {}",
+                r.text()
+            );
+            test_support::assert_problem(&r, problems::MALFORMED_HEADER, StatusCode::BAD_REQUEST);
+        }
+    }
+
+    // `obs-text` is valid entity-tag content, so such a tag is parsed and
+    // compared rather than refused. Reverie's own validators are ASCII, so
+    // it compares unequal and earns the ordinary 412.
+    #[sqlx::test(migrations = "./migrations")]
+    async fn patch_metadata_with_obs_text_if_match_reaches_comparison(pool: sqlx::PgPool) {
+        let app_pool = test_support::db::app_pool_for(&pool).await;
+        let ing_pool = test_support::db::ingestion_pool_for(&pool).await;
+        let (_admin_id, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+        let marker = Uuid::new_v4().simple().to_string();
+        let (_work_id, m_id) =
+            test_support::db::insert_work_and_manifestation(&ing_pool, &marker).await;
+        let server = test_support::db::server_with_real_pools(&app_pool, &ing_pool);
+
+        let r = server
+            .patch(&format!("/api/v1/books/{m_id}/metadata"))
+            .add_header(AUTHORIZATION, basic)
+            .add_header(
+                axum::http::header::IF_MATCH,
+                axum::http::HeaderValue::from_bytes(b"\"\x80obs-text\"").unwrap(),
+            )
+            .json(&serde_json::json!({"title": format!("Obs text {marker}")}))
+            .await;
+        test_support::assert_problem(
+            &r,
+            problems::IF_MATCH_MISMATCH,
+            StatusCode::PRECONDITION_FAILED,
+        );
+    }
+
+    // A request whose header and body are both defective is answered for the
+    // header: 422 is scoped to content that parsed, and this request's own
+    // shape failed first.
+    #[sqlx::test(migrations = "./migrations")]
+    async fn patch_metadata_refused_if_match_precedes_body_validation(pool: sqlx::PgPool) {
+        let app_pool = test_support::db::app_pool_for(&pool).await;
+        let ing_pool = test_support::db::ingestion_pool_for(&pool).await;
+        let (_admin_id, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+        let marker = Uuid::new_v4().simple().to_string();
+        let (_work_id, m_id) =
+            test_support::db::insert_work_and_manifestation(&ing_pool, &marker).await;
+        let server = test_support::db::server_with_real_pools(&app_pool, &ing_pool);
+
+        let r = server
+            .patch(&format!("/api/v1/books/{m_id}/metadata"))
+            .add_header(AUTHORIZATION, basic)
+            .add_header(
+                axum::http::header::IF_MATCH,
+                axum::http::HeaderValue::from_static("\"a b\""),
+            )
+            .json(&serde_json::json!({}))
+            .await;
+        test_support::assert_problem(&r, problems::MALFORMED_HEADER, StatusCode::BAD_REQUEST);
+    }
+
+    // The complement: with the precondition satisfied, a body that violates
+    // the documented contract is 422 and stays out of the header's status
+    // class.
+    #[sqlx::test(migrations = "./migrations")]
+    async fn patch_metadata_body_violation_under_matching_if_match_returns_422(pool: sqlx::PgPool) {
+        let app_pool = test_support::db::app_pool_for(&pool).await;
+        let ing_pool = test_support::db::ingestion_pool_for(&pool).await;
+        let (_admin_id, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+        let marker = Uuid::new_v4().simple().to_string();
+        let (_work_id, m_id) =
+            test_support::db::insert_work_and_manifestation(&ing_pool, &marker).await;
+        let server = test_support::db::server_with_real_pools(&app_pool, &ing_pool);
+
+        let initial = server
+            .get(&format!("/api/v1/books/{m_id}/metadata"))
+            .add_header(AUTHORIZATION, basic.clone())
+            .await;
+        let etag = etag_value(initial.headers());
+
+        let r = server
+            .patch(&format!("/api/v1/books/{m_id}/metadata"))
+            .add_header(AUTHORIZATION, basic)
+            .add_header(
+                axum::http::header::IF_MATCH,
+                axum::http::HeaderValue::from_str(&etag).unwrap(),
+            )
+            .json(&serde_json::json!({}))
+            .await;
+        assert_eq!(
+            r.status_code(),
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "body: {}",
+            r.text()
         );
     }
 }
