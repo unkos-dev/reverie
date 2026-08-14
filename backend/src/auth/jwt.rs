@@ -25,7 +25,6 @@
 //! bypass.
 
 use std::str::FromStr;
-use std::time::Duration;
 
 use jsonwebtoken::errors::{ErrorKind, new_error};
 use jsonwebtoken::{Algorithm, DecodingKey, Validation, decode, decode_header};
@@ -89,9 +88,9 @@ impl std::error::Error for JwtValidationError {}
 
 /// [`JwksSource`] carrying the project `User-Agent`.
 /// `jwks_client_rs::source::WebSource` cannot set one, and a bare-UA fetch
-/// 403s behind common WAFs (mirrors [`crate::auth::oidc::http_client`]'s
-/// THREAT note). Fetches ONLY from the configured `url`; this type has no
-/// `jku`/`x5u` code path at all, and its client never follows HTTP
+/// 403s behind common WAFs (see [`crate::auth::oidc::OidcTransport`], which
+/// owns the client this holds). Fetches ONLY from the configured `url`; this
+/// type has no `jku`/`x5u` code path at all, and its client never follows HTTP
 /// redirects, so a token can never redirect key resolution to an
 /// attacker-chosen JWKS endpoint.
 struct ReverieJwksSource {
@@ -123,49 +122,6 @@ impl JwksSource for ReverieJwksSource {
             .await
             .map_err(|e| provider_error("JWKS response was not valid JSON", &e))
     }
-}
-
-/// Connect timeout for the JWKS fetch client. A bare `reqwest::Client`
-/// carries NO default timeout; `jwks_client_rs::source::WebSource` (which
-/// [`ReverieJwksSource`] replaces to set a `User-Agent`) sets its own, so
-/// the replacement must too.
-const JWKS_CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
-
-/// Full-request timeout for the JWKS fetch client (connect through body).
-const JWKS_REQUEST_TIMEOUT: Duration = Duration::from_secs(10);
-
-/// Build the UA-carrying HTTP client used by [`ReverieJwksSource`] to fetch
-/// the resource-server JWKS. Mirrors `services::enrichment::http::api_client`
-/// and `auth::oidc::http_client`: an empty `User-Agent` is matched by common
-/// WAF scanner blocklists (Cloudflare, AWS WAF), so every outbound client in
-/// this codebase is built through a sanctioned UA-setting constructor (see
-/// `adr/2026-05-18-outbound-http-user-agent.md`).
-///
-/// THREAT: the timeouts are availability defenses on the auth hot path.
-/// `jwks_client_rs`'s cache serves a previously cached key only after a
-/// failed refresh RESOLVES; a fetch with no timeout against an `IdP` that
-/// hangs (rather than errors fast) never resolves, holding every request
-/// that triggered the refresh open and defeating that warm-cache fallback.
-/// Redirects are never followed: the operator-configured (or
-/// discovery-resolved) JWKS URL is the final endpoint, and following a
-/// redirect would let the response steer key resolution to a different one.
-fn jwks_http_client(
-    connect_timeout: Duration,
-    request_timeout: Duration,
-) -> anyhow::Result<reqwest::Client> {
-    use anyhow::Context as _;
-
-    #[expect(
-        clippy::disallowed_methods,
-        reason = "sanctioned UA-setting constructor the clippy.toml ban funnels callers into; .user_agent() is set on the next line"
-    )]
-    reqwest::ClientBuilder::new()
-        .user_agent(concat!("reverie/", env!("CARGO_PKG_VERSION")))
-        .connect_timeout(connect_timeout)
-        .timeout(request_timeout)
-        .redirect(reqwest::redirect::Policy::none())
-        .build()
-        .context("failed to build resource-server JWKS HTTP client")
 }
 
 /// Build a `jsonwebtoken::DecodingKey` from a resolved JWK. Mirrors
@@ -293,33 +249,50 @@ impl JwtValidator {
 /// startup (beside [`crate::auth::oidc::init_oidc_client`]) when
 /// [`Config::resource_server_configured`] is `true`. The JWKS URL is the
 /// explicit `resource_server_jwks_url` override when set, otherwise it is
-/// derived via OIDC discovery against `resource_server_issuer`, the same
-/// discovery mechanism [`crate::auth::oidc::init_oidc_client`] uses, reusing
-/// its UA-carrying HTTP client.
+/// derived via OIDC discovery against `resource_server_issuer`. Both the
+/// discovery request and the later key fetches run over `transport`, the
+/// process-wide OIDC transport, so this role shares one bounded, no-redirect
+/// pool with interactive login rather than configuring its own.
+///
+/// THREAT: the transport's timeouts are availability defenses on the auth hot
+/// path. `jwks_client_rs`'s cache serves a previously cached key only after a
+/// failed refresh RESOLVES; a fetch with no timeout against an `IdP` that hangs
+/// (rather than errors fast) never resolves, holding every request that
+/// triggered the refresh open and defeating that warm-cache fallback.
 ///
 /// # Errors
 ///
 /// Returns an error if `resource_server_issuer` or an explicit
-/// `resource_server_jwks_url` is not a valid URL, or if OIDC discovery
-/// against the issuer fails (no explicit override configured).
-pub async fn init_jwt_validator(config: &Config) -> anyhow::Result<JwtValidator> {
+/// `resource_server_jwks_url` is not a valid URL, if either violates its
+/// endpoint policy, or if OIDC discovery against the issuer fails (no explicit
+/// override configured).
+pub async fn init_jwt_validator(
+    config: &Config,
+    transport: &crate::auth::oidc::OidcTransport,
+) -> anyhow::Result<JwtValidator> {
     use anyhow::Context as _;
+
+    use crate::auth::oidc::OidcEndpoint;
 
     let jwks_url = if config.resource_server_jwks_url.trim().is_empty() {
         let issuer = openidconnect::IssuerUrl::new(config.resource_server_issuer.clone())
             .context("invalid REVERIE_RESOURCE_SERVER_ISSUER")?;
-        let http = crate::auth::oidc::http_client()?;
-        let metadata = openidconnect::core::CoreProviderMetadata::discover_async(issuer, &http)
-            .await
-            .map_err(|e| anyhow::anyhow!("resource-server JWKS discovery failed: {e}"))?;
+        transport.check_endpoint(OidcEndpoint::Issuer, issuer.url())?;
+        let metadata = openidconnect::core::CoreProviderMetadata::discover_async(
+            issuer,
+            &transport.oauth_client(),
+        )
+        .await
+        .map_err(|e| anyhow::anyhow!("resource-server JWKS discovery failed: {e}"))?;
         metadata.jwks_uri().url().clone()
     } else {
         url::Url::parse(&config.resource_server_jwks_url)
             .context("invalid REVERIE_RESOURCE_SERVER_JWKS_URL")?
     };
+    transport.check_endpoint(OidcEndpoint::Jwks, &jwks_url)?;
 
     let source = ReverieJwksSource {
-        client: jwks_http_client(JWKS_CONNECT_TIMEOUT, JWKS_REQUEST_TIMEOUT)?,
+        client: transport.raw_client(),
         url: jwks_url,
     };
     let client = JwksClient::builder().build(source);
@@ -334,6 +307,8 @@ pub async fn init_jwt_validator(config: &Config) -> anyhow::Result<JwtValidator>
 
 #[cfg(test)]
 mod tests {
+    use std::time::Duration;
+
     use jsonwebtoken::{Algorithm, EncodingKey, Header};
 
     use super::*;
@@ -350,7 +325,7 @@ mod tests {
         config.resource_server_audience = AUDIENCE.to_string();
         config.resource_server_jwks_url = mock.resource_server_jwks_url();
         config.resource_server_require_at_jwt = require_at_jwt;
-        init_jwt_validator(&config)
+        init_jwt_validator(&config, &crate::auth::oidc::OidcTransport::for_tests())
             .await
             .expect("build validator against the mock JWKS")
     }
@@ -629,7 +604,7 @@ mod tests {
         assert!(validator.validate(&token).await.is_err());
     }
 
-    /// Invariant 3: a `jku`/`x5u` header pointing at an attacker-controlled
+    /// A `jku`/`x5u` header pointing at an attacker-controlled
     /// JWKS (served on a second wiremock, with its own distinct keypair)
     /// must never be followed. The attacker signs with their own key but
     /// reuses the real `kid`, so a validator that (incorrectly) followed
@@ -682,7 +657,7 @@ mod tests {
         config.resource_server_issuer = mock.issuer().to_string();
         config.resource_server_audience = AUDIENCE.to_string();
         config.resource_server_jwks_url = format!("{}/jwks", mock.issuer());
-        let validator = init_jwt_validator(&config)
+        let validator = init_jwt_validator(&config, &crate::auth::oidc::OidcTransport::for_tests())
             .await
             .expect("build validator against the alg-less JWKS");
 
@@ -690,6 +665,77 @@ mod tests {
         let token = mock.sign_access_token(&claims, |_| {});
 
         assert!(validator.validate(&token).await.is_err());
+    }
+
+    /// The resource-server role resolves its JWKS URL through OIDC discovery
+    /// when no explicit override is configured, over the same shared transport
+    /// as interactive login. The mock's discovery document points `jwks_uri` at
+    /// the alg-less OIDC `/jwks`, so reaching validation at all proves the
+    /// fallback resolved and fetched.
+    #[tokio::test]
+    async fn discovery_fallback_resolves_the_jwks_url() {
+        let mock = MockOidcProvider::start("").await;
+        mock.mount_discovery().await;
+
+        let mut config = crate::test_support::test_config();
+        config.resource_server_issuer = mock.issuer().to_string();
+        config.resource_server_audience = AUDIENCE.to_string();
+        config.resource_server_jwks_url = String::new();
+        let validator = init_jwt_validator(&config, &crate::auth::oidc::OidcTransport::for_tests())
+            .await
+            .expect("discovery fallback must resolve the JWKS URL");
+
+        let claims = base_claims(mock.issuer(), "user-1");
+        let token = mock.sign_access_token(&claims, |_| {});
+        // The discovered JWKS omits `alg`, which this validator rejects by
+        // design; the point here is that key resolution reached it.
+        assert!(validator.validate(&token).await.is_err());
+    }
+
+    /// A resource-server issuer must clear the same endpoint policy as the
+    /// interactive one, before any discovery request is made.
+    #[tokio::test]
+    async fn rejects_cleartext_resource_server_issuer() {
+        let mut config = crate::test_support::test_config();
+        config.resource_server_issuer = "http://auth.example.com".to_string();
+        config.resource_server_audience = AUDIENCE.to_string();
+        config.resource_server_jwks_url = String::new();
+
+        let transport =
+            crate::auth::oidc::OidcTransport::new().expect("build production-policy transport");
+        // `JwtValidator` is deliberately not `Debug` (it holds the JWKS
+        // client), so match rather than `expect_err`.
+        let err = match init_jwt_validator(&config, &transport).await {
+            Ok(_) => panic!("a cleartext resource-server issuer must be rejected"),
+            Err(e) => e,
+        };
+        assert!(
+            err.to_string().contains("OIDC issuer URL"),
+            "expected the issuer scheme rejection; got: {err}"
+        );
+    }
+
+    /// An explicit JWKS override is operator-supplied and gets the same
+    /// treatment as a discovered one.
+    #[tokio::test]
+    async fn rejects_cleartext_jwks_override() {
+        let mut config = crate::test_support::test_config();
+        config.resource_server_issuer = "https://auth.example.com".to_string();
+        config.resource_server_audience = AUDIENCE.to_string();
+        config.resource_server_jwks_url = "http://auth.example.com/jwks".to_string();
+
+        let transport =
+            crate::auth::oidc::OidcTransport::new().expect("build production-policy transport");
+        // `JwtValidator` is deliberately not `Debug` (it holds the JWKS
+        // client), so match rather than `expect_err`.
+        let err = match init_jwt_validator(&config, &transport).await {
+            Ok(_) => panic!("a cleartext JWKS override must be rejected"),
+            Err(e) => e,
+        };
+        assert!(
+            err.to_string().contains("OIDC JWKS endpoint"),
+            "expected the JWKS scheme rejection; got: {err}"
+        );
     }
 
     #[tokio::test]
@@ -707,8 +753,11 @@ mod tests {
             .await;
 
         let source = ReverieJwksSource {
-            client: jwks_http_client(Duration::from_millis(250), Duration::from_millis(250))
-                .expect("build JWKS test client"),
+            client: crate::auth::oidc::OidcTransport::for_tests_with_timeouts(
+                Duration::from_millis(250),
+                Duration::from_millis(250),
+            )
+            .raw_client(),
             url: url::Url::parse(&format!("{}/jwks", server.uri())).expect("mock JWKS url parses"),
         };
 
@@ -744,8 +793,7 @@ mod tests {
             .await;
 
         let source = ReverieJwksSource {
-            client: jwks_http_client(JWKS_CONNECT_TIMEOUT, JWKS_REQUEST_TIMEOUT)
-                .expect("build JWKS test client"),
+            client: crate::auth::oidc::OidcTransport::for_tests().raw_client(),
             url: url::Url::parse(&format!("{}/jwks", redirector.uri()))
                 .expect("mock JWKS url parses"),
         };

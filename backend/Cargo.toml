@@ -53,7 +53,20 @@ image = { version = "0.25.10", default-features = false, features = ["jpeg", "pn
 jsonwebtoken = { version = "10.4", features = ["rust_crypto"] }
 jwks_client_rs = { version = "0.6", default-features = false, features = ["rustls", "rust_crypto"] }
 notify = "8.2.0"
-openidconnect = { version = "4.0.1", features = ["reqwest"] }
+# Upstream-maintained adapter presenting a reqwest 0.13 client through oauth2's
+# `AsyncHttpClient` trait. It exists because openidconnect's bundled transport
+# (below) pins reqwest 0.12, which would otherwise build a second HTTP stack,
+# with its own TLS configuration, into every binary. Exact-pinned: the crate is
+# pre-release, an alpha bump may change request/response conversion, and this is
+# Tier-2 auth-path code. It enables none of reqwest's features itself; the
+# feature set comes from Reverie's own reqwest dependency through Cargo feature
+# unification.
+oauth2-reqwest = "=0.1.0-alpha.3"
+# `default-features = false` drops the bundled reqwest 0.12 transport (and the
+# `rustls-tls` feature that only configured it) so the adapter above carries
+# discovery, token exchange, and JWKS retrieval over the single reqwest 0.13
+# pool `auth::oidc::OidcTransport` owns.
+openidconnect = { version = "4.0.1", default-features = false }
 quick-xml = "0.41.0"
 rand = "0.10.1"
 regex = "1.12.4"
