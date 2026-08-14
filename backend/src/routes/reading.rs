@@ -1368,10 +1368,12 @@ mod tests {
         );
     }
 
-    // With the precondition satisfied, a body that violates the documented
-    // contract is 422 and stays out of the header's status class.
+    // Body validation short-circuits before the precondition is compared, so
+    // a body-contract failure is 422 whether the tag would have matched or
+    // not. Both tags are asserted to pin that ordering: comparing the tag
+    // first would turn the stale-tag case into a 412.
     #[sqlx::test(migrations = "./migrations")]
-    async fn patch_reading_body_violation_under_matching_if_match_returns_422(pool: PgPool) {
+    async fn patch_reading_body_violation_returns_422_regardless_of_if_match(pool: PgPool) {
         let app_pool = test_support::db::app_pool_for(&pool).await;
         let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
         let (_work, m_id) =
@@ -1384,22 +1386,27 @@ mod tests {
             .get(&format!("/api/v1/books/{m_id}/reading"))
             .add_header(auth(&basic).0.clone(), auth(&basic).1.clone())
             .await;
-        let etag = etag_value(initial.headers());
+        let matching = etag_value(initial.headers());
 
-        let r = server
-            .patch(&format!("/api/v1/books/{m_id}/reading"))
-            .add_header(auth(&basic).0, auth(&basic).1)
-            .add_header(
-                axum::http::header::IF_MATCH,
-                HeaderValue::from_str(&etag).unwrap(),
-            )
-            .json(&json!({"rating": 9}))
-            .await;
-        assert_eq!(
-            r.status_code(),
-            StatusCode::UNPROCESSABLE_ENTITY,
-            "body: {}",
-            r.text()
-        );
+        for (label, if_match) in [
+            ("matching tag", matching.as_str()),
+            ("valid tag that cannot match", "\"stale\""),
+        ] {
+            let r = server
+                .patch(&format!("/api/v1/books/{m_id}/reading"))
+                .add_header(auth(&basic).0, auth(&basic).1)
+                .add_header(
+                    axum::http::header::IF_MATCH,
+                    HeaderValue::from_str(if_match).unwrap(),
+                )
+                .json(&json!({"rating": 9}))
+                .await;
+            assert_eq!(
+                r.status_code(),
+                StatusCode::UNPROCESSABLE_ENTITY,
+                "{label}: body: {}",
+                r.text()
+            );
+        }
     }
 }

@@ -7760,11 +7760,12 @@ mod tests {
         test_support::assert_problem(&r, problems::MALFORMED_HEADER, StatusCode::BAD_REQUEST);
     }
 
-    // The complement: with the precondition satisfied, a body that violates
-    // the documented contract is 422 and stays out of the header's status
-    // class.
+    // Body validation short-circuits before the precondition is compared, so
+    // a body-contract failure is 422 whether the tag would have matched or
+    // not. Both tags are asserted to pin that ordering: comparing the tag
+    // first would turn the stale-tag case into a 412.
     #[sqlx::test(migrations = "./migrations")]
-    async fn patch_metadata_body_violation_under_matching_if_match_returns_422(pool: sqlx::PgPool) {
+    async fn patch_metadata_body_violation_returns_422_regardless_of_if_match(pool: sqlx::PgPool) {
         let app_pool = test_support::db::app_pool_for(&pool).await;
         let ing_pool = test_support::db::ingestion_pool_for(&pool).await;
         let (_admin_id, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
@@ -7777,22 +7778,27 @@ mod tests {
             .get(&format!("/api/v1/books/{m_id}/metadata"))
             .add_header(AUTHORIZATION, basic.clone())
             .await;
-        let etag = etag_value(initial.headers());
+        let matching = etag_value(initial.headers());
 
-        let r = server
-            .patch(&format!("/api/v1/books/{m_id}/metadata"))
-            .add_header(AUTHORIZATION, basic)
-            .add_header(
-                axum::http::header::IF_MATCH,
-                axum::http::HeaderValue::from_str(&etag).unwrap(),
-            )
-            .json(&serde_json::json!({}))
-            .await;
-        assert_eq!(
-            r.status_code(),
-            StatusCode::UNPROCESSABLE_ENTITY,
-            "body: {}",
-            r.text()
-        );
+        for (label, if_match) in [
+            ("matching tag", matching.as_str()),
+            ("valid tag that cannot match", "\"stale\""),
+        ] {
+            let r = server
+                .patch(&format!("/api/v1/books/{m_id}/metadata"))
+                .add_header(AUTHORIZATION, basic.clone())
+                .add_header(
+                    axum::http::header::IF_MATCH,
+                    axum::http::HeaderValue::from_str(if_match).unwrap(),
+                )
+                .json(&serde_json::json!({}))
+                .await;
+            assert_eq!(
+                r.status_code(),
+                StatusCode::UNPROCESSABLE_ENTITY,
+                "{label}: body: {}",
+                r.text()
+            );
+        }
     }
 }
