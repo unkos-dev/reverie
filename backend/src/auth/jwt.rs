@@ -274,22 +274,34 @@ pub async fn init_jwt_validator(
 
     use crate::auth::oidc::OidcEndpoint;
 
-    let jwks_url = if config.resource_server_jwks_url.trim().is_empty() {
+    let (jwks_url, jwks_source) = if config.resource_server_jwks_url.trim().is_empty() {
         let issuer = openidconnect::IssuerUrl::new(config.resource_server_issuer.clone())
             .context("invalid REVERIE_RESOURCE_SERVER_ISSUER")?;
-        transport.check_endpoint(OidcEndpoint::Issuer, issuer.url())?;
+        transport.check_endpoint(
+            OidcEndpoint::Issuer,
+            "REVERIE_RESOURCE_SERVER_ISSUER",
+            issuer.url(),
+        )?;
         let metadata = openidconnect::core::CoreProviderMetadata::discover_async(
             issuer,
             &transport.oauth_client(),
         )
         .await
         .map_err(|e| anyhow::anyhow!("resource-server JWKS discovery failed: {e}"))?;
-        metadata.jwks_uri().url().clone()
+        // Already fetched once inside discover_async; the transport's
+        // https_only is what bounded that request. See `auth::oidc`.
+        (
+            metadata.jwks_uri().url().clone(),
+            "discovery document jwks_uri",
+        )
     } else {
-        url::Url::parse(&config.resource_server_jwks_url)
-            .context("invalid REVERIE_RESOURCE_SERVER_JWKS_URL")?
+        (
+            url::Url::parse(&config.resource_server_jwks_url)
+                .context("invalid REVERIE_RESOURCE_SERVER_JWKS_URL")?,
+            "REVERIE_RESOURCE_SERVER_JWKS_URL",
+        )
     };
-    transport.check_endpoint(OidcEndpoint::Jwks, &jwks_url)?;
+    transport.check_endpoint(OidcEndpoint::Jwks, jwks_source, &jwks_url)?;
 
     let source = ReverieJwksSource {
         client: transport.raw_client(),
@@ -604,14 +616,14 @@ mod tests {
         assert!(validator.validate(&token).await.is_err());
     }
 
-    /// A `jku`/`x5u` header pointing at an attacker-controlled
-    /// JWKS (served on a second wiremock, with its own distinct keypair)
-    /// must never be followed. The attacker signs with their own key but
-    /// reuses the real `kid`, so a validator that (incorrectly) followed
-    /// `jku` would resolve the attacker's key and the signature would
-    /// verify; because [`ReverieJwksSource`] fetches only from the
-    /// configured URL, the wrapper instead resolves the REAL key for that
-    /// `kid` and signature verification correctly fails.
+    // A `jku`/`x5u` header pointing at an attacker-controlled
+    // JWKS (served on a second wiremock, with its own distinct keypair)
+    // must never be followed. The attacker signs with their own key but
+    // reuses the real `kid`, so a validator that (incorrectly) followed
+    // `jku` would resolve the attacker's key and the signature would
+    // verify; because ReverieJwksSource fetches only from the
+    // configured URL, the wrapper instead resolves the REAL key for that
+    // `kid` and signature verification correctly fails.
     #[tokio::test]
     async fn never_follows_jku_x5u() {
         let mock = MockOidcProvider::start("").await;
@@ -667,11 +679,11 @@ mod tests {
         assert!(validator.validate(&token).await.is_err());
     }
 
-    /// The resource-server role resolves its JWKS URL through OIDC discovery
-    /// when no explicit override is configured, over the same shared transport
-    /// as interactive login. The mock's discovery document points `jwks_uri` at
-    /// the alg-less OIDC `/jwks`, so reaching validation at all proves the
-    /// fallback resolved and fetched.
+    // The resource-server role resolves its JWKS URL through OIDC discovery
+    // when no explicit override is configured, over the same shared transport
+    // as interactive login. The mock's discovery document points `jwks_uri` at
+    // the alg-less OIDC `/jwks`, so reaching validation at all proves the
+    // fallback resolved and fetched.
     #[tokio::test]
     async fn discovery_fallback_resolves_the_jwks_url() {
         let mock = MockOidcProvider::start("").await;
@@ -692,8 +704,8 @@ mod tests {
         assert!(validator.validate(&token).await.is_err());
     }
 
-    /// A resource-server issuer must clear the same endpoint policy as the
-    /// interactive one, before any discovery request is made.
+    // A resource-server issuer must clear the same endpoint policy as the
+    // interactive one, before any discovery request is made.
     #[tokio::test]
     async fn rejects_cleartext_resource_server_issuer() {
         let mut config = crate::test_support::test_config();
@@ -703,19 +715,19 @@ mod tests {
 
         let transport =
             crate::auth::oidc::OidcTransport::new().expect("build production-policy transport");
-        // `JwtValidator` is deliberately not `Debug` (it holds the JWKS
-        // client), so match rather than `expect_err`.
+        // `JwtValidator` does not implement `Debug`, so `expect_err` is
+        // unavailable.
         let Err(err) = init_jwt_validator(&config, &transport).await else {
             panic!("a cleartext resource-server issuer must be rejected")
         };
         assert!(
-            err.to_string().contains("OIDC issuer URL"),
-            "expected the issuer scheme rejection; got: {err}"
+            err.to_string().contains("REVERIE_RESOURCE_SERVER_ISSUER"),
+            "the rejection must name the setting the operator can change; got: {err}"
         );
     }
 
-    /// An explicit JWKS override is operator-supplied and gets the same
-    /// treatment as a discovered one.
+    // An explicit JWKS override is operator-supplied and gets the same
+    // treatment as a discovered one.
     #[tokio::test]
     async fn rejects_cleartext_jwks_override() {
         let mut config = crate::test_support::test_config();
@@ -725,14 +737,14 @@ mod tests {
 
         let transport =
             crate::auth::oidc::OidcTransport::new().expect("build production-policy transport");
-        // `JwtValidator` is deliberately not `Debug` (it holds the JWKS
-        // client), so match rather than `expect_err`.
+        // `JwtValidator` does not implement `Debug`, so `expect_err` is
+        // unavailable.
         let Err(err) = init_jwt_validator(&config, &transport).await else {
             panic!("a cleartext JWKS override must be rejected")
         };
         assert!(
-            err.to_string().contains("OIDC JWKS endpoint"),
-            "expected the JWKS scheme rejection; got: {err}"
+            err.to_string().contains("REVERIE_RESOURCE_SERVER_JWKS_URL"),
+            "the rejection must name the setting the operator can change; got: {err}"
         );
     }
 

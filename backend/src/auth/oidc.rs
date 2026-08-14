@@ -10,7 +10,9 @@
 //! what [`crate::state::AppState`] carries.
 //!
 //! ID-token verification and nonce binding happen in the OIDC callback route
-//! handler, not here. This module's responsibility ends at client construction.
+//! handler, not here. What this module owns beyond startup is the transport:
+//! the callback's token exchange and the resource-server JWKS fetches both run
+//! over [`crate::auth::oidc::OidcTransport`].
 //!
 //! # Threat model — issuer trust boundary
 //!
@@ -22,7 +24,7 @@
 //! ID-token forgery. This is an operator-level threat, not a user-level one;
 //! the mitigation is operator key management and issuer selection.
 //!
-//! # Threat model — transport bounds
+//! # Threat model: transport bounds
 //!
 //! Every configured OIDC egress path runs through [`crate::auth::oidc::OidcTransport`]: interactive
 //! discovery, token exchange, and the resource-server JWKS fetch and its
@@ -41,7 +43,7 @@
 //! `client_secret`-bearing request, or the choice of signing keys, to an origin
 //! the operator never configured.
 //!
-//! # Threat model — HTTPS-only endpoints
+//! # Threat model: HTTPS-only endpoints
 //!
 //! OIDC Discovery requires an HTTPS issuer with no query or fragment. Reverie
 //! extends that to every endpoint it will actually call: discovered
@@ -103,18 +105,6 @@ pub enum OidcEndpoint {
     Jwks,
 }
 
-impl OidcEndpoint {
-    /// Operator-facing name used in configuration-error messages.
-    const fn label(self) -> &'static str {
-        match self {
-            Self::Issuer => "OIDC issuer URL",
-            Self::Authorization => "OIDC authorization endpoint",
-            Self::Token => "OIDC token endpoint",
-            Self::Jwks => "OIDC JWKS endpoint",
-        }
-    }
-}
-
 /// Which URL schemes an OIDC endpoint may use.
 ///
 /// Only ever [`Self::HttpsOnly`] outside `cfg(test)`. The permissive variant
@@ -139,6 +129,20 @@ impl SchemePolicy {
             Self::HttpsOnly => false,
             #[cfg(test)]
             Self::PermitLoopbackHttp => url.scheme() == "http" && is_loopback(url),
+        }
+    }
+
+    /// Whether the HTTP client itself should refuse non-HTTPS requests.
+    ///
+    /// THREAT: this is the backstop for [`Self::permits`]. Checking URLs at
+    /// startup only holds while every caller remembers to check, and a future
+    /// egress path that forgets would otherwise send a credential in the clear.
+    /// `reqwest`'s own `https_only` makes the transport refuse regardless.
+    const fn requires_https_transport(self) -> bool {
+        match self {
+            Self::HttpsOnly => true,
+            #[cfg(test)]
+            Self::PermitLoopbackHttp => false,
         }
     }
 }
@@ -167,6 +171,22 @@ fn is_loopback(url: &url::Url) -> bool {
 /// discovery and token exchange; [`Self::raw_client`] hands the bare client to
 /// the resource-server JWKS source. They are role-specific views of the same
 /// physical connections, not two clients.
+///
+/// The HTTPS requirement holds at two levels, and both are load-bearing.
+///
+/// [`Self::check_endpoint`] gives an operator a specific startup error naming
+/// the setting or discovery-document field at fault. It runs before the request
+/// for configured issuers, for an explicit JWKS override, and for the
+/// discovered authorization and token endpoints.
+///
+/// THREAT: it cannot cover everything, which is why the client is also built
+/// `https_only`. `openidconnect`'s `discover_async` fetches the JWKS the
+/// discovery document names as part of discovery, before Reverie sees the URL
+/// at all, so for that one request the transport flag is the only thing
+/// standing between a hostile or misconfigured provider and signing keys
+/// fetched over plaintext. The same flag covers any future egress path whose
+/// author forgets to validate. Do not remove it on the grounds that every URL
+/// looks validated.
 #[derive(Clone, Debug)]
 pub struct OidcTransport {
     http: reqwest::Client,
@@ -226,6 +246,7 @@ impl OidcTransport {
             .connect_timeout(connect_timeout)
             .timeout(request_timeout)
             .redirect(reqwest::redirect::Policy::none())
+            .https_only(scheme_policy.requires_https_transport())
             .build()
             .context("failed to build OIDC HTTP client")?;
         Ok(Self {
@@ -249,14 +270,25 @@ impl OidcTransport {
     /// Reject a URL Reverie is about to call as `endpoint` if it violates the
     /// constraints that endpoint kind carries.
     ///
+    /// `source` names where the URL came from, so the error points at the thing
+    /// an operator can change: an environment variable when they configured it,
+    /// or the discovery-document field when the provider supplied it. It is
+    /// kept separate from `endpoint` because provenance and constraints vary
+    /// independently: the interactive and resource-server issuers obey
+    /// identical rules but live in different settings.
+    ///
     /// # Errors
     ///
-    /// Returns an error naming the offending endpoint and constraint, so an
+    /// Returns an error naming `source` and the violated constraint, so an
     /// operator configuration mistake reads as one at startup.
-    pub(crate) fn check_endpoint(&self, endpoint: OidcEndpoint, url: &url::Url) -> Result<()> {
-        let label = endpoint.label();
+    pub(crate) fn check_endpoint(
+        &self,
+        endpoint: OidcEndpoint,
+        source: &'static str,
+        url: &url::Url,
+    ) -> Result<()> {
         if !self.scheme_policy.permits(url) {
-            bail!("{label} must use https, got {}", url.scheme());
+            bail!("{source} must use https, got {}", url.scheme());
         }
         // An issuer is a bare identifier: OIDC Discovery derives the
         // well-known path from it, so a query would be dropped and a fragment
@@ -264,10 +296,10 @@ impl OidcTransport {
         // components the IdP built in, but a fragment is never sent to the
         // server and would silently truncate the URL Reverie thinks it called.
         if endpoint == OidcEndpoint::Issuer && url.query().is_some() {
-            bail!("{label} must not contain a query component");
+            bail!("{source} must not contain a query component");
         }
         if url.fragment().is_some() {
-            bail!("{label} must not contain a fragment");
+            bail!("{source} must not contain a fragment");
         }
         Ok(())
     }
@@ -327,8 +359,14 @@ pub type OidcClient = openidconnect::Client<
 ///
 /// Pairs the discovered client with the transport that produced it, so the
 /// callback's token exchange reuses the same bounded pool instead of building
-/// one per request. Clones are cheap: both fields are `Arc`-backed internally.
-#[derive(Clone, Debug)]
+/// one per request.
+///
+/// Deliberately not `Clone`. [`crate::state::AppState`] holds it behind an
+/// `Arc`, which is what makes state clones cheap; copying the runtime itself
+/// would duplicate the discovered client (`OidcClient` owns its metadata and
+/// key set outright, unlike the `Arc`-backed `reqwest::Client` inside the
+/// transport) and undo the single-runtime ownership this type exists to hold.
+#[derive(Debug)]
 pub struct OidcRuntime {
     client: OidcClient,
     transport: OidcTransport,
@@ -355,23 +393,37 @@ impl OidcRuntime {
 /// Discover the OIDC provider and return a runtime with `redirect_uri` bound.
 ///
 /// Performs an async HTTP GET to `{OIDC_ISSUER_URL}/.well-known/openid-configuration`
-/// over `transport`, parses the provider metadata, checks the endpoints it names
-/// against [`OidcTransport::check_endpoint`], and constructs an [`OidcClient`]
-/// ready for authorization URL generation. Called once at startup; the result
-/// is stored in [`crate::state::AppState`].
-///
-/// Issuer URL and redirect URI are validated before the network call; a
-/// malformed or non-HTTPS URL is an operator configuration error caught at
-/// startup rather than at request time.
+/// over `transport`, parses the provider metadata, checks the endpoints it
+/// names against [`OidcTransport::check_endpoint`], and constructs an
+/// [`OidcClient`] ready for authorization URL generation. Called once at
+/// startup; the result is stored in [`crate::state::AppState`].
 ///
 /// # Threat model
 ///
-/// TLS certificate validation is delegated to the `reqwest` default client
-/// (system certificate roots). The discovery document is parsed by
-/// `openidconnect::CoreProviderMetadata`; malformed documents produce an
-/// error rather than a partially-constructed client. The endpoints it names
-/// are checked before they can be called, so a compromised or misconfigured
-/// provider cannot downgrade the authorization or token request to cleartext.
+/// TLS certificate validation is delegated to the transport's `reqwest` client,
+/// which resolves trust anchors from the platform trust store. The discovery
+/// document is parsed by `openidconnect::CoreProviderMetadata`; malformed
+/// documents produce an error rather than a partially-constructed client.
+///
+/// Validation happens at different points for different URLs, and the
+/// difference matters:
+///
+/// - `OIDC_ISSUER_URL` and `OIDC_REDIRECT_URI` are validated before the network
+///   call, so an operator configuration error fails fast rather than after a
+///   discovery round-trip;
+/// - the discovered authorization and token endpoints are validated here,
+///   before Reverie ever calls them, so a compromised or misconfigured provider
+///   cannot downgrade an authorization or token request to cleartext;
+/// - the discovered JWKS is fetched by `discover_async` itself, as part of
+///   discovery, so the check below runs after that request rather than before
+///   it.
+///
+/// THREAT: that last case is why the transport is built `https_only`. It, not
+/// [`OidcTransport::check_endpoint`], is the control that stops a provider from
+/// naming a cleartext `jwks_uri` and having Reverie fetch signing keys over
+/// plaintext. The check afterwards still rejects the provider, but it cannot
+/// unsend the request. Removing `https_only` reopens that hole even though
+/// every URL here appears to be validated.
 ///
 /// # Errors
 ///
@@ -385,22 +437,34 @@ pub async fn init_oidc_client(config: &Config, transport: &OidcTransport) -> Res
     // would have succeeded.
     let issuer =
         IssuerUrl::new(config.oidc_issuer_url.clone()).context("invalid OIDC_ISSUER_URL")?;
-    transport.check_endpoint(OidcEndpoint::Issuer, issuer.url())?;
+    transport.check_endpoint(OidcEndpoint::Issuer, "OIDC_ISSUER_URL", issuer.url())?;
     let redirect =
         RedirectUrl::new(config.oidc_redirect_uri.clone()).context("invalid OIDC_REDIRECT_URI")?;
 
+    // Fetches the discovery document and, inside the same call, the JWKS it
+    // names. The transport's `https_only` is what bounds that second request;
+    // the checks below run after it.
     let provider_metadata = CoreProviderMetadata::discover_async(issuer, &transport.oauth_client())
         .await
         .map_err(|e| anyhow::anyhow!("OIDC discovery failed: {e}"))?;
 
     transport.check_endpoint(
         OidcEndpoint::Authorization,
+        "discovery document authorization_endpoint",
         provider_metadata.authorization_endpoint().url(),
     )?;
     if let Some(token_endpoint) = provider_metadata.token_endpoint() {
-        transport.check_endpoint(OidcEndpoint::Token, token_endpoint.url())?;
+        transport.check_endpoint(
+            OidcEndpoint::Token,
+            "discovery document token_endpoint",
+            token_endpoint.url(),
+        )?;
     }
-    transport.check_endpoint(OidcEndpoint::Jwks, provider_metadata.jwks_uri().url())?;
+    transport.check_endpoint(
+        OidcEndpoint::Jwks,
+        "discovery document jwks_uri",
+        provider_metadata.jwks_uri().url(),
+    )?;
 
     let client = CoreClient::from_provider_metadata(
         provider_metadata,
@@ -447,14 +511,19 @@ mod tests {
         url::Url::parse(url).expect("test URL parses")
     }
 
-    /// Regression test: the OIDC HTTP client must send a non-empty
-    /// `User-Agent` header. Empty UA is matched by common WAF rules
-    /// (Cloudflare's default scanner-block list includes `http.user_agent
-    /// eq ""`), causing OIDC discovery to 403 at startup behind such a
-    /// WAF. The wiremock matcher returns 200 only on `reverie/<semver>`;
-    /// any other UA — including the empty string `reqwest` sends by
-    /// default when `.user_agent(...)` is not called on the builder —
-    /// falls through to wiremock's default 404 and trips the assert.
+    // Provenance label for the constraint tests below, which assert what is
+    // accepted or rejected rather than how the rejection reads. Tests that do
+    // assert the message pass the real setting name.
+    const SRC: &str = "test source";
+
+    // Regression test: the OIDC HTTP client must send a non-empty
+    // `User-Agent` header. Empty UA is matched by common WAF rules
+    // (Cloudflare's default scanner-block list includes `http.user_agent
+    // eq ""`), causing OIDC discovery to 403 at startup behind such a
+    // WAF. The wiremock matcher returns 200 only on `reverie/<semver>`;
+    // any other UA, including the empty string `reqwest` sends by
+    // default when `.user_agent(...)` is not called on the builder,
+    // falls through to wiremock's default 404 and trips the assert.
     #[tokio::test]
     async fn transport_sends_reverie_user_agent() {
         use wiremock::matchers::{header_regex, method};
@@ -482,9 +551,9 @@ mod tests {
         );
     }
 
-    /// THREAT: a configured endpoint must not be able to steer a
-    /// credential-bearing OIDC request to another origin. The redirect target
-    /// here answers 200, so a followed redirect surfaces as success.
+    // THREAT: a configured endpoint must not be able to steer a
+    // credential-bearing OIDC request to another origin. The redirect target
+    // here answers 200, so a followed redirect surfaces as success.
     #[tokio::test]
     async fn transport_never_follows_redirects() {
         use wiremock::matchers::{method, path};
@@ -522,9 +591,9 @@ mod tests {
         );
     }
 
-    /// THREAT: an `IdP` that hangs rather than refusing must not hold the boot
-    /// loop open. The whole-request timeout is the bound that turns it into a
-    /// fast startup failure.
+    // THREAT: an `IdP` that hangs rather than refusing must not hold the boot
+    // loop open. The whole-request timeout is the bound that turns it into a
+    // fast startup failure.
     #[tokio::test]
     async fn transport_fails_fast_against_hung_endpoint() {
         use std::time::Instant;
@@ -564,11 +633,16 @@ mod tests {
         let transport = https_only();
 
         transport
-            .check_endpoint(OidcEndpoint::Issuer, &parse("https://auth.example.com"))
+            .check_endpoint(
+                OidcEndpoint::Issuer,
+                SRC,
+                &parse("https://auth.example.com"),
+            )
             .expect("a plain HTTPS issuer is valid");
         transport
             .check_endpoint(
                 OidcEndpoint::Issuer,
+                SRC,
                 &parse("https://auth.example.com/realms/reverie"),
             )
             .expect("a path-bearing HTTPS issuer is valid");
@@ -580,21 +654,23 @@ mod tests {
         ] {
             assert!(
                 transport
-                    .check_endpoint(OidcEndpoint::Issuer, &parse(rejected))
+                    .check_endpoint(OidcEndpoint::Issuer, SRC, &parse(rejected))
                     .is_err(),
                 "issuer {rejected} must be rejected"
             );
         }
     }
 
-    /// An operator-selected `IdP` on a private address is a supported deployment;
-    /// only the scheme is constrained. The enrichment SSRF resolver, which
-    /// blocks private addresses outright, is deliberately not applied here.
+    // An operator-selected `IdP` on a private address is a supported
+    // deployment; only the scheme is constrained. The enrichment SSRF
+    // resolver, which blocks private addresses outright, is deliberately not
+    // applied here.
     #[test]
     fn private_address_issuer_is_valid_over_https() {
         https_only()
             .check_endpoint(
                 OidcEndpoint::Issuer,
+                SRC,
                 &parse("https://10.1.2.3:8443/realms/r"),
             )
             .expect("a private-address HTTPS issuer is valid");
@@ -608,6 +684,7 @@ mod tests {
             transport
                 .check_endpoint(
                     endpoint,
+                    SRC,
                     &parse("https://auth.example.com/authorize?tenant=a"),
                 )
                 .expect("a standards-permitted query component is valid");
@@ -618,7 +695,7 @@ mod tests {
             ] {
                 assert!(
                     transport
-                        .check_endpoint(endpoint, &parse(rejected))
+                        .check_endpoint(endpoint, SRC, &parse(rejected))
                         .is_err(),
                     "{endpoint:?} {rejected} must be rejected"
                 );
@@ -626,33 +703,92 @@ mod tests {
         }
     }
 
+    // A fragment is never transmitted to the server, so accepting one on a
+    // JWKS URL would silently drop part of what the operator configured.
     #[test]
-    fn jwks_endpoint_must_be_https() {
+    fn jwks_endpoint_must_be_https_and_keeps_query_but_rejects_fragment() {
         let transport = https_only();
 
         transport
-            .check_endpoint(OidcEndpoint::Jwks, &parse("https://auth.example.com/jwks"))
+            .check_endpoint(
+                OidcEndpoint::Jwks,
+                SRC,
+                &parse("https://auth.example.com/jwks"),
+            )
             .expect("an HTTPS JWKS endpoint is valid");
+        transport
+            .check_endpoint(
+                OidcEndpoint::Jwks,
+                SRC,
+                &parse("https://auth.example.com/jwks?tenant=a"),
+            )
+            .expect("a query-bearing HTTPS JWKS endpoint is valid");
+
+        for rejected in [
+            "http://auth.example.com/jwks",
+            "https://auth.example.com/jwks#frag",
+        ] {
+            assert!(
+                transport
+                    .check_endpoint(OidcEndpoint::Jwks, SRC, &parse(rejected))
+                    .is_err(),
+                "JWKS endpoint {rejected} must be rejected"
+            );
+        }
+    }
+
+    // THREAT: check_endpoint is a startup convenience, not the boundary. The
+    // client itself must refuse cleartext, so an egress path added later that
+    // forgets to validate still cannot put a credential on the wire. The
+    // target here serves a real 200, so a client that sent the request would
+    // succeed.
+    #[tokio::test]
+    async fn production_client_refuses_cleartext_even_without_validation() {
+        use wiremock::matchers::method;
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .respond_with(ResponseTemplate::new(200))
+            .mount(&server)
+            .await;
+
+        let probe = format!("{}/probe", server.uri());
+
+        // Positive control: the same request over the loopback test policy
+        // succeeds, so a failure below is the scheme policy and not an
+        // unreachable server or a malformed URL.
+        let permitted = OidcTransport::for_tests()
+            .raw_client()
+            .get(probe.clone())
+            .send()
+            .await
+            .expect("the loopback test policy must reach the mock");
+        assert_eq!(permitted.status().as_u16(), 200);
+
         assert!(
-            transport
-                .check_endpoint(OidcEndpoint::Jwks, &parse("http://auth.example.com/jwks"))
-                .is_err(),
-            "a cleartext JWKS endpoint must be rejected"
+            https_only().raw_client().get(probe).send().await.is_err(),
+            "the production transport must refuse an http:// URL outright, \
+             not rely on every caller having called check_endpoint first"
         );
     }
 
-    /// The permissive policy exists only so tests can drive the real startup
-    /// seams against a local mock; it must not relax anything else.
+    // The permissive policy exists only so tests can drive the real startup
+    // seams against a local mock; it must not relax anything else.
     #[test]
     fn test_policy_permits_http_but_keeps_structural_constraints() {
         let transport = OidcTransport::for_tests();
 
         transport
-            .check_endpoint(OidcEndpoint::Issuer, &parse("http://127.0.0.1:8080"))
+            .check_endpoint(OidcEndpoint::Issuer, SRC, &parse("http://127.0.0.1:8080"))
             .expect("the test policy tolerates a cleartext mock issuer");
         assert!(
             transport
-                .check_endpoint(OidcEndpoint::Issuer, &parse("http://127.0.0.1:8080?x=1"))
+                .check_endpoint(
+                    OidcEndpoint::Issuer,
+                    SRC,
+                    &parse("http://127.0.0.1:8080?x=1")
+                )
                 .is_err(),
             "the test policy must still reject a query-bearing issuer"
         );
@@ -682,10 +818,9 @@ mod tests {
         );
     }
 
-    /// A cleartext issuer must fail at startup before any network call, not be
-    /// silently accepted the way the ASCII-only configuration check once was.
-    /// The port is closed, so a regression that skipped the scheme check would
-    /// surface as `OIDC discovery failed` instead.
+    // A cleartext issuer must fail at startup before any network call. The
+    // port is closed, so a regression that skipped the scheme check would
+    // surface as `OIDC discovery failed` instead.
     #[tokio::test]
     async fn init_oidc_client_rejects_http_issuer() {
         let config = config_with_overrides(&[("OIDC_ISSUER_URL", "http://127.0.0.1:1")]);
@@ -696,8 +831,8 @@ mod tests {
         let msg = err.to_string();
 
         assert!(
-            msg.contains("OIDC issuer URL"),
-            "expected the issuer scheme rejection; got: {msg}"
+            msg.contains("OIDC_ISSUER_URL"),
+            "the rejection must name the setting the operator can change; got: {msg}"
         );
         assert!(
             !msg.contains("OIDC discovery failed"),
@@ -705,12 +840,12 @@ mod tests {
         );
     }
 
-    /// Regression test for the fail-fast validation order: a malformed
-    /// `OIDC_REDIRECT_URI` must surface before any discovery network call is
-    /// attempted. The issuer points at a closed port, so a regression of the
-    /// validation ordering would surface as `OIDC discovery failed: ...`
-    /// (connection refused) rather than the `invalid OIDC_REDIRECT_URI` we
-    /// expect.
+    // Regression test for the fail-fast validation order: a malformed
+    // `OIDC_REDIRECT_URI` must surface before any discovery network call is
+    // attempted. The issuer points at a closed port, so a regression of the
+    // validation ordering would surface as `OIDC discovery failed: ...`
+    // (connection refused) rather than the `invalid OIDC_REDIRECT_URI` we
+    // expect.
     #[tokio::test]
     async fn init_oidc_client_fails_fast_on_invalid_redirect_uri() {
         let config = config_with_overrides(&[
@@ -733,9 +868,9 @@ mod tests {
         );
     }
 
-    /// The interactive role's discovery runs over the shared transport and
-    /// produces a usable client. Exercises the real startup seam end to end
-    /// against the mock provider's discovery document.
+    // The interactive role's discovery runs over the shared transport and
+    // produces a usable client. Exercises the real startup seam end to end
+    // against the mock provider's discovery document.
     #[tokio::test]
     async fn init_oidc_client_discovers_over_the_shared_transport() {
         let mock = crate::test_support::oidc_mock::MockOidcProvider::start("test").await;
@@ -762,9 +897,9 @@ mod tests {
         );
     }
 
-    /// A provider whose discovery document advertises a cleartext endpoint must
-    /// be rejected before Reverie will send a credential to it, even though the
-    /// issuer itself was HTTPS.
+    // A provider whose discovery document advertises a cleartext endpoint must
+    // be rejected before Reverie will send a credential to it, even though the
+    // issuer itself was HTTPS.
     #[tokio::test]
     async fn init_oidc_client_rejects_cleartext_discovered_endpoint() {
         let mock = crate::test_support::oidc_mock::MockOidcProvider::start("test").await;
@@ -777,8 +912,9 @@ mod tests {
             .expect_err("a cleartext token endpoint must be rejected");
 
         assert!(
-            err.to_string().contains("OIDC token endpoint"),
-            "expected the token-endpoint rejection; got: {err}"
+            err.to_string()
+                .contains("discovery document token_endpoint"),
+            "the rejection must name the discovery field at fault; got: {err}"
         );
     }
 }

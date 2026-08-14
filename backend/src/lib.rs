@@ -314,25 +314,33 @@ pub async fn run() -> anyhow::Result<()> {
     // OIDC is optional: discover the client only when configured.
     // A local-only instance carries no OIDC runtime and the initiate/callback
     // handlers 404. Gate 4 has already guaranteed at least one provider is usable.
-    let oidc = match (config.oidc_configured(), oidc_transport.as_ref()) {
-        (true, Some(transport)) => Some(std::sync::Arc::new(
+    let oidc = if config.oidc_configured() {
+        let transport = oidc_transport
+            .as_ref()
+            .context("OIDC is configured but no OIDC transport was built")?;
+        Some(std::sync::Arc::new(
             auth::oidc::init_oidc_client(&config, transport)
                 .await
                 .map_err(|e| anyhow::anyhow!("failed to initialize OIDC client: {e}"))?,
-        )),
-        _ => None,
+        ))
+    } else {
+        None
     };
 
     // Resource-server JWT validation is likewise optional: a local-only or
     // OIDC-only instance carries no validator, and the extractor's JWT path
     // 401s inertly (see `auth::middleware::verify_bearer`).
-    let jwt_validator = match (config.resource_server_configured(), oidc_transport.as_ref()) {
-        (true, Some(transport)) => Some(std::sync::Arc::new(
+    let jwt_validator = if config.resource_server_configured() {
+        let transport = oidc_transport.as_ref().context(
+            "resource-server JWT validation is configured but no OIDC transport was built",
+        )?;
+        Some(std::sync::Arc::new(
             auth::jwt::init_jwt_validator(&config, transport)
                 .await
                 .map_err(|e| anyhow::anyhow!("failed to initialize JWT validator: {e}"))?,
-        )),
-        _ => None,
+        ))
+    } else {
+        None
     };
 
     let ingestion_pool = db::init_pool(&config.ingestion_database_url, config.db_max_connections)
