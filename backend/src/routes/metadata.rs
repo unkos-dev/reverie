@@ -2068,7 +2068,9 @@ async fn load_manifestation_identifiers(
 ///   when an ISBN/date value fails parsing, when a vocabulary list
 ///   (`genres`/`moods`/`tags`) contains an empty, duplicate, or
 ///   over-length term, or when the operator tries to clear `title`
-///   (canonical title is `NOT NULL` on `works`).
+///   (canonical title is `NOT NULL` on `works`). Reached only once
+///   `If-Match` has matched, so a stale tag yields 412 rather than a
+///   body error.
 /// - [`AppError::MalformedHeader`] when `If-Match` violates the RFC 9110
 ///   §8.8.3 entity-tag grammar, or carries a form this API refuses by
 ///   policy: the `*` wildcard, an entity-tag list, a weak validator, or
@@ -2100,7 +2102,7 @@ async fn load_manifestation_identifiers(
         (status = 412, description = "If-Match does not match the manifestation's current metadata ETag", body = crate::openapi::ProblemDetails,
          headers(("ETag" = String, description = "Current entity-tag, so the caller can resync without a follow-up GET"))),
         (status = 400, description = "If-Match is malformed, or carries a form this API refuses by policy: the * wildcard, an entity-tag list, a weak tag, or a repeated header instance", body = crate::openapi::ProblemDetails),
-        (status = 422, description = "No populated fields, ISBN/date parse failure, or attempt to clear title", body = crate::openapi::ProblemDetails),
+        (status = 422, description = "No populated fields, ISBN/date parse failure, or attempt to clear title. Evaluated only after If-Match has matched, so a stale tag returns 412 instead", body = crate::openapi::ProblemDetails),
         (status = 428, description = "If-Match header absent", body = crate::openapi::ProblemDetails)
     )
 )]
@@ -2128,18 +2130,6 @@ async fn update_book_metadata(
     let work_identifiers = req_fields.work_identifiers.take();
     let manifestation_identifiers = req_fields.manifestation_identifiers.take();
     let fields = req_fields.populated();
-    if fields.is_empty()
-        && contributors.is_none()
-        && genres.is_none()
-        && moods.is_none()
-        && tags.is_none()
-        && work_identifiers.as_ref().is_none_or(BTreeMap::is_empty)
-        && manifestation_identifiers
-            .as_ref()
-            .is_none_or(BTreeMap::is_empty)
-    {
-        return Err(AppError::Validation("no fields".into()));
-    }
 
     let mut tx = db::acquire_with_rls(&state.pool, current_user.user_id)
         .await
@@ -2172,6 +2162,26 @@ async fn update_book_metadata(
     let current_etag = hash_etag(&current)?;
     if !if_match.matches(&current_etag) {
         return Ok(if_match_mismatch(&current_etag));
+    }
+
+    // Semantic body validation runs only once the precondition has held.
+    // RFC 9110 §13.2.1 places precondition evaluation after the normal
+    // request checks (auth, existence) and before the request content is
+    // processed, so a caller holding a stale representation learns that
+    // first and refetches, rather than being sent to fix a body that a
+    // concurrent write may already have made irrelevant. The remaining
+    // per-field rejections below already sat on this side of the check.
+    if fields.is_empty()
+        && contributors.is_none()
+        && genres.is_none()
+        && moods.is_none()
+        && tags.is_none()
+        && work_identifiers.as_ref().is_none_or(BTreeMap::is_empty)
+        && manifestation_identifiers
+            .as_ref()
+            .is_none_or(BTreeMap::is_empty)
+    {
+        return Err(AppError::Validation("no fields".into()));
     }
 
     let mut response_fields: BTreeMap<String, FieldVersionChange> = BTreeMap::new();
@@ -3209,12 +3219,19 @@ mod tests {
             test_support::db::insert_work_and_manifestation(&ing_pool, &marker).await;
 
         let server = test_support::db::server_with_real_pools(&app_pool, &ing_pool);
+        // A matching tag, so the request reaches body validation: the
+        // precondition is evaluated before the content.
+        let initial = server
+            .get(&format!("/api/v1/books/{m_id}/metadata"))
+            .add_header(AUTHORIZATION, basic.clone())
+            .await;
+        let etag = etag_value(initial.headers());
         let response = server
             .patch(&format!("/api/v1/books/{m_id}/metadata"))
             .add_header(AUTHORIZATION, basic)
             .add_header(
                 axum::http::header::IF_MATCH,
-                axum::http::HeaderValue::from_static("\"dummy\""),
+                axum::http::HeaderValue::from_str(&etag).unwrap(),
             )
             .json(&serde_json::json!({"fields": {"title": "Enveloped"}}))
             .await;
@@ -3506,12 +3523,19 @@ mod tests {
             test_support::db::insert_work_and_manifestation(&ing_pool, &marker).await;
 
         let server = test_support::db::server_with_real_pools(&app_pool, &ing_pool);
+        // A matching tag, so the request reaches body validation: the
+        // precondition is evaluated before the content.
+        let initial = server
+            .get(&format!("/api/v1/books/{m_id}/metadata"))
+            .add_header(AUTHORIZATION, basic.clone())
+            .await;
+        let etag = etag_value(initial.headers());
         let response = server
             .patch(&format!("/api/v1/books/{m_id}/metadata"))
             .add_header(AUTHORIZATION, basic)
             .add_header(
                 axum::http::header::IF_MATCH,
-                axum::http::HeaderValue::from_static("\"dummy\""),
+                axum::http::HeaderValue::from_str(&etag).unwrap(),
             )
             .json(&serde_json::json!({}))
             .await;
@@ -7760,12 +7784,14 @@ mod tests {
         test_support::assert_problem(&r, problems::MALFORMED_HEADER, StatusCode::BAD_REQUEST);
     }
 
-    // Body validation short-circuits before the precondition is compared, so
-    // a body-contract failure is 422 whether the tag would have matched or
-    // not. Both tags are asserted to pin that ordering: comparing the tag
-    // first would turn the stale-tag case into a 412.
+    // An accepted tag is compared before the content is processed, so the
+    // same invalid body resolves differently by precondition outcome: the
+    // matching tag reaches body validation and earns 422, while the stale
+    // tag stops at the precondition and earns 412. Evaluating the body
+    // first would collapse both rows to 422 and hide a stale representation
+    // behind a body error.
     #[sqlx::test(migrations = "./migrations")]
-    async fn patch_metadata_body_violation_returns_422_regardless_of_if_match(pool: sqlx::PgPool) {
+    async fn patch_metadata_precondition_is_evaluated_before_the_body(pool: sqlx::PgPool) {
         let app_pool = test_support::db::app_pool_for(&pool).await;
         let ing_pool = test_support::db::ingestion_pool_for(&pool).await;
         let (_admin_id, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
@@ -7780,25 +7806,35 @@ mod tests {
             .await;
         let matching = etag_value(initial.headers());
 
-        for (label, if_match) in [
-            ("matching tag", matching.as_str()),
-            ("valid tag that cannot match", "\"stale\""),
-        ] {
-            let r = server
-                .patch(&format!("/api/v1/books/{m_id}/metadata"))
-                .add_header(AUTHORIZATION, basic.clone())
-                .add_header(
-                    axum::http::header::IF_MATCH,
-                    axum::http::HeaderValue::from_str(if_match).unwrap(),
-                )
-                .json(&serde_json::json!({}))
-                .await;
-            assert_eq!(
-                r.status_code(),
-                StatusCode::UNPROCESSABLE_ENTITY,
-                "{label}: body: {}",
-                r.text()
-            );
-        }
+        let r = server
+            .patch(&format!("/api/v1/books/{m_id}/metadata"))
+            .add_header(AUTHORIZATION, basic.clone())
+            .add_header(
+                axum::http::header::IF_MATCH,
+                axum::http::HeaderValue::from_str(&matching).unwrap(),
+            )
+            .json(&serde_json::json!({}))
+            .await;
+        assert_eq!(
+            r.status_code(),
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "matching tag must reach body validation, body: {}",
+            r.text()
+        );
+
+        let r = server
+            .patch(&format!("/api/v1/books/{m_id}/metadata"))
+            .add_header(AUTHORIZATION, basic)
+            .add_header(
+                axum::http::header::IF_MATCH,
+                axum::http::HeaderValue::from_static("\"stale\""),
+            )
+            .json(&serde_json::json!({}))
+            .await;
+        test_support::assert_problem(
+            &r,
+            problems::IF_MATCH_MISMATCH,
+            StatusCode::PRECONDITION_FAILED,
+        );
     }
 }
