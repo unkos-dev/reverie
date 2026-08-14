@@ -128,6 +128,45 @@ build:
 guards:
     ../scripts/backend-guards.sh
 
+# Needs the Rust toolchain, so it belongs beside clippy rather than in
+# `guards` (that lane runs before rustc exists in CI). Deliberately asserts one
+# owned outcome, not a snapshot of the dependency list: adding or removing an
+# unrelated direct dependency must not fail this, only reintroducing a second
+# HTTP stack on the OIDC path.
+#
+# Reverie talks to an IdP over exactly one reqwest major. openidconnect's
+# default features route through oauth2's bundled transport, which pins reqwest
+# 0.12 alongside the tree's 0.13; the `oauth2-reqwest` adapter replaces it. Two
+# majors means two TLS configurations and two connection pools behind one
+# security boundary, which is what `auth::oidc::OidcTransport` exists to
+# prevent, and a default-feature regression reinstates it silently.
+#
+# Assert one resolved reqwest major on the OIDC egress path.
+[group('rust')]
+dependency-graph:
+    #!/usr/bin/env bash
+    set -ueo pipefail
+    versions="$(cargo tree --locked --workspace --edges normal --prefix none --format '{p}' \
+      | awk '$1 == "reqwest" { print $2 }' | sort -u)"
+    count="$(printf '%s\n' "$versions" | grep -c . || true)"
+    if [ "$count" -ne 1 ]; then
+      echo "expected exactly one resolved reqwest version, found ${count}:" >&2
+      printf '  %s\n' $versions >&2
+      echo "fix: keep openidconnect on default-features = false so oauth2's bundled" >&2
+      echo "     reqwest 0.12 transport stays out of the tree" >&2
+      exit 1
+    fi
+    case "$versions" in
+      v0.13.*) ;;
+      *) echo "resolved reqwest is ${versions}, expected a 0.13 release" >&2; exit 1 ;;
+    esac
+    if ! cargo tree --locked --workspace --edges normal --prefix none --format '{p}' \
+      | grep -q '^oauth2-reqwest '; then
+      echo "oauth2-reqwest is absent: the OIDC path has no reqwest 0.13 adapter" >&2
+      exit 1
+    fi
+    echo "dependency graph: one reqwest (${versions}) via oauth2-reqwest"
+
 # Offline (no database). Mirrors the CI "unused dependencies" job.
 #
 # Fail on unused workspace dependencies.
@@ -152,9 +191,9 @@ lint: clippy doc-lint
 # from the mid-task gate on cost grounds (a full rustdoc pass per check);
 # preflight and CI still run it, so broken links cannot reach a push.
 #
-# Locally-runnable backend gate: format check, clippy, drift.
+# Locally-runnable backend gate: format check, clippy, drift, dependency graph.
 [group('rust')]
-check: fmt-check clippy drift
+check: fmt-check clippy drift dependency-graph
 
 # DB: needs the local dev Postgres up (`just db-up`).
 #

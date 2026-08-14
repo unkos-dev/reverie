@@ -365,6 +365,14 @@ jobs:
       - name: Unused dependencies (cargo-machete)
         run: mise exec github:bnjbvr/cargo-machete -- cargo machete
 
+      # Reads the resolved graph, so it needs rustc but no build artifacts,
+      # which is why it sits here rather than with the grep-based guards that
+      # run before the toolchain step. The assertion lives in the recipe so
+      # this job and a developer's `just rust::check` cannot drift.
+      - name: Dependency graph (single reqwest major)
+        working-directory: ${{ github.workspace }}
+        run: mise exec just -- just rust::dependency-graph
+
       - name: Apply migrations
         run: sqlx migrate run
 

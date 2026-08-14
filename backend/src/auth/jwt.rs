@@ -3,7 +3,7 @@
 //! [`crate::auth::jwt::JwtValidator`] is built at startup
 //! ([`crate::auth::jwt::init_jwt_validator`]) when resource-server config is
 //! present ([`crate::config::Config::resource_server_configured`]). It
-//! validates IdP-issued Bearer access tokens end to end: `iss`/`aud`
+//! validates `IdP`-issued Bearer access tokens end to end: `iss`/`aud`
 //! enforcement, the signing algorithm pinned from the resolved JWK (never
 //! the token header), a JWKS fetched only from the configured URL, and the
 //! `typ` header policy documented on
@@ -705,9 +705,8 @@ mod tests {
             crate::auth::oidc::OidcTransport::new().expect("build production-policy transport");
         // `JwtValidator` is deliberately not `Debug` (it holds the JWKS
         // client), so match rather than `expect_err`.
-        let err = match init_jwt_validator(&config, &transport).await {
-            Ok(_) => panic!("a cleartext resource-server issuer must be rejected"),
-            Err(e) => e,
+        let Err(err) = init_jwt_validator(&config, &transport).await else {
+            panic!("a cleartext resource-server issuer must be rejected")
         };
         assert!(
             err.to_string().contains("OIDC issuer URL"),
@@ -728,9 +727,8 @@ mod tests {
             crate::auth::oidc::OidcTransport::new().expect("build production-policy transport");
         // `JwtValidator` is deliberately not `Debug` (it holds the JWKS
         // client), so match rather than `expect_err`.
-        let err = match init_jwt_validator(&config, &transport).await {
-            Ok(_) => panic!("a cleartext JWKS override must be rejected"),
-            Err(e) => e,
+        let Err(err) = init_jwt_validator(&config, &transport).await else {
+            panic!("a cleartext JWKS override must be rejected")
         };
         assert!(
             err.to_string().contains("OIDC JWKS endpoint"),

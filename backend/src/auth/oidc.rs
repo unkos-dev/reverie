@@ -48,11 +48,11 @@
 //! authorization and token endpoints keep their standards-permitted query
 //! components but must be HTTPS and fragment-free, and JWKS endpoints
 //! (discovered or explicitly overridden) must be HTTPS. There is no production
-//! HTTP escape hatch; a cleartext IdP would expose the authorization code, the
+//! HTTP escape hatch; a cleartext `IdP` would expose the authorization code, the
 //! `client_secret`, and the signing keys to any observer on the path.
 //! Operator-selected private addresses remain valid over HTTPS, so the
 //! enrichment SSRF resolver is deliberately not applied here: it blocks exactly
-//! the private IdP deployments this path is expected to serve.
+//! the private `IdP` deployments this path is expected to serve.
 //!
 //! # Threat model — WAF reachability
 //!
@@ -63,7 +63,7 @@
 //! requests with an empty `User-Agent`. An empty header produces a
 //! startup-time `403 Forbidden` on OIDC discovery and crashes the boot
 //! loop, presenting as an availability failure rather than a security
-//! one. The fixed UA also identifies the client to upstream IdP
+//! one. The fixed UA also identifies the client to upstream `IdP`
 //! operators so misbehaviour traces to a known agent. See
 //! [`adr/2026-05-18-outbound-http-user-agent.md`](../../../../adr/2026-05-18-outbound-http-user-agent.md).
 
@@ -89,7 +89,7 @@ const OIDC_REQUEST_TIMEOUT: Duration = Duration::from_secs(10);
 ///
 /// The kinds differ only in what the standards permit beyond HTTPS: an issuer
 /// is a bare identifier, while authorization and token endpoints may legitimately
-/// carry query components an IdP built into its URLs.
+/// carry query components an `IdP` built into its URLs.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum OidcEndpoint {
     /// The configured issuer. HTTPS, no query, no fragment (OIDC Discovery).
@@ -336,18 +336,18 @@ pub struct OidcRuntime {
 
 impl OidcRuntime {
     /// Pair a discovered client with the transport that produced it.
-    pub(crate) fn new(client: OidcClient, transport: OidcTransport) -> Self {
+    pub(crate) const fn new(client: OidcClient, transport: OidcTransport) -> Self {
         Self { client, transport }
     }
 
     /// The discovered client, for authorization-URL generation, code exchange,
     /// and ID-token verification.
-    pub fn client(&self) -> &OidcClient {
+    pub const fn client(&self) -> &OidcClient {
         &self.client
     }
 
     /// The bounded transport backing this runtime.
-    pub(crate) fn transport(&self) -> &OidcTransport {
+    pub(crate) const fn transport(&self) -> &OidcTransport {
         &self.transport
     }
 }
@@ -522,7 +522,7 @@ mod tests {
         );
     }
 
-    /// THREAT: an IdP that hangs rather than refusing must not hold the boot
+    /// THREAT: an `IdP` that hangs rather than refusing must not hold the boot
     /// loop open. The whole-request timeout is the bound that turns it into a
     /// fast startup failure.
     #[tokio::test]
@@ -587,7 +587,7 @@ mod tests {
         }
     }
 
-    /// An operator-selected IdP on a private address is a supported deployment;
+    /// An operator-selected `IdP` on a private address is a supported deployment;
     /// only the scheme is constrained. The enrichment SSRF resolver, which
     /// blocks private addresses outright, is deliberately not applied here.
     #[test]

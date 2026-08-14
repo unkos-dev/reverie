@@ -139,27 +139,28 @@ log path to replay afterward.
 
 ## rust
 
-| Recipe                    | Purpose                                                                           |
-| ------------------------- | --------------------------------------------------------------------------------- |
-| `just rust::build`        | Compile the workspace.                                                            |
-| `just rust::check`        | Locally-runnable backend gate: format check, clippy, drift.                       |
-| `just rust::clippy`       | Clippy across the whole workspace, all targets, warnings denied.                  |
-| `just rust::cov`          | DB: full test suite under coverage instrumentation.                               |
-| `just rust::deny`         | Check advisories, license, bans, and source policy.                               |
-| `just rust::dev`          | Run the backend API server in the foreground (Ctrl-C stops it).                   |
-| `just rust::dev-start`    | Start the backend API server in the background; logs to backend/.dev-server.log.  |
-| `just rust::dev-status`   | Report whether the backend API server is up.                                      |
-| `just rust::dev-stop`     | Stop the background backend API server started by dev-start.                      |
-| `just rust::doc-lint`     | Reject broken intra-doc links in the public docstrings.                           |
-| `just rust::doctests`     | DB: doctests across the workspace.                                                |
-| `just rust::drift`        | Generated-artifact drift guard (OpenAPI spec + config reference + config schema). |
-| `just rust::fmt`          | Format the workspace in place. WRITES; never a dependency of check/lint.          |
-| `just rust::fmt-check`    | Verify workspace formatting without writing (the pre-push gate form).             |
-| `just rust::guards`       | Backend static allowlist and prose guards.                                        |
-| `just rust::lint`         | Backend lint surface: clippy + doc-lint.                                          |
-| `just rust::machete`      | Fail on unused workspace dependencies.                                            |
-| `just rust::migrate`      | Apply pending database migrations against the resolved dev DSN, then exit.        |
-| `just rust::regen`        | Regenerate the OpenAPI spec, config reference, and config schema in place.        |
-| `just rust::sqlx-check`   | DB: sqlx query-cache freshness against the live schema.                           |
-| `just rust::sqlx-prepare` | DB: regenerate the sqlx offline query cache from the live schema.                 |
-| `just rust::test <args>`  | DB: full test suite, fast local loop (no coverage; see `cov`).                    |
+| Recipe                        | Purpose                                                                           |
+| ----------------------------- | --------------------------------------------------------------------------------- |
+| `just rust::build`            | Compile the workspace.                                                            |
+| `just rust::check`            | Locally-runnable backend gate: format check, clippy, drift, dependency graph.     |
+| `just rust::clippy`           | Clippy across the whole workspace, all targets, warnings denied.                  |
+| `just rust::cov`              | DB: full test suite under coverage instrumentation.                               |
+| `just rust::deny`             | Check advisories, license, bans, and source policy.                               |
+| `just rust::dependency-graph` | Assert one resolved reqwest major on the OIDC egress path.                        |
+| `just rust::dev`              | Run the backend API server in the foreground (Ctrl-C stops it).                   |
+| `just rust::dev-start`        | Start the backend API server in the background; logs to backend/.dev-server.log.  |
+| `just rust::dev-status`       | Report whether the backend API server is up.                                      |
+| `just rust::dev-stop`         | Stop the background backend API server started by dev-start.                      |
+| `just rust::doc-lint`         | Reject broken intra-doc links in the public docstrings.                           |
+| `just rust::doctests`         | DB: doctests across the workspace.                                                |
+| `just rust::drift`            | Generated-artifact drift guard (OpenAPI spec + config reference + config schema). |
+| `just rust::fmt`              | Format the workspace in place. WRITES; never a dependency of check/lint.          |
+| `just rust::fmt-check`        | Verify workspace formatting without writing (the pre-push gate form).             |
+| `just rust::guards`           | Backend static allowlist and prose guards.                                        |
+| `just rust::lint`             | Backend lint surface: clippy + doc-lint.                                          |
+| `just rust::machete`          | Fail on unused workspace dependencies.                                            |
+| `just rust::migrate`          | Apply pending database migrations against the resolved dev DSN, then exit.        |
+| `just rust::regen`            | Regenerate the OpenAPI spec, config reference, and config schema in place.        |
+| `just rust::sqlx-check`       | DB: sqlx query-cache freshness against the live schema.                           |
+| `just rust::sqlx-prepare`     | DB: regenerate the sqlx offline query cache from the live schema.                 |
+| `just rust::test <args>`      | DB: full test suite, fast local loop (no coverage; see `cov`).                    |

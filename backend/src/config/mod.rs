@@ -218,6 +218,12 @@ pub struct Config {
     /// webpki/Mozilla root store (`reqwest` is built with the
     /// `rustls` feature, which uses `webpki-roots`, not OS system
     /// roots).
+    ///
+    /// Must use `https` and carry no query or fragment, as OIDC Discovery
+    /// requires. The authorization, token, and JWKS endpoints the discovery
+    /// document names must use `https` as well. Startup fails on any
+    /// violation. An issuer on a private network address is supported when it
+    /// is served over `https`.
     pub oidc_issuer_url: String,
     /// OIDC client id (`OIDC_CLIENT_ID`, required when OIDC is configured).
     pub oidc_client_id: String,
@@ -261,7 +267,9 @@ pub struct Config {
     /// never from a claim inside an incoming token. An operator pointing
     /// this at a malicious or compromised issuer can induce Reverie to
     /// trust attacker-controlled JWKS, enabling access-token forgery (the
-    /// same operator-level threat documented on `oidc_issuer_url`).
+    /// same operator-level threat documented on `oidc_issuer_url`). It carries
+    /// the same transport constraints: `https`, no query, no fragment, checked
+    /// before the discovery request is made.
     pub resource_server_issuer: String,
     /// Expected `aud` claim for resource-server JWT validation
     /// (`REVERIE_RESOURCE_SERVER_AUDIENCE`). Required together with
@@ -289,9 +297,13 @@ pub struct Config {
     /// process lifetime and is never read from an incoming token (RFC 8725
     /// §3.9/§3.10: `jku`/`x5u` header values are never followed).
     ///
-    /// Fetches against the resolved endpoint carry explicit connect and
-    /// request timeouts and never follow redirects (the configured URL
-    /// must be the final endpoint); resolved keys are cached in-process. Missing
+    /// The resolved endpoint must use `https`, whether it came from this
+    /// override or from discovery; startup fails otherwise.
+    ///
+    /// Fetches against it run over the shared OIDC transport, so they carry
+    /// explicit connect and request timeouts and never follow redirects (the
+    /// configured URL must be the final endpoint); resolved keys are cached
+    /// in-process. Missing
     /// keys are NOT negatively cached: each Bearer credential naming an
     /// unknown `kid` triggers a fresh JWKS fetch, so a flood of such
     /// credentials drives outbound fetches to the `IdP` roughly 1:1. On an
