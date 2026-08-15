@@ -125,7 +125,7 @@ commit-msg:
   jobs:
     - name: commitlint
       run: npx --no-install commitlint --edit {1}
-    # Merge commits are exempt, matching scripts/dco-check.sh in CI.
+    # Merge commits certify no new work of their own, so they are exempt.
     - name: dco
       run: 'head -n1 {1} | grep -q "^Merge " || grep -Eq "^Signed-off-by: .+ <.+@.+>" {1}'
       fail_text: "Missing Signed-off-by trailer. Commit with git commit -s (see CONTRIBUTING.md, Developer Certificate of Origin)."
