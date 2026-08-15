@@ -921,27 +921,6 @@ jobs:
             --error \
             backend/src frontend/src
 
-  # DCO gate: every PR commit needs a Signed-off-by trailer certifying the
-  # developercertificate.org attestation (see CONTRIBUTING.md). Runs on
-  # pull_request and merge_group so it can be a required check without
-  # stalling the merge queue; main pushes skip it because the trailer was
-  # already enforced pre-merge.
-  dco:
-    name: DCO
-    if: github.event_name == 'pull_request' || github.event_name == 'merge_group'
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with:
-          persist-credentials: false
-          fetch-depth: 0
-      - name: Check Signed-off-by trailers
-        env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha }}
-          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.event.merge_group.head_sha }}
-        run: ./scripts/dco-check.sh "$BASE_SHA" "$HEAD_SHA"
-
   # Server-side lint gate for shell, the Dockerfile, spelling, YAML,
   # Markdown, prose, and formatting. The pre-commit hook runs these locally
   # but is bypassable and never runs on fork PRs, so this job is the
@@ -990,9 +969,6 @@ jobs:
 
       - name: Shell lint (shellcheck)
         run: just infra::shellcheck
-
-      - name: DCO gate self-test
-        run: just infra::dco-selftest
 
       - name: Plan-reference gate self-test
         run: just infra::no-plan-refs-selftest

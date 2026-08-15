@@ -15,7 +15,7 @@ These are absolute invariants for the Reverie repository.
 
 - **Branching:** Branch from `main`. Branch names MUST start with a commitlint-accepted type as prefix (`build/`, `chore/`, `ci/`, `docs/`, `feat/`, `fix/`, `perf/`, `refactor/`, `revert/`, `style/`, `test/`), matching the change type. Do not use agent-specific prefixes. Verify the branch name before the first push.
 - **Commits and PR titles:** Every commit subject and pull request title MUST follow Conventional Commits (`<type>(<scope>): <description>`). Pull request titles become squash-merge subjects. Explain the _why_, not the _what_.
-- **Sign-off:** Every commit MUST carry a `Signed-off-by` trailer, so commit with `git commit -s`. The `commit-msg` hook rejects an unsigned commit locally and CI rejects it on the pull request. `.github/CONTRIBUTING.md` carries the Developer Certificate of Origin text and the rest of the contributor process.
+- **Sign-off:** Every commit MUST carry a `Signed-off-by` trailer, so commit with `git commit -s`. The `commit-msg` hook rejects an unsigned commit locally, and the DCO app fails its required check on the pull request. `.github/CONTRIBUTING.md` carries the Developer Certificate of Origin text and the rest of the contributor process.
 - **Linear Integration:** Treat work as Linear-tracked only when the maintainer says so or the task or current branch already identifies an `UNK-XXX` issue. For tracked work, include `Closes UNK-XXX` in the PR body so the active issue does not remain open. For untracked work, do not search for or create a Linear issue and do not add a synthetic closure reference.
   </git_and_linear_workflow>
 
