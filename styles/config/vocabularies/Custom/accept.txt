@@ -10,7 +10,7 @@
 # it still warns and nudges toward these forms.
 # line; lines starting with '#' are comments. Matching is case-insensitive for
 # no English dictionary carries. Keep alphabetical.
-# Reverie vocabulary accept-list (Vale Vocab). One case-insensitive regex per
+# Vocabulary accept-list (Vale Vocab). One case-insensitive regex per
 # the spelling check, and a base term also covers its possessive (Greptile
 # Vale.Spelling entirely. Spelling is Australian English (en_AU); genuine
 accreted

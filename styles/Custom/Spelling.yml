@@ -1,0 +1,5 @@
+extends: spelling
+message: "Did you mean '%s'? Spelling is Australian English; add deliberate terms to the vocabulary accept-list."
+level: warning
+dictionaries:
+  - en_AU
