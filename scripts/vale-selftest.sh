@@ -15,8 +15,6 @@ set -euo pipefail
 cd "$(git rev-parse --show-toplevel)"
 
 fail=0
-# U+2014 (em dash) built from its UTF-8 bytes, so this file stays ASCII.
-emdash=$(printf '\342\200\224')
 
 # alerts_for <text> -> sorted, unique list of fired ReverieProse check names.
 # --no-exit keeps Vale at exit 0 so a `warning`-level alert still yields JSON.
@@ -56,7 +54,6 @@ expect_fires ThroatClearing "It's worth noting that the parser reads the OPF pac
 expect_fires BusinessJargon "Let's circle back to the import pipeline tomorrow."
 expect_fires Adverbs "The cache is fundamentally a key-value store."
 expect_fires VagueDeclaratives "The implications are significant for the schema."
-expect_fires EmDash "The reader loads the spine ${emdash} then renders the page."
 expect_fires WhStarter "The store is durable. What makes this work is the log."
 
 # Clean technical prose must trip nothing.
@@ -97,26 +94,22 @@ expect_fires Spelling "The grid uses virtualized scrolling."
 # Edge cases that lock in deliberate design choices.
 # WhStarter is paragraph-scoped, so a Wh- word in a heading is exempt.
 expect_silent "# How the reader caches pages"
-# Vale lints prose only: an em dash inside an inline code span is ignored.
-expect_silent "The \`a ${emdash} b\` operator is code, not prose."
+# Vale lints prose only: an American spelling inside an inline code span is
+# ignored, so an identifier is never held to the en_AU house spelling.
+expect_silent "The \`behavior\` identifier is code, not prose."
 # Near miss: "deep" without "dive" must not trip BusinessJargon.
 expect_silent "We dug deep into the schema before the migration."
 
-# Em-dash contract: a bare token gates every em dash in prose, so Markdown
-# formatting around the dash cannot slip the gate. Inline code is outside
-# Vale's prose scope.
-# Markers are recast at source, not pattern-exempted, so a table-cell em dash
-# fires like any other prose.
-# Formatting around the dash is no bypass: an emphasised em dash still fires.
-expect_fires EmDash "This decision **${emdash}** owns the contract."
-# A table-cell em dash fires too: table cells are not exempt (markers recast).
-expect_fires EmDash "$(printf -- '| Head |\n| --- |\n| %s |\n' "$emdash")"
-# EmDash is advisory, like Spelling: it surfaces at `warning`, so a finding must
-# not exit non-zero and block the commit or CI gate on its own.
-if printf '%s\n' "The spine loads ${emdash} then renders." | vale --output=line --ext=.md >/dev/null 2>&1; then
-  echo "ok   EmDash warning is advisory (exit 0)"
+# Formatting is no bypass: an emphasised token still reaches the prose scope.
+expect_fires Spelling "This decision **behavior** owns the contract."
+# A table-cell finding fires too: table cells are not exempt.
+expect_fires Spelling "$(printf -- '| Head |\n| --- |\n| behavior |\n')"
+# Spelling is advisory: it surfaces at `warning`, so a finding must not exit
+# non-zero and block the commit or CI gate on its own.
+if printf '%s\n' "The spine behavior renders." | vale --output=line --ext=.md >/dev/null 2>&1; then
+  echo "ok   Spelling warning is advisory (exit 0)"
 else
-  echo "FAIL EmDash must warn without failing the gate" >&2
+  echo "FAIL Spelling must warn without failing the gate" >&2
   fail=1
 fi
 
@@ -155,23 +148,23 @@ else
 fi
 
 # Frontmatter scope on real files uses the same parser as vale-lint.sh. Both the
-# ADR consulted field and a prose description must reject the token.
-printf -- '---\nconsulted: "%s"\n---\n\nClean body.\n' "$emdash" >"$scope_root/docs/src/fm-consulted.md"
-printf -- '---\ndescription: Shell organised %s the rail.\n---\n\nClean body.\n' "$emdash" >"$scope_root/docs/src/fm-desc.md"
+# ADR consulted field and a prose description must reach the prose scope.
+printf -- '---\nconsulted: "behavior"\n---\n\nClean body.\n' >"$scope_root/docs/src/fm-consulted.md"
+printf -- '---\ndescription: The behavior organised the rail.\n---\n\nClean body.\n' >"$scope_root/docs/src/fm-desc.md"
 
 got=$(checks_for docs/src/fm-consulted.md)
-if [ "$got" = "ReverieProse.EmDash" ]; then
-  echo "ok   consulted frontmatter fires EmDash (real file)"
+if [ "$got" = "ReverieProse.Spelling" ]; then
+  echo "ok   consulted frontmatter is in prose scope (real file)"
 else
-  echo "FAIL consulted should fire EmDash, got [${got:-<none>}]" >&2
+  echo "FAIL consulted should fire Spelling, got [${got:-<none>}]" >&2
   fail=1
 fi
 
 got=$(checks_for docs/src/fm-desc.md)
-if [ "$got" = "ReverieProse.EmDash" ]; then
-  echo "ok   description frontmatter fires EmDash (real file)"
+if [ "$got" = "ReverieProse.Spelling" ]; then
+  echo "ok   description frontmatter is in prose scope (real file)"
 else
-  echo "FAIL description should fire EmDash, got [${got:-<none>}]" >&2
+  echo "FAIL description should fire Spelling, got [${got:-<none>}]" >&2
   fail=1
 fi
 
