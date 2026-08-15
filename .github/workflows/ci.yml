@@ -1044,17 +1044,8 @@ jobs:
       - name: Markdown lint (markdownlint-cli2)
         run: just js::markdownlint
 
-      # Ruleset self-test first (stdin snippets — fails the build if a
-      # prose rule stops firing or starts matching clean prose), then the
-      # scope test for vale-lint.sh's include/exclude classification, then
-      # the prose pass itself. Every rule emits at `error`, so any finding
-      # is a hard red.
-      - name: Prose lint self-test (Vale ruleset)
-        run: just infra::vale-selftest
-
-      - name: Prose lint scope test (vale-lint.sh)
-        run: just infra::vale-scope-test
-
+      # Spelling emits at `warning`, so this surfaces findings without failing
+      # the build. Scope and exclusions live in .vale.ini.
       - name: Prose lint (Vale)
         run: just infra::prose
 

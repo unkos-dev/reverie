@@ -83,7 +83,7 @@ pre-commit:
             run: just infra::no-plan-refs {staged_files}
           - name: vale
             glob: "**/*.{md,mdx}"
-            run: scripts/vale-lint.sh {staged_files}
+            run: vale {staged_files}
           # oxlint and stylelint route through the just recipes for their
           # frontend/ prefix-strip (repo-relative staged paths against a
           # frontend/ CWD). oxlint is type-aware: it loads the whole tsconfig

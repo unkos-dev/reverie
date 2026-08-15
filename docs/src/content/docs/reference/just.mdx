@@ -104,8 +104,6 @@ log path to replay afterward.
 | `just infra::tool-pin-drift`                     | Assert no workflow re-pins a mise-managed tool; mise.toml is the single source.                                                                  |
 | `just infra::tool-pin-drift-selftest`            | Exercise the tool-pin guard against planted pins before trusting it.                                                                             |
 | `just infra::typos`                              | Spell check the tree (honours .gitignore and \_typos.toml excludes).                                                                             |
-| `just infra::vale-scope-test`                    | Test the vale-lint.sh scope policy (include/exclude classification).                                                                             |
-| `just infra::vale-selftest`                      | Self-test the Vale ruleset (rules fire on bad prose, stay silent on clean).                                                                      |
 | `just infra::vp-pin-drift`                       | Assert every vite-plus pin agrees: both package.json files, the alias spec, the override, and each workflow.                                     |
 | `just infra::vp-pin-drift-selftest`              | Exercise the vp-pin guard against planted drift before trusting it.                                                                              |
 | `just infra::worktree-base-selftest`             | Self-test the new-branch base resolver: origin/main, local-main and HEAD fallbacks, and the explicit-base override/rejection paths.              |

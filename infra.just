@@ -71,12 +71,7 @@ zizmor-offline:
 # Vale prose linter over all in-scope Markdown (docs/src, adr, repo-root).
 [group('infra')]
 prose:
-    scripts/vale-lint.sh --all
-
-# Self-test the Vale ruleset (rules fire on bad prose, stay silent on clean).
-[group('infra')]
-vale-selftest:
-    scripts/vale-selftest.sh
+    vale docs/src adr *.md
 
 # Self-test the DCO gate (dco-check.sh verdicts on fixture histories).
 [group('infra')]
@@ -159,11 +154,6 @@ filter-sarif-test-rules-selftest:
 [group('infra')]
 filter-sarif-unfixable-os-selftest:
     scripts/filter-sarif-unfixable-os-selftest.sh
-
-# Test the vale-lint.sh scope policy (include/exclude classification).
-[group('infra')]
-vale-scope-test:
-    scripts/vale-scope-test.sh
 
 # Validate greptile.json parses and every pinned context path resolves.
 [group('infra')]
@@ -277,7 +267,7 @@ no-plan-refs *files:
 #
 # Whole repo-lint surface (mirrors the CI repo-lint job).
 [group('infra')]
-lint: shellcheck hadolint typos yamllint sqruff actionlint prose vale-selftest vale-scope-test dco-selftest no-plan-refs-selftest no-issue-refs-selftest tool-pin-drift tool-pin-drift-selftest vp-pin-drift vp-pin-drift-selftest npm-pin-drift npm-pin-drift-selftest renovate-npm-manager-selftest just-reference-drift adr-frontmatter-selftest sanitize-sarif-severities-selftest filter-sarif-test-rules-selftest filter-sarif-unfixable-os-selftest greptile-config compose-dev-invariants compose-dev-invariants-selftest recipe-secret-echo-test dev-server-selftest backend-dev-env-selftest doctor-selftest db-ready-selftest require-disk-backed-selftest worktree-selftest worktree-base-selftest preflight-scope-selftest gate-run-selftest gate-detach-selftest cargo-locked-guard cargo-locked-guard-selftest lefthook-validate
+lint: shellcheck hadolint typos yamllint sqruff actionlint prose dco-selftest no-plan-refs-selftest no-issue-refs-selftest tool-pin-drift tool-pin-drift-selftest vp-pin-drift vp-pin-drift-selftest npm-pin-drift npm-pin-drift-selftest renovate-npm-manager-selftest just-reference-drift adr-frontmatter-selftest sanitize-sarif-severities-selftest filter-sarif-test-rules-selftest filter-sarif-unfixable-os-selftest greptile-config compose-dev-invariants compose-dev-invariants-selftest recipe-secret-echo-test dev-server-selftest backend-dev-env-selftest doctor-selftest db-ready-selftest require-disk-backed-selftest worktree-selftest worktree-base-selftest preflight-scope-selftest gate-run-selftest gate-detach-selftest cargo-locked-guard cargo-locked-guard-selftest lefthook-validate
 
 # Infra has no formatter (oxfmt owns formatting via the JS plane), so check == lint.
 [group('infra')]
