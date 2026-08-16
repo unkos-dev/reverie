@@ -31,25 +31,6 @@ export default defineConfig({
     // light-dark() (parcel-bundler/lightningcss#873), silently corrupting the
     // grid's dark palette in production builds. esbuild minifies it correctly.
     cssMinify: "esbuild",
-    rolldownOptions: {
-      output: {
-        // Route the dev-only design tree into its own named chunk. main.tsx
-        // gates the import behind `if (import.meta.env.DEV)`; in production
-        // `import.meta.env.DEV` is replaced with literal `false`, the
-        // dynamic-import branch becomes dead code, rolldown tree-shakes it,
-        // and no `design-*.js` is emitted into `dist/assets/`. The named
-        // group makes any leak surface as a `design-*.js` chunk, which
-        // scripts/assert-no-design-chunk.mjs fails the build on (substring-
-        // grepping minified output is unreliable, so the gate checks for the
-        // chunk file's structural presence instead). The `test` mirrors the
-        // prior manualChunks predicate: `routes/design` with no trailing
-        // slash matches design.tsx and the directory; `pages/design/` is
-        // directory-only.
-        codeSplitting: {
-          groups: [{ name: "design", test: /\/src\/(routes\/design|pages\/design\/)/ }],
-        },
-      },
-    },
   },
   server: {
     headers: {
