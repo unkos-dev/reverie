@@ -20,15 +20,13 @@ The Step 10 design system is tested at two distinct bars.
   - Theme provider: initial resolution from cookie/DB/`prefers-color-scheme`,
     persistence, and API sync.
   - Theme cookie helpers (read, write, expiry).
-  - Route-gating production-build structural assertion (the `/design/*`
-    explore tree is excluded from production bundles).
 
 ## What is exempt from unit tests
 
 Visual and composition work is verified by:
 
-- Playwright with `@axe-core/playwright` against `/design/system`
-  (`npm run a11y`; targets default in
+- Playwright with `@axe-core/playwright` against the shipped routes in
+  `DEFAULT_TARGETS` (`npm run a11y`; the list lives in
   `frontend/scripts/a11y/allowlist.mjs`).
 - Manual Dark/Light toggle.
 - The `/crosscheck` dual-model review gate at D5.

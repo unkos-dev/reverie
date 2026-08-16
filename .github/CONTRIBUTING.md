@@ -146,7 +146,7 @@ Executable tooling elsewhere in the tree (`scripts/`, the justfiles, `.github/`,
 
 Reverie targets **WCAG 2.2 Level AA** as a design invariant. The review process is recorded in [`adr/superseded/2026-06-05-accessibility-review-process.md`](../adr/superseded/2026-06-05-accessibility-review-process.md) (superseded on the gate mechanism by [`adr/2026-07-13-a11y-gate-on-playwright.md`](../adr/2026-07-13-a11y-gate-on-playwright.md), which moves the gate onto the Playwright stack): what the automated gate covers, what the manual audit owns, the audit cadence, and how the one accepted brand carve-out (Reverie Gold on large CTAs) is documented.
 
-For frontend changes, the `a11y` CI job runs axe-core against the design showcase and fails on any WCAG 2.2 AA violation outside the documented allowlist (`frontend/scripts/a11y/allowlist.mjs`). Run it locally with `npm run a11y` (from `frontend/`, with the dev server up). UI-touching PRs also carry an accessibility checklist in the PR template.
+For frontend changes, the `a11y` CI job runs axe-core against the shipped routes listed in `DEFAULT_TARGETS` (`frontend/scripts/a11y/allowlist.mjs`) and fails on any WCAG 2.2 AA violation outside the documented allowlist in that same file. Run it locally with `npm run a11y` from `frontend/`. Do so with no dev server already on port 5173: Playwright reuses one it finds without checking which checkout owns it, so a server left running from elsewhere gets scanned instead, and the result reads as though it described your branch. To scan a specific server, start it yourself and pass `A11Y_BASE_URL`. UI-touching PRs also carry an accessibility checklist in the PR template.
 
 ## Pull request process
 
