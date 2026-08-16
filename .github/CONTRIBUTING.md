@@ -132,13 +132,15 @@ CI installs vp through [`voidzero-dev/setup-vp`](https://github.com/voidzero-dev
 
 ## Testing requirements
 
-**Tests are mandatory.** No feature or bug fix is complete without tests. Follow the test-first pattern:
+**Tests are mandatory for the shipped product.** No feature or bug fix in `backend/` or `frontend/` is complete without tests. Follow the test-first pattern:
 
 - **Happy path**: expected behaviour works
 - **Negative cases**: invalid input is rejected, error paths are exercised
 - **Edge cases**: where the behaviour is non-obvious
 
-PRs without tests will not be approved.
+PRs touching product code without tests will not be approved.
+
+Executable tooling elsewhere in the tree (`scripts/`, the justfiles, `.github/`, `docker/`, the root configs) is judged on whether it can fail quietly rather than on a fixed test requirement: a guard a pull request exercises and that fails loudly needs no separate test, while a check that can pass while matching nothing needs an assertion inside it. `AGENTS.md` hard rule 5 is the single source for both halves.
 
 ## Accessibility
 

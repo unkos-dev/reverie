@@ -7,7 +7,13 @@ These are absolute invariants for the Reverie repository.
 2. **Never commit secrets:** No `.env`, tokens, or API keys.
 3. **Redact secrets in output:** Never surface a decrypted secret value. Describe its presence (length, format) only. Do not read the redaction log.
 4. **Versioning:** Versions are release-please-managed; never hand-edit version in `Cargo.toml`/`package.json`.
-5. **Tests are mandatory:** Every feature or fix must be accompanied by corresponding happy-path and edge-case tests in the exact same PR. Do not submit code without tests.
+5. **Tests are mandatory for the shipped product:**
+   - Every feature or fix in `backend/` or `frontend/` ships with happy-path and edge-case tests in the same PR.
+   - Do not submit product code without tests.
+   - Executable tooling anywhere else in the tree (`scripts/`, the justfiles, `.github/`, `docker/`, the root configs) is judged on one question: can it fail quietly?
+   - Prose and generated documentation are not in scope here; "Docs are part of done" below governs them.
+   - A guard that a pull request exercises and that fails loudly needs no self-test.
+   - A check that can pass while matching nothing needs an assertion inside it, not a fixture-driven test outside it.
 6. **Verification prerequisites:** Restore a declared project dependency only through the repository's documented, lockfile-backed setup command. If a system prerequisite or CI-only binary is missing, stop the affected verification and report the exact missing command. Never install system packages, weaken checks, or patch around a missing tool without the maintainer's explicit approval.
    </project_hard_rules>
 
@@ -21,8 +27,13 @@ These are absolute invariants for the Reverie repository.
 
 <security_reference>
 
-- **CodeGuard:** Implementation work that touches authentication, authorization, sessions, secrets, input handling, file I/O, XML parsing, serialization, logging, client-side web security, outbound HTTP, response headers, or supply-chain controls MUST follow every applicable rule in `docs/security/codeguard/codeguard-*.md`. Those files come from an upstream third party; do not edit them or assess whether the change should amend them. If an applicable rule conflicts with required Reverie behavior, stop and obtain the maintainer's approval for a deviation. Record each approved deviation, its rationale, and its compensating controls in `docs/security/codeguard/README.md`. Work outside the listed areas requires no CodeGuard review or task-summary statement.
-  </security_reference>
+- **CodeGuard:** Implementation work in any covered area MUST follow every applicable rule in `docs/security/codeguard/codeguard-*.md`.
+  - Covered areas: authentication, authorization, sessions, secrets, input handling, file I/O, XML parsing, serialization, logging, client-side web security, outbound HTTP, response headers, and supply-chain controls.
+  - Those files come from an upstream third party. Do not edit them, and do not assess whether a change should amend them.
+  - If an applicable rule conflicts with required Reverie behavior, stop and obtain the maintainer's approval for a deviation.
+  - Record each approved deviation, its rationale, and its compensating controls in `docs/security/codeguard/README.md`.
+  - Work outside the covered areas requires no CodeGuard review or task-summary statement.
+    </security_reference>
 
 <design_authority>
 
@@ -126,14 +137,29 @@ Two aggregates anchor the local loop and should be the default reflex:
 - `just preflight-full` runs everything the CI gate runs that is locally
   runnable, unconditionally: the DB-backed backend test suite, the sqlx
   cache check, the backend static guards, cargo-machete, cargo-deny, the
-  frontend build, the a11y scan, and the zizmor workflow-security audit
+  frontend build, and the zizmor workflow-security audit
   (online audits included when a GitHub token is in the environment,
   offline-degraded otherwise). It brings the dev database up itself. Run it
   before any push (unless a scoped run already escalated to it), when the
-  change is broad, or when you are unsure; a green run covers every locally
-  runnable CI check, leaving only the CI-only lanes (MSRV, coverage, the
-  docker image build, and the IaC, SAST, and secret scans) to the remote
-  run. `just check` remains the fast offline subset for mid-task iteration;
+  change is broad, or when you are unsure. What it cannot run stays remote. The
+  MSRV (minimum supported Rust version) check, coverage, the docker image build,
+  and the IaC, SAST (static application security testing), and secret scans each
+  need a runner, an image, or a token no workstation has.
+- Two recipes gate nowhere and are invoked by hand when you are working on what
+  they cover. `just js::a11y` reuses an already-running dev server without
+  checking who owns it, so from a checkout that does not hold port 5173 it scans
+  a different tree; a clean CI runner cannot be ambiguous that way, so CI owns
+  the gate and you run the recipe while fixing violations.
+  `just infra::selftests` covers this repository's own scripts against stubbed
+  fixtures. Roughly half of it covers local-only developer tooling CI has no
+  stake in, and the rest covers guards CI already runs for real, whose failure
+  paths belong as assertions inside the guards. Run it while editing a script.
+  One self-test is not in there and does gate:
+  `filter-sarif-unfixable-os-selftest` stays in `infra::lint` and in CI's
+  repo-lint job, because its subject decides which container CVEs reach the
+  code-scanning dashboard and an edit that widens the match hides fixable
+  findings with nothing else to notice.
+- `just check` remains the fast offline subset for mid-task iteration;
   it includes zizmor's offline-only audits but not the token-gated ones.
 - `just preflight-detach [scoped|full]` runs either gate detached from the
   terminal (setsid), so a long run survives a session or turn boundary
