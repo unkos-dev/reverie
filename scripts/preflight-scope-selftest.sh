@@ -55,6 +55,7 @@ expect_failure() {
 
 FULL='rust::guards
 infra::check
+infra::selftests
 db-up
 rust::check
 rust::doc-lint
@@ -67,7 +68,6 @@ js::check
 js::test
 js::build
 js::font-integrity
-js::a11y
 docs::check
 infra::zizmor'
 
@@ -85,8 +85,7 @@ FRONTEND='infra::check
 js::check
 js::test
 js::build
-js::font-integrity
-js::a11y'
+js::font-integrity'
 
 # --- happy paths: one filter each -------------------------------------------
 
@@ -171,8 +170,7 @@ rust::machete
 js::check
 js::test
 js::build
-js::font-integrity
-js::a11y'
+js::font-integrity'
 
 # --- escalation --------------------------------------------------------------
 

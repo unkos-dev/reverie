@@ -85,7 +85,15 @@ build: js::build rust::build docs::build
 # ZIZMOR_GITHUB_TOKEN is exported, offline-degraded otherwise, matching CI's
 # own token-driven coverage). Still CI-only, and not run here: the MSRV
 # toolchain check, coverage lanes, the docker image build, IaC/SAST/secret
-# scans, npm-license, and dependency-review.
+# scans, npm-license, dependency-review, and the accessibility scan.
+#
+# The accessibility scan is the one lane here that is locally runnable and
+# deliberately excluded anyway. Playwright's webServer reuses an already-running
+# dev server with no ownership check, so from any checkout that does not own
+# port 5173 it scans a different tree and reports the result as this branch's.
+# On a clean CI runner that ambiguity cannot arise. `just js::a11y` stays
+# available for the loop that fixes violations, where the caller picks the
+# server.
 #
 # The lanes are a list passed to scripts/gate-run.sh rather than just
 # dependencies, so the run ends with one `GATE: PASS`/`GATE: FAIL` line naming
@@ -104,9 +112,9 @@ preflight-full:
     #!/usr/bin/env bash
     set -ueo pipefail
     scripts/gate-run.sh preflight-full \
-        rust::guards db-up check rust::doc-lint test rust::doctests \
-        rust::sqlx-check rust::machete rust::deny js::build \
-        js::font-integrity js::a11y infra::zizmor
+        rust::guards infra::selftests db-up check rust::doc-lint test \
+        rust::doctests rust::sqlx-check rust::machete rust::deny js::build \
+        js::font-integrity infra::zizmor
 
 # The same gate as `preflight-full`, minus the lanes CI itself would skip. A
 # frontend-only branch pays for the frontend lanes and the unconditional

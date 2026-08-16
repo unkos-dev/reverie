@@ -98,6 +98,7 @@ log path to replay afterward.
 | `just infra::renovate-npm-manager-selftest`      | Assert Renovate's custom manager still sees the devEngines npm pin.                                                                              |
 | `just infra::require-disk-backed-selftest`       | Self-test the shared tmpfs/ramfs filesystem guard `just worktree` and `just doctor` both call.                                                   |
 | `just infra::sanitize-sarif-severities-selftest` | Self-test the SARIF severity sanitizer both Snyk upload jobs run.                                                                                |
+| `just infra::selftests`                          | Self-tests for this repository's own scripts; runs only on machinery branches.                                                                   |
 | `just infra::shellcheck`                         | Shellcheck every tracked shell script.                                                                                                           |
 | `just infra::sqruff`                             | Lint every tracked SQL file against `.sqruff`.                                                                                                   |
 | `just infra::tool-pin-drift`                     | Assert no workflow re-pins a mise-managed tool; mise.toml is the single source.                                                                  |

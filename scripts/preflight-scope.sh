@@ -94,7 +94,7 @@ lanes_for() {
   case "$1" in
     backend) printf '%s\n' rust::guards db-up rust::check rust::doc-lint rust::test rust::doctests rust::sqlx-check rust::machete ;;
     audit) printf '%s\n' rust::deny ;;
-    frontend) printf '%s\n' js::check js::test js::build js::font-integrity js::a11y ;;
+    frontend) printf '%s\n' js::check js::test js::build js::font-integrity ;;
     docs) printf '%s\n' docs::check ;;
     workflows) printf '%s\n' infra::zizmor ;;
     staging | iac | docker | openapi | npm) : ;;
@@ -105,9 +105,21 @@ lanes_for() {
 # Emission order. Mirrors `just preflight-full`: the static guards that need no
 # toolchain, database, or install come first so they fail fastest, db-up
 # precedes every DB-backed recipe, and the network-backed audit runs last.
+#
+# infra::selftests sits here with the other no-toolchain static lanes but is
+# mapped from no filter in lanes_for() and is not in ALWAYS_LANES. Membership of
+# this array alone is what confines it to the machinery escalation below, which
+# selects LANE_ORDER whole.
+#
+# js::a11y is deliberately absent: it is CI-only. Playwright's webServer reuses
+# an already-running dev server with no ownership check, so a local run scans
+# whichever checkout happens to own port 5173 and reports that verdict as this
+# branch's. `just js::a11y` remains available for the loop that fixes
+# violations, where the caller chooses which server is scanned.
 LANE_ORDER=(
   rust::guards
   infra::check
+  infra::selftests
   db-up
   rust::check
   rust::doc-lint
@@ -120,14 +132,13 @@ LANE_ORDER=(
   js::test
   js::build
   js::font-integrity
-  js::a11y
   docs::check
   infra::zizmor
 )
 
 # infra::check mirrors CI's repo-lint job, which carries no path filter: it
-# lints the whole tree (shellcheck, yamllint, actionlint, prose, and the guard
-# self-tests), so any change at all can break it.
+# lints the whole tree (shellcheck, yamllint, actionlint, prose, and the guards
+# whose subject is committed configuration), so any change at all can break it.
 ALWAYS_LANES=(infra::check)
 
 # Changes to these reshape verification itself, so a scoped run cannot reason

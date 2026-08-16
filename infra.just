@@ -262,7 +262,23 @@ no-plan-refs *files:
 #
 # Whole repo-lint surface (mirrors the CI repo-lint job).
 [group('infra')]
-lint: shellcheck hadolint typos yamllint sqruff actionlint prose no-plan-refs-selftest no-issue-refs-selftest tool-pin-drift tool-pin-drift-selftest vp-pin-drift vp-pin-drift-selftest npm-pin-drift npm-pin-drift-selftest renovate-npm-manager-selftest just-reference-drift adr-frontmatter-selftest sanitize-sarif-severities-selftest filter-sarif-test-rules-selftest filter-sarif-unfixable-os-selftest greptile-config compose-dev-invariants compose-dev-invariants-selftest recipe-secret-echo-test dev-server-selftest backend-dev-env-selftest doctor-selftest db-ready-selftest require-disk-backed-selftest worktree-selftest worktree-base-selftest preflight-scope-selftest gate-run-selftest gate-detach-selftest cargo-locked-guard cargo-locked-guard-selftest lefthook-validate
+lint: shellcheck hadolint typos yamllint sqruff actionlint prose tool-pin-drift vp-pin-drift npm-pin-drift renovate-npm-manager-selftest just-reference-drift adr-frontmatter-selftest greptile-config compose-dev-invariants recipe-secret-echo-test cargo-locked-guard lefthook-validate
+
+# Self-tests of this repository's own scripts. Each one stubs its own PATH,
+# docker, mise, npm, and git fixtures, so its verdict is a pure function of
+# committed files that an unrelated change cannot move. They earn their place on
+# the branches that edit the machinery, which is what the preflight escalation
+# selects: this recipe is absent from ALWAYS_LANES and from every filter mapping
+# in preflight-scope.sh, and CI does not run it at all.
+#
+# Four test-shaped names stay in `lint` above rather than moving here.
+# renovate-npm-manager-selftest, adr-frontmatter-selftest, compose-dev-invariants
+# and recipe-secret-echo-test take committed configuration as their subject, not
+# a script, so an unrelated change can break them.
+#
+# Self-tests for this repository's own scripts; runs only on machinery branches.
+[group('infra')]
+selftests: no-plan-refs-selftest no-issue-refs-selftest tool-pin-drift-selftest vp-pin-drift-selftest npm-pin-drift-selftest sanitize-sarif-severities-selftest filter-sarif-test-rules-selftest filter-sarif-unfixable-os-selftest compose-dev-invariants-selftest dev-server-selftest backend-dev-env-selftest doctor-selftest db-ready-selftest require-disk-backed-selftest worktree-selftest worktree-base-selftest preflight-scope-selftest gate-run-selftest gate-detach-selftest cargo-locked-guard-selftest
 
 # Infra has no formatter (oxfmt owns formatting via the JS plane), so check == lint.
 [group('infra')]
