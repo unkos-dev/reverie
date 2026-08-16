@@ -141,8 +141,8 @@ Two aggregates anchor the local loop and should be the default reflex:
   before any push (unless a scoped run already escalated to it), when the
   change is broad, or when you are unsure; a green run covers every locally
   runnable CI check, leaving only the CI-only lanes (MSRV, coverage, the
-  docker image build, the accessibility scan, and the IaC, SAST, and secret
-  scans) to the remote run.
+  docker image build, the accessibility scan, and the IaC, SAST (static
+  application security testing), and secret scans) to the remote run.
 - Two recipes gate nowhere and are invoked by hand when you are working on what
   they cover. `just js::a11y` reuses an already-running dev server without
   checking who owns it, so from a checkout that does not hold port 5173 it scans
