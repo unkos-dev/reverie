@@ -313,12 +313,15 @@ fi
 # The gate can still exit 0 that way, which is the same confidently-narrowed
 # green this tool exists to prevent.
 #
-# Lane execution now lives in scripts/gate-run.sh, which loops, so the
-# behavioural half of this invariant is asserted where it runs:
-# gate-run-selftest.sh puts a variadic fixture lane ahead of another and proves
-# the second one still runs. What stays here is the structural half this file
-# is placed to see, that the recipe delegates rather than re-inlining the
-# broken call. Comments are stripped first: prose in the recipe names the
+# Lane execution lives in scripts/gate-run.sh, which loops, so the invariant
+# has a behavioural half (a variadic lane does not swallow the lanes after it)
+# and a structural half (the recipe delegates rather than re-inlining the
+# broken single-`just` call). Only the structural half is checked, here. The
+# behavioural half is unchecked: it needs a fixture lane list, which is a
+# self-test of gate-run.sh, and that was deleted along with the other self-tests
+# whose subject a pull request exercises for real. The structural check is what
+# stops the broken form coming back, which is the failure that actually
+# happened. Comments are stripped first: prose in the recipe names the
 # broken form to explain why it is banned, and that must not read as the form
 # being present.
 justfile_code="$(grep -v '^[[:space:]]*#' justfile)"

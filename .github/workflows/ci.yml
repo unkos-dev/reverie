@@ -1039,17 +1039,29 @@ jobs:
       - name: Recipe secret-echo guard
         run: just infra::recipe-secret-echo-test
 
-      # The one self-test on this job whose subject is a script. The others
-      # above take committed configuration as their subject.
-      # scripts/filter-sarif-unfixable-os.sh
-      # decides which container CVEs reach the code-scanning dashboard, and an
-      # edit that widens its match withholds findings that do have fixes,
-      # silently. The assertion that would catch that is the predicate itself,
-      # so it cannot live inside the script, and the fixture builds a case a
-      # live scan cannot be relied on to contain. It runs here rather than only
+      # Two self-tests on this job take a script as their subject rather than
+      # committed configuration, and each is here because no assertion inside
+      # its subject could do the same work. Both run in CI rather than only
       # locally because a local gate is bypassable and never runs on fork PRs.
+      #
+      # scripts/filter-sarif-unfixable-os.sh decides which container CVEs reach
+      # the code-scanning dashboard, and an edit that widens its match withholds
+      # findings that do have fixes, silently. The assertion that would catch
+      # that is the predicate itself, so it cannot live inside the script, and
+      # the fixture builds a case a live scan cannot be relied on to contain.
       - name: Container-CVE suppression predicate
         run: just infra::filter-sarif-unfixable-os-selftest
+
+      # scripts/preflight-scope.sh decides which lanes a local gate runs. Break
+      # the `scripts/*` arm of its escalates() and a change to the scoper itself
+      # narrows its own gate from sixteen lanes to one, prints nothing, and
+      # exits clean. The scoper cannot assert its way out of that: what needs
+      # asserting is which lanes were selected, and the selector is the code
+      # under suspicion. Local gate placement is circular for the same reason.
+      # This job is not, because it is unconditional and never consults the
+      # scoper.
+      - name: Preflight lane scoper
+        run: just infra::preflight-scope-selftest
 
       # Every dependency-resolving cargo invocation across the just recipes,
       # the git hooks, the workflow files (this one included), and the image
