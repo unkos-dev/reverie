@@ -131,7 +131,8 @@ Two aggregates anchor the local loop and should be the default reflex:
   frontend-only branch skips the database, the Rust rebuild, and the
   dependency audit. Changes to the verification machinery itself (the
   justfiles, `scripts/`, `mise.toml`, that filter file) escalate to the full
-  lane set, and the whole-tree repo-lint mirror always runs.
+  lane set, and the whole-tree repo-lint mirror always runs. This is the
+  default gate and the mid-branch reflex.
 - `just preflight-full` runs everything the CI gate runs that is locally
   runnable, unconditionally: the DB-backed backend test suite, the sqlx
   cache check, the backend static guards, cargo-machete, cargo-deny, the
@@ -139,10 +140,10 @@ Two aggregates anchor the local loop and should be the default reflex:
   (online audits included when a GitHub token is in the environment,
   offline-degraded otherwise). It brings the dev database up itself. Run it
   before any push (unless a scoped run already escalated to it), when the
-  change is broad, or when you are unsure; a green run covers every locally
-  runnable CI check, leaving only the CI-only lanes (MSRV, coverage, the
-  docker image build, the accessibility scan, and the IaC, SAST (static
-  application security testing), and secret scans) to the remote run.
+  change is broad, or when you are unsure. What it cannot run stays remote:
+  MSRV, coverage, the docker image build, and the IaC, SAST (static application
+  security testing), and secret scans all need a runner, an image, or a token
+  no workstation has.
 - Two recipes gate nowhere and are invoked by hand when you are working on what
   they cover. `just js::a11y` reuses an already-running dev server without
   checking who owns it, so from a checkout that does not hold port 5173 it scans
@@ -152,6 +153,11 @@ Two aggregates anchor the local loop and should be the default reflex:
   fixtures. Roughly half of it covers local-only developer tooling CI has no
   stake in, and the rest covers guards CI already runs for real, whose failure
   paths belong as assertions inside the guards. Run it while editing a script.
+  One self-test is not in there and does gate:
+  `filter-sarif-unfixable-os-selftest` stays in `infra::lint` and in CI's
+  repo-lint job, because its subject decides which container CVEs reach the
+  code-scanning dashboard and an edit that widens the match hides fixable
+  findings with nothing else to notice.
 - `just check` remains the fast offline subset for mid-task iteration;
   it includes zizmor's offline-only audits but not the token-gated ones.
 - `just preflight-detach [scoped|full]` runs either gate detached from the

@@ -1039,6 +1039,16 @@ jobs:
       - name: Recipe secret-echo guard
         run: just infra::recipe-secret-echo-test
 
+      # The one self-test on this job. scripts/filter-sarif-unfixable-os.sh
+      # decides which container CVEs reach the code-scanning dashboard, and an
+      # edit that widens its match withholds findings that do have fixes,
+      # silently. The assertion that would catch that is the predicate itself,
+      # so it cannot live inside the script, and the fixture builds a case a
+      # live scan cannot be relied on to contain. It runs here rather than only
+      # locally because a local gate is bypassable and never runs on fork PRs.
+      - name: Container-CVE suppression predicate
+        run: just infra::filter-sarif-unfixable-os-selftest
+
       # Every dependency-resolving cargo invocation across the just recipes,
       # the git hooks, the workflow files (this one included), and the image
       # build must pass --locked (the package-ingress ADR's frozen-installs
