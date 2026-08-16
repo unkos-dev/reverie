@@ -275,10 +275,14 @@ lint: shellcheck hadolint typos yamllint sqruff actionlint prose tool-pin-drift 
 # them that fires on a real invocation, not a fixture-driven test that fires
 # only where the test runs.
 #
-# Four test-shaped names stay in `lint` above rather than sitting here.
-# renovate-npm-manager-selftest, adr-frontmatter-selftest, compose-dev-invariants
-# and recipe-secret-echo-test take committed configuration as their subject, not
-# a script, so an unrelated change can break them.
+# The split is what a check takes as its subject, not what it is called.
+# `lint` above keeps everything whose subject is committed configuration, which
+# an unrelated change can break: tool-pin-drift, vp-pin-drift, npm-pin-drift,
+# just-reference-drift, greptile-config, compose-dev-invariants,
+# cargo-locked-guard, lefthook-validate, and three that only look test-shaped,
+# renovate-npm-manager-selftest, adr-frontmatter-selftest and
+# recipe-secret-echo-test. A new config validator belongs there. Only a check
+# whose subject is one of this repository's own scripts belongs here.
 #
 # Self-tests for this repository's own scripts; gates nothing, run it by hand.
 [group('infra')]
