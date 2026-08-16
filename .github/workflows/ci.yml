@@ -1201,12 +1201,15 @@ jobs:
       - name: Build
         run: just js::build
 
-  # WCAG 2.2 AA gate: axe-core against the dev-only design showcase, failing
-  # on any violation outside frontend/scripts/a11y/allowlist.mjs. The
-  # Playwright config owns the dev-server lifecycle and ships an arm64
-  # Chromium, so the gate reproduces on the ARM64 dev box as well as x86 CI.
-  # The showcase routes are registered under import.meta.env.DEV, so webServer
-  # points at `npm run dev`, never the production build.
+  # WCAG 2.2 AA gate: axe-core against the shipped routes in DEFAULT_TARGETS
+  # (frontend/scripts/a11y/allowlist.mjs), failing on any violation outside the
+  # allowlist in that same file. The Playwright config owns the dev-server
+  # lifecycle and ships an arm64 Chromium, so the gate reproduces on the ARM64
+  # dev box as well as x86 CI.
+  #
+  # webServer runs the dev server rather than a preview of the production
+  # build. The targets ship, so a preview would now serve them, but dev mode is
+  # what this gate has always measured and moving it is a separate change.
   a11y:
     name: Accessibility (axe)
     needs: changes

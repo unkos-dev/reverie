@@ -1,5 +1,7 @@
 import { defineConfig } from "@playwright/test";
 
+import { DEFAULT_TARGETS } from "./scripts/a11y/allowlist.mjs";
+
 // Playwright project scoped to the WCAG 2.2 AA accessibility gate only (one
 // spec under scripts/a11y). Not a general e2e harness.
 export default defineConfig({
@@ -25,13 +27,18 @@ export default defineConfig({
   webServer: process.env.A11Y_BASE_URL
     ? undefined
     : {
-        // Must be the DEV server, not `vite preview`: /design/system is
-        // registered only under import.meta.env.DEV (see routes/design.tsx).
-        // This overrides the usual preview-in-CI convention.
-        command: "npm run dev",
-        // url (not the deprecated port) is polled for a 2xx, so pointing it at
-        // the scanned route doubles as a route-exists readiness check.
-        url: "http://localhost:5173/design/system",
+        // --strictPort so a busy 5173 fails the run. Without it Vite drifts to
+        // the next free port while Playwright keeps polling 5173 until its
+        // timeout, which surfaces a port collision as a gate hang. Matches the
+        // flag scripts/dev-server.sh passes for the same reason.
+        command: "npm run dev -- --strictPort",
+        // url (not the deprecated port) is polled for a 2xx, which measures
+        // server readiness and nothing more: no appType is configured, so
+        // Vite's SPA fallback answers 200 for any path, a deleted route
+        // included. Route validity is proven later, by the <main> assertion in
+        // a11y.spec.ts. Derived from DEFAULT_TARGETS only so this file cannot
+        // hold a second, drifting copy of a path.
+        url: `http://localhost:5173${DEFAULT_TARGETS[0]}`,
         reuseExistingServer: !process.env.CI,
         timeout: 120_000,
       },

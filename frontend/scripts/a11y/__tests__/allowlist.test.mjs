@@ -4,15 +4,14 @@ import { describe, expect, it } from "vite-plus/test";
 
 import { ALLOWLIST, filterAllowed, parseTargets, urlMatches, verdict } from "../allowlist.mjs";
 
-// Real axe output captured against /design/system (full WCAG 2.2 AA tag set):
-// 1 color-contrast violation over 4 nodes — 3 lg buttons + 1 default badge.
+// A realistic multi-node axe payload captured with the full WCAG 2.2 AA tag
+// set: 1 color-contrast violation over 4 nodes, 3 lg buttons plus 1 default
+// badge.
 //
-// The capture predates `--fg-on-accent` resolving to `gold-contrast` (Ink).
-// Those surfaces render ink-on-gold today and no longer violate at all, so the
-// live showcase produces no color-contrast violation and the gate is green with
-// no button carve-out. The fixture is retained deliberately: it is a realistic
-// multi-node axe payload, and it pins the discriminator's behaviour on gold
-// surfaces so a future regression that reintroduces low-contrast gold is caught
+// No live surface produces these violations. `--fg-on-accent` resolves to
+// `gold-contrast` (Ink), so those components render ink-on-gold and pass. The
+// fixture is retained anyway because it pins the discriminator's behaviour on
+// gold surfaces, so a regression that reintroduces low-contrast gold is caught
 // as a failure rather than silently exempted.
 const fixture = JSON.parse(
   readFileSync(fileURLToPath(new URL("../fixtures/violations.json", import.meta.url)), "utf8"),
@@ -151,8 +150,8 @@ describe("a11y verdict — liveness gate", () => {
 });
 
 describe("a11y parseTargets — env contract + fail-closed target parsing", () => {
-  it("defaults to the design showcase when the var is unset", () => {
-    expect(parseTargets(undefined)).toEqual(["/design/system"]);
+  it("defaults to a route that ships, so the gate cannot certify unreachable markup", () => {
+    expect(parseTargets(undefined)).toEqual(["/forgot-password"]);
   });
 
   it("splits comma-separated paths, trims whitespace, drops empties", () => {

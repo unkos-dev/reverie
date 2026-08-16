@@ -113,25 +113,25 @@ log path to replay afterward.
 
 ## js
 
-| Recipe                          | Purpose                                                                          |
-| ------------------------------- | -------------------------------------------------------------------------------- |
-| `just js::a11y`                 | WCAG axe-core scan of the design showcase; boots a browser and a dev server.     |
-| `just js::build`                | Frontend production build (vp build; typecheck rides js::oxlint via tsgo).       |
-| `just js::check`                | Locally-runnable verify set: lint + format check (a11y and coverage excluded).   |
-| `just js::detect`               | Run the impeccable design anti-pattern detector over the frontend.               |
-| `just js::dev`                  | Run the Vite dev server in the foreground (Ctrl-C stops it).                     |
-| `just js::dev-start`            | Start the Vite dev server in the background; logs to frontend/.dev-server.log.   |
-| `just js::dev-status`           | Report whether the Vite dev server is up.                                        |
-| `just js::dev-stop`             | Stop the background Vite dev server started by dev-start.                        |
-| `just js::fmt`                  | Format the whole tree in place (TS/JS/JSON/CSS/MD/HTML/TOML/YAML). WRITES.       |
-| `just js::fmt-check`            | Verify whole-tree formatting without writing (the authoritative CI gate form).   |
-| `just js::font-integrity`       | Verify the committed Fontshare woff2 files against their pinned checksums.       |
-| `just js::lint`                 | Frontend lint surface: oxlint, stylelint, then root-CWD markdownlint.            |
-| `just js::markdownlint <files>` | markdownlint over tracked Markdown at the repo root.                             |
-| `just js::oxlint <files>`       | oxlint over the frontend, or a passed file list (--max-warnings 0, matching CI). |
-| `just js::stylelint <files>`    | stylelint over frontend CSS (--max-warnings 0, matching CI).                     |
-| `just js::test`                 | Frontend unit tests.                                                             |
-| `just js::test-coverage`        | Frontend unit tests with coverage (the CI form).                                 |
+| Recipe                          | Purpose                                                                              |
+| ------------------------------- | ------------------------------------------------------------------------------------ |
+| `just js::a11y`                 | WCAG axe-core scan of the shipped pre-auth routes; boots a browser and a dev server. |
+| `just js::build`                | Frontend production build (vp build; typecheck rides js::oxlint via tsgo).           |
+| `just js::check`                | Locally-runnable verify set: lint + format check (a11y and coverage excluded).       |
+| `just js::detect`               | Run the impeccable design anti-pattern detector over the frontend.                   |
+| `just js::dev`                  | Run the Vite dev server in the foreground (Ctrl-C stops it).                         |
+| `just js::dev-start`            | Start the Vite dev server in the background; logs to frontend/.dev-server.log.       |
+| `just js::dev-status`           | Report whether the Vite dev server is up.                                            |
+| `just js::dev-stop`             | Stop the background Vite dev server started by dev-start.                            |
+| `just js::fmt`                  | Format the whole tree in place (TS/JS/JSON/CSS/MD/HTML/TOML/YAML). WRITES.           |
+| `just js::fmt-check`            | Verify whole-tree formatting without writing (the authoritative CI gate form).       |
+| `just js::font-integrity`       | Verify the committed Fontshare woff2 files against their pinned checksums.           |
+| `just js::lint`                 | Frontend lint surface: oxlint, stylelint, then root-CWD markdownlint.                |
+| `just js::markdownlint <files>` | markdownlint over tracked Markdown at the repo root.                                 |
+| `just js::oxlint <files>`       | oxlint over the frontend, or a passed file list (--max-warnings 0, matching CI).     |
+| `just js::stylelint <files>`    | stylelint over frontend CSS (--max-warnings 0, matching CI).                         |
+| `just js::test`                 | Frontend unit tests.                                                                 |
+| `just js::test-coverage`        | Frontend unit tests with coverage (the CI form).                                     |
 
 ## rust
 

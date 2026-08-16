@@ -73,5 +73,5 @@ These rules define the React and TypeScript architecture. Do not deviate.
 <testing_standards>
 
 - **Behavioral Testing:** Use Vitest + React Testing Library. Test behavior, not implementation details.
-- **Accessibility Gate:** CI runs Playwright + axe-core (WCAG 2.2 AA) over the dev-only design showcase; reproduce locally with `npm run a11y` (Playwright owns the dev-server lifecycle). Never narrow the WCAG tag ladder. An accepted violation requires a rationale-bearing carve-out in `scripts/a11y/allowlist.mjs`; new scannable routes join the default target list in the same file's `parseTargets` (the `A11Y_TARGETS` env var is a per-run override that CI does not set).
+- **Accessibility Gate:** CI runs Playwright + axe-core (WCAG 2.2 AA) over the shipped pre-auth routes in `scripts/a11y/allowlist.mjs`'s `DEFAULT_TARGETS`; reproduce locally with `npm run a11y` (Playwright owns the dev-server lifecycle). Never narrow the WCAG tag ladder. An accepted violation requires a rationale-bearing carve-out in the same file; new scannable routes join `DEFAULT_TARGETS` (the `A11Y_TARGETS` env var is a per-run override that CI does not set). A route qualifies only when it renders a single top-level `<main>` without an API, since the lane boots Vite alone: a mount-time query renders an error branch the scan would certify as passing.
   </testing_standards>
