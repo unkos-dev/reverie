@@ -3,8 +3,8 @@
 // Accessibility-gate allowlist + verdict (pure, side-effect-free).
 //
 // The a11y CI gate (scripts/a11y/a11y.spec.ts) runs axe-core against the
-// dev-only design showcase and must fail on any WCAG 2.2 AA violation EXCEPT
-// the axe false positive listed below.
+// routes in DEFAULT_TARGETS below and must fail on any WCAG 2.2 AA violation
+// EXCEPT the axe false positive listed below.
 //
 // A carve-out belongs here only when axe MEASURES the surface wrongly. A real
 // contrast shortfall is a design defect and must be fixed in the surface, not
@@ -89,9 +89,24 @@ export function filterAllowed(violations) {
 }
 
 /**
+ * Scan targets when `A11Y_TARGETS` is unset, which is how CI runs.
+ *
+ * `/forgot-password` is the only pre-auth route that renders its real markup
+ * against the Vite-only server this gate boots: it reaches the API from submit
+ * handlers alone, while `/login` and `/setup` each call `fetchSetupStatus` in a
+ * mount-time query and would render an error branch instead. Playwright's
+ * readiness URL is derived from this list, so a target added here is also the
+ * page the web server is polled for.
+ *
+ * Authenticated Home, Library, and Detail are the remaining gap; they need a
+ * storage-state fixture and a backend before they can join.
+ */
+export const DEFAULT_TARGETS = ["/forgot-password"];
+
+/**
  * Parse the `A11Y_TARGETS` env contract into a non-empty list of root-relative
  * paths. Comma-separated, trimmed, empties dropped (same contract as the
- * retired runner); an unset var falls back to the design showcase.
+ * retired runner); an unset var falls back to `DEFAULT_TARGETS`.
  *
  * Fails closed by THROWING rather than returning a degenerate list:
  *   - a zero-length result (var set to "" or all-whitespace) would register no
@@ -104,7 +119,7 @@ export function filterAllowed(violations) {
  * @returns {string[]} one or more paths, each beginning with a single "/"
  */
 export function parseTargets(raw) {
-  const targets = (raw ?? "/design/system")
+  const targets = (raw ?? DEFAULT_TARGETS.join(","))
     .split(",")
     .map((t) => t.trim())
     .filter(Boolean);

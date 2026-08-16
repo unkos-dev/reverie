@@ -91,12 +91,15 @@ fmt-check:
 [group('js')]
 lint: oxlint stylelint markdownlint
 
-# WCAG axe-core scan against the dev-only design showcase. Playwright's
-# webServer owns the dev-server lifecycle (start, wait, teardown), and locally
-# reuses an already-running dev server on port 5173, so no hand-rolled server
-# block is needed here. Not part of `check`: it boots a browser and a server.
+# WCAG axe-core scan against the shipped routes in DEFAULT_TARGETS
+# (frontend/scripts/a11y/allowlist.mjs). Playwright's webServer owns the
+# dev-server lifecycle (start, wait, teardown), and locally reuses an
+# already-running dev server on port 5173, so no hand-rolled server block is
+# needed here. That reuse scans whichever checkout owns 5173, so from a worktree
+# serve the frontend on its own port and pass A11Y_BASE_URL instead. Not part of
+# `check`: it boots a browser and a server.
 #
-# WCAG axe-core scan of the design showcase; boots a browser and a dev server.
+# WCAG axe-core scan of the shipped pre-auth routes; boots a browser and a dev server.
 [group('js')]
 [working-directory('frontend')]
 a11y:
