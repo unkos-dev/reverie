@@ -3,8 +3,8 @@
 // Accessibility-gate allowlist + verdict (pure, side-effect-free).
 //
 // The a11y CI gate (scripts/a11y/a11y.spec.ts) runs axe-core against the
-// routes in DEFAULT_TARGETS below and must fail on any WCAG 2.2 AA violation
-// EXCEPT the axe false positive listed below.
+// routes in DEFAULT_TARGETS below and must fail on any WCAG 2.2 AA violation.
+// The allowlist is empty, which is the state to keep it in.
 //
 // A carve-out belongs here only when axe MEASURES the surface wrongly. A real
 // contrast shortfall is a design defect and must be fixed in the surface, not
@@ -13,43 +13,23 @@
 // target is `.animate-[loading-pulse…]` with no `data-size`, while its html
 // still carries the identifying `data-slot` / `data-size` attributes.
 //
-// A large-CTA carve-out for Reverie Gold used to live here, from when
-// `--fg-on-accent` resolved to Cream and the primary button rendered
-// cream-on-gold at ~3.44:1. `--fg-on-accent` now resolves to `gold-contrast`
-// (Ink), so the lg primary button measures ink-on-gold at 5.11:1 on Light and
-// 8.64:1 on Dark — both clear 4.5:1 at its 14px/500 type, and the gate is green
-// without the exception. The brand restriction it referenced still stands (see
-// frontend/DESIGN.md §2 "Light-Gold Restriction Rule": on light surfaces the
-// gold-9 fill is permitted only on large CTAs and recovery actions, and gold
-// that must read as text or a hairline, the focus ring above all, uses the
-// `accent-text` (gold-11) step instead); the accent simply no longer needs an
-// accessibility exception to satisfy it.
+// The brand's gold restriction is satisfied without an exception here.
+// `--fg-on-accent` resolves to `gold-contrast` (Ink), so the lg primary button
+// measures ink-on-gold at 5.11:1 on Light and 8.64:1 on Dark, both clear of
+// 4.5:1 at its 14px/500 type. frontend/DESIGN.md §2 "Light-Gold Restriction
+// Rule" still governs where the gold-9 fill may be used: large CTAs and
+// recovery actions only, with gold that must read as text or a hairline, the
+// focus ring above all, taking the `accent-text` (gold-11) step instead.
 
 /**
  * Documented, accepted WCAG carve-outs. Each entry matches a node iff the
  * violation rule id equals `ruleId` AND every string in `htmlIncludesAll` is a
- * substring of the node's `html`. Keep this list tiny and rationale-bearing;
- * every entry is an accessibility exception a reviewer must be able to justify.
+ * substring of the node's `html`. Empty is the right state; every entry is an
+ * accessibility exception a reviewer must be able to justify.
+ *
+ * @type {Array<{ ruleId: string, htmlIncludesAll: string[], rationale: string, issue: string | null }>}
  */
-export const ALLOWLIST = [
-  {
-    ruleId: "color-contrast",
-    // Typographic-spine text (CoverArtwork). The `text-cover-*` classes only
-    // ever render inside a `[data-layout]` spine whose ROOT carries the
-    // matching `bg-cover-*` ground, but axe cannot attribute that background
-    // through the spine's absolutely-positioned layers and falls back to the
-    // page canvas — on Dark that yields a bogus ink-on-ink 1.03:1 while the
-    // measured truth is ink-on-gold rgb(14,13,10) on rgb(201,169,97) ≈ 8:1
-    // (verified via getComputedStyle in the UNK-385 browser pass). Colorway
-    // pairings are fixed in COLORWAY_CLASSES (CoverArtwork.tsx) and all clear
-    // 4.5:1 by construction; misuse of `text-cover-*` outside a spine is a
-    // review catch, not an axe catch.
-    htmlIncludesAll: ["text-cover-"],
-    rationale:
-      "DESIGN.md §4 Cover-Spine Rule: cover-palette text always sits on its paired bg-cover-* ground (CoverArtwork COLORWAY_CLASSES, every pairing ≥4.5:1 by construction); axe cannot attribute that ground through the spine's absolute stack and reports page-canvas contrast — a background-attribution false positive.",
-    issue: null,
-  },
-];
+export const ALLOWLIST = [];
 
 /**
  * Whether a single axe node is covered by a documented allowlist entry.

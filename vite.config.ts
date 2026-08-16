@@ -273,10 +273,6 @@ export default defineConfig({
         // moment anything writes, and a write through it lands somewhere the
         // surface cannot read. The ban covers both directions, which is why it
         // is on the import rather than on the setter alone.
-        //
-        // The design-system pages under pages/design/** are deliberately out
-        // of scope: they are standalone specimens with their own local params
-        // and no shared filter state.
         files: [
           "frontend/src/pages/library/**",
           "frontend/src/components/library/**",

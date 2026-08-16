@@ -76,41 +76,37 @@ describe("a11y allowlist — discriminator", () => {
     expect(remaining).toHaveLength(0);
   });
 
-  it("exposes a documented allowlist with a rationale per entry", () => {
-    expect(ALLOWLIST.length).toBeGreaterThan(0);
+  it("requires a DESIGN.md rationale on every entry, however many there are", () => {
     for (const entry of ALLOWLIST) {
       expect(entry.rationale).toMatch(/DESIGN\.md/);
     }
   });
 });
 
-describe("a11y allowlist — cover-spine carve-out", () => {
-  it("allowlists a spine text node carrying a text-cover-* class", () => {
+describe("a11y allowlist — empty by design", () => {
+  it("carries no entries, so nothing is exempt", () => {
+    expect(ALLOWLIST).toHaveLength(0);
+  });
+
+  it("keeps a cover-palette node, which the retired carve-out used to drop", () => {
     const spineText = node(
       '<div class="font-display text-cover-cream line-clamp-4 text-base font-semibold">',
     );
     const remaining = filterAllowed([violation("color-contrast", [spineText])]);
-    expect(remaining).toHaveLength(0);
+    expect(remaining).toHaveLength(1);
   });
 
-  it("does NOT allowlist a non-cover color-contrast node", () => {
+  it("keeps an ordinary color-contrast node", () => {
     const plainText = node('<p class="text-fg-faint">');
     const remaining = filterAllowed([violation("color-contrast", [plainText])]);
     expect(remaining).toHaveLength(1);
   });
 
-  it("does NOT allowlist a text-cover-* node under a different rule id", () => {
-    const spineText = node('<div class="text-cover-ink">');
-    const remaining = filterAllowed([violation("image-alt", [spineText])]);
-    expect(remaining).toHaveLength(1);
-  });
-
-  it("drops only the spine node from a mixed violation", () => {
+  it("keeps every node of a mixed violation", () => {
     const spineText = node('<div class="text-cover-parchment">');
     const remaining = filterAllowed([violation("color-contrast", [spineText, badgeNode])]);
     expect(remaining).toHaveLength(1);
-    expect(remaining[0].nodes).toHaveLength(1);
-    expect(remaining[0].nodes[0].html).toContain('data-slot="badge"');
+    expect(remaining[0].nodes).toHaveLength(2);
   });
 });
 
@@ -135,11 +131,11 @@ describe("a11y verdict — liveness gate", () => {
     ).toBe(false);
   });
 
-  it("passes when only allowlisted spine nodes are present", () => {
+  it("fails on a cover-palette node: no surface carries an exemption", () => {
     const spineText = node('<div class="text-cover-cream">');
     expect(
       verdict({ violations: [violation("color-contrast", [spineText])], scanOk: true }).pass,
-    ).toBe(true);
+    ).toBe(false);
   });
 
   it("returns the remaining (non-allowlisted) violations", () => {
