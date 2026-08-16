@@ -43,8 +43,10 @@ managed_tools=$(
 # producers above (an inline [tools] entry, a [tools."backend:name"] block, and
 # that block's bin/filter_bins value), and any one can stop matching while the
 # others keep the census non-empty, which silently drops a whole class of tool
-# from the check. One representative per producer is asserted, chosen so no
-# single mise.toml entry answers for two of them. An empty census is the
+# from the check. One representative per producer is asserted (nextest and
+# cargo-nextest share one mise.toml entry, but each is emitted by a different
+# producer, so any single decayed producer is still caught). An empty census
+# is the
 # degenerate case of the same failure: without this the loop below reads one
 # empty line, derives its patterns from an empty tool name, and the run ends by
 # announcing a clean result it never established.

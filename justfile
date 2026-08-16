@@ -91,10 +91,10 @@ build: js::build rust::build docs::build
 # answer for either honestly. The accessibility scan reuses an already-running
 # dev server with no ownership check, so from any checkout that does not own
 # port 5173 it scans a different tree and reports the result as this branch's.
-# infra::selftests covers this repository's own scripts, and gates nothing
-# anywhere: half of it is local-only developer tooling CI has no stake in, and
-# the other half guards CI already runs, whose failure paths belong inside the
-# guards. Run either by hand when working on what it covers.
+# infra::selftests covers this repository's local developer tooling (doctor,
+# worktree, the dev-server lifecycle, the detached gate), which CI has no stake
+# in, and gates nothing anywhere. Run either by hand when working on what it
+# covers.
 #
 # The lanes are a list passed to scripts/gate-run.sh rather than just
 # dependencies, so the run ends with one `GATE: PASS`/`GATE: FAIL` line naming
