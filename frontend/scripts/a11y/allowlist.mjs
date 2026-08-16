@@ -95,8 +95,9 @@ export function filterAllowed(violations) {
  * against the Vite-only server this gate boots: it reaches the API from submit
  * handlers alone, while `/login` and `/setup` each call `fetchSetupStatus` in a
  * mount-time query and would render an error branch instead. Playwright's
- * readiness URL is derived from this list, so a target added here is also the
- * page the web server is polled for.
+ * readiness URL is derived from the first entry, which keeps a second copy of a
+ * path out of playwright.config.ts; that probe measures server readiness only,
+ * since Vite's SPA fallback answers 200 for any path.
  *
  * Authenticated Home, Library, and Detail are the remaining gap; they need a
  * storage-state fixture and a backend before they can join.

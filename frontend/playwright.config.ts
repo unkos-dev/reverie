@@ -32,9 +32,12 @@ export default defineConfig({
         // timeout, which surfaces a port collision as a gate hang. Matches the
         // flag scripts/dev-server.sh passes for the same reason.
         command: "npm run dev -- --strictPort",
-        // url (not the deprecated port) is polled for a 2xx, so pointing it at
-        // a scanned route doubles as a route-exists readiness check. Derived
-        // from DEFAULT_TARGETS so the probe cannot outlive the route it polls.
+        // url (not the deprecated port) is polled for a 2xx, which measures
+        // server readiness and nothing more: no appType is configured, so
+        // Vite's SPA fallback answers 200 for any path, a deleted route
+        // included. Route validity is proven later, by the <main> assertion in
+        // a11y.spec.ts. Derived from DEFAULT_TARGETS only so this file cannot
+        // hold a second, drifting copy of a path.
         url: `http://localhost:5173${DEFAULT_TARGETS[0]}`,
         reuseExistingServer: !process.env.CI,
         timeout: 120_000,
