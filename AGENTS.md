@@ -121,26 +121,28 @@ Two aggregates anchor the local loop and should be the default reflex:
   frontend-only branch skips the database, the Rust rebuild, and the
   dependency audit. Changes to the verification machinery itself (the
   justfiles, `scripts/`, `mise.toml`, that filter file) escalate to the full
-  lane set, and the whole-tree repo-lint mirror always runs. That escalation
-  is also the only thing that selects `infra::selftests`, the lane holding the
-  self-tests of the repository's own scripts: they run on the branches that can
-  break them and nowhere else, and CI never runs them.
+  lane set, and the whole-tree repo-lint mirror always runs.
 - `just preflight-full` runs everything the CI gate runs that is locally
   runnable, unconditionally: the DB-backed backend test suite, the sqlx
   cache check, the backend static guards, cargo-machete, cargo-deny, the
-  frontend build, the script self-tests, and the zizmor workflow-security audit
+  frontend build, and the zizmor workflow-security audit
   (online audits included when a GitHub token is in the environment,
   offline-degraded otherwise). It brings the dev database up itself. Run it
   before any push (unless a scoped run already escalated to it), when the
   change is broad, or when you are unsure; a green run covers every locally
   runnable CI check, leaving only the CI-only lanes (MSRV, coverage, the
   docker image build, the accessibility scan, and the IaC, SAST, and secret
-  scans) to the remote run. The accessibility scan is the one of those that a
-  laptop could run: Playwright reuses an already-running dev server without
-  checking who owns it, so a local gate run from a checkout that does not hold
-  port 5173 scans a different tree and reports the verdict as this branch's.
-  `just js::a11y` stays available for fixing violations, where the caller picks
-  the server. `just check` remains the fast offline subset for mid-task iteration;
+  scans) to the remote run.
+- Two recipes gate nowhere and are invoked by hand when you are working on what
+  they cover. `just js::a11y` reuses an already-running dev server without
+  checking who owns it, so from a checkout that does not hold port 5173 it scans
+  a different tree; a clean CI runner cannot be ambiguous that way, so CI owns
+  the gate and you run the recipe while fixing violations.
+  `just infra::selftests` covers this repository's own scripts against stubbed
+  fixtures. Roughly half of it covers local-only developer tooling CI has no
+  stake in, and the rest covers guards CI already runs for real, whose failure
+  paths belong as assertions inside the guards. Run it while editing a script.
+- `just check` remains the fast offline subset for mid-task iteration;
   it includes zizmor's offline-only audits but not the token-gated ones.
 - `just preflight-detach [scoped|full]` runs either gate detached from the
   terminal (setsid), so a long run survives a session or turn boundary

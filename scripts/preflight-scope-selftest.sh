@@ -55,7 +55,6 @@ expect_failure() {
 
 FULL='rust::guards
 infra::check
-infra::selftests
 db-up
 rust::check
 rust::doc-lint

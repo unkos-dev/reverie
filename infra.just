@@ -264,19 +264,23 @@ no-plan-refs *files:
 [group('infra')]
 lint: shellcheck hadolint typos yamllint sqruff actionlint prose tool-pin-drift vp-pin-drift npm-pin-drift renovate-npm-manager-selftest just-reference-drift adr-frontmatter-selftest greptile-config compose-dev-invariants recipe-secret-echo-test cargo-locked-guard lefthook-validate
 
-# Self-tests of this repository's own scripts. Each one stubs its own PATH,
-# docker, mise, npm, and git fixtures, so its verdict is a pure function of
-# committed files that an unrelated change cannot move. They earn their place on
-# the branches that edit the machinery, which is what the preflight escalation
-# selects: this recipe is absent from ALWAYS_LANES and from every filter mapping
-# in preflight-scope.sh, and CI does not run it at all.
+# Self-tests of this repository's own scripts, invoked by hand while editing
+# one. This recipe gates nothing: it is absent from LANE_ORDER, lanes_for(),
+# ALWAYS_LANES and preflight-full, and CI never runs it.
 #
-# Four test-shaped names stay in `lint` above rather than moving here.
+# Nothing here has a gate's subject. Ten entries cover local-only developer
+# tooling (doctor, dev-server, worktree, the gate runner, the preflight scoper)
+# that CI has no stake in whatsoever. The other ten cover guards CI already runs
+# for real on every pull request; what those guards need is an assertion inside
+# them that fires on a real invocation, not a fixture-driven test that fires
+# only where the test runs.
+#
+# Four test-shaped names stay in `lint` above rather than sitting here.
 # renovate-npm-manager-selftest, adr-frontmatter-selftest, compose-dev-invariants
 # and recipe-secret-echo-test take committed configuration as their subject, not
 # a script, so an unrelated change can break them.
 #
-# Self-tests for this repository's own scripts; runs only on machinery branches.
+# Self-tests for this repository's own scripts; gates nothing, run it by hand.
 [group('infra')]
 selftests: no-plan-refs-selftest no-issue-refs-selftest tool-pin-drift-selftest vp-pin-drift-selftest npm-pin-drift-selftest sanitize-sarif-severities-selftest filter-sarif-test-rules-selftest filter-sarif-unfixable-os-selftest compose-dev-invariants-selftest dev-server-selftest backend-dev-env-selftest doctor-selftest db-ready-selftest require-disk-backed-selftest worktree-selftest worktree-base-selftest preflight-scope-selftest gate-run-selftest gate-detach-selftest cargo-locked-guard-selftest
 

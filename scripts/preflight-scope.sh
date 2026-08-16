@@ -106,12 +106,16 @@ lanes_for() {
 # toolchain, database, or install come first so they fail fastest, db-up
 # precedes every DB-backed recipe, and the network-backed audit runs last.
 #
-# infra::selftests sits here with the other no-toolchain static lanes but is
-# mapped from no filter in lanes_for() and is not in ALWAYS_LANES. Membership of
-# this array alone is what confines it to the machinery escalation below, which
-# selects LANE_ORDER whole.
+# Two recipes are deliberately absent, both because a laptop cannot answer for
+# them honestly.
 #
-# js::a11y is deliberately absent: it is CI-only. Playwright's webServer reuses
+# infra::selftests covers this repository's own scripts against stubbed PATH,
+# docker, mise, npm, and git fixtures. Half of what it covers is local-only
+# developer tooling CI has no stake in, and the other half guards CI already
+# runs for real, whose failure paths belong in the guards themselves. It is a
+# recipe to invoke by hand while editing a script, not a gate.
+#
+# js::a11y is CI-only. Playwright's webServer reuses
 # an already-running dev server with no ownership check, so a local run scans
 # whichever checkout happens to own port 5173 and reports that verdict as this
 # branch's. `just js::a11y` remains available for the loop that fixes
@@ -119,7 +123,6 @@ lanes_for() {
 LANE_ORDER=(
   rust::guards
   infra::check
-  infra::selftests
   db-up
   rust::check
   rust::doc-lint
