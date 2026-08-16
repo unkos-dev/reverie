@@ -10,13 +10,8 @@
  * dev-only `ReactQueryDevtoolsPanel` and `<Toaster />` as siblings of
  * the router so their state survives navigation.
  *
- * Dev-only design routes (`/design/system`, `/design/hero/*`) are
- * lazy-imported behind `import.meta.env.DEV` so the route module and
- * everything reachable from `pages/design/**` is dead code in
- * production builds — Vite's `manualChunks` config in
- * `vite.config.ts` isolates the chunk and tree-shaking strips it from
- * the production bundle. The `@tanstack/react-query-devtools` import
- * lives in `lib/query/devtools.tsx` and is referenced only inside a
+ * The `@tanstack/react-query-devtools` import lives in
+ * `lib/query/devtools.tsx` and is referenced only inside a
  * `import.meta.env.DEV` branch so Rollup eliminates it in prod.
  */
 import { StrictMode } from "react";
@@ -101,11 +96,6 @@ const routes: RouteObject[] = [
     },
   },
 ];
-
-if (import.meta.env.DEV) {
-  const { designRoutes } = await import("./routes/design");
-  routes.push(...designRoutes);
-}
 
 const router = createBrowserRouter(routes);
 
