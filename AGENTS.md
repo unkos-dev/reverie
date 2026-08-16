@@ -10,7 +10,8 @@ These are absolute invariants for the Reverie repository.
 5. **Tests are mandatory for the shipped product:**
    - Every feature or fix in `backend/` or `frontend/` ships with happy-path and edge-case tests in the same PR.
    - Do not submit product code without tests.
-   - Repository tooling under `scripts/`, the justfiles, and `.github/` is judged on one question: can it fail quietly?
+   - Executable tooling anywhere else in the tree (`scripts/`, the justfiles, `.github/`, `docker/`, the root configs) is judged on one question: can it fail quietly?
+   - Prose and generated documentation are not in scope here; "Docs are part of done" below governs them.
    - A guard that a pull request exercises and that fails loudly needs no self-test.
    - A check that can pass while matching nothing needs an assertion inside it, not a fixture-driven test outside it.
 6. **Verification prerequisites:** Restore a declared project dependency only through the repository's documented, lockfile-backed setup command. If a system prerequisite or CI-only binary is missing, stop the affected verification and report the exact missing command. Never install system packages, weaken checks, or patch around a missing tool without the maintainer's explicit approval.

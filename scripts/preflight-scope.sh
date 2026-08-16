@@ -115,11 +115,14 @@ lanes_for() {
 # runs for real, whose failure paths belong in the guards themselves. It is a
 # recipe to invoke by hand while editing a script, not a gate.
 #
-# js::a11y is CI-only. Playwright's webServer reuses
-# an already-running dev server with no ownership check, so a local run scans
-# whichever checkout happens to own port 5173 and reports that verdict as this
-# branch's. `just js::a11y` remains available for the loop that fixes
-# violations, where the caller chooses which server is scanned.
+# js::a11y is CI-only for two reasons, and the second is the deciding one. It
+# reuses an already-running dev server with no ownership check, so a local run
+# scans whichever checkout happens to own port 5173 and reports that verdict as
+# this branch's. A dedicated scratch port would fix that much. What it would not
+# fix is that a browser and a server do not belong on every frontend branch's
+# gate to re-scan routes the branch did not touch. `just js::a11y` remains
+# available for the loop that fixes violations, where the caller picks the
+# server.
 LANE_ORDER=(
   rust::guards
   infra::check
@@ -319,6 +322,13 @@ for name in "${filter_names[@]}"; do
     continue
   fi
   note "filter '${name}' matched (${hit}) -> ${lanes[*]}"
+  # The announcement above only fires for a filter with no local lanes at all.
+  # frontend has four and still triggers a CI job with no local counterpart, so
+  # without this the accessibility gate is the one thing a scoped run silently
+  # does not cover.
+  if [ "$name" = frontend ]; then
+    matched_ci_only+=("frontend's a11y scan")
+  fi
   selected+=("${lanes[@]}")
 done
 

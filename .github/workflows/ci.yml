@@ -1039,7 +1039,9 @@ jobs:
       - name: Recipe secret-echo guard
         run: just infra::recipe-secret-echo-test
 
-      # The one self-test on this job. scripts/filter-sarif-unfixable-os.sh
+      # The one self-test on this job whose subject is a script. The others
+      # above take committed configuration as their subject.
+      # scripts/filter-sarif-unfixable-os.sh
       # decides which container CVEs reach the code-scanning dashboard, and an
       # edit that widens its match withholds findings that do have fixes,
       # silently. The assertion that would catch that is the predicate itself,
