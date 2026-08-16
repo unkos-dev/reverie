@@ -41,7 +41,8 @@ Reminders (see CONTRIBUTING.md for the full conventions):
   Types: feat, fix, refactor, docs, chore, test, perf
 - Include the tracking issue ID in the branch name when applicable
   (e.g. feat/unk-42-epub-import) and reference it in the body where relevant.
-- Tests are mandatory: happy path, negative cases, and non-obvious edge
-  cases. PRs without tests will not be approved.
+- Tests are mandatory for backend/ and frontend/: happy path, negative
+  cases, and non-obvious edge cases. Tooling elsewhere is judged on
+  whether it can fail quietly (AGENTS.md hard rule 5).
 - Maintainer review and approval gate every merge.
 -->

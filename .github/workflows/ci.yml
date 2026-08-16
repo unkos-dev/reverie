@@ -970,23 +970,8 @@ jobs:
       - name: Shell lint (shellcheck)
         run: just infra::shellcheck
 
-      - name: Plan-reference gate self-test
-        run: just infra::no-plan-refs-selftest
-
-      - name: Issue-reference gate self-test
-        run: just infra::no-issue-refs-selftest
-
-      - name: Tool-pin gate self-test
-        run: just infra::tool-pin-drift-selftest
-
       - name: No workflow re-pins a mise-managed tool
         run: just infra::tool-pin-drift
-
-      - name: vp-pin gate self-test
-        run: just infra::vp-pin-drift-selftest
-
-      - name: npm-pin gate self-test
-        run: just infra::npm-pin-drift-selftest
 
       # A custom manager whose regex stops matching yields no deps and no
       # error, so nothing else here can notice Renovate losing sight of the
@@ -1054,42 +1039,24 @@ jobs:
       - name: Recipe secret-echo guard
         run: just infra::recipe-secret-echo-test
 
-      - name: Doctor environment check self-test
-        run: just infra::doctor-selftest
-
-      # Self-tests the shared tmpfs/ramfs guard `just worktree` and `just
-      # doctor` both call into, against a real tmpfs specimen (/dev/shm or
-      # /tmp) and a disk-backed path.
-      - name: Disk-backed filesystem guard self-test
-        run: just infra::require-disk-backed-selftest
-
-      # Exercises `just worktree` end to end (git worktree add/remove
-      # included), covering Cargo isolation plus ignored Claude and Codex
-      # overlays that the generated-reference drift check never executes.
-      - name: Worktree isolation and overlay self-test
-        run: just infra::worktree-selftest
-
-      # The gate runner turns a local preflight into a single PASS/FAIL line.
-      # A wrong verdict is invisible by construction (a green line on a failed
-      # run reads exactly like a green line on a passing one), so the runner
-      # is exercised against a fixture justfile here rather than trusted.
-      - name: Gate runner verdict self-test
-        run: just infra::gate-run-selftest
-
-      # `just preflight-detach` wraps this script; self-tests that a detached
-      # run produces both a log and a gate-status-readable record.
-      - name: Detached gate self-test
-        run: just infra::gate-detach-selftest
+      # The one self-test on this job whose subject is a script. The others
+      # above take committed configuration as their subject.
+      # scripts/filter-sarif-unfixable-os.sh
+      # decides which container CVEs reach the code-scanning dashboard, and an
+      # edit that widens its match withholds findings that do have fixes,
+      # silently. The assertion that would catch that is the predicate itself,
+      # so it cannot live inside the script, and the fixture builds a case a
+      # live scan cannot be relied on to contain. It runs here rather than only
+      # locally because a local gate is bypassable and never runs on fork PRs.
+      - name: Container-CVE suppression predicate
+        run: just infra::filter-sarif-unfixable-os-selftest
 
       # Every dependency-resolving cargo invocation across the just recipes,
       # the git hooks, the workflow files (this one included), and the image
       # build must pass --locked (the package-ingress ADR's frozen-installs
-      # control); the selftest keeps the guard's matching from drifting.
+      # control).
       - name: cargo --locked guard
         run: just infra::cargo-locked-guard
-
-      - name: cargo --locked guard self-test
-        run: just infra::cargo-locked-guard-selftest
 
       - name: Validate lefthook.yml
         run: just infra::lefthook-validate

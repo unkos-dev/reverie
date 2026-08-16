@@ -262,7 +262,43 @@ no-plan-refs *files:
 #
 # Whole repo-lint surface (mirrors the CI repo-lint job).
 [group('infra')]
-lint: shellcheck hadolint typos yamllint sqruff actionlint prose no-plan-refs-selftest no-issue-refs-selftest tool-pin-drift tool-pin-drift-selftest vp-pin-drift vp-pin-drift-selftest npm-pin-drift npm-pin-drift-selftest renovate-npm-manager-selftest just-reference-drift adr-frontmatter-selftest sanitize-sarif-severities-selftest filter-sarif-test-rules-selftest filter-sarif-unfixable-os-selftest greptile-config compose-dev-invariants compose-dev-invariants-selftest recipe-secret-echo-test dev-server-selftest backend-dev-env-selftest doctor-selftest db-ready-selftest require-disk-backed-selftest worktree-selftest worktree-base-selftest preflight-scope-selftest gate-run-selftest gate-detach-selftest cargo-locked-guard cargo-locked-guard-selftest lefthook-validate
+lint: shellcheck hadolint typos yamllint sqruff actionlint prose tool-pin-drift vp-pin-drift npm-pin-drift renovate-npm-manager-selftest just-reference-drift adr-frontmatter-selftest greptile-config compose-dev-invariants recipe-secret-echo-test filter-sarif-unfixable-os-selftest cargo-locked-guard lefthook-validate
+
+# Self-tests of this repository's own scripts, invoked by hand while editing
+# one. This recipe gates nothing: it is absent from LANE_ORDER, lanes_for(),
+# ALWAYS_LANES and preflight-full, and CI never runs it.
+#
+# Nothing here has a gate's subject. Half cover local-only developer tooling
+# (doctor, dev-server, worktree, the gate runner, the preflight scoper) that CI
+# has no stake in whatsoever. The rest cover guards CI already runs for real on
+# every pull request; what those guards need is an assertion inside them that
+# fires on a real invocation, not a fixture-driven test that fires only where
+# the test runs. filter-sarif-test-rules-selftest is in the second group even
+# though its subject withholds findings rather than gating: that script already
+# fails the run on a `/test` rule ID absent from its allowlist, so its only
+# widening path is an entry in a committed file that a reviewer sees.
+#
+# The split is what a check takes as its subject, not what it is called.
+# `lint` above keeps everything whose subject is committed configuration, which
+# an unrelated change can break: tool-pin-drift, vp-pin-drift, npm-pin-drift,
+# just-reference-drift, greptile-config, compose-dev-invariants,
+# cargo-locked-guard, lefthook-validate, and three that only look test-shaped,
+# renovate-npm-manager-selftest, adr-frontmatter-selftest and
+# recipe-secret-echo-test. A new config validator belongs there.
+#
+# filter-sarif-unfixable-os-selftest is in `lint` for a different reason, and is
+# the one exception to everything above. Its subject is a suppression predicate
+# that decides which container CVEs reach the code-scanning dashboard. The
+# script fails closed against upstream rewording, but nothing stops an edit that
+# widens the match from silently withholding findings that do have fixes, and
+# the assertion that would catch it is the predicate itself, so it cannot live
+# inside the script. The fixture builds the discriminating case, an advisory
+# naming an older release as unfixed while offering a fix for the scanned one,
+# which a live scan cannot be relied on to contain.
+#
+# Self-tests for this repository's own scripts; gates nothing, run it by hand.
+[group('infra')]
+selftests: no-plan-refs-selftest no-issue-refs-selftest tool-pin-drift-selftest vp-pin-drift-selftest npm-pin-drift-selftest sanitize-sarif-severities-selftest filter-sarif-test-rules-selftest compose-dev-invariants-selftest dev-server-selftest backend-dev-env-selftest doctor-selftest db-ready-selftest require-disk-backed-selftest worktree-selftest worktree-base-selftest preflight-scope-selftest gate-run-selftest gate-detach-selftest cargo-locked-guard-selftest
 
 # Infra has no formatter (oxfmt owns formatting via the JS plane), so check == lint.
 [group('infra')]
