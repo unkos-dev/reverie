@@ -26,8 +26,13 @@ These are absolute invariants for the Reverie repository.
 
 <security_reference>
 
-- **CodeGuard:** Implementation work that touches authentication, authorization, sessions, secrets, input handling, file I/O, XML parsing, serialization, logging, client-side web security, outbound HTTP, response headers, or supply-chain controls MUST follow every applicable rule in `docs/security/codeguard/codeguard-*.md`. Those files come from an upstream third party; do not edit them or assess whether the change should amend them. If an applicable rule conflicts with required Reverie behavior, stop and obtain the maintainer's approval for a deviation. Record each approved deviation, its rationale, and its compensating controls in `docs/security/codeguard/README.md`. Work outside the listed areas requires no CodeGuard review or task-summary statement.
-  </security_reference>
+- **CodeGuard:** Implementation work in any covered area MUST follow every applicable rule in `docs/security/codeguard/codeguard-*.md`.
+  - Covered areas: authentication, authorization, sessions, secrets, input handling, file I/O, XML parsing, serialization, logging, client-side web security, outbound HTTP, response headers, and supply-chain controls.
+  - Those files come from an upstream third party. Do not edit them, and do not assess whether a change should amend them.
+  - If an applicable rule conflicts with required Reverie behavior, stop and obtain the maintainer's approval for a deviation.
+  - Record each approved deviation, its rationale, and its compensating controls in `docs/security/codeguard/README.md`.
+  - Work outside the covered areas requires no CodeGuard review or task-summary statement.
+    </security_reference>
 
 <design_authority>
 
