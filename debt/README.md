@@ -88,8 +88,8 @@ purge commit, not in frontmatter.
   - `infra-gap-closes`: waiting on adjacent infrastructure (homelab,
     deployment surface) being in place
 - **`lift-when`**: specific, measurable condition. Free text.
-  Examples: "the recovery-pin index ships on main", "upstream ships an
-  oauth2-reqwest release supporting reqwest 0.13", "v0.2 release tag cut".
+  Examples: "the recovery-pin index ships on main", "upstream publishes a
+  stable oauth2-reqwest release", "v0.2 release tag cut".
 
 ## Lifecycle
 
@@ -160,4 +160,4 @@ no translation pass.
 - [Self-registration ships dormant (endpoint off by default, screen unrouted)](2026-06-30-self-registration-dormant.md): adopted from the S3 review; the register endpoint mints immediately-active accounts, unsafe for a reachable multi-user instance; lifts when registration becomes a moderated request-access flow with a disabled-on-register invariant test
 - [Forwarded client-IP header trusted by name, not proxy identity](2026-06-27-forwarded-header-trust-unbound.md): adopted from PR #511 review; the login/recovery limiter honors trusted_client_ip_header without a peer-CIDR binding; lifts when forwarded-IP trust is bound to an allow-listed reverse-proxy CIDR
 - [Publisher and pub_date missing from metadata edit UI](2026-05-26-publisher-pubdate-ui-gap.md): adopted from 11c; BookDetail doesn't carry those columns yet; lifts when API + UI extended
-- [Two reqwest majors in the dependency tree](2026-08-05-reqwest-dual-pin.md): recognised 2026-05-29; openidconnect 4 pulls oauth2 5, whose bundled reqwest feature pins reqwest 0.12 beside the tree's 0.13; lifts when a first-party AsyncHttpClient adapter over 0.13 replaces that feature, or upstream ships an oauth2-reqwest supporting 0.13
+- [The OIDC transport adapter is pinned to a pre-release](2026-08-14-oauth2-reqwest-prerelease-pin.md): adopted 2026-08-14; the only adapter presenting a reqwest 0.13 client to oauth2 ships as 0.1.0-alpha.3, so an exact pin guards security-sensitive request conversion on the auth path; lifts when oauth2-reqwest publishes a stable release compatible with the oauth2 and reqwest majors Reverie resolves

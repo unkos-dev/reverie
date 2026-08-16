@@ -20,7 +20,6 @@ use uuid::Uuid;
 use tower_sessions::Session;
 
 use crate::auth::middleware::CurrentUser;
-use crate::auth::oidc;
 use crate::auth::theme_cookie::set_theme_cookie;
 use crate::error::AppError;
 use crate::models::theme_preference::ThemePreference;
@@ -87,7 +86,7 @@ async fn oidc_login(
     // OIDC is optional. When unconfigured this handler is
     // unreachable in practice (the SPA hides the OIDC action), but guard so a
     // direct hit 404s cleanly rather than acting on an absent client.
-    let oidc_client = state.oidc_client.as_ref().ok_or(AppError::NotFound)?;
+    let oidc_client = state.oidc.as_ref().ok_or(AppError::NotFound)?.client();
 
     let (pkce_challenge, pkce_verifier) = PkceCodeChallenge::new_random_sha256();
 
@@ -151,7 +150,8 @@ async fn callback(
 ) -> Result<(CookieJar, Redirect), AppError> {
     let Query(params) = params?;
     // OIDC optional: a callback without a configured client 404s.
-    let oidc_client = state.oidc_client.as_ref().ok_or(AppError::NotFound)?;
+    let oidc = state.oidc.as_ref().ok_or(AppError::NotFound)?;
+    let oidc_client = oidc.client();
     // Validate OIDC anti-forgery state (the `state` query param echoed
     // back by the IdP must match the value `/auth/oidc/login` stored under
     // `oidc_csrf_state`). This is the OIDC transient — distinct from
@@ -178,8 +178,9 @@ async fn callback(
         .map_err(|e| AppError::Internal(e.into()))?
         .ok_or(AppError::Unauthorized)?;
 
-    // Exchange code for tokens
-    let http_client = oidc::exchange_http_client().map_err(AppError::Internal)?;
+    // Exchange code for tokens over the startup-built transport: bounded,
+    // no-redirect, and pooled, rather than a fresh client per callback.
+    let http_client = oidc.transport().oauth_client();
     let token_response = oidc_client
         .exchange_code(AuthorizationCode::new(params.code))
         .map_err(|e| AppError::Internal(anyhow::anyhow!("exchange_code config error: {e}")))?
@@ -1327,7 +1328,9 @@ mod tests {
         // Mock IdP: spins up wiremock + signs a key + serves /jwks.
         // client_id matches `test_config().oidc_client_id` (empty string).
         let mock = MockOidcProvider::start("").await;
-        let oidc_client = Some(mock.client("http://localhost:3000/auth/callback"));
+        let oidc = Some(std::sync::Arc::new(
+            mock.runtime("http://localhost:3000/auth/callback"),
+        ));
 
         // Shared session store so the test can read what /auth/oidc/login wrote.
         let store = MemoryStore::default();
@@ -1335,7 +1338,7 @@ mod tests {
             pool: app_pool.clone(),
             ingestion_pool,
             config: test_support::test_config(),
-            oidc_client,
+            oidc,
             jwt_validator: None,
             login_limiter: test_support::test_login_limiter(),
             settings: test_support::test_settings(),
@@ -1521,13 +1524,15 @@ mod tests {
         let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
 
         let mock = MockOidcProvider::start("").await;
-        let oidc_client = Some(mock.client("http://localhost:3000/auth/callback"));
+        let oidc = Some(std::sync::Arc::new(
+            mock.runtime("http://localhost:3000/auth/callback"),
+        ));
         let store = MemoryStore::default();
         let state = AppState {
             pool: app_pool.clone(),
             ingestion_pool,
             config: test_support::test_config(),
-            oidc_client,
+            oidc,
             jwt_validator: None,
             login_limiter: test_support::test_login_limiter(),
             settings: test_support::test_settings(),
@@ -1670,13 +1675,15 @@ mod tests {
         let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
 
         let mock = MockOidcProvider::start("").await;
-        let oidc_client = Some(mock.client("http://localhost:3000/auth/callback"));
+        let oidc = Some(std::sync::Arc::new(
+            mock.runtime("http://localhost:3000/auth/callback"),
+        ));
         let store = MemoryStore::default();
         let state = AppState {
             pool: app_pool.clone(),
             ingestion_pool,
             config: test_support::test_config(),
-            oidc_client,
+            oidc,
             jwt_validator: None,
             login_limiter: test_support::test_login_limiter(),
             settings: test_support::test_settings(),
@@ -1789,13 +1796,15 @@ mod tests {
         let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
 
         let mock = MockOidcProvider::start("").await;
-        let oidc_client = Some(mock.client("http://localhost:3000/auth/callback"));
+        let oidc = Some(std::sync::Arc::new(
+            mock.runtime("http://localhost:3000/auth/callback"),
+        ));
         let store = MemoryStore::default();
         let state = AppState {
             pool: app_pool.clone(),
             ingestion_pool,
             config: test_support::test_config(),
-            oidc_client,
+            oidc,
             jwt_validator: None,
             login_limiter: test_support::test_login_limiter(),
             settings: test_support::test_settings(),
@@ -1905,13 +1914,15 @@ mod tests {
         let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
 
         let mock = MockOidcProvider::start("").await;
-        let oidc_client = Some(mock.client("http://localhost:3000/auth/callback"));
+        let oidc = Some(std::sync::Arc::new(
+            mock.runtime("http://localhost:3000/auth/callback"),
+        ));
         let store = MemoryStore::default();
         let state = AppState {
             pool: app_pool.clone(),
             ingestion_pool,
             config: test_support::test_config(),
-            oidc_client,
+            oidc,
             jwt_validator: None,
             login_limiter: test_support::test_login_limiter(),
             settings: test_support::test_settings(),

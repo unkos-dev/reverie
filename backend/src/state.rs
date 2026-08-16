@@ -3,12 +3,11 @@
 //!
 //! [`AppState`] is `Clone`. Each field is cheaply cloneable: `PgPool`
 //! is `Arc`-backed internally; [`Config`] is owned data (`Clone`-derived,
-//! mostly `String` / `Vec` / nested config structs); [`OidcClient`] is
-//! the `openidconnect::Client` alias from [`crate::auth::oidc`] —
-//! a concrete type whose `Clone` is what `openidconnect` provides.
-//! It is built once during [`crate::run`] and threaded through Axum's
-//! `with_state`, the auth/session layers, the ingestion watcher, the
-//! enrichment queue, and (read-only) the writeback worker.
+//! mostly `String` / `Vec` / nested config structs); [`OidcRuntime`] is
+//! `Arc`-wrapped so every clone shares one discovered client and one HTTP
+//! connection pool. It is built once during [`crate::run`] and threaded
+//! through Axum's `with_state`, the auth/session layers, the ingestion
+//! watcher, the enrichment queue, and (read-only) the writeback worker.
 
 use std::sync::Arc;
 
@@ -18,7 +17,7 @@ use tokio::sync::RwLock;
 use chrono::{DateTime, Utc};
 
 use crate::auth::jwt::JwtValidator;
-use crate::auth::oidc::OidcClient;
+use crate::auth::oidc::OidcRuntime;
 use crate::auth::rate_limit::LoginLimiter;
 use crate::config::Config;
 use crate::models::settings::Settings;
@@ -40,14 +39,15 @@ pub struct AppState {
     /// CSP `HeaderValue`s on `config.security` (built in `run` before this
     /// state is constructed).
     pub config: Config,
-    /// Pre-discovered OIDC client (issuer metadata + JWKS) for the
-    /// login and callback routes, or `None` when OIDC is not configured
-    /// (local-only instance). Discovery happens once at startup
-    /// in [`crate::auth::oidc::init_oidc_client`] and only when
-    /// [`crate::config::Config::oidc_configured`] is true; clones are cheap
-    /// (the underlying `openidconnect::Client` derives `Clone`). The OIDC
-    /// initiate/callback handlers guard on `Some` and 404 when this is `None`.
-    pub oidc_client: Option<OidcClient>,
+    /// Interactive OIDC runtime: the pre-discovered client (issuer metadata +
+    /// JWKS) paired with the bounded transport that discovered it, or `None`
+    /// when OIDC is not configured (local-only instance). Discovery happens
+    /// once at startup in [`crate::auth::oidc::init_oidc_client`] and only when
+    /// [`crate::config::Config::oidc_configured`] is true. The OIDC
+    /// initiate/callback handlers guard on `Some` and 404 when this is `None`;
+    /// the callback's token exchange reuses this runtime's transport instead of
+    /// building a client per request.
+    pub oidc: Option<Arc<OidcRuntime>>,
     /// Resource-server JWT validator for IdP-issued Bearer access tokens, or
     /// `None` when resource-server JWT validation is not configured
     /// ([`crate::config::Config::resource_server_configured`]). Built once
