@@ -1016,13 +1016,6 @@ jobs:
       - name: Format check (oxfmt)
         run: just js::fmt-check
 
-      # The just recipe reference is generated from the task graph and
-      # committed; regenerate and diff so a stale page fails the build. After
-      # the workspace install because the generator formats its output with
-      # the pinned vp, so oxfmt owns the committed bytes.
-      - name: just recipe reference drift
-        run: just infra::just-reference-drift
-
       # greptile.json must parse and every customContext.files[] pin must
       # resolve — a pin to a moved file degrades reviews silently.
       # Unconditional so a PR that deletes a pinned file fails here even if

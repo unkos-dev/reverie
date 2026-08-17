@@ -73,16 +73,6 @@ zizmor-offline:
 prose:
     vale docs/src adr *.md
 
-# Regenerate the just recipe reference from the justfiles. WRITES.
-[group('infra')]
-just-reference:
-    scripts/gen-just-reference.sh
-
-# Assert the committed just reference still matches the justfiles.
-[group('infra')]
-just-reference-drift:
-    scripts/gen-just-reference.sh --check
-
 # Assert no workflow re-pins a mise-managed tool; mise.toml is the single source.
 [group('infra')]
 tool-pin-drift:
@@ -206,7 +196,7 @@ no-plan-refs *files:
 #
 # Whole repo-lint surface (mirrors the CI repo-lint job).
 [group('infra')]
-lint: shellcheck hadolint typos yamllint sqruff actionlint prose tool-pin-drift vp-pin-drift npm-pin-drift renovate-npm-manager-selftest just-reference-drift adr-frontmatter-selftest greptile-config compose-dev-invariants recipe-secret-echo-test filter-sarif-unfixable-os-selftest preflight-scope-selftest cargo-locked-guard lefthook-validate
+lint: shellcheck hadolint typos yamllint sqruff actionlint prose tool-pin-drift vp-pin-drift npm-pin-drift renovate-npm-manager-selftest adr-frontmatter-selftest greptile-config compose-dev-invariants recipe-secret-echo-test filter-sarif-unfixable-os-selftest preflight-scope-selftest cargo-locked-guard lefthook-validate
 
 # Everything left here covers local-only developer tooling, and that is now the
 # entry criterion. CI has no stake in `just doctor`, `just worktree`, or the
