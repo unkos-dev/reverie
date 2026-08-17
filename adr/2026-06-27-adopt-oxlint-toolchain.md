@@ -66,7 +66,7 @@ The three forcing decisions resolved as follows.
 - **Cardinal `as`-cast ban** (`typescript/consistent-type-assertions` with
   `objectLiteralTypeAssertions: never`) is a native oxlint rule and fires
   standalone, without type information. It needs no type-aware support, so the
-  migration's main risk did not materialize.
+  migration's main risk did not materialise.
 - **Fetch centralisation** (`no-restricted-globals` and
   `no-restricted-properties`) is native.
 - **The `strictTypeChecked` class** (`no-floating-promises`, `no-unsafe-*`) is
