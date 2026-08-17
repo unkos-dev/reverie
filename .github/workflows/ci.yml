@@ -1491,7 +1491,7 @@ jobs:
 
   # Server-side Conventional Commits gate: the local commit-msg hook is
   # bypassable and never runs on fork PRs, yet release-please's changelog
-  # and linear-close.yml's extraction depend on commit shape. Two surfaces:
+  # depends on commit shape. Two surfaces:
   # every commit the PR introduces (keeps branch history greppable), and
   # the PR title — squash-merge makes the title the subject of the commit
   # that lands on main, which is what release-please consumes.
@@ -1543,45 +1543,6 @@ jobs:
         env:
           PR_TITLE: ${{ github.event.pull_request.title }}
         run: printf '%s\n' "$PR_TITLE" | npx --no-install commitlint --verbose
-
-  # Advisory check that the PR body carries the `Closes UNK-N` magic word
-  # (hard-rule-9): linear-close.yml's branch/title extraction is the
-  # fallback and Linear's own branch-name matching is unreliable against
-  # the prefix convention. Advisory so legitimate no-issue PRs are never
-  # blocked; graduation to blocking = swap the final exit 0 for exit 1.
-  pr-linear-ref:
-    name: PR body Linear reference (advisory)
-    if: github.event_name == 'pull_request'
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    steps:
-      # THREAT: PR body and branch name are attacker-controlled text on
-      # fork PRs — both reach the script via env, never template
-      # interpolation.
-      - name: Check for Closes UNK-N magic word
-        env:
-          PR_BODY: ${{ github.event.pull_request.body }}
-          HEAD_REF: ${{ github.event.pull_request.head.ref }}
-        run: |
-          set -euo pipefail
-          if grep -qiE 'closes UNK-[0-9]+' <<<"${PR_BODY}"; then
-            echo "PR body carries a Closes UNK-N magic word."
-            exit 0
-          fi
-          # Legitimate no-issue class: docs/ or chore/ branch with no
-          # embedded issue id.
-          if grep -qE '^(docs|chore)/' <<<"${HEAD_REF}" && ! grep -qiE 'unk-[0-9]+' <<<"${HEAD_REF}"; then
-            echo "No-issue branch (${HEAD_REF}) — Closes line not required."
-            exit 0
-          fi
-          msg="PR body lacks a 'Closes UNK-N' line. Hard-rule-9: without the magic word the Linear issue is never auto-closed on merge (branch-name matching is unreliable). Add 'Closes UNK-XXX' to the PR body, or use a docs/ or chore/ branch without an issue id if genuinely untracked."
-          echo "::warning title=Missing Closes UNK-N in PR body::${msg}"
-          {
-            echo "## PR body Linear reference (advisory)"
-            echo ""
-            echo "${msg}"
-          } >> "$GITHUB_STEP_SUMMARY"
-          exit 0
 
   # Advisory: absent from ci-gate.needs[] and continue-on-error, so a Sonar
   # outage or missing token never fails the build.
@@ -1807,7 +1768,6 @@ jobs:
       - sast
       - docs
       - commitlint
-      - pr-linear-ref
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
