@@ -46,10 +46,14 @@ governor = { version = "0.10.4", features = ["dashmap"] }
 hickory-resolver = "0.26.1"
 image = { version = "0.25.10", default-features = false, features = ["jpeg", "png", "webp"] }
 # Resource-server JWT validation (RFC 9068) for IdP-issued Bearer access
-# tokens; jsonwebtoken has no default crypto backend as of 10.x, so a
-# backend feature is mandatory. jwks_client_rs pulls jsonwebtoken >=10.2
-# transitively; default-features = false drops native-tls in favour of
-# the workspace's rustls posture.
+# tokens; jsonwebtoken has no default crypto backend, so a backend feature
+# is mandatory. jwks_client_rs pulls its own jsonwebtoken dependency
+# transitively, and its JwksClientError: From<jsonwebtoken::errors::Error>
+# impl only satisfies the trait bound in auth/jwt.rs when both crates
+# resolve the same jsonwebtoken major version — bump them together, never
+# independently, or the build breaks with two incompatible same-named
+# jsonwebtoken types in the graph. default-features = false drops
+# native-tls in favour of the workspace's rustls posture.
 jsonwebtoken = { version = "11.0", features = ["rust_crypto"] }
 jwks_client_rs = { version = "0.6", default-features = false, features = ["rustls", "rust_crypto"] }
 notify = "8.2.0"
