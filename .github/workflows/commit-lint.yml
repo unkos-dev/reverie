@@ -17,6 +17,14 @@ on:
 
 permissions: {}
 
+# A title edit supersedes the run before it. Without this, two edits seconds
+# apart leave two runs reporting under one required context name, and the
+# check that decides the merge could be the one holding the older title. A
+# cancelled run is not a success, so cancelling fails closed.
+concurrency:
+  group: commit-lint-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
 jobs:
   commitlint:
     name: Commit lint
