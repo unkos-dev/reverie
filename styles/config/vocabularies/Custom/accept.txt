@@ -44,6 +44,7 @@ async
 atlassian
 atomicity
 Audiobookshelf
+auditable
 auth
 Authelia
 Authentik
@@ -77,6 +78,7 @@ changelog
 Changelogs
 checkable
 checkboxes
+Checkov
 checksums
 chroma
 chromedriver
@@ -150,6 +152,7 @@ Dockerfile
 docstring
 docstrings
 doctests
+dotenv
 dotfiles
 doublestar
 dropdown
@@ -326,6 +329,7 @@ prefetch
 prefetches
 preflight
 prefs
+preinstalls
 Prettier
 PRs
 pullable
@@ -380,6 +384,7 @@ roundtrip
 ruleset
 runnable
 rustdoc
+rustup
 sanitisation
 Satoshi
 SBOM
@@ -440,6 +445,7 @@ templated
 Templating
 testEngine
 theming
+timeframes
 Tkdodo
 Tokio
 tombstoned
@@ -452,6 +458,7 @@ tradeoff
 tradeoffs
 Traefik
 trigram
+Trivy
 TruffleHog
 tsgo
 tsgolint
