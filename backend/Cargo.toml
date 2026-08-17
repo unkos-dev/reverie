@@ -50,7 +50,7 @@ image = { version = "0.25.10", default-features = false, features = ["jpeg", "pn
 # backend feature is mandatory. jwks_client_rs pulls jsonwebtoken >=10.2
 # transitively; default-features = false drops native-tls in favour of
 # the workspace's rustls posture.
-jsonwebtoken = { version = "10.4", features = ["rust_crypto"] }
+jsonwebtoken = { version = "11.0", features = ["rust_crypto"] }
 jwks_client_rs = { version = "0.6", default-features = false, features = ["rustls", "rust_crypto"] }
 notify = "8.2.0"
 openidconnect = { version = "4.0.1", features = ["reqwest"] }
