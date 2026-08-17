@@ -1,7 +1,6 @@
 name: PR labeler
 
 # Runs from the base branch so the config on main is authoritative (fork-safe).
-# Applies labels defined in .github/labeler.yml based on changed files.
 
 on:
   pull_request_target:

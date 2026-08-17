@@ -52,16 +52,10 @@ jobs:
         with:
           persist-credentials: false
 
-      # Resolve the pinned build-cache version once for every job that needs
-      # it. mise.toml is the pin a developer's machine installs kache from,
-      # and the cache action takes a version string of its own, so reading it
-      # here keeps one source of truth and stops a second copy drifting.
-      #
-      # The Rust toolchain is not resolved here. .github/actions/rust-toolchain
-      # reads backend/rust-toolchain.toml in the job that installs from it and
-      # reports the version back, so the compiler and anything keyed on it come
-      # from one read rather than from two parsers that have to agree.
-      #
+      # Resolve the pinned kache version once here (from mise.toml) so every
+      # job that needs it reads one source instead of a drifting copy. The
+      # Rust toolchain version is resolved separately, in
+      # .github/actions/rust-toolchain, for the same reason.
       # `|| true` lets a dropped field reach the format guard instead of
       # failing the pipe opaquely.
       - name: Resolve pinned build-cache version
@@ -142,17 +136,13 @@ jobs:
       KACHE_REMOTE_READONLY: ${{ github.ref == 'refs/heads/main' && 'false' || 'true' }}
       # kache refuses to cache a C compilation carrying a flag its table does
       # not model, which is why zstd-sys recompiles every run.
-      # -fmerge-all-constants is deterministic codegen with no host-dependent
-      # component, so opting it in is safe: an allowlisted flag is folded into
-      # the cache key verbatim, and a compile without it keys differently.
-      #
-      # Env rather than a repository `.kache.toml`, because kache resolves that
-      # file by walking up from the working directory and these compiles are
-      # spawned by build scripts whose directory is under ~/.cargo/registry,
-      # where the repository is not an ancestor. The other flag these builds
-      # carry, `-Wa,--debug-prefix-map=`, is deliberately absent: the allowlist
-      # matches by exact string and that value embeds the versioned registry
-      # path, so an entry would stop matching on the next aws-lc-sys bump.
+      # -fmerge-all-constants is deterministic codegen, so allowlisting it is
+      # safe. Set via env, not a repository `.kache.toml`: kache resolves that
+      # file by walking up from the working directory, and these compiles run
+      # under ~/.cargo/registry, where the repository is not an ancestor.
+      # `-Wa,--debug-prefix-map=` stays off the allowlist: it embeds the
+      # versioned registry path, so a pinned entry would stop matching on the
+      # next aws-lc-sys bump.
       KACHE_CC_EXTRA_ALLOWLIST_FLAGS: -fmerge-all-constants
       # Fork pull requests cannot read repository secrets, so the remote does
       # not exist for them; pointing kache at an unreachable endpoint would
@@ -192,12 +182,11 @@ jobs:
       # just walks up to the repo-root justfile from this backend/ working
       # directory; rust::guards re-enters the repo root itself.
       #
-      # Shims stay off for the whole job. A shim resolves its version from the
-      # mise config at the caller's working directory, and rustc links each
-      # unit from that unit's package root, which for a registry dependency is
-      # ~/.cargo/registry with no mise.toml above it. Every step that needs a
-      # mise tool runs under `mise exec` instead, so a step that forgets the
-      # wrapper fails loudly rather than resolving silently through a shim.
+      # Shims stay off for the whole job: rustc links a registry dependency
+      # from ~/.cargo/registry, which has no mise.toml above it for a shim to
+      # resolve against. Every step that needs a mise tool runs under `mise
+      # exec` instead, so a step that forgets the wrapper fails loudly rather
+      # than resolving silently.
       - name: Install just (mise)
         uses: jdx/mise-action@3c2e0cf82a5b2e5249f0d3635a4d83d0ae861518 # v4.2.5
         with:
@@ -228,14 +217,13 @@ jobs:
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
         with:
           workspaces: backend
-          # Registry only wherever the store below is reachable, which is what
-          # keeps this tarball inside the quota: the registry is a fraction of
-          # `target/`, so it stops evicting unrelated caches.
-          #
-          # A fork has no credentials for that store and asks for `target/`
-          # instead, which does not restore what the default branch saves:
-          # actions/cache derives its version from the path set. Once the last
-          # full-target generation expires a fork compiles cold. Tracked in
+          # Registry only wherever the remote store below is reachable: the
+          # registry is a fraction of `target/`, so caching it stays inside
+          # the quota without evicting unrelated caches. A fork has no
+          # credentials for that store and falls back to caching `target/`
+          # instead, which does not restore what the default branch saves
+          # (actions/cache keys on the path set) and compiles cold once the
+          # last full-target generation expires. Tracked in
           # debt/2026-07-26-fork-pr-cache-fallback.md.
           cache-targets: ${{ secrets.R2_ACCOUNT_ID == '' }}
           # Restore-only on PR branches: the repo cache quota (10 GiB) cannot
@@ -245,23 +233,22 @@ jobs:
           # source anyway.
           save-if: ${{ github.ref == 'refs/heads/main' }}
 
-      # Content-addressed compile cache in R2. Per-crate keys invalidate the
-      # bumped crate and its dependents where the tarball key above rebuilds
-      # everything, so the two divide cleanly: tarball for the registry, this
-      # for compiled artifacts. See adr/2026-07-26-remote-build-cache-on-r2.md.
+      # Content-addressed compile cache in R2, keyed per crate so a bump only
+      # invalidates that crate and its dependents; the tarball cache above
+      # covers the registry instead. See
+      # adr/2026-07-26-remote-build-cache-on-r2.md.
       #
-      # Write credentials are reserved for pushes to main and a pull request
-      # gets object-read keys, the same poisoning surface docker-build records
-      # for its buildx scopes. pr-comment needs `pull-requests: write`, which
-      # this workflow does not grant; github-cache would put the artifacts back
-      # inside the 10 GiB quota this exists to escape.
+      # Write credentials are reserved for pushes to main; a pull request gets
+      # object-read keys, the same poisoning surface docker-build records for
+      # its buildx scopes. pr-comment stays off (needs `pull-requests: write`,
+      # which this workflow does not grant); github-cache stays off (it would
+      # put the artifacts back inside the 10 GiB quota this exists to escape).
       #
-      # The digest is pinned past v1 (published 2026-06-15, never re-pointed)
-      # because `namespace` and `pr-comment` do not exist in that contract, and
-      # GitHub discards an undeclared input with a warning rather than an
-      # error, leaving the setting silently inert. Check any input added here
-      # against action.yml at this revision rather than at main, and return to
-      # a tag once upstream publishes one past v1.
+      # Digest pinned past v1 (published 2026-06-15, never re-pointed): that
+      # tag's contract has no `namespace` or `pr-comment` input, and GitHub
+      # silently drops an undeclared input rather than erroring. Check any new
+      # input against action.yml at this revision, and return to a tag once
+      # upstream publishes one past v1.
       - name: Remote build cache (kache)
         if: env.R2_CONFIGURED == 'true'
         uses: kunobi-ninja/kache-action@a257c055543c2840700a9bbca8f9c3094a421b1b # main@2026-06-19
@@ -274,23 +261,19 @@ jobs:
           s3-secret-access-key: ${{ github.ref == 'refs/heads/main' && secrets.R2_SECRET_ACCESS_KEY_RW || secrets.R2_SECRET_ACCESS_KEY_RO }}
           github-cache: false
           pr-comment: false
-          # Without this the build scripts and doctest binaries pass through
-          # uncached, counted at 580 skipped executables. The Linux default
+          # Without this, build scripts and doctest binaries pass through
+          # uncached (580 skipped executables). Already the Linux default
           # since kache 0.12.0, kept explicit because that default rests on
-          # where the platform keeps debug information rather than on a
-          # caching guarantee, and losing it would read as a slow run.
+          # where the platform keeps debug information, not on a caching
+          # guarantee, and losing it would just read as a slow run.
           cache-executables: true
-          # Shards are what make prefetch useful: unset, the post step skips
-          # the shard upload and hits arrive one request at a time, measured
-          # at ~2min of request latency against ~14s of body transfer across
-          # 1354 hits.
+          # Shards make prefetch useful: unset, hits arrive one request at a
+          # time (~2min latency vs ~14s transfer across 1354 hits measured).
           #
-          # The value identifies the build configuration rather than the job
-          # (target/rustc_hash/profile), so a toolchain bump rotates it
-          # instead of warming shards for artifacts that no longer exist. A
-          # job with a different configuration needs its own value, coverage
-          # most of all: `-C instrument-coverage` is a separate key space and
-          # reusing this namespace would silently cross the two.
+          # Keyed on build configuration, not job name, so a toolchain bump
+          # rotates it instead of warming shards for artifacts that no longer
+          # exist. Coverage needs its own value: `-C instrument-coverage` is a
+          # separate key space and reusing this namespace would cross the two.
           namespace: x86_64-unknown-linux-gnu/${{ steps.rust.outputs.version }}/dev
 
       # A cache degrades quietly by design: kache compiles for real whenever
@@ -323,14 +306,11 @@ jobs:
         run: psql -v ON_ERROR_STOP=1 postgres://reverie:reverie@localhost:5432/reverie_dev -f docker/init-roles.sql
         working-directory: ${{ github.workspace }}
 
-      # Must land before the first cargo invocation that links (sqlx-cli
-      # below), since the job-level RUSTFLAGS routes every link through mold.
-      # `-fuse-ld=mold` makes the driver search for a real `ld.mold` binary,
-      # which is why shims stay off (see the just install step above); gcc
-      # takes a linker name here rather than a path, unlike clang.
-      # cargo-machete rides along because mise's own setup dominates a small
-      # tool install, and pinning both in mise.toml drops an unpinned
-      # `apt-get install` from the job's supply chain.
+      # Must land before the first linking cargo invocation (sqlx-cli below),
+      # since job-level RUSTFLAGS routes every link through mold; shims stay
+      # off for the same reason as the just install step above. cargo-machete
+      # rides along so both tools are pinned in mise.toml rather than pulled
+      # via an unpinned `apt-get install`.
       - name: Install mold and cargo-machete (mise)
         uses: jdx/mise-action@3c2e0cf82a5b2e5249f0d3635a4d83d0ae861518 # v4.2.5
         with:
@@ -390,14 +370,11 @@ jobs:
       - name: Doctests
         run: mise exec mold -- cargo test --locked --doc --workspace
 
-      # Upload the prefetch shards the cache action cannot. Its post step is a
-      # JavaScript action, so it runs from $GITHUB_WORKSPACE where this
-      # workspace has no Cargo.lock (the crate root is backend/), and the
-      # shard upload is skipped. Running it here picks the crate root up from
-      # the job's working directory. No arguments deliberately: the setup step
-      # exports KACHE_NAMESPACE and the remote settings, so the namespace
-      # stays declared in one place. Writes stay on the default branch.
-      # Tracked in debt/2026-07-26-kache-shard-upload-step.md.
+      # Upload the prefetch shards the cache action's post step cannot: that
+      # step is a JavaScript action running from $GITHUB_WORKSPACE, which has
+      # no Cargo.lock (the crate root is backend/), so it skips the upload.
+      # No arguments: the setup step already exported KACHE_NAMESPACE and the
+      # remote settings. Tracked in debt/2026-07-26-kache-shard-upload-step.md.
       - name: Upload prefetch shards
         if: env.R2_CONFIGURED == 'true' && github.ref == 'refs/heads/main'
         run: kache save-manifest
@@ -557,15 +534,14 @@ jobs:
           # Restore-only on PR branches; see the backend-checks cache step.
           save-if: ${{ github.ref == 'refs/heads/main' }}
 
-      # --locked forbids resolving newer, higher-MSRV dependency versions
-      # than the committed lockfile; --all-targets covers tests and
-      # benches, not just lib + bin.
+      # --locked forbids resolving newer, higher-MSRV dependency versions than
+      # the committed lockfile; --all-targets covers tests and benches too.
       #
       # RUSTUP_TOOLCHAIN is what actually holds this job to the floor: rustup
-      # honours backend/rust-toolchain.toml over whatever this job installed,
-      # so without the override the job would compile on the pinned toolchain
-      # and pass while checking nothing. The assertion is the regression test
-      # for that. rustc reports a full x.y.z while rust-version may be x.y,
+      # otherwise honours backend/rust-toolchain.toml and this job would
+      # compile on the pinned toolchain, passing while checking nothing. The
+      # assertion below is the regression test for that override taking
+      # effect. rustc reports a full x.y.z while rust-version may be x.y,
       # hence the patch-suffix match.
       - name: Check workspace builds on MSRV
         env:
@@ -665,16 +641,15 @@ jobs:
       - name: Lint workflow files
         run: actionlint -color
 
-  # Covers the class actionlint and CodeQL's actions analyzer do not:
-  # credential persistence, template injection in run blocks, cache poisoning
-  # of privileged deploys, dangerous triggers, over-broad permissions. It
-  # matters here because label.yml uses pull_request_target and
-  # docker-publish.yml is a privileged GHCR deployer.
+  # Covers what actionlint and CodeQL's actions analyzer do not: credential
+  # persistence, template injection in run blocks, cache poisoning of
+  # privileged deploys, dangerous triggers, over-broad permissions. Matters
+  # here because label.yml uses pull_request_target and docker-publish.yml is
+  # a privileged GHCR deployer.
   #
-  # Runs through `just infra::zizmor` so a contributor runs the same recipe
-  # and the same pinned binary. The recipe runs plain `zizmor .` with no
-  # SARIF upload, so a finding is a hard failure rather than a non-blocking
-  # Security-tab entry (which would need security-events:write).
+  # Runs through `just infra::zizmor` so local and CI use the same recipe and
+  # pinned binary: plain `zizmor .` with no SARIF upload, so a finding is a
+  # hard failure rather than a non-blocking Security-tab entry.
   workflow-security:
     name: Workflow security (zizmor)
     needs: changes
@@ -684,12 +659,12 @@ jobs:
     permissions:
       contents: read
     env:
-      # The ephemeral job token keeps the five token-gated audits running
-      # (impostor-commit, known-vulnerable-actions, ref-confusion,
-      # ref-version-mismatch, stale-action-refs); without it zizmor degrades
-      # to offline mode with a warning instead of failing. contents: read is
-      # scope enough, since those audits query public data about the actions
-      # referenced from workflows, not privileged data on this repo.
+      # Keeps the five token-gated audits running (impostor-commit,
+      # known-vulnerable-actions, ref-confusion, ref-version-mismatch,
+      # stale-action-refs); without it zizmor degrades to offline mode with a
+      # warning instead of failing. contents: read is scope enough, since
+      # those audits query public data about the referenced actions, not
+      # privileged data on this repo.
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -798,25 +773,24 @@ jobs:
       - name: Scan OpenAPI spec (gating)
         run: checkov -f docs/openapi.json --framework openapi --compact --config-file .checkov.yaml
 
-  # npm counterpart of cargo-deny's [licenses] allowlist, which covers only
-  # the Rust tree (dependency-review-action gates vulnerabilities on
-  # PR-introduced deps, not licenses).
+  # npm counterpart of cargo-deny's [licenses] allowlist (Rust-only;
+  # dependency-review-action gates PR-introduced vulnerabilities, not
+  # licenses).
   #
-  # Scope is --production of each tree: what binds the project is what it
-  # distributes, and dev tooling is not redistributed. The root tree has no
-  # production deps today, included so a later one is gated from day one.
+  # Scope is --production of each tree: dev tooling is not redistributed. The
+  # root tree has no production deps today, included so a later one is gated
+  # from day one.
   #
   # Allowlist mirrors deny.toml's permissive-only set plus the permissive
-  # licenses actually present in the npm trees. The exclusions are
-  # build-time-only native tooling whose compiled *output* ships but whose
-  # own code never lands in it, so their licenses do not bind the project:
+  # licenses present in the npm trees. Excluded by name (not license): these
+  # are build-time-only native tooling whose compiled *output* ships but whose
+  # own code never lands in it, so their license does not bind the project:
   #   - @img/sharp-libvips-* (LGPL-3.0): sharp's libvips prebuilts.
   #   - lightningcss* (MPL-2.0): CSS transform; output is plain CSS.
   #   - satteri / @bruits/satteri-* (MIT upstream, no license field
   #     published): Markdown processor prebuilts; reads UNKNOWN until the
   #     pre-1.0 packaging gap is fixed upstream.
-  # Each is excluded by name prefix, not by license, so the gate still
-  # fails any other package carrying these licenses.
+  # The gate still fails any other package carrying these licenses.
   npm-license:
     name: npm license policy
     needs: changes
@@ -898,18 +872,17 @@ jobs:
           url: "https://github.com/opengrep/opengrep/releases/download/v{version}/opengrep_manylinux_x86"
           binary: opengrep
 
-      # --error exits non-zero on any finding. Security packs only — the
-      # full language packs bundle best-practice/portability rules that are
-      # the linter's remit. Tests are not excluded wholesale (a blanket
-      # file drop is a coverage blind spot); a test legitimately exercising
-      # an insecure API gets a call-site `// nosemgrep: <rule-id>`
-      # carve-out.
+      # --error exits non-zero on any finding. Security packs only — the full
+      # language packs bundle best-practice/portability rules, which are the
+      # linter's remit. Tests are not excluded wholesale (a blanket file drop
+      # is a coverage blind spot); a test legitimately exercising an insecure
+      # API gets a call-site `// nosemgrep: <rule-id>` carve-out.
       #
-      # Excluded rule: rust.lang.security.args fires on ANY std::env::args
-      # use; main.rs reads argv for CLI subcommand dispatch, not security
-      # decisions, and the rule cannot tell the difference. The rule-ID
-      # prefix is derived from the rules-checkout `path:` above — keep the
-      # two in lockstep or the exclusion silently stops matching.
+      # Excluded rule: rust.lang.security.args fires on any std::env::args
+      # use; main.rs reads argv for CLI subcommand dispatch, not a security
+      # decision, and the rule cannot tell the difference. Its ID prefix is
+      # derived from the rules-checkout `path:` above — keep the two in
+      # lockstep or the exclusion silently stops matching.
       - name: Scan source (gating)
         run: |
           set -euo pipefail
@@ -1033,26 +1006,23 @@ jobs:
         run: just infra::recipe-secret-echo-test
 
       # Two self-tests on this job take a script as their subject rather than
-      # committed configuration, and each is here because no assertion inside
-      # its subject could do the same work. Both run in CI rather than only
-      # locally because a local gate is bypassable and never runs on fork PRs.
+      # committed configuration, because no assertion inside that script could
+      # do the same work. Both run in CI, not only locally, because a local
+      # gate is bypassable and never runs on fork PRs.
       #
-      # scripts/filter-sarif-unfixable-os.sh decides which container CVEs reach
-      # the code-scanning dashboard, and an edit that widens its match withholds
-      # findings that do have fixes, silently. The assertion that would catch
-      # that is the predicate itself, so it cannot live inside the script, and
-      # the fixture builds a case a live scan cannot be relied on to contain.
+      # scripts/filter-sarif-unfixable-os.sh decides which container CVEs
+      # reach the code-scanning dashboard; an edit that widens its match
+      # silently withholds findings that do have fixes. The fixture builds a
+      # case a live scan cannot be relied on to contain.
       - name: Container-CVE suppression predicate
         run: just infra::filter-sarif-unfixable-os-selftest
 
-      # scripts/preflight-scope.sh decides which lanes a local gate runs. Break
-      # the `scripts/*` arm of its escalates() and a change to the scoper itself
-      # narrows its own gate from sixteen lanes to one, prints nothing, and
-      # exits clean. The scoper cannot assert its way out of that: what needs
-      # asserting is which lanes were selected, and the selector is the code
-      # under suspicion. Local gate placement is circular for the same reason.
-      # This job is not, because it is unconditional and never consults the
-      # scoper.
+      # scripts/preflight-scope.sh decides which lanes a local gate runs.
+      # Break the `scripts/*` arm of its escalates() and a change to the
+      # scoper narrows its own gate silently. The scoper can't assert its way
+      # out of that (the selector is the code under suspicion), and a local
+      # gate is circular for the same reason. This job isn't: unconditional
+      # and never consults the scoper.
       - name: Preflight lane scoper
         run: just infra::preflight-scope-selftest
 
@@ -1174,14 +1144,14 @@ jobs:
         run: just js::build
 
   # WCAG 2.2 AA gate: axe-core against the shipped routes in DEFAULT_TARGETS
-  # (frontend/scripts/a11y/allowlist.mjs), failing on any violation outside the
-  # allowlist in that same file. The Playwright config owns the dev-server
-  # lifecycle and ships an arm64 Chromium, so the gate reproduces on the ARM64
-  # dev box as well as x86 CI.
+  # (frontend/scripts/a11y/allowlist.mjs), failing on any violation outside
+  # that file's allowlist. The Playwright config owns the dev-server lifecycle
+  # and ships an arm64 Chromium, so the gate reproduces on the ARM64 dev box
+  # as well as x86 CI.
   #
-  # webServer runs the dev server rather than a preview of the production
-  # build. The targets ship, so a preview would now serve them, but dev mode is
-  # what this gate has always measured and moving it is a separate change.
+  # webServer runs the dev server, not a production-build preview: that has
+  # always been what this gate measures, and switching it is a separate
+  # change.
   a11y:
     name: Accessibility (axe)
     needs: changes
@@ -1488,18 +1458,16 @@ jobs:
     name: SonarQube Cloud
     needs: [changes, backend, frontend]
     # A main analysis overwrites coverage with exactly what it submits;
-    # SonarQube Cloud has no carryforward, so a missing report re-reports
-    # that stack as 0%. Hence on push both producers must have succeeded.
-    # PR analyses never touch the main baseline, so single-stack PRs (one
-    # producer skipped) still scan. Skip fork PRs: no SONAR_TOKEN, so the
-    # scan only fails. Skip bot dependency PRs by head branch (renovate/*,
-    # dependabot/*): their diffs carry no analyzable first-party code, and
-    # keying on the branch rather than the actor keeps the scan skipped when
-    # a human pushes a fix to the bot branch, where it would otherwise run
-    # and red-X on a missing coverage artifact. The actor guards still cover
-    # bot-authored push and non-PR runs. !cancelled(), not always():
-    # always() runs even inside a cancelled run, and once scanned main with
-    # zero artifacts, wiping the baseline to 0%.
+    # SonarQube Cloud has no carryforward, so a missing report re-reports that
+    # stack as 0%. Hence on push both producers must have succeeded. PR
+    # analyses never touch the main baseline, so single-stack PRs still scan.
+    # Skip fork PRs: no SONAR_TOKEN, so the scan only fails. Skip bot
+    # dependency PRs by head branch (renovate/*, dependabot/*): their diffs
+    # carry no analyzable first-party code, and keying on the branch rather
+    # than the actor keeps the scan skipped when a human pushes a fix to the
+    # bot branch. !cancelled(), not always(): always() runs even inside a
+    # cancelled run, and once scanned main with zero artifacts, wiping the
+    # baseline to 0%. The codacy-coverage job mirrors this condition.
     if: >-
       !cancelled() &&
       github.actor != 'dependabot[bot]' &&
@@ -1583,12 +1551,11 @@ jobs:
   codacy-coverage:
     name: Codacy coverage
     needs: [backend, frontend]
-    # Fork PRs carry no CODACY_PROJECT_TOKEN, so the upload can only fail.
-    # Bot dependency branches carry no analyzable first-party code and would
-    # annotate on a missing coverage artifact; keying on the head branch
-    # rather than the actor keeps the job skipped when a human pushes a fix
-    # to the bot branch. On push both producers must have succeeded, so a
-    # commit's coverage is never published from a single stack.
+    # Mirrors the sonar job's condition (see its comment for the rationale):
+    # fork PRs carry no CODACY_PROJECT_TOKEN, so the upload can only fail; bot
+    # dependency branches are skipped by head branch rather than actor; on
+    # push both producers must have succeeded before a commit's coverage
+    # publishes.
     if: >-
       !cancelled() &&
       github.actor != 'dependabot[bot]' &&
@@ -1619,9 +1586,9 @@ jobs:
           path: frontend/coverage
         continue-on-error: true
 
-      # Both reports carry stack-relative SF: paths. Codacy resolves coverage
-      # against repository-root paths and reports no data at all when a report
-      # references files it cannot locate, so prepend each stack directory.
+      # Both reports carry stack-relative SF: paths; see the sonar job's
+      # equivalent step. Codacy resolves coverage against repository-root
+      # paths and reports no data at all when a file can't be located.
       - name: Normalize coverage paths to repo root
         run: |
           set -euo pipefail

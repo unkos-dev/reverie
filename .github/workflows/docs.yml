@@ -37,8 +37,7 @@ jobs:
     name: Build docs
     uses: ./.github/workflows/docs-build.yml
     with:
-      # External-URL checking is advisory and only runs on this deploy
-      # lane, not in the PR gate.
+      # Only this deploy lane runs the advisory external-link pass, not the PR gate.
       check-external-links: true
       upload-pages-artifact: true
 
