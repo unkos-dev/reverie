@@ -1,24 +1,17 @@
 name: Scorecard supply-chain security
 
-# OpenSSF Scorecard — recomputed supply-chain security score. Results
-# upload to the code-scanning dashboard and, with publish_results, to the
-# public OpenSSF API that backs the README badge.
+# OpenSSF Scorecard — recomputed supply-chain security score.
 
 on:
-  # Re-score whenever a branch protection rule changes — protection
-  # posture is a heavily-weighted Scorecard check, so a rule edit should
-  # refresh the grade promptly rather than waiting for the weekly cron.
+  # Protection posture is a heavily-weighted Scorecard check, so re-score on change.
   branch_protection_rule:
   schedule:
-    # Weekly, 23:23 UTC Tuesday (~07:23 Wednesday Perth). Off-peak and
-    # off the top of the hour to dodge runner contention; deliberately
-    # not on Sunday 17:37 where CodeQL's weekly scan already sits.
+    # Off-peak and off CodeQL's weekly slot (Sunday 17:37 UTC), to dodge runner contention.
     - cron: "23 23 * * 2"
   push:
     branches: [main]
 
-# The job declares its own permissions block, which fully overrides this —
-# kept narrow for correctness if a future job is added without its own.
+# Kept narrow in case a future job is added without its own permissions block.
 permissions:
   contents: read
 
@@ -35,16 +28,13 @@ jobs:
       contents: read
       # Upload the SARIF result into the code-scanning dashboard.
       security-events: write
-      # Mint the OIDC token Scorecard uses to publish results to the
-      # public OpenSSF API (required for the badge + publish_results).
+      # Mint the OIDC token Scorecard uses to publish to the public OpenSSF API.
       id-token: write
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
-          # Scorecard reads repo metadata via the API, not the checked-out
-          # credentials; persisting them would needlessly widen the token
-          # surface the run exposes.
+          # Scorecard reads repo metadata via the API, not checked-out credentials.
           persist-credentials: false
 
       - name: Run analysis
@@ -52,12 +42,10 @@ jobs:
         with:
           results_file: results.sarif
           results_format: sarif
-          # Publish to the public OpenSSF API so the README badge resolves.
-          # Public-repo scores are public by design.
+          # Public-repo scores are public by design; this is how the README badge resolves.
           publish_results: true
 
-      # Retain the raw SARIF as a build artifact for inspection even when
-      # the code-scanning upload below is rate-limited or unavailable.
+      # Retain raw SARIF even if the code-scanning upload below is unavailable.
       - name: Upload artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:

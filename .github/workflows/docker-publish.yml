@@ -1,35 +1,24 @@
 name: Docker Publish
 
-# Two publication channels per
-# adr/2026-05-12-platform-matrix-via-native-runners.md:
-#   - `main`-branch push -> `:main` (floating) + `:sha-<7>` (immutable pin),
-#     linux/arm64 only (the sole staging consumer is arm64).
-#   - `v*` tag push      -> `:vX.Y.Z` + `:X.Y`, linux/amd64+arm64 manifest
-#     list (public release boundary; self-hosters run mixed arches).
-# `:latest` is reserved for the first semver release.
-#
-# Build shape: `prepare-matrix` emits the include list for the trigger,
-# `build` runs one job per arch on a native runner (no QEMU) and pushes by
-# digest, `merge` assembles and tags the manifest list.
+# Two publication channels per adr/2026-05-12-platform-matrix-via-native-runners.md:
+#   - `main`-branch push -> `:main` + `:sha-<7>`, linux/arm64 only (staging).
+#   - `v*` tag push      -> `:vX.Y.Z` + `:X.Y`, linux/amd64+arm64 (public release).
+# `prepare-matrix` emits the include list, `build` runs one job per arch on a
+# native runner (no QEMU) and pushes by digest, `merge` tags the manifest list.
 on:
   push:
     tags:
       - "v*"
     branches:
       - main
-  # Ad-hoc rebuilds and feature-branch verification of workflow changes
-  # that wouldn't otherwise fire on a non-main push.
+  # Ad-hoc rebuilds and feature-branch verification of workflow changes.
   workflow_dispatch:
 
-# Least privilege at the top; build/merge widen to packages: write
-# themselves.
 permissions:
   contents: read
 
-# Serialize per-ref runs without cancelling in-flight builds: a
-# near-complete publish (build → merge → sign) must never be aborted by a
-# newer push. The build is idempotent, so sequential runs are the right
-# trade.
+# Serialize, never cancel: an in-flight publish (build → merge → sign) must
+# never be aborted by a newer push. The build is idempotent, so queueing is safe.
 concurrency:
   group: docker-publish-${{ github.ref }}
 
@@ -38,19 +27,15 @@ env:
   IMAGE_NAME: unkos-dev/reverie
 
 jobs:
-  # Job-level `if:` cannot reference the `matrix` context, so the
-  # per-trigger platform filter lives in the matrix shape.
+  # Job-level `if:` can't reference `matrix`, so the platform filter lives in its shape.
   prepare-matrix:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
       matrix: ${{ steps.set.outputs.matrix }}
-      # Branch pushes build only when an image input changed; tag pushes
-      # and manual dispatches always build. A `paths:` filter on the push
-      # trigger cannot express this split — it would also filter tag
-      # pushes, and a silently skipped release build is unacceptable — so
-      # the gate lives here. The filter step is skipped on tag/dispatch, in
-      # which case its empty output falls through as "build".
+      # A `paths:` filter on the trigger would also filter tag pushes, silently
+      # skipping a release build, so the gate lives here instead. Skipped on
+      # tag/dispatch, where the empty output falls through as "build".
       build: ${{ steps.filter.outputs.image != 'false' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -60,9 +45,7 @@ jobs:
         id: filter
         if: github.event_name == 'push' && github.ref_type == 'branch'
         with:
-          # Image inputs: the definition files plus everything the build
-          # context COPYs. Keep in lockstep with the Dockerfile's COPY
-          # surface.
+          # Keep in lockstep with the Dockerfile's COPY surface.
           filters: |
             image:
               - 'Dockerfile'
@@ -88,8 +71,6 @@ jobs:
     needs: prepare-matrix
     if: needs.prepare-matrix.outputs.build == 'true'
     runs-on: ${{ matrix.runner }}
-    # Bounded well above observed build time but far below the 6h default
-    # so a hung build fails fast.
     timeout-minutes: 60
     permissions:
       contents: read
@@ -110,9 +91,7 @@ jobs:
 
       - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4
 
-      # OCI labels must be set at per-arch build time — `imagetools create`
-      # cannot back-fill labels into already-pushed image configs. Tag
-      # assignment happens in `merge` against the final manifest list.
+      # OCI labels must be set at build time; `imagetools create` can't back-fill them.
       - uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6
         id: meta
         with:
@@ -131,13 +110,8 @@ jobs:
           cache-from: type=gha,scope=buildcache-${{ matrix.arch }}
           cache-to: type=gha,scope=buildcache-${{ matrix.arch }},mode=max
 
-      # The CVE gate downstream is layer analysis and never executes the
-      # binary; this does, on the digest just pushed, natively on this
-      # runner's arch. print-config-schema exercises the entrypoint,
-      # dynamic linking, and the config structs with no database, and must
-      # emit valid JSON. Full /health readiness needs a live Postgres and
-      # is the staging smoke's remit. Failing here stops the merge job, so
-      # a non-executing image is never tagged or signed.
+      # The CVE gate is layer analysis only; this actually executes the pushed
+      # digest, so a non-executing image is never tagged or signed.
       - name: Boot smoke (entrypoint executes)
         env:
           IMAGE_REF: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
@@ -147,10 +121,7 @@ jobs:
           docker run --rm "${IMAGE_REF}@${BUILD_DIGEST}" print-config-schema | jq -e . > /dev/null
           echo "entrypoint OK: config schema is valid JSON"
 
-      # `buildx du` reports the *ephemeral* buildkit content store on this
-      # runner, not the persistent gha cache pool — useful for spotting
-      # whether the build hydrated the local store, not a substitute for
-      # inspecting the repo Actions cache.
+      # Reports this runner's ephemeral store, not the persistent gha cache pool.
       - name: Local buildkit content store
         if: always()
         run: docker buildx du
@@ -172,9 +143,7 @@ jobs:
 
       - name: Export digest
         env:
-          # Env-mapped rather than interpolated into the run body; both are
-          # trusted here, but env-mapping is the idiomatic hardening on a
-          # privileged GHCR-publish workflow.
+          # Env-mapped, not interpolated: idiomatic hardening here.
           RUNNER_TEMP: ${{ runner.temp }}
           BUILD_DIGEST: ${{ steps.build.outputs.digest }}
         run: |
@@ -194,11 +163,8 @@ jobs:
     timeout-minutes: 15
     needs:
       - build
-    # A job-level block replaces the workflow-level grant, so the scopes
-    # this job relies on must be restated alongside id-token:
-    #   - packages: write — push the manifest list to GHCR.
-    #   - id-token: write — mint the OIDC token cosign exchanges with
-    #     Fulcio for a short-lived keyless signing certificate.
+    # Job-level block restates scopes: packages: write pushes the manifest
+    # list; id-token: write mints the OIDC token cosign exchanges with Fulcio.
     permissions:
       contents: read
       packages: write
@@ -219,15 +185,13 @@ jobs:
 
       - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4
 
-      # cosign for keyless (Sigstore) signing of the published manifest
-      # list.
+      # cosign for keyless (Sigstore) signing of the published manifest list.
       - name: Install cosign
         uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
         with:
           cosign-release: v3.1.3
 
-      # The composite checkout below only fetches the local action
-      # definition; the image content comes from GHCR digests.
+      # Fetches only the local action definition; image content comes from GHCR.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
@@ -240,18 +204,13 @@ jobs:
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
             type=ref,event=branch
-            # THREAT: immutable sha-<7> tags are the staging auto-deploy
-            # trigger, so they are minted for main only — a workflow_dispatch
-            # on a feature branch must be able to verify the full publish
-            # pipeline without putting unreviewed code on a deployable tag.
+            # THREAT: sha-<7> tags trigger staging auto-deploy, so mint them
+            # for main only — a feature-branch dispatch must never land on a deployable tag.
             type=sha,prefix=sha-,enable=${{ github.ref_type != 'tag' && github.ref_name == 'main' }}
 
-      # CVE-gate the image BEFORE it is tagged and signed — signing an
-      # unscanned artifact is attestation theatre. Placement is
-      # load-bearing: the per-arch images exist in GHCR only as untagged
-      # digests here, so a failing scan stops the manifest list from ever
-      # being created, tagged, or signed. Keep this pin in lockstep with
-      # ci.yml's.
+      # CVE-gate before tagging/signing: images exist only as untagged digests
+      # here, so a failing scan stops the manifest list ever being created.
+      # Keep this pin in lockstep with ci.yml's.
       - name: Install trivy
         uses: ./.github/actions/install-pinned-tool
         with:
@@ -262,17 +221,10 @@ jobs:
           binary: trivy
           archive-member: trivy
 
-      # Blocking on fixable HIGH/CRITICAL CVEs; unfixed CVEs are excluded —
-      # they would block every publish until a distro fix ships, with no
-      # action available to us. Cross-platform scanning is layer analysis,
-      # not execution, so the amd64 runner scans arm64 images fine.
-      #
-      # Indirection: buildx with provenance/sbom pushes each per-arch
-      # "digest" as an OCI image *index* whose children are the real image
-      # manifest plus an attestation manifest. trivy resolves an index via
-      # the scanner host's platform, which an arm64-only index doesn't
-      # carry — so enumerate the non-attestation children and scan each
-      # child manifest digest directly.
+      # buildx with provenance/sbom pushes each per-arch "digest" as an OCI
+      # index (real manifest + attestation manifest), and trivy can't resolve
+      # an arm64-only index from this amd64 host — so enumerate the
+      # non-attestation children and scan each manifest digest directly.
       - name: Scan image for vulnerabilities (gating)
         working-directory: ${{ runner.temp }}/digests
         env:
@@ -305,43 +257,26 @@ jobs:
             done
           done
 
-      # Gate SBOM completeness here, beside the CVE scan and for the same
-      # reason its comment gives: the per-arch images exist in GHCR only as
-      # untagged digests at this point, so a failure stops the manifest
-      # list from ever being created. Running this after `imagetools
-      # create` would leave the rejected image pullable under its public
-      # tag even though signing had stopped.
-      #
-      # Per digest rather than over the assembled list: a manifest list's
-      # SBOM is a platform-keyed map, and counting across it would let a
-      # complete arm64 document mask an amd64 one that had lost its
-      # metadata. Each platform has to stand on its own.
-      #
-      # Neither ecosystem reaches the SBOM on its own. Crates appear only
-      # because the binary is built with `cargo auditable`, and frontend
-      # packages only because the build ships a CycloneDX document into
-      # the image for syft to ingest. Both are quiet, load-bearing
-      # mechanisms that a plausible-looking refactor could remove without
-      # breaking the build, so assert each independently and name the
-      # mechanism in the failure.
+      # Gate here, per untagged digest, before `imagetools create`: a manifest
+      # list's SBOM is platform-keyed, so counting across it could let a
+      # complete arm64 doc mask a broken amd64 one. Crates appear in the SBOM
+      # only via `cargo auditable`; npm packages only via a CycloneDX doc
+      # syft ingests — both are quiet mechanisms a refactor could break silently.
       - name: Verify SBOM covers application dependencies (gating)
         working-directory: ${{ runner.temp }}/digests
         env:
           IMAGE_REF: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
         run: |
           set -euo pipefail
-          # Scratch file lives OUTSIDE the digests working directory: the
-          # manifest-create step below globs this directory as the digest
-          # list, and a stray file would be expanded into an invalid
-          # `@sha256:` reference that fails every publish.
+          # Scratch file lives OUTSIDE this dir: manifest-create below globs
+          # it as the digest list, and a stray file breaks every publish.
           sbom="${RUNNER_TEMP}/sbom-check.json"
           rc=0
           for digest in *; do
             ref="${IMAGE_REF}@sha256:${digest}"
             docker buildx imagetools inspect "$ref" \
               --format '{{ json .SBOM }}' > "$sbom"
-            # A digest published without an SBOM attestation inspects to
-            # JSON `null`; that is a failure, not an empty result.
+            # No SBOM attestation inspects to JSON `null`, which is a failure.
             jq -e '. != null' "$sbom" > /dev/null \
               || { echo "::error::${ref} carries no SBOM attestation"; rc=1; continue; }
             count() {
@@ -363,8 +298,8 @@ jobs:
           done
           exit "$rc"
 
-      # Provenance/SBOM attestations on the per-arch images are preserved
-      # on the resulting manifest list.
+      # Provenance/SBOM attestations on the per-arch images carry through
+      # to the resulting manifest list.
       - name: Create manifest list and push
         working-directory: ${{ runner.temp }}/digests
         env:
@@ -378,51 +313,39 @@ jobs:
       - name: Inspect image
         env:
           IMAGE_REF: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
-          # meta.outputs.version is the first metadata-action tag — semver
-          # on a release-tag push, the branch name on a push to main —
-          # never attacker-controlled.
+          # meta.outputs.version is the first metadata-action tag — never attacker-controlled.
           IMAGE_VERSION: ${{ steps.meta.outputs.version }}
         run: |
           docker buildx imagetools inspect "${IMAGE_REF}:${IMAGE_VERSION}"
 
-      # Keyless Sigstore signing of every published image: cosign exchanges
-      # this job's OIDC token for a short-lived Fulcio certificate and
-      # records the signature in the public Rekor transparency log — no
-      # long-lived private key to store or rotate.
+      # Keyless: cosign exchanges this job's OIDC token for a short-lived
+      # Fulcio certificate and records the signature in Rekor.
       - name: Sign published image (keyless)
         env:
           IMAGE_REF: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           VERSION: ${{ steps.meta.outputs.version }}
         run: |
           set -euo pipefail
-          # Sign by immutable digest, never by tag: a tag can be re-pointed
-          # after signing; the digest cannot. The manifest-list digest
-          # transitively covers every per-arch image beneath it.
+          # Sign by immutable digest, never by tag: a tag can be re-pointed after signing.
           digest=$(docker buildx imagetools inspect "${IMAGE_REF}:${VERSION}" \
             --format '{{ .Manifest.Digest }}')
-          # set -e aborts if inspect itself fails, but an empty-yet-exit-0
-          # result would produce a malformed `…@` ref that cosign rejects
-          # with an opaque error; fail loud and attributable instead.
+          # An empty-yet-exit-0 result would produce a malformed ref cosign
+          # rejects with an opaque error; fail loud instead.
           [[ -n "$digest" ]] || { echo "::error::Failed to capture manifest digest for ${IMAGE_REF}:${VERSION}"; exit 1; }
           echo "Signing ${IMAGE_REF}@${digest}"
           cosign sign --yes "${IMAGE_REF}@${digest}"
 
-  # Surface the image SBOM where release-page consumers expect it. The
-  # buildkit-generated SBOM attestation on the published image stays the
-  # authoritative copy; this job re-exports that same attestation — no
-  # second SBOM generation, so the release asset cannot drift from the
-  # image. Runs on `v*` tags (attach to the GitHub Release) and on
-  # workflow_dispatch (workflow artifact only — no release to attach to).
-  # Skipped on plain main pushes: no release exists and the in-registry
-  # attestation covers staging.
+  # Re-exports the buildkit-generated attestation (no second SBOM generation,
+  # so the asset can't drift). Skipped on plain main pushes: no release
+  # exists and the in-registry attestation covers staging.
   release-sbom:
     if: github.ref_type == 'tag' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     needs:
       - merge
-    # contents: write only to upload the release asset; packages: read to
-    # pull the attestation from GHCR. No id-token — nothing is signed here.
+    # contents: write uploads the release asset; packages: read pulls the
+    # attestation. No id-token — nothing is signed here.
     permissions:
       contents: write
       packages: read
@@ -435,8 +358,7 @@ jobs:
 
       - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4
 
-      # Same version derivation as the merge job, so the inspected ref is
-      # identical to what merge just pushed.
+      # Same version derivation as the merge job, so the ref matches what merge pushed.
       - uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6
         id: meta
         with:
@@ -451,20 +373,16 @@ jobs:
           IMAGE_VERSION: ${{ steps.meta.outputs.version }}
         run: |
           set -euo pipefail
-          # Unmatched globs (empty sbom-out) must fail the glob itself, not
-          # hand a literal `*.spdx.json` path to jq's opaque ENOENT.
+          # Fail the glob itself rather than hand jq a literal `*.spdx.json` path.
           shopt -s failglob
           mkdir -p sbom-out
           docker buildx imagetools inspect "${IMAGE_REF}:${IMAGE_VERSION}" \
             --format '{{ json .SBOM }}' > sbom-raw.json
-          # An image published without an SBOM attestation inspects to JSON
-          # `null` — fail with a legible diagnostic.
+          # No SBOM attestation inspects to JSON `null` — fail with a legible diagnostic.
           jq -e '. != null' sbom-raw.json > /dev/null \
             || { echo "::error::${IMAGE_REF}:${IMAGE_VERSION} carries no SBOM attestation"; exit 1; }
-          # Single-platform inspect yields {"SPDX": …}; a multi-platform
-          # index yields a platform-keyed map. Handle both so the job works
-          # for the single-arch staging shape and the multi-arch release
-          # shape alike.
+          # Single-platform inspect yields {"SPDX": …}; multi-platform yields
+          # a platform-keyed map. Handle both shapes.
           if jq -e '.SPDX' sbom-raw.json > /dev/null; then
             jq '.SPDX' sbom-raw.json > "sbom-out/reverie-${IMAGE_VERSION}.spdx.json"
           else
@@ -474,8 +392,7 @@ jobs:
                 > "sbom-out/reverie-${IMAGE_VERSION}-${safe}.spdx.json"
             done
           fi
-          # Empty or SPDX-less attestation output must fail loudly, not
-          # publish an empty asset.
+          # Fail loudly on empty or SPDX-less output rather than publish an empty asset.
           for f in sbom-out/*.spdx.json; do
             jq -e '.spdxVersion' "$f" > /dev/null \
               || { echo "::error::$f is not a valid SPDX document"; exit 1; }

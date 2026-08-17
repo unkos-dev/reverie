@@ -1,7 +1,4 @@
 self-hosted-runner:
-  # Custom labels for self-hosted runners used in workflows.
-  # `reverie-dev-deployer` — runner on `oci-compute-1` that deploys to
-  # the `reverie-dev` LXC (UNK-231). See homelab repo for the runner
-  # compose unit and Incus TLS cert provisioning.
+  # Dev-deploy runner, provisioned outside this repository.
   labels:
     - reverie-dev-deployer

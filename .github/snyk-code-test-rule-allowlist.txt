@@ -1,37 +1,5 @@
-# Snyk Code test-variant rule allowlist
-#
-# This file is the canonical registry of Snyk Code rule IDs whose findings
-# are analysed but NOT ingested into the code-scanning dashboard. Snyk
-# reports a distinct `<rule>/test` rule ID when the finding sits in test
-# code; entries here name those IDs exactly.
-#
-# What this does NOT do: it does not exclude any file from the scan. Snyk
-# Code still analyses every test file, so a taint trace that runs from a
-# test helper into production code is still found and still reported,
-# under the ordinary (non-`/test`) rule ID that is never listed here.
-# Filtering by rule ID rather than by path is what preserves that.
-#
-# Adding an entry: review every current finding for the rule first and
-# confirm none of them is a defect worth fixing, then include the
-# reviewer justification in the PR description. A `/test` rule ID that
-# appears in a scan without being listed here fails the job, so the list
-# can only widen deliberately.
-#
-# Each non-comment line is one exact Snyk Code rule ID.
-
-# Test files seed and clear `document.cookie` in a jsdom document to set
-# up read-path fixtures. These are fixture writes in a synthetic
-# document, not cookie-setting code that ships. Both production writers
-# (frontend/src/lib/theme/cookie.ts writeThemeCookie and
-# frontend/src/pages/library/view-cookie.ts writeViewCookie) set Secure,
-# neither is flagged by this rule, and both have tests asserting the
-# attribute so the guarantee survives this entry.
+# jsdom fixture cookie write; the production writers set Secure and have tests.
 javascript/WebCookieSecureDisabledByDefault/test
 
-# Literal password strings in frontend API tests are request-body
-# payloads asserted against a mocked fetch ("a strong password",
-# "correct-horse-battery-staple"). They authenticate nothing. Real
-# committed credentials are the job of gitleaks (every PR and push) and
-# the TruffleHog history sweep, neither of which treats test files
-# differently; this rule is a code-smell heuristic, not that control.
+# Mocked-fetch request-body fixtures, not credentials; gitleaks covers secrets.
 javascript/NoHardcodedPasswords/test

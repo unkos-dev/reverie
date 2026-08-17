@@ -1,14 +1,9 @@
-# Server-side Conventional Commits gate: the local commit-msg hook is
-# bypassable and never runs on fork PRs, yet release-please's changelog
-# depends on commit shape. Two surfaces:
-# every commit the PR introduces (keeps branch history greppable), and
-# the PR title — squash merging composes the merge commit from the title,
-# so the title is the one commit subject the commit-msg hook never sees and
-# the one release-please consumes.
-#
-# Its own workflow rather than a job in ci.yml, so a title edit reruns this
-# check alone rather than the full CI matrix. pull_request-only: push and
-# merge_group have no PR range or title.
+# Server-side gate: the local commit-msg hook is bypassable and never runs on
+# fork PRs. Lints both the PR's commit range and its title (the one subject
+# the hook never sees, and the one release-please consumes via squash-merge).
+# Own workflow, not a ci.yml job, so a title edit reruns this check alone
+# rather than the full CI matrix. pull_request-only: push and merge_group
+# have no PR range or title.
 name: Commit lint
 
 on:
@@ -17,10 +12,8 @@ on:
 
 permissions: {}
 
-# A title edit supersedes the run before it. Without this, two edits seconds
-# apart leave two runs reporting under one required context name, and the
-# check that decides the merge could be the one holding the older title. A
-# cancelled run is not a success, so cancelling fails closed.
+# A title edit supersedes the run before it, so the required check can't
+# resolve against a stale title. A cancelled run is not a success (fails closed).
 concurrency:
   group: commit-lint-${{ github.event.pull_request.number }}
   cancel-in-progress: true
@@ -52,25 +45,21 @@ jobs:
           node-manager: false
           cache: true
 
-      # Root lockfile carries the same pinned commitlint the local
-      # commit-msg hook runs.
+      # Root lockfile carries the same pinned commitlint the local hook runs.
       - name: Install commitlint
         run: vp install
 
-      # Event-payload SHAs, not refs: base.sha pins the fork point even if
-      # the base branch moves mid-run, and neither value is
-      # attacker-controlled text.
+      # base.sha pins the fork point even if the base branch moves mid-run.
       - name: Lint PR commit range
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: npx --no-install commitlint --from "$BASE_SHA" --to "$HEAD_SHA" --verbose
 
-      # GitHub appends ` (#N)` to the squash subject; commitlint parses it
-      # as part of the subject, so linting the bare title matches what
-      # release-please will see. The title is attacker-controlled input on a
-      # public repository; it reaches the shell only through the
-      # environment, never through template interpolation into the script.
+      # GitHub appends ` (#N)` to the squash subject; the bare title still
+      # matches what commitlint/release-please will see.
+      # THREAT: PR title is attacker-controlled; it reaches the shell only via
+      # env, never template interpolation into the script.
       - name: Lint PR title (squash-merge subject)
         env:
           PR_TITLE: ${{ github.event.pull_request.title }}
