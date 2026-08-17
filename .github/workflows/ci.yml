@@ -110,8 +110,7 @@ jobs:
       # -fmerge-all-constants is deterministic codegen so is safe to allowlist; kache
       # otherwise refuses to cache it and zstd-sys recompiles every run. Set via env,
       # not .kache.toml: these compiles run under ~/.cargo/registry, which the repo
-      # is not an ancestor of. `-Wa,--debug-prefix-map=` stays off the allowlist: it
-      # embeds the versioned registry path and would stop matching on the next bump.
+      # is not an ancestor of.
       KACHE_CC_EXTRA_ALLOWLIST_FLAGS: -fmerge-all-constants
       # Fork PRs have no repository secrets, so the remote doesn't exist for them; they
       # fall back to the target/ tarball. In job env, since secrets reach env/with, not if.
