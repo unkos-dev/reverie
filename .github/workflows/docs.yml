@@ -1,16 +1,13 @@
 name: Docs
 
-# PR-time docs builds live in ci.yml's `docs` job so they can join the
-# ci-gate aggregator (cross-workflow `needs` is impossible); both lanes
-# consume the shared docs-build.yml. This workflow owns only the Pages
-# deploy on push-to-main + tags (plus manual dispatch).
+# PR-time docs builds live in ci.yml (cross-workflow `needs` is impossible);
+# this workflow owns only the Pages deploy on push-to-main + tags.
 on:
   push:
     branches: [main]
     paths:
       - "docs/**"
-      # docs is an npm workspace; a root manifest, lockfile, or npm
-      # config change must redeploy too.
+      # docs is an npm workspace; a root manifest/lockfile change must redeploy too.
       - "package.json"
       - "package-lock.json"
       - ".npmrc"
@@ -23,11 +20,7 @@ on:
 permissions:
   contents: read
 
-# Every event here is a real deploy event; one shared `pages` group keeps
-# concurrent Pages deployments serialized. Queue rather than cancel: an
-# in-flight production deploy should always complete (a cancelled
-# deploy-pages call can strand a red deployment event), and deploys are
-# infrequent enough that queueing costs seconds.
+# Queue rather than cancel: a cancelled deploy-pages call can strand a red deployment.
 concurrency:
   group: pages
   cancel-in-progress: false

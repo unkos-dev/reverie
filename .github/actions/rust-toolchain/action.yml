@@ -48,15 +48,8 @@ outputs:
 runs:
   using: composite
   steps:
-    # A composite step does not inherit the calling job's default
-    # working-directory, and several callers default to backend/, so the
-    # repository-root path is anchored explicitly.
-    #
-    # The sed match stops at the closing quote, and `|| true` lets a dropped
-    # field reach the format guard instead of failing the pipe opaquely. The
-    # guard matters more than it looks: an unresolved version would otherwise
-    # reach the cache namespace below as an empty string and quietly pollute a
-    # shared key space.
+    # Anchored explicitly: composite steps don't inherit the calling job's
+    # default working-directory, and several callers default to backend/.
     - name: Resolve toolchain version
       id: resolve
       shell: bash
@@ -78,20 +71,9 @@ runs:
         fi
         echo "version=${version}" >> "$GITHUB_OUTPUT"
 
-    # --profile minimal keeps the docs and sources a CI job never opens off the
-    # runner; --no-self-update pins rustup itself to the runner image rather
-    # than letting an install step change the tool doing the installing.
-    #
-    # RUSTUP_PERMIT_COPY_RENAME lets rustup fall back to copy-then-delete when
-    # it cannot rename across a filesystem boundary. It is scoped to this step
-    # because it exists to stop an obscure install failure, not to change how
-    # anything later behaves.
-    #
-    # `rustup default` is separate and load-bearing: the toolchain file only
-    # governs cargo invocations under backend/, so without it a tool probing
-    # rustc from the repository root reads whichever compiler the runner image
-    # happened to ship, and a cache keyed on that would not match the compiler
-    # the build actually used.
+    # `rustup default` is load-bearing, not redundant: the toolchain file
+    # only governs cargo under backend/, so without it a root-level rustc
+    # probe would see whichever compiler the runner image shipped.
     - name: Install toolchain
       shell: bash
       env:

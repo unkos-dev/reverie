@@ -1,5 +1,4 @@
 self-hosted-runner:
-  # `reverie-dev-deployer` — self-hosted runner for the dev deploy lane;
-  # provisioned outside this repository.
+  # Dev-deploy runner, provisioned outside this repository.
   labels:
     - reverie-dev-deployer

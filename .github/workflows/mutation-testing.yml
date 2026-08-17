@@ -1,24 +1,13 @@
 name: Mutation testing
 
-# Weekly, advisory-only mutation testing over the backend: cargo-mutants
-# patches the source one mutation at a time and re-runs the tests; a mutant
-# the suite fails to kill marks behaviour no test asserts. Coverage says a
-# line executed — this says a test would notice if it broke.
-#
-# Advisory posture: not a required check, never blocks anything. Missed
-# mutants surface in the step summary + artifact for periodic triage;
-# infrastructure failures (build errors, bad flags) still fail the run so
-# the cron cannot rot silently.
-#
-# Sharded 1/8 per week, rotating on the ISO week number, so the full
-# mutant population is covered every 8 weeks at a bounded per-run cost.
+# Advisory-only: a mutant the suite fails to kill marks behaviour no test
+# asserts, but only infrastructure failures (not missed mutants) fail the run.
+# Sharded 1/8 per week on the ISO week number, covering the full population
+# every 8 weeks at a bounded per-run cost.
 on:
   schedule:
-    # Weekly, 19:07 UTC Saturday (~03:07 Sunday Perth). Off-peak; clear of
-    # the CodeQL (Sun), Scorecard (Tue), and daily-audit (18:00) crons.
+    # Off-peak; clear of the CodeQL, Scorecard, and daily-audit crons.
     - cron: "7 19 * * 6"
-  # Manual runs for validating the harness or chasing a specific week's
-  # findings.
   workflow_dispatch:
 
 permissions:
@@ -52,14 +41,11 @@ jobs:
           --health-retries 5
     env:
       # Compile against the committed .sqlx cache; tests connect live and
-      # create their own per-test databases (same split as the backend CI
-      # job's clippy/test phases).
+      # create their own per-test databases.
       SQLX_OFFLINE: "true"
       DATABASE_URL: postgres://reverie:reverie@localhost:5432/reverie_dev
       CARGO_INCREMENTAL: 0
       RUSTFLAGS: -C link-arg=-fuse-ld=mold
-      # Colour survives the captured runner log; see ci.yml's backend-checks
-      # job.
       CARGO_TERM_COLOR: always
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -70,31 +56,18 @@ jobs:
         run: psql postgres://reverie:reverie@localhost:5432/reverie_dev -f docker/init-roles.sql
         working-directory: ${{ github.workspace }}
 
-      # Installs the version backend/rust-toolchain.toml pins, the file rustup
-      # honours for every cargo call, so this workflow cannot drift onto a
-      # different compiler from the one ci.yml and a developer's machine use.
+      # Pins to backend/rust-toolchain.toml, keeping this workflow on the same
+      # compiler as ci.yml and a developer's machine.
       - uses: ./.github/actions/rust-toolchain
 
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
         with:
           workspaces: backend
 
-      # Mutation testing rebuilds and relinks once per mutant, so the linker
-      # choice compounds here more than anywhere else in CI. mold rides along
-      # with cargo-mutants rather than taking a step of its own: mise's setup
-      # dominates a small tool install, so one step installing two tools costs
-      # less than two steps installing one. Taking it from mise also drops an
-      # unpinned `apt-get install mold` from this workflow, which is the whole
-      # reason mise.toml pins mold in the first place, and puts this job on the
-      # same mold build as ci.yml and a developer's machine.
-      #
-      # Shims stay off PATH and the run below goes through `mise exec`, for the
-      # reason ci.yml records on its own mold step: `-fuse-ld=mold` makes the
-      # linker driver search for a program named `ld.mold`, which it must find
-      # as the real binary. A mise shim re-resolves its version per exec from
-      # the config at the caller's working directory, and rustc links each unit
-      # from that unit's package root, so a registry dependency links from
-      # ~/.cargo/registry with no mise.toml above it.
+      # Shims stay off PATH: a shim re-resolves its version per exec from the
+      # cwd's mise.toml, but rustc links each unit from that unit's package
+      # root — a registry dependency would link from ~/.cargo/registry with
+      # no mise.toml above it. `mise exec` below sidesteps that.
       - name: Install mold and cargo-mutants (mise)
         uses: jdx/mise-action@3c2e0cf82a5b2e5249f0d3635a4d83d0ae861518 # v4.2.5
         with:
@@ -103,10 +76,8 @@ jobs:
           install_args: mold cargo:cargo-mutants
           add_shims_to_path: false
 
-      # Exit-code triage keeps the advisory posture honest: missed mutants
-      # (2) and mutant timeouts (3) are findings, not failures; anything
-      # else (usage error, clean-tree build failure) is real breakage and
-      # reds the run.
+      # Exit codes 2 (missed mutants) and 3 (timeouts) are findings, not
+      # failures; anything else is real breakage and reds the run.
       - name: Run mutants (weekly shard)
         run: |
           set -euo pipefail

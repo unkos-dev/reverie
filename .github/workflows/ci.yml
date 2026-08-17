@@ -1,10 +1,8 @@
 name: CI
 
 on:
-  # Push-to-main runs exist for SonarQube Cloud: PRs are squash-merged, so
-  # main's head commit is a SHA no pull_request run ever analyzed — without
-  # this trigger the default-branch baseline (new-code detection, coverage
-  # badge) never updates.
+  # PRs are squash-merged, so main's head commit is a SHA no pull_request run
+  # analyzed; push keeps SonarQube Cloud's baseline current.
   push:
     branches: [main]
   pull_request:
@@ -14,23 +12,18 @@ on:
 permissions:
   contents: read
 
-# Never cancel main-push runs: back-to-back merges would cancel the older
-# run, reddening the workflow badge and starving the sonar job of coverage
-# artifacts (a cancelled run once wiped the Sonar baseline to 0%).
-# Superseded PR runs cancel freely.
+# A cancelled main-push run once wiped the Sonar coverage baseline; PR runs
+# still cancel freely.
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 env:
-  # Single source of truth for the migration CLI used by both backend jobs.
-  # The backend-checks guard keeps this in lockstep with the sqlx crate.
+  # Kept in lockstep with the sqlx crate version by the backend-checks guard below.
   SQLX_CLI_VERSION: "0.9.0"
 
 jobs:
-  # Detect which areas of the repo changed so downstream jobs can skip when
-  # their inputs are untouched. Every filter includes ci.yml itself: a
-  # workflow edit must re-run the jobs it defines.
+  # Every filter includes ci.yml itself: a workflow edit must re-run the jobs it defines.
   changes:
     name: Detect changes
     runs-on: ubuntu-latest
@@ -52,12 +45,7 @@ jobs:
         with:
           persist-credentials: false
 
-      # Resolve the pinned kache version once here (from mise.toml) so every
-      # job that needs it reads one source instead of a drifting copy. The
-      # Rust toolchain version is resolved separately, in
-      # .github/actions/rust-toolchain, for the same reason.
-      # `|| true` lets a dropped field reach the format guard instead of
-      # failing the pipe opaquely.
+      # Resolved once here so every job that needs it reads one source, not a drifting copy.
       - name: Resolve pinned build-cache version
         id: kache
         run: |
@@ -76,22 +64,16 @@ jobs:
       - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4
         id: filter
         with:
-          # On merge_group events paths-filter's default base (HEAD~1) sees
-          # only the topmost commit in the synthetic merge ref; pin to
-          # merge_group.base_sha so skip decisions match the PR-against-main
-          # diff.
+          # merge_group's default base (HEAD~1) sees only the synthetic merge ref's
+          # topmost commit; pin to base_sha to match the PR-against-main diff.
           base: ${{ github.event.merge_group.base_sha || github.base_ref }}
           ref: ${{ github.event.merge_group.head_sha || github.ref }}
-          # Filter definitions live in .github/path-filters.yml so the local
-          # preflight scoper (scripts/preflight-scope.sh) reads the same source
-          # and cannot drift from CI's skip decisions.
+          # scripts/preflight-scope.sh reads the same file, so the two cannot drift.
           filters: .github/path-filters.yml
 
   backend-checks:
     name: Backend checks
     needs: changes
-    # Push-to-main always runs backend checks even when the merged change is
-    # frontend-only, matching the coverage lane's default-branch policy.
     if: needs.changes.outputs.backend == 'true' || github.event_name == 'push'
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -114,55 +96,33 @@ jobs:
           --health-timeout 5s
           --health-retries 5
     env:
-      # sqlx::test connects as the schema owner to create per-test
-      # databases; role pools for reverie_app / reverie_ingestion are built
-      # per-test in code.
+      # sqlx::test connects as the schema owner; per-test role pools are built in code.
       DATABASE_URL: postgres://reverie:reverie@localhost:5432/reverie_dev
-      # CI-only build-speed tweaks. Incremental metadata tracking is wasted in
-      # a single-shot build, and mold (installed below) removes the
-      # single-threaded ld bottleneck. Debuginfo is deliberately absent:
-      # backend/Cargo.toml declares it, so both planes compile the same way
-      # without two settings having to agree.
+      # Debuginfo deliberately absent here: backend/Cargo.toml declares it, so both
+      # planes compile the same way without two settings having to agree.
       CARGO_INCREMENTAL: 0
       RUSTFLAGS: -C link-arg=-fuse-ld=mold
-      # Cargo emits colour only when it detects a terminal, and a captured
-      # runner log is never one, so warnings and errors would arrive as
-      # undifferentiated text. Set per job rather than per step because it
-      # applies to every cargo call the job makes.
+      # A captured runner log is never a terminal, so cargo needs colour forced.
       CARGO_TERM_COLOR: always
-      # Belt and braces with the object-read credentials below: a pull request
-      # is told not to write to the store the default branch restores from,
-      # rather than relying on the bucket to reject it.
+      # Belt and braces with the object-read credentials below: a pull request is told
+      # not to write to the store main restores from, not just relying on the bucket.
       KACHE_REMOTE_READONLY: ${{ github.ref == 'refs/heads/main' && 'false' || 'true' }}
-      # kache refuses to cache a C compilation carrying a flag its table does
-      # not model, which is why zstd-sys recompiles every run.
-      # -fmerge-all-constants is deterministic codegen, so allowlisting it is
-      # safe. Set via env, not a repository `.kache.toml`: kache resolves that
-      # file by walking up from the working directory, and these compiles run
-      # under ~/.cargo/registry, where the repository is not an ancestor.
-      # `-Wa,--debug-prefix-map=` stays off the allowlist: it embeds the
-      # versioned registry path, so a pinned entry would stop matching on the
-      # next aws-lc-sys bump.
+      # -fmerge-all-constants is deterministic codegen so is safe to allowlist; kache
+      # otherwise refuses to cache it and zstd-sys recompiles every run. Set via env,
+      # not .kache.toml: these compiles run under ~/.cargo/registry, which the repo
+      # is not an ancestor of. `-Wa,--debug-prefix-map=` stays off the allowlist: it
+      # embeds the versioned registry path and would stop matching on the next bump.
       KACHE_CC_EXTRA_ALLOWLIST_FLAGS: -fmerge-all-constants
-      # Fork pull requests cannot read repository secrets, so the remote does
-      # not exist for them; pointing kache at an unreachable endpoint would
-      # time out per crate and leave the setup check asserting nothing. They
-      # fall back to the tarball carrying `target/` instead. In job env
-      # because the secrets context reaches `env` and `with`, not a step's
-      # `if`.
+      # Fork PRs have no repository secrets, so the remote doesn't exist for them; they
+      # fall back to the target/ tarball. In job env, since secrets reach env/with, not if.
       R2_CONFIGURED: ${{ secrets.R2_ACCOUNT_ID != '' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
 
-      # The static guards below need no toolchain, database, or installs;
-      # they run first so a violation fails in seconds.
-
-      # sqlx-cli must track the sqlx *crate* version, or `cargo sqlx prepare
-      # --check` validates against a cache built by a mismatched proc-macro.
-      # Both are hand-set in different files, so anchor on the crate and fail
-      # loud when the cli pin differs from it in either direction.
+      # sqlx-cli must track the sqlx crate version, or `cargo sqlx prepare --check`
+      # validates against a cache built by a mismatched proc-macro.
       - name: sqlx-cli pin matches sqlx crate version
         run: |
           crate="$(yq -p toml -o yaml '.dependencies.sqlx.version // .dependencies.sqlx' Cargo.toml)"
@@ -179,14 +139,9 @@ jobs:
           fi
           echo "sqlx-cli pin ($SQLX_CLI_VERSION) matches sqlx crate ($crate)"
 
-      # just walks up to the repo-root justfile from this backend/ working
-      # directory; rust::guards re-enters the repo root itself.
-      #
-      # Shims stay off for the whole job: rustc links a registry dependency
-      # from ~/.cargo/registry, which has no mise.toml above it for a shim to
-      # resolve against. Every step that needs a mise tool runs under `mise
-      # exec` instead, so a step that forgets the wrapper fails loudly rather
-      # than resolving silently.
+      # Shims stay off for the whole job: rustc links a registry dependency from
+      # ~/.cargo/registry, which has no mise.toml above it for a shim to resolve
+      # against. Steps needing a mise tool run under `mise exec` instead.
       - name: Install just (mise)
         uses: jdx/mise-action@3c2e0cf82a5b2e5249f0d3635a4d83d0ae861518 # v4.2.5
         with:
@@ -195,20 +150,11 @@ jobs:
           install_args: just
           add_shims_to_path: false
 
-      # Single-sourced in scripts/backend-guards.sh: runtime sqlx::query and
-      # raw_sql invocations, raw axum .route( registrations, and em dashes in
-      # the generated config schema, each checked against its
-      # .github/*-allowlist.txt (the em-dash guard has none). The
-      # datetime-crate boundary is a clippy lint instead, so it runs in the
-      # lint job rather than here.
       - name: Backend static guards
         working-directory: ${{ github.workspace }}
         run: mise exec just -- just rust::guards
 
-      # Installs the version backend/rust-toolchain.toml pins, so this job and
-      # a developer's machine compile with the same rustc. Components are
-      # per-job: this one lints, so clippy and rustfmt, not llvm-tools. The
-      # step id is read by the cache namespace below.
+      # Components are per-job: this one lints, so clippy and rustfmt, not llvm-tools.
       - id: rust
         uses: ./.github/actions/rust-toolchain
         with:
@@ -217,38 +163,23 @@ jobs:
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
         with:
           workspaces: backend
-          # Registry only wherever the remote store below is reachable: the
-          # registry is a fraction of `target/`, so caching it stays inside
-          # the quota without evicting unrelated caches. A fork has no
-          # credentials for that store and falls back to caching `target/`
-          # instead, which does not restore what the default branch saves
-          # (actions/cache keys on the path set) and compiles cold once the
-          # last full-target generation expires. Tracked in
+          # A fork has no store credentials and falls back to caching target/ instead
+          # (a cold compile once the last full-target generation expires). Tracked in
           # debt/2026-07-26-fork-pr-cache-fallback.md.
           cache-targets: ${{ secrets.R2_ACCOUNT_ID == '' }}
-          # Restore-only on PR branches: the repo cache quota (10 GiB) cannot
-          # hold per-branch copies of the gigabyte-scale rust caches, and the
-          # resulting LRU eviction was costing warm caches elsewhere. PRs
-          # branch from a fresh main, so main's cache is the right restore
-          # source anyway.
+          # Restore-only on PR branches: the 10 GiB repo quota can't hold per-branch
+          # copies of the gigabyte-scale rust caches without evicting others.
           save-if: ${{ github.ref == 'refs/heads/main' }}
 
-      # Content-addressed compile cache in R2, keyed per crate so a bump only
-      # invalidates that crate and its dependents; the tarball cache above
-      # covers the registry instead. See
+      # Content-addressed compile cache in R2, keyed per crate. See
       # adr/2026-07-26-remote-build-cache-on-r2.md.
       #
-      # Write credentials are reserved for pushes to main; a pull request gets
-      # object-read keys, the same poisoning surface docker-build records for
-      # its buildx scopes. pr-comment stays off (needs `pull-requests: write`,
-      # which this workflow does not grant); github-cache stays off (it would
-      # put the artifacts back inside the 10 GiB quota this exists to escape).
+      # Write credentials are reserved for pushes to main; a PR gets object-read keys.
       #
-      # Digest pinned past v1 (published 2026-06-15, never re-pointed): that
-      # tag's contract has no `namespace` or `pr-comment` input, and GitHub
-      # silently drops an undeclared input rather than erroring. Check any new
-      # input against action.yml at this revision, and return to a tag once
-      # upstream publishes one past v1.
+      # Digest pinned past v1 (published 2026-06-15, never re-pointed): that tag's
+      # contract has no `namespace` or `pr-comment` input, and GitHub silently drops
+      # an undeclared input rather than erroring. Check any new input against
+      # action.yml at this revision before returning to a tag.
       - name: Remote build cache (kache)
         if: env.R2_CONFIGURED == 'true'
         uses: kunobi-ninja/kache-action@a257c055543c2840700a9bbca8f9c3094a421b1b # main@2026-06-19
@@ -261,26 +192,18 @@ jobs:
           s3-secret-access-key: ${{ github.ref == 'refs/heads/main' && secrets.R2_SECRET_ACCESS_KEY_RW || secrets.R2_SECRET_ACCESS_KEY_RO }}
           github-cache: false
           pr-comment: false
-          # Without this, build scripts and doctest binaries pass through
-          # uncached (580 skipped executables). Already the Linux default
-          # since kache 0.12.0, kept explicit because that default rests on
-          # where the platform keeps debug information, not on a caching
-          # guarantee, and losing it would just read as a slow run.
+          # Explicit despite being the current Linux default: that default rests on
+          # platform debug-info placement, not a caching guarantee.
           cache-executables: true
-          # Shards make prefetch useful: unset, hits arrive one request at a
-          # time (~2min latency vs ~14s transfer across 1354 hits measured).
-          #
-          # Keyed on build configuration, not job name, so a toolchain bump
-          # rotates it instead of warming shards for artifacts that no longer
-          # exist. Coverage needs its own value: `-C instrument-coverage` is a
-          # separate key space and reusing this namespace would cross the two.
+          # Shards make prefetch useful; unset, hits arrive one at a time. Keyed on
+          # build configuration, not job name, so a toolchain bump rotates it rather
+          # than warming shards for artifacts that no longer exist. Coverage needs
+          # its own value: `-C instrument-coverage` is a separate key space.
           namespace: x86_64-unknown-linux-gnu/${{ steps.rust.outputs.version }}/dev
 
-      # A cache degrades quietly by design: kache compiles for real whenever
-      # the store is unreachable and still exits 0. A mistyped secret or a
-      # renamed input would therefore leave every job uncached, slow, and
-      # green forever, indistinguishable from a cold cache. Assert the remote
-      # resolved before the compiling steps start depending on it.
+      # kache degrades quietly by design: it compiles for real when the store is
+      # unreachable and still exits 0, so a mistyped secret would leave every job
+      # uncached and green forever. Assert the remote resolved before depending on it.
       - name: Verify the remote cache resolved
         if: env.R2_CONFIGURED == 'true'
         run: |
@@ -306,11 +229,8 @@ jobs:
         run: psql -v ON_ERROR_STOP=1 postgres://reverie:reverie@localhost:5432/reverie_dev -f docker/init-roles.sql
         working-directory: ${{ github.workspace }}
 
-      # Must land before the first linking cargo invocation (sqlx-cli below),
-      # since job-level RUSTFLAGS routes every link through mold; shims stay
-      # off for the same reason as the just install step above. cargo-machete
-      # rides along so both tools are pinned in mise.toml rather than pulled
-      # via an unpinned `apt-get install`.
+      # Must land before the first linking cargo invocation (sqlx-cli below), since
+      # job-level RUSTFLAGS routes every link through mold.
       - name: Install mold and cargo-machete (mise)
         uses: jdx/mise-action@3c2e0cf82a5b2e5249f0d3635a4d83d0ae861518 # v4.2.5
         with:
@@ -319,11 +239,8 @@ jobs:
           install_args: mold github:bnjbvr/cargo-machete
           add_shims_to_path: false
 
-      # sqlx-cli has no upstream prebuilt binaries, so a cache miss
-      # compiles it from source (~60-90s with the feature trim to rustls +
-      # postgres — the actual surface). The cache is keyed on version +
-      # features alone, not workspace Cargo.lock, so Renovate lock churn
-      # cannot invalidate it. Bump the key suffix if the features change.
+      # Keyed on version + features alone, not workspace Cargo.lock, so Renovate lock
+      # churn cannot invalidate it. Bump the key suffix if the features change.
       - name: Cache sqlx-cli binary
         id: cache-sqlx-cli
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
@@ -335,13 +252,9 @@ jobs:
 
       - name: Install sqlx-cli (cache miss only)
         if: steps.cache-sqlx-cli.outputs.cache-hit != 'true'
-        # No `--locked`: sqlx-cli 0.9 stopped shipping Cargo.lock in its
-        # published crate, so `--locked` errors with no lockfile to honour.
+        # No --locked: sqlx-cli 0.9 stopped shipping Cargo.lock in its published crate.
         run: mise exec mold -- cargo install sqlx-cli --version ${{ env.SQLX_CLI_VERSION }} --no-default-features --features rustls,postgres
 
-      # Every unused crate is dead advisory/license/audit surface. Static
-      # manifest-vs-source scan; justified carve-outs live in Cargo.toml's
-      # [package.metadata.cargo-machete] ignored list.
       - name: Unused dependencies (cargo-machete)
         run: mise exec github:bnjbvr/cargo-machete -- cargo machete
 
@@ -351,38 +264,30 @@ jobs:
       - name: Lint
         run: mise exec mold -- cargo clippy --workspace --all-targets --locked -- -D warnings
 
-      # Kills broken intra-doc cross-refs in existing docstrings. Without
-      # --document-private-items the scope is pub items only, matching the
+      # Without --document-private-items the scope is pub items only, matching the
       # Tier 1 comment-policy surface.
       - name: Doc lint (broken intra-doc links)
         env:
           RUSTDOCFLAGS: "-D rustdoc::broken_intra_doc_links"
         run: mise exec mold -- cargo doc --locked --no-deps --workspace
 
-      # Drift guard on the committed .sqlx/ query cache: fails if the cache
-      # is stale relative to the query macros + live schema.
       - name: Check sqlx query cache freshness
         run: mise exec mold -- cargo sqlx prepare --check -- --locked --tests
 
-      # nextest does not run doctests. Reverie has none today; this step
-      # exists so doctest drift fails CI from day one and is near-instant
-      # while empty.
+      # nextest does not run doctests; Reverie has none today, so this exists to fail
+      # CI from day one on doctest drift.
       - name: Doctests
         run: mise exec mold -- cargo test --locked --doc --workspace
 
-      # Upload the prefetch shards the cache action's post step cannot: that
-      # step is a JavaScript action running from $GITHUB_WORKSPACE, which has
-      # no Cargo.lock (the crate root is backend/), so it skips the upload.
-      # No arguments: the setup step already exported KACHE_NAMESPACE and the
-      # remote settings. Tracked in debt/2026-07-26-kache-shard-upload-step.md.
+      # The cache action's post step runs from $GITHUB_WORKSPACE, which has no
+      # Cargo.lock (the crate root is backend/), so it skips this upload itself.
+      # Tracked in debt/2026-07-26-kache-shard-upload-step.md.
       - name: Upload prefetch shards
         if: env.R2_CONFIGURED == 'true' && github.ref == 'refs/heads/main'
         run: kache save-manifest
 
-  # Keep the instrumented build off the checks job's serial critical path.
-  # A dedicated target directory is safe to retain because it is used only
-  # with this job's fixed coverage flags; raw execution profiles are deleted
-  # before every run so cached results can never enter the report.
+  # Kept off the checks job's serial critical path; raw execution profiles are
+  # deleted before every run so cached results can never enter the report.
   backend:
     name: Backend coverage
     needs: changes
@@ -418,9 +323,7 @@ jobs:
         with:
           persist-credentials: false
 
-      # Version from backend/rust-toolchain.toml; see the backend-checks
-      # toolchain step. Coverage instrumentation is read back by llvm-tools, so
-      # that component is this job's alone.
+      # Coverage instrumentation is read back by llvm-tools, so it's this job's alone.
       - uses: ./.github/actions/rust-toolchain
         with:
           components: llvm-tools-preview
@@ -436,9 +339,6 @@ jobs:
         run: psql -v ON_ERROR_STOP=1 postgres://reverie:reverie@localhost:5432/reverie_dev -f docker/init-roles.sql
         working-directory: ${{ github.workspace }}
 
-      # Before the sqlx-cli install, since the job-level RUSTFLAGS routes that
-      # link through mold too. nextest and cargo-llvm-cov ride along, and
-      # shims stay off, for the reasons given on the checks job's mold step.
       - name: Install linker and coverage tools (mise)
         uses: jdx/mise-action@3c2e0cf82a5b2e5249f0d3635a4d83d0ae861518 # v4.2.5
         with:
@@ -463,9 +363,7 @@ jobs:
       - name: Apply migrations
         run: sqlx migrate run
 
-      # Cargo fingerprints safely invalidate changed objects in this
-      # coverage-only target. Remove raw execution data before retaining the
-      # compiled artifacts with --no-clean.
+      # Remove raw execution data before retaining compiled artifacts with --no-clean.
       - name: Test (with coverage)
         run: |
           mkdir -p "$CARGO_LLVM_COV_TARGET_DIR"
@@ -481,11 +379,9 @@ jobs:
           if-no-files-found: error
           retention-days: 1
 
-  # MSRV floor enforcement: compile the workspace on exactly the declared
-  # `rust-version` so a dependency bump or new syntax that silently raises
-  # the real minimum fails here instead of breaking self-hosters building
-  # from source on the documented floor. Compile-only against the committed
-  # .sqlx cache — no Postgres needed.
+  # Compiles on exactly the declared rust-version, so a dependency bump or new syntax
+  # that silently raises the real minimum fails here instead of breaking
+  # self-hosters building from source on the documented floor.
   msrv:
     name: MSRV check
     needs: changes
@@ -505,12 +401,6 @@ jobs:
         with:
           persist-credentials: false
 
-      # Read the MSRV from Cargo.toml so the pinned toolchain and the
-      # declared rust-version cannot drift. The sed stops at the first
-      # quote so a trailing inline comment carrying another quoted version
-      # can't be captured; `|| true` lets a dropped field flow through as
-      # empty so the format guard reports it rather than an opaque pipe
-      # failure.
       - name: Resolve declared MSRV
         id: msrv
         run: |
@@ -522,8 +412,7 @@ jobs:
           fi
           echo "version=${version}" >> "$GITHUB_OUTPUT"
 
-      # The one caller that overrides the pinned channel: this job compiles on
-      # the declared floor rather than on the version the toolchain file pins.
+      # The one caller that overrides the pinned channel with the declared floor.
       - uses: ./.github/actions/rust-toolchain
         with:
           toolchain: ${{ steps.msrv.outputs.version }}
@@ -534,15 +423,11 @@ jobs:
           # Restore-only on PR branches; see the backend-checks cache step.
           save-if: ${{ github.ref == 'refs/heads/main' }}
 
-      # --locked forbids resolving newer, higher-MSRV dependency versions than
-      # the committed lockfile; --all-targets covers tests and benches too.
-      #
-      # RUSTUP_TOOLCHAIN is what actually holds this job to the floor: rustup
-      # otherwise honours backend/rust-toolchain.toml and this job would
-      # compile on the pinned toolchain, passing while checking nothing. The
-      # assertion below is the regression test for that override taking
-      # effect. rustc reports a full x.y.z while rust-version may be x.y,
-      # hence the patch-suffix match.
+      # RUSTUP_TOOLCHAIN is what actually holds this job to the floor: rustup otherwise
+      # honours backend/rust-toolchain.toml, passing while checking nothing. The
+      # assertion below is the regression test for that override taking effect.
+      # rustc reports a full x.y.z while rust-version may be x.y, hence the
+      # patch-suffix match.
       - name: Check workspace builds on MSRV
         env:
           RUSTUP_TOOLCHAIN: ${{ steps.msrv.outputs.version }}
@@ -577,18 +462,12 @@ jobs:
           # renovate: datasource=github-releases depName=jdx/mise extractVersion=^v(?<version>.+)$
           version: "2026.8.5"
           install_args: github:EmbarkStudios/cargo-deny
-      # advisories reads the RustSec database; check also enforces the
-      # license, ban, and source policy in backend/deny.toml. Advisory
-      # suppressions and their justifications live in deny.toml.
       - name: Check dependencies (advisories, licenses, bans, sources)
         run: cargo deny check
 
-  # PR-gate newly-introduced vulnerable dependencies: diffs the PR's
-  # dependency manifests against base and fails on any added package with
-  # an advisory at/above the floor. Complements cargo-deny (whole lockfile)
-  # and Renovate (post-merge, reactive). pull_request-only — there is no
-  # diff to evaluate on push or merge_group; ci-gate treats the skip as a
-  # pass.
+  # Diffs the PR's dependency manifests against base and fails on any added package
+  # with an advisory at/above the floor. pull_request-only: no diff to evaluate on
+  # push or merge_group; ci-gate treats the skip as a pass.
   dependency-review:
     name: Dependency review
     if: github.event_name == 'pull_request'
@@ -600,15 +479,11 @@ jobs:
           persist-credentials: false
       - uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
         with:
-          # License policy is owned by cargo-deny (backend/deny.toml) to
-          # avoid a second, drifting allowlist; this layer gates
-          # vulnerabilities only.
+          # License policy is owned by cargo-deny; this layer gates vulnerabilities only.
           fail-on-severity: moderate
-          # vp ships as a vite fork installed under the `vite` alias, so
-          # the lock entry reads vite@0.2.1 and matches every historical
-          # real-vite advisory (0.2.1 sorts below all real versions).
-          # vite-plus-core 0.2.1 is vite 8.x underneath, which carries the
-          # fixes, so these do not apply. Revisit on a vp version bump. See
+          # vp installs under the `vite` alias at vite@0.2.1, which sorts below every
+          # historical real-vite advisory; vite-plus-core 0.2.1 is vite 8.x underneath
+          # and carries the fixes. Revisit on a vp version bump. See
           # debt/2026-06-30-vite-plus-alias-dependency-review.md
           allow-ghsas: >-
             GHSA-353f-5xf4-qw67, GHSA-356w-63v5-8wf4, GHSA-4r4m-qw57-chr8,
@@ -617,9 +492,7 @@ jobs:
             GHSA-mv48-hcvh-8jj8, GHSA-v6wh-96g9-6wx3, GHSA-vg6x-rcgg-rjx6,
             GHSA-x574-m823-4x7w, GHSA-xcj6-pq6g-qj4x
 
-  # Syntax / context-availability lint for workflow files. Mirrors the
-  # lefthook pre-commit invocation at the same pinned version so local and
-  # CI cannot drift.
+  # Mirrors the lefthook pre-commit invocation at the same pinned version.
   workflow-lint:
     name: Workflow lint
     needs: changes
@@ -641,15 +514,9 @@ jobs:
       - name: Lint workflow files
         run: actionlint -color
 
-  # Covers what actionlint and CodeQL's actions analyzer do not: credential
-  # persistence, template injection in run blocks, cache poisoning of
-  # privileged deploys, dangerous triggers, over-broad permissions. Matters
-  # here because label.yml uses pull_request_target and docker-publish.yml is
-  # a privileged GHCR deployer.
-  #
-  # Runs through `just infra::zizmor` so local and CI use the same recipe and
-  # pinned binary: plain `zizmor .` with no SARIF upload, so a finding is a
-  # hard failure rather than a non-blocking Security-tab entry.
+  # Matters because label.yml uses pull_request_target and docker-publish.yml is a
+  # privileged GHCR deployer. Runs `just infra::zizmor` with no SARIF upload, so a
+  # finding is a hard failure rather than a non-blocking Security-tab entry.
   workflow-security:
     name: Workflow security (zizmor)
     needs: changes
@@ -659,12 +526,9 @@ jobs:
     permissions:
       contents: read
     env:
-      # Keeps the five token-gated audits running (impostor-commit,
-      # known-vulnerable-actions, ref-confusion, ref-version-mismatch,
-      # stale-action-refs); without it zizmor degrades to offline mode with a
-      # warning instead of failing. contents: read is scope enough, since
-      # those audits query public data about the referenced actions, not
-      # privileged data on this repo.
+      # Without it zizmor degrades to offline mode with a warning instead of failing.
+      # contents: read is scope enough: the token-gated audits query public data
+      # about referenced actions, not privileged data on this repo.
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -681,12 +545,9 @@ jobs:
       - name: Workflow security audit (zizmor)
         run: just infra::zizmor
 
-  # IaC misconfiguration scan over the Dockerfile and compose files: the
-  # security class hadolint's instruction lint doesn't cover — root-user
-  # defaults, missing healthchecks, privileged/host-mode services,
-  # secrets-in-env shapes. HIGH/CRITICAL to match the image-scan gate in
-  # docker-publish.yml; suppressions live in .trivyignore with per-finding
-  # justification.
+  # Covers what hadolint's instruction lint doesn't: root-user defaults, missing
+  # healthchecks, privileged/host-mode services, secrets-in-env shapes.
+  # Suppressions live in .trivyignore with per-finding justification.
   iac-scan:
     name: IaC misconfig (trivy)
     needs: changes
@@ -698,7 +559,7 @@ jobs:
         with:
           persist-credentials: false
 
-      # Keep this pin in lockstep with docker-publish.yml's.
+      # Keep in lockstep with docker-publish.yml's pin.
       - name: Install trivy
         uses: ./.github/actions/install-pinned-tool
         with:
@@ -709,8 +570,6 @@ jobs:
           binary: trivy
           archive-member: trivy
 
-      # Scoped to the container/IaC surface: workflow security is zizmor's
-      # remit and docs templates are not deployable IaC.
       - name: Scan IaC for misconfigurations (gating)
         run: |
           set -euo pipefail
@@ -721,10 +580,9 @@ jobs:
             --skip-dirs .github \
             .
 
-  # PR-time image build: docker-publish only fires post-merge, so without
-  # this a broken image definition merges green and detonates on main in
-  # the privileged publish lane (the lockfile-hoist incident). arm64 to
-  # match the main-push publish arch and share its warm layer cache.
+  # docker-publish only fires post-merge, so without this a broken image definition
+  # merges green and detonates on main in the privileged publish lane. arm64 to match
+  # the main-push publish arch and share its warm layer cache.
   docker-build:
     name: Docker image build
     needs: changes
@@ -738,9 +596,8 @@ jobs:
 
       - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4
 
-      # Read the publish lane's cache, never write it: a PR-controlled
-      # cache-to into the scope the privileged publish job restores would
-      # be a cache-poisoning surface.
+      # Read the publish lane's cache, never write it: a PR-controlled cache-to into
+      # that scope would be a cache-poisoning surface.
       - name: Build image (no push)
         uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7
         with:
@@ -749,11 +606,8 @@ jobs:
           push: false
           cache-from: type=gha,scope=buildcache-arm64
 
-  # checkov OpenAPI policy gate over the generated spec: securitySchemes
-  # present and non-cleartext, global security rules defined,
-  # operation-level security coverage. Suppressions, if ever needed, live
-  # in .checkov.yaml with per-finding justification. Dockerfile/compose
-  # misconfig is trivy's remit; workflow security is zizmor's.
+  # Checks securitySchemes present and non-cleartext, global security rules defined,
+  # operation-level security coverage. Suppressions live in .checkov.yaml.
   openapi-policy:
     name: OpenAPI policy (checkov)
     needs: changes
@@ -765,32 +619,20 @@ jobs:
         with:
           persist-credentials: false
 
-      # checkov is pip-only (no standalone release binary). Pinned so a new
-      # upstream policy cannot break the gate on an unrelated PR.
+      # checkov is pip-only (no standalone release binary).
       - name: Install checkov 3.3.0
         run: pipx install checkov==3.3.0
 
       - name: Scan OpenAPI spec (gating)
         run: checkov -f docs/openapi.json --framework openapi --compact --config-file .checkov.yaml
 
-  # npm counterpart of cargo-deny's [licenses] allowlist (Rust-only;
-  # dependency-review-action gates PR-introduced vulnerabilities, not
-  # licenses).
+  # npm counterpart of cargo-deny's [licenses] allowlist.
   #
-  # Scope is --production of each tree: dev tooling is not redistributed. The
-  # root tree has no production deps today, included so a later one is gated
-  # from day one.
-  #
-  # Allowlist mirrors deny.toml's permissive-only set plus the permissive
-  # licenses present in the npm trees. Excluded by name (not license): these
-  # are build-time-only native tooling whose compiled *output* ships but whose
-  # own code never lands in it, so their license does not bind the project:
-  #   - @img/sharp-libvips-* (LGPL-3.0): sharp's libvips prebuilts.
-  #   - lightningcss* (MPL-2.0): CSS transform; output is plain CSS.
-  #   - satteri / @bruits/satteri-* (MIT upstream, no license field
-  #     published): Markdown processor prebuilts; reads UNKNOWN until the
-  #     pre-1.0 packaging gap is fixed upstream.
-  # The gate still fails any other package carrying these licenses.
+  # Excluded by name, not license: this build-time-only native tooling's compiled
+  # output ships, but its own code never lands in it, so its license doesn't bind
+  # the project (@img/sharp-libvips-*, lightningcss*, satteri/@bruits/satteri-*,
+  # the last of which reads UNKNOWN until its pre-1.0 packaging gap is fixed
+  # upstream). The gate still fails any other package carrying these licenses.
   npm-license:
     name: npm license policy
     needs: changes
@@ -815,10 +657,6 @@ jobs:
           node-manager: false
           cache: true
 
-      # One workspace install; license-checker walks each package's
-      # declared production deps resolved from the hoisted root
-      # node_modules. The scanner itself is a lockfile-pinned root
-      # devDependency.
       - name: Check npm licenses (gating)
         run: |
           set -euo pipefail
@@ -839,11 +677,8 @@ jobs:
           done
           exit "$rc"
 
-  # Rule-based SAST, motivated by Rust, where CodeQL's extractor resolves
-  # only ~47% of call targets and pattern rules need no call-graph
-  # resolution. Engine is opengrep, the Linux Foundation fork of semgrep.
-  # Rulesets are SHA-pinned so an upstream rule addition cannot break the
-  # gate on an unrelated PR.
+  # Rule-based SAST via opengrep, motivated by Rust, where CodeQL's extractor
+  # resolves call targets poorly and pattern rules need no call-graph resolution.
   sast:
     name: SAST (opengrep)
     needs: changes
@@ -872,16 +707,13 @@ jobs:
           url: "https://github.com/opengrep/opengrep/releases/download/v{version}/opengrep_manylinux_x86"
           binary: opengrep
 
-      # --error exits non-zero on any finding. Security packs only — the full
-      # language packs bundle best-practice/portability rules, which are the
-      # linter's remit. Tests are not excluded wholesale (a blanket file drop
-      # is a coverage blind spot); a test legitimately exercising an insecure
-      # API gets a call-site `// nosemgrep: <rule-id>` carve-out.
+      # Tests are not excluded wholesale (a blanket file drop is a coverage blind
+      # spot); a legitimate insecure-API test gets a call-site `// nosemgrep:
+      # <rule-id>` carve-out instead.
       #
-      # Excluded rule: rust.lang.security.args fires on any std::env::args
-      # use; main.rs reads argv for CLI subcommand dispatch, not a security
-      # decision, and the rule cannot tell the difference. Its ID prefix is
-      # derived from the rules-checkout `path:` above — keep the two in
+      # rust.lang.security.args is excluded: main.rs reads argv for CLI subcommand
+      # dispatch, not a security decision, and the rule can't tell the difference.
+      # Its ID prefix derives from the rules-checkout path above — keep the two in
       # lockstep or the exclusion silently stops matching.
       - name: Scan source (gating)
         run: |
@@ -894,11 +726,8 @@ jobs:
             --error \
             backend/src frontend/src
 
-  # Server-side lint gate for shell, the Dockerfile, spelling, YAML,
-  # Markdown, prose, and formatting. The pre-commit hook runs these locally
-  # but is bypassable and never runs on fork PRs, so this job is the
-  # authoritative surface. Tools are pinned in mise.toml and invoked through
-  # just recipes, so both planes evaluate the same binaries.
+  # The pre-commit hook runs these locally but is bypassable and never runs on fork
+  # PRs, so this job is the authoritative surface.
   repo-lint:
     name: Repo lint
     runs-on: ubuntu-latest
@@ -908,30 +737,16 @@ jobs:
         with:
           persist-credentials: false
 
-      # Static guard, invoked as the script rather than through `just` so it
-      # still runs first, before mise and any install: the pins it checks are
-      # what those installs would use, so drift should fail in seconds rather
-      # than after provisioning the wrong vp. `just infra::vp-pin-drift` runs
-      # the same script locally and in the preflight gate. jq and yq are both
-      # preinstalled on the runner image, so this step needs no toolchain.
+      # Run directly, ahead of mise, so a pin drift fails in seconds rather than
+      # after provisioning the wrong tool version.
       - name: vp and node pins agree across every copy
         run: scripts/vp-pin-drift.sh
 
-      # Same reasoning as the vp guard above: run the script directly, ahead
-      # of mise, so a disagreeing npm pin fails in seconds rather than after
-      # provisioning the npm that package.json would then reject. This job
-      # enumerates recipes individually rather than running `just
-      # infra::lint`, so a guard added only to that aggregate would run
-      # locally and never on the merge path.
       - name: npm pin agrees between package.json and mise
         run: scripts/npm-pin-drift.sh
 
-      # Single-source tool provisioning: mise installs the exact pins from
-      # mise.toml, so this job runs the same binaries as the local hooks and
-      # there is no per-workflow version copy to drift.
-      # Shims stay on for this step, unlike the Rust jobs' mise-action calls:
-      # this job runs only JS tools from the repo root, so there is no
-      # registry package root for a shim to resolve against.
+      # Shims stay on, unlike the Rust jobs' mise-action calls: this job runs only
+      # JS tools from the repo root, where mise.toml is a shim's ancestor.
       - name: Install pinned tools (mise)
         uses: jdx/mise-action@3c2e0cf82a5b2e5249f0d3635a4d83d0ae861518 # v4.2.5
         with:
@@ -946,9 +761,8 @@ jobs:
       - name: No workflow re-pins a mise-managed tool
         run: just infra::tool-pin-drift
 
-      # A custom manager whose regex stops matching yields no deps and no
-      # error, so nothing else here can notice Renovate losing sight of the
-      # devEngines pin.
+      # A custom manager whose regex stops matching yields no deps and no error, so
+      # nothing else can notice Renovate losing sight of the devEngines pin.
       - name: Renovate still sees the devEngines npm pin
         run: just infra::renovate-npm-manager-selftest
 
@@ -978,70 +792,45 @@ jobs:
       - name: Markdown lint (markdownlint-cli2)
         run: just js::markdownlint
 
-      # Spelling emits at `warning`, so this surfaces findings without failing
-      # the build. Scope and exclusions live in .vale.ini.
+      # Emits at `warning`, so this surfaces findings without failing the build.
       - name: Prose lint (Vale)
         run: just infra::prose
 
-      # Authoritative formatting gate: the pre-commit hook formats staged
-      # files locally, but this whole-tree --check is what actually fails
-      # the build. Scope lives in the root vite.config.ts fmt block.
       - name: Format check (oxfmt)
         run: just js::fmt-check
 
-      # greptile.json must parse and every customContext.files[] pin must
-      # resolve — a pin to a moved file degrades reviews silently.
-      # Unconditional so a PR that deletes a pinned file fails here even if
-      # it never touches greptile.json.
+      # Unconditional so a PR that deletes a pinned file fails here even if it never
+      # touches greptile.json itself.
       - name: Validate greptile.json
         run: just infra::greptile-config
 
-      # Dev-DB compose invariants (loopback bind, digest pin, parent volume
-      # mount) and the recipe secret-echo guard: overridden DB credentials
-      # must never print into echoed recipe lines.
       - name: Compose dev invariants
         run: just infra::compose-dev-invariants
 
       - name: Recipe secret-echo guard
         run: just infra::recipe-secret-echo-test
 
-      # Two self-tests on this job take a script as their subject rather than
-      # committed configuration, because no assertion inside that script could
-      # do the same work. Both run in CI, not only locally, because a local
-      # gate is bypassable and never runs on fork PRs.
-      #
-      # scripts/filter-sarif-unfixable-os.sh decides which container CVEs
-      # reach the code-scanning dashboard; an edit that widens its match
-      # silently withholds findings that do have fixes. The fixture builds a
-      # case a live scan cannot be relied on to contain.
+      # scripts/filter-sarif-unfixable-os.sh decides which container CVEs reach the
+      # code-scanning dashboard; an edit that widens its match silently withholds
+      # fixable findings. No assertion inside the script itself could catch that.
       - name: Container-CVE suppression predicate
         run: just infra::filter-sarif-unfixable-os-selftest
 
-      # scripts/preflight-scope.sh decides which lanes a local gate runs.
-      # Break the `scripts/*` arm of its escalates() and a change to the
-      # scoper narrows its own gate silently. The scoper can't assert its way
-      # out of that (the selector is the code under suspicion), and a local
-      # gate is circular for the same reason. This job isn't: unconditional
-      # and never consults the scoper.
+      # scripts/preflight-scope.sh decides which lanes a local gate runs; a change
+      # that narrows its own escalation logic is circular to catch locally. This job
+      # is unconditional and never consults the scoper.
       - name: Preflight lane scoper
         run: just infra::preflight-scope-selftest
 
-      # Every dependency-resolving cargo invocation across the just recipes,
-      # the git hooks, the workflow files (this one included), and the image
-      # build must pass --locked (the package-ingress ADR's frozen-installs
-      # control).
+      # The package-ingress ADR's frozen-installs control.
       - name: cargo --locked guard
         run: just infra::cargo-locked-guard
 
       - name: Validate lefthook.yml
         run: just infra::lefthook-validate
 
-      # Reject issue-tracker references in public-facing source and docs —
-      # they describe a private tracker, not the codebase. The issue-ref
-      # guard itself scans the whole tree on every invocation; this filter
-      # only decides whether a PR touches gated-scope file types at all, so
-      # PRs outside that scope skip the step entirely. The plan-ref guard
-      # that runs alongside it stays changed-files only.
+      # This filter only decides whether a PR touches gated-scope file types at all;
+      # PRs outside that scope skip the guard step entirely.
       - name: Detect changed source and docs
         uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4
         id: source-changed
@@ -1055,10 +844,9 @@ jobs:
               - 'frontend/src/**/*.{ts,tsx,js,jsx,css}'
               - '**/*.{md,mdx}'
 
-      # The file list reaches the shell via env (never inline `${{ }}`),
-      # and is NUL-delimited so a filename containing a newline cannot
-      # split and bypass the guard. `shell: bash` because mapfile + process
-      # substitution are bash-only.
+      # The file list reaches the shell via env, never inline `${{ }}`, and is
+      # NUL-delimited so a filename containing a newline can't split and bypass
+      # the guard.
       - name: Reject issue-tracker and plan refs in changed source
         if: steps.source-changed.outputs.source == 'true'
         shell: bash
@@ -1075,7 +863,6 @@ jobs:
   frontend:
     name: Frontend
     needs: changes
-    # Push-to-main always runs both stack jobs; see the backend job's note.
     if: needs.changes.outputs.frontend == 'true' || github.event_name == 'push'
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -1087,11 +874,6 @@ jobs:
         with:
           persist-credentials: false
 
-      # just walks up to the repo-root justfile from this frontend/ working
-      # directory; each js:: recipe re-enters frontend/ via its own
-      # [working-directory]. Shims stay on: this job runs only JS tools from
-      # the repo root, so there is no registry package root for a shim to
-      # resolve against.
       - name: Install just and node (mise)
         uses: jdx/mise-action@3c2e0cf82a5b2e5249f0d3635a4d83d0ae861518 # v4.2.5
         with:
@@ -1105,8 +887,8 @@ jobs:
           node-manager: false
           cache: true
 
-      # Install from the repo root: the root prepare hook (lefthook
-      # install) resolves its binary from the root node_modules.
+      # Install from the repo root: the root prepare hook (lefthook install) resolves
+      # its binary from the root node_modules.
       - name: Install
         working-directory: ${{ github.workspace }}
         run: vp install
@@ -1117,9 +899,7 @@ jobs:
       - name: Test (with coverage)
         run: just js::test-coverage
 
-      # if-no-files-found: error — a missing report must fail here, not
-      # read as 0% coverage downstream. Consumed by the sonar job within
-      # this run; no post-run use, so minimum retention.
+      # A missing report must fail here, not read as 0% coverage downstream.
       - name: Upload frontend coverage artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
@@ -1131,8 +911,7 @@ jobs:
       - name: Stylelint
         run: just js::stylelint
 
-      # Advisory until the 3 known bg-black findings in stock shadcn
-      # overlays are addressed.
+      # Advisory until the known bg-black findings in stock shadcn overlays are addressed.
       - name: Detect (impeccable, advisory)
         run: just js::detect
         continue-on-error: true
@@ -1143,15 +922,9 @@ jobs:
       - name: Build
         run: just js::build
 
-  # WCAG 2.2 AA gate: axe-core against the shipped routes in DEFAULT_TARGETS
-  # (frontend/scripts/a11y/allowlist.mjs), failing on any violation outside
-  # that file's allowlist. The Playwright config owns the dev-server lifecycle
-  # and ships an arm64 Chromium, so the gate reproduces on the ARM64 dev box
-  # as well as x86 CI.
-  #
-  # webServer runs the dev server, not a production-build preview: that has
-  # always been what this gate measures, and switching it is a separate
-  # change.
+  # WCAG 2.2 AA gate: axe-core against the routes in
+  # frontend/scripts/a11y/allowlist.mjs, failing on any violation outside that
+  # file's allowlist.
   a11y:
     name: Accessibility (axe)
     needs: changes
@@ -1179,16 +952,10 @@ jobs:
           node-manager: false
           cache: true
 
-      # Install from the repo root (the root prepare hook needs npm's cwd
-      # at the root to resolve lefthook). @playwright/test is a
-      # lockfile-pinned frontend devDependency, so its integrity rides the
-      # committed lockfile like every other npm dep.
       - name: Install
         working-directory: ${{ github.workspace }}
         run: vp install
 
-      # Key the browser cache on the resolved @playwright/test version so a
-      # lockfile bump misses cleanly and re-downloads.
       - name: Resolve Playwright version
         id: playwright
         working-directory: ${{ github.workspace }}
@@ -1200,22 +967,17 @@ jobs:
           path: ~/.cache/ms-playwright
           key: playwright-chromium-${{ runner.os }}-${{ runner.arch }}-${{ steps.playwright.outputs.version }}
 
-      # Install unconditionally, even on a cache hit: the cache holds only the
-      # browser binaries under ~/.cache/ms-playwright, but `--with-deps`
-      # installs OS-level apt packages that are not cached and must be present
-      # on every run.
+      # Unconditional even on a cache hit: `--with-deps` installs OS-level apt
+      # packages that aren't cached and must be present every run.
       - name: Install Playwright Chromium
         run: npx playwright install --with-deps chromium
 
-      # webServer in playwright.config.ts starts `npm run dev`, waits on the
-      # scanned route, and tears it down. Do not also start a server here:
-      # Playwright never reuses an existing server in CI, so a second one would
-      # collide on port 5173 (EADDRINUSE).
+      # Do not also start a server here: Playwright's webServer config already runs
+      # `npm run dev` and never reuses an existing one, so a second would collide on
+      # port 5173.
       - name: Run accessibility gate
         run: npm run a11y
 
-      # Traces (retain-on-failure) carry the attached axe-results.json plus DOM
-      # snapshots and console for each failing scan; only present on a red run.
       - name: Upload Playwright traces
         if: failure()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
@@ -1224,10 +986,9 @@ jobs:
           path: frontend/test-results/
           if-no-files-found: ignore
 
-  # Smoke test the staging compose init path: catches role-clause
-  # regressions in init-roles.sql and required-env-var regressions in the
-  # compose `${VAR:?required}` interpolations before they land on staging.
-  # Postgres-only `up` — the init surface under test is postgres.
+  # Catches role-clause regressions in init-roles.sql and required-env-var
+  # regressions in compose's `${VAR:?required}` interpolations before they land
+  # on staging.
   staging-smoke:
     name: Staging compose smoke
     needs: changes
@@ -1239,23 +1000,20 @@ jobs:
         with:
           persist-credentials: false
 
-      # Build .env from the committed example so a required key renamed in
-      # compose but not in the example is also caught. Distinct passwords
-      # per role so a swapped CREATE ROLE clause in init-roles.sql can't
-      # authenticate cross-role and pass silently.
+      # Distinct passwords per role so a swapped CREATE ROLE clause in init-roles.sql
+      # can't authenticate cross-role and pass silently.
       - name: Prepare env files from examples
         working-directory: docker
         run: |
           set -euo pipefail
           cp staging.env.bootstrap.example .env
-          # .env.runtime and .env.migrate are required: true on services
-          # that aren't started here; compose validates env_file presence
-          # at parse time regardless. Stub values, never read.
+          # .env.runtime and .env.migrate are required: true on services not started
+          # here, but compose validates env_file presence at parse time regardless.
           cp staging.env.runtime.example .env.runtime
           cp staging.env.migrate.example .env.migrate
-          # `=.*` (not `=$`) so substitutions stay robust if the examples
-          # ever acquire non-empty defaults; an exact-empty anchor would
-          # silently no-op and fail later at auth with an opaque 28P01.
+          # `=.*`, not `=$`: an exact-empty anchor would silently no-op if the
+          # examples acquire non-empty defaults, failing later at auth with an
+          # opaque 28P01.
           sed -i \
             -e 's|^POSTGRES_PASSWORD=.*|POSTGRES_PASSWORD=smoke_super_pw_1|' \
             -e 's|^REVERIE_APP_PASSWORD=.*|REVERIE_APP_PASSWORD=smoke_app_pw_2|' \
@@ -1272,8 +1030,6 @@ jobs:
       - name: Bring up postgres service
         run: docker compose -f docker/compose.staging.yml up -d --wait --wait-timeout 120 reverie-postgres
 
-      # `docker compose exec` keeps the psql client version matched to the
-      # server image.
       - name: Assert roles exist with CONNECT grant
         run: |
           set -euo pipefail
@@ -1289,11 +1045,8 @@ jobs:
               echo "Role ${role} missing or cannot login" >&2
               exit 1
             fi
-            # Query pg_database.datacl directly (not has_database_privilege)
-            # so deleting the explicit GRANT CONNECT lines is caught even
-            # while Postgres' default PUBLIC -> CONNECT grant is in place;
-            # has_database_privilege returns true via PUBLIC and would mask
-            # the deletion.
+            # has_database_privilege would return true via Postgres' default PUBLIC
+            # grant and mask a deleted GRANT CONNECT line, so query datacl directly.
             has_connect=$(exec_psql -c "SELECT EXISTS (SELECT 1 FROM pg_database d, aclexplode(d.datacl) acl WHERE d.datname = current_database() AND acl.grantee = (SELECT oid FROM pg_roles WHERE rolname = '${role}') AND acl.privilege_type = 'CONNECT')")
             if [ "$has_connect" != "t" ]; then
               echo "Role ${role} lacks an explicit CONNECT grant on $(exec_psql -c 'SELECT current_database()')" >&2
@@ -1301,8 +1054,6 @@ jobs:
             fi
           done
 
-      # Catches `LOGIN PASSWORD` clause regressions in init-roles.sql (the
-      # 28P01-at-runtime failure mode).
       - name: Assert each role authenticates with its supplied password
         run: |
           set -euo pipefail
@@ -1318,13 +1069,10 @@ jobs:
           login_as reverie_readonly  smoke_ro_pw_4
           login_as reverie_migrator  smoke_mig_pw_5
 
-      # THREAT: the migration identity must not be a superuser, create
-      # roles, or bypass RLS. This catches *active* escalation (a CREATE/
-      # ALTER ROLE adding SUPERUSER/CREATEROLE/BYPASSRLS). It does NOT
-      # catch deletion of the explicit NOSUPERUSER NOCREATEROLE NOBYPASSRLS
-      # clause from init-roles.sql — those are the CREATE ROLE defaults, so
-      # removal yields the same f|f|f; the clause's presence is guarded by
-      # review.
+      # THREAT: the migration identity must not be a superuser, create roles, or
+      # bypass RLS. Catches active escalation only; deleting the explicit
+      # NOSUPERUSER NOCREATEROLE NOBYPASSRLS clause yields the same f|f|f (they're
+      # the CREATE ROLE defaults), so that clause's presence is guarded by review.
       - name: Assert reverie_migrator is not over-privileged
         run: |
           set -euo pipefail
@@ -1338,12 +1086,10 @@ jobs:
             exit 1
           fi
 
-      # The migrator's two load-bearing grants: CREATE on the database (for
-      # `CREATE SCHEMA` in the initial migration) and CREATE on schema
-      # public (PG15+ revoked the implicit PUBLIC grant). Role-exists /
-      # login / f|f|f all stay green if either is dropped — only a real DDL
-      # round-trip catches it. One statement exercises both, leaving no
-      # residue.
+      # The migrator's two load-bearing grants (CREATE on the database, CREATE on
+      # schema public) stay invisible to the role-exists/login/f|f|f checks above if
+      # dropped; only a real DDL round-trip catches it. One statement exercises
+      # both, leaving no residue.
       - name: Assert reverie_migrator has DDL capability
         run: |
           set -euo pipefail
@@ -1354,10 +1100,8 @@ jobs:
             -c "CREATE SCHEMA _smoke_ddl; CREATE TABLE _smoke_ddl.probe (id int); DROP SCHEMA _smoke_ddl CASCADE;"
 
       # THREAT: the long-lived app must hold zero DDL credentials, so
-      # DATABASE_URL_MIGRATION must reach `reverie-migrate` and NOT the
-      # `reverie` app service. Asserted against the fully-rendered config;
-      # parse-time only, and runs while env files are still intact (before
-      # the negative-path step blanks a var).
+      # DATABASE_URL_MIGRATION must reach reverie-migrate and never the reverie app
+      # service. Runs before the negative-path step below blanks a var.
       - name: Assert DATABASE_URL_MIGRATION is scoped to reverie-migrate only
         working-directory: docker
         run: |
@@ -1378,10 +1122,8 @@ jobs:
         if: always()
         run: docker compose -f docker/compose.staging.yml down -v
 
-      # Negative path: blank a required env var and assert `compose config`
-      # hard-fails mentioning it. Key-name presence in stderr is the
-      # signal — compose's exact wording is not pinned across versions.
-      # `!cancelled()` so a regression in the `:?required` mechanism isn't
+      # Key-name presence in stderr is the signal: compose's exact wording isn't
+      # pinned across versions. !cancelled() so a `:?required` regression isn't
       # silently skipped behind an earlier failure.
       - name: Assert missing required env var hard-fails
         if: ${{ !cancelled() }}
@@ -1402,9 +1144,8 @@ jobs:
             exit 1
           fi
 
-  # Server-side secret scan. The gitleaks pre-commit hook is client-side:
-  # bypassable and never run on fork PRs. Intentionally unconditional — a
-  # secret can land in any file type, so every PR is scanned.
+  # The gitleaks pre-commit hook is client-side: bypassable and never run on fork
+  # PRs. Unconditional — a secret can land in any file type.
   secret-scan:
     name: Secret scan
     runs-on: ubuntu-latest
@@ -1412,8 +1153,8 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
-          # Full history so the pull_request scan below can walk the whole
-          # branch range, not just the tip commit.
+          # Full history so the pull_request scan below can walk the whole branch
+          # range, not just the tip commit.
           fetch-depth: 0
           persist-credentials: false
 
@@ -1424,12 +1165,10 @@ jobs:
           version: "2026.8.5"
           install_args: gitleaks
 
-      # On a pull_request, scan every commit the branch introduces: a secret
-      # added and later removed within the branch is gone from the working
-      # tree but stays readable in the pushed history, so a HEAD-only scan
-      # would pass while the credential is still exposed. push/merge_group
-      # has no PR base and falls back to a full-tree scan. --redact keeps any
-      # match out of the public CI log.
+      # On a pull_request, scan every commit the branch introduces: a secret added
+      # and later removed within the branch is gone from the working tree but stays
+      # readable in the pushed history. push/merge_group falls back to a full-tree
+      # scan.
       - name: Scan for secrets
         env:
           PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
@@ -1441,34 +1180,24 @@ jobs:
             gitleaks dir . --no-banner --redact
           fi
 
-  # PR-time docs build + internal-link gate. The build definition lives in
-  # the reusable docs-build.yml, shared with docs.yml's Pages deploy lane
-  # (cross-workflow `needs` is impossible, so the job must exist here to
-  # join ci-gate). A skipped docs job (no docs change) is treated as a pass
-  # by the aggregator.
+  # Build lives in the reusable docs-build.yml, shared with docs.yml's Pages deploy
+  # lane; cross-workflow `needs` is impossible, so the job must exist here to join
+  # ci-gate.
   docs:
     name: Docs build
     needs: changes
     if: needs.changes.outputs.docs == 'true'
     uses: ./.github/workflows/docs-build.yml
 
-  # Advisory: absent from ci-gate.needs[] and continue-on-error, so a Sonar
-  # outage or missing token never fails the build.
+  # Advisory: absent from ci-gate.needs[] and continue-on-error.
   sonar:
     name: SonarQube Cloud
     needs: [changes, backend, frontend]
-    # A main analysis overwrites coverage with exactly what it submits;
-    # SonarQube Cloud has no carryforward, so a missing report re-reports that
-    # stack as 0%. Hence on push both producers must have succeeded. PR
-    # analyses never touch the main baseline, so single-stack PRs still scan.
-    # Skip fork PRs: no SONAR_TOKEN, so the scan only fails. Skip bot
-    # dependency PRs by head branch (renovate/*, dependabot/*): their diffs
-    # carry no analyzable first-party code, and keying on the branch rather
-    # than the actor keeps the scan skipped when a human pushes a fix to the
-    # bot branch; the actor guards still cover bot-authored push and non-PR
-    # runs. !cancelled(), not always(): always() runs even inside a
-    # cancelled run, and once scanned main with zero artifacts, wiping the
-    # baseline to 0%. The codacy-coverage job mirrors this condition.
+    # SonarQube Cloud has no carryforward, so a missing report re-reports that stack
+    # as 0%; hence on push both producers must have succeeded. Bot dependency PRs
+    # are skipped by head branch, not actor, so a human pushing a fix to the bot
+    # branch still gets scanned. !cancelled(), not always(): always() once scanned
+    # main with zero artifacts and wiped the baseline. codacy-coverage mirrors this.
     if: >-
       !cancelled() &&
       github.actor != 'dependabot[bot]' &&
@@ -1488,7 +1217,6 @@ jobs:
           fetch-depth: 0 # blame-based new-code detection
           persist-credentials: false
 
-      # Best-effort: the producing job may be skipped on a single-stack PR.
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         id: dl_backend
         with:
@@ -1502,9 +1230,8 @@ jobs:
           path: frontend/coverage
         continue-on-error: true
 
-      # Both reports carry stack-relative SF: paths; prepend each stack dir
-      # so a single project resolves them against projectBaseDir. Without
-      # this they match nothing and coverage reads 0%.
+      # Both reports carry stack-relative SF: paths; without prepending the stack
+      # dir they match nothing against projectBaseDir and coverage reads 0%.
       - name: Normalize coverage paths to repo root
         run: |
           set -euo pipefail
@@ -1515,12 +1242,9 @@ jobs:
             sed -i 's#^SF:#SF:frontend/#' frontend/coverage/lcov.info
           fi
 
-      # On push a missing artifact must block the scan: it would overwrite
-      # the main baseline with partial coverage (the job-level if already
-      # requires both producers green, so a miss here is an artifact-infra
-      # failure). On PRs the analysis is baseline-safe; annotate and
-      # continue. The job stays advisory either way (continue-on-error,
-      # absent from ci-gate).
+      # On push a missing artifact must block the scan (it would overwrite the main
+      # baseline with partial coverage). On PRs the analysis is baseline-safe:
+      # annotate and continue.
       - name: Gate coverage inputs
         if: always()
         env:
@@ -1544,19 +1268,13 @@ jobs:
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
 
-  # Advisory: absent from ci-gate.needs[] and continue-on-error, so a Codacy
-  # outage or missing token never fails the build. Deliberately a sibling of
-  # the sonar job rather than steps inside it: the two coverage vendors are
-  # under comparison, and separate jobs let either be dropped without
-  # untangling shared steps.
+  # Advisory. Deliberately a sibling of the sonar job rather than steps inside it:
+  # the two coverage vendors are under comparison, and separate jobs let either be
+  # dropped without untangling shared steps.
   codacy-coverage:
     name: Codacy coverage
     needs: [backend, frontend]
-    # Mirrors the sonar job's condition (see its comment for the rationale):
-    # fork PRs carry no CODACY_PROJECT_TOKEN, so the upload can only fail; bot
-    # dependency branches are skipped by head branch rather than actor; on
-    # push both producers must have succeeded before a commit's coverage
-    # publishes.
+    # Mirrors the sonar job's condition.
     if: >-
       !cancelled() &&
       github.actor != 'dependabot[bot]' &&
@@ -1575,7 +1293,6 @@ jobs:
         with:
           persist-credentials: false
 
-      # Best-effort: the producing job may be skipped on a single-stack PR.
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
           name: backend-coverage
@@ -1587,9 +1304,8 @@ jobs:
           path: frontend/coverage
         continue-on-error: true
 
-      # Both reports carry stack-relative SF: paths; see the sonar job's
-      # equivalent step. Codacy resolves coverage against repository-root
-      # paths and reports no data at all when a file can't be located.
+      # See the sonar job's equivalent step; Codacy reports no data at all when a
+      # file can't be located.
       - name: Normalize coverage paths to repo root
         run: |
           set -euo pipefail
@@ -1600,10 +1316,9 @@ jobs:
             sed -i 's#^SF:#SF:frontend/#' frontend/coverage/lcov.info
           fi
 
-      # The reporter is handed only the reports that exist: naming a missing
-      # file fails the whole upload, which would otherwise turn every
-      # single-stack PR into an error. Reports above 10 MB fail server-side
-      # with a JSON parse error, so size is surfaced here where it is legible.
+      # Naming a missing file fails the whole upload, so hand the reporter only what
+      # exists. Reports above 10 MB fail server-side with an opaque JSON parse
+      # error, so size is surfaced here instead.
       - name: Collect coverage reports
         id: reports
         env:
@@ -1630,11 +1345,9 @@ jobs:
             echo 'token=set' >> "${GITHUB_OUTPUT}"
           fi
 
-      # The action SHA pins the wrapper, not the reporter: v1.3.0 fetches
-      # Codacy's bootstrap script from master on every run, and no released
-      # revision accepts a reporter version. The script verifies the SHA512 of
-      # the binary it installs, so the unpinned surface is the script itself,
-      # against a vendor that already receives the whole repository.
+      # The SHA pins the wrapper, not the reporter: v1.3.0 fetches Codacy's bootstrap
+      # script from master on every run; no released revision accepts a reporter
+      # version. That script verifies the SHA512 of the binary it installs.
       - name: Upload coverage to Codacy
         if: steps.reports.outputs.list != '' && steps.reports.outputs.token == 'set'
         uses: codacy/codacy-coverage-reporter-action@89d6c85cfafaec52c72b6c5e8b2878d33104c699 # v1.3.0
@@ -1642,14 +1355,11 @@ jobs:
           project-token: ${{ secrets.CODACY_PROJECT_TOKEN }}
           coverage-reports: ${{ steps.reports.outputs.list }}
 
-  # Single required status check for the branch ruleset. Path-conditional
-  # jobs that legitimately skip on a given PR no longer leave an
-  # individually-required check unsatisfied; the gate fails only when a
-  # needed job actually failed or was cancelled — `skipped` is a pass.
+  # Single required status check for the branch ruleset: `skipped` is a pass, so a
+  # path-conditional job that legitimately skips doesn't block merge.
   #
-  # `if: always()` is load-bearing: without it the gate is itself skipped
-  # when an upstream job fails, and GitHub reports a skipped required check
-  # as success — a broken build could merge.
+  # `if: always()` is load-bearing: without it the gate is itself skipped when an
+  # upstream job fails, and GitHub reports a skipped required check as success.
   ci-gate:
     name: CI gate
     if: always()

@@ -7,28 +7,23 @@ on:
     branches: [main]
   merge_group:
   schedule:
-    # Weekly scan, 17:37 UTC Sunday (~01:37 Monday Perth). Off-peak and
-    # avoids top-of-the-hour contention on GitHub-hosted runners.
+    # Off-peak, off top-of-the-hour, to dodge runner contention.
     - cron: "37 17 * * 0"
 
 permissions:
   contents: read
 
-# Never cancel main-branch runs (pushes and the weekly schedule both carry
-# refs/heads/main): a cancelled run reddens the README badge and drops the
-# commit's code-scanning results. Superseded PR runs cancel freely.
+# Never cancel main-branch runs: it would drop that commit's code-scanning
+# results. Superseded PR runs cancel freely.
 concurrency:
   group: codeql-${{ github.ref }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
   # Detect which languages' source changed so analyze jobs can skip.
-  # Scheduled runs always analyze everything (the analyze jobs' `if:` falls
-  # through on `schedule`). The Actions analyzer is deliberately NOT
-  # path-gated: the ruleset requires code-scanning results, and a PR
-  # matching no path filter would otherwise have zero results and be
-  # permanently blocked from merging; Actions analysis is the cheapest of
-  # the three, so the always-on cost is modest.
+  # The Actions analyzer is deliberately NOT path-gated: the ruleset requires
+  # code-scanning results, and a PR matching no filter would otherwise have
+  # zero results and be permanently blocked from merging.
   changes:
     name: Detect changes
     runs-on: ubuntu-latest
@@ -44,11 +39,8 @@ jobs:
         if: github.event_name != 'schedule'
         id: filter
         with:
-          # On merge_group events, paths-filter's default base (HEAD~1)
-          # only sees the topmost commit in the synthetic merge ref —
-          # it would miss the diff for any PR sharing the queue. Pin
-          # explicitly to merge_group.base_sha so downstream skip
-          # decisions match the actual PR-against-main diff.
+          # Default base (HEAD~1) only sees the synthetic merge ref's topmost
+          # commit; pin explicitly so skip decisions match the real PR diff.
           base: ${{ github.event.merge_group.base_sha || github.base_ref }}
           ref: ${{ github.event.merge_group.head_sha || github.ref }}
           filters: |
@@ -64,13 +56,11 @@ jobs:
 
   analyze-actions:
     name: Analyze (actions)
-    # Always runs — guarantees a CodeQL result exists for every commit (see
-    # the changes-job comment).
+    # Always runs — guarantees a CodeQL result exists for every commit.
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
-      # security-events: write to upload SARIF; actions: read lets the
-      # extractor fetch referenced workflows.
+      # actions: read lets the extractor fetch referenced workflows.
       security-events: write
       actions: read
       contents: read
@@ -147,13 +137,10 @@ jobs:
         with:
           category: /language:rust
 
-  # Single required CodeQL context for the branch ruleset. A gate in ci.yml
-  # cannot `needs:` jobs in this separate workflow, so CodeQL carries its own.
-  # Requiring this aggregate instead of the per-language Analyze (*) jobs means
-  # a PR that doesn't touch a given language (its analyze job skips) is not
-  # blocked by an unsatisfied required check. `analyze-actions` always runs, so
-  # there is always at least one real CodeQL result per commit. `if: always()`
-  # is load-bearing for the same reason as the CI gate.
+  # Single required CodeQL context: a gate in ci.yml can't `needs:` jobs in
+  # this separate workflow. Requiring this aggregate instead of the
+  # per-language jobs means a PR that skips a language's analyze job isn't
+  # blocked by an unsatisfied required check. `if: always()` is load-bearing.
   codeql-gate:
     name: CodeQL gate
     if: always()
