@@ -1,7 +1,6 @@
-# Config for actions/labeler@v5.
-# Labels are auto-applied to PRs based on changed file paths.
-# Matching rules follow the v5 "any-glob-to-any-file" semantics — a label is
-# applied if ANY changed file matches ANY of the globs listed under it.
+# Config for actions/labeler@v5. Matching rules follow the v5
+# "any-glob-to-any-file" semantics — a label is applied if ANY changed file
+# matches ANY of the globs listed under it.
 
 "area/backend":
   - changed-files:

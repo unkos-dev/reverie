@@ -1,5 +1,5 @@
-# zizmor configuration (UNK-327). Documented exceptions for the workflow-
-# security gate (the `workflow-security` job in .github/workflows/ci.yml).
+# zizmor configuration. Documented exceptions for the workflow-security gate
+# (the `workflow-security` job in .github/workflows/ci.yml).
 # Every entry carries a justification; this file is the audit trail.
 #
 # An `ignore` entry suppresses a tool false-positive, NOT an accepted security
