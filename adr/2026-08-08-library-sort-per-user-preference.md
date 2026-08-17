@@ -119,7 +119,7 @@ The decision:
 
 The library surface has no `?sort=` reader or writer; lint and tests keep
 `useSearchParams` off the surface, and the filter hook owns no sort key. One
-intent handler serializes every sort gesture into the preference write, and
+intent handler serialises every sort gesture into the preference write, and
 regression tests pin the case the two-layer model failed: clearing an
 inherited descending default from each sort surface must reach the wire as
 `sort_stack: null`. The list request never carries the installation default.

@@ -21,7 +21,7 @@ two config files.
 This record completes the pivot: a single Vite+ (`vp`) toolchain drives the repo
 as one npm workspace, with lint and format configuration unified in a root
 `vite.config.ts`. The forces are convergence (one toolchain, one config home) and
-parity (no enforcement, build, or test behavior may regress in the move).
+parity (no enforcement, build, or test behaviour may regress in the move).
 
 ## Decision Drivers
 
@@ -51,7 +51,7 @@ Chosen option: **Vite+ monorepo.** The forcing details resolved as follows.
   standalone `oxfmt` dependency, `.oxfmtrc.json`, and the per-package fmt block are
   gone. `frontend/vite.config.ts` keeps only build, server, and test config.
 - **npm workspaces.** The root declares `workspaces: ["frontend", "docs"]` for one
-  lockfile and one hoisted `node_modules`. npm honors `overrides` only in the
+  lockfile and one hoisted `node_modules`. npm honours `overrides` only in the
   workspace root, so all pins consolidate there; astro runs on vp's
   `@voidzero-dev/vite-plus-core` fork, so a single global `vite` override serves
   both packages.
@@ -63,7 +63,7 @@ Chosen option: **Vite+ monorepo.** The forcing details resolved as follows.
   loader resolves `vite-plus` from the project `node_modules`, so the root config
   needs it as a dependency even though the binary is global. `npm` and `npx`
   resolve through vp shims (`vp env setup`) so the `devEngines.packageManager`
-  version is honored.
+  version is honoured.
 - **CI bootstraps vp via `voidzero-dev/setup-vp` (SHA-pinned) and one root
   `vp install`.** The `just` recipes that define each gate are unchanged.
 

@@ -15,7 +15,7 @@ Search, suggest, and the typed text filters were accent-sensitive:
 `garcia` did not find `García`. Library metadata is multilingual, users
 type unaccented queries, and every fuzzy surface (tsvector search,
 trigram suggest, `_contains` filters) needed the same accent-insensitive
-behavior without corrupting stored values. Where should folding happen,
+behaviour without corrupting stored values. Where should folding happen,
 and what does it cost?
 
 ## Decision Drivers
