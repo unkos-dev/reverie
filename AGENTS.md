@@ -23,9 +23,11 @@ These are absolute invariants for the Reverie repository.
 - **Commits and PR titles:** Every commit subject and pull request title MUST follow Conventional Commits (`<type>(<scope>): <description>`). Pull request titles become squash-merge subjects. Explain the _why_, not the _what_.
 - **Sign-off:** Every commit MUST carry a `Signed-off-by` trailer, so commit with `git commit -s`. The `commit-msg` hook rejects an unsigned commit locally, and the DCO app fails its required check on the pull request. `.github/CONTRIBUTING.md` carries the Developer Certificate of Origin text and the rest of the contributor process.
 - **Linear Integration:** Treat work as Linear-tracked only when the maintainer says so or the task or current branch already identifies an `UNK-XXX` issue.
-  - For tracked work, include `Closes UNK-XXX` in the PR body. Linear's own GitHub app attaches the pull request to the issue and transitions it: In Progress on open, Done on merge. The magic word in the body is what it keys on, so omitting it leaves the issue open.
-  - The app matches that phrase anywhere in the body, including prose that only quotes it, and it writes on open regardless of the issue's current state. A body that discusses a closing line without meaning it must write the identifier without the keyword.
+  - For tracked work, include `Closes UNK-XXX` in the PR body; omitting it leaves the issue open.
+  - Linear's own GitHub app attaches the pull request and transitions the issue: In Progress on open, Done on merge.
   - Nothing in this repository closes issues; there is no workflow or credential behind the transition.
+  - The app matches the phrase anywhere in the body, even in prose that only quotes it, and writes on open regardless of the issue's state.
+  - A body that discusses a closing line without meaning it must write the identifier without the keyword.
   - For untracked work, do not search for or create a Linear issue and do not add a synthetic closure reference.
     </git_and_linear_workflow>
 
