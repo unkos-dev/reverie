@@ -190,6 +190,8 @@ jobs:
           s3-endpoint: https://${{ secrets.R2_ACCOUNT_ID }}.r2.cloudflarestorage.com
           s3-access-key-id: ${{ github.ref == 'refs/heads/main' && secrets.R2_ACCESS_KEY_ID_RW || secrets.R2_ACCESS_KEY_ID_RO }}
           s3-secret-access-key: ${{ github.ref == 'refs/heads/main' && secrets.R2_SECRET_ACCESS_KEY_RW || secrets.R2_SECRET_ACCESS_KEY_RO }}
+          # github-cache would refill the 10 GiB quota this cache exists to
+          # escape; pr-comment needs `pull-requests: write`, not granted here.
           github-cache: false
           pr-comment: false
           # Explicit despite being the current Linux default: that default rests on

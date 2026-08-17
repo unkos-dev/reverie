@@ -1,4 +1,6 @@
-# Every entry carries a justification; this file is the audit trail.
+# Every entry carries a justification; this file is the audit trail. An
+# `ignore` suppresses a tool false-positive, never an accepted risk; a
+# `disable` gives up real coverage and must state what is lost.
 rules:
   ref-version-mismatch:
     # SHA pins are the control; Renovate's `# vN` comments lag upstream tag
