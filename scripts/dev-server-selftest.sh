@@ -4,7 +4,15 @@ set -euo pipefail
 root="$(git rev-parse --show-toplevel)"
 lifecycle="${root}/scripts/dev-server.sh"
 tmp="$(mktemp -d)"
-port=45173
+
+# Derived from the checkout path rather than fixed. A literal port made two
+# checkouts running this at once collide, and the precondition below then
+# reported the second one as a failure of the tree it was testing. Hashing the
+# path gives each worktree its own port and keeps reruns from one checkout
+# reproducible. A collision within a single checkout is a different thing,
+# usually a fake server an earlier run leaked, and still fails loudly below.
+# The band is where the old literal sat.
+port=$((45000 + $(cksum <<<"${root}" | cut -d' ' -f1) % 1000))
 
 # The identity-mismatch case leaves a live foreign group behind on purpose;
 # every group this test starts is torn down here.

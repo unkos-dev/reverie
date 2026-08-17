@@ -313,14 +313,16 @@ fi
 # The gate can still exit 0 that way, which is the same confidently-narrowed
 # green this tool exists to prevent.
 #
-# Lane execution now lives in scripts/gate-run.sh, which loops, so the
-# behavioural half of this invariant is asserted where it runs:
-# gate-run-selftest.sh puts a variadic fixture lane ahead of another and proves
-# the second one still runs. What stays here is the structural half this file
-# is placed to see, that the recipe delegates rather than re-inlining the
-# broken call. Comments are stripped first: prose in the recipe names the
-# broken form to explain why it is banned, and that must not read as the form
-# being present.
+# Lane execution lives in scripts/gate-run.sh, which loops, so the invariant
+# has a behavioural half (a variadic lane does not swallow the lanes after it)
+# and a structural half (neither the recipe nor the runner collapses the lane
+# list into one `just` call). The structural half is checked at both sites: the
+# recipe must delegate to the runner, and the runner must invoke lanes one at a
+# time. The behavioural half has no fixture; the structural checks are what
+# stop the broken form returning, at the recipe where it originally appeared
+# and at the loop a deduplicating refactor would collapse. Comments are
+# stripped first: prose at both sites names the broken form to explain why it
+# is banned, and that must not read as the form being present.
 justfile_code="$(grep -v '^[[:space:]]*#' justfile)"
 # shellcheck disable=SC2016  # the patterns are recipe text; $ must stay literal
 if printf '%s\n' "$justfile_code" | grep -qF 'scripts/gate-run.sh preflight "${lanes[@]}"' &&
@@ -328,6 +330,16 @@ if printf '%s\n' "$justfile_code" | grep -qF 'scripts/gate-run.sh preflight "${l
   printf 'ok   %s\n' 'preflight (the scoped default gate) delegates its lane list to the looping runner'
 else
   printf 'FAIL %s\n' 'preflight passes its lane list to a single just call; a variadic lane swallows the lanes after it'
+  failures=$((failures + 1))
+fi
+
+runner_code="$(grep -v '^[[:space:]]*#' scripts/gate-run.sh)"
+# shellcheck disable=SC2016  # the patterns are script text; $ must stay literal
+if printf '%s\n' "$runner_code" | grep -qF 'just "$lane"' &&
+  ! printf '%s\n' "$runner_code" | grep -qF 'just "${lanes[@]}"'; then
+  printf 'ok   %s\n' 'gate-run.sh invokes lanes one at a time'
+else
+  printf 'FAIL %s\n' 'gate-run.sh no longer loops one just call per lane; a variadic lane swallows the lanes after it'
   failures=$((failures + 1))
 fi
 

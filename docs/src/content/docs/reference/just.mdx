@@ -69,17 +69,12 @@ log path to replay afterward.
 | `just infra::adr-frontmatter-selftest`           | Validate canonical ADR frontmatter and lifecycle index coverage.                                                                                 |
 | `just infra::backend-dev-env-selftest`           | Assert the backend dev recipes resolve REVERIE_DEV_ENV without overriding an already-set variable.                                               |
 | `just infra::cargo-locked-guard`                 | Every dependency-resolving cargo invocation in the just recipes must pass --locked; the package-ingress ADR records why.                         |
-| `just infra::cargo-locked-guard-selftest`        | Self-test scripts/cargo-locked-guard.sh against clean and violating fixtures, then the real recipes.                                             |
 | `just infra::check`                              | Infra has no formatter (oxfmt owns formatting via the JS plane), so check == lint.                                                               |
 | `just infra::compose-dev-invariants`             | Dev-DB compose invariants: loopback bind, digest pin, parent volume mount.                                                                       |
-| `just infra::compose-dev-invariants-selftest`    | Self-test both CI postgres pins against isolated workflow fixtures.                                                                              |
-| `just infra::db-ready-selftest`                  | Self-test the db-up socket readiness probe against a stubbed psql.                                                                               |
 | `just infra::dev-server-selftest`                | Exercise the dev-server lifecycle script against a fake server on a scratch port.                                                                |
 | `just infra::doctor-selftest`                    | Self-test `just doctor` (missing-binary, fully-stubbed happy path, warn-only path).                                                              |
-| `just infra::filter-sarif-test-rules-selftest`   | ordinary rule reported in a test file still reaches the dashboard.                                                                               |
 | `just infra::filter-sarif-unfixable-os-selftest` | a fix available is never withheld.                                                                                                               |
 | `just infra::gate-detach-selftest`               | Self-test the detached-gate script `just preflight-detach` wraps: a passing and a failing run each need a log and a gate-status-readable record. |
-| `just infra::gate-run-selftest`                  | Self-test the gate runner's verdict line, run record, status reporting, and record pruning.                                                      |
 | `just infra::greptile-config`                    | Validate greptile.json parses and every pinned context path resolves.                                                                            |
 | `just infra::hadolint`                           | Hadolint every tracked Dockerfile.                                                                                                               |
 | `just infra::just-reference`                     | Regenerate the just recipe reference from the justfiles. WRITES.                                                                                 |
@@ -87,25 +82,19 @@ log path to replay afterward.
 | `just infra::lefthook-validate`                  | Validate the lefthook.yml hook configuration.                                                                                                    |
 | `just infra::lint`                               | Whole repo-lint surface (mirrors the CI repo-lint job).                                                                                          |
 | `just infra::no-issue-refs <files>`              | Reject issue-tracker references anywhere in the gated tree.                                                                                      |
-| `just infra::no-issue-refs-selftest`             | Self-test the issue-tracker reference guard's whole-tree enforcement.                                                                            |
 | `just infra::no-plan-refs <files>`               | Reject plan-artifact references in a passed file list.                                                                                           |
-| `just infra::no-plan-refs-selftest`              | Self-test the private-plan reference guard.                                                                                                      |
 | `just infra::npm-pin-drift`                      | Assert the npm pin agrees between package.json devEngines and mise.toml.                                                                         |
-| `just infra::npm-pin-drift-selftest`             | Exercise the npm-pin guard against planted drift before trusting it.                                                                             |
 | `just infra::preflight-scope-selftest`           | Self-test the preflight scoper's lane mapping, escalation, and fail-closed paths.                                                                |
 | `just infra::prose`                              | Vale prose linter over all in-scope Markdown (docs/src, adr, repo-root).                                                                         |
 | `just infra::recipe-secret-echo-test`            | Overridden DB credentials never echo into recipe logs (dry-run assertion).                                                                       |
 | `just infra::renovate-npm-manager-selftest`      | Assert Renovate's custom manager still sees the devEngines npm pin.                                                                              |
 | `just infra::require-disk-backed-selftest`       | Self-test the shared tmpfs/ramfs filesystem guard `just worktree` and `just doctor` both call.                                                   |
-| `just infra::sanitize-sarif-severities-selftest` | Self-test the SARIF severity sanitizer both Snyk upload jobs run.                                                                                |
-| `just infra::selftests`                          | Self-tests for this repository's own scripts; gates nothing, run it by hand.                                                                     |
+| `just infra::selftests`                          | Self-tests for this repository's local developer tooling; gates nothing, run it by hand.                                                         |
 | `just infra::shellcheck`                         | Shellcheck every tracked shell script.                                                                                                           |
 | `just infra::sqruff`                             | Lint every tracked SQL file against `.sqruff`.                                                                                                   |
 | `just infra::tool-pin-drift`                     | Assert no workflow re-pins a mise-managed tool; mise.toml is the single source.                                                                  |
-| `just infra::tool-pin-drift-selftest`            | Exercise the tool-pin guard against planted pins before trusting it.                                                                             |
 | `just infra::typos`                              | Spell check the tree (honours .gitignore and \_typos.toml excludes).                                                                             |
 | `just infra::vp-pin-drift`                       | Assert every vite-plus pin agrees: both package.json files, the alias spec, the override, and each workflow.                                     |
-| `just infra::vp-pin-drift-selftest`              | Exercise the vp-pin guard against planted drift before trusting it.                                                                              |
 | `just infra::worktree-base-selftest`             | Self-test the new-branch base resolver: origin/main, local-main and HEAD fallbacks, and the explicit-base override/rejection paths.              |
 | `just infra::worktree-selftest`                  | Self-test the worktree recipe's Cargo isolation and operator-owned overlays.                                                                     |
 | `just infra::yamllint`                           | yamllint every tracked YAML file.                                                                                                                |

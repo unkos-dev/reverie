@@ -46,6 +46,25 @@ is_gated() {
   return 1
 }
 
+# Positive control, run on every invocation. The census below is whole-tree, so
+# its emptiness is checked too, but an empty census only catches gross
+# breakage: one decayed is_gated arm leaves the census full and stops covering
+# a whole file class silently. These assertions hold the guard to its own
+# documented scope, and unlike a fixture outside the guard they run on the code
+# path every real caller takes.
+self_check() {
+  grep -qE "$pattern" <<<'see UNK-123 for context' || return 1
+  is_gated backend/src/main.rs || return 1
+  is_gated frontend/src/App.tsx || return 1
+  is_gated adr/some-decision.md || return 1
+  ! is_gated AGENTS.md || return 1
+  ! is_gated frontend/src/components/ui/button.tsx || return 1
+}
+if ! self_check; then
+  echo "no-issue-refs: self-check failed; the scope rules or the pattern no longer match their own documented examples, so a clean result would mean nothing" >&2
+  exit 2
+fi
+
 # `git ls-files` lists every tracked path repo-relative to the current
 # directory, so callers must run this from the repo root (both lefthook and
 # the `just` recipe do). NUL-delimited so a path containing a newline cannot
@@ -57,8 +76,12 @@ while IFS= read -r -d '' path; do
   fi
 done < <(git ls-files -z)
 
+# The census is whole-tree and this repository always holds gated files, so an
+# empty one means the enumeration broke, not that there is nothing to check.
+# Reporting success there would be the guard's quietest possible failure.
 if [ "${#files[@]}" -eq 0 ]; then
-  exit 0
+  echo "no-issue-refs: the tracked-file census is empty; refusing to report a clean tree" >&2
+  exit 2
 fi
 
 # grep exit 1 = no matches (clean); exit >1 = a real error (e.g. an unreadable

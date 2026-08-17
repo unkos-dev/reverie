@@ -109,11 +109,10 @@ lanes_for() {
 # Two recipes are deliberately absent, both because a laptop cannot answer for
 # them honestly.
 #
-# infra::selftests covers this repository's own scripts against stubbed PATH,
-# docker, mise, npm, and git fixtures. Half of what it covers is local-only
-# developer tooling CI has no stake in, and the other half guards CI already
-# runs for real, whose failure paths belong in the guards themselves. It is a
-# recipe to invoke by hand while editing a script, not a gate.
+# infra::selftests covers this repository's local developer tooling (doctor,
+# worktree, the dev-server lifecycle, the detached gate) against stubbed PATH,
+# docker, mise, npm, and git fixtures. CI has no stake in any of it. It is a
+# recipe to invoke by hand while editing one of those scripts, not a gate.
 #
 # js::a11y is CI-only for two reasons, and the second is the deciding one. It
 # reuses an already-running dev server with no ownership check, so a local run

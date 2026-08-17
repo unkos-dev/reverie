@@ -150,15 +150,20 @@ Two aggregates anchor the local loop and should be the default reflex:
   checking who owns it, so from a checkout that does not hold port 5173 it scans
   a different tree; a clean CI runner cannot be ambiguous that way, so CI owns
   the gate and you run the recipe while fixing violations.
-  `just infra::selftests` covers this repository's own scripts against stubbed
-  fixtures. Roughly half of it covers local-only developer tooling CI has no
-  stake in, and the rest covers guards CI already runs for real, whose failure
-  paths belong as assertions inside the guards. Run it while editing a script.
-  One self-test is not in there and does gate:
-  `filter-sarif-unfixable-os-selftest` stays in `infra::lint` and in CI's
-  repo-lint job, because its subject decides which container CVEs reach the
-  code-scanning dashboard and an edit that widens the match hides fixable
-  findings with nothing else to notice.
+  `just infra::selftests` covers this repository's local developer tooling
+  against stubbed fixtures: `doctor`, `worktree`, the dev-server lifecycle, the
+  detached gate. CI has no stake in any of it. Run it while editing one of
+  those scripts. The self-tests that used to sit beside it, covering guards CI
+  runs for real on every pull request, are gone; those guards assert their own
+  non-degeneracy instead, which fires on every real invocation rather than only
+  where a fixture runs.
+  Two self-tests are not in that recipe and do gate, in `infra::lint` and in
+  CI's repo-lint job. `filter-sarif-unfixable-os-selftest`, because its subject
+  decides which container CVEs reach the code-scanning dashboard and an edit
+  that widens the match hides fixable findings with nothing else to notice.
+  `preflight-scope-selftest`, because its subject decides which lanes a local
+  gate runs, so an edit that narrows the gate can deselect the very check that
+  would catch it. Neither failure can be asserted from inside its own subject.
 - `just check` remains the fast offline subset for mid-task iteration;
   it includes zizmor's offline-only audits but not the token-gated ones.
 - `just preflight-detach [scoped|full]` runs either gate detached from the

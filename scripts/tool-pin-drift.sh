@@ -39,6 +39,24 @@ managed_tools=$(
   ' mise.toml | sort -u
 )
 
+# Positive control, run on every invocation. The census has three independent
+# producers above (an inline [tools] entry, a [tools."backend:name"] block, and
+# that block's bin/filter_bins value), and any one can stop matching while the
+# others keep the census non-empty, which silently drops a whole class of tool
+# from the check. One representative per producer is asserted (nextest and
+# cargo-nextest share one mise.toml entry, but each is emitted by a different
+# producer, so any single decayed producer is still caught). An empty census
+# is the
+# degenerate case of the same failure: without this the loop below reads one
+# empty line, derives its patterns from an empty tool name, and the run ends by
+# announcing a clean result it never established.
+for expected in just nextest cargo-nextest; do
+  if ! grep -qxF "$expected" <<<"$managed_tools"; then
+    echo "tool-pin-drift: '${expected}' is absent from the mise.toml census, so one of the three producers has stopped matching; refusing to report that no workflow re-pins a managed tool. If that tool was deliberately dropped, pick a new representative for its producer" >&2
+    exit 2
+  fi
+done
+
 fail=0
 while IFS= read -r tool; do
   # Inline pins (`just@1.56.0`, `yamllint==1.38.0`) and Renovate annotations
