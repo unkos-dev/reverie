@@ -9,7 +9,12 @@
 # Its own workflow rather than a job in ci.yml, so a title edit reruns this
 # check alone rather than the full CI matrix. pull_request-only: push and
 # merge_group have no PR range or title.
-name: Commit lint
+#
+# The display name deliberately matches ci.yml's. A pull request renders each
+# check as "<workflow name> / <job name>", so sharing the name is what files
+# this check with the rest of CI instead of stranding it under a family of one.
+# The required-status context is the job name below, not this string.
+name: CI
 
 on:
   pull_request:
