@@ -87,30 +87,22 @@ FROM frontend-builder AS frontend-sbom
 # curl is absent from the node:slim base.
 RUN apt-get update && apt-get install -y --no-install-recommends curl \
     && rm -rf /var/lib/apt/lists/*
-ARG TARGETARCH
-# renovate: datasource=github-release-attachments depName=anchore/syft extractVersion=^v(?<version>.+)$
+# mise's installer self-verifies the binary against upstream checksums,
+# and its aqua backend verifies syft's download (checksums + signatures).
+# renovate: datasource=github-releases depName=jdx/mise extractVersion=^v(?<version>.+)$
+ARG MISE_VERSION=2026.8.8
+RUN curl -fsSL --connect-timeout 10 --max-time 300 --retry 2 --retry-all-errors \
+      -o /tmp/mise-install.sh https://mise.run \
+    && MISE_VERSION="v${MISE_VERSION}" MISE_INSTALL_PATH=/usr/local/bin/mise sh /tmp/mise-install.sh \
+    && rm -f /tmp/mise-install.sh
+# renovate: datasource=github-releases depName=anchore/syft extractVersion=^v(?<version>.+)$
 ARG SYFT_VERSION=1.51.0
-# Official per-arch checksums from syft's release assets; Renovate bumps
-# the version but cannot recompute these, so a bump fails here until the
-# pair is repinned.
-RUN set -eu; \
-    case "$TARGETARCH" in \
-      amd64) sha256=2a2e837a2c8d59ec9af5472ee22d3b04ee463c4e44476ecf993fd1e5ab6ebc7f ;; \
-      arm64) sha256=6c0466811541ea03add5213a60a1562f0851e4c0b0ecfdee1a694a9455285900 ;; \
-      *) echo "unsupported TARGETARCH: $TARGETARCH" >&2; exit 1 ;; \
-    esac; \
-    curl -fsSL --connect-timeout 10 --max-time 300 --retry 2 --retry-all-errors \
-      -o /tmp/syft.tar.gz \
-      "https://github.com/anchore/syft/releases/download/v${SYFT_VERSION}/syft_${SYFT_VERSION}_linux_${TARGETARCH}.tar.gz"; \
-    printf '%s  /tmp/syft.tar.gz\n' "$sha256" > /tmp/syft.tar.gz.sha256; \
-    sha256sum -c /tmp/syft.tar.gz.sha256; \
-    tar -xzf /tmp/syft.tar.gz -C /usr/local/bin syft; \
-    rm -f /tmp/syft.tar.gz /tmp/syft.tar.gz.sha256
 # --override-default-catalogers is load-bearing: syft's default set for a
 # dir: scan excludes javascript-package-cataloger, silently yielding a
 # document with zero npm components.
 RUN --mount=type=cache,target=/root/.npm npm ci --omit=dev --workspace frontend --ignore-scripts \
-    && syft dir:node_modules --override-default-catalogers javascript-package-cataloger \
+    && mise exec "aqua:anchore/syft@${SYFT_VERSION}" -- \
+       syft dir:node_modules --override-default-catalogers javascript-package-cataloger \
        -o cyclonedx-json > /build/frontend.cdx.json
 
 # Stage 3: Runtime
