@@ -76,39 +76,23 @@ RUN --mount=type=cache,target=/root/.npm npm ci --workspace frontend --ignore-sc
 COPY frontend/ frontend/
 RUN npm run build --workspace frontend
 
-# Stage 2b: frontend-sbom — dependency record for the bundled frontend.
-# The frontend ships as a bundle, so its dependencies are not packages in
-# the runtime image and no image scanner can recover them. Emitting the
-# list from the tree that produced the bundle keeps the record from
-# drifting.
-#
-# Scanning the hoisted root package-lock.json directly (no install) was
-# considered and rejected: npm workspace lockfiles flatten every member's
-# dependencies into one unattributed list, so a lockfile-only catalog of
-# this tree would also pull in docs/'s production dependencies (astro,
-# sharp, ...) with no way to tell them apart from the frontend's own.
-# `npm ci --omit=dev --workspace frontend` installs the frontend's
-# production tree dev-free, so no syft dev/prod heuristic is needed.
-# Known over-inclusion: npm's workspace install also leaks a few of the
-# root's own installs (esbuild, typescript, the vite-plus core) into
-# node_modules, so those appear in the document as if shipped —
-# over-reporting, the safe direction for an SBOM. The pnpm migration's
-# filtered install removes the leak. Separate stage so this
-# install (and the syft binary used to read it) never reach the runtime
-# image; the builder stage above keeps its own narrower dev+prod install
-# for the build tools it needs.
+# Stage 2b: frontend-sbom — dependency record for the bundled frontend,
+# emitted from the tree that produced the bundle (the runtime image has no
+# npm packages for a scanner to find). The install is scoped dev-free to
+# the frontend workspace; npm's workspace install leaks a few root
+# build-tool packages into the document (over-reporting; the pnpm
+# migration removes the leak). Separate stage so neither this install nor
+# syft reaches the runtime image.
 FROM frontend-builder AS frontend-sbom
-# curl is needed only to fetch the pinned syft binary below; not present
-# in the node:slim base.
+# curl is absent from the node:slim base.
 RUN apt-get update && apt-get install -y --no-install-recommends curl \
     && rm -rf /var/lib/apt/lists/*
 ARG TARGETARCH
 # renovate: datasource=github-release-attachments depName=anchore/syft extractVersion=^v(?<version>.+)$
 ARG SYFT_VERSION=1.51.0
-# Checksums are the official ones published in syft's
-# syft_<version>_checksums.txt release asset. Renovate bumps SYFT_VERSION
-# via the annotation above but cannot recompute a checksum, so a version
-# bump fails this RUN until a reviewer pastes the matching sha256 pair.
+# Official per-arch checksums from syft's release assets; Renovate bumps
+# the version but cannot recompute these, so a bump fails here until the
+# pair is repinned.
 RUN set -eu; \
     case "$TARGETARCH" in \
       amd64) sha256=2a2e837a2c8d59ec9af5472ee22d3b04ee463c4e44476ecf993fd1e5ab6ebc7f ;; \
@@ -122,17 +106,9 @@ RUN set -eu; \
     sha256sum -c /tmp/syft.tar.gz.sha256; \
     tar -xzf /tmp/syft.tar.gz -C /usr/local/bin syft; \
     rm -f /tmp/syft.tar.gz /tmp/syft.tar.gz.sha256
-# --omit=dev scopes the install (and therefore the catalog) to production
-# dependencies; javascript-package-cataloger reads installed package.json
-# files with no dev/prod distinction of its own, so what is on disk is
-# what ends up in the document.
-#
-# javascript-package-cataloger is tagged for image/installed sources, not
-# directory sources, so syft excludes it from the default set for a
-# `dir:` scan; --override-default-catalogers forces it in and drops every
-# other default (go-module and github-actions-usage catalogers otherwise
-# fire on binaries and workflow-shaped fixtures bundled inside some
-# packages, which are noise for a dependency record).
+# --override-default-catalogers is load-bearing: syft's default set for a
+# dir: scan excludes javascript-package-cataloger, silently yielding a
+# document with zero npm components.
 RUN --mount=type=cache,target=/root/.npm npm ci --omit=dev --workspace frontend --ignore-scripts \
     && syft dir:node_modules --override-default-catalogers javascript-package-cataloger \
        -o cyclonedx-json > /build/frontend.cdx.json
