@@ -5,7 +5,8 @@
     ":semanticCommits",
     ":gitSignOff",
     "helpers:pinGitHubActionDigests",
-    "mergeConfidence:all-badges"
+    "mergeConfidence:all-badges",
+    "customManagers:dockerfileVersions"
   ],
   "configMigration": true,
   "timezone": "Australia/Perth",
@@ -180,9 +181,12 @@
       "datasourceTemplate": "crate"
     },
     {
-      "description": "Track annotated version pins in workflows (TruffleHog's image tag, mise itself, and the remaining install-pinned-tool binaries). When a sha256 line follows the version, the github-release-attachments datasource rewrites it alongside the bump, keeping the checksum control without the manual repin step.",
+      "description": "Track annotated version pins in workflows and composite actions; a trailing sha256 line is rewritten alongside the bump via github-release-attachments. File patterns are the customManagers:githubActionsVersions preset's verbatim — the preset itself would double-claim these annotations without the sha256 rewrite. ARG-shaped Dockerfile pins belong to the dockerfileVersions preset in extends.",
       "customType": "regex",
-      "managerFilePatterns": ["/^\\.github/workflows/[^/]+\\.ya?ml$/"],
+      "managerFilePatterns": [
+        "/(^|/)(workflow-templates|\\.(?:github|gitea|forgejo)/(?:workflows|actions))/.+\\.ya?ml$/",
+        "/(^|/)action\\.ya?ml$/"
+      ],
       "matchStrings": [
         "# renovate: datasource=(?<datasource>\\S+) depName=(?<depName>\\S+)(?: extractVersion=(?<extractVersion>\\S+))?\\s+version:\\s*\"(?<currentValue>[^\"]+)\"(?:\\s+sha256:\\s*\"(?<currentDigest>[a-f0-9]{64})\")?"
       ]

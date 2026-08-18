@@ -76,29 +76,41 @@ RUN --mount=type=cache,target=/root/.npm npm ci --workspace frontend --ignore-sc
 COPY frontend/ frontend/
 RUN npm run build --workspace frontend
 
-# Stage 2b: frontend-sbom — dependency record for the bundled frontend.
-# The frontend ships as a bundle, so its dependencies are not packages in
-# the runtime image and no image scanner can recover them. Emitting the
-# list from the tree that produced the bundle keeps the record from
-# drifting. --omit=dev because this describes what ships, not what built
-# it.
-#
-# Separate stage because `npm sbom` validates the whole workspace tree and
-# aborts with ESBOMPROBLEMS on any absent member, while the build above
-# deliberately installs only the frontend workspace. The full install
-# lives here so the builder stage keeps its narrow install and the
-# runtime image never sees either.
-#
-# npm sbom also refuses when a workspace member lacks a version, and the
-# private root has none (EINVALIDPURLTYPE). Borrow the release version
-# for generation alone: this manifest is a build artefact that is never
-# published, so release-please stays the tree's only version authority.
+# Stage 2b: frontend-sbom — dependency record for the bundled frontend,
+# emitted from the tree that produced the bundle (the runtime image has no
+# npm packages for a scanner to find). The install is scoped dev-free to
+# the frontend workspace; npm's workspace install leaks a few root
+# build-tool packages into the document (over-reporting; the pnpm
+# migration removes the leak). Separate stage so neither this install nor
+# syft reaches the runtime image.
 FROM frontend-builder AS frontend-sbom
-COPY version.txt ./
-RUN --mount=type=cache,target=/root/.npm npm ci --ignore-scripts \
-    && npm pkg set version="$(cat version.txt)" \
-    && npm sbom --sbom-format cyclonedx --omit=dev --workspace frontend \
-       > /build/frontend.cdx.json
+# curl and gnupg are absent from the node:slim base.
+RUN apt-get update && apt-get install -y --no-install-recommends curl gnupg \
+    && rm -rf /var/lib/apt/lists/*
+# The installer is GPG-verified against mise's release key (a one-time
+# anchor, not a version pin); the installed mise then verifies syft's
+# download through its aqua backend. Verification binds to this key alone:
+# the keyring holds nothing else.
+ARG MISE_GPG_FINGERPRINT=24853EC9F655CE80B48E6C3A8B81C9D17413A06D
+# renovate: datasource=github-releases depName=jdx/mise extractVersion=^v(?<version>.+)$
+ARG MISE_VERSION=2026.8.8
+RUN set -eu; \
+    GNUPGHOME="$(mktemp -d)"; export GNUPGHOME; \
+    gpg --keyserver hkps://keys.openpgp.org --recv-keys "$MISE_GPG_FINGERPRINT"; \
+    curl -fsSL --connect-timeout 10 --max-time 300 --retry 2 --retry-all-errors \
+      -o /tmp/mise-install.sh.sig https://mise.jdx.dev/install.sh.sig; \
+    gpg --decrypt /tmp/mise-install.sh.sig > /tmp/mise-install.sh; \
+    MISE_VERSION="v${MISE_VERSION}" MISE_INSTALL_PATH=/usr/local/bin/mise sh /tmp/mise-install.sh; \
+    rm -rf "$GNUPGHOME" /tmp/mise-install.sh.sig /tmp/mise-install.sh
+# renovate: datasource=github-releases depName=anchore/syft extractVersion=^v(?<version>.+)$
+ARG SYFT_VERSION=1.51.0
+# --override-default-catalogers is load-bearing: syft's default set for a
+# dir: scan excludes javascript-package-cataloger, silently yielding a
+# document with zero npm components.
+RUN --mount=type=cache,target=/root/.npm npm ci --omit=dev --workspace frontend --ignore-scripts \
+    && mise exec "aqua:anchore/syft@${SYFT_VERSION}" -- \
+       syft dir:node_modules --override-default-catalogers javascript-package-cataloger \
+       -o cyclonedx-json > /build/frontend.cdx.json
 
 # Stage 3: Runtime
 # UNK-253: codename MUST match the builder stage above. See note on `chef`.
