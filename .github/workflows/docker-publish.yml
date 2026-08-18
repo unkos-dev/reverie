@@ -109,6 +109,9 @@ jobs:
           sbom: true
           cache-from: type=gha,scope=buildcache-${{ matrix.arch }}
           cache-to: type=gha,scope=buildcache-${{ matrix.arch }},mode=max
+          # A cached runtime stage would freeze apt-get upgrade at its last
+          # cold build, silently breaking the fixes-lead-the-base-image design.
+          no-cache-filters: runtime
 
       # The CVE gate is layer analysis only; this actually executes the pushed
       # digest, so a non-executing image is never tagged or signed.
