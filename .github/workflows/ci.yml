@@ -380,6 +380,43 @@ jobs:
           if-no-files-found: error
           retention-days: 1
 
+      # Codacy requires repo-root-relative SF: paths; the backend lcov is backend-relative.
+      - name: Normalize coverage paths to repo root
+        run: sed -i 's#^SF:#SF:backend/#' lcov.info
+
+      # Reports above 10 MB fail server-side with an opaque JSON parse error, so
+      # size is surfaced here instead.
+      - name: Check coverage report size
+        id: backend_lcov_size
+        run: |
+          size=$(wc -c < lcov.info)
+          if [ "${size}" -gt 10485760 ]; then
+            echo "::warning title=Coverage report oversized::backend/lcov.info is ${size} bytes; Codacy rejects reports above 10 MB."
+            echo 'skip=true' >> "${GITHUB_OUTPUT}"
+          else
+            echo 'skip=false' >> "${GITHUB_OUTPUT}"
+          fi
+
+      # Per-language advisory upload; PR-level Codacy contexts come from these steps.
+      # The SHA pins the wrapper, not the reporter: v1.3.0 fetches Codacy's bootstrap
+      # script from master on every run; no released revision accepts a reporter
+      # version. That script verifies the SHA512 of the binary it installs.
+      - name: Upload coverage to Codacy
+        if: >-
+          steps.backend_lcov_size.outputs.skip != 'true' &&
+          github.actor != 'dependabot[bot]' &&
+          github.actor != 'renovate[bot]' &&
+          (github.event_name != 'pull_request' ||
+           (github.event.pull_request.head.repo.full_name == github.repository &&
+            !startsWith(github.head_ref, 'renovate/') &&
+            !startsWith(github.head_ref, 'dependabot/')))
+        uses: codacy/codacy-coverage-reporter-action@89d6c85cfafaec52c72b6c5e8b2878d33104c699 # v1.3.0
+        continue-on-error: true
+        with:
+          project-token: ${{ secrets.CODACY_PROJECT_TOKEN }}
+          coverage-reports: backend/lcov.info
+          language: Rust
+
   # Compiles on exactly the declared rust-version, so a dependency bump or new syntax
   # that silently raises the real minimum fails here instead of breaking
   # self-hosters building from source on the documented floor.
@@ -909,6 +946,40 @@ jobs:
           if-no-files-found: error
           retention-days: 1
 
+      # Codacy requires repo-root-relative SF: paths; the frontend lcov is frontend-relative.
+      - name: Normalize coverage paths to repo root
+        run: sed -i 's#^SF:#SF:frontend/#' coverage/lcov.info
+
+      # Reports above 10 MB fail server-side with an opaque JSON parse error, so
+      # size is surfaced here instead.
+      - name: Check coverage report size
+        id: frontend_lcov_size
+        run: |
+          size=$(wc -c < coverage/lcov.info)
+          if [ "${size}" -gt 10485760 ]; then
+            echo "::warning title=Coverage report oversized::frontend/coverage/lcov.info is ${size} bytes; Codacy rejects reports above 10 MB."
+            echo 'skip=true' >> "${GITHUB_OUTPUT}"
+          else
+            echo 'skip=false' >> "${GITHUB_OUTPUT}"
+          fi
+
+      # Per-language advisory upload; PR-level Codacy contexts come from these steps.
+      - name: Upload coverage to Codacy
+        if: >-
+          steps.frontend_lcov_size.outputs.skip != 'true' &&
+          github.actor != 'dependabot[bot]' &&
+          github.actor != 'renovate[bot]' &&
+          (github.event_name != 'pull_request' ||
+           (github.event.pull_request.head.repo.full_name == github.repository &&
+            !startsWith(github.head_ref, 'renovate/') &&
+            !startsWith(github.head_ref, 'dependabot/')))
+        uses: codacy/codacy-coverage-reporter-action@89d6c85cfafaec52c72b6c5e8b2878d33104c699 # v1.3.0
+        continue-on-error: true
+        with:
+          project-token: ${{ secrets.CODACY_PROJECT_TOKEN }}
+          coverage-reports: frontend/coverage/lcov.info
+          language: TypeScript
+
       - name: Stylelint
         run: just js::stylelint
 
@@ -1268,93 +1339,6 @@ jobs:
         uses: SonarSource/sonarqube-scan-action@22918119ff8e1ca75a623e15c8296b6ea4fbe28f # v8.2.1
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-
-  # Advisory. Deliberately a sibling of the sonar job rather than steps inside it:
-  # the two coverage vendors are under comparison, and separate jobs let either be
-  # dropped without untangling shared steps.
-  codacy-coverage:
-    name: Codacy coverage
-    needs: [backend, frontend]
-    # Mirrors the sonar job's condition.
-    if: >-
-      !cancelled() &&
-      github.actor != 'dependabot[bot]' &&
-      github.actor != 'renovate[bot]' &&
-      (github.event_name != 'pull_request' ||
-       (github.event.pull_request.head.repo.full_name == github.repository &&
-        !startsWith(github.head_ref, 'renovate/') &&
-        !startsWith(github.head_ref, 'dependabot/'))) &&
-      (github.event_name != 'push' ||
-       (needs.backend.result == 'success' && needs.frontend.result == 'success'))
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    continue-on-error: true
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with:
-          persist-credentials: false
-
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
-        with:
-          name: backend-coverage
-          path: backend
-        continue-on-error: true
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
-        with:
-          name: frontend-coverage
-          path: frontend/coverage
-        continue-on-error: true
-
-      # See the sonar job's equivalent step; Codacy reports no data at all when a
-      # file can't be located.
-      - name: Normalize coverage paths to repo root
-        run: |
-          set -euo pipefail
-          if [ -f backend/lcov.info ]; then
-            sed -i 's#^SF:#SF:backend/#' backend/lcov.info
-          fi
-          if [ -f frontend/coverage/lcov.info ]; then
-            sed -i 's#^SF:#SF:frontend/#' frontend/coverage/lcov.info
-          fi
-
-      # Naming a missing file fails the whole upload, so hand the reporter only what
-      # exists. Reports above 10 MB fail server-side with an opaque JSON parse
-      # error, so size is surfaced here instead.
-      - name: Collect coverage reports
-        id: reports
-        env:
-          CODACY_PROJECT_TOKEN: ${{ secrets.CODACY_PROJECT_TOKEN }}
-        run: |
-          set -euo pipefail
-          list=''
-          for f in backend/lcov.info frontend/coverage/lcov.info; do
-            if [ ! -f "${f}" ]; then
-              echo "::warning title=Coverage report missing::${f} was not produced; Codacy coverage will be partial."
-              continue
-            fi
-            size=$(wc -c < "${f}")
-            if [ "${size}" -gt 10485760 ]; then
-              echo "::warning title=Coverage report oversized::${f} is ${size} bytes; Codacy rejects reports above 10 MB."
-            fi
-            list="${list:+${list},}${f}"
-          done
-          echo "list=${list}" >> "${GITHUB_OUTPUT}"
-          if [ -z "${CODACY_PROJECT_TOKEN}" ]; then
-            echo "::warning title=CODACY_PROJECT_TOKEN missing::Codacy coverage upload skipped."
-            echo 'token=' >> "${GITHUB_OUTPUT}"
-          else
-            echo 'token=set' >> "${GITHUB_OUTPUT}"
-          fi
-
-      # The SHA pins the wrapper, not the reporter: v1.3.0 fetches Codacy's bootstrap
-      # script from master on every run; no released revision accepts a reporter
-      # version. That script verifies the SHA512 of the binary it installs.
-      - name: Upload coverage to Codacy
-        if: steps.reports.outputs.list != '' && steps.reports.outputs.token == 'set'
-        uses: codacy/codacy-coverage-reporter-action@89d6c85cfafaec52c72b6c5e8b2878d33104c699 # v1.3.0
-        with:
-          project-token: ${{ secrets.CODACY_PROJECT_TOKEN }}
-          coverage-reports: ${{ steps.reports.outputs.list }}
 
   # Single required status check for the branch ruleset: `skipped` is a pass, so a
   # path-conditional job that legitimately skips doesn't block merge.
