@@ -20,12 +20,9 @@ concurrency:
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
-  # Detect which languages' source changed; consulted only to skip analyze
-  # jobs on push. PR and merge-queue runs analyze every language
-  # unconditionally: the ruleset's code-scanning rule expects results per
-  # category (tool+language), so a skipped analyzer would leave the PR
-  # permanently unmergeable — one always-on analyzer cannot satisfy another
-  # category's expectation.
+  # Gates the analyze jobs on push only. PR and merge-queue runs analyze every
+  # language: the ruleset's code-scanning rule expects per-category results, so
+  # a skipped analyzer blocks the PR forever.
   changes:
     name: Detect changes
     runs-on: ubuntu-latest
