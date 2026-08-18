@@ -80,25 +80,62 @@ RUN npm run build --workspace frontend
 # The frontend ships as a bundle, so its dependencies are not packages in
 # the runtime image and no image scanner can recover them. Emitting the
 # list from the tree that produced the bundle keeps the record from
-# drifting. --omit=dev because this describes what ships, not what built
-# it.
+# drifting.
 #
-# Separate stage because `npm sbom` validates the whole workspace tree and
-# aborts with ESBOMPROBLEMS on any absent member, while the build above
-# deliberately installs only the frontend workspace. The full install
-# lives here so the builder stage keeps its narrow install and the
-# runtime image never sees either.
-#
-# npm sbom also refuses when a workspace member lacks a version, and the
-# private root has none (EINVALIDPURLTYPE). Borrow the release version
-# for generation alone: this manifest is a build artefact that is never
-# published, so release-please stays the tree's only version authority.
+# Scanning the hoisted root package-lock.json directly (no install) was
+# considered and rejected: npm workspace lockfiles flatten every member's
+# dependencies into one unattributed list, so a lockfile-only catalog of
+# this tree would also pull in docs/'s production dependencies (astro,
+# sharp, ...) with no way to tell them apart from the frontend's own.
+# `npm ci --omit=dev --workspace frontend` installs the frontend's
+# production tree dev-free, so no syft dev/prod heuristic is needed.
+# Known over-inclusion: npm's workspace install also leaks a few of the
+# root's own installs (esbuild, typescript, the vite-plus core) into
+# node_modules, so those appear in the document as if shipped —
+# over-reporting, the safe direction for an SBOM. The pnpm migration's
+# filtered install removes the leak. Separate stage so this
+# install (and the syft binary used to read it) never reach the runtime
+# image; the builder stage above keeps its own narrower dev+prod install
+# for the build tools it needs.
 FROM frontend-builder AS frontend-sbom
-COPY version.txt ./
-RUN --mount=type=cache,target=/root/.npm npm ci --ignore-scripts \
-    && npm pkg set version="$(cat version.txt)" \
-    && npm sbom --sbom-format cyclonedx --omit=dev --workspace frontend \
-       > /build/frontend.cdx.json
+# curl is needed only to fetch the pinned syft binary below; not present
+# in the node:slim base.
+RUN apt-get update && apt-get install -y --no-install-recommends curl \
+    && rm -rf /var/lib/apt/lists/*
+ARG TARGETARCH
+# renovate: datasource=github-release-attachments depName=anchore/syft extractVersion=^v(?<version>.+)$
+ARG SYFT_VERSION=1.51.0
+# Checksums are the official ones published in syft's
+# syft_<version>_checksums.txt release asset. Renovate bumps SYFT_VERSION
+# via the annotation above but cannot recompute a checksum, so a version
+# bump fails this RUN until a reviewer pastes the matching sha256 pair.
+RUN set -eu; \
+    case "$TARGETARCH" in \
+      amd64) sha256=2a2e837a2c8d59ec9af5472ee22d3b04ee463c4e44476ecf993fd1e5ab6ebc7f ;; \
+      arm64) sha256=6c0466811541ea03add5213a60a1562f0851e4c0b0ecfdee1a694a9455285900 ;; \
+      *) echo "unsupported TARGETARCH: $TARGETARCH" >&2; exit 1 ;; \
+    esac; \
+    curl -fsSL --connect-timeout 10 --max-time 300 --retry 2 --retry-all-errors \
+      -o /tmp/syft.tar.gz \
+      "https://github.com/anchore/syft/releases/download/v${SYFT_VERSION}/syft_${SYFT_VERSION}_linux_${TARGETARCH}.tar.gz"; \
+    printf '%s  /tmp/syft.tar.gz\n' "$sha256" > /tmp/syft.tar.gz.sha256; \
+    sha256sum -c /tmp/syft.tar.gz.sha256; \
+    tar -xzf /tmp/syft.tar.gz -C /usr/local/bin syft; \
+    rm -f /tmp/syft.tar.gz /tmp/syft.tar.gz.sha256
+# --omit=dev scopes the install (and therefore the catalog) to production
+# dependencies; javascript-package-cataloger reads installed package.json
+# files with no dev/prod distinction of its own, so what is on disk is
+# what ends up in the document.
+#
+# javascript-package-cataloger is tagged for image/installed sources, not
+# directory sources, so syft excludes it from the default set for a
+# `dir:` scan; --override-default-catalogers forces it in and drops every
+# other default (go-module and github-actions-usage catalogers otherwise
+# fire on binaries and workflow-shaped fixtures bundled inside some
+# packages, which are noise for a dependency record).
+RUN --mount=type=cache,target=/root/.npm npm ci --omit=dev --workspace frontend --ignore-scripts \
+    && syft dir:node_modules --override-default-catalogers javascript-package-cataloger \
+       -o cyclonedx-json > /build/frontend.cdx.json
 
 # Stage 3: Runtime
 # UNK-253: codename MUST match the builder stage above. See note on `chef`.
