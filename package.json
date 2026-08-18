@@ -10,13 +10,6 @@
     "node": ">=24.16.0"
   },
   "packageManager": "pnpm@11.22.0",
-  "devEngines": {
-    "packageManager": {
-      "name": "pnpm",
-      "version": "11.22.0",
-      "onFail": "download"
-    }
-  },
   "scripts": {
     "prepare": "lefthook install",
     "build": "vp run -r build"
