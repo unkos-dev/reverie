@@ -20,10 +20,9 @@ concurrency:
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
-  # Detect which languages' source changed so analyze jobs can skip.
-  # The Actions analyzer is deliberately NOT path-gated: the ruleset requires
-  # code-scanning results, and a PR matching no filter would otherwise have
-  # zero results and be permanently blocked from merging.
+  # Gates the analyze jobs on push only. PR and merge-queue runs analyze every
+  # language: the ruleset's code-scanning rule expects per-category results, so
+  # a skipped analyzer blocks the PR forever.
   changes:
     name: Detect changes
     runs-on: ubuntu-latest
@@ -36,13 +35,9 @@ jobs:
         with:
           persist-credentials: false
       - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4
-        if: github.event_name != 'schedule'
+        if: github.event_name == 'push'
         id: filter
         with:
-          # Default base (HEAD~1) only sees the synthetic merge ref's topmost
-          # commit; pin explicitly so skip decisions match the real PR diff.
-          base: ${{ github.event.merge_group.base_sha || github.base_ref }}
-          ref: ${{ github.event.merge_group.head_sha || github.ref }}
           filters: |
             javascript-typescript:
               - 'frontend/**'
@@ -84,7 +79,7 @@ jobs:
   analyze-javascript-typescript:
     name: Analyze (javascript-typescript)
     needs: changes
-    if: github.event_name == 'schedule' || needs.changes.outputs.javascript-typescript == 'true'
+    if: github.event_name != 'push' || needs.changes.outputs.javascript-typescript == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
@@ -111,7 +106,7 @@ jobs:
   analyze-rust:
     name: Analyze (rust)
     needs: changes
-    if: github.event_name == 'schedule' || needs.changes.outputs.rust == 'true'
+    if: github.event_name != 'push' || needs.changes.outputs.rust == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:
