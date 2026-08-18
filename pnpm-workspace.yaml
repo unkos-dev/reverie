@@ -1,0 +1,7 @@
+packages:
+  - frontend
+  - docs
+allowBuilds:
+  esbuild: false
+  lefthook: false
+  puppeteer: false
