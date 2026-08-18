@@ -1,4 +1,4 @@
-name: CI
+name: CI # sonar.yml's workflow_run trigger matches this string; renaming either orphans it silently.
 
 on:
   # PRs are squash-merged, so main's head commit is a SHA no pull_request run
@@ -1260,85 +1260,6 @@ jobs:
     needs: changes
     if: needs.changes.outputs.docs == 'true'
     uses: ./.github/workflows/docs-build.yml
-
-  # Advisory: absent from ci-gate.needs[] and continue-on-error.
-  sonar:
-    name: SonarQube Cloud
-    needs: [changes, backend, frontend]
-    # SonarQube Cloud has no carryforward, so a missing report re-reports that stack
-    # as 0%; hence on push both producers must have succeeded. Bot dependency PRs
-    # are skipped by head branch, not actor, so a human pushing a fix to the bot
-    # branch still gets scanned. !cancelled(), not always(): always() once scanned
-    # main with zero artifacts and wiped the baseline. codacy-coverage mirrors this.
-    if: >-
-      !cancelled() &&
-      github.actor != 'dependabot[bot]' &&
-      github.actor != 'renovate[bot]' &&
-      (github.event_name != 'pull_request' ||
-       (github.event.pull_request.head.repo.full_name == github.repository &&
-        !startsWith(github.head_ref, 'renovate/') &&
-        !startsWith(github.head_ref, 'dependabot/'))) &&
-      (github.event_name != 'push' ||
-       (needs.backend.result == 'success' && needs.frontend.result == 'success'))
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    continue-on-error: true
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with:
-          fetch-depth: 0 # blame-based new-code detection
-          persist-credentials: false
-
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
-        id: dl_backend
-        with:
-          name: backend-coverage
-          path: backend
-        continue-on-error: true
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
-        id: dl_frontend
-        with:
-          name: frontend-coverage
-          path: frontend/coverage
-        continue-on-error: true
-
-      # Both reports carry stack-relative SF: paths; without prepending the stack
-      # dir they match nothing against projectBaseDir and coverage reads 0%.
-      - name: Normalize coverage paths to repo root
-        run: |
-          set -euo pipefail
-          if [ -f backend/lcov.info ]; then
-            sed -i 's#^SF:#SF:backend/#' backend/lcov.info
-          fi
-          if [ -f frontend/coverage/lcov.info ]; then
-            sed -i 's#^SF:#SF:frontend/#' frontend/coverage/lcov.info
-          fi
-
-      # On push a missing artifact must block the scan (it would overwrite the main
-      # baseline with partial coverage). On PRs the analysis is baseline-safe:
-      # annotate and continue.
-      - name: Gate coverage inputs
-        if: always()
-        env:
-          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-          BACKEND_DL: ${{ steps.dl_backend.outcome }}
-          FRONTEND_DL: ${{ steps.dl_frontend.outcome }}
-        run: |
-          if [ "${BACKEND_DL}" = 'failure' ] || [ "${FRONTEND_DL}" = 'failure' ]; then
-            if [ "${GITHUB_EVENT_NAME}" = 'push' ]; then
-              echo "::error title=Sonar coverage missing::A coverage artifact was absent on a main push; refusing to overwrite the baseline with partial coverage."
-              exit 1
-            fi
-            echo "::warning title=Sonar coverage partial::A coverage artifact was absent (single-stack PR or upstream failure); Sonar scanned with incomplete coverage."
-          fi
-          if [ -z "${SONAR_TOKEN}" ]; then
-            echo "::warning title=SONAR_TOKEN missing::SonarQube scan ran without a token; coverage was not published."
-          fi
-
-      - name: SonarQube Cloud scan
-        uses: SonarSource/sonarqube-scan-action@22918119ff8e1ca75a623e15c8296b6ea4fbe28f # v8.2.1
-        env:
-          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
 
   # Single required status check for the branch ruleset: `skipped` is a pass, so a
   # path-conditional job that legitimately skips doesn't block merge.

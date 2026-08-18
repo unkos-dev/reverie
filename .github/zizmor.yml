@@ -10,3 +10,8 @@ rules:
     ignore:
       # setup-node there has no cache: input; the finding fires on presence.
       - docs.yml
+  dangerous-triggers:
+    ignore:
+      # sonar.yml runs read-only on main CI completions and executes no
+      # PR-controlled code; the finding fires on the trigger class.
+      - sonar.yml

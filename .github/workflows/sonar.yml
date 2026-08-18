@@ -1,0 +1,68 @@
+# Main-baseline analysis only; PR decoration deliberately absent (Codacy owns PR coverage).
+name: Sonar
+
+on:
+  workflow_run:
+    # "CI" is ci.yml's `name:` — renaming either side silently orphans this trigger.
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+
+permissions:
+  contents: read
+
+# Main CI runs vary in duration so completions can invert; queueing serializes
+# scans instead of letting a scan of an older commit cancel a newer one.
+concurrency:
+  group: sonar
+  cancel-in-progress: false
+
+jobs:
+  scan:
+    name: SonarQube Cloud
+    if: github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      actions: read # needed for cross-run artifact download
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          fetch-depth: 0 # blame-based new-code detection
+          persist-credentials: false
+
+      # A missing artifact fails here rather than rewriting the baseline as 0%.
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: backend-coverage
+          path: backend
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: frontend-coverage
+          path: frontend/coverage
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      # Both reports carry stack-relative SF: paths; without prepending the stack
+      # dir they match nothing against projectBaseDir and coverage reads 0%.
+      - name: Normalize coverage paths to repo root
+        run: |
+          set -euo pipefail
+          sed -i 's#^SF:#SF:backend/#' backend/lcov.info
+          sed -i 's#^SF:#SF:frontend/#' frontend/coverage/lcov.info
+
+      # No official scanner caching guidance; established community pattern to
+      # avoid re-fetching scanner on every main push.
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: ~/.sonar/cache
+          key: sonar-${{ runner.os }}
+
+      - name: SonarQube Cloud scan
+        uses: SonarSource/sonarqube-scan-action@22918119ff8e1ca75a623e15c8296b6ea4fbe28f # v8.2.1
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
