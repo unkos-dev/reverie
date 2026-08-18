@@ -84,17 +84,24 @@ RUN npm run build --workspace frontend
 # migration removes the leak). Separate stage so neither this install nor
 # syft reaches the runtime image.
 FROM frontend-builder AS frontend-sbom
-# curl is absent from the node:slim base.
-RUN apt-get update && apt-get install -y --no-install-recommends curl \
+# curl and gnupg are absent from the node:slim base.
+RUN apt-get update && apt-get install -y --no-install-recommends curl gnupg \
     && rm -rf /var/lib/apt/lists/*
-# mise's installer self-verifies the binary against upstream checksums,
-# and its aqua backend verifies syft's download (checksums + signatures).
+# The installer is GPG-verified against mise's release key (a one-time
+# anchor, not a version pin); the installed mise then verifies syft's
+# download through its aqua backend. Verification binds to this key alone:
+# the keyring holds nothing else.
+ARG MISE_GPG_FINGERPRINT=24853EC9F655CE80B48E6C3A8B81C9D17413A06D
 # renovate: datasource=github-releases depName=jdx/mise extractVersion=^v(?<version>.+)$
 ARG MISE_VERSION=2026.8.8
-RUN curl -fsSL --connect-timeout 10 --max-time 300 --retry 2 --retry-all-errors \
-      -o /tmp/mise-install.sh https://mise.run \
-    && MISE_VERSION="v${MISE_VERSION}" MISE_INSTALL_PATH=/usr/local/bin/mise sh /tmp/mise-install.sh \
-    && rm -f /tmp/mise-install.sh
+RUN set -eu; \
+    GNUPGHOME="$(mktemp -d)"; export GNUPGHOME; \
+    gpg --keyserver hkps://keys.openpgp.org --recv-keys "$MISE_GPG_FINGERPRINT"; \
+    curl -fsSL --connect-timeout 10 --max-time 300 --retry 2 --retry-all-errors \
+      -o /tmp/mise-install.sh.sig https://mise.jdx.dev/install.sh.sig; \
+    gpg --decrypt /tmp/mise-install.sh.sig > /tmp/mise-install.sh; \
+    MISE_VERSION="v${MISE_VERSION}" MISE_INSTALL_PATH=/usr/local/bin/mise sh /tmp/mise-install.sh; \
+    rm -rf "$GNUPGHOME" /tmp/mise-install.sh.sig /tmp/mise-install.sh
 # renovate: datasource=github-releases depName=anchore/syft extractVersion=^v(?<version>.+)$
 ARG SYFT_VERSION=1.51.0
 # --override-default-catalogers is load-bearing: syft's default set for a
