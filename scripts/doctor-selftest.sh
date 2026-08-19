@@ -52,9 +52,9 @@ git -C "${fixture}" update-ref refs/remotes/origin/main HEAD
 # portable: on any real filesystem the second write's mtime is never
 # earlier than the first's, and a same-second tie still reads as "not
 # stale" since the check only fires on strictly-newer.
-mkdir -p "${fixture}/node_modules"
+mkdir -p "${fixture}/node_modules/.pnpm"
 echo '{}' >"${fixture}/pnpm-lock.yaml"
-echo '{}' >"${fixture}/node_modules/.modules.yaml"
+echo '{}' >"${fixture}/node_modules/.pnpm/lock.yaml"
 
 # Non-empty sqlx offline cache with one entry shaped like a real sqlx
 # query-*.json (query + hash keys), not just any parseable JSON.
@@ -79,7 +79,7 @@ noop_stub() { # <dir> <name>
 
 stub_bin="${tmp}/bin"
 mkdir -p "${stub_bin}"
-for real in env bash git jq ls df date dirname cat head tail tr cut uname grep stat; do
+for real in env bash git jq ls df date dirname cat head tail tr cut uname grep stat cmp; do
   link_real "${stub_bin}" "${real}"
 done
 for tool in just cargo rustc node pnpm vp; do
@@ -391,33 +391,30 @@ expect_contains "valid sqlx cache is reported" "PASS sqlx offline cache"
 rm -rf "${fixture}/node_modules"
 expect_exit "absent node_modules warns" 0 "${stub_bin}"
 expect_contains "absent node_modules advises just install" "WARN root node_modules present -- fix: just install"
-mkdir -p "${fixture}/node_modules"
+mkdir -p "${fixture}/node_modules/.pnpm"
 echo '{}' >"${fixture}/pnpm-lock.yaml"
-echo '{}' >"${fixture}/node_modules/.modules.yaml"
+echo '{}' >"${fixture}/node_modules/.pnpm/lock.yaml"
 
 # (b) node_modules present but the install marker missing: an incomplete or
 # interrupted install.
-rm -f "${fixture}/node_modules/.modules.yaml"
+rm -f "${fixture}/node_modules/.pnpm/lock.yaml"
 expect_exit "missing install marker warns" 0 "${stub_bin}"
 expect_contains "missing install marker advises just install" "WARN node_modules install incomplete (marker missing) -- fix: just install"
-echo '{}' >"${fixture}/node_modules/.modules.yaml"
+echo '{}' >"${fixture}/node_modules/.pnpm/lock.yaml"
 
-# (c) both files present but the lockfile is strictly newer than the
-# marker: a genuine staleness. Writing the marker before the lockfile is the
-# same portable ordering trick used to set up the fixture originally, run in
-# the other direction; unlike the tie-safe "not stale" setup, this assertion
-# needs a real, not just a same-second, gap, so a one-second sleep (portable,
-# unlike a GNU-only `touch -d` backdate) sits between the two writes.
-echo '{}' >"${fixture}/node_modules/.modules.yaml"
-sleep 1
-echo '{}' >"${fixture}/pnpm-lock.yaml"
+# (c) both present but their contents differ: the committed lockfile moved
+# without a reinstall. Content, not mtime: pnpm writes the lockfile after the
+# tree, so a correct install always leaves the committed copy marginally
+# newer and a timestamp test would warn on every healthy checkout.
+echo '{"resolved": "b"}' >"${fixture}/pnpm-lock.yaml"
 expect_exit "stale lockfile warns" 0 "${stub_bin}"
 expect_contains "stale lockfile advises just install" "WARN node_modules stale against pnpm-lock.yaml -- fix: just install"
 
-# restore the happy-path ordering (lockfile written before the marker) for
-# any assertions that follow.
+# The matching case, asserted explicitly: an mtime-based check would fail this
+# one, since the committed lockfile is written last here too.
 echo '{}' >"${fixture}/pnpm-lock.yaml"
-echo '{}' >"${fixture}/node_modules/.modules.yaml"
+expect_exit "a matching lockfile exits zero" 0 "${stub_bin}"
+expect_contains "a matching lockfile passes" "PASS node_modules matches pnpm-lock.yaml"
 
 # --- kache binary check: absent from PATH warns (not fails) and names the
 # fix; present passes. ---

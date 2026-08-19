@@ -174,16 +174,20 @@ else
   warn "root node_modules present" "just install"
 fi
 
-if [ -f pnpm-lock.yaml ] && [ -f node_modules/.modules.yaml ]; then
-  if [ pnpm-lock.yaml -nt node_modules/.modules.yaml ]; then
-    warn "node_modules stale against pnpm-lock.yaml" "just install"
-  else
+# Compared by content, not by timestamp. pnpm writes the lockfile after the
+# tree, so a correct install leaves the committed lockfile a fraction newer
+# than anything under node_modules, and an mtime test would warn on every
+# healthy checkout. node_modules/.pnpm/lock.yaml is the lockfile pnpm actually
+# installed from, so comparing the two answers the question exactly.
+if [ -f pnpm-lock.yaml ] && [ -f node_modules/.pnpm/lock.yaml ]; then
+  if cmp -s pnpm-lock.yaml node_modules/.pnpm/lock.yaml; then
     pass "node_modules matches pnpm-lock.yaml"
+  else
+    warn "node_modules stale against pnpm-lock.yaml" "just install"
   fi
 else
-  # The install marker (node_modules/.modules.yaml, which pnpm writes to
-  # record the state of the tree) is missing even though node_modules exists:
-  # an incomplete or interrupted install.
+  # The installed-lockfile copy is missing even though node_modules exists: an
+  # incomplete or interrupted install.
   warn "node_modules install incomplete (marker missing)" "just install"
 fi
 
