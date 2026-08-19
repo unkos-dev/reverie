@@ -88,7 +88,7 @@ mkdir -p "${stub_bin}"
 for real in env bash git jq ls df date dirname cat head tail tr cut uname grep stat; do
   link_real "${stub_bin}" "${real}"
 done
-for tool in just cargo rustc node npx; do
+for tool in just cargo rustc node npx vp; do
   noop_stub "${stub_bin}" "${tool}"
 done
 

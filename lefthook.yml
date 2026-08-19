@@ -35,7 +35,7 @@ pre-commit:
           # (e.g. a regenerated backend/config.schema.json) a clean no-op.
           - name: oxfmt
             glob: "**/*.{ts,tsx,js,jsx,mjs,cjs,mts,cts,json,jsonc,css,md,mdx,html,toml}"
-            run: npx --no-install vp fmt --write --no-error-on-unmatched-pattern {staged_files}
+            run: vp fmt --write --no-error-on-unmatched-pattern {staged_files}
             stage_fixed: true
           # The `&&` orders oxfmt before yamllint within the one command, so the
           # formatter always completes before the linter reads the file
@@ -43,7 +43,7 @@ pre-commit:
           # piped group alongside oxfmt, never parallel with it.
           - name: yaml
             glob: "**/*.{yml,yaml}"
-            run: npx --no-install vp fmt --write --no-error-on-unmatched-pattern {staged_files} && yamllint {staged_files}
+            run: vp fmt --write --no-error-on-unmatched-pattern {staged_files} && yamllint {staged_files}
             stage_fixed: true
     - name: checks
       group:
@@ -53,7 +53,7 @@ pre-commit:
             run: gitleaks protect --staged --no-banner --redact
           - name: markdownlint
             glob: "**/*.md"
-            run: npx --no-install markdownlint-cli2 {staged_files}
+            run: vp exec markdownlint-cli2 {staged_files}
           - name: actionlint
             glob: ".github/workflows/**/*.{yml,yaml}"
             run: actionlint -color {staged_files}
@@ -124,7 +124,7 @@ pre-push:
 commit-msg:
   jobs:
     - name: commitlint
-      run: npx --no-install commitlint --edit {1}
+      run: vp exec commitlint --edit {1}
     # Merge commits certify no new work of their own, so they are exempt.
     - name: dco
       run: 'head -n1 {1} | grep -q "^Merge " || grep -Eq "^Signed-off-by: .+ <.+@.+>" {1}'

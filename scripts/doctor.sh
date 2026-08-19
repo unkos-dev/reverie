@@ -29,6 +29,17 @@ for bin in git just docker cargo rustc node npm npx mise jq; do
   fi
 done
 
+# 1b. vp resolves on PATH. Separate from the loop above because it is a
+# standalone binary rather than a mise pin, so `mise install` cannot supply it
+# and the loop's fix text would send a contributor somewhere that never helps.
+# Every js recipe and four lefthook jobs invoke it directly, so a machine
+# without it fails at commit time.
+if command -v vp >/dev/null 2>&1; then
+  pass "binary 'vp' resolves on PATH"
+else
+  fail "binary 'vp' resolves on PATH" "see the vite-plus install in .github/CONTRIBUTING.md"
+fi
+
 # 2. mise pins installed for this directory's toolset. `ls --current` scopes
 # to the config active here (root mise.toml), and `--missing` reports only
 # tools that are pinned but not yet installed.

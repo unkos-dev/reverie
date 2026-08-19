@@ -1,8 +1,10 @@
 # JS plane: frontend lint/test/build plus whole-tree formatting and Markdown lint.
-# JS tools are node-local (frontend/node_modules/.bin or the root devDeps), NOT on
-# system PATH, so recipes delegate through `npm run <script>` or `npx --no-install`,
-# never a bare binary. The module runs from the repo root (flat layout); frontend
-# recipes opt into frontend/ via [working-directory], whole-tree recipes stay at root.
+# vp is a global binary; the project's own tools are node-local
+# (frontend/node_modules/.bin or the root devDeps) and NOT on system PATH, so a
+# project binary runs through `vp exec` and a package script through
+# `npm run <script>`, never a bare binary. The module runs from the repo root
+# (flat layout); frontend recipes opt into frontend/ via [working-directory],
+# whole-tree recipes stay at root.
 
 set shell := ["bash", "-ueo", "pipefail", "-c"]
 
@@ -21,9 +23,9 @@ oxlint *files:
     set -ueo pipefail
     cd "$(git rev-parse --show-toplevel)"
     if [ "$#" -gt 0 ]; then
-        npx --no-install vp lint --max-warnings 0 ${GITHUB_ACTIONS:+--format=github} "$@"
+        vp lint --max-warnings 0 ${GITHUB_ACTIONS:+--format=github} "$@"
     else
-        npx --no-install vp lint --max-warnings 0 ${GITHUB_ACTIONS:+--format=github} frontend
+        vp lint --max-warnings 0 ${GITHUB_ACTIONS:+--format=github} frontend
     fi
 
 # With an explicit file list, scopes to those paths (leading `frontend/` stripped so
@@ -40,7 +42,7 @@ stylelint *files:
     if [ "$#" -gt 0 ]; then
         args=()
         for f in "$@"; do args+=("${f#frontend/}"); done
-        npx --no-install stylelint --max-warnings 0 "${args[@]}"
+        vp exec stylelint --max-warnings 0 "${args[@]}"
     else
         npm run stylelint
     fi
@@ -55,9 +57,9 @@ markdownlint *files:
     #!/usr/bin/env bash
     set -ueo pipefail
     if [ "$#" -gt 0 ]; then
-        npx --no-install markdownlint-cli2 "$@"
+        vp exec markdownlint-cli2 "$@"
     else
-        git ls-files -z '*.md' ':!:.claude/**' | xargs -0 -r npx --no-install markdownlint-cli2
+        git ls-files -z '*.md' ':!:.claude/**' | xargs -0 -r vp exec markdownlint-cli2
     fi
 
 # Advisory (CI runs it continue-on-error), so deliberately not in `lint`/`check`.
@@ -75,12 +77,12 @@ detect:
 # Format the whole tree in place (TS/JS/JSON/CSS/MD/HTML/TOML/YAML). WRITES.
 [group('js')]
 fmt:
-    npx --no-install vp fmt --write --no-error-on-unmatched-pattern .
+    vp fmt --write --no-error-on-unmatched-pattern .
 
 # Verify whole-tree formatting without writing (the authoritative CI gate form).
 [group('js')]
 fmt-check:
-    npx --no-install vp fmt --check .
+    vp fmt --check .
 
 # Frontend lint surface: oxlint, stylelint, then root-CWD markdownlint.
 [group('js')]
