@@ -74,7 +74,10 @@ COPY docs/package.json docs/
 ARG MISE_GPG_FINGERPRINT=24853EC9F655CE80B48E6C3A8B81C9D17413A06D
 # renovate: datasource=github-releases depName=jdx/mise extractVersion=^v(?<version>.+)$
 ARG MISE_VERSION=2026.8.8
-RUN apt-get update && apt-get install -y --no-install-recommends curl gnupg \
+# libatomic1 is for pnpm itself: the prebuilt Linux binary links against
+# libatomic.so.1, which the slim base does not ship, and without it pnpm dies
+# at exec with a loader error rather than anything that names the cause.
+RUN apt-get update && apt-get install -y --no-install-recommends curl gnupg libatomic1 \
     && rm -rf /var/lib/apt/lists/* \
     && set -eu; \
     GNUPGHOME="$(mktemp -d)"; export GNUPGHOME; \
@@ -116,8 +119,12 @@ ARG SYFT_VERSION=1.51.0
 # dependencies are linked. The root node_modules holds only the workspace
 # root's own devDependencies, which is what previously leaked build tooling
 # into this document.
+# CI=true is what lets the --prod install replace the builder's dev tree.
+# Discarding it is the point (this document must not carry devDependencies),
+# but pnpm treats removing a modules directory as destructive and refuses to
+# do it unprompted without a TTY.
 RUN --mount=type=cache,target=/pnpm-store \
-    mise exec "pnpm@$(node -p "require('./package.json').packageManager.replace(/^pnpm@/, '')")" -- \
+    CI=true mise exec "pnpm@$(node -p "require('./package.json').packageManager.replace(/^pnpm@/, '')")" -- \
       pnpm install --frozen-lockfile --prod --filter frontend --ignore-scripts \
     && mise exec "aqua:anchore/syft@${SYFT_VERSION}" -- \
        syft dir:frontend/node_modules --override-default-catalogers javascript-package-cataloger \
