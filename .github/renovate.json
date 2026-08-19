@@ -181,7 +181,7 @@
       "datasourceTemplate": "crate"
     },
     {
-      "description": "Track annotated version pins in workflows and composite actions, including the SBOM generator whose trailing sha256 digest is rewritten alongside the bump. File patterns are the customManagers:githubActionsVersions preset's verbatim — the preset itself would double-claim these annotations without the digest rewrite. ARG-shaped Dockerfile pins belong to the dockerfileVersions preset in extends.",
+      "description": "Track annotated version pins in workflows and composite action files. The first pattern matches a renovate comment above a version key; the second matches the SBOM generator, whose version and sha256 digest move together. File patterns are the customManagers:githubActionsVersions preset's verbatim, because the preset would double-claim these annotations while leaving that digest unrewritten. ARG-shaped Dockerfile pins belong to the dockerfileVersions preset in extends.",
       "customType": "regex",
       "managerFilePatterns": [
         "/(^|/)(workflow-templates|\\.(?:github|gitea|forgejo)/(?:workflows|actions))/.+\\.ya?ml$/",
