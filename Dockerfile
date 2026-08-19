@@ -106,7 +106,9 @@ RUN set -eu; \
 ARG SYFT_VERSION=1.51.0
 # --override-default-catalogers is load-bearing: syft's default set for a
 # dir: scan excludes javascript-package-cataloger, silently yielding a
-# document with zero npm components.
+# document with zero npm components. The publish workflow's SBOM
+# generator pin must keep pace with this syft: an older generator
+# silently ignores newer CycloneDX spec versions.
 RUN --mount=type=cache,target=/root/.npm npm ci --omit=dev --workspace frontend --ignore-scripts \
     && mise exec "aqua:anchore/syft@${SYFT_VERSION}" -- \
        syft dir:node_modules --override-default-catalogers javascript-package-cataloger \
