@@ -5,9 +5,12 @@
 #
 #   vp <name>              a built-in (build, dev, preview, test, lint, fmt,
 #                          check, pack). Built-ins cannot be overridden, so this
-#                          NEVER runs a package.json script of the same name.
-#                          Package selection comes from defaultPackage in the
-#                          root vite.config.ts — built-ins take no --filter.
+#                          NEVER runs a package.json script of the same name,
+#                          and none of them takes a package --filter. Only the
+#                          app commands (dev, build, preview, pack) fall back to
+#                          defaultPackage at the root; test, lint, fmt and check
+#                          resolve from the CWD, so their recipes set
+#                          [working-directory] and must keep it.
 #   vp run [--filter P] X  a package.json script. The only workspace-selecting
 #                          form, and mandatory for any script whose name
 #                          collides with a built-in (docs `build` is astro).

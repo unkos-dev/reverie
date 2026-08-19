@@ -160,7 +160,7 @@ For frontend changes, the `a11y` CI job runs axe-core against the shipped routes
 
 1. Create a feature branch from `main` using the appropriate prefix
 2. Write tests for your changes (see above)
-3. Ensure all CI checks pass locally (`cargo fmt --check`, `cargo clippy --workspace --all-targets --locked -- -D warnings`, `cargo test`, `vp run lint`, `vp test run`, `vp build` as applicable)
+3. Ensure all CI checks pass locally (`cargo fmt --check`, `cargo clippy --workspace --all-targets --locked -- -D warnings`, `cargo test`, `vp run lint` and `vp test run` from `frontend/`, `vp build` as applicable)
 4. Open the PR and fill in **Summary** and **Test plan**. Keep **Why**, **Accessibility**, and issue closure sections only when relevant; delete unused sections instead of writing placeholders or `N/A`.
 5. Labels auto-apply based on paths touched; no manual labelling needed
 6. Wait for maintainer review and approval
