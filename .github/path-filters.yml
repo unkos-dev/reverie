@@ -44,6 +44,9 @@ iac:
   - "docker-compose.yml"
   - "docker/**"
   - ".trivyignore"
+  # trivy's own pin lives here, and this job has no push fallback, so a
+  # scanner bump would otherwise merge without the scan it gates ever running.
+  - "mise.toml"
   - ".github/workflows/ci.yml"
   - ".github/path-filters.yml"
 docker:
