@@ -54,7 +54,7 @@ jobs:
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-        run: npx --no-install commitlint --from "$BASE_SHA" --to "$HEAD_SHA" --verbose
+        run: vp exec commitlint --from "$BASE_SHA" --to "$HEAD_SHA" --verbose
 
       # GitHub appends ` (#N)` to the squash subject; the bare title still
       # matches what commitlint/release-please will see.
@@ -63,4 +63,4 @@ jobs:
       - name: Lint PR title (squash-merge subject)
         env:
           PR_TITLE: ${{ github.event.pull_request.title }}
-        run: printf '%s\n' "$PR_TITLE" | npx --no-install commitlint --verbose
+        run: printf '%s\n' "$PR_TITLE" | vp exec commitlint --verbose

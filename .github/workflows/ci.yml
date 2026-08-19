@@ -701,7 +701,7 @@ jobs:
             echo "::group::license check (${tree})"
             (
               cd "$tree"
-              npx --no-install license-checker-rseidelsohn \
+              vp exec license-checker-rseidelsohn \
                 --production \
                 --excludePrivatePackages \
                 --excludePackagesStartingWith "@img/sharp-libvips;@bruits/satteri;satteri;lightningcss" \
@@ -1036,7 +1036,7 @@ jobs:
       # Unconditional even on a cache hit: `--with-deps` installs OS-level apt
       # packages that aren't cached and must be present every run.
       - name: Install Playwright Chromium
-        run: npx playwright install --with-deps chromium
+        run: vp exec playwright install --with-deps chromium
 
       # Do not also start a server here: Playwright's webServer config already runs
       # `npm run dev` and never reuses an existing one, so a second would collide on
