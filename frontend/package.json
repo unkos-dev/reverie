@@ -7,13 +7,8 @@
     "node": ">=24.16.0"
   },
   "scripts": {
-    "dev": "vp dev",
     "build": "vp build",
     "lint": "vp lint --max-warnings 0",
-    "preview": "vp preview",
-    "test": "vp test run",
-    "test:watch": "vp test",
-    "test:coverage": "vp test run --coverage",
     "stylelint": "stylelint 'src/**/*.css' --max-warnings 0",
     "primitives:gen": "node scripts/radix-gen/emit-primitives.ts",
     "detect": "impeccable detect src",

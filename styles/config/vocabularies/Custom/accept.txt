@@ -84,6 +84,7 @@ chroma
 chromedriver
 chrono
 CI
+clickjacking
 clippy
 closable
 Cloudflare
@@ -167,12 +168,14 @@ enum
 enums
 env
 environ
+EPUBs
 erroring
 esbuild
 ESLint
 ETag
 Eventing
 execution_time
+exfiltrate
 failover
 fallbacks
 fallthrough
@@ -214,6 +217,8 @@ homelab
 homelabber
 homelabbers
 homelabs
+hostname
+hostnames
 hotfix
 hotfixes
 href
@@ -283,6 +288,7 @@ middleware
 migrator
 mintable
 miscalibration
+misconfiguration
 misconfigured
 mise
 misestimating
@@ -294,7 +300,9 @@ namespaced
 namespaces
 natively
 nav
+navigations
 nginx
+ngrok
 normalized
 npm
 Nullable
@@ -302,6 +310,7 @@ Nygard
 OAuth
 observability
 OData
+onboarding
 OOMs
 OpenLibrary
 openlibrary
@@ -330,6 +339,7 @@ prefetches
 preflight
 prefs
 preinstalls
+preload
 Prettier
 PRs
 pullable
@@ -520,7 +530,10 @@ VoidZero
 vp
 WAFs
 wayfinding
+webhook
 webhooks
+websocket
+whitespace
 Wikidata
 wikidata
 wiremock

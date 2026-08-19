@@ -5,6 +5,11 @@ import { defineConfig } from "vite-plus";
 // so every lint override is scoped to frontend/**. Ignores are root-relative.
 // Frontend build/server/test config stays in frontend/vite.config.ts.
 export default defineConfig({
+  // Built-in commands (vp build, vp dev, vp test, vp preview) have no package
+  // filter — vp run is the only workspace-selecting entry point — so without
+  // this they would target the repo root and find no app. Must stay a plain
+  // string literal: vp reads it statically.
+  defaultPackage: "./frontend",
   fmt: {
     semi: true,
     singleQuote: false,

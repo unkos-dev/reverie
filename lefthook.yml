@@ -71,7 +71,7 @@ pre-commit:
           # (|| true). The glob only gates WHETHER it runs for this commit.
           - name: impeccable
             glob: "frontend/src/**/*.{ts,tsx,html,css}"
-            run: npm --prefix frontend run detect || true
+            run: vp run --filter frontend detect || true
           # Each guard self-scopes via its own is_gated(), so one job each is
           # enough; the glob only pre-filters which commits invoke it. no-plan-refs
           # omits Markdown by design (its scope is backend/src + frontend/src).

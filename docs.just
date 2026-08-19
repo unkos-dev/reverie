@@ -5,10 +5,14 @@
 set shell := ["bash", "-ueo", "pipefail", "-c"]
 set working-directory := 'docs'
 
+# --filter, not a bare `vp build`: `build` is a vp built-in, and a built-in
+# cannot be overridden by a same-named script. A bare `vp build` here would run
+# Vite against the docs directory and exit 0 having built nothing Astro.
+#
 # Build the Starlight site (= astro build).
 [group('docs')]
 build:
-    npm run build
+    vp run --filter docs build
 
 # Stages dist under the Pages base path so root-relative /reverie/... links
 # resolve, mirroring the CI gate. Run on demand after a build, not in `check`.
