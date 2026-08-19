@@ -97,7 +97,7 @@ absolute `http(s)://` URL.
 
 **Dev relaxations do not ship to prod.** `'unsafe-inline' 'unsafe-eval'` in
 dev are declared in `frontend/vite.config.ts` `server.headers` and apply
-only when running `npm run dev`.
+only when running `vp dev`.
 
 ### Fonts
 

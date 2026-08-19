@@ -45,8 +45,10 @@ jobs:
       - name: Install workspace
         run: vp install
 
+      # --fail-if-no-match: a filter matching nothing exits 0, so without it a
+      # renamed or relocated docs package passes this job having built nothing.
       - name: Build Starlight
-        run: vp run --filter docs build
+        run: vp run --filter docs --fail-if-no-match build
 
       # Links render root-relative under /reverie/; symlink dist under a
       # `reverie` subdir so lychee's --root-dir resolution matches.

@@ -1,10 +1,23 @@
 # JS plane: frontend lint/test/build plus whole-tree formatting and Markdown lint.
 # vp is a global binary; the project's own tools are node-local
-# (frontend/node_modules/.bin or the root devDeps) and NOT on system PATH, so a
-# project binary runs through `vp exec` and a package script through
-# `npm run <script>`, never a bare binary. The module runs from the repo root
-# (flat layout); frontend recipes opt into frontend/ via [working-directory],
-# whole-tree recipes stay at root.
+# (frontend/node_modules/.bin or the root devDeps) and NOT on system PATH.
+# Three invocation forms, and the difference is load-bearing:
+#
+#   vp <name>              a built-in (build, dev, preview, test, lint, fmt,
+#                          check, pack). Built-ins cannot be overridden, so this
+#                          NEVER runs a package.json script of the same name,
+#                          and none of them takes a package --filter. Only the
+#                          app commands (dev, build, preview, pack) fall back to
+#                          defaultPackage at the root; test, lint, fmt and check
+#                          resolve from the CWD, so their recipes set
+#                          [working-directory] and must keep it.
+#   vp run [--filter P] X  a package.json script. The only workspace-selecting
+#                          form, and mandatory for any script whose name
+#                          collides with a built-in (docs `build` is astro).
+#   vp exec <binary>       a third-party binary from node_modules/.bin.
+#
+# The module runs from the repo root (flat layout); frontend recipes opt into
+# frontend/ via [working-directory], whole-tree recipes stay at root.
 
 set shell := ["bash", "-ueo", "pipefail", "-c"]
 
@@ -44,7 +57,7 @@ stylelint *files:
         for f in "$@"; do args+=("${f#frontend/}"); done
         vp exec stylelint --max-warnings 0 "${args[@]}"
     else
-        npm run stylelint
+        vp run stylelint
     fi
 
 # With an explicit file list, scopes to those paths; otherwise whole-tree
@@ -68,7 +81,7 @@ markdownlint *files:
 [group('js')]
 [working-directory('frontend')]
 detect:
-    npm run detect
+    vp run detect
 
 # Runs at the repo root over every oxfmt-owned type; never a dependency of
 # check/lint. vp's bundled oxfmt is the one formatter; config is the root
@@ -100,25 +113,25 @@ lint: oxlint stylelint markdownlint
 [group('js')]
 [working-directory('frontend')]
 a11y:
-    npm run a11y
+    vp run a11y
 
 # Frontend unit tests.
 [group('js')]
 [working-directory('frontend')]
 test:
-    npm run test
+    vp test run
 
 # Frontend unit tests with coverage (the CI form).
 [group('js')]
 [working-directory('frontend')]
 test-coverage:
-    npm run test:coverage
+    vp test run --coverage
 
 # Frontend production build (vp build; typecheck rides js::oxlint via tsgo).
 [group('js')]
 [working-directory('frontend')]
 build:
-    npm run build
+    vp build
 
 # The CI frontend gate form; cheap and offline, so locally runnable on its own.
 #
@@ -136,7 +149,7 @@ check: lint fmt-check
 [group('js')]
 [working-directory('frontend')]
 dev:
-    npm run dev
+    vp dev
 
 # The background lifecycle lives in scripts/dev-server.sh so the ownership
 # checks are shared across start/stop/status, shellcheck covers the logic,

@@ -25,8 +25,14 @@ stop_ticks="${DEV_SERVER_STOP_TICKS:-20}"
 # strictPort makes a lost port race fatal to our Vite instead of letting it
 # drift to the next free port, where the pidfile and probes would describe
 # the wrong server.
-cmd="${DEV_SERVER_CMD:-npm run dev -- --strictPort}"
-leader_pattern="${DEV_SERVER_LEADER_PATTERN:-node|npm|vite}"
+cmd="${DEV_SERVER_CMD:-vp dev --strictPort}"
+# Anchored to an argv element's basename (cmdline is NUL-separated, so each
+# record is one argument), matching the form the rust plane overrides with.
+# The old unanchored `node|npm|vite` would match any argv element containing
+# "vite" — including vp's own install path — so it could report a foreign
+# process as ours. vp execs in place as the group leader; node is kept
+# because a direct-node server is still a supported DEV_SERVER_CMD.
+leader_pattern="${DEV_SERVER_LEADER_PATTERN:-(^|/)(vp|node)$}"
 # Advice strings name the caller's recipes, so the rust plane's recipes can
 # point at rust::dev-stop instead of the js defaults.
 stop_hint="${DEV_SERVER_STOP_HINT:-just js::dev-stop}"

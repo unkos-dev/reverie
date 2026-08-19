@@ -157,10 +157,9 @@ assert "startup timeout leaves no server" no_hang_server
 # signalled: cmdline pattern alone is not ownership.
 #
 # Waiting on the pidfile alone would be racy in the wrong direction: it appears
-# one statement before `cd /`, and until the exec the leader is still the bash
-# whose own cmdline carries the word "node" from the -c string while its cwd is
-# still the server directory. That window presents as genuinely owned, so wait
-# for the state this case is actually about.
+# one statement before `cd /`, so until the exec the leader is still the bash,
+# whose cwd is the server directory. Wait for the state this case is actually
+# about rather than for the pidfile.
 (setsid bash -c "echo \"\$\$\" > ${tmp}/.dev-server.pid; cd /; exec node ${tmp}/fake-hang.mjs" >/dev/null 2>&1 </dev/null &)
 for _ in $(seq 1 40); do
   [ -s "${tmp}/.dev-server.pid" ] &&

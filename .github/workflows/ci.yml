@@ -1039,10 +1039,10 @@ jobs:
         run: vp exec playwright install --with-deps chromium
 
       # Do not also start a server here: Playwright's webServer config already runs
-      # `npm run dev` and never reuses an existing one, so a second would collide on
+      # `vp dev` and never reuses an existing one, so a second would collide on
       # port 5173.
       - name: Run accessibility gate
-        run: npm run a11y
+        run: vp run a11y
 
       - name: Upload Playwright traces
         if: failure()

@@ -96,7 +96,7 @@ start one), so a value you set there is the one the server uses.
 Frontend only (Node.js at or above the `engines.node` floor in `package.json`; install at the repository root, where npm workspaces hoist every plane's dependencies):
 
 ```bash
-npm ci && npm run dev --workspace frontend
+npm ci && vp dev
 ```
 
 Subsystem conventions (database roles, testing helpers, linting rules) are documented in [backend/AGENTS.md](../backend/AGENTS.md) and [frontend/AGENTS.md](../frontend/AGENTS.md).
@@ -154,13 +154,13 @@ Executable tooling elsewhere in the tree (`scripts/`, the justfiles, `.github/`,
 
 Reverie targets **WCAG 2.2 Level AA** as a design invariant. The review process is recorded in [`adr/superseded/2026-06-05-accessibility-review-process.md`](../adr/superseded/2026-06-05-accessibility-review-process.md) (superseded on the gate mechanism by [`adr/2026-07-13-a11y-gate-on-playwright.md`](../adr/2026-07-13-a11y-gate-on-playwright.md), which moves the gate onto the Playwright stack): what the automated gate covers, what the manual audit owns, the audit cadence, and how the one accepted brand carve-out (Reverie Gold on large CTAs) is documented.
 
-For frontend changes, the `a11y` CI job runs axe-core against the shipped routes listed in `DEFAULT_TARGETS` (`frontend/scripts/a11y/allowlist.mjs`) and fails on any WCAG 2.2 AA violation outside the documented allowlist in that same file. Run it locally with `npm run a11y` from `frontend/`. Do so with no dev server already on port 5173: Playwright reuses one it finds without checking which checkout owns it, so a server left running from elsewhere gets scanned instead, and the result reads as though it described your branch. To scan a specific server, start it yourself and pass `A11Y_BASE_URL`. UI-touching PRs also carry an accessibility checklist in the PR template.
+For frontend changes, the `a11y` CI job runs axe-core against the shipped routes listed in `DEFAULT_TARGETS` (`frontend/scripts/a11y/allowlist.mjs`) and fails on any WCAG 2.2 AA violation outside the documented allowlist in that same file. Run it locally with `vp run a11y` from `frontend/`. Do so with no dev server already on port 5173: Playwright reuses one it finds without checking which checkout owns it, so a server left running from elsewhere gets scanned instead, and the result reads as though it described your branch. To scan a specific server, start it yourself and pass `A11Y_BASE_URL`. UI-touching PRs also carry an accessibility checklist in the PR template.
 
 ## Pull request process
 
 1. Create a feature branch from `main` using the appropriate prefix
 2. Write tests for your changes (see above)
-3. Ensure all CI checks pass locally (`cargo fmt --check`, `cargo clippy --workspace --all-targets --locked -- -D warnings`, `cargo test`, `npm run lint`, `npm test`, `npm run build` as applicable)
+3. Ensure all CI checks pass locally (`cargo fmt --check`, `cargo clippy --workspace --all-targets --locked -- -D warnings`, `cargo test`, `vp run lint` and `vp test run` from `frontend/`, `vp build` as applicable)
 4. Open the PR and fill in **Summary** and **Test plan**. Keep **Why**, **Accessibility**, and issue closure sections only when relevant; delete unused sections instead of writing placeholders or `N/A`.
 5. Labels auto-apply based on paths touched; no manual labelling needed
 6. Wait for maintainer review and approval
