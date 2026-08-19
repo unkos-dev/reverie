@@ -188,7 +188,8 @@
         "/(^|/)action\\.ya?ml$/"
       ],
       "matchStrings": [
-        "# renovate: datasource=(?<datasource>\\S+) depName=(?<depName>\\S+)(?: extractVersion=(?<extractVersion>\\S+))?\\s+version:\\s*\"(?<currentValue>[^\"]+)\"(?:\\s+sha256:\\s*\"(?<currentDigest>[a-f0-9]{64})\")?"
+        "# renovate: datasource=(?<datasource>\\S+) depName=(?<depName>\\S+)(?: extractVersion=(?<extractVersion>\\S+))?\\s+version:\\s*\"(?<currentValue>[^\"]+)\"(?:\\s+sha256:\\s*\"(?<currentDigest>[a-f0-9]{64})\")?",
+        "# renovate: datasource=(?<datasource>\\S+) depName=(?<depName>\\S+)\\s+sbom: generator=[^:\\s]+:(?<currentValue>[0-9.]+)@(?<currentDigest>sha256:[a-f0-9]{64})"
       ]
     }
   ]

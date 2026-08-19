@@ -106,7 +106,12 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           outputs: type=image,name=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }},push-by-digest=true,name-canonical=true,push=true
           provenance: mode=max
-          sbom: true
+          # Pinned: the floating stable-1 generator lags syft releases and
+          # silently drops CycloneDX spec versions its bundled syft cannot
+          # parse (the Dockerfile's frontend SBOM depends on this keeping
+          # pace with SYFT_VERSION there).
+          # renovate: datasource=docker depName=docker/buildkit-syft-scanner
+          sbom: generator=docker/buildkit-syft-scanner:1.12.0@sha256:ae4f3b554449e7e25548e7d8ccc029d17357348e30c6e3df01b92bc93654d6a9
           cache-from: type=gha,scope=buildcache-${{ matrix.arch }}
           cache-to: type=gha,scope=buildcache-${{ matrix.arch }},mode=max
           # A cached runtime stage would freeze apt-get upgrade at its last

@@ -106,14 +106,13 @@ RUN set -eu; \
 ARG SYFT_VERSION=1.51.0
 # --override-default-catalogers is load-bearing: syft's default set for a
 # dir: scan excludes javascript-package-cataloger, silently yielding a
-# document with zero npm components. The @1.5 spec pin is equally
-# load-bearing: buildkit-syft-scanner's bundled syft silently ignores
-# newer CycloneDX versions, dropping every npm component from the
-# attestation.
+# document with zero npm components. The publish workflow's SBOM
+# generator pin must keep pace with this syft: an older generator
+# silently ignores newer CycloneDX spec versions.
 RUN --mount=type=cache,target=/root/.npm npm ci --omit=dev --workspace frontend --ignore-scripts \
     && mise exec "aqua:anchore/syft@${SYFT_VERSION}" -- \
        syft dir:node_modules --override-default-catalogers javascript-package-cataloger \
-       -o cyclonedx-json@1.5 > /build/frontend.cdx.json
+       -o cyclonedx-json > /build/frontend.cdx.json
 
 # Stage 3: Runtime
 # UNK-253: codename MUST match the builder stage above. See note on `chef`.
