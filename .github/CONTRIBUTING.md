@@ -107,19 +107,19 @@ Contributor automation conventions live in [`AGENTS.md`](../AGENTS.md) files (th
 
 Git hooks are managed by lefthook and installed through the `prepare` npm script, so a fresh clone wires them on `npm ci`. Four of those hooks invoke vite-plus directly, so install it before your first commit.
 
-Install [vite-plus](https://viteplus.dev). It is a standalone binary, so an install inside the checkout does not provide it. Reading the version from the manifest keeps this command from drifting away from the pin it exists to match, and `VP_NODE_MANAGER=no` leaves Node to mise, which pins it:
-
-```sh
-curl -fsSL https://vite.plus \
-  | VP_VERSION="$(node -p "require('./package.json').devDependencies['vite-plus']")" \
-    VP_NODE_MANAGER=no bash
-```
-
 Install the repository-pinned hook and local-check tools with [mise](https://mise.jdx.dev/):
 
 ```sh
 mise install actionlint gitleaks hadolint just node shellcheck typos vale yamllint \
   npm:npm github:nextest-rs/nextest github:taiki-e/cargo-llvm-cov
+```
+
+Then install [vite-plus](https://viteplus.dev). It is a standalone binary, so an install inside the checkout does not provide it. Run this from the repository root: reading the version out of the manifest keeps the command from drifting away from the pin it exists to match, and it needs the Node the previous step provisions. `VP_NODE_MANAGER=no` leaves Node to mise, which pins it:
+
+```sh
+curl -fsSL https://vite.plus \
+  | VP_VERSION="$(node -p "require('./package.json').devDependencies['vite-plus']")" \
+    VP_NODE_MANAGER=no bash
 ```
 
 `just` is the task runner for every plane, and the lint, format, test, and build definitions CI uses live in the justfiles rather than inline in the workflows. Run `just --list` for the recipe list with descriptions. `just worktree <branch>` creates a worktree outside the checkout, where it cannot enter the Docker build context or cargo's workspace discovery; set `WORKTREE_ROOT` to choose where those live.
