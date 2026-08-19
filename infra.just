@@ -78,21 +78,6 @@ prose:
 tool-pin-drift:
     scripts/tool-pin-drift.sh
 
-# Assert every vite-plus pin agrees: both package.json files, the alias spec, the override, and each workflow.
-[group('infra')]
-vp-pin-drift:
-    scripts/vp-pin-drift.sh
-
-# Assert the npm pin agrees between package.json devEngines and mise.toml.
-[group('infra')]
-npm-pin-drift:
-    scripts/npm-pin-drift.sh
-
-# Assert Renovate's custom manager still sees the devEngines npm pin.
-[group('infra')]
-renovate-npm-manager-selftest:
-    scripts/renovate-npm-manager-selftest.sh
-
 # Validate canonical ADR frontmatter and lifecycle index coverage.
 [group('infra')]
 adr-frontmatter-selftest:
@@ -196,7 +181,7 @@ no-plan-refs *files:
 #
 # Whole repo-lint surface (mirrors the CI repo-lint job).
 [group('infra')]
-lint: shellcheck hadolint typos yamllint sqruff actionlint prose tool-pin-drift vp-pin-drift npm-pin-drift renovate-npm-manager-selftest adr-frontmatter-selftest greptile-config compose-dev-invariants recipe-secret-echo-test filter-sarif-unfixable-os-selftest preflight-scope-selftest cargo-locked-guard lefthook-validate
+lint: shellcheck hadolint typos yamllint sqruff actionlint prose tool-pin-drift adr-frontmatter-selftest greptile-config compose-dev-invariants recipe-secret-echo-test filter-sarif-unfixable-os-selftest preflight-scope-selftest cargo-locked-guard lefthook-validate
 
 # Everything left here covers local-only developer tooling, and that is now the
 # entry criterion. CI has no stake in `just doctor`, `just worktree`, or the
@@ -213,8 +198,8 @@ lint: shellcheck hadolint typos yamllint sqruff actionlint prose tool-pin-drift 
 #
 # `lint` above keeps every check whose subject is committed configuration an
 # unrelated change can break, including three that only look test-shaped:
-# renovate-npm-manager-selftest, adr-frontmatter-selftest and
-# recipe-secret-echo-test. A new config validator belongs there.
+# adr-frontmatter-selftest and recipe-secret-echo-test. A new config validator
+# belongs there.
 #
 # Two entries in `lint` are neither, and each is there for its own reason.
 #

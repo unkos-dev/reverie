@@ -24,6 +24,7 @@ affordances
 afterward
 AG
 Akamai
+allowBuilds
 allowlist
 allowlisted
 allowlisting
@@ -138,7 +139,6 @@ deserializes
 dev
 devDep
 devDependency
-devEngines
 devs
 Devtools
 dialog
@@ -322,6 +322,7 @@ overridable
 oxc
 oxfmt
 oxlint
+packageManager
 params
 Parchment
 parseability
@@ -330,6 +331,7 @@ perf
 pixmap
 plaintext
 pluggable
+pnpm
 pooler
 Postgres
 postinstall
@@ -434,6 +436,7 @@ src
 stateful
 stdout
 strawman
+strictDepBuilds
 struct
 structs
 Stylelint

@@ -2,20 +2,10 @@
   "private": true,
   "name": "reverie-dev",
   "description": "Development tooling for Reverie",
-  "workspaces": [
-    "frontend",
-    "docs"
-  ],
   "engines": {
     "node": ">=24.16.0"
   },
-  "devEngines": {
-    "packageManager": {
-      "name": "npm",
-      "version": "12.0.2",
-      "onFail": "download"
-    }
-  },
+  "packageManager": "pnpm@11.22.0",
   "scripts": {
     "prepare": "lefthook install",
     "build": "vp run -r build"
@@ -26,15 +16,8 @@
     "lefthook": "2.1.10",
     "license-checker-rseidelsohn": "5.0.1",
     "markdownlint-cli2": "^0.23.0",
-    "vite": "npm:@voidzero-dev/vite-plus-core@0.2.9",
-    "vite-plus": "0.2.9"
-  },
-  "overrides": {
-    "markdown-it": "14.3.0",
-    "vite": "$vite",
-    "vitest": "4.1.10",
-    "ip-address": "^10.2.0",
-    "form-data": "4.0.6"
+    "vite": "catalog:",
+    "vite-plus": "catalog:"
   },
   "commitlint": {
     "extends": [
@@ -56,10 +39,5 @@
         100
       ]
     }
-  },
-  "allowScripts": {
-    "puppeteer": false,
-    "esbuild": false,
-    "lefthook": false
   }
 }

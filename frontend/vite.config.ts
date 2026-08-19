@@ -104,7 +104,7 @@ export default defineConfig({
         // so it lives outside src/ and runs in a node env like vite-plugins.
         // The pure allowlist/verdict module is the only logic-bearing surface
         // and is unit-tested here; the Playwright spec (a11y.spec.ts) that
-        // drives axe-core is exercised end-to-end via `npm run a11y`.
+        // drives axe-core is exercised end-to-end via `vp run a11y`.
         extends: true,
         test: {
           name: "a11y",

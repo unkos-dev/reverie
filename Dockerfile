@@ -63,38 +63,20 @@ FROM node:24.19.0-slim@sha256:3638d9a6fe4030bd716be989438248074489337ba3275657f9
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 WORKDIR /build
-COPY package.json package-lock.json ./
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY frontend/package.json frontend/
 COPY docs/package.json docs/
-# devEngines pins npm exactly, and the base image's bundled npm lags it —
-# the `onFail: download` self-swap does not fire under `npm ci` here, it
-# just hard-fails (EBADDEVENGINES). Install the manifest-pinned npm first,
-# reading the version from package.json so this line can never drift from
-# the pin it exists to satisfy.
-RUN --mount=type=cache,target=/root/.npm npm install -g "npm@$(node -p "require('./package.json').devEngines.packageManager.version")"
-RUN --mount=type=cache,target=/root/.npm npm ci --workspace frontend --ignore-scripts
-COPY frontend/ frontend/
-RUN npm run build --workspace frontend
-
-# Stage 2b: frontend-sbom — dependency record for the bundled frontend,
-# emitted from the tree that produced the bundle (the runtime image has no
-# npm packages for a scanner to find). The install is scoped dev-free to
-# the frontend workspace; npm's workspace install leaks a few root
-# build-tool packages into the document (over-reporting; the pnpm
-# migration removes the leak). Separate stage so neither this install nor
-# syft reaches the runtime image.
-FROM frontend-builder AS frontend-sbom
-# curl and gnupg are absent from the node:slim base.
-RUN apt-get update && apt-get install -y --no-install-recommends curl gnupg \
-    && rm -rf /var/lib/apt/lists/*
-# The installer is GPG-verified against mise's release key (a one-time
-# anchor, not a version pin); the installed mise then verifies syft's
-# download through its aqua backend. Verification binds to this key alone:
-# the keyring holds nothing else.
+# The installer is GPG-verified against mise's release key (a one-time anchor,
+# not a version pin); the installed mise then verifies pnpm's download through
+# its aqua backend, and serves the sbom stage's syft too. Verification binds to
+# this key alone: the keyring holds nothing else. pnpm cannot come through vp
+# here, because vp resolves from a node_modules this stage does not yet have.
 ARG MISE_GPG_FINGERPRINT=24853EC9F655CE80B48E6C3A8B81C9D17413A06D
 # renovate: datasource=github-releases depName=jdx/mise extractVersion=^v(?<version>.+)$
 ARG MISE_VERSION=2026.8.8
-RUN set -eu; \
+RUN apt-get update && apt-get install -y --no-install-recommends curl gnupg \
+    && rm -rf /var/lib/apt/lists/* \
+    && set -eu; \
     GNUPGHOME="$(mktemp -d)"; export GNUPGHOME; \
     gpg --keyserver hkps://keys.openpgp.org --recv-keys "$MISE_GPG_FINGERPRINT"; \
     curl -fsSL --connect-timeout 10 --max-time 300 --retry 2 --retry-all-errors \
@@ -102,6 +84,25 @@ RUN set -eu; \
     gpg --decrypt /tmp/mise-install.sh.sig > /tmp/mise-install.sh; \
     MISE_VERSION="v${MISE_VERSION}" MISE_INSTALL_PATH=/usr/local/bin/mise sh /tmp/mise-install.sh; \
     rm -rf "$GNUPGHOME" /tmp/mise-install.sh.sig /tmp/mise-install.sh
+# The pnpm version is read from package.json's packageManager field so this
+# line cannot drift from the pin it exists to satisfy.
+RUN --mount=type=cache,target=/pnpm-store \
+    mise exec "pnpm@$(node -p "require('./package.json').packageManager.replace(/^pnpm@/, '')")" -- \
+      pnpm config set store-dir /pnpm-store --location project \
+    && mise exec "pnpm@$(node -p "require('./package.json').packageManager.replace(/^pnpm@/, '')")" -- \
+      pnpm install --frozen-lockfile --filter frontend... --ignore-scripts
+COPY frontend/ frontend/
+RUN --mount=type=cache,target=/pnpm-store \
+    mise exec "pnpm@$(node -p "require('./package.json').packageManager.replace(/^pnpm@/, '')")" -- \
+      pnpm --filter frontend run build
+
+# Stage 2b: frontend-sbom — dependency record for the bundled frontend,
+# emitted from the tree that produced the bundle (the runtime image has no
+# packages for a scanner to find). The install is scoped dev-free to the
+# frontend project. Separate stage so neither this install nor syft reaches
+# the runtime image. mise, curl and gnupg are inherited from the builder,
+# which needs mise for pnpm, so this stage installs none of them itself.
+FROM frontend-builder AS frontend-sbom
 # renovate: datasource=github-releases depName=anchore/syft extractVersion=^v(?<version>.+)$
 ARG SYFT_VERSION=1.51.0
 # --override-default-catalogers is load-bearing: syft's default set for a
@@ -109,9 +110,17 @@ ARG SYFT_VERSION=1.51.0
 # document with zero npm components. The publish workflow's SBOM
 # generator pin must keep pace with this syft: an older generator
 # silently ignores newer CycloneDX spec versions.
-RUN --mount=type=cache,target=/root/.npm npm ci --omit=dev --workspace frontend --ignore-scripts \
+#
+# syft reads frontend/node_modules rather than the root: pnpm's layout is
+# isolated, so the frontend project's own directory is where its resolved
+# dependencies are linked. The root node_modules holds only the workspace
+# root's own devDependencies, which is what previously leaked build tooling
+# into this document.
+RUN --mount=type=cache,target=/pnpm-store \
+    mise exec "pnpm@$(node -p "require('./package.json').packageManager.replace(/^pnpm@/, '')")" -- \
+      pnpm install --frozen-lockfile --prod --filter frontend --ignore-scripts \
     && mise exec "aqua:anchore/syft@${SYFT_VERSION}" -- \
-       syft dir:node_modules --override-default-catalogers javascript-package-cataloger \
+       syft dir:frontend/node_modules --override-default-catalogers javascript-package-cataloger \
        -o cyclonedx-json > /build/frontend.cdx.json
 
 # Stage 3: Runtime

@@ -53,7 +53,7 @@ jobs:
               - 'backend/**'
               - 'frontend/**'
               - 'package.json'
-              - 'package-lock.json'
+              - 'pnpm-lock.yaml'
               - 'docs/package.json'
               - 'version.txt'
               - '.github/workflows/docker-publish.yml'

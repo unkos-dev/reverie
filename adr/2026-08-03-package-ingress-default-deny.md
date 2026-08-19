@@ -64,13 +64,14 @@ the toolchain rather than at review.
 1. **The manager is pinned and enforced.** npm through `devEngines` and
    `mise.toml` held in lockstep; the Rust toolchain and MSRV through CI. An
    unpinned manager means an unknown set of security defaults.
-2. **Installs are frozen.** `npm ci` and `cargo --locked`. A resolving install
+2. **Installs are frozen.** `pnpm install --frozen-lockfile` and
+   `cargo --locked`. A resolving install
    on a build or deploy path can take a version the lockfile never recorded.
-3. **No install-time code execution.** `allowScripts` denies by default, and
-   `strict-allow-scripts` fails the install on anything unreviewed. The policy
-   sits in the root `.npmrc` and root `package.json` because
+3. **No install-time code execution.** `allowBuilds` records a decision per
+   package, and `strictDepBuilds` fails the install on anything undecided. The
+   policy sits in `pnpm-workspace.yaml` because
    [2026-06-30-adopt-vite-plus-monorepo-toolchain.md](2026-06-30-adopt-vite-plus-monorepo-toolchain.md)
-   put one lockfile and one hoisted `node_modules` at the root.
+   put one lockfile and one workspace declaration at the root.
 4. **New versions wait.** Renovate holds an update for `minimumReleaseAge`,
    currently 3 days. A compromised release is usually yanked soon after
    discovery, so waiting removes most of that exposure and asks nothing of
@@ -82,8 +83,8 @@ the toolchain rather than at review.
 Entries take the shape the tooling can police, following
 [2026-07-04-expect-over-allow-lint-suppressions.md](2026-07-04-expect-over-allow-lint-suppressions.md):
 a version-pinned allow entry is the `#[allow]` of package policy, documenting
-intent while rotting silently. An `allowScripts` entry is therefore name-only
-unless this repo pins that package's version itself.
+intent while rotting silently. `allowBuilds` keys its entries by package name,
+so a decision cannot quietly stop matching when a version range moves.
 
 No package is allowed to run an install script. Six packages in the tree
 declare one, three of them `fsevents` builds that install on macOS alone. Of
@@ -98,10 +99,9 @@ invokes. All three are denied by name.
   lockfile refresh can no longer void the policy.
 - Good, because a dependency that starts shipping an install script fails the
   install instead of running, or being skipped with nobody the wiser.
-- Bad, because `npx <tool>` inside the checkout fails for a tool carrying an
-  install script. `npm exec` ignores the project `allowScripts` by design while
-  still reading strict mode from `.npmrc`, so the gate applies with no policy
-  behind it; `--allow-scripts=<pkg>` covers the one-off.
+- Bad, because a one-off `vp dlx <tool>` fetches a package this policy has not
+  ruled on. It runs outside the workspace install, so `allowBuilds` does not
+  cover it; treat an ad-hoc fetch as its own decision.
 - Bad, because a Renovate refresh introducing a script-bearing package turns
   that pull request red until someone rules on it. That signal is the point,
   and it still adds a step to an otherwise automerged lane.
@@ -121,11 +121,10 @@ invokes. All three are denied by name.
 
 ### Confirmation
 
-`strict-allow-scripts` in the root `.npmrc` fails any install whose
-dependencies carry an install script not covered by `allowScripts`. Every
-`allowScripts` entry is name-only, or pinned to a version this repo declares
-itself; a pinned entry naming a transitive package is the defect this record
-exists to prevent. On the cargo side, `scripts/cargo-locked-guard.sh` fails
+`strictDepBuilds` fails any install whose dependencies carry a build script
+not ruled on in `allowBuilds`. Entries are keyed by package name rather than by
+resolved version, so a decision cannot silently stop matching when a range
+moves. On the cargo side, `scripts/cargo-locked-guard.sh` fails
 the lint gate for any resolving invocation without `--locked` across the
 recipes, hooks, workflows, and image build, treating unknown subcommands as
 resolving.

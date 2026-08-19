@@ -15,27 +15,22 @@ typos = "1.49.0"
 vale = "3.16.0"
 yamllint = "1.38.0"
 zizmor = "1.29.0"
-# npm enforces `devEngines.packageManager` in package.json on every direct
-# invocation, hard-erroring with EBADDEVENGINES when the running npm
-# disagrees rather than honouring the declared `onFail: download`. Without
-# this entry a checkout falls through to whatever npm the ambient config
-# supplies, so a machine whose global pin has moved ahead can run neither
-# `npm install` nor any lefthook step that shells out to npm. The JS jobs in
-# CI hit the same wall through their bare `npx` invocations, because the npm
-# bundled with node lags this pin, so mise-action installs this entry
-# alongside node and the shim outranks the bundled copy on PATH.
+# The package manager, resolved through mise's aqua backend and so
+# checksum-verified. Two bootstraps need pnpm before any node_modules exists
+# and therefore cannot reach it through vp: `just worktree`, which installs
+# dependencies into a fresh checkout, and the image build. Everything past
+# those points goes through vp instead.
 #
-# Both node and this entry ship npm and npx bins, and mise resolves a
-# contested bin to the first tool listed in this table, for shims and for
-# the PATH order `mise env` exports. `"npm:npm"` must stay listed before
-# `node` below, or node's bundled npm shadows this pin and every direct
-# npm/npx invocation fails with EBADDEVENGINES.
-# `npm-pin-drift` holds this in lockstep with package.json and enforces
-# this ordering.
-# mise owns the node pin the same way it owns npm above: CI provisions node
-# through jdx/mise-action, which reads this table, and setup-vp is told not
-# to manage node (node-manager: false) so the two installers cannot disagree.
-"npm:npm" = "12.0.2"
+# Unlike the npm pin this replaces, the version here is a convenience rather
+# than a correctness constraint. package.json's `packageManager` field is
+# authoritative, and a pnpm whose version disagrees with it downloads and
+# re-executes the declared version instead of refusing to run, so there is no
+# EBADDEVENGINES-shaped failure to hold in lockstep and no bin contest with
+# node to order around.
+pnpm = "11.22.0"
+# mise owns the node pin: CI provisions node through jdx/mise-action, which
+# reads this table, and setup-vp is told not to manage node
+# (node-manager: false) so the two installers cannot disagree.
 node = "24.19.0"
 
 # SQL linter for backend/migrations, run by `just infra::sqruff`. No mise

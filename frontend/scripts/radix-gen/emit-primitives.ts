@@ -1,6 +1,6 @@
 /*
  * Emits src/styles/themes/primitives.generated.css from the vendored Radix
- * color engine plus the Reverie brand anchors. Run with `npm run
+ * color engine plus the Reverie brand anchors. Run with `vp run
  * primitives:gen`; a drift test pins the committed artifact to this output,
  * so the file and this emitter change together, never independently.
  *
@@ -84,7 +84,7 @@ function p3block(prefix: string, wide: string[], wideAlpha: string[]) {
 
 const HEADER = `/*
  * Reverie editorial design-system — Radix-generated color primitives.
- * GENERATED ARTIFACT — do not hand-edit. Regenerate: npm run primitives:gen.
+ * GENERATED ARTIFACT — do not hand-edit. Regenerate: vp run primitives:gen.
  *
  * Source fn:  scripts/radix-gen/generate-radix-colors.ts (radix-ui/website @ 88a9f14)
  * Deps:       @radix-ui/colors@${COLOR_DEP_VERSIONS["@radix-ui/colors"]}  colorjs.io@${COLOR_DEP_VERSIONS["colorjs.io"]}  bezier-easing@${COLOR_DEP_VERSIONS["bezier-easing"]}

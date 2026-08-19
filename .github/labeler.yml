@@ -46,4 +46,4 @@
           - "**/Cargo.lock"
           - "**/Cargo.toml"
           - "**/package.json"
-          - "**/package-lock.json"
+          - "**/pnpm-lock.yaml"

@@ -25,19 +25,13 @@ chmod +x "${fixture}/scripts/doctor.sh"
 cp "${repo_root}/scripts/require-disk-backed.sh" "${fixture}/scripts/require-disk-backed.sh"
 chmod +x "${fixture}/scripts/require-disk-backed.sh"
 
-# devEngines.packageManager pin the npm-drift check (2b) compares the
-# PATH-resolved npm against. The version is arbitrary; only agreement with
-# the npm stub's reported version (below) matters.
-fixture_npm_version="11.18.0"
+# A minimal manifest. No check reads a field from it any more, but check 6's
+# lockfile comparison needs the file to exist alongside the fixture lockfile.
 cat > "${fixture}/package.json" << EOF
 {
-  "devEngines": {
-    "packageManager": {
-      "name": "npm",
-      "onFail": "download",
-      "version": "${fixture_npm_version}"
-    }
-  }
+  "name": "doctor-fixture",
+  "private": true,
+  "packageManager": "pnpm@11.22.0"
 }
 EOF
 
@@ -59,8 +53,8 @@ git -C "${fixture}" update-ref refs/remotes/origin/main HEAD
 # earlier than the first's, and a same-second tie still reads as "not
 # stale" since the check only fires on strictly-newer.
 mkdir -p "${fixture}/node_modules"
-echo '{}' >"${fixture}/package-lock.json"
-echo '{}' >"${fixture}/node_modules/.package-lock.json"
+echo '{}' >"${fixture}/pnpm-lock.yaml"
+echo '{}' >"${fixture}/node_modules/.modules.yaml"
 
 # Non-empty sqlx offline cache with one entry shaped like a real sqlx
 # query-*.json (query + hash keys), not just any parseable JSON.
@@ -88,23 +82,9 @@ mkdir -p "${stub_bin}"
 for real in env bash git jq ls df date dirname cat head tail tr cut uname grep stat; do
   link_real "${stub_bin}" "${real}"
 done
-for tool in just cargo rustc node npx vp; do
+for tool in just cargo rustc node pnpm vp; do
   noop_stub "${stub_bin}" "${tool}"
 done
-
-# npm stub: reports DOCTOR_STUB_NPM_VERSION (default: the fixture's own
-# devEngines pin, so the happy path agrees without any override) rather than
-# doctor.sh only checking resolvability like the noop-stubbed tools above,
-# since check 2b actually runs `npm --version` and compares it.
-cat > "${stub_bin}/npm" << NPM_STUB
-#!/usr/bin/env bash
-if [ "\$1" = '--version' ]; then
-  printf '%s\n' "\${DOCTOR_STUB_NPM_VERSION-${fixture_npm_version}}"
-  exit 0
-fi
-exit 0
-NPM_STUB
-chmod +x "${stub_bin}/npm"
 
 # Scratch HOME so the kache platform-default and XDG_CACHE_HOME-fallback
 # resolution below never reads or sizes the real machine's build cache.
@@ -403,24 +383,24 @@ echo '{"query": "SELECT 1", "hash": "deadbeef"}' >"${fixture}/backend/.sqlx/quer
 expect_exit "a valid sqlx cache entry passes" 0 "${stub_bin}"
 expect_contains "valid sqlx cache is reported" "PASS sqlx offline cache"
 
-# --- node_modules advice: `just install` runs `npm ci`, which is
-# lockfile-exact and works from nothing, so it is the runnable repair for
-# every unhealthy state below and each one must name it. ---
+# --- node_modules advice: `just install` is lockfile-exact and works from
+# nothing, so it is the runnable repair for every unhealthy state below and
+# each one must name it. ---
 
 # (a) node_modules absent entirely.
 rm -rf "${fixture}/node_modules"
 expect_exit "absent node_modules warns" 0 "${stub_bin}"
 expect_contains "absent node_modules advises just install" "WARN root node_modules present -- fix: just install"
 mkdir -p "${fixture}/node_modules"
-echo '{}' >"${fixture}/package-lock.json"
-echo '{}' >"${fixture}/node_modules/.package-lock.json"
+echo '{}' >"${fixture}/pnpm-lock.yaml"
+echo '{}' >"${fixture}/node_modules/.modules.yaml"
 
 # (b) node_modules present but the install marker missing: an incomplete or
 # interrupted install.
-rm -f "${fixture}/node_modules/.package-lock.json"
+rm -f "${fixture}/node_modules/.modules.yaml"
 expect_exit "missing install marker warns" 0 "${stub_bin}"
 expect_contains "missing install marker advises just install" "WARN node_modules install incomplete (marker missing) -- fix: just install"
-echo '{}' >"${fixture}/node_modules/.package-lock.json"
+echo '{}' >"${fixture}/node_modules/.modules.yaml"
 
 # (c) both files present but the lockfile is strictly newer than the
 # marker: a genuine staleness. Writing the marker before the lockfile is the
@@ -428,16 +408,16 @@ echo '{}' >"${fixture}/node_modules/.package-lock.json"
 # the other direction; unlike the tie-safe "not stale" setup, this assertion
 # needs a real, not just a same-second, gap, so a one-second sleep (portable,
 # unlike a GNU-only `touch -d` backdate) sits between the two writes.
-echo '{}' >"${fixture}/node_modules/.package-lock.json"
+echo '{}' >"${fixture}/node_modules/.modules.yaml"
 sleep 1
-echo '{}' >"${fixture}/package-lock.json"
+echo '{}' >"${fixture}/pnpm-lock.yaml"
 expect_exit "stale lockfile warns" 0 "${stub_bin}"
-expect_contains "stale lockfile advises just install" "WARN node_modules stale against package-lock.json -- fix: just install"
+expect_contains "stale lockfile advises just install" "WARN node_modules stale against pnpm-lock.yaml -- fix: just install"
 
 # restore the happy-path ordering (lockfile written before the marker) for
 # any assertions that follow.
-echo '{}' >"${fixture}/package-lock.json"
-echo '{}' >"${fixture}/node_modules/.package-lock.json"
+echo '{}' >"${fixture}/pnpm-lock.yaml"
+echo '{}' >"${fixture}/node_modules/.modules.yaml"
 
 # --- kache binary check: absent from PATH warns (not fails) and names the
 # fix; present passes. ---
@@ -661,53 +641,6 @@ expect_contains "both-set warning's fix covers both variables" "unset both CARGO
 unset CARGO_TARGET_DIR
 unset CARGO_BUILD_TARGET_DIR
 rm -rf "${fixture}/.cargo"
-
-# --- npm toolchain drift (check 2b): PATH npm vs devEngines.packageManager ---
-
-# A wrong-version npm is exactly what a stale PATH entry ahead of mise's
-# shims produces, and it is what breaks every lefthook commit with
-# EBADDEVENGINES: the check must fail closed on it, not just note it.
-export DOCTOR_STUB_NPM_VERSION="9.9.9"
-expect_exit "npm version mismatch fails the run" 1 "${stub_bin}"
-expect_contains "npm version mismatch is reported" "FAIL npm on PATH (9.9.9) matches the devEngines.packageManager pin (${fixture_npm_version})"
-expect_contains "npm version mismatch names the fix" "run 'mise install', and confirm mise's shims precede any other npm on PATH"
-unset DOCTOR_STUB_NPM_VERSION
-
-# The matching case is already exercised by the happy path above (no FAIL or
-# WARN lines at all); this pins the exact PASS line so a future regression
-# that silently stopped reporting it would still be caught.
-expect_exit "matching npm version passes" 0 "${stub_bin}"
-expect_contains "matching npm version is reported" "PASS npm on PATH matches the devEngines.packageManager pin (${fixture_npm_version})"
-
-# No npm on PATH at all: check 1 already fails on the missing binary, but
-# check 2b must independently fail too rather than silently skip, since a
-# reader scanning only for its own line must not read a missing npm as a
-# version match that was never actually checked.
-stub_bin_no_npm="${tmp}/bin-no-npm"
-mkdir -p "${stub_bin_no_npm}"
-for f in "${stub_bin}"/*; do
-  name="$(basename "${f}")"
-  [ "${name}" = "npm" ] && continue
-  cp -P "${f}" "${stub_bin_no_npm}/${name}"
-done
-expect_exit "missing npm fails closed on the version check too" 1 "${stub_bin_no_npm}"
-expect_contains "missing npm names the fix on the version check" "FAIL npm on PATH matches the devEngines.packageManager pin -- fix: run 'mise install'"
-
-# --- npm pin readability (check 2b): a failing jq is its own failure --------
-
-# A jq that is missing or cannot parse package.json used to collapse into an
-# empty pin, sending the reader to "restore the npm pin" when the pin was
-# fine all along. The stub PATH links the real jq, so break the link
-# explicitly and restore it afterwards. Check 2 shares jq and fails too;
-# only the 2b wording is under test here.
-rm -f "${stub_bin}/jq"
-printf '#!/usr/bin/env bash\nexit 1\n' > "${stub_bin}/jq"
-chmod +x "${stub_bin}/jq"
-expect_exit "a failing jq fails the run" 1 "${stub_bin}"
-expect_contains "a failing jq is reported as unreadable, not as a missing pin" "FAIL package.json devEngines pin is readable (jq failed)"
-expect_not_contains "a failing jq does not misreport a missing pin" "restore the npm pin"
-rm -f "${stub_bin}/jq"
-ln -s "$(command -v jq)" "${stub_bin}/jq"
 
 # --- disk space (check 11): tmpfs-aware wording ------------------------------
 

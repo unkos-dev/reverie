@@ -18,10 +18,12 @@ warn() { printf 'WARN %s -- fix: %s\n' "$1" "$2"; warn_count=$((warn_count + 1))
 fail() { printf 'FAIL %s -- fix: %s\n' "$1" "$2"; fail_count=$((fail_count + 1)); }
 info() { printf 'INFO %s\n' "$1"; }
 
-# 1. Required binaries resolve on PATH. jq is included because checks 2, 2b,
-# and 7 below all shell out to it; without this, a missing jq shows up
-# only as a confusing "(missing: unknown)" deep in another check's output.
-for bin in git just docker cargo rustc node npm npx mise jq; do
+# 1. Required binaries resolve on PATH. jq is included because checks 2 and 7
+# below both shell out to it; without this, a missing jq shows up only as a
+# confusing "(missing: unknown)" deep in another check's output. pnpm is here
+# because `just install` and the worktree bootstrap invoke it directly, before
+# any node_modules exists for vp to resolve one from.
+for bin in git just docker cargo rustc node pnpm mise jq; do
   if command -v "$bin" >/dev/null 2>&1; then
     pass "binary '${bin}' resolves on PATH"
   else
@@ -62,37 +64,6 @@ if command -v mise >/dev/null 2>&1; then
   fi
 else
   fail "mise-pinned tools are installed" "install mise, then run 'mise install'"
-fi
-
-# 2b. npm resolved on PATH matches the devEngines.packageManager pin in
-# package.json. devEngines is what npm itself enforces: every direct npm
-# invocation compares the running binary's version against it and hard-fails
-# with EBADDEVENGINES on a mismatch, and lefthook's git hooks invoke bare
-# npx/npm from the caller's PATH, so this breaks every commit, not just an
-# explicit `npm install`. scripts/npm-pin-drift.sh checks the declared pin
-# agrees with mise.toml; this checks the binary actually resolved on PATH
-# agrees with the declared pin, which mise alone cannot guarantee once a
-# stale npm sits ahead of mise's shims.
-jq_rc=0
-declared_npm="$(jq -r '.devEngines.packageManager.version // ""' package.json 2>/dev/null)" || jq_rc=$?
-if [ "${jq_rc}" -ne 0 ]; then
-  # Fail closed and name the real fault: a failed jq collapsed into an empty
-  # string is indistinguishable from a genuinely absent pin, and "restore
-  # the pin" is the wrong fix when jq is missing or package.json unreadable.
-  fail "package.json devEngines pin is readable (jq failed)" "run 'jq .devEngines package.json' manually and investigate"
-elif command -v npm > /dev/null 2>&1; then
-  resolved_npm="$(npm --version 2>/dev/null || true)"
-  if [ -z "${resolved_npm}" ]; then
-    fail "npm on PATH reports a version" "run 'npm --version' manually and investigate"
-  elif [ -z "${declared_npm}" ]; then
-    fail "package.json declares devEngines.packageManager.version" "restore the npm pin in package.json devEngines"
-  elif [ "${resolved_npm}" != "${declared_npm}" ]; then
-    fail "npm on PATH (${resolved_npm}) matches the devEngines.packageManager pin (${declared_npm})" "run 'mise install', and confirm mise's shims precede any other npm on PATH"
-  else
-    pass "npm on PATH matches the devEngines.packageManager pin (${resolved_npm})"
-  fi
-else
-  fail "npm on PATH matches the devEngines.packageManager pin" "run 'mise install', and confirm mise's shims precede any other npm on PATH"
 fi
 
 # 3. Docker daemon reachable.
@@ -187,30 +158,32 @@ else
 fi
 
 # 6. node_modules present at the workspace root, and not stale against the
-# committed lockfile. npm workspaces hoist frontend and docs dependencies
-# into the one root node_modules (adr/2026-06-30-adopt-vite-plus-monorepo-toolchain.md),
-# so a healthy checkout has no frontend/node_modules or docs/node_modules of
-# its own to check.
+# committed lockfile. pnpm's layout is isolated rather than hoisted
+# (adr/2026-06-30-adopt-vite-plus-monorepo-toolchain.md), so each project also
+# has its own node_modules linking into the root virtual store. Only the root
+# is checked: every install writes it, and no per-project tree can exist
+# without it.
 #
-# Every unhealthy state here gets the same advice. `just install` runs
-# `npm ci`, which is lockfile-exact and bootstraps from nothing, so it repairs
-# an absent tree, an interrupted one, and a stale one alike, and none of the
-# three needs a binary a broken install may not have left behind.
+# Every unhealthy state here gets the same advice. `just install` is
+# lockfile-exact and bootstraps from nothing, so it repairs an absent tree, an
+# interrupted one, and a stale one alike, and none of the three needs a binary
+# a broken install may not have left behind.
 if [ -d node_modules ]; then
   pass "root node_modules present"
 else
   warn "root node_modules present" "just install"
 fi
 
-if [ -f package-lock.json ] && [ -f node_modules/.package-lock.json ]; then
-  if [ package-lock.json -nt node_modules/.package-lock.json ]; then
-    warn "node_modules stale against package-lock.json" "just install"
+if [ -f pnpm-lock.yaml ] && [ -f node_modules/.modules.yaml ]; then
+  if [ pnpm-lock.yaml -nt node_modules/.modules.yaml ]; then
+    warn "node_modules stale against pnpm-lock.yaml" "just install"
   else
-    pass "node_modules matches package-lock.json"
+    pass "node_modules matches pnpm-lock.yaml"
   fi
 else
-  # The install marker (node_modules/.package-lock.json) is missing even
-  # though node_modules exists: an incomplete or interrupted install.
+  # The install marker (node_modules/.modules.yaml, which pnpm writes to
+  # record the state of the tree) is missing even though node_modules exists:
+  # an incomplete or interrupted install.
   warn "node_modules install incomplete (marker missing)" "just install"
 fi
 

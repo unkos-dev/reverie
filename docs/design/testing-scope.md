@@ -26,7 +26,7 @@ The Step 10 design system is tested at two distinct bars.
 Visual and composition work is verified by:
 
 - Playwright with `@axe-core/playwright` against the shipped routes in
-  `DEFAULT_TARGETS` (`npm run a11y`; the list lives in
+  `DEFAULT_TARGETS` (`vp run a11y`; the list lives in
   `frontend/scripts/a11y/allowlist.mjs`).
 - Manual Dark/Light toggle.
 - The `/crosscheck` dual-model review gate at D5.

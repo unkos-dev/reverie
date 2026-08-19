@@ -9,8 +9,8 @@ on:
       - "docs/**"
       # docs is an npm workspace; a root manifest/lockfile change must redeploy too.
       - "package.json"
-      - "package-lock.json"
-      - ".npmrc"
+      - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
       - ".github/workflows/docs.yml"
       - ".github/workflows/docs-build.yml"
     tags:

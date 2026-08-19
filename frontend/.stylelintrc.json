@@ -27,7 +27,7 @@
   },
   "overrides": [
     {
-      "comment": "Atmosphere (Tier 3) + self-hosted @font-face — raw hex permitted (art-directed editorial constants / fonts). The generated Tier 1 primitives file is excluded from linting via top-level ignoreFiles (machine-generated; regenerate via npm run primitives:gen, never hand-edit). The Tier 2 semantic file (index.css) is NOT exempt — it is hex-banned.",
+      "comment": "Atmosphere (Tier 3) + self-hosted @font-face — raw hex permitted (art-directed editorial constants / fonts). The generated Tier 1 primitives file is excluded from linting via top-level ignoreFiles (machine-generated; regenerate via vp run primitives:gen, never hand-edit). The Tier 2 semantic file (index.css) is NOT exempt — it is hex-banned.",
       "files": ["src/styles/themes/atmosphere.css", "src/styles/fonts.css"],
       "rules": { "color-no-hex": null }
     }

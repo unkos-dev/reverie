@@ -93,3 +93,4 @@ backend/.dev-server.log
 backend/library/
 backend/ingestion/
 backend/quarantine/
+.npmrc
