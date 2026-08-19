@@ -105,7 +105,15 @@ Contributor automation conventions live in [`AGENTS.md`](../AGENTS.md) files (th
 
 ### Pre-commit prerequisites
 
-Git hooks are managed by lefthook and installed through the `prepare` npm script, so a fresh clone wires them on `npm ci`.
+Git hooks are managed by lefthook and installed through the `prepare` npm script, so a fresh clone wires them on `npm ci`. Four of those hooks invoke vite-plus directly, so install it before your first commit.
+
+Install [vite-plus](https://viteplus.dev). It is a standalone binary, so an install inside the checkout does not provide it. Reading the version from the manifest keeps this command from drifting away from the pin it exists to match, and `VP_NODE_MANAGER=no` leaves Node to mise, which pins it:
+
+```sh
+curl -fsSL https://vite.plus \
+  | VP_VERSION="$(node -p "require('./package.json').devDependencies['vite-plus']")" \
+    VP_NODE_MANAGER=no bash
+```
 
 Install the repository-pinned hook and local-check tools with [mise](https://mise.jdx.dev/):
 
@@ -116,7 +124,7 @@ mise install actionlint gitleaks hadolint just node shellcheck typos vale yamlli
 
 `just` is the task runner for every plane, and the lint, format, test, and build definitions CI uses live in the justfiles rather than inline in the workflows. Run `just --list` for the recipe list with descriptions. `just worktree <branch>` creates a worktree outside the checkout, where it cannot enter the Docker build context or cargo's workspace discovery; set `WORKTREE_ROOT` to choose where those live.
 
-[`mise.toml`](../mise.toml) pins those contributor tools and the additional CI-only Rust tools to the versions enforced in CI. The scoped command avoids installing cargo-machete, cargo-deny, and cargo-mutants for contributors because local recipes do not use them. npm is pinned there too, matching the `devEngines.packageManager` version in [`package.json`](../package.json): npm enforces that declaration on every direct invocation and refuses to run when the binary on `PATH` disagrees, so an unpinned npm blocks `npm install` and every hook that shells out to it. `scripts/npm-pin-drift.sh` holds the two copies in lockstep. Node is pinned in `mise.toml` too and installed with the tools above; vite-plus remains a lockfile-managed project dependency. If a declared project dependency is missing, restore it through the documented lockfile-backed setup command. If a system prerequisite is unavailable, stop the affected check and report the missing command; do not bypass the check or install system packages implicitly.
+[`mise.toml`](../mise.toml) pins those contributor tools and the additional CI-only Rust tools to the versions enforced in CI. The scoped command avoids installing cargo-machete, cargo-deny, and cargo-mutants for contributors because local recipes do not use them. npm is pinned there too, matching the `devEngines.packageManager` version in [`package.json`](../package.json): npm enforces that declaration on every direct invocation and refuses to run when the binary on `PATH` disagrees, so an unpinned npm blocks `npm install` and every hook that shells out to it. `scripts/npm-pin-drift.sh` holds the two copies in lockstep. Node is pinned in `mise.toml` too and installed with the tools above. vite-plus is two things at once: the global binary installed above, which every `just js::` recipe and four git hooks invoke, and a `vite-plus` devDependency that supplies the toolchain the binary runs and that CI's `setup-vp` reads the version from. If a declared project dependency is missing, restore it through the documented lockfile-backed setup command. If a system prerequisite is unavailable, stop the affected check and report the missing command; do not bypass the check or install system packages implicitly.
 
 Workflow and infrastructure files are additionally scanned in CI by zizmor, Checkov, Trivy, CodeQL, cargo-audit, cargo-deny, and dependency-review. These are intentionally CI-only scanners. Local installation is not part of contributor setup. Documented zizmor suppressions and their justifications live in [`.github/zizmor.yml`](zizmor.yml).
 
