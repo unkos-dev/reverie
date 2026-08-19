@@ -119,7 +119,12 @@ FROM debian:trixie-slim@sha256:020c0d20b9880058cbe785a9db107156c3c75c2ac944a6aa7
 # probe needs a working HTTP client baked in so docker / compose / Incus can
 # detect when the server is up and the schema check has passed before
 # flipping traffic.
-RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl \
+# The upgrade is standing design, not a patch: Debian's apt repo carries
+# security fixes days-to-weeks before the base image rebuilds with them,
+# and the publish gate fails on fixable CVEs, so every build applies the
+# suite's current fixes on top of the pinned base.
+RUN apt-get update && apt-get upgrade -y \
+    && apt-get install -y --no-install-recommends ca-certificates curl \
     && rm -rf /var/lib/apt/lists/*
 # Fixed numeric id rather than letting `useradd -r` pick one: the allocation
 # is whatever the base image happens to have free, so it can move under the
