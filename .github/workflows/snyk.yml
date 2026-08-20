@@ -43,7 +43,7 @@ jobs:
         uses: jdx/mise-action@3c2e0cf82a5b2e5249f0d3635a4d83d0ae861518 # v4.2.5
         with:
           # renovate: datasource=github-releases depName=jdx/mise extractVersion=^v(?<version>.+)$
-          version: "2026.8.6"
+          version: "2026.8.8"
           install_args: snyk
 
       # Exit 1 (findings) is tolerated while advisory; anything above 1 is a
@@ -103,7 +103,7 @@ jobs:
         uses: jdx/mise-action@3c2e0cf82a5b2e5249f0d3635a4d83d0ae861518 # v4.2.5
         with:
           # renovate: datasource=github-releases depName=jdx/mise extractVersion=^v(?<version>.+)$
-          version: "2026.8.6"
+          version: "2026.8.8"
           install_args: snyk
 
       # --dev includes devDependencies: a compromised dev tool has the same
@@ -165,7 +165,7 @@ jobs:
         uses: jdx/mise-action@3c2e0cf82a5b2e5249f0d3635a4d83d0ae861518 # v4.2.5
         with:
           # renovate: datasource=github-releases depName=jdx/mise extractVersion=^v(?<version>.+)$
-          version: "2026.8.6"
+          version: "2026.8.8"
           install_args: snyk
 
       - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4
