@@ -53,7 +53,7 @@ jobs:
               - 'backend/**'
               - 'frontend/**'
               - 'package.json'
-              - 'package-lock.json'
+              - 'pnpm-lock.yaml'
               - 'docs/package.json'
               - 'version.txt'
               - '.github/workflows/docker-publish.yml'
@@ -104,6 +104,14 @@ jobs:
           context: .
           platforms: ${{ matrix.platform }}
           labels: ${{ steps.meta.outputs.labels }}
+          # mise verifies every tool download's GitHub artifact attestation
+          # against api.github.com. Unauthenticated, that is 60 requests per
+          # hour per IP, and hosted runners share IPs, so the budget is not
+          # ours alone to spend. The job token raises the ceiling far past
+          # anything one build needs. Passed as a secret, never a build-arg:
+          # a build-arg is recorded in the image history and would publish it.
+          secrets: |
+            github_token=${{ secrets.GITHUB_TOKEN }}
           outputs: type=image,name=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }},push-by-digest=true,name-canonical=true,push=true
           provenance: mode=max
           # Pinned: the floating stable-1 generator lags syft releases and

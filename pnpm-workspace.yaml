@@ -1,0 +1,56 @@
+# Workspace-wide pnpm configuration. pnpm v11 no longer reads settings from
+# package.json's `pnpm` field, so everything that is not a dependency
+# declaration lives here.
+packages:
+  - frontend
+  - docs
+
+# Required by `pnpm deploy`, which the image build uses to materialise the
+# frontend's production closure for the SBOM. Since pnpm v10 deploy runs only
+# from workspaces that set this; the alternative is its --legacy flag, which
+# selects the implementation pnpm is moving away from.
+#
+# It is inert here, and that is why it can be left alone rather than tidied
+# away: it changes how workspace-to-workspace dependencies are linked, from
+# symlinks to injected copies, and neither project depends on the other.
+injectWorkspacePackages: true
+
+# Install-script default-deny, per adr/2026-08-03-package-ingress-default-deny.md.
+# `strictDepBuilds` defaults to true and is what turns an undecided package into
+# a failed install (ERR_PNPM_IGNORED_BUILDS, exit 1) rather than a warning
+# nobody reads; `allowBuilds` records the per-package decision. A dependency
+# that starts shipping an install script therefore stops the install until
+# someone rules on it.
+#
+# The gate fires on a clean install. A warm node_modules reports "Already up to
+# date" and skips it, so a newly script-shipping dependency can hide locally
+# until the next clean install. CI's fresh runners cannot be in that state.
+strictDepBuilds: true
+allowBuilds:
+  esbuild: false
+  lefthook: false
+  puppeteer: false
+
+# The single definition of each pinned version. Referenced as `catalog:` from
+# every importer, which is what keeps the vp version from being restated across
+# root and frontend manifests.
+catalog:
+  vite: "npm:@voidzero-dev/vite-plus-core@0.2.9"
+  vite-plus: "0.2.9"
+  vitest: "4.1.10"
+  # Must equal vitest exactly. vite-plus refuses to start when the coverage
+  # provider and the test runner disagree, because Vitest itself only warns and
+  # then reports coverage from mixed versions. Renovate already moves this
+  # family as one group for the same reason.
+  "@vitest/coverage-v8": "4.1.10"
+
+# Transitive security floors. Each entry is a deliberate minimum, not a
+# convenience pin, and removing one reopens the advisory it closes.
+#   vite    peer alignment; the only thing holding the graph on vp's fork.
+#   vitest  entangled with the alias: vite-plus bundles the @vitest/* family
+#           with an exact vitest peer dependency. Carries GHSA-p63j-vcc4-9vmv.
+#   form-data  live floor. httpsnippet resolves 4.0.4 unaided. GHSA-fx2h-pf6j-xcff.
+overrides:
+  vite: "catalog:"
+  vitest: "catalog:"
+  form-data: "4.0.6"

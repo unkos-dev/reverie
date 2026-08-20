@@ -93,10 +93,10 @@ OPDS requires. They resolve an out-of-tree env file at `~/reverie/dev/env`
 (override the location with `REVERIE_DEV_ENV`; copy `.env.example` there to
 start one), so a value you set there is the one the server uses.
 
-Frontend only (Node.js at or above the `engines.node` floor in `package.json`; install at the repository root, where npm workspaces hoist every plane's dependencies):
+Frontend only (Node.js at or above the `engines.node` floor in `package.json`; install at the repository root, where `pnpm-workspace.yaml` declares every plane's project):
 
 ```bash
-npm ci && vp dev
+pnpm install --frozen-lockfile && vp dev
 ```
 
 Subsystem conventions (database roles, testing helpers, linting rules) are documented in [backend/AGENTS.md](../backend/AGENTS.md) and [frontend/AGENTS.md](../frontend/AGENTS.md).
@@ -105,13 +105,13 @@ Contributor automation conventions live in [`AGENTS.md`](../AGENTS.md) files (th
 
 ### Pre-commit prerequisites
 
-Git hooks are managed by lefthook and installed through the `prepare` npm script, so a fresh clone wires them on `npm ci`. Four of those hooks invoke vite-plus directly, so install it before your first commit.
+Git hooks are managed by lefthook and installed through the `prepare` script, so a fresh clone wires them on `pnpm install`. Four of those hooks invoke vite-plus directly, so install it before your first commit.
 
 Install the repository-pinned hook and local-check tools with [mise](https://mise.jdx.dev/):
 
 ```sh
 mise install actionlint gitleaks hadolint just node shellcheck typos vale yamllint \
-  npm:npm github:nextest-rs/nextest github:taiki-e/cargo-llvm-cov
+  pnpm github:nextest-rs/nextest github:taiki-e/cargo-llvm-cov
 ```
 
 Then install [vite-plus](https://viteplus.dev). It is a standalone binary, so an install inside the checkout does not provide it. Run this from the repository root: reading the version out of the manifest keeps the command from drifting away from the pin it exists to match, and it needs the Node the previous step provisions. `VP_NODE_MANAGER=no` leaves Node to mise, which pins it:
@@ -124,7 +124,7 @@ curl -fsSL https://vite.plus \
 
 `just` is the task runner for every plane, and the lint, format, test, and build definitions CI uses live in the justfiles rather than inline in the workflows. Run `just --list` for the recipe list with descriptions. `just worktree <branch>` creates a worktree outside the checkout, where it cannot enter the Docker build context or cargo's workspace discovery; set `WORKTREE_ROOT` to choose where those live.
 
-[`mise.toml`](../mise.toml) pins those contributor tools and the additional CI-only Rust tools to the versions enforced in CI. The scoped command avoids installing cargo-machete, cargo-deny, and cargo-mutants for contributors because local recipes do not use them. npm is pinned there too, matching the `devEngines.packageManager` version in [`package.json`](../package.json): npm enforces that declaration on every direct invocation and refuses to run when the binary on `PATH` disagrees, so an unpinned npm blocks `npm install` and every hook that shells out to it. `scripts/npm-pin-drift.sh` holds the two copies in lockstep. Node is pinned in `mise.toml` too and installed with the tools above. vite-plus is two things at once: the global binary installed above, which every `just js::` recipe and four git hooks invoke, and a `vite-plus` devDependency that supplies the toolchain the binary runs and that CI's `setup-vp` reads the version from. If a declared project dependency is missing, restore it through the documented lockfile-backed setup command. If a system prerequisite is unavailable, stop the affected check and report the missing command; do not bypass the check or install system packages implicitly.
+[`mise.toml`](../mise.toml) pins those contributor tools and the additional CI-only Rust tools to the versions enforced in CI. The scoped command avoids installing cargo-machete, cargo-deny, and cargo-mutants for contributors because local recipes do not use them. pnpm is pinned there too, for the two bootstraps that need it before any `node_modules` exists: `just worktree` and the image build. It is a convenience rather than a correctness constraint, because `packageManager` in [`package.json`](../package.json) is authoritative and a pnpm whose version disagrees downloads and re-executes the declared one. Node is pinned in `mise.toml` too and installed with the tools above. vite-plus is two things at once: the global binary installed above, which every `just js::` recipe and four git hooks invoke, and a `vite-plus` devDependency that supplies the toolchain the binary runs and that CI's `setup-vp` reads the version from. If a declared project dependency is missing, restore it through the documented lockfile-backed setup command. If a system prerequisite is unavailable, stop the affected check and report the missing command; do not bypass the check or install system packages implicitly.
 
 Workflow and infrastructure files are additionally scanned in CI by zizmor, Checkov, Trivy, CodeQL, cargo-audit, cargo-deny, and dependency-review. These are intentionally CI-only scanners. Local installation is not part of contributor setup. Documented zizmor suppressions and their justifications live in [`.github/zizmor.yml`](zizmor.yml).
 
@@ -188,6 +188,6 @@ Dependency updates are managed by [Renovate](https://docs.renovatebot.com/) on a
 
 New Rust dependencies must satisfy the supply-chain policy in [`backend/deny.toml`](../backend/deny.toml): a crate whose license is outside the permissive allowlist (any GPL/LGPL/AGPL or otherwise unlisted license) or that resolves to a git source rather than crates.io will fail the `cargo deny check` run in the `audit` CI job. If you have a legitimate need for such a dependency, raise it in the PR so the policy exception can be reviewed.
 
-No npm dependency runs an install script. `allowScripts` in the root `package.json` denies every package that ships one, and `strict-allow-scripts` in the root `.npmrc` fails the install on anything unreviewed, so a dependency that starts shipping a script stops CI until someone rules on it. [The package-ingress ADR](../adr/2026-08-03-package-ingress-default-deny.md) records why.
+No dependency runs an install script. `allowBuilds` in `pnpm-workspace.yaml` rules on every package that ships one, and `strictDepBuilds` fails the install on anything undecided, so a dependency that starts shipping a script stops CI until someone rules on it. [The package-ingress ADR](../adr/2026-08-03-package-ingress-default-deny.md) records why.
 
-To clear one: read what the script does, then run `npm install-scripts deny <pkg>` if the package works without it. That is the usual answer, because native tooling now ships its binaries as platform `optionalDependencies` and keeps the script only as a fallback. If the package cannot work without it, `npm install-scripts approve <pkg>` records that instead, but approve pins to the resolved version, so reserve it for a package this repo pins itself: on a transitive one the pin stops matching the first time the range moves, and a pinned entry that matches nothing is not a denial. `npm install-scripts ls` shows what is awaiting a decision. Commit the `package.json` change in the same PR.
+To clear one: read what the script does, then run `vp pm approve-builds` and deny it if the package works without it. That is the usual answer, because native tooling now ships its binaries as platform `optionalDependencies` and keeps the script only as a fallback. Approving instead records `<pkg>: true`, and denying records `<pkg>: false`; either way the decision lands in `pnpm-workspace.yaml`'s `allowBuilds` map, keyed by package name rather than by resolved version. Commit that change in the same PR.

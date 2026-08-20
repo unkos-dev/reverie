@@ -18,11 +18,13 @@ audit:
   - ".github/workflows/ci.yml"
   - ".github/path-filters.yml"
 frontend:
-  # Root vite.config.ts, lockfile, and .npmrc govern the workspaces.
+  # Root vite.config.ts, the lockfile, and pnpm-workspace.yaml (which declares
+  # the workspace members, the catalog and the install-script policy) govern
+  # every project.
   - "frontend/**"
   - "package.json"
-  - "package-lock.json"
-  - ".npmrc"
+  - "pnpm-lock.yaml"
+  - "pnpm-workspace.yaml"
   - "vite.config.ts"
   - ".github/workflows/ci.yml"
   - ".github/path-filters.yml"
@@ -55,7 +57,8 @@ docker:
   - "Dockerfile"
   - ".dockerignore"
   - "package.json"
-  - "package-lock.json"
+  - "pnpm-lock.yaml"
+  - "pnpm-workspace.yaml"
   - "frontend/package.json"
   - "docs/package.json"
   - "backend/Cargo.toml"
@@ -69,7 +72,8 @@ openapi:
   - ".github/path-filters.yml"
 npm:
   - "package.json"
-  - "package-lock.json"
+  - "pnpm-lock.yaml"
+  - "pnpm-workspace.yaml"
   - "frontend/package.json"
   - "docs/package.json"
   - ".github/workflows/ci.yml"
@@ -79,8 +83,8 @@ docs:
   # trips this filter.
   - "docs/**"
   - "package.json"
-  - "package-lock.json"
-  - ".npmrc"
+  - "pnpm-lock.yaml"
+  - "pnpm-workspace.yaml"
   - ".github/workflows/ci.yml"
   - ".github/workflows/docs.yml"
   - ".github/workflows/docs-build.yml"

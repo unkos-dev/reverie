@@ -19,7 +19,7 @@ linting, building, and testing were driven by four loosely related commands over
 two config files.
 
 This record completes the pivot: a single Vite+ (`vp`) toolchain drives the repo
-as one npm workspace, with lint and format configuration unified in a root
+as one workspace, with lint and format configuration unified in a root
 `vite.config.ts`. The forces are convergence (one toolchain, one config home) and
 parity (no enforcement, build, or test behaviour may regress in the move).
 
@@ -33,7 +33,7 @@ parity (no enforcement, build, or test behaviour may regress in the move).
 ## Considered Options
 
 - **Vite+ monorepo.** Root `vite.config.ts` owns fmt + lint; `frontend` and `docs`
-  are npm workspaces; `vp` drives every gate.
+  are workspace projects; `vp` drives every gate.
 - **Keep standalone oxlint + oxfmt over three npm trees** (the post-oxfmt state).
   Two config files, no workspace orchestration, and whole-tree formatting needs a
   separate standalone binary.
@@ -50,20 +50,22 @@ Chosen option: **Vite+ monorepo.** The forcing details resolved as follows.
   holds the frontend rules with every override scoped to `frontend/**`. The
   standalone `oxfmt` dependency, `.oxfmtrc.json`, and the per-package fmt block are
   gone. `frontend/vite.config.ts` keeps only build, server, and test config.
-- **npm workspaces.** The root declares `workspaces: ["frontend", "docs"]` for one
-  lockfile and one hoisted `node_modules`. npm honours `overrides` only in the
-  workspace root, so all pins consolidate there; astro runs on vp's
-  `@voidzero-dev/vite-plus-core` fork, so a single global `vite` override serves
-  both packages.
+- **A pnpm workspace.** `pnpm-workspace.yaml` declares the projects, one
+  lockfile, and a catalog that holds each shared pin once. Overrides live beside
+  the catalog and apply across the workspace, so pins consolidate in one file;
+  astro runs on vp's `@voidzero-dev/vite-plus-core` fork, so a single `vite`
+  override serves every project. The layout is isolated rather than hoisted:
+  each project gets its own `node_modules` linking into a shared virtual
+  store.
 - **tsgo is the sole typechecker.** `vp lint` runs the type-aware pass over the
   same app and node scope `tsc -b` covered, so the separate `tsc -b` build step is
   removed. Because a missing type-aware engine exits zero silently, a test asserts
   the pass fires on a known type-aware violation.
-- **vp is a baked global binary plus a `vite-plus` root devDependency.** The config
+- **vp is a global binary plus a `vite-plus` root devDependency.** The config
   loader resolves `vite-plus` from the project `node_modules`, so the root config
-  needs it as a dependency even though the binary is global. `npm` and `npx`
-  resolve through vp shims (`vp env setup`) so the `devEngines.packageManager`
-  version is honoured.
+  needs it as a dependency even though the binary is global. vp downloads the
+  package manager named by `packageManager` in the root `package.json`, which is
+  what keeps every invocation on the declared pnpm.
 - **CI bootstraps vp via `voidzero-dev/setup-vp` (SHA-pinned) and one root
   `vp install`.** The `just` recipes that define each gate are unchanged.
 
@@ -71,21 +73,22 @@ Chosen option: **Vite+ monorepo.** The forcing details resolved as follows.
 
 - Good, because one toolchain drives lint, format, typecheck, build, and test from
   one config, and `vp run -r` orchestrates both packages.
-- Good, because a single lockfile and hoisted `node_modules` replace three trees,
-  and the lockfile pins every platform's native binding.
-- Neutral, because vp is pre-release: the binary is pinned, and the workspace image
-  must run `vp env setup` so the npm shims exist, or bare `npm` falls through to a
-  system version that rejects the package-manager pin.
-- Bad, because hoisting moves dependencies to the root `node_modules`: scripts or
-  tests that assumed `frontend/node_modules` must resolve through Node module
-  resolution instead of a fixed relative path.
+- Good, because a single lockfile replaces three, and it pins every platform's
+  native binding.
+- Good, because the isolated layout means a project can only import what it
+  declares: an undeclared transitive dependency fails at resolution rather than
+  working by accident until the graph shifts.
+- Neutral, because vp is pre-release, so the binary is pinned.
+- Bad, because tooling that walks `node_modules` must account for the virtual
+  store: a scanner pointed at the workspace root sees the root's own
+  dependencies, not a project's.
 
 ### Confirmation
 
 `vp check` gates format, lint, and typecheck; `vp run -r build` builds both
-packages with the design-chunk gate and CSP sidecar intact; `npm ci` reproduces the
-workspace from the root lockfile; CI runs the gates through `setup-vp` plus one root
-`vp install`. The drift-gated generated files and `CHANGELOG.md` stay byte
+projects with the design-chunk gate and CSP sidecar intact; a frozen-lockfile
+install reproduces the workspace from the root lockfile; CI runs the gates
+through `setup-vp` plus one root `vp install`. The drift-gated generated files and `CHANGELOG.md` stay byte
 identical through a format pass.
 
 ## More Information

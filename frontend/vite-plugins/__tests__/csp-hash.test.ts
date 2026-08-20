@@ -190,10 +190,12 @@ export default defineConfig({ plugins: [cspHashPlugin()], build: { minify: false
       "utf8",
     );
 
-    // Re-use the workspace-root node_modules (npm workspaces hoists vite and
-    // its deps there, not into frontend/) by symlinking instead of a full
-    // `npm install` here. Direct fs call rather than `ln -s` via shell so
-    // CodeQL doesn't flag a shell command built from a non-constant path.
+    // Re-use the workspace-root node_modules by symlinking rather than
+    // installing into the fixture. The root declares vite itself, so its link
+    // is there, and pnpm's virtual store sits inside that same directory, so
+    // the symlink carries the transitive graph with it. Direct fs call rather
+    // than `ln -s` via shell so CodeQL doesn't flag a shell command built from
+    // a non-constant path.
     const parentNodeModules = resolve(thisDir, "..", "..", "..", "node_modules");
     symlinkSync(parentNodeModules, join(root, "node_modules"));
 
@@ -218,11 +220,15 @@ export default defineConfig({ plugins: [cspHashPlugin()], build: { minify: false
       env: {
         ...process.env,
         // Regression guard: if a future change reintroduces a
-        // package-manager fallback (npx or similar), forcing npm offline
+        // package-manager fallback, forcing the package manager offline
         // against an unreachable registry makes any such fetch fail loudly
         // instead of silently succeeding against the network again.
-        npm_config_offline: "true",
-        npm_config_registry: "http://csp-hash-e2e-hermetic-guard.invalid/",
+        //
+        // The prefix is load-bearing. pnpm reads `pnpm_config_<key>` and
+        // ignores the `npm_config_` form these once used, so keeping the npm
+        // spelling would leave the guard passing while enforcing nothing.
+        pnpm_config_offline: "true",
+        pnpm_config_registry: "http://csp-hash-e2e-hermetic-guard.invalid/",
       },
     });
 

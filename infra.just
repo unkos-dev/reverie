@@ -38,8 +38,12 @@ sqruff:
 actionlint:
     actionlint -color
 
-# `.` matches the zizmor-action default input and .github/zizmor.yml is
-# auto-discovered from the repo root, so no --config flag is needed. Exit
+# `.` matches the zizmor-action default input. --config is passed explicitly
+# rather than relying on discovery: from a linked worktree zizmor does not find
+# .github/zizmor.yml, so every suppression in it silently stops applying and
+# the run fails on a finding the file accepts with a written justification.
+# That is the checkout `just worktree` creates, so discovery cannot be trusted
+# where this recipe is most often run. Exit
 # code and default persona (regular) already match the CI job's gate
 # semantics: any finding is nonzero. Without a GH_TOKEN/GITHUB_TOKEN/
 # ZIZMOR_GITHUB_TOKEN in the environment zizmor degrades to offline mode on
@@ -52,7 +56,7 @@ actionlint:
 # Audit workflow files for GitHub Actions supply-chain and security issues (matches the CI zizmor gate).
 [group('infra')]
 zizmor:
-    zizmor .
+    zizmor --config .github/zizmor.yml .
 
 # --offline is the strict form of the two network-disabling flags (it also
 # forbids fetching a remote `user/repo` input, not just skipping audits), so
@@ -66,7 +70,7 @@ zizmor:
 # Offline-only workflow security audit; skips network-dependent audits (see just infra::zizmor for full CI parity).
 [group('infra')]
 zizmor-offline:
-    zizmor --offline .
+    zizmor --offline --config .github/zizmor.yml .
 
 # Vale prose linter over all in-scope Markdown (docs/src, adr, repo-root).
 [group('infra')]
@@ -77,21 +81,6 @@ prose:
 [group('infra')]
 tool-pin-drift:
     scripts/tool-pin-drift.sh
-
-# Assert every vite-plus pin agrees: both package.json files, the alias spec, the override, and each workflow.
-[group('infra')]
-vp-pin-drift:
-    scripts/vp-pin-drift.sh
-
-# Assert the npm pin agrees between package.json devEngines and mise.toml.
-[group('infra')]
-npm-pin-drift:
-    scripts/npm-pin-drift.sh
-
-# Assert Renovate's custom manager still sees the devEngines npm pin.
-[group('infra')]
-renovate-npm-manager-selftest:
-    scripts/renovate-npm-manager-selftest.sh
 
 # Validate canonical ADR frontmatter and lifecycle index coverage.
 [group('infra')]
@@ -196,7 +185,7 @@ no-plan-refs *files:
 #
 # Whole repo-lint surface (mirrors the CI repo-lint job).
 [group('infra')]
-lint: shellcheck hadolint typos yamllint sqruff actionlint prose tool-pin-drift vp-pin-drift npm-pin-drift renovate-npm-manager-selftest adr-frontmatter-selftest greptile-config compose-dev-invariants recipe-secret-echo-test filter-sarif-unfixable-os-selftest preflight-scope-selftest cargo-locked-guard lefthook-validate
+lint: shellcheck hadolint typos yamllint sqruff actionlint prose tool-pin-drift adr-frontmatter-selftest greptile-config compose-dev-invariants recipe-secret-echo-test filter-sarif-unfixable-os-selftest preflight-scope-selftest cargo-locked-guard lefthook-validate
 
 # Everything left here covers local-only developer tooling, and that is now the
 # entry criterion. CI has no stake in `just doctor`, `just worktree`, or the
@@ -213,8 +202,8 @@ lint: shellcheck hadolint typos yamllint sqruff actionlint prose tool-pin-drift 
 #
 # `lint` above keeps every check whose subject is committed configuration an
 # unrelated change can break, including three that only look test-shaped:
-# renovate-npm-manager-selftest, adr-frontmatter-selftest and
-# recipe-secret-echo-test. A new config validator belongs there.
+# adr-frontmatter-selftest and recipe-secret-echo-test. A new config validator
+# belongs there.
 #
 # Two entries in `lint` are neither, and each is there for its own reason.
 #

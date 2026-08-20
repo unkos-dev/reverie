@@ -43,7 +43,7 @@ jobs:
   # npm counterpart of the cargo-deny cron. Full tree including devDependencies:
   # a compromised dev tool has the same repo write access as a runtime one.
   npm-advisories:
-    name: Advisory scan (npm audit)
+    name: Advisory scan (dependency audit)
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -56,7 +56,7 @@ jobs:
         with:
           # renovate: datasource=github-releases depName=jdx/mise extractVersion=^v(?<version>.+)$
           version: "2026.8.6"
-          install_args: node "npm:npm"
+          install_args: node
           add_shims_to_path: true
 
       - uses: voidzero-dev/setup-vp@313600b80b104eadebb9111787d37a2e83e014ca # v1.17.0
@@ -64,9 +64,11 @@ jobs:
           node-manager: false
           cache: false
 
-      # One root lockfile covers all workspaces.
-      - name: Audit npm lockfile
-        run: npm audit --audit-level=high
+      # One root lockfile covers every workspace project. `--` passes the
+      # severity threshold through vp to the package manager; without it vp
+      # rejects the flag as its own.
+      - name: Audit the lockfile
+        run: vp pm audit -- --audit-level=high
 
   # Distro-layer CVEs drift after publish; the publish-time trivy gate only
   # sees what was known at build time, so re-scan daily.

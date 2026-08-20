@@ -40,9 +40,9 @@
       "rangeStrategy": "update-lockfile"
     },
     {
-      "description": "Do not manage the npm overrides block as first-class dependencies. Its entries are deliberate transitive security floors, and because the packages are transitive-only, a per-entry lockfile bump runs npm install <pkg>@<version>, which npm rejects with EOVERRIDE. That failure blocked the hono lockfile branch and the npm side of lock file maintenance. Pinned transitive versions still refresh within range through normal lockfile updates.",
+      "description": "Do not manage the workspace overrides block as first-class dependencies. Its entries are deliberate transitive security floors chosen for the advisory each one closes, not versions to track upstream, so a per-entry bump would raise the floor to whatever released last and drop the reason it was set. Pinned transitive versions still refresh within range through normal lockfile updates.",
       "matchManagers": ["npm"],
-      "matchDepTypes": ["overrides"],
+      "matchDepTypes": ["pnpm-workspace.overrides"],
       "enabled": false
     },
     {
@@ -149,29 +149,13 @@
       "groupName": "vite-plus"
     },
     {
-      "description": "The generated color primitives pin these exactly; any bump fails the radix-gen drift test until npm run primitives:gen is rerun and the palette diff reviewed, so move them as one deliberate, dashboard-approved group.",
+      "description": "The generated color primitives pin these exactly; any bump fails the radix-gen drift test until `vp run primitives:gen` is rerun and the palette diff reviewed, so move them as one deliberate, dashboard-approved group.",
       "matchDepNames": ["@radix-ui/colors", "colorjs.io", "bezier-easing"],
       "groupName": "radix-gen",
       "dependencyDashboardApproval": true
-    },
-    {
-      "description": "Keep the two npm pins in one PR. scripts/npm-pin-drift.sh requires mise.toml and package.json's devEngines to name the identical npm version, and the two live behind different managers: mise sees the mise.toml entry, and the custom manager below is the only thing that sees devEngines at all. Ungrouped, the mise bump lands alone and every npm release becomes a red PR that cannot go green without a hand edit.",
-      "matchManagers": ["mise", "custom.regex"],
-      "matchDepNames": ["npm", "npm:npm"],
-      "groupName": "npm-pin"
     }
   ],
   "customManagers": [
-    {
-      "description": "Track devEngines.packageManager.version. Renovate's npm manager reads only the top-level packageManager field, never devEngines, so this copy is invisible to every built-in manager. Without it the mise manager raises an npm bump against mise.toml alone and reinstates the mismatch npm-pin-drift exists to catch; the npm-pin group above then moves both copies together.",
-      "customType": "regex",
-      "managerFilePatterns": ["/^package\\.json$/"],
-      "matchStrings": [
-        "\"packageManager\":\\s*\\{[^{}]*?\"version\":\\s*\"(?<currentValue>[0-9]+\\.[0-9]+\\.[0-9]+)\""
-      ],
-      "depNameTemplate": "npm",
-      "datasourceTemplate": "npm"
-    },
     {
       "description": "Track SQLX_CLI_VERSION because it is not embedded in an install-action tool list.",
       "customType": "regex",

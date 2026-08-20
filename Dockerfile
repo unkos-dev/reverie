@@ -43,58 +43,29 @@ ENV SQLX_OFFLINE=true
 # above is unaffected and stays cache-valid.
 RUN cargo auditable build --release --locked
 
-# Stage 2: Build frontend with buildkit npm cache mount.
-# The mount avoids re-fetching tarballs when the npm-ci layer cache is invalidated
-# but the lockfile is unchanged — buildkit reuses the mount within a single
-# build. GHA runners are ephemeral so the mount does not persist across runs;
-# cross-run npm reuse is provided by the gha layer cache instead.
+# Stage 2a: js-toolchain — the shared base for both JS stages. Node plus mise,
+# and nothing project-specific, so the two stages below branch from it and run
+# concurrently instead of one waiting on the other.
 #
-# npm workspaces: the lockfile is hoisted to the repo root, so the install
-# needs the root manifests plus every workspace manifest to resolve the
-# workspace graph. docs/package.json is present for graph resolution only —
-# `--workspace frontend` keeps its dependencies out of the install.
-# --ignore-scripts skips the root `prepare` hook (lefthook install), which
-# requires a .git directory the build context deliberately excludes; the
-# frontend build tools ship platform binaries as scriptless optional deps,
-# so nothing in the install relies on lifecycle scripts.
-FROM node:24.19.0-slim@sha256:3638d9a6fe4030bd716be989438248074489337ba3275657f93595428be4fc03 AS frontend-builder
-# vp's native binary initializes an HTTPS client at startup and aborts when
-# the system has no CA store; the slim base ships none.
-RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates \
-    && rm -rf /var/lib/apt/lists/*
-WORKDIR /build
-COPY package.json package-lock.json ./
-COPY frontend/package.json frontend/
-COPY docs/package.json docs/
-# devEngines pins npm exactly, and the base image's bundled npm lags it —
-# the `onFail: download` self-swap does not fire under `npm ci` here, it
-# just hard-fails (EBADDEVENGINES). Install the manifest-pinned npm first,
-# reading the version from package.json so this line can never drift from
-# the pin it exists to satisfy.
-RUN --mount=type=cache,target=/root/.npm npm install -g "npm@$(node -p "require('./package.json').devEngines.packageManager.version")"
-RUN --mount=type=cache,target=/root/.npm npm ci --workspace frontend --ignore-scripts
-COPY frontend/ frontend/
-RUN npm run build --workspace frontend
-
-# Stage 2b: frontend-sbom — dependency record for the bundled frontend,
-# emitted from the tree that produced the bundle (the runtime image has no
-# npm packages for a scanner to find). The install is scoped dev-free to
-# the frontend workspace; npm's workspace install leaks a few root
-# build-tool packages into the document (over-reporting; the pnpm
-# migration removes the leak). Separate stage so neither this install nor
-# syft reaches the runtime image.
-FROM frontend-builder AS frontend-sbom
-# curl and gnupg are absent from the node:slim base.
-RUN apt-get update && apt-get install -y --no-install-recommends curl gnupg \
-    && rm -rf /var/lib/apt/lists/*
-# The installer is GPG-verified against mise's release key (a one-time
-# anchor, not a version pin); the installed mise then verifies syft's
-# download through its aqua backend. Verification binds to this key alone:
-# the keyring holds nothing else.
+# ca-certificates: vp's native binary initializes an HTTPS client at startup
+# and aborts when the system has no CA store; the slim base ships none.
+# libatomic1: the prebuilt Linux pnpm links against libatomic.so.1, also absent
+# from the slim base, and without it pnpm dies at exec with a loader error that
+# names nothing useful.
+#
+# The mise installer is GPG-verified against mise's release key (a one-time
+# anchor, not a version pin); the installed mise then verifies pnpm and syft
+# through its aqua backend. Verification binds to this key alone: the keyring
+# holds nothing else. Neither tool can come through vp here, because vp
+# resolves from a node_modules that does not exist yet.
+FROM node:24.19.0-slim@sha256:3638d9a6fe4030bd716be989438248074489337ba3275657f93595428be4fc03 AS js-toolchain
 ARG MISE_GPG_FINGERPRINT=24853EC9F655CE80B48E6C3A8B81C9D17413A06D
 # renovate: datasource=github-releases depName=jdx/mise extractVersion=^v(?<version>.+)$
 ARG MISE_VERSION=2026.8.8
-RUN set -eu; \
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates curl gnupg libatomic1 \
+    && rm -rf /var/lib/apt/lists/* \
+    && set -eu; \
     GNUPGHOME="$(mktemp -d)"; export GNUPGHOME; \
     gpg --keyserver hkps://keys.openpgp.org --recv-keys "$MISE_GPG_FINGERPRINT"; \
     curl -fsSL --connect-timeout 10 --max-time 300 --retry 2 --retry-all-errors \
@@ -102,17 +73,109 @@ RUN set -eu; \
     gpg --decrypt /tmp/mise-install.sh.sig > /tmp/mise-install.sh; \
     MISE_VERSION="v${MISE_VERSION}" MISE_INSTALL_PATH=/usr/local/bin/mise sh /tmp/mise-install.sh; \
     rm -rf "$GNUPGHOME" /tmp/mise-install.sh.sig /tmp/mise-install.sh
+WORKDIR /build
+# Every pnpm invocation reads its version from packageManager, so no line here
+# can drift from the pin it exists to satisfy.
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY frontend/package.json frontend/
+COPY docs/package.json docs/
+# Install pnpm once, here, so both stages below inherit it from this layer
+# rather than resolving it independently. The version comes from
+# packageManager, so this line cannot drift from the pin it exists to satisfy.
+#
+# Every `mise install` verifies the download's GitHub artifact attestation
+# against api.github.com, which is a real build-time dependency on a service
+# that returns the occasional 504. The timeouts below are mise's own documented
+# defaults, restored explicitly because the value in effect inside the build
+# was materially lower; `retry` is what actually covers the failure observed,
+# since a gateway error does not become a success by waiting longer. Bounded,
+# and matching the retry the mise installer above already uses.
+ENV MISE_FETCH_REMOTE_VERSIONS_TIMEOUT=20s \
+    MISE_HTTP_TIMEOUT=30s
+COPY scripts/docker-retry.sh /usr/local/bin/retry
+# The token is optional and mounted, never an ARG: a build-arg is recorded in
+# the image history, which would publish it. Absent (a local build), the
+# attestation check still runs, just unauthenticated against the shared
+# per-IP budget.
+#
+# MISE_GITHUB_TOKEN rather than GITHUB_TOKEN: mise reads both, checking this
+# one first, and it reaches only the tool that needs it instead of every
+# process in the step. The runner's automatic GITHUB_TOKEN does not apply
+# here, because a build container does not inherit the job's environment.
+RUN --mount=type=secret,id=github_token \
+    chmod +x /usr/local/bin/retry \
+    && if [ -s /run/secrets/github_token ]; then \
+         MISE_GITHUB_TOKEN="$(cat /run/secrets/github_token)"; export MISE_GITHUB_TOKEN; \
+       fi; \
+    retry mise install "pnpm@$(node -p "require('./package.json').packageManager.replace(/^pnpm@/, '')")"
+
+# Stage 2b: Build the frontend bundle.
+#
+# pnpm needs the root manifests plus every project manifest to resolve the
+# workspace graph, which is why docs/package.json is copied above; the
+# `--filter frontend...` install keeps docs' own dependencies out of the tree.
+# --ignore-scripts is belt and braces: pnpm-workspace.yaml's allowBuilds denies
+# every script-bearing package already.
+#
+# The /pnpm-store cache mount avoids re-fetching tarballs when the install layer
+# is invalidated but the lockfile is unchanged; buildkit reuses it within a
+# single build, and the sbom stage mounts the same one. GHA runners are
+# ephemeral, so cross-run reuse comes from the gha layer cache instead.
+FROM js-toolchain AS frontend-builder
+RUN --mount=type=cache,target=/pnpm-store \
+    mise exec "pnpm@$(node -p "require('./package.json').packageManager.replace(/^pnpm@/, '')")" -- \
+      pnpm config set store-dir /pnpm-store --location project \
+    && mise exec "pnpm@$(node -p "require('./package.json').packageManager.replace(/^pnpm@/, '')")" -- \
+      pnpm install --frozen-lockfile --filter frontend... --ignore-scripts
+COPY frontend/ frontend/
+RUN --mount=type=cache,target=/pnpm-store \
+    mise exec "pnpm@$(node -p "require('./package.json').packageManager.replace(/^pnpm@/, '')")" -- \
+      pnpm --filter frontend run build
+
+# Stage 2c: frontend-sbom — the dependency record for the bundled frontend. The
+# runtime image holds no packages for a scanner to find, so the document is
+# generated here and copied in.
+#
+# `pnpm deploy` rather than a scoped install: pnpm's layout is isolated, so an
+# installed project directory holds only symlinks into a store that a directory
+# scan cannot follow, and no install flag produces a frontend-scoped flat tree
+# (--filter under a hoisted linker still links the whole workspace). deploy
+# materialises exactly one project's production closure as a self-contained
+# directory, which is the artifact this document describes. It is an inventory
+# rather than a runnable tree: --ignore-scripts suppresses lifecycle scripts,
+# which changes nothing here because allowBuilds denies all three
+# script-bearing packages and none is in the frontend production closure.
+#
+# This stage branches from js-toolchain rather than from frontend-builder, so
+# it runs concurrently with the bundle build. The lockfile is the shared root
+# of trust: both stages install --frozen-lockfile from the same committed
+# lockfile, no lifecycle script runs, and no patchedDependencies rewrite a
+# package, so the two resolutions cannot diverge.
+#
+# --override-default-catalogers is load-bearing: syft's default set for a dir:
+# scan excludes javascript-package-cataloger, silently yielding a document with
+# zero npm components. The publish workflow's SBOM generator pin must keep pace
+# with this syft: an older generator silently ignores newer CycloneDX spec
+# versions.
+FROM js-toolchain AS frontend-sbom
 # renovate: datasource=github-releases depName=anchore/syft extractVersion=^v(?<version>.+)$
 ARG SYFT_VERSION=1.51.0
-# --override-default-catalogers is load-bearing: syft's default set for a
-# dir: scan excludes javascript-package-cataloger, silently yielding a
-# document with zero npm components. The publish workflow's SBOM
-# generator pin must keep pace with this syft: an older generator
-# silently ignores newer CycloneDX spec versions.
-RUN --mount=type=cache,target=/root/.npm npm ci --omit=dev --workspace frontend --ignore-scripts \
-    && mise exec "aqua:anchore/syft@${SYFT_VERSION}" -- \
-       syft dir:node_modules --override-default-catalogers javascript-package-cataloger \
-       -o cyclonedx-json > /build/frontend.cdx.json
+# syft's install is its own layer: it is the second network-bearing step in
+# this stage, and separating it means a transient failure fetching it does not
+# also discard the deploy above.
+RUN --mount=type=secret,id=github_token \
+    if [ -s /run/secrets/github_token ]; then \
+      MISE_GITHUB_TOKEN="$(cat /run/secrets/github_token)"; export MISE_GITHUB_TOKEN; \
+    fi; \
+    retry mise install "aqua:anchore/syft@${SYFT_VERSION}"
+RUN --mount=type=cache,target=/pnpm-store \
+    mise exec "pnpm@$(node -p "require('./package.json').packageManager.replace(/^pnpm@/, '')")" -- \
+      pnpm config set store-dir /pnpm-store --location project \
+    && mise exec "pnpm@$(node -p "require('./package.json').packageManager.replace(/^pnpm@/, '')")" -- \
+      pnpm deploy --ignore-scripts --filter frontend --prod /sbom-tree
+RUN mise exec "aqua:anchore/syft@${SYFT_VERSION}" -- \
+      syft dir:/sbom-tree --override-default-catalogers javascript-package-cataloger \
+      -o cyclonedx-json > /build/frontend.cdx.json
 
 # Stage 3: Runtime
 # UNK-253: codename MUST match the builder stage above. See note on `chef`.

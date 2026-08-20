@@ -107,7 +107,7 @@ Use `just worktree <branch>` to create a worktree. It places the checkout
 outside the repository, where it cannot enter the Docker build context or
 cargo's workspace discovery, and refuses to create one on a temporary
 filesystem where unpushed commits would not survive a reboot. It installs the
-node dependencies in the new checkout, under the npm that branch's
+node dependencies in the new checkout, under the pnpm that branch's
 `package.json` declares, so the worktree is ready for the JS plane on its first
 turn; that install is the one step in the recipe that needs network access. It
 also writes a worktree-local cargo target dir, so concurrent worktree builds

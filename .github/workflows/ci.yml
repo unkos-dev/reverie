@@ -683,7 +683,7 @@ jobs:
         with:
           # renovate: datasource=github-releases depName=jdx/mise extractVersion=^v(?<version>.+)$
           version: "2026.8.6"
-          install_args: node "npm:npm"
+          install_args: node
           add_shims_to_path: true
 
       - uses: voidzero-dev/setup-vp@313600b80b104eadebb9111787d37a2e83e014ca # v1.17.0
@@ -769,14 +769,6 @@ jobs:
         with:
           persist-credentials: false
 
-      # Run directly, ahead of mise, so a pin drift fails in seconds rather than
-      # after provisioning the wrong tool version.
-      - name: vp and node pins agree across every copy
-        run: scripts/vp-pin-drift.sh
-
-      - name: npm pin agrees between package.json and mise
-        run: scripts/npm-pin-drift.sh
-
       # Shims stay on, unlike the Rust jobs' mise-action calls: this job runs only
       # JS tools from the repo root, where mise.toml is a shim's ancestor.
       - name: Install pinned tools (mise)
@@ -784,7 +776,7 @@ jobs:
         with:
           # renovate: datasource=github-releases depName=jdx/mise extractVersion=^v(?<version>.+)$
           version: "2026.8.6"
-          install_args: just shellcheck hadolint typos vale yamllint github:quarylabs/sqruff node "npm:npm"
+          install_args: just shellcheck hadolint typos vale yamllint github:quarylabs/sqruff node
           add_shims_to_path: true
 
       - name: Shell lint (shellcheck)
@@ -792,11 +784,6 @@ jobs:
 
       - name: No workflow re-pins a mise-managed tool
         run: just infra::tool-pin-drift
-
-      # A custom manager whose regex stops matching yields no deps and no error, so
-      # nothing else can notice Renovate losing sight of the devEngines pin.
-      - name: Renovate still sees the devEngines npm pin
-        run: just infra::renovate-npm-manager-selftest
 
       - name: ADR frontmatter and index coverage
         run: just infra::adr-frontmatter-selftest
@@ -911,7 +898,7 @@ jobs:
         with:
           # renovate: datasource=github-releases depName=jdx/mise extractVersion=^v(?<version>.+)$
           version: "2026.8.6"
-          install_args: just node "npm:npm"
+          install_args: just node
           add_shims_to_path: true
 
       - uses: voidzero-dev/setup-vp@313600b80b104eadebb9111787d37a2e83e014ca # v1.17.0
@@ -1010,7 +997,7 @@ jobs:
         with:
           # renovate: datasource=github-releases depName=jdx/mise extractVersion=^v(?<version>.+)$
           version: "2026.8.6"
-          install_args: node "npm:npm"
+          install_args: node
           add_shims_to_path: true
 
       - uses: voidzero-dev/setup-vp@313600b80b104eadebb9111787d37a2e83e014ca # v1.17.0
@@ -1022,10 +1009,13 @@ jobs:
         working-directory: ${{ github.workspace }}
         run: vp install
 
+      # Read the installed package, not the lockfile: the manifest carries a
+      # range, and under pnpm's isolated layout a version can appear in the
+      # lockfile at more than one path. This step runs after `vp install`, so
+      # what it reports is exactly the version the cached browser must match.
       - name: Resolve Playwright version
         id: playwright
-        working-directory: ${{ github.workspace }}
-        run: echo "version=$(jq -r '.packages["node_modules/@playwright/test"].version' package-lock.json)" >> "$GITHUB_OUTPUT"
+        run: echo "version=$(node -e "console.log(require('@playwright/test/package.json').version)")" >> "$GITHUB_OUTPUT"
 
       - name: Cache Playwright browsers
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6

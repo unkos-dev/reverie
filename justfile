@@ -26,15 +26,15 @@ _default:
 help:
     @just --list --list-submodules
 
-# npm workspaces hoist the frontend and docs dependency trees into the one root
-# node_modules, so this is the whole tree's install and there is no per-plane
-# equivalent. `npm ci` rather than `npm install`: it is lockfile-exact and it
-# works from nothing.
+# One install for the whole tree; there is no per-plane equivalent, because the
+# workspace members are declared centrally in pnpm-workspace.yaml.
+# --frozen-lockfile rather than a plain install: it is lockfile-exact, it fails
+# rather than silently updating the lockfile, and it works from nothing.
 #
-# Install the npm workspace (frontend + docs) from the root lockfile.
+# Install the pnpm workspace (frontend + docs) from the root lockfile.
 [group('aggregate')]
 install:
-    npm ci
+    pnpm install --frozen-lockfile
 
 # infra::zizmor-offline rides along here rather than inside infra::check
 # because it audits a different CI job (workflow-security) than the one
@@ -482,22 +482,21 @@ worktree branch base="":
     # install scripts unrun in a fresh checkout also matches
     # adr/2026-08-03-package-ingress-default-deny.md.
     #
-    # npm enforces package.json's `devEngines.packageManager` on every direct
-    # invocation, hard-erroring when the running version disagrees, so the
-    # install runs under the npm the destination declares rather than the one
-    # this checkout has on PATH. The version has to be explicit: a branch old
-    # enough to declare a different npm also predates the "npm:npm" entry in
-    # mise.toml, so a bare `mise exec` there resolves nothing.
-    npm_pin=""
+    # The install runs under the pnpm the destination declares, not the one this
+    # checkout has on PATH, because a branch may pin a different version. The
+    # version has to be explicit: a branch old enough to declare a different
+    # pnpm also predates the `pnpm` entry in mise.toml, so a bare `mise exec`
+    # there resolves nothing.
+    pnpm_pin=""
     if [ -f "$dest/package.json" ] && command -v jq > /dev/null; then
-        npm_pin="$(jq -r '.devEngines.packageManager.version // empty' "$dest/package.json" 2> /dev/null || true)"
+        pnpm_pin="$(jq -r '.packageManager // empty' "$dest/package.json" 2> /dev/null | sed -n 's/^pnpm@//p' || true)"
     fi
-    if [ -n "$npm_pin" ] && command -v mise > /dev/null; then
-        echo "installing node dependencies in $dest (npm ${npm_pin} via mise)"
-        install_cmd=(mise exec "npm:npm@${npm_pin}" -- npm ci --ignore-scripts)
+    if [ -n "$pnpm_pin" ] && command -v mise > /dev/null; then
+        echo "installing node dependencies in $dest (pnpm ${pnpm_pin} via mise)"
+        install_cmd=(mise exec "pnpm@${pnpm_pin}" -- pnpm install --frozen-lockfile --ignore-scripts)
     else
-        echo "installing node dependencies in $dest (npm ci)"
-        install_cmd=(npm ci --ignore-scripts)
+        echo "installing node dependencies in $dest (pnpm install)"
+        install_cmd=(pnpm install --frozen-lockfile --ignore-scripts)
     fi
     # Not `&&`, for the reason given above the mise trust call: the recipe
     # would report a ready worktree that no JS lane can run in.

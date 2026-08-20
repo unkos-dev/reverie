@@ -22,3 +22,5 @@ exclude_paths:
   - "backend/config.schema.json"
   # Design-token stylesheet emitted by the primitives generator.
   - "frontend/src/styles/themes/primitives.generated.css"
+  # Dependency graph resolved from the manifests, which are already analysed.
+  - "pnpm-lock.yaml"

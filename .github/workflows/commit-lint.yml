@@ -37,7 +37,7 @@ jobs:
         with:
           # renovate: datasource=github-releases depName=jdx/mise extractVersion=^v(?<version>.+)$
           version: "2026.8.6"
-          install_args: node "npm:npm"
+          install_args: node
           add_shims_to_path: true
 
       - uses: voidzero-dev/setup-vp@313600b80b104eadebb9111787d37a2e83e014ca # v1.17.0

@@ -52,5 +52,5 @@ extend-exclude = [
   "styles/config/dictionaries/",
   "styles/config/vocabularies/",
   "*.lock",
-  "package-lock.json",
+  "pnpm-lock.yaml",
 ]

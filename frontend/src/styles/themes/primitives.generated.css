@@ -1,6 +1,6 @@
 /*
  * Reverie editorial design-system — Radix-generated color primitives.
- * GENERATED ARTIFACT — do not hand-edit. Regenerate: npm run primitives:gen.
+ * GENERATED ARTIFACT — do not hand-edit. Regenerate: vp run primitives:gen.
  *
  * Source fn:  scripts/radix-gen/generate-radix-colors.ts (radix-ui/website @ 88a9f14)
  * Deps:       @radix-ui/colors@3.0.0  colorjs.io@0.7.1  bezier-easing@3.0.1
