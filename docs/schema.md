@@ -124,7 +124,7 @@ lazily on first write, so a fresh account has no row at all.
 | `library_view`           | grid, table                                     | `user_preferences.view`            |
 
 **Note:** `ingestion_status` tracks per-file lifecycle on manifestations.
-`job_status` tracks batch orchestration on ingestion_jobs. These are intentionally
+`job_status` tracks batch orchestration on `ingestion_jobs`. These are intentionally
 separate, as a job can fail while individual files succeeded, and vice versa.
 
 ## Database Role Architecture

@@ -2,9 +2,9 @@
 severity: medium
 surfaces: [security, server-operator]
 adopted: 2026-06-27
-adopted-because: PR #511 review (CodeRabbit); trusted_client_ip_header is honored by name with no trusted-proxy peer binding
+adopted-because: PR #511 review (CodeRabbit); trusted_client_ip_header is honoured by name with no trusted-proxy peer binding
 lift-when-class: feature-flag
-lift-when: forwarded-IP trust is bound to an allow-listed reverse-proxy peer CIDR (honor the header only when the TCP peer is in-CIDR), with a test covering an off-CIDR spoof
+lift-when: forwarded-IP trust is bound to an allow-listed reverse-proxy peer CIDR (honour the header only when the TCP peer is in-CIDR), with a test covering an off-CIDR spoof
 ---
 
 # Forwarded client-IP header is trusted by name, not by proxy identity
@@ -21,7 +21,7 @@ IP-independent backstop and still bounds per-email brute force, so this is
 defense-in-depth rather than an unbounded hole, and it is accepted until the
 trust is bound to proxy identity.
 
-Lift by honoring the forwarded header only when the TCP peer is in an
+Lift by honouring the forwarded header only when the TCP peer is in an
 operator-configured reverse-proxy CIDR allow-list (falling back to the socket
 peer otherwise), with a test that a spoofed header from an off-CIDR peer is
 ignored. Tracked under the rate-limit coverage audit.
