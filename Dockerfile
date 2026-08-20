@@ -97,10 +97,15 @@ COPY scripts/docker-retry.sh /usr/local/bin/retry
 # the image history, which would publish it. Absent (a local build), the
 # attestation check still runs, just unauthenticated against the shared
 # per-IP budget.
+#
+# MISE_GITHUB_TOKEN rather than GITHUB_TOKEN: mise reads both, checking this
+# one first, and it reaches only the tool that needs it instead of every
+# process in the step. The runner's automatic GITHUB_TOKEN does not apply
+# here, because a build container does not inherit the job's environment.
 RUN --mount=type=secret,id=github_token \
     chmod +x /usr/local/bin/retry \
     && if [ -s /run/secrets/github_token ]; then \
-         GITHUB_TOKEN="$(cat /run/secrets/github_token)"; export GITHUB_TOKEN; \
+         MISE_GITHUB_TOKEN="$(cat /run/secrets/github_token)"; export MISE_GITHUB_TOKEN; \
        fi; \
     retry mise install "pnpm@$(node -p "require('./package.json').packageManager.replace(/^pnpm@/, '')")"
 
@@ -160,7 +165,7 @@ ARG SYFT_VERSION=1.51.0
 # also discard the deploy above.
 RUN --mount=type=secret,id=github_token \
     if [ -s /run/secrets/github_token ]; then \
-      GITHUB_TOKEN="$(cat /run/secrets/github_token)"; export GITHUB_TOKEN; \
+      MISE_GITHUB_TOKEN="$(cat /run/secrets/github_token)"; export MISE_GITHUB_TOKEN; \
     fi; \
     retry mise install "aqua:anchore/syft@${SYFT_VERSION}"
 RUN --mount=type=cache,target=/pnpm-store \
