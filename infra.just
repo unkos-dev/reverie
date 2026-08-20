@@ -72,10 +72,20 @@ zizmor:
 zizmor-offline:
     zizmor --offline --config .github/zizmor.yml .
 
-# Vale prose linter over all in-scope Markdown (docs/src, adr, repo-root).
+# Every tracked Markdown file, so nothing rots unlinted. The lefthook job runs
+# vale over staged files whatever their path, so a narrower gate than this one
+# does not spare anyone the findings: it only defers them to whoever next edits
+# a file, as a surprise their change did not cause. Scope is taken from git
+# rather than a directory list for the same reason.
+#
+# The two exclusions are carved in .vale.ini, not here, so the hook honours them
+# too: agent-process instructions, and the third-party CodeGuard rules that
+# AGENTS.md forbids editing.
+#
+# Vale prose linter over every tracked Markdown file.
 [group('infra')]
 prose:
-    vale docs/src adr *.md
+    git ls-files -z '*.md' | xargs -0 -r vale
 
 # Assert no workflow re-pins a mise-managed tool; mise.toml is the single source.
 [group('infra')]

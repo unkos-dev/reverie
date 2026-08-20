@@ -51,7 +51,7 @@ bundled client:
    drop the `reqwest` feature.
 3. Pass the adapter to `openidconnect`'s async request methods in
    `backend/src/auth/oidc.rs` for discovery and token exchange.
-4. Rewire the OIDC mock's client, which is already wiremock-based.
+4. Rewire the OIDC mock client, which is already wiremock-based.
 
 Effort: roughly half a day to a day. It removes `reqwest 0.12` from the
 tree entirely, with an ongoing cost near zero (about 70 first-party
