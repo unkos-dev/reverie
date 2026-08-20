@@ -93,8 +93,16 @@ COPY docs/package.json docs/
 ENV MISE_FETCH_REMOTE_VERSIONS_TIMEOUT=20s \
     MISE_HTTP_TIMEOUT=30s
 COPY scripts/docker-retry.sh /usr/local/bin/retry
-RUN chmod +x /usr/local/bin/retry \
-    && retry mise install "pnpm@$(node -p "require('./package.json').packageManager.replace(/^pnpm@/, '')")"
+# The token is optional and mounted, never an ARG: a build-arg is recorded in
+# the image history, which would publish it. Absent (a local build), the
+# attestation check still runs, just unauthenticated against the shared
+# per-IP budget.
+RUN --mount=type=secret,id=github_token \
+    chmod +x /usr/local/bin/retry \
+    && if [ -s /run/secrets/github_token ]; then \
+         GITHUB_TOKEN="$(cat /run/secrets/github_token)"; export GITHUB_TOKEN; \
+       fi; \
+    retry mise install "pnpm@$(node -p "require('./package.json').packageManager.replace(/^pnpm@/, '')")"
 
 # Stage 2b: Build the frontend bundle.
 #
@@ -150,7 +158,11 @@ ARG SYFT_VERSION=1.51.0
 # syft's install is its own layer: it is the second network-bearing step in
 # this stage, and separating it means a transient failure fetching it does not
 # also discard the deploy above.
-RUN retry mise install "aqua:anchore/syft@${SYFT_VERSION}"
+RUN --mount=type=secret,id=github_token \
+    if [ -s /run/secrets/github_token ]; then \
+      GITHUB_TOKEN="$(cat /run/secrets/github_token)"; export GITHUB_TOKEN; \
+    fi; \
+    retry mise install "aqua:anchore/syft@${SYFT_VERSION}"
 RUN --mount=type=cache,target=/pnpm-store \
     mise exec "pnpm@$(node -p "require('./package.json').packageManager.replace(/^pnpm@/, '')")" -- \
       pnpm config set store-dir /pnpm-store --location project \

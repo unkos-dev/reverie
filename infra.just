@@ -38,8 +38,12 @@ sqruff:
 actionlint:
     actionlint -color
 
-# `.` matches the zizmor-action default input and .github/zizmor.yml is
-# auto-discovered from the repo root, so no --config flag is needed. Exit
+# `.` matches the zizmor-action default input. --config is passed explicitly
+# rather than relying on discovery: from a linked worktree zizmor does not find
+# .github/zizmor.yml, so every suppression in it silently stops applying and
+# the run fails on a finding the file accepts with a written justification.
+# That is the checkout `just worktree` creates, so discovery cannot be trusted
+# where this recipe is most often run. Exit
 # code and default persona (regular) already match the CI job's gate
 # semantics: any finding is nonzero. Without a GH_TOKEN/GITHUB_TOKEN/
 # ZIZMOR_GITHUB_TOKEN in the environment zizmor degrades to offline mode on
@@ -52,7 +56,7 @@ actionlint:
 # Audit workflow files for GitHub Actions supply-chain and security issues (matches the CI zizmor gate).
 [group('infra')]
 zizmor:
-    zizmor .
+    zizmor --config .github/zizmor.yml .
 
 # --offline is the strict form of the two network-disabling flags (it also
 # forbids fetching a remote `user/repo` input, not just skipping audits), so
@@ -66,7 +70,7 @@ zizmor:
 # Offline-only workflow security audit; skips network-dependent audits (see just infra::zizmor for full CI parity).
 [group('infra')]
 zizmor-offline:
-    zizmor --offline .
+    zizmor --offline --config .github/zizmor.yml .
 
 # Vale prose linter over all in-scope Markdown (docs/src, adr, repo-root).
 [group('infra')]
