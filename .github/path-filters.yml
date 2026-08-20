@@ -58,6 +58,7 @@ docker:
   - ".dockerignore"
   - "package.json"
   - "pnpm-lock.yaml"
+  - "pnpm-workspace.yaml"
   - "frontend/package.json"
   - "docs/package.json"
   - "backend/Cargo.toml"
@@ -72,6 +73,7 @@ openapi:
 npm:
   - "package.json"
   - "pnpm-lock.yaml"
+  - "pnpm-workspace.yaml"
   - "frontend/package.json"
   - "docs/package.json"
   - ".github/workflows/ci.yml"
