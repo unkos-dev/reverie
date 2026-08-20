@@ -80,15 +80,21 @@ COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY frontend/package.json frontend/
 COPY docs/package.json docs/
 # Install pnpm once, here, so both stages below inherit it from this layer
-# rather than resolving it independently. Every `mise install` verifies the
-# download's GitHub artifact attestation, which needs api.github.com, and
-# mise's three-second default fetch timeout is tight enough from inside a
-# build network to fail intermittently; one attempt with room to answer beats
-# two on a hair trigger. The version comes from packageManager, so this line
-# cannot drift from the pin it exists to satisfy.
-ENV MISE_FETCH_REMOTE_VERSIONS_TIMEOUT=60s \
-    MISE_HTTP_TIMEOUT=120s
-RUN mise install "pnpm@$(node -p "require('./package.json').packageManager.replace(/^pnpm@/, '')")"
+# rather than resolving it independently. The version comes from
+# packageManager, so this line cannot drift from the pin it exists to satisfy.
+#
+# Every `mise install` verifies the download's GitHub artifact attestation
+# against api.github.com, which is a real build-time dependency on a service
+# that returns the occasional 504. The timeouts below are mise's own documented
+# defaults, restored explicitly because the value in effect inside the build
+# was materially lower; `retry` is what actually covers the failure observed,
+# since a gateway error does not become a success by waiting longer. Bounded,
+# and matching the retry the mise installer above already uses.
+ENV MISE_FETCH_REMOTE_VERSIONS_TIMEOUT=20s \
+    MISE_HTTP_TIMEOUT=30s
+COPY scripts/docker-retry.sh /usr/local/bin/retry
+RUN chmod +x /usr/local/bin/retry \
+    && retry mise install "pnpm@$(node -p "require('./package.json').packageManager.replace(/^pnpm@/, '')")"
 
 # Stage 2b: Build the frontend bundle.
 #
@@ -141,14 +147,18 @@ RUN --mount=type=cache,target=/pnpm-store \
 FROM js-toolchain AS frontend-sbom
 # renovate: datasource=github-releases depName=anchore/syft extractVersion=^v(?<version>.+)$
 ARG SYFT_VERSION=1.51.0
+# syft's install is its own layer: it is the second network-bearing step in
+# this stage, and separating it means a transient failure fetching it does not
+# also discard the deploy above.
+RUN retry mise install "aqua:anchore/syft@${SYFT_VERSION}"
 RUN --mount=type=cache,target=/pnpm-store \
     mise exec "pnpm@$(node -p "require('./package.json').packageManager.replace(/^pnpm@/, '')")" -- \
       pnpm config set store-dir /pnpm-store --location project \
     && mise exec "pnpm@$(node -p "require('./package.json').packageManager.replace(/^pnpm@/, '')")" -- \
-      pnpm deploy --ignore-scripts --filter frontend --prod /sbom-tree \
-    && mise exec "aqua:anchore/syft@${SYFT_VERSION}" -- \
-       syft dir:/sbom-tree --override-default-catalogers javascript-package-cataloger \
-       -o cyclonedx-json > /build/frontend.cdx.json
+      pnpm deploy --ignore-scripts --filter frontend --prod /sbom-tree
+RUN mise exec "aqua:anchore/syft@${SYFT_VERSION}" -- \
+      syft dir:/sbom-tree --override-default-catalogers javascript-package-cataloger \
+      -o cyclonedx-json > /build/frontend.cdx.json
 
 # Stage 3: Runtime
 # UNK-253: codename MUST match the builder stage above. See note on `chef`.
