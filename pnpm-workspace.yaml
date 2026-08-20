@@ -5,6 +5,16 @@ packages:
   - frontend
   - docs
 
+# Required by `pnpm deploy`, which the image build uses to materialise the
+# frontend's production closure for the SBOM. Since pnpm v10 deploy runs only
+# from workspaces that set this; the alternative is its --legacy flag, which
+# selects the implementation pnpm is moving away from.
+#
+# It is inert here, and that is why it can be left alone rather than tidied
+# away: it changes how workspace-to-workspace dependencies are linked, from
+# symlinks to injected copies, and neither project depends on the other.
+injectWorkspacePackages: true
+
 # Install-script default-deny, per adr/2026-08-03-package-ingress-default-deny.md.
 # `strictDepBuilds` defaults to true and is what turns an undecided package into
 # a failed install (ERR_PNPM_IGNORED_BUILDS, exit 1) rather than a warning
