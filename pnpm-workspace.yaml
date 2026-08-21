@@ -37,11 +37,19 @@ allowBuilds:
 catalog:
   vite: "npm:@voidzero-dev/vite-plus-core@0.2.9"
   vite-plus: "0.2.9"
+  # Not an independent choice: this mirrors the Vitest that vite-plus bundles,
+  # which `vp toolchain vitest` reports and no package-manager command can see.
+  # The override below then holds the whole graph, vite-plus's own dependency
+  # included, on that single copy.
   vitest: "4.1.10"
-  # Must equal vitest exactly. vite-plus refuses to start when the coverage
-  # provider and the test runner disagree, because Vitest itself only warns and
-  # then reports coverage from mixed versions. Renovate already moves this
-  # family as one group for the same reason.
+  # Must equal the bundled Vitest above. vite-plus refuses to start when the
+  # coverage provider and the test runner disagree, because Vitest itself only
+  # warns and then reports coverage from mixed versions.
+  #
+  # `vp migrate` is what moves these two, together with vite-plus and the vite
+  # alias, to whatever a new vp bundles. Renovate holds the family behind
+  # dashboard approval for that reason and must not bump a member on its own;
+  # doing so once set vitest to 4.1.11 against a vp bundling 4.1.10.
   "@vitest/coverage-v8": "4.1.10"
 
 # Transitive security floors. Each entry is a deliberate minimum, not a

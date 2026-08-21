@@ -144,9 +144,10 @@
       "enabled": false
     },
     {
-      "description": "Keep vite-plus and vitest in lockstep: vite-plus bundles the @vitest/* family with an exact vitest peer dependency, so a standalone vitest or vite-plus bump fails lockfile resolution.",
+      "description": "These versions mirror the toolchain vite-plus bundles rather than describing independent choices, and `vp migrate` is what moves them: it re-pins vite-plus, the vite -> @voidzero-dev/vite-plus-core alias, and the vitest and @vitest/* catalog entries to whatever the new vp bundles, in one pass. Renovate cannot see a bundled version at all (`vp toolchain vitest` is the only reading of it), so an automatic bump of any member sets a number vp owns: vitest 4.1.11 against a vp bundling 4.1.10 makes `vp test --coverage` refuse to start. Dashboard approval keeps Renovate in the role it is competent for, announcing that a release exists, while the update itself is performed by running `vp migrate` and committing its result.",
       "matchDepNames": ["vite-plus", "vite", "@voidzero-dev/**", "vitest", "@vitest/**"],
-      "groupName": "vite-plus"
+      "groupName": "vite-plus",
+      "dependencyDashboardApproval": true
     },
     {
       "description": "The generated color primitives pin these exactly; any bump fails the radix-gen drift test until `vp run primitives:gen` is rerun and the palette diff reviewed, so move them as one deliberate, dashboard-approved group.",
