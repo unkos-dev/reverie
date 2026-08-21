@@ -178,10 +178,13 @@ jobs:
       # Digest pinned past v1 (published 2026-06-15, never re-pointed): that tag's
       # contract has no `namespace` or `pr-comment` input, and GitHub silently drops
       # an undeclared input rather than erroring. Check any new input against
-      # action.yml at this revision before returning to a tag.
+      # action.yml at this revision before returning to a tag. The digest is
+      # upstream main as of 2026-06-19. The trailing comment names the branch on
+      # its own because Renovate reads it as the ref to resolve, and a ref that
+      # carries the date resolves to nothing.
       - name: Remote build cache (kache)
         if: env.R2_CONFIGURED == 'true'
-        uses: kunobi-ninja/kache-action@a257c055543c2840700a9bbca8f9c3094a421b1b # main@2026-06-19
+        uses: kunobi-ninja/kache-action@a257c055543c2840700a9bbca8f9c3094a421b1b # main
         with:
           version: ${{ needs.changes.outputs.kache }}
           s3-bucket: reverie-ci-cache
