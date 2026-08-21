@@ -3,9 +3,9 @@
 //
 // Records a verdict on stdout and always exits 0. The SBOM is a published
 // deliverable, not a security control — Snyk and trivy scan the source and the
-// image directly — so a defect here must never block a release. The scheduled
-// published-image audit reads the recorded verdict and opens an issue, which is
-// what stops a broken SBOM going unnoticed.
+// image directly — so a defect here must never block a release. The publish
+// workflow reads the recorded verdict back off every published digest and opens
+// an issue, which is what stops a broken SBOM going unnoticed.
 //
 // `pnpm deploy` writes its own lockfile into the tree it materialises, and that
 // lockfile is the production closure as pnpm itself resolved it. It is an

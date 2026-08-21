@@ -180,9 +180,10 @@ RUN mise exec "aqua:anchore/syft@${SYFT_VERSION}" -- \
 # Consistency check for the document above. It records a verdict and never
 # fails the build: the SBOM is a published deliverable, not a security control
 # (Snyk and trivy scan the source and the image directly), so a defect here
-# must not block a release. The scheduled published-image audit reads this
-# verdict and opens an issue, which is what stops a broken SBOM going
-# unnoticed. The script carries the reasoning for what it compares and why.
+# must not block a release. The publish workflow's per-digest verification step
+# reads this verdict once the image is pushed and opens an issue, which is what
+# stops a broken SBOM going unnoticed. The script carries the reasoning for
+# what it compares and why.
 COPY scripts/verify-frontend-sbom.mjs /usr/local/lib/verify-frontend-sbom.mjs
 RUN node /usr/local/lib/verify-frontend-sbom.mjs /sbom-tree /build/frontend.cdx.json \
       > /build/sbom-verify.txt \
@@ -221,8 +222,8 @@ COPY --from=frontend-builder /build/frontend/dist /srv/frontend
 COPY --from=frontend-sbom /build/frontend.cdx.json /usr/share/reverie/sbom/frontend.cdx.json
 # The verdict travels with the document it describes: the check runs where both
 # the SBOM and pnpm's resolved closure exist, but the thing that must notice a
-# failure is a scheduled job with no access to either. Reading it back off the
-# published image is what closes that gap.
+# failure is a workflow step with access to neither. Reading it back off each
+# published digest is what closes that gap.
 COPY --from=frontend-sbom /build/sbom-verify.txt /usr/share/reverie/sbom/verify.txt
 # UNK-106: the backend serves /assets/* and falls back to index.html for SPA
 # routes when this env var is set. Validation at startup panics the process
