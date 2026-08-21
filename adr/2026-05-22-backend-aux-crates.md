@@ -144,8 +144,7 @@ mismatches at byte position 0 take the same wall-clock time as
 mismatches at byte position 31.
 
 Why constant-time matters here (per the OWASP CSRF cheat sheet
-and Reverie's threat model
-[`project_open_source_security_stance`](../.claude/projects/-home-coder-reverie/memory/project_open_source_security_stance.md)):
+and Reverie's threat model, the multi-user exposed instance):
 a timing-leak in CSRF compare lets an attacker who can issue
 many requests against the gateway narrow the valid-token search
 space byte by byte, in the same way they can attack a
@@ -230,11 +229,10 @@ is the path of least resistance.
 
 ## More Information
 
-- [`feedback_industry_standard_default`](../.claude/projects/-home-coder-reverie/memory/feedback_industry_standard_default.md):
-  defaults to standard-library / audited-crate idioms over
-  hand-rolled primitives.
-- [`feedback_audit_ignores`](../.claude/projects/-home-coder-reverie/memory/feedback_audit_ignores.md),
-  handling of `cargo audit` findings on these new packages.
+- Standing principle: default to standard-library and audited-crate idioms
+  over hand-rolled primitives.
+- Standing principle: how `cargo audit` findings on these new packages are
+  handled.
 - Sibling ADR:
   [`2026-05-22-json-api-conventions.md`](2026-05-22-json-api-conventions.md)
   (RFC 7396 Merge Patch decision; CSRF synchronizer-token
@@ -242,6 +240,4 @@ is the path of least resistance.
 - Sibling ADR:
   [`2026-05-22-frontend-data-layer-deps.md`](2026-05-22-frontend-data-layer-deps.md)
   (frontend dependency adoptions for Step 11).
-- Implementation plan: `.claude/PRPs/plans/library-ui.plan.md`
-  (Sub-phase 11a Tasks 1c + 4; 11c Task 1).
 - Tracker: the Step 11 API conventions work.

@@ -170,8 +170,7 @@ No `axum-login` or `tower-sessions-sqlx-store` entry remains in
 ## More Information
 
 - The coordinated `tower-sessions` 0.14 → 0.15 bump this decision unblocks.
-  Implementation is tracked in `prp-plan` output under `.claude/PRPs/plans/`,
-  not in this ADR.
+  Implementation is tracked in the implementation plan, not in this ADR.
 - Supersedes
   [`superseded/2026-05-08-tower-sessions-sqlx-store.md`](superseded/2026-05-08-tower-sessions-sqlx-store.md),
   that ADR adopted `tower-sessions-sqlx-store` and explicitly rejected a

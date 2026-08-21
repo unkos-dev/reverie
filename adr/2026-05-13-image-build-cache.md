@@ -241,6 +241,5 @@ Open a superseding or amending ADR if any of the following happen:
   - `Dockerfile`: cargo-chef split decided by this ADR
   - `.github/workflows/docker-publish.yml`: cache wiring + Tier 1
     obs + workflow_dispatch decided by this ADR
-  - `.claude/PRPs/plans/image-build-cache.plan.md`: implementation
-    plan; carry-over section enumerated the points folded into this
-    ADR
+  - The implementation plan for this work: its carry-over section
+    enumerated the points folded into this ADR
