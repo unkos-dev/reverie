@@ -88,6 +88,18 @@ COPY docs/package.json docs/
 # layer, which is why that is not the path used here.
 RUN pnpm runtime set node "$(pnpm pkg get devEngines.runtime.version)" -g \
     && node --version
+# The package store moves off PNPM_HOME, and this is load-bearing rather than
+# tidying. `runtime set` installs the Node binary *into* the store, and the
+# stages below mount a BuildKit cache over it. A cache mount masks whatever the
+# layer had at that path, so mounting on /pnpm/store hides the runtime: `node`
+# resolves only while an install is actually running in the same step and
+# repopulating the store from the lockfile's `node@runtime` entry. The moment
+# that install layer comes back from the cache instead, the store stays empty,
+# `/pnpm/bin/node` dangles, and pnpm's dependency-status check reacts by running
+# an implicit unscoped install, which fires the root `prepare` script and needs
+# a git this image does not carry. Keeping the two paths apart is what makes the
+# runtime survive a cache hit.
+ENV pnpm_config_store_dir=/pnpm-store
 
 # Stage 2b: Build the frontend bundle.
 #
@@ -104,10 +116,10 @@ RUN pnpm runtime set node "$(pnpm pkg get devEngines.runtime.version)" -g \
 # setting. GHA runners are ephemeral, so cross-run reuse comes from the gha
 # layer cache instead.
 FROM js-toolchain AS frontend-builder
-RUN --mount=type=cache,id=pnpm,target=/pnpm/store \
+RUN --mount=type=cache,id=pnpm-store,target=/pnpm-store \
     pnpm install --frozen-lockfile --filter frontend... --ignore-scripts
 COPY frontend/ frontend/
-RUN --mount=type=cache,id=pnpm,target=/pnpm/store \
+RUN --mount=type=cache,id=pnpm-store,target=/pnpm-store \
     pnpm --filter frontend run build
 
 # Stage 2c: frontend-sbom — the dependency record for the bundled frontend. The
@@ -144,7 +156,7 @@ FROM js-toolchain AS frontend-sbom
 #
 # renovate: datasource=docker depName=anchore/syft
 COPY --from=anchore/syft:v1.51.0@sha256:678bfa565b60f747aac0f8e964fe5588a24445b8d0a480e91f6efd70020dfbb0 /syft /usr/local/bin/syft
-RUN --mount=type=cache,id=pnpm,target=/pnpm/store \
+RUN --mount=type=cache,id=pnpm-store,target=/pnpm-store \
     pnpm deploy --ignore-scripts --filter frontend --prod /sbom-tree
 RUN syft dir:/sbom-tree --override-default-catalogers javascript-package-cataloger \
       -o cyclonedx-json > /build/frontend.cdx.json
