@@ -74,7 +74,7 @@ ADR-or-amendment after the detector earns its keep.
   path matches `frontend/src/**/*.{ts,tsx,html,css}`. Function form
   used so the same `vp run --filter frontend detect` runs locally
   and in CI. Wall-time delta vs single-file scan ~400ms.
-- **CI** runs the same `vp run --filter frontend detect` as a new step in the
+- **CI** runs the same scan through `just js::detect` as a new step in the
   frontend job between Stylelint and font-integrity.
 - **Advisory both sides** (lint-staged `|| true` + CI
   `continue-on-error: true`) until the 3 deferred `bg-black`
@@ -107,7 +107,7 @@ Denying the install script drops the ~180MB postinstall fetch
 without removing the puppeteer JS itself. The dynamic import inside
 `detectUrl()` still resolves, so a URL-scan would fail at
 `launch()` for want of a browser rather than at the import;
-`npx puppeteer browsers install chrome` fetches one on demand if
+`vp dlx puppeteer browsers install chrome` fetches one on demand if
 URL-scan is ever wanted. Static path unaffected.
 
 Corrected 2026-08-03: this record first named

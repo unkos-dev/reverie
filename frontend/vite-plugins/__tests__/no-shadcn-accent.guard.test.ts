@@ -7,7 +7,7 @@ import { join, resolve } from "node:path";
 // primitive's hover/focus treatment — the dropped `--color-accent-foreground`
 // alias means stock shadcn primitives that ship with `focus:bg-accent
 // focus:text-accent-foreground` would render with broken text colour. A
-// future `npx shadcn@latest add <component>` must rewrite those utilities to
+// future `vp dlx shadcn@latest add <component>` must rewrite those utilities to
 // `focus:bg-hover focus:text-fg` (matching dropdown-menu.tsx and select.tsx)
 // before merging. This guard fails the build if a primitive reintroduces the
 // pattern.

@@ -97,7 +97,8 @@ test fixture casts) remain.
 ### Enforcement
 
 Both stacks already gate `cargo clippy -- -D warnings` and
-`vp lint` in CI. No CI changes needed beyond the config blocks.
+`vp lint --max-warnings 0` in CI. No CI changes needed beyond the config
+blocks.
 
 ### Test code exclusions
 
