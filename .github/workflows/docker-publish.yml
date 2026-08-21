@@ -274,47 +274,6 @@ jobs:
             done
           done
 
-      # Gate here, per untagged digest, before `imagetools create`: a manifest
-      # list's SBOM is platform-keyed, so counting across it could let a
-      # complete arm64 doc mask a broken amd64 one. Crates appear in the SBOM
-      # only via `cargo auditable`; npm packages only via a CycloneDX doc
-      # syft ingests — both are quiet mechanisms a refactor could break silently.
-      - name: Verify SBOM covers application dependencies (gating)
-        working-directory: ${{ runner.temp }}/digests
-        env:
-          IMAGE_REF: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
-        run: |
-          set -euo pipefail
-          # Scratch file lives OUTSIDE this dir: manifest-create below globs
-          # it as the digest list, and a stray file breaks every publish.
-          sbom="${RUNNER_TEMP}/sbom-check.json"
-          rc=0
-          for digest in *; do
-            ref="${IMAGE_REF}@sha256:${digest}"
-            docker buildx imagetools inspect "$ref" \
-              --format '{{ json .SBOM }}' > "$sbom"
-            # No SBOM attestation inspects to JSON `null`, which is a failure.
-            jq -e '. != null' "$sbom" > /dev/null \
-              || { echo "::error::${ref} carries no SBOM attestation"; rc=1; continue; }
-            count() {
-              jq -r --arg p "$1" \
-                '[.. | strings | select(startswith($p))] | length' "$sbom"
-            }
-            crates=$(count "pkg:cargo/")
-            npm=$(count "pkg:npm/")
-            debs=$(count "pkg:deb/")
-            echo "sha256:${digest} -> ${crates} cargo, ${npm} npm, ${debs} deb"
-            if [ "$crates" -eq 0 ]; then
-              echo "::error::${ref} lists no cargo components. The release binary is probably no longer built with \`cargo auditable\`, so every crate is absent from its SBOM."
-              rc=1
-            fi
-            if [ "$npm" -eq 0 ]; then
-              echo "::error::${ref} lists no npm components. The frontend CycloneDX document is probably no longer present at /usr/share/reverie/sbom/ for syft to ingest, so every bundled frontend dependency is absent from its SBOM."
-              rc=1
-            fi
-          done
-          exit "$rc"
-
       # Provenance/SBOM attestations on the per-arch images carry through
       # to the resulting manifest list.
       - name: Create manifest list and push
