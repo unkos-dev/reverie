@@ -109,12 +109,16 @@ ENV pnpm_config_store_dir=/pnpm-store
 # --ignore-scripts is belt and braces: pnpm-workspace.yaml's allowBuilds denies
 # every script-bearing package already.
 #
-# The /pnpm/store cache mount avoids re-fetching tarballs when the install layer
+# The /pnpm-store cache mount avoids re-fetching tarballs when the install layer
 # is invalidated but the lockfile is unchanged; buildkit reuses it within a
-# single build, and the sbom stage mounts the same one. The path is the store
-# the base image already configures through PNPM_HOME, so no store-dir needs
-# setting. GHA runners are ephemeral, so cross-run reuse comes from the gha
-# layer cache instead.
+# single build, and the sbom stage mounts the same one. GHA runners are
+# ephemeral, so cross-run reuse comes from the gha layer cache instead.
+#
+# The path is deliberate and must not move back under PNPM_HOME. It comes from
+# the inherited `pnpm_config_store_dir`, set in js-toolchain for the reason
+# recorded there: mounting a cache on the base image's default /pnpm/store
+# masks the Node runtime installed into it, which fails only once a layer
+# arrives from the cache rather than being built.
 FROM js-toolchain AS frontend-builder
 RUN --mount=type=cache,id=pnpm-store,target=/pnpm-store \
     pnpm install --frozen-lockfile --filter frontend... --ignore-scripts
