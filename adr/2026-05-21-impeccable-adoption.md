@@ -72,9 +72,9 @@ ADR-or-amendment after the detector earns its keep.
   function; see Future Plan for the runtime evidence).
 - **Pre-commit (lint-staged)** triggers full-scan when any staged
   path matches `frontend/src/**/*.{ts,tsx,html,css}`. Function form
-  used so the same `npm --prefix frontend run detect` runs locally
+  used so the same `vp run --filter frontend detect` runs locally
   and in CI. Wall-time delta vs single-file scan ~400ms.
-- **CI** runs the same `npm run detect` as a new step in the
+- **CI** runs the same `vp run --filter frontend detect` as a new step in the
   frontend job between Stylelint and font-integrity.
 - **Advisory both sides** (lint-staged `|| true` + CI
   `continue-on-error: true`) until the 3 deferred `bg-black`
@@ -321,7 +321,7 @@ new one. The amendment/supersession will:
 2. Accept the ~180MB Chromium download on CI (~30s per run; or
    cache via GitHub Actions cache keyed on puppeteer version)
 3. Add a new CI step that:
-   - Boots `npm run dev` in background OR pulls from PR-preview URL
+   - Boots `vp dev` in background OR pulls from PR-preview URL
    - Waits for server health
    - Runs `impeccable detect http://localhost:5173/<path>` per
      critical surface

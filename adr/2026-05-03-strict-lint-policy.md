@@ -97,7 +97,7 @@ test fixture casts) remain.
 ### Enforcement
 
 Both stacks already gate `cargo clippy -- -D warnings` and
-`npm run lint` in CI. No CI changes needed beyond the config blocks.
+`vp lint` in CI. No CI changes needed beyond the config blocks.
 
 ### Test code exclusions
 

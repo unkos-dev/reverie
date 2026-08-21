@@ -62,11 +62,11 @@ dedicated cacheable layer.
    layer). The cooker layer is the cache target: warm hits skip ~3min
    of dep compilation when `Cargo.lock` is unchanged.
 
-3. **Frontend buildkit npm cache mount.**
-   `RUN --mount=type=cache,target=/root/.npm npm ci`. Survives within a
-   single build (buildkit-scoped, not layer-scoped). Cross-run npm
-   reuse comes from the gha layer cache for the `npm ci` layer when
-   `package-lock.json` is unchanged; the mount avoids tarball re-fetch
+3. **Frontend buildkit package-store cache mount.**
+   `RUN --mount=type=cache,id=pnpm,target=/pnpm/store pnpm install`.
+   Survives within a single build (buildkit-scoped, not layer-scoped).
+   Cross-run reuse comes from the gha layer cache for the install layer
+   when `pnpm-lock.yaml` is unchanged; the mount avoids tarball re-fetch
    when the layer cache invalidates for unrelated reasons.
 
 4. **Tier 1 observability only.** Post-build steps emit `docker buildx

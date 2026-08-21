@@ -56,8 +56,8 @@ Chosen option: **`@playwright/test` + `@axe-core/playwright` for the CI gate, wi
   linux-arm64 Chromium build (chrome-headless-shell, falling back to full
   Chromium on arm64), so the chromedriver / Chrome-for-Testing gap that blocked
   `@axe-core/cli` never applied to Playwright. The gate reproduces locally on
-  ARM64 with `npx playwright install chromium` then `npm run a11y`, no browser
-  substitution required.
+  ARM64 with `vp exec playwright install chromium` then `just js::a11y`, no
+  browser substitution required.
 - **Stack consolidation.** The consolidation argument now points the other way.
   When the prior decision was made, `agent-browser` was the standardised
   verification binary and Playwright would have been the second stack. Playwright
@@ -67,10 +67,12 @@ Chosen option: **`@playwright/test` + `@axe-core/playwright` for the CI gate, wi
 Concretely:
 
 - **Automated gate.** The CI `a11y` job runs `@axe-core/playwright` against the
-  dev-only design showcase under `npm run dev`, using the full WCAG 2.2 AA tag
-  set (`wcag2a`, `wcag2aa`, `wcag21a`, `wcag21aa`, `wcag22aa`). Playwright's
-  `webServer` owns the dev-server lifecycle. It fails on any violation outside
-  the documented allowlist and is frontend-conditional. Locally: `npm run a11y`.
+  shipped pre-auth routes, using the full WCAG 2.2 AA tag set (`wcag2a`,
+  `wcag2aa`, `wcag21a`, `wcag21aa`, `wcag22aa`). Playwright's `webServer` owns
+  the dev-server lifecycle. It fails on any violation outside the documented
+  allowlist and is frontend-conditional. Locally: `just js::a11y`. The scan
+  originally covered a dev-only design showcase; it was moved onto real routes
+  so the gate judges what users receive.
 - **Allowlist unchanged.** The accepted carve-outs and the role-keyed matching
   that expresses them are unchanged: violations from axe are filtered through the
   same first-party `allowlist.mjs` (matching on element role read from node HTML,
@@ -98,7 +100,7 @@ Concretely:
 
 ### Confirmation
 
-Enforced by the CI `a11y` job: `npm run a11y` (Playwright) fails on any WCAG 2.2
+Enforced by the CI `a11y` job: `just js::a11y` (Playwright) fails on any WCAG 2.2
 AA violation whose nodes are not covered by
 `frontend/scripts/a11y/allowlist.mjs`. The spec also asserts the scan ran (axe
 testEngine present, the scanned path matches the target, non-trivial
