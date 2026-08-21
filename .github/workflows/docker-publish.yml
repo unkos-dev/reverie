@@ -180,11 +180,14 @@ jobs:
     needs:
       - build
     # Job-level block restates scopes: packages: write pushes the manifest
-    # list; id-token: write mints the OIDC token cosign exchanges with Fulcio.
+    # list; id-token: write mints the OIDC token cosign exchanges with Fulcio;
+    # issues: write files the SBOM alert, which is non-gating and would
+    # otherwise leave no trace.
     permissions:
       contents: read
       packages: write
       id-token: write
+      issues: write
     steps:
       - name: Download digests
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
@@ -310,6 +313,91 @@ jobs:
           [[ -n "$digest" ]] || { echo "::error::Failed to capture manifest digest for ${IMAGE_REF}:${VERSION}"; exit 1; }
           echo "Signing ${IMAGE_REF}@${digest}"
           cosign sign --yes "${IMAGE_REF}@${digest}"
+
+      # Deliberately non-gating, and deliberately last: the SBOM is a published
+      # deliverable, not a security control (Snyk scans the source, the trivy
+      # gate above scans the image, cargo-deny scans Cargo.lock), so an
+      # inaccurate one must never hold up a release. It must not be able to fail
+      # quietly either, which is what the issue below is for.
+      #
+      # Per digest rather than per tag: a tag release publishes amd64 and arm64,
+      # each built independently, and each records its own verdict. Checking one
+      # architecture, or checking `:main` and calling it evidence for a release
+      # artifact, would leave the other unobserved. Published images are
+      # immutable, so verifying once here is complete — a later re-read could
+      # only repeat this answer.
+      - name: Verify published SBOM (non-gating)
+        id: sbom-verify
+        continue-on-error: true
+        working-directory: ${{ runner.temp }}/digests
+        env:
+          IMAGE_REF: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+        run: |
+          set -euo pipefail
+          rc=0
+          for digest in *; do
+            ref="${IMAGE_REF}@sha256:${digest}"
+            # Each pushed "digest" is an OCI index carrying the real manifest
+            # plus an attestation manifest; the platform has to come from the
+            # index, since this runner's own architecture says nothing about
+            # what was built.
+            platform=$(docker buildx imagetools inspect --raw "$ref" | jq -r '
+              if .manifests then
+                .manifests[]
+                | select(.annotations["vnd.docker.reference.type"] != "attestation-manifest")
+                | .platform | "\(.os)/\(.architecture)"
+              else
+                empty
+              end' | head -1)
+            [ -n "$platform" ] || { echo "::warning::${ref} exposes no platform; skipping"; continue; }
+
+            echo "::group::${platform} ${ref}"
+            # create + cp never executes the image, so reading a foreign
+            # architecture on this runner is safe.
+            docker pull --platform "$platform" --quiet "$ref" > /dev/null
+            c=$(docker create --platform "$platform" "$ref")
+            verdict=$(docker cp "$c:/usr/share/reverie/sbom/verify.txt" - \
+              | tar -xO 2>/dev/null || echo "FAIL verdict file absent from the image")
+            docker rm -f "$c" > /dev/null
+            echo "verdict: ${verdict}"
+
+            case "$verdict" in
+              OK\ *) ;;
+              *) echo "::error::${platform} ${ref}: the frontend SBOM failed its own consistency check at build time: ${verdict}"; rc=1 ;;
+            esac
+
+            # cargo-auditable embeds the crate list into the release binary and
+            # is the only reason any crate reaches the SBOM: there is no
+            # Cargo.lock in the runtime image to scan. Dropping the wrapper
+            # leaves a working binary, a green build, and an SBOM missing most
+            # of the application, so presence is the whole check.
+            crates=$(docker buildx imagetools inspect "$ref" --format '{{ json .SBOM }}' \
+              | jq '[.. | objects | select(.referenceType == "purl")
+                | .referenceLocator | select(startswith("pkg:cargo/"))] | length')
+            echo "cargo components: ${crates}"
+            if [ "$crates" -eq 0 ]; then
+              echo "::error::${platform} ${ref} lists no cargo components. The release binary is probably no longer built with \`cargo auditable\`, so every crate is absent from its SBOM."
+              rc=1
+            fi
+            echo "::endgroup::"
+          done
+          exit "$rc"
+
+      # A `continue-on-error` step is easy to stop reading; an open issue is not.
+      - name: Open issue on SBOM defect
+        if: steps.sbom-verify.outcome == 'failure'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          title="Published SBOM is inaccurate"
+          n=$(gh issue list --state open --search "$title in:title" --json number --jq '.[0].number // empty')
+          if [ -n "$n" ]; then
+            gh issue comment "$n" --body "Recurred: ${RUN_URL}"
+          else
+            gh issue create --title "$title" --body "The SBOM published with this image no longer describes what the image ships. Nothing was gated on it and the release completed normally, but the document is a published deliverable and is currently wrong. Review the run log: ${RUN_URL} — the verdict text names which check failed, and the checks themselves live in the \`frontend-sbom\` stage of the Dockerfile."
+          fi
 
   # Re-exports the buildkit-generated attestation (no second SBOM generation,
   # so the asset can't drift). Skipped on plain main pushes: no release
