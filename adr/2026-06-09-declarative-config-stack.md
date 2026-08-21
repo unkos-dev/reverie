@@ -21,8 +21,7 @@ lines (about half of that tests) and grew from ~15 vars at scaffold time to its
 current size without the loading approach ever being revisited.
 
 The immediate trigger is the docs-as-done effort
-([`.claude/PRPs/plans/docs-as-done.plan.md`](../.claude/PRPs/plans/docs-as-done.plan.md),
-the configuration-reference generation task): hard rule 10 requires a generated **configuration reference** from
+(the configuration-reference generation task): hard rule 10 requires a generated **configuration reference** from
 `config.rs`. An adversarial review of that plan found the proposed generator (which would
 parse the source with `syn` and read each field's `///` doc prose) to be structurally
 unsound. The config contract lives in imperative call-site code plus doc-comment
@@ -256,7 +255,7 @@ declarative structs, since it is coupled to the removed `get("KEY")` form.
 
 ## More Information
 
-- Driver: [`.claude/PRPs/plans/docs-as-done.plan.md`](../.claude/PRPs/plans/docs-as-done.plan.md)
+- Driver: the docs-as-done effort
   (the configuration-reference generation task): the configuration-reference requirement and the adversarial-review
   finding (S1) that surfaced the imperative-config problem. The docs-as-done
   configuration-reference page lands after this refactor, not within it.
@@ -272,8 +271,8 @@ declarative structs, since it is coupled to the removed `get("KEY")` form.
   as its lift condition; that entry is purged by the implementing PR (see `debt/`
   git history).
 - Implementation plan, task sequence (including the `config/` module split as the
-  closing move), and verification live in prp-plan output
-  (`.claude/PRPs/plans/`), not here. The implementation epic is tracked as
+  closing move), and verification live in the implementation plan, not here.
+  The implementation epic is tracked as
   the configuration refactor epic.
 - Revisit trigger: if implementation prototyping shows figment's env→nested-struct
   mapping cannot serve the existing variable layout without an outsized custom

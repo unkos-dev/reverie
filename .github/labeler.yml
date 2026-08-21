@@ -34,7 +34,7 @@
 "security":
   - changed-files:
       - any-glob-to-any-file:
-          - ".claude/security/**"
+          - "docs/security/**"
           - "backend/src/auth/**"
           - ".github/workflows/codeql.yml"
           - "**/*csp*"

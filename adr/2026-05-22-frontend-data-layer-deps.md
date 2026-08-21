@@ -244,14 +244,9 @@ v8 is the current stable. v9 is not released. No reason to wait.
 
 ## More Information
 
-- [`feedback_industry_standard_default`](../.claude/projects/-home-coder-reverie/memory/feedback_industry_standard_default.md):
-  defaults to ecosystem-standard packages over custom plumbing.
-- [`feedback_reverie_frontend_is_npm`](../.claude/projects/-home-coder-reverie/memory/feedback_reverie_frontend_is_npm.md):
-  npm only.
-- [`feedback_audit_ignores`](../.claude/projects/-home-coder-reverie/memory/feedback_audit_ignores.md),
-  handling of `npm audit` findings on these new packages.
-- Implementation plan: `.claude/PRPs/plans/library-ui.plan.md`
-  (Sub-phase 11a Tasks 9 + 12; 11b Task 6; 11d Task 6).
+- Standing principle: default to ecosystem-standard packages over custom
+  plumbing.
+- Standing principle: how advisory findings on these new packages are handled.
 - Tracker: the Step 11 API conventions work.
 - Sibling ADR: this PR's
   `2026-05-22-json-api-conventions.md` and

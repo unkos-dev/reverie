@@ -27,7 +27,7 @@ surfaced during the adversarial review of PR #308 (Step 11a-A.3, the
 | --------------------------- | ------------------------------------------------- | ------------------------------------------------------------ |
 | Domain enum (authoritative) | `Clean` / `Repaired` / `Degraded` / `Quarantined` | `backend/src/services/epub/mod.rs:177` (`ValidationOutcome`) |
 | Postgres enum (storage)     | `pending` / `valid` / `repaired` / `degraded`     | `validation_status` type                                     |
-| Frontend sketch (wire)      | `clean` / `repaired` / `degraded` / `quarantined` | `.claude/PRPs/plans/library-ui.plan.md`                      |
+| Frontend sketch (wire)      | `clean` / `repaired` / `degraded` / `quarantined` | pre-implementation design sketch                             |
 
 Two facts settle which terms are real:
 
@@ -60,9 +60,8 @@ deferred here.
 - Name the value set correctly: the stored label should not imply a
   false semantic (see Decision Outcome).
 - Simplicity: no speculative schema for unbuilt product surfaces.
-- Pre-release schema is freely mutable
-  ([`project_schema_evolution`](../.claude/projects/-home-coder-reverie/memory/project_schema_evolution.md)),
-  so a rename costs no production data backfill.
+- Pre-release schema is freely mutable, so a rename costs no production data
+  backfill.
 
 ## Considered Options
 
@@ -104,8 +103,8 @@ decided.
 The operator-facing explanation of these states is deferred to a
 release-docs backlog (`docs/RELEASE_DOCS_BACKLOG.md`) rather than a
 half-built Starlight page; the dev-facing `docs/schema.md` reference is
-corrected now because the rename makes its current listing wrong. See
-[`feedback_rationale_in_user_docs`](../.claude/projects/-home-coder-reverie/memory/feedback_rationale_in_user_docs.md).
+corrected now because the rename makes its current listing wrong. Operator
+docs carry the rationale, not just the values.
 
 ### Consequences
 
@@ -124,9 +123,9 @@ corrected now because the rename makes its current listing wrong. See
 ### Confirmation
 
 Implementation tasks, the migration mechanics, the affected file:line
-sites, and the verification checklist live in the committed plan
-`.claude/PRPs/plans/unk-276-validation-status.plan.md`. Compliance with
-this decision is confirmed by that plan's verification gate plus CI:
+sites, and the verification checklist live in the implementation plan.
+Compliance with this decision is confirmed by that plan's verification gate
+plus CI:
 `cargo sqlx prepare --check -- --tests`, `cargo fmt --check`,
 `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test`,
 and the frontend lint/test suite. The closing PR flips
@@ -173,13 +172,11 @@ and the frontend lint/test suite. The closing PR flips
   "the validator itself could not run": previously that outcome borrowed
   `degraded`, hiding validator crashes from operators. The four original
   values and their semantics are unchanged; `quarantined` remains absent.
-- Implementation plan (committed):
-  `.claude/PRPs/plans/unk-276-validation-status.plan.md`.
 - Tracked debt:
   [`debt/2026-05-23-validation-status-untyped.md`](../debt/2026-05-23-validation-status-untyped.md).
 - Enum-series precedent: the user role and ingestion status enum tasks.
 - Step 11 umbrella: the API conventions work; this issue is the validation status vocabulary task.
 - Domain source enum: `backend/src/services/epub/mod.rs:177`
   (`ValidationOutcome`).
-- Operator-rationale-in-docs principle:
-  [`feedback_rationale_in_user_docs.md`](../.claude/projects/-home-coder-reverie/memory/feedback_rationale_in_user_docs.md).
+- Operator-rationale-in-docs principle: operator docs carry the reasoning, not
+  only the values.
