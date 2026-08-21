@@ -22,7 +22,9 @@ info() { printf 'INFO %s\n' "$1"; }
 # below both shell out to it; without this, a missing jq shows up only as a
 # confusing "(missing: unknown)" deep in another check's output. pnpm is here
 # because `just install` and the worktree bootstrap invoke it directly, before
-# any node_modules exists for vp to resolve one from.
+# any node_modules exists for vp to resolve one from. node comes from vp rather
+# than mise, so a missing node usually means vp was installed with its node
+# manager disabled rather than that a mise pin is unresolved.
 for bin in git just docker cargo rustc node pnpm mise jq; do
   if command -v "$bin" >/dev/null 2>&1; then
     pass "binary '${bin}' resolves on PATH"
