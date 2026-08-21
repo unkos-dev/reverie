@@ -42,8 +42,12 @@ An unreleased commit carries no changelog and no release testing. The
 seven commits between `v1` and this one include Windows runner support
 and a test refresh, none of which were exercised by a release. Renovate
 tracks the pin by the branch named in its trailing comment, so it will
-propose digest bumps as upstream moves, and each one silently changes the
-contract the step is written against.
+propose digest bumps as upstream moves, and each one changes the contract
+the step is written against. Those bumps are not automerged: under
+`renovate.json`, only `patch` and `pin` are automerged for a third-party
+action, and `digest` only for `actions/**` and `github/**`. A bump therefore
+arrives as a pull request to check against `action.yml` at the revision it
+proposes.
 
 Every other action in this repository is pinned to a digest that
 corresponds to a published release.
