@@ -177,6 +177,18 @@ RUN mise exec "aqua:anchore/syft@${SYFT_VERSION}" -- \
       syft dir:/sbom-tree --override-default-catalogers javascript-package-cataloger \
       -o cyclonedx-json > /build/frontend.cdx.json
 
+# Consistency check for the document above. It records a verdict and never
+# fails the build: the SBOM is a published deliverable, not a security control
+# (Snyk and trivy scan the source and the image directly), so a defect here
+# must not block a release. The publish workflow's per-digest verification step
+# reads this verdict once the image is pushed and opens an issue, which is what
+# stops a broken SBOM going unnoticed. The script carries the reasoning for
+# what it compares and why.
+COPY scripts/verify-frontend-sbom.mjs /usr/local/lib/verify-frontend-sbom.mjs
+RUN node /usr/local/lib/verify-frontend-sbom.mjs /sbom-tree /build/frontend.cdx.json \
+      > /build/sbom-verify.txt \
+    && cat /build/sbom-verify.txt
+
 # Stage 3: Runtime
 # UNK-253: codename MUST match the builder stage above. See note on `chef`.
 FROM debian:trixie-slim@sha256:020c0d20b9880058cbe785a9db107156c3c75c2ac944a6aa7ab59f2add76a7bd AS runtime
@@ -208,6 +220,11 @@ COPY --from=frontend-builder /build/frontend/dist /srv/frontend
 # records the provenance as "acquired package info from SBOM: <path>".
 # It also lets an operator read the list straight off the running image.
 COPY --from=frontend-sbom /build/frontend.cdx.json /usr/share/reverie/sbom/frontend.cdx.json
+# The verdict travels with the document it describes: the check runs where both
+# the SBOM and pnpm's resolved closure exist, but the thing that must notice a
+# failure is a workflow step with access to neither. Reading it back off each
+# published digest is what closes that gap.
+COPY --from=frontend-sbom /build/sbom-verify.txt /usr/share/reverie/sbom/verify.txt
 # UNK-106: the backend serves /assets/* and falls back to index.html for SPA
 # routes when this env var is set. Validation at startup panics the process
 # if the dir or its csp-hashes.json sidecar is missing.
