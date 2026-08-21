@@ -45,10 +45,10 @@ jobs:
         id: filter
         if: github.event_name == 'push' && github.ref_type == 'branch'
         with:
-          # Keep in lockstep with the Dockerfile's COPY surface. The two
-          # scripts are named individually rather than as `scripts/**`: only
-          # these are copied into a stage, and a wildcard would rebuild and
-          # republish the image for every unrelated tooling change.
+          # Keep in lockstep with the Dockerfile's COPY surface. The script is
+          # named individually rather than as `scripts/**`: only it is copied
+          # into a stage, and a wildcard would rebuild and republish the image
+          # for every unrelated tooling change.
           filters: |
             image:
               - 'Dockerfile'
@@ -59,7 +59,6 @@ jobs:
               - 'pnpm-lock.yaml'
               - 'docs/package.json'
               - 'version.txt'
-              - 'scripts/docker-retry.sh'
               - 'scripts/verify-frontend-sbom.mjs'
               - '.github/workflows/docker-publish.yml'
       - id: set
@@ -109,20 +108,12 @@ jobs:
           context: .
           platforms: ${{ matrix.platform }}
           labels: ${{ steps.meta.outputs.labels }}
-          # mise verifies every tool download's GitHub artifact attestation
-          # against api.github.com. Unauthenticated, that is 60 requests per
-          # hour per IP, and hosted runners share IPs, so the budget is not
-          # ours alone to spend. The job token raises the ceiling far past
-          # anything one build needs. Passed as a secret, never a build-arg:
-          # a build-arg is recorded in the image history and would publish it.
-          secrets: |
-            github_token=${{ secrets.GITHUB_TOKEN }}
           outputs: type=image,name=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }},push-by-digest=true,name-canonical=true,push=true
           provenance: mode=max
           # Pinned: the floating stable-1 generator lags syft releases and
           # silently drops CycloneDX spec versions its bundled syft cannot
           # parse (the Dockerfile's frontend SBOM depends on this keeping
-          # pace with SYFT_VERSION there).
+          # pace with the syft image digest there).
           # renovate: datasource=docker depName=docker/buildkit-syft-scanner
           sbom: generator=docker/buildkit-syft-scanner:1.12.0@sha256:ae4f3b554449e7e25548e7d8ccc029d17357348e30c6e3df01b92bc93654d6a9
           cache-from: type=gha,scope=buildcache-${{ matrix.arch }}

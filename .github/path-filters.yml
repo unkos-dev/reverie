@@ -54,12 +54,11 @@ iac:
 docker:
   # Manifests only: this gates build-context failures (a lockfile hoist
   # breaking a COPY); compile breakage is the backend/frontend jobs' remit.
-  # The two scripts belong here because the Dockerfile copies them into a
-  # stage and runs them, so a change to either can only be exercised by
-  # building the image.
+  # verify-frontend-sbom.mjs belongs here because the Dockerfile copies it into
+  # a stage and runs it, so a change to it can only be exercised by building
+  # the image.
   - "Dockerfile"
   - ".dockerignore"
-  - "scripts/docker-retry.sh"
   - "scripts/verify-frontend-sbom.mjs"
   - "package.json"
   - "pnpm-lock.yaml"
