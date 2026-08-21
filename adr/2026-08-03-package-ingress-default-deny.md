@@ -61,9 +61,12 @@ unrelated runtime fault.
 Five controls govern package ingress. Each is global, and each is enforced by
 the toolchain rather than at review.
 
-1. **The manager is pinned and enforced.** npm through `devEngines` and
-   `mise.toml` held in lockstep; the Rust toolchain and MSRV through CI. An
-   unpinned manager means an unknown set of security defaults.
+1. **The manager is pinned and enforced.** pnpm through `packageManager`,
+   which a disagreeing pnpm re-executes rather than ignores; the JavaScript
+   runtime through `devEngines.runtime`, which pnpm and vp both read and which
+   `pnpm-lock.yaml` carries per-platform checksums for; the Rust toolchain and
+   MSRV through CI. An unpinned manager means an unknown set of security
+   defaults.
 2. **Installs are frozen.** `pnpm install --frozen-lockfile` and
    `cargo --locked`. A resolving install
    on a build or deploy path can take a version the lockfile never recorded.

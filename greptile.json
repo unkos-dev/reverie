@@ -230,7 +230,7 @@
       {
         "id": "shadcn-generated-exempt",
         "severity": "low",
-        "rule": "shadcn/ui primitives in src/components/ui/** are CLI-generated (`npx shadcn@latest add`). Do not flag style or convention divergences in this directory unless they affect runtime correctness.",
+        "rule": "shadcn/ui primitives in src/components/ui/** are CLI-generated (`vp dlx shadcn@latest add <component>`). Do not flag style or convention divergences in this directory unless they affect runtime correctness.",
         "scope": ["frontend/src/components/ui/**"]
       },
       {
