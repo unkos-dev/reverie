@@ -74,9 +74,18 @@ COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY frontend/package.json frontend/
 COPY docs/package.json docs/
 # Installed once here so both stages below inherit one runtime from this layer
-# rather than provisioning it twice. The download is checksum-verified against
-# the per-platform sha256 entries devEngines.runtime writes into pnpm-lock.yaml,
-# which are committed and reviewable.
+# rather than provisioning it twice.
+#
+# What anchors this download, stated precisely because it is easy to overclaim:
+# `runtime set -g` resolves in pnpm's own global project, not in /build, and it
+# succeeds with no pnpm-lock.yaml present at all. The committed per-platform
+# sha256 entries devEngines.runtime writes into this repository's lockfile
+# therefore do NOT gate it. The fetch is still integrity-checked — pnpm keeps a
+# lockfile of its own alongside the global install — but against a lock this
+# build generates rather than one a reviewer reads. A frozen workspace install
+# does consume the committed entries; it materialises the runtime into the
+# store, which is a cache mount in the stages below and so never reaches a
+# layer, which is why that is not the path used here.
 RUN pnpm runtime set node "$(pnpm pkg get devEngines.runtime.version)" -g \
     && node --version
 
