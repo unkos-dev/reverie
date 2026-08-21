@@ -63,11 +63,16 @@ dedicated cacheable layer.
    of dep compilation when `Cargo.lock` is unchanged.
 
 3. **Frontend buildkit package-store cache mount.**
-   `RUN --mount=type=cache,id=pnpm,target=/pnpm/store pnpm install`.
+   `RUN --mount=type=cache,id=pnpm-store,target=/pnpm-store pnpm install`.
    Survives within a single build (buildkit-scoped, not layer-scoped).
    Cross-run reuse comes from the gha layer cache for the install layer
    when `pnpm-lock.yaml` is unchanged; the mount avoids tarball re-fetch
    when the layer cache invalidates for unrelated reasons.
+   The store sits at `/pnpm-store`, set through `pnpm_config_store_dir`, and
+   not at the base image's default under `PNPM_HOME`. Mounting a cache there
+   masks the Node runtime `pnpm runtime set` installs into the store, and that
+   only fails once the install layer arrives from the cache instead of being
+   built, so it passes at merge and breaks later.
 
 4. **Tier 1 observability only.** Post-build steps emit `docker buildx
 du` (this runner's local buildkit content store, ephemeral) and a
