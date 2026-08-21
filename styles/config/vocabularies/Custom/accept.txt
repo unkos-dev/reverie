@@ -1,18 +1,13 @@
+# Vale Vocab accept-list. Every entry is a case-insensitive regex, so do not
+# use [..] character classes here: one bracketed entry can disable the spelling
+# check entirely. A base term already covers its case variants and its
+# possessive, so neither is listed separately.
 #
-# American spellings in prose are recast, not accepted. Entries below are
-# Australian-English forms the bundled en_AU dictionary happens to lack, so the
-# Brand and product vocabulary.
-# correct AU spelling is not flagged. The American spelling is NOT accepted, so
-# covers Greptile's), so neither case variants nor '"'"'s forms are listed.
-# Do NOT use [..] character classes here: a bracketed entry can disable
-# Identifiers, libraries, services, and technical jargon.
-# identifiers, library/service names, proper nouns, and technical jargon that
-# it still warns and nudges toward these forms.
-# line; lines starting with '#' are comments. Matching is case-insensitive for
-# no English dictionary carries. Keep alphabetical.
-# Vocabulary accept-list (Vale Vocab). One case-insensitive regex per
-# the spelling check, and a base term also covers its possessive (Greptile
-# Vale.Spelling entirely. Spelling is Australian English (en_AU); genuine
+# Spelling is Australian English. An American spelling in prose is recast
+# rather than accepted here. The exception is a code-domain term that is also
+# an American spelling, such as color.
+#
+# Keep alphabetical.
 accreted
 adapter
 adapters
