@@ -27,19 +27,11 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Install node (mise)
-        uses: jdx/mise-action@3c2e0cf82a5b2e5249f0d3635a4d83d0ae861518 # v4.2.5
-        with:
-          # renovate: datasource=github-releases depName=jdx/mise extractVersion=^v(?<version>.+)$
-          version: "2026.8.8"
-          install_args: node
-          add_shims_to_path: true
-
       # No dependency cache: this feeds the privileged Pages publish, and a
       # shared cache there is a cache-poisoning surface (zizmor).
       - uses: voidzero-dev/setup-vp@313600b80b104eadebb9111787d37a2e83e014ca # v1.17.0
         with:
-          node-manager: false
+          node-manager: true
           cache: false
 
       - name: Install workspace
