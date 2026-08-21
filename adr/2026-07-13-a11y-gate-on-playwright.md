@@ -94,9 +94,9 @@ Concretely:
 - Good, because the project converges on one browser-automation stack.
 - Neutral, because the allowlist/verdict layer stays first-party code (small,
   pure, unit-tested); only the driver changed.
-- Bad, because the gate still covers only the design showcase; post-login views
-  need an authenticated session and are added to the run targets as that becomes
-  possible.
+- Bad, because the gate covers only shipped pre-auth routes; post-login views
+  need a backend and a stored-session fixture, and are added to the run targets
+  as that becomes possible.
 
 ### Confirmation
 
