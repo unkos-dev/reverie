@@ -125,6 +125,12 @@ Step 4 is not optional. Add a context to the ruleset before a run has proven
 the string, and a typo blocks every pull request until someone removes it by
 hand.
 
+The `changes` job reports a check run of its own, `<concern> / changes`. Leave
+it out of the ruleset. A detector is not a check, and requiring one per concern
+adds a context that enforces nothing anyone reads. Its failure mode, where a
+dead detector skips its dependents into being counted as passed, is what the
+backstop gate covers.
+
 ## Repository-specific values
 
 Everything above is portable. These are the parts that are not:
