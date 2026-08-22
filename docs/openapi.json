@@ -5500,7 +5500,7 @@
           "auth"
         ],
         "summary": "`POST /auth/register`: config-gated self-service registration.",
-        "description": "Gated on `self_registration_enabled` (404 when off) AND `local_auth_enabled`.\nMirrors the repeatable pre-auth handlers (`forgot_password`/`reset_password`),\nNOT `setup`: it is unauthenticated and repeatable, and each call fires an\nArgon2 hash plus an outbound HIBP request, so the per-source rate limit is\nenforced BEFORE any policy/hash/breach work.\n\nTHREAT (privilege escalation): a self-registered account is\nalways an `adult`, never an admin or child. The DTO carries no role, and\n`create_local` is called with [`Role::Adult`]; admin and child accounts are\nminted only by an existing administrator. No session is established (parity\nwith setup/reset: the session contract lives only at `/auth/local/login`).\n\n# Errors\n- [`AppError::NotFound`] when self-registration or local auth is disabled.\n- [`AppError::RateLimited`] (429) when the per-source limit is exceeded.\n- [`AppError::Validation`] (422) on a malformed email or a policy failure.\n- [`AppError::EmailConflict`] (409) when the email is already in use.\n- [`AppError::Internal`] on hashing or database failure.",
+        "description": "Gated on `self_registration_enabled` (404 when off) AND `local_auth_enabled`.\nUnauthenticated and repeatable, and each call fires an Argon2 hash plus an\noutbound HIBP request, so the per-source rate limit is enforced BEFORE any\npolicy/hash/breach work, as in `forgot_password`/`reset_password`. `setup`\ntakes the same limit for the pre-bootstrap window, where its 409 fast-reject\ndoes not yet apply.\n\nTHREAT (privilege escalation): a self-registered account is\nalways an `adult`, never an admin or child. The DTO carries no role, and\n`create_local` is called with [`Role::Adult`]; admin and child accounts are\nminted only by an existing administrator. No session is established (parity\nwith setup/reset: the session contract lives only at `/auth/local/login`).\n\n# Errors\n- [`AppError::NotFound`] when self-registration or local auth is disabled.\n- [`AppError::RateLimited`] (429) when the per-source limit is exceeded.\n- [`AppError::Validation`] (422) on a malformed email or a policy failure.\n- [`AppError::EmailConflict`] (409) when the email is already in use.\n- [`AppError::Internal`] on hashing or database failure.",
         "operationId": "register",
         "requestBody": {
           "content": {
@@ -5626,7 +5626,7 @@
           "auth"
         ],
         "summary": "`POST /auth/setup`: first-run bootstrap: mint the first administrator.",
-        "description": "THREAT: bootstrap is the ONLY first-admin path. The race\nguarantee is the DB `instance_bootstrap` singleton insert inside\n[`user::create_first_admin`], NOT this `admin_exists` pre-check (which is only\na cheap fast-reject; a `SELECT EXISTS ... INSERT` does not serialize under\nREAD COMMITTED). A second concurrent setup loses the marker-row race and maps\nto 409. Setup does NOT auto-login (parity with recovery; the session contract\nlives only at `/auth/local/login`).\n\n# Errors\n- [`AppError::SetupAlreadyComplete`] (409) when an administrator already\n  exists (fast-reject or the marker-row race).\n- [`AppError::Validation`] (422) on a malformed email or too-short password.\n- [`AppError::Internal`] on hashing or database failure.",
+        "description": "THREAT: bootstrap is the ONLY first-admin path. The race\nguarantee is the DB `instance_bootstrap` singleton insert inside\n[`user::create_first_admin`], NOT this `admin_exists` pre-check (which is only\na cheap fast-reject; a `SELECT EXISTS ... INSERT` does not serialize under\nREAD COMMITTED). A second concurrent setup loses the marker-row race and maps\nto 409. Setup does NOT auto-login (parity with recovery; the session contract\nlives only at `/auth/local/login`).\n\nRate-limited per source like the repeatable pre-auth handlers, despite\nsucceeding only once. The 409 fast-reject bounds this endpoint only after an\nadministrator exists; before that, every call reaches the Argon2 hash, so an\nun-bootstrapped instance would otherwise grind on demand for anyone who can\nreach it. The limit is enforced first, ahead of the `admin_exists` query.\n\n# Errors\n- [`AppError::RateLimited`] (429) when the per-source limit is exceeded.\n- [`AppError::SetupAlreadyComplete`] (409) when an administrator already\n  exists (fast-reject or the marker-row race).\n- [`AppError::Validation`] (422) on a malformed email or too-short password.\n- [`AppError::Internal`] on hashing or database failure.",
         "operationId": "setup",
         "requestBody": {
           "content": {
@@ -5654,6 +5654,16 @@
           },
           "422": {
             "description": "Validation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too many requests",
             "content": {
               "application/json": {
                 "schema": {
@@ -10243,18 +10253,18 @@
       "device_token_bearer": {
         "type": "http",
         "scheme": "bearer",
-        "description": "Personal device-token credential (`{prefix}{token_id}.{secret}`). MUST be used over HTTPS in production; the token is otherwise exposed in transit (Checkov CKV_OPENAPI_20)."
+        "description": "Personal device-token credential (`{prefix}{token_id}.{secret}`). MUST be used over HTTPS in production; the token is otherwise exposed in transit."
       },
       "oidc_jwt_bearer": {
         "type": "http",
         "scheme": "bearer",
         "bearerFormat": "JWT",
-        "description": "RFC 9068 resource-server access token issued by the configured IdP. MUST be used over HTTPS in production; the token is otherwise exposed in transit (Checkov CKV_OPENAPI_20)."
+        "description": "RFC 9068 resource-server access token issued by the configured IdP. MUST be used over HTTPS in production; the token is otherwise exposed in transit."
       },
       "opds_basic": {
         "type": "http",
         "scheme": "basic",
-        "description": "HTTP Basic authentication for the OPDS feeds. MUST be used over HTTPS in production; Basic credentials are otherwise exposed in transit (Checkov CKV_OPENAPI_3)."
+        "description": "HTTP Basic authentication for the OPDS feeds. MUST be used over HTTPS in production; Basic credentials are otherwise exposed in transit."
       },
       "session_cookie": {
         "type": "apiKey",

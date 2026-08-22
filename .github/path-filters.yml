@@ -40,6 +40,7 @@ workflows:
   - ".github/workflows/**"
   - ".github/actions/**"
   - ".github/zizmor.yml"
+  - "mise.toml"
   - ".github/path-filters.yml"
 iac:
   - "Dockerfile"
@@ -71,7 +72,11 @@ docker:
   - ".github/path-filters.yml"
 openapi:
   - "docs/openapi.json"
-  - ".checkov.yaml"
+  - ".vacuum.yaml"
+  - ".vacuum-ignore.yaml"
+  # vacuum's own pin lives here, and this job has no push fallback, so a
+  # linter bump would otherwise merge without the lint it gates ever running.
+  - "mise.toml"
   - ".github/workflows/ci.yml"
   - ".github/path-filters.yml"
 npm:

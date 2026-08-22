@@ -603,10 +603,10 @@ jobs:
           push: false
           cache-from: type=gha,scope=buildcache-arm64
 
-  # Checks securitySchemes present and non-cleartext, global security rules defined,
-  # operation-level security coverage. Suppressions live in .checkov.yaml.
+  # Lints the generated spec against every oas and owasp rule it already
+  # satisfies. Which rules those are, and why the rest are off, is .vacuum.yaml.
   openapi-policy:
-    name: OpenAPI policy (checkov)
+    name: OpenAPI policy (vacuum)
     needs: changes
     if: needs.changes.outputs.openapi == 'true'
     runs-on: ubuntu-latest
@@ -616,12 +616,17 @@ jobs:
         with:
           persist-credentials: false
 
-      # checkov is pip-only (no standalone release binary).
-      - name: Install checkov 3.3.0
-        run: pipx install checkov==3.3.0
+      - uses: ./.github/actions/setup
+        with:
+          mise-install-args: vacuum
 
-      - name: Scan OpenAPI spec (gating)
-        run: checkov -f docs/openapi.json --framework openapi --compact --config-file .checkov.yaml
+      - name: Lint OpenAPI spec (gating)
+        # info, not the default error: the strict security rule reports at info,
+        # so a higher threshold would let a newly-public write endpoint pass.
+        # The baseline is zero findings at every severity, so nothing else moves.
+        run: >-
+          vacuum lint --ruleset .vacuum.yaml --ignore-file .vacuum-ignore.yaml
+          --fail-severity info --details docs/openapi.json
 
   # npm counterpart of cargo-deny's [licenses] allowlist.
   #
