@@ -1,6 +1,3 @@
-# Workspace-wide pnpm configuration. pnpm v11 no longer reads settings from
-# package.json's `pnpm` field, so everything that is not a dependency
-# declaration lives here.
 packages:
   - frontend
   - docs
@@ -37,12 +34,12 @@ allowBuilds:
 catalog:
   vite: "npm:@voidzero-dev/vite-plus-core@0.2.9"
   vite-plus: "0.2.9"
-  vitest: "4.1.10"
+  vitest: "4.1.11"
   # Must equal vitest exactly. vite-plus refuses to start when the coverage
   # provider and the test runner disagree, because Vitest itself only warns and
   # then reports coverage from mixed versions. Renovate already moves this
   # family as one group for the same reason.
-  "@vitest/coverage-v8": "4.1.10"
+  "@vitest/coverage-v8": "4.1.11"
 
 # Transitive security floors. Each entry is a deliberate minimum, not a
 # convenience pin, and removing one reopens the advisory it closes.
