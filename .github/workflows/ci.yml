@@ -777,12 +777,6 @@ jobs:
       - name: Shell lint (shellcheck)
         run: just infra::shellcheck
 
-      - name: No workflow re-pins a mise-managed tool
-        run: just infra::tool-pin-drift
-
-      - name: ADR frontmatter and index coverage
-        run: just infra::adr-frontmatter-selftest
-
       - name: Dockerfile lint (hadolint)
         run: just infra::hadolint
 
@@ -813,17 +807,6 @@ jobs:
       - name: Format check (oxfmt)
         run: just js::fmt-check
 
-      # Unconditional so a PR that deletes a pinned file fails here even if it never
-      # touches greptile.json itself.
-      - name: Validate greptile.json
-        run: just infra::greptile-config
-
-      - name: Compose dev invariants
-        run: just infra::compose-dev-invariants
-
-      - name: Recipe secret-echo guard
-        run: just infra::recipe-secret-echo-test
-
       # scripts/filter-sarif-unfixable-os.sh decides which container CVEs reach the
       # code-scanning dashboard; an edit that widens its match silently withholds
       # fixable findings. No assertion inside the script itself could catch that.
@@ -839,9 +822,6 @@ jobs:
       # The package-ingress ADR's frozen-installs control.
       - name: cargo --locked guard
         run: just infra::cargo-locked-guard
-
-      - name: Validate lefthook.yml
-        run: just infra::lefthook-validate
 
       # This filter only decides whether a PR touches gated-scope file types at all;
       # PRs outside that scope skip the guard step entirely.

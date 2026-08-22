@@ -87,36 +87,11 @@ zizmor-offline:
 prose:
     git ls-files -z '*.md' | xargs -0 -r vale
 
-# Assert no workflow re-pins a mise-managed tool; mise.toml is the single source.
-[group('infra')]
-tool-pin-drift:
-    scripts/tool-pin-drift.sh
-
-# Validate canonical ADR frontmatter and lifecycle index coverage.
-[group('infra')]
-adr-frontmatter-selftest:
-    scripts/adr-frontmatter-selftest.sh
-
 # Self-test the base-OS finding filter, including that a distro CVE with
 # a fix available is never withheld.
 [group('infra')]
 filter-sarif-unfixable-os-selftest:
     scripts/filter-sarif-unfixable-os-selftest.sh
-
-# Validate greptile.json parses and every pinned context path resolves.
-[group('infra')]
-greptile-config:
-    scripts/validate-greptile-config.sh
-
-# Dev-DB compose invariants: loopback bind, digest pin, parent volume mount.
-[group('infra')]
-compose-dev-invariants:
-    scripts/compose-dev-invariants.sh
-
-# Overridden DB credentials never echo into recipe logs (dry-run assertion).
-[group('infra')]
-recipe-secret-echo-test:
-    scripts/recipe-secret-echo-test.sh
 
 # Exercise the dev-server lifecycle script against a fake server on a scratch port.
 [group('infra')]
@@ -163,14 +138,6 @@ cargo-locked-guard:
 gate-detach-selftest:
     scripts/gate-detach-selftest.sh
 
-# lefthook is a node-local devDep, not on PATH, so it runs via `vp exec`.
-# Validation is cheap and offline, so it joins the lint aggregate.
-#
-# Validate the lefthook.yml hook configuration.
-[group('infra')]
-lefthook-validate:
-    vp exec lefthook validate
-
 # Whole-tree: scripts/no-issue-refs.sh ignores any arguments and always
 # checks every tracked in-scope file, so the *files parameter only controls
 # whether a caller bothers invoking the recipe at all.
@@ -195,7 +162,7 @@ no-plan-refs *files:
 #
 # Whole repo-lint surface (mirrors the CI repo-lint job).
 [group('infra')]
-lint: shellcheck hadolint typos yamllint sqruff actionlint prose tool-pin-drift adr-frontmatter-selftest greptile-config compose-dev-invariants recipe-secret-echo-test filter-sarif-unfixable-os-selftest preflight-scope-selftest cargo-locked-guard lefthook-validate
+lint: shellcheck hadolint typos yamllint sqruff actionlint prose filter-sarif-unfixable-os-selftest preflight-scope-selftest cargo-locked-guard
 
 # Everything left here covers local-only developer tooling, and that is now the
 # entry criterion. CI has no stake in `just doctor`, `just worktree`, or the
@@ -210,12 +177,11 @@ lint: shellcheck hadolint typos yamllint sqruff actionlint prose tool-pin-drift 
 # which is strictly more coverage for a tenth of the lines. Those guards carry
 # their own assertions now and the fixtures are gone.
 #
-# `lint` above keeps every check whose subject is committed configuration an
-# unrelated change can break, including three that only look test-shaped:
-# adr-frontmatter-selftest and recipe-secret-echo-test. A new config validator
-# belongs there.
-#
-# Two entries in `lint` are neither, and each is there for its own reason.
+# A check earns a place in `lint` by catching a failure that has actually
+# happened here, not one that could. Config validators added alongside the
+# config they validate do not qualify. cargo-locked-guard is the exception, and
+# carries ADR authority rather than a fire history; the other two answer for
+# themselves below.
 #
 # filter-sarif-unfixable-os-selftest guards a suppression predicate that decides
 # which container CVEs reach the code-scanning dashboard. The script fails

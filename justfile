@@ -595,8 +595,7 @@ db-migrate:
 # `just db-reset` (destructive; discards the shared DB's data).
 #
 # Same migrator DSN default as db-migrate, as a deliberate copy that
-# nothing in just enforces; scripts/recipe-secret-echo-test.sh asserts
-# the two stay byte-identical, so change both together. Duplicated
+# nothing enforces, so change both together. Duplicated
 # rather than lifted into a just variable for the same reason db-migrate
 # inlines it: a just variable would echo an overridden credential into
 # dry-run/verbose recipe output.
