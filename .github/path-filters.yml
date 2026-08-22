@@ -1,6 +1,7 @@
 # Shared by CI's `changes` job and scripts/preflight-scope.sh; a filter edit
-# changes both gates. Every filter includes this file and every workflow that
-# defines a job it gates, so editing the definition re-runs the job. Patterns
+# changes both gates. Every filter includes this file and every workflow or
+# composite action that defines a job it gates, so editing the definition
+# re-runs the job. Patterns
 # are literal paths and trailing `/**` only: the local scoper has no glob engine.
 backend:
   - "backend/**"
@@ -9,6 +10,7 @@ backend:
   - ".github/workflows/ci.yml"
   # Not under `workflows`: a toolchain edit must trigger the backend jobs.
   - ".github/actions/rust-toolchain/**"
+  - ".github/actions/setup/**"
   - ".github/workflows/security.yml"
   - ".github/path-filters.yml"
 audit:
@@ -17,6 +19,8 @@ audit:
   - "backend/deny.toml"
   - "mise.toml"
   - ".github/workflows/ci.yml"
+  - ".github/workflows/deps.yml"
+  - ".github/actions/setup/**"
   - ".github/path-filters.yml"
 frontend:
   # Root vite.config.ts, the lockfile, and pnpm-workspace.yaml (which declares
@@ -29,6 +33,7 @@ frontend:
   - "vite.config.ts"
   - ".github/workflows/ci.yml"
   - ".github/workflows/security.yml"
+  - ".github/actions/setup/**"
   - ".github/path-filters.yml"
 staging:
   - "docker/compose.staging.yml"
@@ -54,6 +59,7 @@ iac:
   - "mise.toml"
   - ".github/workflows/ci.yml"
   - ".github/workflows/security.yml"
+  - ".github/actions/setup/**"
   - ".github/path-filters.yml"
 docker:
   # Manifests only: this gates build-context failures (a lockfile hoist
@@ -82,6 +88,7 @@ openapi:
   - "mise.toml"
   - ".github/workflows/ci.yml"
   - ".github/workflows/security.yml"
+  - ".github/actions/setup/**"
   - ".github/path-filters.yml"
 npm:
   - "package.json"
@@ -90,6 +97,8 @@ npm:
   - "frontend/package.json"
   - "docs/package.json"
   - ".github/workflows/ci.yml"
+  - ".github/workflows/deps.yml"
+  - ".github/actions/setup/**"
   - ".github/path-filters.yml"
 docs:
   # docs/** includes generated reference artifacts, so a backend regen

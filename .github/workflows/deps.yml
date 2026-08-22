@@ -1,0 +1,106 @@
+name: Dependencies
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  changes:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      audit: ${{ steps.filter.outputs.audit }}
+      npm: ${{ steps.filter.outputs.npm }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4
+        id: filter
+        with:
+          # merge_group's default base (HEAD~1) sees only the synthetic merge ref's
+          # topmost commit; pin to base_sha to match the PR-against-main diff.
+          base: ${{ github.event.merge_group.base_sha || github.base_ref }}
+          ref: ${{ github.event.merge_group.head_sha || github.ref }}
+          # scripts/preflight-scope.sh reads the same file, so the two cannot drift.
+          filters: .github/path-filters.yml
+
+  cargo-deny:
+    needs: changes
+    if: needs.changes.outputs.audit == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - uses: ./.github/actions/setup
+        with:
+          mise-install-args: github:EmbarkStudios/cargo-deny
+
+      - name: Check dependencies (advisories, licenses, bans, sources)
+        run: cargo deny check
+
+  review:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
+        with:
+          # License policy is owned by cargo-deny; this layer gates vulnerabilities only.
+          fail-on-severity: moderate
+          # vp's `vite` alias sorts below every historical real-vite advisory.
+          # See debt/2026-06-30-vite-plus-alias-dependency-review.md
+          allow-ghsas: >-
+            GHSA-353f-5xf4-qw67, GHSA-356w-63v5-8wf4, GHSA-4r4m-qw57-chr8,
+            GHSA-4w7w-66w2-5vf9, GHSA-64vr-g452-qvp3, GHSA-859w-5945-r5v3,
+            GHSA-9cwx-2883-4wfx, GHSA-c27g-q93r-2cwf, GHSA-fx2h-pf6j-xcff,
+            GHSA-mv48-hcvh-8jj8, GHSA-v6wh-96g9-6wx3, GHSA-vg6x-rcgg-rjx6,
+            GHSA-x574-m823-4x7w, GHSA-xcj6-pq6g-qj4x
+
+  npm-licenses:
+    needs: changes
+    if: needs.changes.outputs.npm == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - uses: ./.github/actions/setup
+        with:
+          vp: "true"
+
+      - name: Check npm licenses (gating)
+        run: |
+          set -euo pipefail
+          allow="MIT;Apache-2.0;ISC;0BSD;BSD-2-Clause;BSD-3-Clause;BlueOak-1.0.0;CC0-1.0;Python-2.0;Unlicense"
+          rc=0
+          for tree in . frontend docs; do
+            echo "::group::license check (${tree})"
+            (
+              cd "$tree"
+              # Excluded by name, not license: build-time native tooling whose own
+              # code never lands in the shipped output.
+              vp exec license-checker-rseidelsohn \
+                --production \
+                --excludePrivatePackages \
+                --excludePackagesStartingWith "@img/sharp-libvips;@bruits/satteri;satteri;lightningcss" \
+                --onlyAllow "$allow"
+            ) || rc=1
+            echo "::endgroup::"
+          done
+          exit "$rc"

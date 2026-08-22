@@ -13,7 +13,7 @@ inputs:
   mise-install-args:
     description: >-
       Tools to install, passed through to mise-action's install_args. Empty
-      installs only what mise.toml pins for the repository root.
+      skips mise entirely.
     required: false
     default: ""
   add-shims-to-path:
@@ -35,6 +35,7 @@ runs:
   using: composite
   steps:
     - name: Install pinned tools (mise)
+      if: inputs.mise-install-args != ''
       uses: jdx/mise-action@3c2e0cf82a5b2e5249f0d3635a4d83d0ae861518 # v4.2.5
       with:
         # renovate: datasource=github-releases depName=jdx/mise extractVersion=^v(?<version>.+)$
