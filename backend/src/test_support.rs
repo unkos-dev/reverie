@@ -580,6 +580,37 @@ pub mod db {
         axum_test::TestServer::new(app)
     }
 
+    /// Same as [`server_with_real_pools`] but with a per-source limit of
+    /// `per_min` and `X-Forwarded-For` trusted for the client IP.
+    ///
+    /// Both are needed to exercise a 429 through the router: the base
+    /// `test_config()` trusts no header, and `PeerAddr` is empty under the test
+    /// harness, so `client_ip` resolves to `None` and the limiter is never
+    /// consulted. Send an `X-Forwarded-For` header from the test to key it.
+    pub fn server_with_source_rate_limit(
+        app_pool: &PgPool,
+        ingestion_pool: &PgPool,
+        per_min: u32,
+    ) -> axum_test::TestServer {
+        use crate::state::AppState;
+        let mut config = super::test_config();
+        config.trusted_client_ip_header = Some("x-forwarded-for".to_owned());
+        let state = AppState {
+            pool: app_pool.clone(),
+            ingestion_pool: ingestion_pool.clone(),
+            config,
+            oidc_client: Some(super::test_oidc_client()),
+            jwt_validator: None,
+            login_limiter: crate::auth::rate_limit::build_login_limiter(
+                std::num::NonZeroU32::new(per_min).expect("per_min must be non-zero"),
+            ),
+            settings: super::test_settings(),
+            last_settings_reload: std::sync::Arc::new(tokio::sync::RwLock::new(None)),
+        };
+        let app = crate::build_router(state);
+        axum_test::TestServer::new(app)
+    }
+
     /// Same as [`server_with_real_pools`] but with OPDS enabled. Tests that
     /// exercise `/opds/*` routes need this — the base `test_config()` has
     /// `opds.enabled = false` to match ordinary route tests.
