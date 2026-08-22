@@ -1,0 +1,171 @@
+name: Lint
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+env:
+  MISE_TOOLS: just shellcheck hadolint typos vale yamllint github:quarylabs/sqruff actionlint zizmor
+
+jobs:
+  changes:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      workflows: ${{ steps.filter.outputs.workflows }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4
+        id: filter
+        with:
+          # merge_group's default base (HEAD~1) sees only the synthetic merge ref's
+          # topmost commit; pin to base_sha to match the PR-against-main diff.
+          base: ${{ github.event.merge_group.base_sha || github.base_ref }}
+          ref: ${{ github.event.merge_group.head_sha || github.ref }}
+          # scripts/preflight-scope.sh reads the same file, so the two cannot drift.
+          filters: .github/path-filters.yml
+
+  # zizmor matters because label.yml uses pull_request_target and
+  # docker-publish.yml is a privileged GHCR deployer. It runs with no SARIF
+  # upload, so a finding is a hard failure rather than a Security-tab entry.
+  workflows:
+    needs: changes
+    if: needs.changes.outputs.workflows == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    env:
+      # Without it zizmor degrades to offline mode with a warning instead of failing.
+      # contents: read is scope enough: the token-gated audits query public data
+      # about referenced actions, not privileged data on this repo.
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - uses: ./.github/actions/setup
+        with:
+          mise-install-args: ${{ env.MISE_TOOLS }}
+
+      - name: Lint workflow files
+        run: actionlint -color
+
+      - name: Workflow security audit (zizmor)
+        run: just infra::zizmor
+
+  guards:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - uses: ./.github/actions/setup
+        with:
+          mise-install-args: ${{ env.MISE_TOOLS }}
+
+      # scripts/filter-sarif-unfixable-os.sh decides which container CVEs reach the
+      # code-scanning dashboard; an edit that widens its match silently withholds
+      # fixable findings. No assertion inside the script itself could catch that.
+      - name: Container-CVE suppression predicate
+        run: just infra::filter-sarif-unfixable-os-selftest
+
+      # scripts/preflight-scope.sh decides which lanes a local gate runs; a change
+      # that narrows its own escalation logic is circular to catch locally. This job
+      # is unconditional and never consults the scoper.
+      - name: Preflight lane scoper
+        run: just infra::preflight-scope-selftest
+
+      # The package-ingress ADR's frozen-installs control.
+      - name: cargo --locked guard
+        run: just infra::cargo-locked-guard
+
+      # This filter only decides whether a PR touches gated-scope file types at all;
+      # PRs outside that scope skip the guard step entirely.
+      - name: Detect changed source and docs
+        uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4
+        id: source-changed
+        with:
+          base: ${{ github.event.merge_group.base_sha || github.base_ref }}
+          ref: ${{ github.event.merge_group.head_sha || github.ref }}
+          list-files: json
+          filters: |
+            source:
+              - 'backend/src/**/*.rs'
+              - 'frontend/src/**/*.{ts,tsx,js,jsx,css}'
+              - '**/*.{md,mdx}'
+
+      # The file list reaches the shell via env, never inline `${{ }}`, and is
+      # NUL-delimited so a filename containing a newline can't split and bypass
+      # the guard.
+      - name: Reject issue-tracker and plan refs in changed source
+        if: steps.source-changed.outputs.source == 'true'
+        shell: bash
+        env:
+          SOURCE_FILES: ${{ steps.source-changed.outputs.source_files }}
+        run: |
+          set -euo pipefail
+          mapfile -d '' -t files < <(printf '%s' "$SOURCE_FILES" | jq -j '.[] + "\u0000"')
+          if [ "${#files[@]}" -gt 0 ]; then
+            just infra::no-issue-refs "${files[@]}"
+            just infra::no-plan-refs "${files[@]}"
+          fi
+
+  prose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - uses: ./.github/actions/setup
+        with:
+          mise-install-args: ${{ env.MISE_TOOLS }}
+          vp: "true"
+
+      - name: Spell check (typos)
+        run: just infra::typos
+
+      - name: Markdown lint (markdownlint-cli2)
+        run: just js::markdownlint
+
+      # Emits at `warning`, so this surfaces findings without failing the build.
+      - name: Prose lint (Vale)
+        run: just infra::prose
+
+  files:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - uses: ./.github/actions/setup
+        with:
+          mise-install-args: ${{ env.MISE_TOOLS }}
+          vp: "true"
+
+      - name: Shell lint (shellcheck)
+        run: just infra::shellcheck
+
+      - name: Dockerfile lint (hadolint)
+        run: just infra::hadolint
+
+      - name: YAML lint (yamllint)
+        run: just infra::yamllint
+
+      - name: SQL lint (sqruff)
+        run: just infra::sqruff
+
+      - name: Format check (oxfmt)
+        run: just js::fmt-check

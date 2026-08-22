@@ -160,7 +160,7 @@ no-plan-refs *files:
 # The two ref guards take a file list and are driven per-commit by hooks, so they
 # are excluded here.
 #
-# Whole repo-lint surface (mirrors the CI repo-lint job).
+# Whole repo-lint surface (the non-JS half of CI's lint concern).
 [group('infra')]
 lint: shellcheck hadolint typos yamllint sqruff actionlint prose filter-sarif-unfixable-os-selftest preflight-scope-selftest cargo-locked-guard
 
