@@ -1,0 +1,201 @@
+name: Frontend
+
+on:
+  workflow_call:
+    secrets:
+      CODACY_PROJECT_TOKEN:
+        required: false
+
+permissions:
+  contents: read
+
+jobs:
+  changes:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      frontend: ${{ steps.filter.outputs.frontend }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4
+        id: filter
+        with:
+          # merge_group's default base (HEAD~1) sees only the synthetic merge ref's
+          # topmost commit; pin to base_sha to match the PR-against-main diff.
+          base: ${{ github.event.merge_group.base_sha || github.base_ref }}
+          ref: ${{ github.event.merge_group.head_sha || github.ref }}
+          # scripts/preflight-scope.sh reads the same file, so the two cannot drift.
+          filters: .github/path-filters.yml
+
+  lint:
+    needs: changes
+    if: needs.changes.outputs.frontend == 'true' || github.event_name == 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - uses: ./.github/actions/setup
+        with:
+          mise-install-args: just
+          vp: "true"
+
+      - name: Lint
+        run: just js::oxlint
+
+      - name: Stylelint
+        run: just js::stylelint
+
+      # Advisory until the known bg-black findings in stock shadcn overlays are addressed.
+      - name: Detect (impeccable, advisory)
+        run: just js::detect
+        continue-on-error: true
+
+  test:
+    needs: changes
+    if: needs.changes.outputs.frontend == 'true' || github.event_name == 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - uses: ./.github/actions/setup
+        with:
+          mise-install-args: just
+          vp: "true"
+
+      - name: Test (with coverage)
+        run: just js::test-coverage
+
+      # A missing report must fail here, not read as 0% coverage downstream.
+      - name: Upload frontend coverage artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: frontend-coverage
+          path: frontend/coverage/lcov.info
+          if-no-files-found: error
+          retention-days: 1
+
+      # Codacy requires repo-root-relative SF: paths; the frontend lcov is frontend-relative.
+      - name: Normalize coverage paths to repo root
+        run: sed -i 's#^SF:#SF:frontend/#' coverage/lcov.info
+
+      # Reports above 10 MB fail server-side with an opaque JSON parse error, so
+      # size is surfaced here instead.
+      - name: Check coverage report size
+        id: frontend_lcov_size
+        run: |
+          size=$(wc -c < coverage/lcov.info)
+          if [ "${size}" -gt 10485760 ]; then
+            echo "::warning title=Coverage report oversized::frontend/coverage/lcov.info is ${size} bytes; Codacy rejects reports above 10 MB."
+            echo 'skip=true' >> "${GITHUB_OUTPUT}"
+          else
+            echo 'skip=false' >> "${GITHUB_OUTPUT}"
+          fi
+
+      # Per-language advisory upload; PR-level Codacy contexts come from these steps.
+      - name: Upload coverage to Codacy
+        if: >-
+          steps.frontend_lcov_size.outputs.skip != 'true' &&
+          github.actor != 'dependabot[bot]' &&
+          github.actor != 'renovate[bot]' &&
+          (github.event_name != 'pull_request' ||
+           (github.event.pull_request.head.repo.full_name == github.repository &&
+            !startsWith(github.head_ref, 'renovate/') &&
+            !startsWith(github.head_ref, 'dependabot/')))
+        uses: codacy/codacy-coverage-reporter-action@89d6c85cfafaec52c72b6c5e8b2878d33104c699 # v1.3.0
+        continue-on-error: true
+        with:
+          project-token: ${{ secrets.CODACY_PROJECT_TOKEN }}
+          coverage-reports: frontend/coverage/lcov.info
+          language: TypeScript
+
+  build:
+    needs: changes
+    if: needs.changes.outputs.frontend == 'true' || github.event_name == 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - uses: ./.github/actions/setup
+        with:
+          mise-install-args: just
+          vp: "true"
+
+      - name: Verify font integrity
+        run: just js::font-integrity
+
+      - name: Build
+        run: just js::build
+
+  # WCAG 2.2 AA gate: axe-core against the routes in
+  # frontend/scripts/a11y/allowlist.mjs, failing on any violation outside that
+  # file's allowlist.
+  a11y:
+    needs: changes
+    if: needs.changes.outputs.frontend == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - uses: ./.github/actions/setup
+        with:
+          vp: "true"
+
+      # Read the installed package, not the lockfile: the manifest carries a
+      # range, and under pnpm's isolated layout a version can appear in the
+      # lockfile at more than one path. This step runs after `vp install`, so
+      # what it reports is exactly the version the cached browser must match.
+      - name: Resolve Playwright version
+        id: playwright
+        run: echo "version=$(node -e "console.log(require('@playwright/test/package.json').version)")" >> "$GITHUB_OUTPUT"
+
+      - name: Cache Playwright browsers
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-chromium-${{ runner.os }}-${{ runner.arch }}-${{ steps.playwright.outputs.version }}
+
+      # Unconditional even on a cache hit: `--with-deps` installs OS-level apt
+      # packages that aren't cached and must be present every run.
+      - name: Install Playwright Chromium
+        run: vp exec playwright install --with-deps chromium
+
+      # Do not also start a server here: Playwright's webServer config already runs
+      # `vp dev` and never reuses an existing one, so a second would collide on
+      # port 5173.
+      - name: Run accessibility gate
+        run: vp run a11y
+
+      - name: Upload Playwright traces
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: a11y-playwright-traces
+          path: frontend/test-results/
+          if-no-files-found: ignore

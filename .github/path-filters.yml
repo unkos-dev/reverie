@@ -32,6 +32,7 @@ frontend:
   - "pnpm-workspace.yaml"
   - "vite.config.ts"
   - ".github/workflows/ci.yml"
+  - ".github/workflows/frontend.yml"
   - ".github/workflows/security.yml"
   - ".github/actions/setup/**"
   - ".github/path-filters.yml"
