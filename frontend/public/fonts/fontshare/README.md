@@ -76,7 +76,7 @@ sha256sum *.woff2 > SHA256SUMS
 ```
 
 To verify integrity locally (CI runs the same command in
-`.github/workflows/ci.yml` → `Verify font integrity`):
+`.github/workflows/frontend.yml` → `Verify font integrity`):
 
 ```bash
 cd frontend/public/fonts/fontshare/files && sha256sum -c SHA256SUMS

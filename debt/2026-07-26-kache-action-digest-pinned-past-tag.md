@@ -11,7 +11,7 @@ lift-when: kunobi-ninja/kache-action publishes a tag containing commit a257c05, 
 
 ## Constraint
 
-`.github/workflows/ci.yml` pins `kunobi-ninja/kache-action` to commit
+`.github/workflows/backend.yml` pins `kunobi-ninja/kache-action` to commit
 `a257c055543c2840700a9bbca8f9c3094a421b1b`, which is the head of the
 upstream default branch rather than a released tag.
 

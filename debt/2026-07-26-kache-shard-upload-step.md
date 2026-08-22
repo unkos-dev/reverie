@@ -27,7 +27,7 @@ upload never happens.
 
 ## Workaround
 
-`.github/workflows/ci.yml` runs `kache save-manifest` as an ordinary step
+`.github/workflows/backend.yml` runs `kache save-manifest` as an ordinary step
 after the compiling steps, where it inherits `backend/` from the job's
 working directory. It passes no arguments: the action's setup step
 exports `KACHE_NAMESPACE` and the remote settings into the job
