@@ -213,7 +213,7 @@ fi
 
 # Records carry lane names, statuses, and integers only, never lane output: a
 # recipe line can legitimately contain a DSN default, and a log that quietly
-# accumulated one would defeat scripts/recipe-secret-echo-test.sh.
+# accumulated one would put a credential on disk.
 record() {
   [ -n "$run_log" ] || return 0
   printf '%s\n' "$1" >> "$run_log" || {
