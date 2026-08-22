@@ -1,5 +1,12 @@
 name: CI # sonar.yml's workflow_run trigger matches this string; renaming either orphans it silently.
 
+# Display only, and independent of `name:` above, so the sonar.yml coupling is untouched.
+run-name: >-
+  ${{ github.event_name == 'pull_request'
+      && format('PR #{0}: {1}', github.event.number, github.event.pull_request.title)
+   || github.event_name == 'merge_group' && 'merge queue'
+   || format('main: {0}', github.event.head_commit.message) }}
+
 on:
   # PRs are squash-merged, so main's head commit is a SHA no pull_request run
   # analyzed; push keeps SonarQube Cloud's baseline current.
@@ -533,58 +540,11 @@ jobs:
             GHSA-mv48-hcvh-8jj8, GHSA-v6wh-96g9-6wx3, GHSA-vg6x-rcgg-rjx6,
             GHSA-x574-m823-4x7w, GHSA-xcj6-pq6g-qj4x
 
-  # Mirrors the lefthook pre-commit invocation at the same pinned version.
-  workflow-lint:
-    name: Workflow lint
-    needs: changes
-    if: needs.changes.outputs.workflows == 'true'
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with:
-          persist-credentials: false
-
-      - name: Install actionlint (mise)
-        uses: jdx/mise-action@3c2e0cf82a5b2e5249f0d3635a4d83d0ae861518 # v4.2.5
-        with:
-          # renovate: datasource=github-releases depName=jdx/mise extractVersion=^v(?<version>.+)$
-          version: "2026.8.8"
-          install_args: actionlint
-
-      - name: Lint workflow files
-        run: actionlint -color
-
-  # Matters because label.yml uses pull_request_target and docker-publish.yml is a
-  # privileged GHCR deployer. Runs `just infra::zizmor` with no SARIF upload, so a
-  # finding is a hard failure rather than a non-blocking Security-tab entry.
-  workflow-security:
-    name: Workflow security (zizmor)
-    needs: changes
-    if: needs.changes.outputs.workflows == 'true'
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    permissions:
-      contents: read
-    env:
-      # Without it zizmor degrades to offline mode with a warning instead of failing.
-      # contents: read is scope enough: the token-gated audits query public data
-      # about referenced actions, not privileged data on this repo.
-      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with:
-          persist-credentials: false
-
-      - name: Install pinned tools (mise)
-        uses: jdx/mise-action@3c2e0cf82a5b2e5249f0d3635a4d83d0ae861518 # v4.2.5
-        with:
-          # renovate: datasource=github-releases depName=jdx/mise extractVersion=^v(?<version>.+)$
-          version: "2026.8.8"
-          install_args: just zizmor
-
-      - name: Workflow security audit (zizmor)
-        run: just infra::zizmor
+  # Unconditional, and never gains an `if:`. A skipped caller reports a check run
+  # named `lint`, while the ruleset requires `lint / <job>`, which would then never
+  # report and leave every pull request pending. Filtering lives inside lint.yml.
+  lint:
+    uses: ./.github/workflows/lint.yml
 
   # Covers what hadolint's instruction lint doesn't: root-user defaults, missing
   # healthchecks, privileged/host-mode services, secrets-in-env shapes.
@@ -752,107 +712,6 @@ jobs:
             --exclude-rule opengrep-rules.rust.lang.security.args \
             --error \
             backend/src frontend/src
-
-  # The pre-commit hook runs these locally but is bypassable and never runs on fork
-  # PRs, so this job is the authoritative surface.
-  repo-lint:
-    name: Repo lint
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with:
-          persist-credentials: false
-
-      # Shims stay on, unlike the Rust jobs' mise-action calls: this job runs only
-      # JS tools from the repo root, where mise.toml is a shim's ancestor.
-      - name: Install pinned tools (mise)
-        uses: jdx/mise-action@3c2e0cf82a5b2e5249f0d3635a4d83d0ae861518 # v4.2.5
-        with:
-          # renovate: datasource=github-releases depName=jdx/mise extractVersion=^v(?<version>.+)$
-          version: "2026.8.8"
-          install_args: just shellcheck hadolint typos vale yamllint github:quarylabs/sqruff
-          add_shims_to_path: true
-
-      - name: Shell lint (shellcheck)
-        run: just infra::shellcheck
-
-      - name: Dockerfile lint (hadolint)
-        run: just infra::hadolint
-
-      - name: Spell check (typos)
-        run: just infra::typos
-
-      - name: YAML lint (yamllint)
-        run: just infra::yamllint
-
-      - name: SQL lint (sqruff)
-        run: just infra::sqruff
-
-      - uses: voidzero-dev/setup-vp@313600b80b104eadebb9111787d37a2e83e014ca # v1.17.0
-        with:
-          node-manager: true
-          cache: true
-
-      - name: Install workspace
-        run: vp install
-
-      - name: Markdown lint (markdownlint-cli2)
-        run: just js::markdownlint
-
-      # Emits at `warning`, so this surfaces findings without failing the build.
-      - name: Prose lint (Vale)
-        run: just infra::prose
-
-      - name: Format check (oxfmt)
-        run: just js::fmt-check
-
-      # scripts/filter-sarif-unfixable-os.sh decides which container CVEs reach the
-      # code-scanning dashboard; an edit that widens its match silently withholds
-      # fixable findings. No assertion inside the script itself could catch that.
-      - name: Container-CVE suppression predicate
-        run: just infra::filter-sarif-unfixable-os-selftest
-
-      # scripts/preflight-scope.sh decides which lanes a local gate runs; a change
-      # that narrows its own escalation logic is circular to catch locally. This job
-      # is unconditional and never consults the scoper.
-      - name: Preflight lane scoper
-        run: just infra::preflight-scope-selftest
-
-      # The package-ingress ADR's frozen-installs control.
-      - name: cargo --locked guard
-        run: just infra::cargo-locked-guard
-
-      # This filter only decides whether a PR touches gated-scope file types at all;
-      # PRs outside that scope skip the guard step entirely.
-      - name: Detect changed source and docs
-        uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4
-        id: source-changed
-        with:
-          base: ${{ github.event.merge_group.base_sha || github.base_ref }}
-          ref: ${{ github.event.merge_group.head_sha || github.ref }}
-          list-files: json
-          filters: |
-            source:
-              - 'backend/src/**/*.rs'
-              - 'frontend/src/**/*.{ts,tsx,js,jsx,css}'
-              - '**/*.{md,mdx}'
-
-      # The file list reaches the shell via env, never inline `${{ }}`, and is
-      # NUL-delimited so a filename containing a newline can't split and bypass
-      # the guard.
-      - name: Reject issue-tracker and plan refs in changed source
-        if: steps.source-changed.outputs.source == 'true'
-        shell: bash
-        env:
-          SOURCE_FILES: ${{ steps.source-changed.outputs.source_files }}
-        run: |
-          set -euo pipefail
-          mapfile -d '' -t files < <(printf '%s' "$SOURCE_FILES" | jq -j '.[] + "\u0000"')
-          if [ "${#files[@]}" -gt 0 ]; then
-            just infra::no-issue-refs "${files[@]}"
-            just infra::no-plan-refs "${files[@]}"
-          fi
 
   frontend:
     name: Frontend
@@ -1227,9 +1086,7 @@ jobs:
       - msrv
       - audit
       - dependency-review
-      - workflow-lint
-      - workflow-security
-      - repo-lint
+      - lint
       - frontend
       - a11y
       - staging-smoke
