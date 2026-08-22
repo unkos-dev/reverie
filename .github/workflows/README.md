@@ -111,6 +111,9 @@ what it uses. That is `security`, where no step would ever move from the secret
 scanner to the spec linter, and the scanners are large enough that installing
 all of them everywhere would be waste with nothing bought.
 
+A job that needs only the JS workspace names no tools at all, and the mise step
+drops out.
+
 The pin consolidation stays visible to Renovate because its custom manager for
 annotated version pins matches composite action files as well as workflow
 files.
@@ -151,8 +154,8 @@ backstop gate covers.
 
 Everything above is portable. These are the parts that are not:
 
-- Concerns: `lint` and `security` today, with the remaining planes moving
-  across in sequence.
+- Concerns: `lint`, `security`, and `deps` today, with the remaining planes
+  moving across in sequence.
 - Filters live in `.github/path-filters.yml` and are consumed by both CI and
   `scripts/preflight-scope.sh`.
 - Tools come from `mise.toml`; the JS workspace resolves under the package

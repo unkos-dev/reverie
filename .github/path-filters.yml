@@ -17,6 +17,7 @@ audit:
   - "backend/deny.toml"
   - "mise.toml"
   - ".github/workflows/ci.yml"
+  - ".github/workflows/deps.yml"
   - ".github/path-filters.yml"
 frontend:
   # Root vite.config.ts, the lockfile, and pnpm-workspace.yaml (which declares
@@ -90,6 +91,7 @@ npm:
   - "frontend/package.json"
   - "docs/package.json"
   - ".github/workflows/ci.yml"
+  - ".github/workflows/deps.yml"
   - ".github/path-filters.yml"
 docs:
   # docs/** includes generated reference artifacts, so a backend regen

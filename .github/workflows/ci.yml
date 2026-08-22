@@ -37,14 +37,12 @@ jobs:
     timeout-minutes: 5
     outputs:
       backend: ${{ steps.filter.outputs.backend }}
-      audit: ${{ steps.filter.outputs.audit }}
       frontend: ${{ steps.filter.outputs.frontend }}
       staging: ${{ steps.filter.outputs.staging }}
       workflows: ${{ steps.filter.outputs.workflows }}
       iac: ${{ steps.filter.outputs.iac }}
       docker: ${{ steps.filter.outputs.docker }}
       openapi: ${{ steps.filter.outputs.openapi }}
-      npm: ${{ steps.filter.outputs.npm }}
       docs: ${{ steps.filter.outputs.docs }}
       kache: ${{ steps.kache.outputs.version }}
     steps:
@@ -491,55 +489,6 @@ jobs:
           esac
           cargo check --workspace --all-targets --locked
 
-  audit:
-    name: Dependency policy (cargo-deny)
-    needs: changes
-    if: needs.changes.outputs.audit == 'true'
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    defaults:
-      run:
-        working-directory: backend
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with:
-          persist-credentials: false
-      - name: Install cargo-deny (mise)
-        uses: jdx/mise-action@3c2e0cf82a5b2e5249f0d3635a4d83d0ae861518 # v4.2.5
-        with:
-          # renovate: datasource=github-releases depName=jdx/mise extractVersion=^v(?<version>.+)$
-          version: "2026.8.8"
-          install_args: github:EmbarkStudios/cargo-deny
-      - name: Check dependencies (advisories, licenses, bans, sources)
-        run: cargo deny check
-
-  # Diffs the PR's dependency manifests against base and fails on any added package
-  # with an advisory at/above the floor. pull_request-only: no diff to evaluate on
-  # push or merge_group; ci-gate treats the skip as a pass.
-  dependency-review:
-    name: Dependency review
-    if: github.event_name == 'pull_request'
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with:
-          persist-credentials: false
-      - uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
-        with:
-          # License policy is owned by cargo-deny; this layer gates vulnerabilities only.
-          fail-on-severity: moderate
-          # vp installs under the `vite` alias at vite@0.2.1, which sorts below every
-          # historical real-vite advisory; vite-plus-core 0.2.1 is vite 8.x underneath
-          # and carries the fixes. Revisit on a vp version bump. See
-          # debt/2026-06-30-vite-plus-alias-dependency-review.md
-          allow-ghsas: >-
-            GHSA-353f-5xf4-qw67, GHSA-356w-63v5-8wf4, GHSA-4r4m-qw57-chr8,
-            GHSA-4w7w-66w2-5vf9, GHSA-64vr-g452-qvp3, GHSA-859w-5945-r5v3,
-            GHSA-9cwx-2883-4wfx, GHSA-c27g-q93r-2cwf, GHSA-fx2h-pf6j-xcff,
-            GHSA-mv48-hcvh-8jj8, GHSA-v6wh-96g9-6wx3, GHSA-vg6x-rcgg-rjx6,
-            GHSA-x574-m823-4x7w, GHSA-xcj6-pq6g-qj4x
-
   # Unconditional, and never gains an `if:`. A skipped caller reports a check run
   # named `lint`, while the ruleset requires `lint / <job>`, which would then never
   # report and leave every pull request pending. Filtering lives inside lint.yml.
@@ -548,6 +497,9 @@ jobs:
 
   security:
     uses: ./.github/workflows/security.yml
+
+  deps:
+    uses: ./.github/workflows/deps.yml
 
   # Covers what hadolint's instruction lint doesn't: root-user defaults, missing
   # healthchecks, privileged/host-mode services, secrets-in-env shapes.
@@ -578,51 +530,6 @@ jobs:
           push: false
           cache-from: type=gha,scope=buildcache-arm64
 
-  # npm counterpart of cargo-deny's [licenses] allowlist.
-  #
-  # Excluded by name, not license: this build-time-only native tooling's compiled
-  # output ships, but its own code never lands in it, so its license doesn't bind
-  # the project (@img/sharp-libvips-*, lightningcss*, satteri/@bruits/satteri-*,
-  # the last of which reads UNKNOWN until its pre-1.0 packaging gap is fixed
-  # upstream). The gate still fails any other package carrying these licenses.
-  npm-license:
-    name: npm license policy
-    needs: changes
-    if: needs.changes.outputs.npm == 'true'
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with:
-          persist-credentials: false
-
-      - uses: voidzero-dev/setup-vp@313600b80b104eadebb9111787d37a2e83e014ca # v1.17.0
-        with:
-          node-manager: true
-          cache: true
-
-      - name: Check npm licenses (gating)
-        run: |
-          set -euo pipefail
-          vp install
-          allow="MIT;Apache-2.0;ISC;0BSD;BSD-2-Clause;BSD-3-Clause;BlueOak-1.0.0;CC0-1.0;Python-2.0;Unlicense"
-          rc=0
-          for tree in . frontend docs; do
-            echo "::group::license check (${tree})"
-            (
-              cd "$tree"
-              vp exec license-checker-rseidelsohn \
-                --production \
-                --excludePrivatePackages \
-                --excludePackagesStartingWith "@img/sharp-libvips;@bruits/satteri;satteri;lightningcss" \
-                --onlyAllow "$allow"
-            ) || rc=1
-            echo "::endgroup::"
-          done
-          exit "$rc"
-
-  # Rule-based SAST via opengrep, motivated by Rust, where CodeQL's extractor
-  # resolves call targets poorly and pattern rules need no call-graph resolution.
   frontend:
     name: Frontend
     needs: changes
@@ -960,15 +867,13 @@ jobs:
       - backend
       - backend-checks
       - msrv
-      - audit
-      - dependency-review
       - lint
       - security
+      - deps
       - frontend
       - a11y
       - staging-smoke
       - docker-build
-      - npm-license
       - docs
     runs-on: ubuntu-latest
     timeout-minutes: 5
