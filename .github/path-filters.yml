@@ -73,6 +73,9 @@ openapi:
   - "docs/openapi.json"
   - ".vacuum.yaml"
   - ".vacuum-ignore.yaml"
+  # vacuum's own pin lives here, and this job has no push fallback, so a
+  # linter bump would otherwise merge without the lint it gates ever running.
+  - "mise.toml"
   - ".github/workflows/ci.yml"
   - ".github/path-filters.yml"
 npm:
