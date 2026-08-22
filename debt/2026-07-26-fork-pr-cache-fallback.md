@@ -11,7 +11,7 @@ lift-when: fork pull requests restore a compilation cache again, whether by a fo
 
 ## Constraint
 
-`Backend checks` asks `Swatinem/rust-cache` for the registry only
+`backend / checks` asks `Swatinem/rust-cache` for the registry only
 wherever the object store is reachable, and for `target/` as well where
 it is not:
 
@@ -39,7 +39,7 @@ seven days after last access.
 ## Workaround
 
 None. Fork pull requests compile cold once the last full-target
-generation expires, at roughly 786s for `Backend checks` against 194s
+generation expires, at roughly 786s for `backend / checks` against 194s
 warm.
 
 ## Why this isn't the right shape
