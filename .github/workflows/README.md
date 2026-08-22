@@ -154,8 +154,8 @@ backstop gate covers.
 
 Everything above is portable. These are the parts that are not:
 
-- Concerns: `lint`, `security`, and `deps` today, with the remaining planes
-  moving across in sequence.
+- Concerns: `lint`, `security`, `deps`, and `frontend` today, with the
+  remaining planes moving across in sequence.
 - Filters live in `.github/path-filters.yml` and are consumed by both CI and
   `scripts/preflight-scope.sh`.
 - Tools come from `mise.toml`; the JS workspace resolves under the package
