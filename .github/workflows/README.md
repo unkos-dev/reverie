@@ -130,10 +130,14 @@ more than the work it skips is a slower job with more moving parts.
    `changes` job and one job per check group.
 2. Add the caller job to `ci.yml`, with no `if:` and no `name:`.
 3. Add the caller to `ci-gate.needs`, unless every job in it is advisory.
-4. Open the pull request and read the actual check names off it.
-5. Add those exact strings to the branch ruleset as required contexts.
+4. Add the concern file to every filter its `changes` job reads.
+5. Open the pull request and read the actual check names off it.
+6. Add those exact strings to the branch ruleset as required contexts.
 
-Step 4 is not optional. Add a context to the ruleset before a run has proven
+Step 4 fails quietly when missed: a job whose definition sits outside the
+filter gating it can be weakened and skipped in the same change.
+
+Step 6 is not optional. Add a context to the ruleset before a run has proven
 the string, and a typo blocks every pull request until someone removes it by
 hand.
 
