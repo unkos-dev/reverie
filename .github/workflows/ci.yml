@@ -546,37 +546,12 @@ jobs:
   lint:
     uses: ./.github/workflows/lint.yml
 
+  security:
+    uses: ./.github/workflows/security.yml
+
   # Covers what hadolint's instruction lint doesn't: root-user defaults, missing
   # healthchecks, privileged/host-mode services, secrets-in-env shapes.
   # Suppressions live in .trivyignore with per-finding justification.
-  iac-scan:
-    name: IaC misconfig (trivy)
-    needs: changes
-    if: needs.changes.outputs.iac == 'true'
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with:
-          persist-credentials: false
-
-      - name: Install trivy (mise)
-        uses: jdx/mise-action@3c2e0cf82a5b2e5249f0d3635a4d83d0ae861518 # v4.2.5
-        with:
-          # renovate: datasource=github-releases depName=jdx/mise extractVersion=^v(?<version>.+)$
-          version: "2026.8.8"
-          install_args: trivy
-
-      - name: Scan IaC for misconfigurations (gating)
-        run: |
-          set -euo pipefail
-          trivy config \
-            --severity HIGH,CRITICAL \
-            --exit-code 1 \
-            --skip-dirs node_modules,frontend/node_modules,docs/node_modules,backend/target \
-            --skip-dirs .github \
-            .
-
   # docker-publish only fires post-merge, so without this a broken image definition
   # merges green and detonates on main in the privileged publish lane. arm64 to match
   # the main-push publish arch and share its warm layer cache.
@@ -602,31 +577,6 @@ jobs:
           platforms: linux/arm64
           push: false
           cache-from: type=gha,scope=buildcache-arm64
-
-  # Lints the generated spec against every oas and owasp rule it already
-  # satisfies. Which rules those are, and why the rest are off, is .vacuum.yaml.
-  openapi-policy:
-    name: OpenAPI policy (vacuum)
-    needs: changes
-    if: needs.changes.outputs.openapi == 'true'
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with:
-          persist-credentials: false
-
-      - uses: ./.github/actions/setup
-        with:
-          mise-install-args: vacuum
-
-      - name: Lint OpenAPI spec (gating)
-        # info, not the default error: the strict security rule reports at info,
-        # so a higher threshold would let a newly-public write endpoint pass.
-        # The baseline is zero findings at every severity, so nothing else moves.
-        run: >-
-          vacuum lint --ruleset .vacuum.yaml --ignore-file .vacuum-ignore.yaml
-          --fail-severity info --details docs/openapi.json
 
   # npm counterpart of cargo-deny's [licenses] allowlist.
   #
@@ -673,51 +623,6 @@ jobs:
 
   # Rule-based SAST via opengrep, motivated by Rust, where CodeQL's extractor
   # resolves call targets poorly and pattern rules need no call-graph resolution.
-  sast:
-    name: SAST (opengrep)
-    needs: changes
-    if: needs.changes.outputs.backend == 'true' || needs.changes.outputs.frontend == 'true'
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with:
-          persist-credentials: false
-
-      - name: Checkout opengrep-rules (pinned)
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with:
-          repository: opengrep/opengrep-rules
-          ref: f1d2b562b414783763fd02a6ed2736eaed622efa
-          path: .opengrep-rules
-          persist-credentials: false
-
-      - name: Install opengrep (mise)
-        uses: jdx/mise-action@3c2e0cf82a5b2e5249f0d3635a4d83d0ae861518 # v4.2.5
-        with:
-          # renovate: datasource=github-releases depName=jdx/mise extractVersion=^v(?<version>.+)$
-          version: "2026.8.8"
-          install_args: opengrep
-
-      # Tests are not excluded wholesale (a blanket file drop is a coverage blind
-      # spot); a legitimate insecure-API test gets a call-site `// nosemgrep:
-      # <rule-id>` carve-out instead.
-      #
-      # rust.lang.security.args is excluded: main.rs reads argv for CLI subcommand
-      # dispatch, not a security decision, and the rule can't tell the difference.
-      # Its ID prefix derives from the rules-checkout path above — keep the two in
-      # lockstep or the exclusion silently stops matching.
-      - name: Scan source (gating)
-        run: |
-          set -euo pipefail
-          opengrep scan \
-            --config .opengrep-rules/rust/lang/security \
-            --config .opengrep-rules/typescript/lang/security \
-            --config .opengrep-rules/typescript/react/security \
-            --exclude-rule opengrep-rules.rust.lang.security.args \
-            --error \
-            backend/src frontend/src
-
   frontend:
     name: Frontend
     needs: changes
@@ -1033,40 +938,6 @@ jobs:
 
   # The gitleaks pre-commit hook is client-side: bypassable and never run on fork
   # PRs. Unconditional — a secret can land in any file type.
-  secret-scan:
-    name: Secret scan
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with:
-          # Full history so the pull_request scan below can walk the whole branch
-          # range, not just the tip commit.
-          fetch-depth: 0
-          persist-credentials: false
-
-      - name: Install gitleaks (mise)
-        uses: jdx/mise-action@3c2e0cf82a5b2e5249f0d3635a4d83d0ae861518 # v4.2.5
-        with:
-          # renovate: datasource=github-releases depName=jdx/mise extractVersion=^v(?<version>.+)$
-          version: "2026.8.8"
-          install_args: gitleaks
-
-      # On a pull_request, scan every commit the branch introduces: a secret added
-      # and later removed within the branch is gone from the working tree but stays
-      # readable in the pushed history. push/merge_group falls back to a full-tree
-      # scan.
-      - name: Scan for secrets
-        env:
-          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
-        run: |
-          set -euo pipefail
-          if [ -n "${PR_BASE_SHA}" ]; then
-            gitleaks git . --no-banner --redact --log-opts "${PR_BASE_SHA}..HEAD"
-          else
-            gitleaks dir . --no-banner --redact
-          fi
-
   # Build lives in the reusable docs-build.yml, shared with docs.yml's Pages deploy
   # lane; cross-workflow `needs` is impossible, so the job must exist here to join
   # ci-gate.
@@ -1092,15 +963,12 @@ jobs:
       - audit
       - dependency-review
       - lint
+      - security
       - frontend
       - a11y
       - staging-smoke
-      - secret-scan
-      - iac-scan
       - docker-build
-      - openapi-policy
       - npm-license
-      - sast
       - docs
     runs-on: ubuntu-latest
     timeout-minutes: 5

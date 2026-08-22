@@ -1,7 +1,7 @@
 # Shared by CI's `changes` job and scripts/preflight-scope.sh; a filter edit
-# changes both gates. Every filter includes ci.yml and this file itself, so
-# an edit to either re-runs every gated job. Patterns are literal paths and
-# trailing `/**` only: the local scoper has no glob engine.
+# changes both gates. Every filter includes this file and every workflow that
+# defines a job it gates, so editing the definition re-runs the job. Patterns
+# are literal paths and trailing `/**` only: the local scoper has no glob engine.
 backend:
   - "backend/**"
   - "docker/init-roles.sql"
@@ -9,6 +9,7 @@ backend:
   - ".github/workflows/ci.yml"
   # Not under `workflows`: a toolchain edit must trigger the backend jobs.
   - ".github/actions/rust-toolchain/**"
+  - ".github/workflows/security.yml"
   - ".github/path-filters.yml"
 audit:
   - "backend/Cargo.toml"
@@ -27,6 +28,7 @@ frontend:
   - "pnpm-workspace.yaml"
   - "vite.config.ts"
   - ".github/workflows/ci.yml"
+  - ".github/workflows/security.yml"
   - ".github/path-filters.yml"
 staging:
   - "docker/compose.staging.yml"
@@ -51,6 +53,7 @@ iac:
   # scanner bump would otherwise merge without the scan it gates ever running.
   - "mise.toml"
   - ".github/workflows/ci.yml"
+  - ".github/workflows/security.yml"
   - ".github/path-filters.yml"
 docker:
   # Manifests only: this gates build-context failures (a lockfile hoist
@@ -78,6 +81,7 @@ openapi:
   # linter bump would otherwise merge without the lint it gates ever running.
   - "mise.toml"
   - ".github/workflows/ci.yml"
+  - ".github/workflows/security.yml"
   - ".github/path-filters.yml"
 npm:
   - "package.json"

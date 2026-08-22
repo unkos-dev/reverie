@@ -97,11 +97,19 @@ concern file never receives secrets it does not name.
 
 ## Setup and caching
 
-`.github/actions/setup` is the single place the mise and vp pins live. Every
-job calls it with the same tool list rather than computing a per-job subset:
-uniform setup costs a few seconds of installing tools a job will not use, and
-buys the property that moving a step between jobs is never accompanied by a
-silent missing-tool failure.
+`.github/actions/setup` is the single place the mise and vp pins live.
+
+How much a job installs depends on whether its steps could move. Where a
+concern's jobs are one pool of checks split for parallelism, and a step could
+sensibly live in any of them, every job installs the same tool list: the few
+seconds of installing unused tools buys the property that moving a step never
+comes with a silent missing-tool failure. That is `lint`, whose four jobs share
+one set of small command-line tools.
+
+Where the jobs are distinct tools that happen to share a subject, each installs
+what it uses. That is `security`, where no step would ever move from the secret
+scanner to the spec linter, and the scanners are large enough that installing
+all of them everywhere would be waste with nothing bought.
 
 The pin consolidation stays visible to Renovate because its custom manager for
 annotated version pins matches composite action files as well as workflow
@@ -112,16 +120,24 @@ build cache for the Rust plane. A cache saved by a pull request run is scoped
 to that pull request, so treat every cache as saved when lucky and give each
 one `restore-keys` prefix fallbacks.
 
+Measure before adding one. The mise tool cache already covers tool installs,
+which is most of what a scanning job spends, and a cache whose restore costs
+more than the work it skips is a slower job with more moving parts.
+
 ## Adding a concern
 
 1. Write `.github/workflows/<concern>.yml` as `workflow_call`-only, with a
    `changes` job and one job per check group.
 2. Add the caller job to `ci.yml`, with no `if:` and no `name:`.
 3. Add the caller to `ci-gate.needs`, unless every job in it is advisory.
-4. Open the pull request and read the actual check names off it.
-5. Add those exact strings to the branch ruleset as required contexts.
+4. Add the concern file to every filter its `changes` job reads.
+5. Open the pull request and read the actual check names off it.
+6. Add those exact strings to the branch ruleset as required contexts.
 
-Step 4 is not optional. Add a context to the ruleset before a run has proven
+Step 4 fails quietly when missed: a job whose definition sits outside the
+filter gating it can be weakened and skipped in the same change.
+
+Step 6 is not optional. Add a context to the ruleset before a run has proven
 the string, and a typo blocks every pull request until someone removes it by
 hand.
 
@@ -135,7 +151,8 @@ backstop gate covers.
 
 Everything above is portable. These are the parts that are not:
 
-- Concerns: `lint` today, with the remaining planes moving across in sequence.
+- Concerns: `lint` and `security` today, with the remaining planes moving
+  across in sequence.
 - Filters live in `.github/path-filters.yml` and are consumed by both CI and
   `scripts/preflight-scope.sh`.
 - Tools come from `mise.toml`; the JS workspace resolves under the package
