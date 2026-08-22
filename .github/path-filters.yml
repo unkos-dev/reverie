@@ -71,7 +71,7 @@ docker:
   - ".github/path-filters.yml"
 openapi:
   - "docs/openapi.json"
-  - ".checkov.yaml"
+  - ".vacuum.yaml"
   - ".github/workflows/ci.yml"
   - ".github/path-filters.yml"
 npm:

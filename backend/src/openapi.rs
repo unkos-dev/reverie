@@ -73,9 +73,8 @@ const API_VERSION: &str = "0.1.0";
 /// are otherwise exposed in cleartext. Transport is enforced operationally
 /// (reverse-proxy TLS; the session cookie is `Secure` when `behind_https`),
 /// not by the spec, so the residual cleartext-credential findings are justified
-/// skips: `CKV_OPENAPI_3` on `opds_basic` (HTTP Basic) and `CKV_OPENAPI_20` on
-/// `device_token_bearer` and `oidc_jwt_bearer` (HTTP Bearer). All are
-/// registered in `.checkov.yaml`.
+/// skips: `owasp-no-http-basic` on `opds_basic`, and `owasp-jwt-best-practices`
+/// on the Bearer schemes. Both are registered in `.vacuum.yaml`.
 ///
 /// See `adr/2026-06-08-api-versioning-openapi.md`.
 struct SecurityAddon;
