@@ -10243,18 +10243,18 @@
       "device_token_bearer": {
         "type": "http",
         "scheme": "bearer",
-        "description": "Personal device-token credential (`{prefix}{token_id}.{secret}`). MUST be used over HTTPS in production; the token is otherwise exposed in transit (Checkov CKV_OPENAPI_20)."
+        "description": "Personal device-token credential (`{prefix}{token_id}.{secret}`). MUST be used over HTTPS in production; the token is otherwise exposed in transit."
       },
       "oidc_jwt_bearer": {
         "type": "http",
         "scheme": "bearer",
         "bearerFormat": "JWT",
-        "description": "RFC 9068 resource-server access token issued by the configured IdP. MUST be used over HTTPS in production; the token is otherwise exposed in transit (Checkov CKV_OPENAPI_20)."
+        "description": "RFC 9068 resource-server access token issued by the configured IdP. MUST be used over HTTPS in production; the token is otherwise exposed in transit."
       },
       "opds_basic": {
         "type": "http",
         "scheme": "basic",
-        "description": "HTTP Basic authentication for the OPDS feeds. MUST be used over HTTPS in production; Basic credentials are otherwise exposed in transit (Checkov CKV_OPENAPI_3)."
+        "description": "HTTP Basic authentication for the OPDS feeds. MUST be used over HTTPS in production; Basic credentials are otherwise exposed in transit."
       },
       "session_cookie": {
         "type": "apiKey",

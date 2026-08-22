@@ -2,7 +2,7 @@
 # (.github/workflows/ci.yml), which lints the generated docs/openapi.json.
 #
 # The baseline is every rule in vacuum's oas and owasp rulesets that the
-# current spec already satisfies: 46 rules, all passing. The rules disabled
+# current spec already satisfies: 56 rules, all passing. The rules disabled
 # below are the ones that fire today. Each is off because turning it on is a
 # change to the spec or to the generator behind it, not a change to this file,
 # and adopting them is tracked as its own work.
@@ -11,8 +11,10 @@
 # disable means committing to the remediation that rule demands.
 
 extends:
-  - vacuum:oas
-  - vacuum:owasp
+  # The two-element form is load-bearing: a bare `vacuum:owasp` resolves to
+  # zero rules instead of erroring, which silently disables the whole ruleset.
+  - [vacuum:oas, recommended]
+  - [vacuum:owasp, all]
 
 rules:
   # --- Security rules worth adopting; each needs spec or generator work ---
