@@ -621,7 +621,12 @@ jobs:
           mise-install-args: vacuum
 
       - name: Lint OpenAPI spec (gating)
-        run: vacuum lint --ruleset .vacuum.yaml --fail-severity warn --details docs/openapi.json
+        # info, not the default error: the strict security rule reports at info,
+        # so a higher threshold would let a newly-public write endpoint pass.
+        # The baseline is zero findings at every severity, so nothing else moves.
+        run: >-
+          vacuum lint --ruleset .vacuum.yaml --ignore-file .vacuum-ignore.yaml
+          --fail-severity info --details docs/openapi.json
 
   # npm counterpart of cargo-deny's [licenses] allowlist.
   #

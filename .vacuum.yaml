@@ -2,13 +2,18 @@
 # (.github/workflows/ci.yml), which lints the generated docs/openapi.json.
 #
 # The baseline is every rule in vacuum's oas and owasp rulesets that the
-# current spec already satisfies: 56 rules, all passing. The rules disabled
+# current spec already satisfies: 57 rules, all passing. The rules disabled
 # below are the ones that fire today. Each is off because turning it on is a
 # change to the spec or to the generator behind it, not a change to this file,
 # and adopting them is tracked as its own work.
 #
 # Adding a rule here means the spec was changed to satisfy it. Removing a
 # disable means committing to the remediation that rule demands.
+#
+# Location-scoped exceptions live in .vacuum-ignore.yaml instead, which
+# silences an enabled rule at named paths. Note that vacuum accepts a Spectral
+# `overrides:` block here and silently ignores it; the ignore file is the
+# mechanism that works.
 
 extends:
   # The two-element form is load-bearing: a bare `vacuum:owasp` resolves to
@@ -45,12 +50,6 @@ rules:
   # Responses must declare rate-limit headers. This is a product decision
   # about whether the API implements rate limiting, not a spec fix. 323 hits.
   owasp-rate-limit: false
-
-  # Unsafe operations must carry explicit security. Fires on the six auth
-  # endpoints that are deliberately unauthenticated, so adopting it means
-  # expressing "public by design" in the spec rather than leaving security
-  # null. 6 hits.
-  owasp-protection-global-unsafe-strict: false
 
   # --- Deliberate, permanent exceptions ---
 
