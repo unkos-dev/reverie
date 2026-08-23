@@ -1,7 +1,8 @@
-# Shared by CI's `changes` job and scripts/preflight-scope.sh; a filter edit
-# changes both gates. Every filter includes this file and every workflow or
-# composite action that defines a job it gates, so editing the definition
-# re-runs the job. Patterns
+# Shared by every concern workflow's `changes` job and by
+# scripts/preflight-scope.sh; a filter edit changes both gates, which is why a
+# detector reads this file rather than inlining its own patterns. Every filter
+# includes this file and every workflow or composite action that defines a job
+# it gates, so editing the definition re-runs the job. Patterns
 # are literal paths and trailing `/**` only: the local scoper has no glob engine.
 backend:
   - "backend/**"

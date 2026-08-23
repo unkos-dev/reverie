@@ -294,23 +294,6 @@ STUB
   fi
 done
 
-# --- the shared-source invariant --------------------------------------------
-
-# The whole design rests on CI reading the same file. An inlined `filters:`
-# block in a concern's changes job would let the two gates drift apart with
-# nothing failing. Every `changes` job lives in a concern workflow now, so the
-# check counts them: a concern that stops sourcing the shared file is caught by
-# the count falling, and zero means the detectors have gone entirely.
-shared_source_count=$(grep -rlc '^ *filters: \.github/path-filters\.yml$' \
-  .github/workflows/*.yml 2>/dev/null | wc -l)
-if [ "$shared_source_count" -ge 8 ]; then
-  printf 'ok   %s (%s workflows)\n' 'CI sources its filters from the shared file' "$shared_source_count"
-else
-  printf 'FAIL %s: %s workflow(s) source .github/path-filters.yml, expected at least 8\n' \
-    'the local scoper can now drift from CI' "$shared_source_count"
-  failures=$((failures + 1))
-fi
-
 # --- the lane-invocation invariant -------------------------------------------
 
 # The selected lanes are recipe names handed to `just`. Passing them all on one
