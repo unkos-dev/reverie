@@ -1,26 +1,35 @@
 # Server-side gate: the local commit-msg hook is bypassable and never runs on
 # fork PRs. Lints both the PR's commit range and its title (the one subject
 # the hook never sees, and the one release-please consumes via squash-merge).
-# Own workflow, not a ci.yml job, so a title edit reruns this check alone
-# rather than the full CI matrix. pull_request-only: push and merge_group
-# have no PR range or title.
-name: Commit lint
+# Standalone rather than a ci.yml concern, because `edited` belongs on this
+# trigger and nowhere else: putting it on the caller would rerun all of CI on
+# every title edit.
+name: PR hygiene
 
 on:
   pull_request:
     types: [opened, edited, reopened, synchronize]
+  # A required context whose workflow lacks this trigger deadlocks the merge
+  # queue. The job below skips on it, and a skipped required check passes.
+  merge_group:
 
 permissions: {}
 
 # A title edit supersedes the run before it, so the required check can't
-# resolve against a stale title. A cancelled run is not a success (fails closed).
+# resolve against a stale title. A cancelled run is not a success (fails closed),
+# which is why the key falls back to the run id: `pull_request.number` is empty
+# on merge_group, and a shared empty key would make queue entries cancel
+# each other.
 concurrency:
-  group: commit-lint-${{ github.event.pull_request.number }}
+  group: pr-hygiene-${{ github.event.pull_request.number || github.run_id }}
   cancel-in-progress: true
 
 jobs:
-  commitlint:
-    name: Commit lint
+  # Free-text display name, faux-namespaced so the ruleset's required-context
+  # column reads the same as the composed concerns'.
+  commits:
+    name: hygiene / commits
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -32,14 +41,10 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
-      - uses: voidzero-dev/setup-vp@313600b80b104eadebb9111787d37a2e83e014ca # v1.17.0
-        with:
-          node-manager: true
-          cache: true
-
       # Root lockfile carries the same pinned commitlint the local hook runs.
-      - name: Install commitlint
-        run: vp install
+      - uses: ./.github/actions/setup
+        with:
+          vp: "true"
 
       # base.sha pins the fork point even if the base branch moves mid-run.
       - name: Lint PR commit range

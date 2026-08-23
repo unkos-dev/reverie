@@ -56,6 +56,11 @@ trigger.
 The two rules are the same rule seen from different levels: something that does
 not run must still report, and only a job that GitHub started can report.
 
+A third rule follows from how the names are built. A caller job never declares
+`name:` either, because the context prefix is the caller's _display_ name.
+Adding one silently renames every required context that caller owns into
+strings that never report again.
+
 ## The changes job and path filters
 
 Every concern file starts with a `changes` job running `dorny/paths-filter`
@@ -84,7 +89,13 @@ required check as passed. That is a silent enforcement bypass. A caller's
 result aggregates its entire called workflow, so the gate sees the detector
 failure that the per-job contexts cannot.
 
-Advisory jobs that never fail are deliberately absent from its `needs`.
+Advisory jobs that never fail are deliberately absent from its `needs`, which
+today means `snyk`.
+
+Gate `needs` drift is a bounded failure. Forgetting a new concern there degrades
+the backstop for that concern alone; its per-job contexts still enforce every
+real failure. That is why the gate stays a short list of caller names rather
+than something generated.
 
 ## Permissions and secrets
 
@@ -158,15 +169,38 @@ adds a context that enforces nothing anyone reads. Its failure mode, where a
 dead detector skips its dependents into being counted as passed, is what the
 backstop gate covers.
 
+## Workflows outside the composition
+
+Three sit beside `ci.yml` rather than under it, each for a reason that would
+break if it were composed.
+
+`pr-hygiene.yml` needs `pull_request: types: [edited]`, so a title edit
+re-checks the title. On a caller that trigger would rerun all of CI every time
+someone fixes a typo in a PR title. It carries `merge_group:` from the start,
+because a required context whose workflow lacks that trigger deadlocks the
+queue, and its job skips there. Its concurrency key falls back to the run id,
+since the PR number is empty on a queue run and a shared empty key with
+`cancel-in-progress` would make queue entries cancel each other.
+
+`sonar.yml` runs on `workflow_run` after CI completes on main, because it needs
+both coverage artifacts from one run.
+
+The rest are non-PR lanes: the release publish, the scheduled audits and
+mutation runs, the OSSF scorecard, the pull-request labelling on `pull_request_target`, and
+release automation. None of them has a PR-time surface to compose.
+
 ## Repository-specific values
 
 Everything above is portable. These are the parts that are not:
 
-- Concerns: `lint`, `security`, `deps`, `frontend`, `backend`, `docs`,
-  `staging`, `docker`, and `snyk` today, with `codeql` still to move.
+- Concerns: `backend`, `frontend`, `deps`, `security`, `lint`, `docs`,
+  `staging`, `docker`, `codeql`, and `snyk`.
 - `snyk` is the one concern with no `changes` job. Its scans are continuous
   advisory review whose value is a fresh baseline on every push, which path
   gating would defeat, so its jobs filter on event and fork origin only.
+- `codeql` and `docs` keep a direct trigger beside `workflow_call`: a weekly
+  schedule and a manual dispatch respectively. Neither carries a required
+  context on that path, so the bare job names those runs report are fine.
 - Filters live in `.github/path-filters.yml` and are consumed by both CI and
   `scripts/preflight-scope.sh`.
 - Tools come from `mise.toml`; the JS workspace resolves under the package
