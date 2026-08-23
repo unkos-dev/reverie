@@ -30,7 +30,8 @@ jobs:
         image: postgres:18
         env:
           POSTGRES_USER: reverie
-          POSTGRES_PASSWORD: reverie
+          # Non-secret credential scoped to this ephemeral CI run.
+          POSTGRES_PASSWORD: ci-${{ github.run_id }}-${{ github.run_attempt }}
           POSTGRES_DB: reverie_dev
         ports:
           - 5432:5432
@@ -43,7 +44,7 @@ jobs:
       # Compile against the committed .sqlx cache; tests connect live and
       # create their own per-test databases.
       SQLX_OFFLINE: "true"
-      DATABASE_URL: postgres://reverie:reverie@localhost:5432/reverie_dev
+      DATABASE_URL: postgres://reverie:ci-${{ github.run_id }}-${{ github.run_attempt }}@localhost:5432/reverie_dev
       CARGO_INCREMENTAL: 0
       RUSTFLAGS: -C link-arg=-fuse-ld=mold
       CARGO_TERM_COLOR: always
@@ -53,7 +54,7 @@ jobs:
           persist-credentials: false
 
       - name: Create database roles
-        run: psql postgres://reverie:reverie@localhost:5432/reverie_dev -f docker/init-roles.sql
+        run: psql "$DATABASE_URL" -f docker/init-roles.sql
         working-directory: ${{ github.workspace }}
 
       # Pins to backend/rust-toolchain.toml, keeping this workflow on the same
