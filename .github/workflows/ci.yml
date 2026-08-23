@@ -96,6 +96,17 @@ jobs:
   docker:
     uses: ./.github/workflows/docker.yml
 
+  # Absent from ci-gate.needs on purpose: every job here is advisory and never
+  # fails, so a detector hiccup must not block a merge.
+  snyk:
+    uses: ./.github/workflows/snyk.yml
+    permissions:
+      contents: read
+      security-events: write
+      packages: read
+    secrets:
+      SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+
   # Single required status check for the branch ruleset: `skipped` is a pass, so a
   # path-conditional job that legitimately skips doesn't block merge.
   #
