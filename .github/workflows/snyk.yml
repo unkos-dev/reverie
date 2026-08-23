@@ -139,6 +139,11 @@ jobs:
     if: github.event_name == 'push'
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    env:
+      # Declared once: the scan flag and the monitored project's name both read
+      # it, so a second published architecture is one more value rather than
+      # two strings that must be kept in step.
+      PLATFORM: linux/arm64
     permissions:
       contents: read
       # Pull the image from GHCR.
@@ -207,7 +212,7 @@ jobs:
           rc=0
           snyk container test "$IMAGE_REF" \
             --org=reverie \
-            --platform=linux/arm64 \
+            --platform="$PLATFORM" \
             --file=Dockerfile \
             --sarif-file-output=snyk-container.sarif || rc=$?
           if [ "$rc" -gt 1 ]; then exit "$rc"; fi
@@ -247,6 +252,12 @@ jobs:
 
       # Image counterpart to the npm baseline snapshot above; container
       # targets are keyed by image reference, so no --remote-repo-url here.
+      #
+      # The name carries the platform because a container project is keyed by
+      # name within its image-reference target: two architectures monitored
+      # under one name would overwrite each other's snapshot, leaving only the
+      # last one scanned. --target-reference stays the branch, which is what it
+      # is for.
       - name: Snyk container baseline snapshot
         if: steps.image.outputs.present == 'true'
         env:
@@ -255,6 +266,7 @@ jobs:
         run: |
           snyk container monitor "$IMAGE_REF" \
             --org=reverie \
-            --platform=linux/arm64 \
+            --platform="$PLATFORM" \
             --file=Dockerfile \
+            --project-name="reverie image (${PLATFORM})" \
             --target-reference=main

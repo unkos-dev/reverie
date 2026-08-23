@@ -1,11 +1,10 @@
 name: CodeQL
 
 on:
-  push:
-    branches: [main]
-  pull_request:
-    branches: [main]
-  merge_group:
+  # PR, push and merge-queue runs arrive through ci.yml's caller. Direct
+  # triggers for those events would double every scan under clashing check
+  # names; the weekly deep scan has no caller and keeps its own.
+  workflow_call:
   schedule:
     # Off-peak, off top-of-the-hour, to dodge runner contention.
     - cron: "37 17 * * 0"
@@ -13,8 +12,9 @@ on:
 permissions:
   contents: read
 
-# Never cancel main-branch runs: it would drop that commit's code-scanning
-# results. Superseded PR runs cancel freely.
+# Inert under the caller, whose group governs composed runs; kept because it
+# still guards the direct weekly schedule. Never cancel main-branch runs: it
+# would drop that commit's code-scanning results.
 concurrency:
   group: codeql-${{ github.ref }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
@@ -24,7 +24,6 @@ jobs:
   # language: the ruleset's code-scanning rule expects per-category results, so
   # a skipped analyzer blocks the PR forever.
   changes:
-    name: Detect changes
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
@@ -49,8 +48,7 @@ jobs:
               - '.github/workflows/codeql.yml'
               - '.github/codeql/**'
 
-  analyze-actions:
-    name: Analyze (actions)
+  actions:
     # Always runs — guarantees a CodeQL result exists for every commit.
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -76,8 +74,7 @@ jobs:
         with:
           category: /language:actions
 
-  analyze-javascript-typescript:
-    name: Analyze (javascript-typescript)
+  javascript-typescript:
     needs: changes
     if: github.event_name != 'push' || needs.changes.outputs.javascript-typescript == 'true'
     runs-on: ubuntu-latest
@@ -103,8 +100,7 @@ jobs:
         with:
           category: /language:javascript-typescript
 
-  analyze-rust:
-    name: Analyze (rust)
+  rust:
     needs: changes
     if: github.event_name != 'push' || needs.changes.outputs.rust == 'true'
     runs-on: ubuntu-latest
@@ -131,27 +127,3 @@ jobs:
         uses: github/codeql-action/analyze@db488ddef3bf6cb639b32c2e9a7c0a7ea8271d28 # v4
         with:
           category: /language:rust
-
-  # Single required CodeQL context: a gate in ci.yml can't `needs:` jobs in
-  # this separate workflow. Requiring this aggregate instead of the
-  # per-language jobs means a PR that skips a language's analyze job isn't
-  # blocked by an unsatisfied required check. `if: always()` is load-bearing.
-  codeql-gate:
-    name: CodeQL gate
-    if: always()
-    needs:
-      - changes
-      - analyze-actions
-      - analyze-javascript-typescript
-      - analyze-rust
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    steps:
-      - name: Fail if any analysis failed or was cancelled
-        if: contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')
-        env:
-          RESULTS: ${{ toJSON(needs) }}
-        run: |
-          echo "A required CodeQL analysis failed or was cancelled:"
-          echo "$RESULTS"
-          exit 1
