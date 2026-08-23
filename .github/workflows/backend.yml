@@ -75,7 +75,8 @@ jobs:
         image: postgres:18@sha256:3a82e1f56c8f0f5616a11103ac3d47e632c3938698946a7ad26da0df1334744a
         env:
           POSTGRES_USER: reverie
-          POSTGRES_PASSWORD: reverie
+          # Non-secret credential scoped to this ephemeral CI run.
+          POSTGRES_PASSWORD: ci-${{ github.run_id }}-${{ github.run_attempt }}
           POSTGRES_DB: reverie_dev
         ports:
           - 5432:5432
@@ -86,7 +87,7 @@ jobs:
           --health-retries 5
     env:
       # sqlx::test connects as the schema owner; per-test role pools are built in code.
-      DATABASE_URL: postgres://reverie:reverie@localhost:5432/reverie_dev
+      DATABASE_URL: postgres://reverie:ci-${{ github.run_id }}-${{ github.run_attempt }}@localhost:5432/reverie_dev
       # Debuginfo deliberately absent here: backend/Cargo.toml declares it, so both
       # planes compile the same way without two settings having to agree.
       CARGO_INCREMENTAL: 0
@@ -216,7 +217,7 @@ jobs:
         run: cargo fmt --check
 
       - name: Create database roles
-        run: psql -v ON_ERROR_STOP=1 postgres://reverie:reverie@localhost:5432/reverie_dev -f docker/init-roles.sql
+        run: psql -v ON_ERROR_STOP=1 "$DATABASE_URL" -f docker/init-roles.sql
         working-directory: ${{ github.workspace }}
 
       # Must land before the first linking cargo invocation (sqlx-cli below), since
@@ -288,7 +289,8 @@ jobs:
         image: postgres:18@sha256:3a82e1f56c8f0f5616a11103ac3d47e632c3938698946a7ad26da0df1334744a
         env:
           POSTGRES_USER: reverie
-          POSTGRES_PASSWORD: reverie
+          # Non-secret credential scoped to this ephemeral CI run.
+          POSTGRES_PASSWORD: ci-${{ github.run_id }}-${{ github.run_attempt }}
           POSTGRES_DB: reverie_dev
         ports:
           - 5432:5432
@@ -298,7 +300,7 @@ jobs:
           --health-timeout 5s
           --health-retries 5
     env:
-      DATABASE_URL: postgres://reverie:reverie@localhost:5432/reverie_dev
+      DATABASE_URL: postgres://reverie:ci-${{ github.run_id }}-${{ github.run_attempt }}@localhost:5432/reverie_dev
       CARGO_INCREMENTAL: 0
       RUSTFLAGS: -C link-arg=-fuse-ld=mold
       # See the checks job.
@@ -322,7 +324,7 @@ jobs:
           save-if: ${{ github.ref == 'refs/heads/main' }}
 
       - name: Create database roles
-        run: psql -v ON_ERROR_STOP=1 postgres://reverie:reverie@localhost:5432/reverie_dev -f docker/init-roles.sql
+        run: psql -v ON_ERROR_STOP=1 "$DATABASE_URL" -f docker/init-roles.sql
         working-directory: ${{ github.workspace }}
 
       # Shims stay off here for the same reason as the checks job.
