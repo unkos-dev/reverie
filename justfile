@@ -103,9 +103,8 @@ build: js::build rust::build docs::build
 # last line of a captured run saying nothing about the run. See gate-run.sh for
 # why that matters and what it costs.
 #
-# `just preflight` is the default, scoped gate below; run this unconditional
-# form before any push (unless a scoped run already escalated to it), when
-# the change is broad, or when you are unsure.
+# `just preflight` is the default, scoped gate. This unconditional form requires
+# prior maintainer approval and a reason the scoped gate is insufficient.
 #
 # Run everything CI runs that is locally runnable, DB-backed tests included, unconditionally.
 [group('aggregate')]
@@ -120,7 +119,7 @@ preflight-full:
 # The same gate as `preflight-full`, minus the lanes CI itself would skip. A
 # frontend-only branch pays for the frontend lanes and the unconditional
 # repo-lint mirror, not a database, a Rust rebuild, and a dependency audit.
-# This is the default gate and the mid-branch reflex.
+# This is the default gate for both iteration and pre-push verification.
 #
 # The skip decisions come from .github/path-filters.yml, the same file CI's
 # `changes` job feeds to dorny/paths-filter, so widening a filter for CI
@@ -128,10 +127,9 @@ preflight-full:
 # (justfiles, scripts/, tool pins, that filter file) escalate to the full lane
 # set, because a scoped run cannot reason about a change to its own rules.
 #
-# `just preflight-full` stays the unconditional answer: run it when the
-# change is broad or you are unsure, though a scoped run's own escalation
-# reaches the same lanes automatically when it applies. Args pass through to
-# scripts/preflight-scope.sh (`--base <ref>` to compare against something
+# A scoped run escalates automatically when required. Running
+# `just preflight-full` directly requires prior maintainer approval. Args pass
+# through to scripts/preflight-scope.sh (`--base <ref>` compares against a ref
 # other than origin/main).
 #
 # Run only the preflight lanes this branch's changed paths require (the default gate).
