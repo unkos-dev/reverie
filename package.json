@@ -14,7 +14,7 @@
   },
   "packageManager": "pnpm@11.22.0",
   "scripts": {
-    "prepare": "lefthook install",
+    "prepare": "test ! -e .git || lefthook install",
     "build": "vp run -r build"
   },
   "devDependencies": {
