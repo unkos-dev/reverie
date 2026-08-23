@@ -26,36 +26,10 @@ concurrency:
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
-  # Every filter includes ci.yml itself: a workflow edit must re-run the jobs it defines.
-  changes:
-    name: Detect changes
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    outputs:
-      staging: ${{ steps.filter.outputs.staging }}
-      workflows: ${{ steps.filter.outputs.workflows }}
-      iac: ${{ steps.filter.outputs.iac }}
-      docker: ${{ steps.filter.outputs.docker }}
-      openapi: ${{ steps.filter.outputs.openapi }}
-      docs: ${{ steps.filter.outputs.docs }}
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with:
-          persist-credentials: false
-
-      - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4
-        id: filter
-        with:
-          # merge_group's default base (HEAD~1) sees only the synthetic merge ref's
-          # topmost commit; pin to base_sha to match the PR-against-main diff.
-          base: ${{ github.event.merge_group.base_sha || github.base_ref }}
-          ref: ${{ github.event.merge_group.head_sha || github.ref }}
-          # scripts/preflight-scope.sh reads the same file, so the two cannot drift.
-          filters: .github/path-filters.yml
-
-  # Unconditional, and never gains an `if:`. A skipped caller reports a check run
-  # named `lint`, while the ruleset requires `lint / <job>`, which would then never
-  # report and leave every pull request pending. Filtering lives inside lint.yml.
+  # No caller ever gains an `if:`. A skipped caller reports a check run named
+  # after itself, while the ruleset requires `<caller> / <job>`, which would then
+  # never report and leave every pull request pending. Filtering lives inside
+  # each called workflow.
   backend:
     uses: ./.github/workflows/backend.yml
     secrets:
@@ -96,24 +70,47 @@ jobs:
   docker:
     uses: ./.github/workflows/docker.yml
 
-  # Single required status check for the branch ruleset: `skipped` is a pass, so a
-  # path-conditional job that legitimately skips doesn't block merge.
+  codeql:
+    uses: ./.github/workflows/codeql.yml
+    permissions:
+      contents: read
+      security-events: write
+      actions: read
+
+  # Absent from ci-gate.needs on purpose: every job here is advisory and never
+  # fails, so a detector hiccup must not block a merge.
+  snyk:
+    uses: ./.github/workflows/snyk.yml
+    permissions:
+      contents: read
+      security-events: write
+      packages: read
+    secrets:
+      SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+
+  # Machinery backstop, not the enforcement: the per-job contexts are what name a
+  # real failure. This catches the one thing they structurally cannot. A failed
+  # `changes` detector skips its dependents, and GitHub counts a skipped required
+  # check as passed, so the failure disappears. A caller's result aggregates its
+  # whole called workflow, which makes the detector failure visible here.
   #
   # `if: always()` is load-bearing: without it the gate is itself skipped when an
   # upstream job fails, and GitHub reports a skipped required check as success.
+  #
+  # `snyk` is deliberately absent: its jobs are advisory and never fail.
   ci-gate:
     name: CI gate
     if: always()
     needs:
-      - changes
       - backend
-      - lint
-      - security
-      - deps
       - frontend
+      - deps
+      - security
+      - lint
+      - docs
       - staging
       - docker
-      - docs
+      - codeql
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:

@@ -294,17 +294,6 @@ STUB
   fi
 done
 
-# --- the shared-source invariant --------------------------------------------
-
-# The whole design rests on CI reading the same file. An inlined `filters:`
-# block in ci.yml would let the two gates drift apart with nothing failing.
-if grep -q '^ *filters: \.github/path-filters\.yml$' .github/workflows/ci.yml; then
-  printf 'ok   %s\n' 'ci.yml sources its filters from the shared file'
-else
-  printf 'FAIL %s\n' 'ci.yml no longer sources .github/path-filters.yml; the local scoper can now drift from CI'
-  failures=$((failures + 1))
-fi
-
 # --- the lane-invocation invariant -------------------------------------------
 
 # The selected lanes are recipe names handed to `just`. Passing them all on one
