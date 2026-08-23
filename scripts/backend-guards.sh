@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# Guard: static backend allowlist and prose guards that ci.yml's
-# backend-checks job runs before installing a toolchain, database, or any
+# Guard: static backend allowlist and prose guards that backend.yml's
+# checks job runs before installing a toolchain, database, or any
 # other dependency, so a violation fails in seconds. Single-sourced here per
 # the justfile header's stated philosophy (CI command definitions live once);
-# ci.yml invokes this script instead of duplicating the grep logic inline.
+# the workflow invokes this script instead of duplicating the grep logic inline.
 #
-# Three independent guards, run in the same order as backend-checks:
+# Three independent guards, run in the same order as that job:
 #   1. runtime sqlx::query/raw_sql invocations outside the allowlist
 #   2. raw axum .route( registrations outside the allowlist
 #   3. em dashes in the generated config schema

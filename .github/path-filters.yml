@@ -8,6 +8,7 @@ backend:
   - "docker/init-roles.sql"
   - "mise.toml"
   - ".github/workflows/ci.yml"
+  - ".github/workflows/backend.yml"
   # Not under `workflows`: a toolchain edit must trigger the backend jobs.
   - ".github/actions/rust-toolchain/**"
   - ".github/actions/setup/**"

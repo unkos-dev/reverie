@@ -116,7 +116,7 @@ regen:
 build:
     SQLX_OFFLINE=true cargo build --workspace --locked
 
-# Offline (no database, no toolchain needed). Mirrors ci.yml's backend-checks
+# Offline (no database, no toolchain needed). Mirrors backend.yml's checks
 # static guards: runtime sqlx::query/raw_sql, raw axum .route( registrations,
 # and em dashes in the generated config schema, each checked against its
 # .github/*-allowlist.txt (or, for the em-dash guard, none). The

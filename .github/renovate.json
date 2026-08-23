@@ -117,7 +117,7 @@
       "groupName": "commitlint"
     },
     {
-      "description": "Keep every PostgreSQL image pin in one PR. docker/compose.dev.yml and the ci.yml backend service are meant to pin the identical postgres digest so dev and CI test against one database version; nothing checks that, so this grouping is what holds it. Splitting across the docker-compose and github-actions managers would drift them. The release-age hold is restated here because Renovate parses that workflow service image under the github-actions manager, so the digest exemption above would otherwise reach the CI half alone. Grouping does not wait for a member that is not yet eligible: it ships the eligible subset, which drifts the pins by date rather than by manager.",
+      "description": "Keep every PostgreSQL image pin in one PR. docker/compose.dev.yml and the backend.yml services are meant to pin the identical postgres digest so dev and CI test against one database version; nothing checks that, so this grouping is what holds it. Splitting across the docker-compose and github-actions managers would drift them. The release-age hold is restated here because Renovate parses that workflow service image under the github-actions manager, so the digest exemption above would otherwise reach the CI half alone. Grouping does not wait for a member that is not yet eligible: it ships the eligible subset, which drifts the pins by date rather than by manager.",
       "matchManagers": ["docker-compose", "github-actions"],
       "matchPackageNames": ["postgres"],
       "matchUpdateTypes": ["patch", "pin", "digest"],
