@@ -91,6 +91,13 @@ Advisory jobs that never fail are deliberately absent from its `needs`.
 Top-level `permissions: contents: read`, with any job needing more declaring it
 at the job level next to the reason.
 
+A called workflow can only downgrade its caller's token, never elevate it, so
+the caller job's `permissions:` must be the union of what its jobs declare. The
+grant is then a ceiling shared by every job in the concern file, which is why
+the file keeps its own restrictive top level: without it, a job running
+third-party lifecycle scripts would inherit a publish token it has no use for.
+`docs` is the only concern that needs this today.
+
 Called workflows inherit `secrets.GITHUB_TOKEN` from the caller, so a concern
 file needs no `secrets:` block for it. Anything else is passed explicitly; a
 concern file never receives secrets it does not name.
@@ -131,7 +138,8 @@ more than the work it skips is a slower job with more moving parts.
 
 1. Write `.github/workflows/<concern>.yml` as `workflow_call`-only, with a
    `changes` job and one job per check group.
-2. Add the caller job to `ci.yml`, with no `if:` and no `name:`.
+2. Add the caller job to `ci.yml`, with no `if:` and no `name:`, and with
+   `permissions:` matching the union its jobs declare.
 3. Add the caller to `ci-gate.needs`, unless every job in it is advisory.
 4. Add the concern file to every filter its `changes` job reads.
 5. Open the pull request and read the actual check names off it.
@@ -154,8 +162,8 @@ backstop gate covers.
 
 Everything above is portable. These are the parts that are not:
 
-- Concerns: `lint`, `security`, `deps`, `frontend`, and `backend` today, with
-  the remaining planes moving across in sequence.
+- Concerns: `lint`, `security`, `deps`, `frontend`, `backend`, `docs`,
+  `staging`, and `docker` today, with `snyk` and `codeql` still to move.
 - Filters live in `.github/path-filters.yml` and are consumed by both CI and
   `scripts/preflight-scope.sh`.
 - Tools come from `mise.toml`; the JS workspace resolves under the package

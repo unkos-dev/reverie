@@ -43,6 +43,7 @@ staging:
   - "docker/staging.env.bootstrap.example"
   - "docker/staging.env.runtime.example"
   - ".github/workflows/ci.yml"
+  - ".github/workflows/staging.yml"
   - ".github/path-filters.yml"
 workflows:
   # A suppression edit must re-run the scan without a workflow change.
@@ -80,6 +81,7 @@ docker:
   - "backend/Cargo.toml"
   - "backend/Cargo.lock"
   - ".github/workflows/ci.yml"
+  - ".github/workflows/docker.yml"
   - ".github/path-filters.yml"
 openapi:
   - "docs/openapi.json"
@@ -111,5 +113,4 @@ docs:
   - "pnpm-workspace.yaml"
   - ".github/workflows/ci.yml"
   - ".github/workflows/docs.yml"
-  - ".github/workflows/docs-build.yml"
   - ".github/path-filters.yml"
