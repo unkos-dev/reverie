@@ -76,93 +76,39 @@ COPY docs/package.json docs/
 # Installed once here so both stages below inherit one runtime from this layer
 # rather than provisioning it twice.
 #
-# What anchors this download, stated precisely because it is easy to overclaim:
-# `runtime set -g` resolves in pnpm's own global project, not in /build, and it
-# succeeds with no pnpm-lock.yaml present at all. The committed per-platform
-# sha256 entries devEngines.runtime writes into this repository's lockfile
-# therefore do NOT gate it. The fetch is still integrity-checked — pnpm keeps a
-# lockfile of its own alongside the global install — but against a lock this
-# build generates rather than one a reviewer reads. A frozen workspace install
-# does consume the committed entries; it materialises the runtime into the
-# store, which is a cache mount in the stages below and so never reaches a
-# layer, which is why that is not the path used here.
+# `runtime set -g` uses pnpm's global project, not the repository lockfile.
+# The workspace fetch below validates committed entries but does not provision
+# the Node executable used by this build.
 RUN pnpm runtime set node "$(pnpm pkg get devEngines.runtime.version)" -g \
     && node --version
-# The package store moves off PNPM_HOME, and this is load-bearing rather than
-# tidying. `runtime set` installs the Node binary *into* the store, and the
-# stages below mount a BuildKit cache over it. A cache mount masks whatever the
-# layer had at that path, so mounting on /pnpm/store hides the runtime: `node`
-# resolves only while an install is actually running in the same step and
-# repopulating the store from the lockfile's `node@runtime` entry. The moment
-# that install layer comes back from the cache instead, the store stays empty,
-# `/pnpm/bin/node` dangles, and pnpm's dependency-status check reacts by running
-# an implicit unscoped install, which fires the root `prepare` script and needs
-# a git this image does not carry. Keeping the two paths apart is what makes the
-# runtime survive a cache hit.
 ENV pnpm_config_store_dir=/pnpm-store
+
+# GHA does not preserve cache mounts, so required packages belong in a layer.
+RUN pnpm fetch
 
 # Stage 2b: Build the frontend bundle.
 #
-# pnpm needs the root manifests plus every project manifest to resolve the
-# workspace graph, which is why docs/package.json is copied above; the
-# `--filter frontend...` install keeps docs' own dependencies out of the tree.
-# --ignore-scripts is belt and braces: pnpm-workspace.yaml's allowBuilds denies
-# every script-bearing package already.
-#
-# The /pnpm-store cache mount avoids re-fetching tarballs when the install layer
-# is invalidated but the lockfile is unchanged; buildkit reuses it within a
-# single build, and the sbom stage mounts the same one. GHA runners are
-# ephemeral, so cross-run reuse comes from the gha layer cache instead.
-#
-# The path is deliberate and must not move back under PNPM_HOME. It comes from
-# the inherited `pnpm_config_store_dir`, set in js-toolchain for the reason
-# recorded there: mounting a cache on the base image's default /pnpm/store
-# masks the Node runtime installed into it, which fails only once a layer
-# arrives from the cache rather than being built.
+# Workspace resolution needs every copied manifest; the filter excludes docs.
+# `--ignore-scripts` is defence in depth after the workspace allowlist.
 FROM js-toolchain AS frontend-builder
-RUN --mount=type=cache,id=pnpm-store,target=/pnpm-store \
-    pnpm install --frozen-lockfile --filter frontend... --ignore-scripts
+RUN pnpm install --offline --frozen-lockfile --filter frontend... --ignore-scripts
 COPY frontend/ frontend/
-RUN --mount=type=cache,id=pnpm-store,target=/pnpm-store \
-    pnpm --filter frontend run build
+# Source timestamps can trigger pnpm 11's unscoped repair install. The explicit
+# frozen offline install above owns dependency validation for this stage.
+RUN PNPM_CONFIG_VERIFY_DEPS_BEFORE_RUN=false pnpm --filter frontend run build
 
 # Stage 2c: frontend-sbom — the dependency record for the bundled frontend. The
 # runtime image holds no packages for a scanner to find, so the document is
 # generated here and copied in.
 #
-# `pnpm deploy` rather than a scoped install: pnpm's layout is isolated, so an
-# installed project directory holds only symlinks into a store that a directory
-# scan cannot follow, and no install flag produces a frontend-scoped flat tree
-# (--filter under a hoisted linker still links the whole workspace). deploy
-# materialises exactly one project's production closure as a self-contained
-# directory, which is the artifact this document describes. It is an inventory
-# rather than a runnable tree: --ignore-scripts suppresses lifecycle scripts,
-# which changes nothing here because allowBuilds denies all three
-# script-bearing packages and none is in the frontend production closure.
-#
-# This stage branches from js-toolchain rather than from frontend-builder, so
-# it runs concurrently with the bundle build. The lockfile is the shared root
-# of trust: both stages install --frozen-lockfile from the same committed
-# lockfile, no lifecycle script runs, and no patchedDependencies rewrite a
-# package, so the two resolutions cannot diverge.
-#
-# --override-default-catalogers is load-bearing: syft's default set for a dir:
-# scan excludes javascript-package-cataloger, silently yielding a document with
-# zero npm components. The publish workflow's SBOM generator pin must keep pace
-# with this syft: an older generator silently ignores newer CycloneDX spec
-# versions.
+# `deploy` materialises the production closure instead of leaving store links
+# that a directory scan cannot follow. Syft's default dir scan excludes its
+# JavaScript cataloger, so it must be selected explicitly.
 FROM js-toolchain AS frontend-sbom
-# syft arrives from its own published image at an immutable digest rather than
-# through a package manager. That removes the last tool download from the image
-# build, and with it the only remaining reason for this stage to reach
-# api.github.com — so the retry wrapper and the mounted job token that existed
-# to make that dependency survivable are gone from the tree entirely.
-#
 # renovate: datasource=docker depName=anchore/syft
 COPY --from=anchore/syft:v1.51.0@sha256:678bfa565b60f747aac0f8e964fe5588a24445b8d0a480e91f6efd70020dfbb0 /syft /usr/local/bin/syft
-RUN --mount=type=cache,id=pnpm-store,target=/pnpm-store \
-    pnpm deploy --ignore-scripts --filter frontend --prod /sbom-tree
-RUN syft dir:/sbom-tree --override-default-catalogers javascript-package-cataloger \
+RUN pnpm deploy --ignore-scripts --filter frontend --prod /sbom-tree \
+    && syft dir:/sbom-tree --override-default-catalogers javascript-package-cataloger \
       -o cyclonedx-json > /build/frontend.cdx.json
 
 # Consistency check for the document above. It records a verdict and never
