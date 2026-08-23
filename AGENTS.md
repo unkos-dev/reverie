@@ -136,15 +136,16 @@ Two aggregates anchor the local loop and should be the default reflex:
   dependency audit. Changes to the verification machinery itself (the
   justfiles, `scripts/`, `mise.toml`, that filter file) escalate to the full
   lane set, and the whole-tree repo-lint mirror always runs. This is the
-  default gate and the mid-branch reflex.
+  default gate for both iteration and pre-push verification.
 - `just preflight-full` runs everything the CI gate runs that is locally
   runnable, unconditionally: the DB-backed backend test suite, the sqlx
   cache check, the backend static guards, cargo-machete, cargo-deny, the
   frontend build, and the zizmor workflow-security audit
   (online audits included when a GitHub token is in the environment,
-  offline-degraded otherwise). It brings the dev database up itself. Run it
-  before any push (unless a scoped run already escalated to it), when the
-  change is broad, or when you are unsure. What it cannot run stays remote. The
+  offline-degraded otherwise). It brings the dev database up itself. Do not run
+  it without the maintainer's prior approval. Before seeking approval, explain
+  why the scoped gate is insufficient for the change. What it cannot run stays
+  remote. The
   MSRV (minimum supported Rust version) check, coverage, the docker image build,
   and the IaC, SAST (static application security testing), and secret scans each
   need a runner, an image, or a token no workstation has.
