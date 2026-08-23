@@ -163,7 +163,10 @@ backstop gate covers.
 Everything above is portable. These are the parts that are not:
 
 - Concerns: `lint`, `security`, `deps`, `frontend`, `backend`, `docs`,
-  `staging`, and `docker` today, with `snyk` and `codeql` still to move.
+  `staging`, `docker`, and `snyk` today, with `codeql` still to move.
+- `snyk` is the one concern with no `changes` job. Its scans are continuous
+  advisory review whose value is a fresh baseline on every push, which path
+  gating would defeat, so its jobs filter on event and fork origin only.
 - Filters live in `.github/path-filters.yml` and are consumed by both CI and
   `scripts/preflight-scope.sh`.
 - Tools come from `mise.toml`; the JS workspace resolves under the package
