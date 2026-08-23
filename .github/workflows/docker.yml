@@ -1,0 +1,56 @@
+name: Docker
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  changes:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      docker: ${{ steps.filter.outputs.docker }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4
+        id: filter
+        with:
+          # merge_group's default base (HEAD~1) sees only the synthetic merge ref's
+          # topmost commit; pin to base_sha to match the PR-against-main diff.
+          base: ${{ github.event.merge_group.base_sha || github.base_ref }}
+          ref: ${{ github.event.merge_group.head_sha || github.ref }}
+          # scripts/preflight-scope.sh reads the same file, so the two cannot drift.
+          filters: .github/path-filters.yml
+
+  # Covers what hadolint's instruction lint doesn't: root-user defaults, missing
+  # healthchecks, privileged/host-mode services, secrets-in-env shapes.
+  # Suppressions live in .trivyignore with per-finding justification.
+  # docker-publish only fires post-merge, so without this a broken image definition
+  # merges green and detonates on main in the privileged publish lane. arm64 to match
+  # the main-push publish arch and share its warm layer cache.
+  build:
+    needs: changes
+    if: needs.changes.outputs.docker == 'true'
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4
+
+      # Read the publish lane's cache, never write it: a PR-controlled cache-to into
+      # that scope would be a cache-poisoning surface.
+      - name: Build image (no push)
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7
+        with:
+          context: .
+          platforms: linux/arm64
+          push: false
+          cache-from: type=gha,scope=buildcache-arm64

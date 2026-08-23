@@ -1,41 +1,107 @@
 name: Docs
 
-# PR-time docs builds live in ci.yml (cross-workflow `needs` is impossible);
-# this workflow owns only the Pages deploy on push-to-main + tags.
 on:
-  push:
-    branches: [main]
-    paths:
-      - "docs/**"
-      # docs is an npm workspace; a root manifest/lockfile change must redeploy too.
-      - "package.json"
-      - "pnpm-lock.yaml"
-      - "pnpm-workspace.yaml"
-      - ".github/workflows/docs.yml"
-      - ".github/workflows/docs-build.yml"
-    tags:
-      - "v*"
+  workflow_call:
   workflow_dispatch:
 
 permissions:
   contents: read
 
-# Queue rather than cancel: a cancelled deploy-pages call can strand a red deployment.
-concurrency:
-  group: pages
-  cancel-in-progress: false
-
 jobs:
-  build:
-    name: Build docs
-    uses: ./.github/workflows/docs-build.yml
-    with:
-      # Only this deploy lane runs the advisory external-link pass, not the PR gate.
-      check-external-links: true
-      upload-pages-artifact: true
+  changes:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      docs: ${{ steps.filter.outputs.docs == 'true' || github.event_name == 'workflow_dispatch' }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
 
+      # dorny's base and ref expressions are empty on a manual dispatch, so the
+      # step is skipped there and the output above forces a full run instead.
+      - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4
+        id: filter
+        if: github.event_name != 'workflow_dispatch'
+        with:
+          # merge_group's default base (HEAD~1) sees only the synthetic merge ref's
+          # topmost commit; pin to base_sha to match the PR-against-main diff.
+          base: ${{ github.event.merge_group.base_sha || github.base_ref }}
+          ref: ${{ github.event.merge_group.head_sha || github.ref }}
+          # scripts/preflight-scope.sh reads the same file, so the two cannot drift.
+          filters: .github/path-filters.yml
+
+  build:
+    needs: changes
+    if: needs.changes.outputs.docs == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      # No dependency cache: this feeds the privileged Pages publish, and a
+      # shared cache there is a cache-poisoning surface (zizmor). The composite
+      # setup action caches unconditionally, so this job does not use it.
+      - uses: voidzero-dev/setup-vp@313600b80b104eadebb9111787d37a2e83e014ca # v1.17.0
+        with:
+          node-manager: true
+          cache: false
+
+      - name: Install workspace
+        run: vp install
+
+      # --fail-if-no-match: a filter matching nothing exits 0, so without it a
+      # renamed or relocated docs package passes this job having built nothing.
+      - name: Build Starlight
+        run: vp run --filter docs --fail-if-no-match build
+
+      # Links render root-relative under /reverie/; symlink dist under a
+      # `reverie` subdir so lychee's --root-dir resolution matches.
+      - name: Stage built docs at the Pages base path
+        run: |
+          mkdir -p "${RUNNER_TEMP}/linkroot"
+          ln -sfn "${GITHUB_WORKSPACE}/docs/dist" "${RUNNER_TEMP}/linkroot/reverie"
+
+      # --offline means this gating pass cannot flake on external network state.
+      - name: Check internal links (gating)
+        uses: lycheeverse/lychee-action@e7477775783ea5526144ba13e8db5eec57747ce8 # v2.9.0
+        with:
+          args: "--offline --no-progress --root-dir ${{ runner.temp }}/linkroot ${{ runner.temp }}/linkroot/reverie"
+          fail: true
+
+      # External URLs are flaky, so continue-on-error swallows the exit code
+      # while fail:true still surfaces broken links in the step log. Deploy lane
+      # only, on the same allowlist the deploy job gates on.
+      - name: Check external links (advisory)
+        if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+        id: external-links
+        continue-on-error: true
+        uses: lycheeverse/lychee-action@e7477775783ea5526144ba13e8db5eec57747ce8 # v2.9.0
+        with:
+          args: "--no-progress --scheme http --scheme https --root-dir ${{ runner.temp }}/linkroot ${{ runner.temp }}/linkroot/reverie"
+          fail: true
+
+      # Annotate so a green job doesn't hide broken links in the step log.
+      - name: Flag broken external links
+        if: steps.external-links.outcome == 'failure'
+        run: echo "::warning::lychee found broken external links in the docs — see the 'Check external links (advisory)' step summary."
+
+      - name: Upload Pages artifact
+        if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+        uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5
+        with:
+          path: docs/dist
+
+  # An allowlist, never a denylist: `merge_group` satisfies `!= 'pull_request'`
+  # and would publish an unmerged queue ref or eject the batch on the
+  # environment's branch policy.
   deploy:
-    needs: build
+    needs: [changes, build]
+    if: >-
+      needs.changes.outputs.docs == 'true' &&
+      (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -44,6 +110,12 @@ jobs:
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
+    # Queue rather than cancel: a cancelled deploy-pages call can strand a red
+    # deployment. Job-level so it holds under the caller, where a top-level
+    # block would be inert.
+    concurrency:
+      group: pages
+      cancel-in-progress: false
     steps:
       - name: Deploy to GitHub Pages
         id: deployment

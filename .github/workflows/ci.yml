@@ -80,203 +80,21 @@ jobs:
     secrets:
       CODACY_PROJECT_TOKEN: ${{ secrets.CODACY_PROJECT_TOKEN }}
 
-  # Covers what hadolint's instruction lint doesn't: root-user defaults, missing
-  # healthchecks, privileged/host-mode services, secrets-in-env shapes.
-  # Suppressions live in .trivyignore with per-finding justification.
-  # docker-publish only fires post-merge, so without this a broken image definition
-  # merges green and detonates on main in the privileged publish lane. arm64 to match
-  # the main-push publish arch and share its warm layer cache.
-  docker-build:
-    name: Docker image build
-    needs: changes
-    if: needs.changes.outputs.docker == 'true'
-    runs-on: ubuntu-24.04-arm
-    timeout-minutes: 45
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with:
-          persist-credentials: false
-
-      - uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4
-
-      # Read the publish lane's cache, never write it: a PR-controlled cache-to into
-      # that scope would be a cache-poisoning surface.
-      - name: Build image (no push)
-        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7
-        with:
-          context: .
-          platforms: linux/arm64
-          push: false
-          cache-from: type=gha,scope=buildcache-arm64
-
-  # Catches role-clause regressions in init-roles.sql and required-env-var
-  # regressions in compose's `${VAR:?required}` interpolations before they land
-  # on staging.
-  staging-smoke:
-    name: Staging compose smoke
-    needs: changes
-    if: needs.changes.outputs.staging == 'true'
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with:
-          persist-credentials: false
-
-      # Distinct passwords per role so a swapped CREATE ROLE clause in init-roles.sql
-      # can't authenticate cross-role and pass silently.
-      - name: Prepare env files from examples
-        working-directory: docker
-        run: |
-          set -euo pipefail
-          cp staging.env.bootstrap.example .env
-          # .env.runtime and .env.migrate are required: true on services not started
-          # here, but compose validates env_file presence at parse time regardless.
-          cp staging.env.runtime.example .env.runtime
-          cp staging.env.migrate.example .env.migrate
-          # `=.*`, not `=$`: an exact-empty anchor would silently no-op if the
-          # examples acquire non-empty defaults, failing later at auth with an
-          # opaque 28P01.
-          sed -i \
-            -e 's|^POSTGRES_PASSWORD=.*|POSTGRES_PASSWORD=smoke_super_pw_1|' \
-            -e 's|^REVERIE_APP_PASSWORD=.*|REVERIE_APP_PASSWORD=smoke_app_pw_2|' \
-            -e 's|^REVERIE_INGESTION_PASSWORD=.*|REVERIE_INGESTION_PASSWORD=smoke_ing_pw_3|' \
-            -e 's|^REVERIE_READONLY_PASSWORD=.*|REVERIE_READONLY_PASSWORD=smoke_ro_pw_4|' \
-            -e 's|^REVERIE_MIGRATOR_PASSWORD=.*|REVERIE_MIGRATOR_PASSWORD=smoke_mig_pw_5|' \
-            -e 's|^REVERIE_VERSION=.*|REVERIE_VERSION=smoke-test|' \
-            -e 's|^REVERIE_LIBRARY_HOST_PATH=.*|REVERIE_LIBRARY_HOST_PATH=/tmp/smoke-library|' \
-            -e 's|^REVERIE_INGESTION_HOST_PATH=.*|REVERIE_INGESTION_HOST_PATH=/tmp/smoke-ingestion|' \
-            -e 's|^REVERIE_QUARANTINE_HOST_PATH=.*|REVERIE_QUARANTINE_HOST_PATH=/tmp/smoke-quarantine|' \
-            -e 's|^REVERIE_RECOVERY_PINS_HOST_PATH=.*|REVERIE_RECOVERY_PINS_HOST_PATH=/tmp/smoke-recovery-pins|' \
-            .env
-
-      - name: Bring up postgres service
-        run: docker compose -f docker/compose.staging.yml up -d --wait --wait-timeout 120 reverie-postgres
-
-      - name: Assert roles exist with CONNECT grant
-        run: |
-          set -euo pipefail
-          exec_psql() {
-            docker compose -f docker/compose.staging.yml exec -T \
-              -e PGPASSWORD=smoke_super_pw_1 \
-              reverie-postgres psql -v ON_ERROR_STOP=1 -At \
-              -U reverie -d reverie "$@"
-          }
-          for role in reverie_app reverie_ingestion reverie_readonly reverie_migrator; do
-            exists=$(exec_psql -c "SELECT 1 FROM pg_roles WHERE rolname = '${role}' AND rolcanlogin")
-            if [ "$exists" != "1" ]; then
-              echo "Role ${role} missing or cannot login" >&2
-              exit 1
-            fi
-            # has_database_privilege would return true via Postgres' default PUBLIC
-            # grant and mask a deleted GRANT CONNECT line, so query datacl directly.
-            has_connect=$(exec_psql -c "SELECT EXISTS (SELECT 1 FROM pg_database d, aclexplode(d.datacl) acl WHERE d.datname = current_database() AND acl.grantee = (SELECT oid FROM pg_roles WHERE rolname = '${role}') AND acl.privilege_type = 'CONNECT')")
-            if [ "$has_connect" != "t" ]; then
-              echo "Role ${role} lacks an explicit CONNECT grant on $(exec_psql -c 'SELECT current_database()')" >&2
-              exit 1
-            fi
-          done
-
-      - name: Assert each role authenticates with its supplied password
-        run: |
-          set -euo pipefail
-          login_as() {
-            local role=$1 pw=$2
-            docker compose -f docker/compose.staging.yml exec -T \
-              -e PGPASSWORD="${pw}" \
-              reverie-postgres psql -v ON_ERROR_STOP=1 -At \
-              -h localhost -U "${role}" -d reverie -c 'SELECT 1' >/dev/null
-          }
-          login_as reverie_app       smoke_app_pw_2
-          login_as reverie_ingestion smoke_ing_pw_3
-          login_as reverie_readonly  smoke_ro_pw_4
-          login_as reverie_migrator  smoke_mig_pw_5
-
-      # THREAT: the migration identity must not be a superuser, create roles, or
-      # bypass RLS. Catches active escalation only; deleting the explicit
-      # NOSUPERUSER NOCREATEROLE NOBYPASSRLS clause yields the same f|f|f (they're
-      # the CREATE ROLE defaults), so that clause's presence is guarded by review.
-      - name: Assert reverie_migrator is not over-privileged
-        run: |
-          set -euo pipefail
-          attrs=$(docker compose -f docker/compose.staging.yml exec -T \
-            -e PGPASSWORD=smoke_super_pw_1 \
-            reverie-postgres psql -v ON_ERROR_STOP=1 -At \
-            -U reverie -d reverie \
-            -c "SELECT rolsuper, rolcreaterole, rolbypassrls FROM pg_roles WHERE rolname = 'reverie_migrator'")
-          if [ "$attrs" != "f|f|f" ]; then
-            echo "reverie_migrator is over-privileged: rolsuper|rolcreaterole|rolbypassrls = ${attrs} (want f|f|f)" >&2
-            exit 1
-          fi
-
-      # The migrator's two load-bearing grants (CREATE on the database, CREATE on
-      # schema public) stay invisible to the role-exists/login/f|f|f checks above if
-      # dropped; only a real DDL round-trip catches it. One statement exercises
-      # both, leaving no residue.
-      - name: Assert reverie_migrator has DDL capability
-        run: |
-          set -euo pipefail
-          docker compose -f docker/compose.staging.yml exec -T \
-            -e PGPASSWORD=smoke_mig_pw_5 \
-            reverie-postgres psql -v ON_ERROR_STOP=1 -At \
-            -h localhost -U reverie_migrator -d reverie \
-            -c "CREATE SCHEMA _smoke_ddl; CREATE TABLE _smoke_ddl.probe (id int); DROP SCHEMA _smoke_ddl CASCADE;"
-
-      # THREAT: the long-lived app must hold zero DDL credentials, so
-      # DATABASE_URL_MIGRATION must reach reverie-migrate and never the reverie app
-      # service. Runs before the negative-path step below blanks a var.
-      - name: Assert DATABASE_URL_MIGRATION is scoped to reverie-migrate only
-        working-directory: docker
-        run: |
-          set -euo pipefail
-          rendered=$(docker compose -f compose.staging.yml config)
-          if ! awk '/^  reverie-migrate:/{f=1} f && /^  [a-z]/ && !/^  reverie-migrate:/{f=0} f' <<<"$rendered" \
-               | grep -q 'DATABASE_URL_MIGRATION'; then
-            echo "DATABASE_URL_MIGRATION missing from reverie-migrate service config" >&2
-            exit 1
-          fi
-          if awk '/^  reverie:/{f=1} f && /^  [a-z]/ && !/^  reverie:/{f=0} f' <<<"$rendered" \
-               | grep -q 'DATABASE_URL_MIGRATION'; then
-            echo "DATABASE_URL_MIGRATION leaked into the reverie app service — credential isolation broken" >&2
-            exit 1
-          fi
-
-      - name: Tear down postgres service
-        if: always()
-        run: docker compose -f docker/compose.staging.yml down -v
-
-      # Key-name presence in stderr is the signal: compose's exact wording isn't
-      # pinned across versions. !cancelled() so a `:?required` regression isn't
-      # silently skipped behind an earlier failure.
-      - name: Assert missing required env var hard-fails
-        if: ${{ !cancelled() }}
-        working-directory: docker
-        run: |
-          set -euo pipefail
-          sed -i 's|^REVERIE_APP_PASSWORD=.*|REVERIE_APP_PASSWORD=|' .env
-          if stderr=$(docker compose -f compose.staging.yml config 2>&1 >/dev/null); then
-            echo "Expected compose config to fail with missing REVERIE_APP_PASSWORD, but it succeeded" >&2
-            echo "stderr was:" >&2
-            echo "${stderr}" >&2
-            exit 1
-          fi
-          if ! grep -qF REVERIE_APP_PASSWORD <<<"${stderr}"; then
-            echo "compose config failed but stderr did not mention REVERIE_APP_PASSWORD" >&2
-            echo "stderr was:" >&2
-            echo "${stderr}" >&2
-            exit 1
-          fi
-
-  # The gitleaks pre-commit hook is client-side: bypassable and never run on fork
-  # PRs. Unconditional — a secret can land in any file type.
-  # Build lives in the reusable docs-build.yml, shared with docs.yml's Pages deploy
-  # lane; cross-workflow `needs` is impossible, so the job must exist here to join
-  # ci-gate.
+  # The only caller granting more than the top-level default: a called workflow
+  # can downgrade its caller's token but never elevate it, so the deploy job's
+  # needs are declared here and narrowed again inside docs.yml.
   docs:
-    name: Docs build
-    needs: changes
-    if: needs.changes.outputs.docs == 'true'
-    uses: ./.github/workflows/docs-build.yml
+    uses: ./.github/workflows/docs.yml
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+
+  staging:
+    uses: ./.github/workflows/staging.yml
+
+  docker:
+    uses: ./.github/workflows/docker.yml
 
   # Single required status check for the branch ruleset: `skipped` is a pass, so a
   # path-conditional job that legitimately skips doesn't block merge.
@@ -293,8 +111,8 @@ jobs:
       - security
       - deps
       - frontend
-      - staging-smoke
-      - docker-build
+      - staging
+      - docker
       - docs
     runs-on: ubuntu-latest
     timeout-minutes: 5
