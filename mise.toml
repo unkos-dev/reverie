@@ -43,7 +43,7 @@ pnpm = "11.22.0"
 # SQL linter for backend/migrations, run by `just infra::sqruff`. No mise
 # registry shorthand exists, so it takes the explicit GitHub backend form.
 [tools."github:quarylabs/sqruff"]
-version = "0.39.0"
+version = "0.40.0"
 filter_bins = "sqruff"
 
 # Prebuilt Rust tools used by local recipes. The GitHub backend enables
