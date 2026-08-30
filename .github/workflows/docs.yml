@@ -44,7 +44,7 @@ jobs:
       # No dependency cache: this feeds the privileged Pages publish, and a
       # shared cache there is a cache-poisoning surface (zizmor). The composite
       # setup action caches unconditionally, so this job does not use it.
-      - uses: voidzero-dev/setup-vp@313600b80b104eadebb9111787d37a2e83e014ca # v1.17.0
+      - uses: voidzero-dev/setup-vp@1b32467adbe183473499fd9d5d372c3ed9641754 # v1.18.0
         with:
           node-manager: true
           cache: false
