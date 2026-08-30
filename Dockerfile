@@ -106,7 +106,7 @@ RUN PNPM_CONFIG_VERIFY_DEPS_BEFORE_RUN=false pnpm --filter frontend run build
 # JavaScript cataloger, so it must be selected explicitly.
 FROM js-toolchain AS frontend-sbom
 # renovate: datasource=docker depName=anchore/syft
-COPY --from=anchore/syft:v1.51.0@sha256:678bfa565b60f747aac0f8e964fe5588a24445b8d0a480e91f6efd70020dfbb0 /syft /usr/local/bin/syft
+COPY --from=anchore/syft:v1.51.1@sha256:95fe0835e5bebc6f8b1f8acef68d47d63d594ef4c0f25c097ff853b23cbac74c /syft /usr/local/bin/syft
 RUN pnpm deploy --ignore-scripts --filter frontend --prod /sbom-tree \
     && syft dir:/sbom-tree --override-default-catalogers javascript-package-cataloger \
       -o cyclonedx-json > /build/frontend.cdx.json
