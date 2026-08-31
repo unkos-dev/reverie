@@ -10,8 +10,11 @@
 use std::sync::LazyLock;
 
 use argon2::Argon2;
-use argon2::password_hash::rand_core::{OsRng, RngCore};
-use argon2::password_hash::{PasswordHash, PasswordHasher, PasswordVerifier, SaltString};
+use argon2::password_hash::phc::PasswordHash;
+use argon2::password_hash::{PasswordHasher, PasswordVerifier};
+use rand::RngExt as _;
+use rand::rand_core::UnwrapErr;
+use rand::rngs::SysRng;
 
 /// Hash a password into an Argon2id PHC string with a fresh random salt.
 ///
@@ -20,10 +23,7 @@ use argon2::password_hash::{PasswordHash, PasswordHasher, PasswordVerifier, Salt
 /// Returns [`argon2::password_hash::Error`] if hashing fails (e.g. an invalid
 /// parameter set); not expected with [`argon2::Argon2::default`].
 pub fn hash_password(password: &[u8]) -> Result<String, argon2::password_hash::Error> {
-    let salt = SaltString::generate(&mut OsRng);
-    Ok(Argon2::default()
-        .hash_password(password, &salt)?
-        .to_string())
+    Ok(Argon2::default().hash_password(password)?.to_string())
 }
 
 /// Verify a password against a stored Argon2id PHC string. `Ok(())` on a match.
@@ -51,15 +51,12 @@ pub fn verify_password(password: &[u8], phc: &str) -> Result<(), argon2::passwor
 /// unrecoverable environment fault, so this fails loud at startup rather than
 /// silently shipping the degraded control.
 static DUMMY_PHC: LazyLock<String> = LazyLock::new(|| {
-    let mut secret = [0u8; 32];
-    OsRng.fill_bytes(&mut secret);
+    let secret: [u8; 32] = UnwrapErr(SysRng).random();
     #[expect(
         clippy::expect_used,
-        reason = "DUMMY_PHC is the anti-enumeration timing control (CWE-208); a failure to hash random bytes with default Argon2 params is an unrecoverable startup fault. Failing loud here is correct, not silently disabling the control."
+        reason = "DUMMY_PHC is the anti-enumeration timing control (CWE-208); a failure to hash the dummy secret is an unrecoverable startup fault. Failing loud here is correct, not silently disabling the control."
     )]
-    let phc = hash_password(&secret)
-        .expect("DUMMY_PHC: Argon2 must hash the anti-enumeration dummy secret");
-    phc
+    hash_password(&secret).expect("DUMMY_PHC: Argon2 must hash the anti-enumeration dummy secret")
 });
 
 /// Spend Argon2id-verification-equivalent work on a login attempt whose email
