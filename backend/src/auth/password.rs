@@ -12,7 +12,8 @@ use std::sync::LazyLock;
 use argon2::Argon2;
 use argon2::password_hash::phc::PasswordHash;
 use argon2::password_hash::{PasswordHasher, PasswordVerifier};
-use rand::TryRng as _;
+use rand::RngExt as _;
+use rand::rand_core::UnwrapErr;
 use rand::rngs::SysRng;
 
 /// Hash a password into an Argon2id PHC string with a fresh random salt.
@@ -50,18 +51,12 @@ pub fn verify_password(password: &[u8], phc: &str) -> Result<(), argon2::passwor
 /// unrecoverable environment fault, so this fails loud at startup rather than
 /// silently shipping the degraded control.
 static DUMMY_PHC: LazyLock<String> = LazyLock::new(|| {
+    let secret: [u8; 32] = UnwrapErr(SysRng).random();
     #[expect(
         clippy::expect_used,
-        reason = "DUMMY_PHC is the anti-enumeration timing control (CWE-208); a failure to seed or hash the dummy secret is an unrecoverable startup fault. Failing loud here is correct, not silently disabling the control."
+        reason = "DUMMY_PHC is the anti-enumeration timing control (CWE-208); a failure to hash the dummy secret is an unrecoverable startup fault. Failing loud here is correct, not silently disabling the control."
     )]
-    {
-        let mut secret = [0u8; 32];
-        SysRng.try_fill_bytes(&mut secret).expect(
-            "DUMMY_PHC: OS RNG must be available to seed the anti-enumeration dummy secret",
-        );
-        hash_password(&secret)
-            .expect("DUMMY_PHC: Argon2 must hash the anti-enumeration dummy secret")
-    }
+    hash_password(&secret).expect("DUMMY_PHC: Argon2 must hash the anti-enumeration dummy secret")
 });
 
 /// Spend Argon2id-verification-equivalent work on a login attempt whose email
