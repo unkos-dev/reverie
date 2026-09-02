@@ -22,7 +22,7 @@ describe("queryClient — QueryCache onError", () => {
     setUnauthenticatedHandler(handler);
 
     await queryClient
-      .fetchQuery({
+      .query({
         queryKey: ["__test", "401"],
         queryFn: () => {
           throw new ApiError(401, "https://reverie.example/probs/unauthorized", "Unauthorized", "");
@@ -41,7 +41,7 @@ describe("queryClient — QueryCache onError", () => {
     setUnauthenticatedHandler(handler);
 
     await queryClient
-      .fetchQuery({
+      .query({
         queryKey: ["__test", "500"],
         queryFn: () => {
           throw new ApiError(500, null, "Internal Server Error", "");
@@ -58,7 +58,7 @@ describe("queryClient — QueryCache onError", () => {
     setUnauthenticatedHandler(handler);
 
     await queryClient
-      .fetchQuery({
+      .query({
         queryKey: ["__test", "TypeError"],
         queryFn: () => {
           throw new TypeError("network down");
@@ -77,7 +77,7 @@ describe("queryClient — QueryCache onError", () => {
     setUnauthenticatedHandler(second);
 
     await queryClient
-      .fetchQuery({
+      .query({
         queryKey: ["__test", "replace"],
         queryFn: () => {
           throw new ApiError(401, null, "Unauthorized", "");

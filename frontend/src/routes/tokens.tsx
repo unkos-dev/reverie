@@ -9,10 +9,12 @@ import { TokensPage } from "@/pages/tokens/TokensPage";
 
 /** Loader for `/tokens` — prefetches the caller's token list. */
 export async function loader(): Promise<null> {
-  await queryClient.prefetchQuery({
-    queryKey: queryKeys.tokens.list(),
-    queryFn: ({ signal }) => listTokens(signal),
-  });
+  await queryClient
+    .query({
+      queryKey: queryKeys.tokens.list(),
+      queryFn: ({ signal }) => listTokens(signal),
+    })
+    .catch(() => {});
   return null;
 }
 

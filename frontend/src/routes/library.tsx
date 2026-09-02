@@ -47,14 +47,16 @@ export async function loader({ request }: LoaderFunctionArgs): Promise<null> {
   const mirroredSort = serializeSortParam(parseSortParam(readDisplayPreferences().sortStack ?? ""));
   if (mirroredSort !== "") seedParams.sort = mirroredSort;
   const initialPageParam: string | undefined = undefined;
-  await queryClient.prefetchInfiniteQuery({
-    queryKey: queryKeys.books.list(seedParams),
-    // Loader only seeds page 1 — `pageParam` is always the initial
-    // value here. Subsequent pages are driven by `fetchNextPage` in
-    // the component, which carries its own queryFn closure.
-    queryFn: ({ signal }) => listBooks(seedParams, signal),
-    initialPageParam,
-  });
+  await queryClient
+    .infiniteQuery({
+      queryKey: queryKeys.books.list(seedParams),
+      // Loader only seeds page 1 — `pageParam` is always the initial
+      // value here. Subsequent pages are driven by `fetchNextPage` in
+      // the component, which carries its own queryFn closure.
+      queryFn: ({ signal }) => listBooks(seedParams, signal),
+      initialPageParam,
+    })
+    .catch(() => {});
   return null;
 }
 

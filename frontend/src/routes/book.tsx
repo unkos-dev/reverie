@@ -21,7 +21,7 @@ import { BookPage } from "@/pages/book/BookPage";
  * Loader for `/b/:id`. Prefetches the detail so the component's
  * `useSuspenseQuery` hits a hot cache, then returns `{ title }` for
  * the utility strip's breadcrumb (the component itself reads the id
- * from `useParams`). `prefetchQuery` swallows fetch errors, so the
+ * from `useParams`). The prefetch swallows fetch errors, so the
  * post-prefetch cache read can be `undefined` — that degrades to
  * `null` and the breadcrumb renders without a trailing label.
  *
@@ -37,10 +37,12 @@ export async function loader({ params }: LoaderFunctionArgs): Promise<TitleData 
     // oxlint-disable-next-line typescript/only-throw-error -- react-router's loader-bailout convention is `throw new Response(...)`.
     throw new Response("Missing book id", { status: 404 });
   }
-  await queryClient.prefetchQuery({
-    queryKey: queryKeys.books.detail(id),
-    queryFn: ({ signal }) => getBook(id, signal),
-  });
+  await queryClient
+    .query({
+      queryKey: queryKeys.books.detail(id),
+      queryFn: ({ signal }) => getBook(id, signal),
+    })
+    .catch(() => {});
   const detail = queryClient.getQueryData<BookDetail>(queryKeys.books.detail(id));
   return detail === undefined ? null : ({ title: detail.title } satisfies TitleData);
 }

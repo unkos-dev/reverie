@@ -20,10 +20,12 @@ import { DashboardPage } from "@/pages/admin/DashboardPage";
 export async function loader(): Promise<null> {
   const me = queryClient.getQueryData<AuthMe | null>(queryKeys.auth.me());
   if (me?.role === "admin") {
-    await queryClient.prefetchQuery({
-      queryKey: queryKeys.dashboard.stats(),
-      queryFn: ({ signal }) => getDashboardStats(signal),
-    });
+    await queryClient
+      .query({
+        queryKey: queryKeys.dashboard.stats(),
+        queryFn: ({ signal }) => getDashboardStats(signal),
+      })
+      .catch(() => {});
   }
   return null;
 }

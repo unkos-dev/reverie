@@ -22,11 +22,11 @@ import { queryKeys } from "@/lib/query/keys";
  */
 async function resolveLoginRedirect(): Promise<string> {
   try {
-    const status = await queryClient.ensureQueryData({
+    const status = await queryClient.query({
       queryKey: queryKeys.auth.setupStatus(),
       queryFn: ({ signal }) => fetchSetupStatus(signal),
       retry: false,
-      staleTime: Infinity,
+      staleTime: "static",
     });
     return status.oidc_enabled ? "/auth/oidc/login" : "/login";
   } catch {

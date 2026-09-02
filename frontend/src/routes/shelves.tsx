@@ -9,10 +9,12 @@ import { ShelvesListPage } from "@/pages/shelves/ShelvesListPage";
 
 /** Loader for `/shelves` — prefetches the shelf list. */
 export async function loader(): Promise<null> {
-  await queryClient.prefetchQuery({
-    queryKey: queryKeys.shelves.list(),
-    queryFn: ({ signal }) => listShelves(signal),
-  });
+  await queryClient
+    .query({
+      queryKey: queryKeys.shelves.list(),
+      queryFn: ({ signal }) => listShelves(signal),
+    })
+    .catch(() => {});
   return null;
 }
 

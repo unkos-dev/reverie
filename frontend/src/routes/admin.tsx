@@ -20,10 +20,12 @@ import { UsersPage } from "@/pages/admin/UsersPage";
 export async function loader(): Promise<null> {
   const me = queryClient.getQueryData<AuthMe | null>(queryKeys.auth.me());
   if (me?.role === "admin") {
-    await queryClient.prefetchQuery({
-      queryKey: queryKeys.users.list(),
-      queryFn: ({ signal }) => listUsers(signal),
-    });
+    await queryClient
+      .query({
+        queryKey: queryKeys.users.list(),
+        queryFn: ({ signal }) => listUsers(signal),
+      })
+      .catch(() => {});
   }
   return null;
 }

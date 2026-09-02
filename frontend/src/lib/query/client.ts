@@ -2,7 +2,7 @@
  * Application-wide TanStack Query client.
  *
  * The `QueryClient` is a module singleton — route loaders import it
- * directly for `prefetchQuery`, components share it through the
+ * directly to prefetch via `query`, components share it through the
  * `QueryClientProvider` mounted in `main.tsx`, and a single shared
  * cache means a prefetch in a loader is hot on the component that
  * renders next. Per the JSON-API ADR and the
@@ -83,8 +83,8 @@ export function invokeUnauthenticatedHandler(): void {
 }
 
 /**
- * Singleton `QueryClient`. Route loaders import this directly for
- * `prefetchQuery`; `<QueryClientProvider client={queryClient}/>` makes
+ * Singleton `QueryClient`. Route loaders import this directly to
+ * prefetch via `query`; `<QueryClientProvider client={queryClient}/>` makes
  * the same instance available to components via context.
  */
 export const queryClient = new QueryClient({
