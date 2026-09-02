@@ -41,7 +41,7 @@ beforeEach(() => {
   queryClient.clear();
   setUnauthenticatedHandler(() => {});
   // Seed provider state so the provider-aware redirect resolves without a
-  // fetch (the redirect reads `/auth/setup/status` via `ensureQueryData`).
+  // fetch (the redirect reads `/auth/setup/status` via `queryClient.query`).
   // Default is OIDC-off, so the redirect target is the local form `/login`.
   queryClient.setQueryData(queryKeys.auth.setupStatus(), {
     setup_required: false,
@@ -104,7 +104,7 @@ describe("App — auth boundary", () => {
     expect(await screen.findByText("HOME_ROUTE_RENDERED")).toBeInTheDocument();
 
     await queryClient
-      .fetchQuery({
+      .query({
         queryKey: ["__app-test", "401"],
         queryFn: () => {
           throw new ApiError(401, null, "Unauthorized", "");
@@ -124,7 +124,7 @@ describe("App — auth boundary", () => {
     expect(await screen.findByText("HOME_ROUTE_RENDERED")).toBeInTheDocument();
 
     await queryClient
-      .fetchQuery({
+      .query({
         queryKey: ["__app-test", "500"],
         queryFn: () => {
           throw new ApiError(500, null, "Internal Server Error", "");
@@ -172,7 +172,7 @@ describe("App — auth boundary", () => {
     });
 
     await queryClient
-      .fetchQuery({
+      .query({
         queryKey: ["__app-test", "concurrent-401"],
         queryFn: () => {
           throw new ApiError(401, null, "Unauthorized", "");

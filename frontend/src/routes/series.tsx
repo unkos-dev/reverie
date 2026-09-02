@@ -20,7 +20,7 @@ import { SeriesPage } from "@/pages/series/SeriesPage";
 /**
  * Loader for `/series/:id`. Prefetches the series detail so the
  * page's `useSuspenseQuery` hits a hot cache, then returns `{ title }`
- * for the utility strip's breadcrumb. `prefetchQuery` swallows fetch
+ * for the utility strip's breadcrumb. The prefetch swallows fetch
  * errors — a cold cache degrades to `null` (crumb renders "Library"
  * alone).
  *
@@ -34,10 +34,12 @@ export async function loader({ params }: LoaderFunctionArgs): Promise<TitleData 
     // oxlint-disable-next-line typescript/only-throw-error -- react-router's loader-bailout convention is `throw new Response(...)`.
     throw new Response("Missing series id", { status: 404 });
   }
-  await queryClient.prefetchQuery({
-    queryKey: queryKeys.series.detail(id),
-    queryFn: ({ signal }) => getSeries(id, signal),
-  });
+  await queryClient
+    .query({
+      queryKey: queryKeys.series.detail(id),
+      queryFn: ({ signal }) => getSeries(id, signal),
+    })
+    .catch(() => {});
   const detail = queryClient.getQueryData<SeriesDetail>(queryKeys.series.detail(id));
   return detail === undefined ? null : ({ title: detail.name } satisfies TitleData);
 }

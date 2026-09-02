@@ -30,7 +30,7 @@
  *   `pages/shelves/ShelfDetailPage` (both `useSuspenseQuery`).
  * - **Loaders** prefetch and swallow, leaving the throw to the primary
  *   surface that re-reads the same key: `routes/shelves` and
- *   `routes/shelf-detail` (both `prefetchQuery`).
+ *   `routes/shelf-detail` (both prefetch via `queryClient.query`).
  * - **Auxiliary** surfaces degrade and stay mounted, because shelves are
  *   an accessory to their real job: `components/shell/LeftRail`,
  *   `components/shell/FilterRail`, `pages/library/FilterChips`,

@@ -12,10 +12,12 @@ import { ShelfDetailPage } from "@/pages/shelves/ShelfDetailPage";
 /** Loader for `/shelves/:id` — prefetches the shelf detail. */
 export async function loader({ params }: LoaderFunctionArgs): Promise<null> {
   const id = params.id ?? "";
-  await queryClient.prefetchQuery({
-    queryKey: queryKeys.shelves.detail(id),
-    queryFn: ({ signal }) => getShelf(id, signal),
-  });
+  await queryClient
+    .query({
+      queryKey: queryKeys.shelves.detail(id),
+      queryFn: ({ signal }) => getShelf(id, signal),
+    })
+    .catch(() => {});
   return null;
 }
 
