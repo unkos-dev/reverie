@@ -7,7 +7,8 @@
 //! never leaks a raw timestamp.
 //!
 //! Also distinct from the static-resource cache validators `tower-http`
-//! serves under `/assets`: this module's single-strong-tag rule governs
+//! serves for the frontend dist tree, under `/assets` and through the
+//! composite fallback: this module's single-strong-tag rule governs
 //! conditional writes on API resources only.
 //!
 //! Every caller feeds its own dedicated, fixed-field-order struct into

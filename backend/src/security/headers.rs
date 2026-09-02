@@ -13,11 +13,12 @@
 //!   `HeaderValue` on `SecurityConfig` (validated at startup in
 //!   `reverie_api::run`). Attached to matched routes only.
 //! - [`crate::security::headers::composite_fallback`] — the single
-//!   fallback handler for the composite. Path-prefix-dispatches to either
-//!   a JSON 404 + API CSP (reserved prefixes) or an `index.html` + HTML
-//!   CSP (SPA fallback). Neither the per-router CSP layers nor any other
-//!   middleware attaches CSP to fallback responses, so the handler sets
-//!   CSP itself.
+//!   fallback handler for the composite. Path-prefix-dispatches to a JSON
+//!   404 + API CSP (reserved prefixes), a dist-root file + HTML CSP (the
+//!   fonts, brand assets and favicons Vite copies out of `public/`), or an
+//!   `index.html` + HTML CSP (SPA fallback). Neither the per-router CSP
+//!   layers nor any other middleware attaches CSP to fallback responses,
+//!   so the handler sets CSP itself.
 //!
 //! # Tier 2 — security-critical
 //!
@@ -28,7 +29,7 @@
 
 use axum::body::Body;
 use axum::extract::{Request, State};
-use axum::http::{HeaderName, HeaderValue, StatusCode, Uri, header};
+use axum::http::{HeaderName, HeaderValue, StatusCode, header};
 use axum::middleware::Next;
 use axum::response::{IntoResponse, Response};
 
@@ -122,10 +123,11 @@ pub async fn api_csp_layer(
 /// Sets `Content-Security-Policy` to the HTML CSP on responses from the
 /// matched `/assets/*` routes.
 ///
-/// Does NOT cover SPA `index.html` responses — those come from the
-/// composite fallback, which attaches HTML CSP directly. When the HTML CSP
-/// is not configured (API-only dev runs), no header is written — dev mode
-/// relies on Vite's own `server.headers` block.
+/// Does NOT cover `index.html` or the dist-root files (fonts, brand assets,
+/// favicons) — both come from the composite fallback, which attaches the
+/// same HTML CSP directly. When the HTML CSP is not configured (API-only dev
+/// runs), no header is written — dev mode relies on Vite's own
+/// `server.headers` block.
 ///
 /// Threat: silently emitting no CSP on a missing `csp_html_header` is
 /// dev-only behaviour; production startup validates the dist and configures
@@ -147,21 +149,39 @@ pub async fn html_csp_layer(
 /// composite — axum 0.8 panics when `.merge()` combines two routers each
 /// carrying their own.
 ///
-/// Path-prefix-dispatches: reserved prefixes (`/api`, `/auth`, `/health`,
-/// `/opds`) yield a JSON 404 + API CSP; anything else falls through to the
-/// SPA `index.html` + HTML CSP.
+/// Path-prefix-dispatches into three response classes: reserved prefixes
+/// (`/api`, `/auth`, `/health`, `/opds`) yield a JSON 404 + API CSP; a path
+/// naming a real file in the dist tree yields that file + HTML CSP; anything
+/// else is an SPA route and yields `index.html` + HTML CSP. The SPA-route
+/// class disregards `Accept`, which RFC 9110 §12.5.1 permits when no
+/// acceptable representation exists, so a missing file is answered as an
+/// SPA route rather than with a 404 or 406. A non-GET on either non-reserved
+/// class yields `ServeDir`'s 405 with `Allow`, because both serve static
+/// content that only supports GET and HEAD.
+///
+/// The dist-file class exists because Vite copies `public/` to the dist
+/// root rather than into `assets/`, so the fonts, brand assets and favicons
+/// sit on paths the `/assets` router never matches. Without this arm they
+/// resolve as SPA routes and return `index.html` with a 200, which reaches
+/// the browser as HTML where an image or a font was expected.
 ///
 /// Threat: the dispatch table and the per-router CSP layers together
 /// implement route-class differentiation. Adding a route under a reserved
 /// prefix that should serve HTML — or removing a prefix from
 /// `RESERVED_PREFIXES` without adjusting routes — would silently emit the
-/// wrong CSP class on the affected paths.
-pub async fn composite_fallback(State(state): State<AppState>, uri: Uri) -> Response {
-    if is_reserved_prefix(uri.path()) {
-        api_404_with_csp(&state)
-    } else {
-        spa_fallback_response(&state).await
+/// wrong CSP class on the affected paths. Both non-reserved classes carry
+/// the HTML CSP, so a path moving between them cannot change CSP class.
+pub async fn composite_fallback(State(state): State<AppState>, req: Request<Body>) -> Response {
+    if is_reserved_prefix(req.uri().path()) {
+        return api_404_with_csp(&state);
     }
+    if let Some(dist) = state.config.security.frontend_dist_path.as_ref()
+        && let Some(mut resp) = crate::routes::spa::try_dist_file(dist, req).await
+    {
+        attach_html_csp(&mut resp, &state);
+        return resp;
+    }
+    spa_fallback_response(&state).await
 }
 
 /// 404 RFC 9457 Problem Details + API CSP for reserved-prefix
@@ -333,13 +353,24 @@ mod tests {
         ))
     }
 
+    /// Body of the fixture's dist-root asset, standing in for the real
+    /// `brand/`, `fonts/` and favicon trees Vite copies out of `public/`.
+    const GLYPH_SVG: &[u8] = br#"<svg xmlns="http://www.w3.org/2000/svg"/>"#;
+
     /// Materialise a minimal dist/ tree in a `TempDir`: `index.html`,
-    /// `csp-hashes.json`, `assets/`. Used by SPA-serving tests.
+    /// `csp-hashes.json`, `assets/`, and a nested asset outside `assets/`.
+    /// Used by SPA-serving tests.
     fn fixture_dist(index_html_body: &[u8]) -> TempDir {
         let tmp = TempDir::new().unwrap();
         fs::write(tmp.path().join("index.html"), index_html_body).unwrap();
         fs::create_dir_all(tmp.path().join("assets")).unwrap();
         fs::write(tmp.path().join("assets").join("main.js"), b"// placeholder").unwrap();
+        fs::create_dir_all(tmp.path().join("brand").join("glyph")).unwrap();
+        fs::write(
+            tmp.path().join("brand").join("glyph").join("slot.svg"),
+            GLYPH_SVG,
+        )
+        .unwrap();
         fs::write(
             tmp.path().join("csp-hashes.json"),
             br#"{"script-src-hashes":["sha256-AAAA"]}"#,
@@ -569,6 +600,111 @@ mod tests {
             .unwrap()
             .to_owned();
         assert!(csp.contains("default-src 'self'"), "unexpected: {csp}");
+    }
+
+    fn dist_server(dist: &TempDir) -> axum_test::TestServer {
+        test_server_with_security(SecurityConfig {
+            frontend_dist_path: Some(dist.path().to_path_buf()),
+            csp_html_header: Some(HeaderValue::from_static("default-src 'self'")),
+            csp_api_header: Some(HeaderValue::from_static("default-src 'none'")),
+            ..crate::test_support::test_config().security
+        })
+    }
+
+    #[tokio::test]
+    async fn dist_root_file_serves_its_own_bytes_not_index_html() {
+        let dist = fixture_dist(b"<!doctype html><title>spa</title>");
+        let server = dist_server(&dist);
+        let r = server.get("/brand/glyph/slot.svg").await;
+        r.assert_status_ok();
+        assert_eq!(r.as_bytes().as_ref(), GLYPH_SVG);
+        assert_eq!(r.headers().get("content-type").unwrap(), "image/svg+xml");
+    }
+
+    #[tokio::test]
+    async fn dist_root_file_carries_html_csp_and_nosniff() {
+        let dist = fixture_dist(b"<!doctype html>");
+        let server = dist_server(&dist);
+        let r = server.get("/brand/glyph/slot.svg").await;
+        let csp = r
+            .headers()
+            .get("content-security-policy")
+            .unwrap()
+            .to_str()
+            .unwrap()
+            .to_owned();
+        assert!(csp.contains("default-src 'self'"), "unexpected: {csp}");
+        assert_eq!(
+            r.headers().get("x-content-type-options").unwrap(),
+            "nosniff"
+        );
+    }
+
+    #[tokio::test]
+    async fn dist_traversal_attempt_does_not_escape_the_root() {
+        let dist = fixture_dist(b"<!doctype html><title>spa</title>");
+        let server = dist_server(&dist);
+        // Percent-encoded so the path survives to ServeDir rather than being
+        // normalised away before the root check can matter.
+        let r = server.get("/%2e%2e%2f%2e%2e%2fetc%2fpasswd").await;
+        r.assert_status_ok();
+        assert_eq!(
+            r.headers().get("content-type").unwrap(),
+            "text/html; charset=utf-8",
+            "traversal must fall through to the SPA route class, never a file read"
+        );
+    }
+
+    #[tokio::test]
+    async fn non_get_on_an_spa_route_returns_405_with_allow() {
+        let dist = fixture_dist(b"<!doctype html><title>spa</title>");
+        let server = dist_server(&dist);
+        let r = server.post("/library/anything").await;
+        r.assert_status(axum::http::StatusCode::METHOD_NOT_ALLOWED);
+        assert_eq!(r.headers().get("allow").unwrap(), "GET,HEAD");
+        let csp = r
+            .headers()
+            .get("content-security-policy")
+            .unwrap()
+            .to_str()
+            .unwrap()
+            .to_owned();
+        assert!(csp.contains("default-src 'self'"), "unexpected: {csp}");
+    }
+
+    #[tokio::test]
+    async fn dist_root_file_revalidation_returns_304_with_html_csp() {
+        let dist = fixture_dist(b"<!doctype html>");
+        let server = dist_server(&dist);
+        let first = server.get("/brand/glyph/slot.svg").await;
+        first.assert_status_ok();
+        let etag = first.headers().get("etag").unwrap().to_owned();
+
+        let r = server
+            .get("/brand/glyph/slot.svg")
+            .add_header(header::IF_NONE_MATCH, etag)
+            .await;
+        r.assert_status(axum::http::StatusCode::NOT_MODIFIED);
+        let csp = r
+            .headers()
+            .get("content-security-policy")
+            .unwrap()
+            .to_str()
+            .unwrap()
+            .to_owned();
+        assert!(csp.contains("default-src 'self'"), "unexpected: {csp}");
+    }
+
+    #[tokio::test]
+    async fn dist_root_file_range_request_returns_206_partial_bytes() {
+        let dist = fixture_dist(b"<!doctype html>");
+        let server = dist_server(&dist);
+        let r = server
+            .get("/brand/glyph/slot.svg")
+            .add_header(header::RANGE, HeaderValue::from_static("bytes=0-3"))
+            .await;
+        r.assert_status(axum::http::StatusCode::PARTIAL_CONTENT);
+        assert_eq!(r.as_bytes().as_ref(), &GLYPH_SVG[0..4]);
     }
 
     #[tokio::test]
