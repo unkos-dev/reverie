@@ -152,7 +152,10 @@ pub async fn html_csp_layer(
 /// Path-prefix-dispatches into three response classes: reserved prefixes
 /// (`/api`, `/auth`, `/health`, `/opds`) yield a JSON 404 + API CSP; a path
 /// naming a real file in the dist tree yields that file + HTML CSP; anything
-/// else is an SPA route and yields `index.html` + HTML CSP.
+/// else is an SPA route and yields `index.html` + HTML CSP. The SPA-route
+/// class disregards `Accept`, which RFC 9110 §12.5.1 permits when no
+/// acceptable representation exists, so a missing file is answered as an
+/// SPA route rather than with a 404 or 406.
 ///
 /// The dist-file class exists because Vite copies `public/` to the dist
 /// root rather than into `assets/`, so the fonts, brand assets and favicons
