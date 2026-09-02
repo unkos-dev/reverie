@@ -277,6 +277,10 @@ plan). Reverie adopts the OWASP synchronizer-token pattern:
   absent → 428 with `type: ".../csrf-missing"`; if present but
   does not match the session value under constant-time compare
   (`subtle::ConstantTimeEq`) → 403 with `type: ".../csrf-mismatch"`.
+  The layer wraps the matched route, so a session-authenticated
+  mutation without a valid token receives the CSRF problem before
+  any route-level status is decided, including 405 for an
+  unsupported method and 404 for a missing row.
 - Token rotates on privilege change (when `session_version`
   increments).
 - `POST /auth/logout` is exempt, logging out destroys the
