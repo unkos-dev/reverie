@@ -170,6 +170,12 @@ pub enum AppError {
     /// [`problems::EMAIL_CONFLICT`]. HTTP 409 Conflict.
     #[error("email already in use")]
     EmailConflict,
+    /// Method not supported on an otherwise-matched route. RFC 9457
+    /// `type` [`problems::METHOD_NOT_ALLOWED`]. HTTP 405. Must not set
+    /// its own `Allow` header — axum appends the registered methods
+    /// after this response is produced.
+    #[error("method not allowed")]
+    MethodNotAllowed,
     /// Anything else — unhandled `sqlx::Error`, IO failure, etc. RFC
     /// 9457 `type` [`problems::INTERNAL`]. HTTP 500 with a fixed
     /// non-leaking `detail`; the inner cause is
@@ -303,6 +309,12 @@ impl IntoResponse for AppError {
                 problems::EMAIL_CONFLICT,
                 "Conflict",
                 "An account with that email already exists.".to_owned(),
+            ),
+            Self::MethodNotAllowed => (
+                StatusCode::METHOD_NOT_ALLOWED,
+                problems::METHOD_NOT_ALLOWED,
+                "Method Not Allowed",
+                "The request method is not supported for this resource.".to_owned(),
             ),
             Self::Internal(err) => {
                 tracing::error!(error = %err, "internal server error");
@@ -534,6 +546,18 @@ mod tests {
         let (status, _, json) = parse_problem(AppError::SystemShelfImmutable).await;
         assert_eq!(status, StatusCode::CONFLICT);
         assert_problem_shape(&json, problems::SYSTEM_SHELF_IMMUTABLE, 409, "Conflict");
+    }
+
+    #[tokio::test]
+    async fn method_not_allowed_returns_405_problem() {
+        let (status, _, json) = parse_problem(AppError::MethodNotAllowed).await;
+        assert_eq!(status, StatusCode::METHOD_NOT_ALLOWED);
+        assert_problem_shape(
+            &json,
+            problems::METHOD_NOT_ALLOWED,
+            405,
+            "Method Not Allowed",
+        );
     }
 
     #[tokio::test]

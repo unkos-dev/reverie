@@ -124,6 +124,11 @@ where
         api_like = api_like.merge(opds);
     }
     let api_like = api_like
+        // Must stay after every merge into api_like above: it only patches
+        // routes already registered on this router at call time, so an
+        // earlier placement would leave later-merged routes on axum's bare
+        // 405. Scoped to api_like, so the SPA merge below is untouched.
+        .method_not_allowed_fallback(security::headers::api_method_not_allowed_fallback)
         .layer(axum::middleware::from_fn_with_state(
             state.clone(),
             security::headers::api_csp_layer,

@@ -180,7 +180,10 @@ invalid field values, business-rule rejections) are 422, mapped by
 `AppError::Validation`. Semantic codes are reserved for
 well-formed requests that fail against current server state
 rather than against their own shape: 404 for existence (including
-the deliberate 404-over-403 ownership convention above), 409 for
+the deliberate 404-over-403 ownership convention above), 405
+Method Not Allowed (RFC 9110 §15.5.6) when the target resource
+exists but does not support the request's method, emitted as
+problem details with the `Allow` header intact, 409 for
 conflict, 412 Precondition Failed when a precondition evaluates
 false (RFC 9110 §13.1), and 428 Precondition Required when a
 required precondition is missing entirely (RFC 6585 §3).
@@ -274,6 +277,10 @@ plan). Reverie adopts the OWASP synchronizer-token pattern:
   absent → 428 with `type: ".../csrf-missing"`; if present but
   does not match the session value under constant-time compare
   (`subtle::ConstantTimeEq`) → 403 with `type: ".../csrf-mismatch"`.
+  The layer wraps the matched route, so a session-authenticated
+  mutation without a valid token receives the CSRF problem before
+  any route-level status is decided, including 405 for an
+  unsupported method and 404 for a missing row.
 - Token rotates on privilege change (when `session_version`
   increments).
 - `POST /auth/logout` is exempt, logging out destroys the
