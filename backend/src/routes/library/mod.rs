@@ -1041,6 +1041,7 @@ fn merge_external_ids(
 #[utoipa::path(
     get,
     path = "/api/v1/books/{id}",
+    operation_id = "book_detail",
     tag = "library",
     params(("id" = Uuid, Path, description = "Manifestation id")),
     security(("session_cookie" = ["read"]), ("device_token_bearer" = ["read"]), ("oidc_jwt_bearer" = ["read"]), ("opds_basic" = ["read"])),

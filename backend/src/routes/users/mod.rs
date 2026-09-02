@@ -85,7 +85,6 @@ struct UserResponse {
     display_name: String,
     /// Email address; `null` when the user has none on file.
     email: Option<String>,
-    /// Access-control role.
     role: Role,
     /// Whether child content-visibility rules apply to this user.
     is_child: bool,
@@ -154,7 +153,7 @@ async fn list_users(
 /// Body for `PUT /api/v1/users/{id}/role`.
 #[derive(Debug, Deserialize, utoipa::ToSchema)]
 struct UpdateRoleRequest {
-    /// New role for the target user.
+    #[schema(schema_with = crate::openapi::update_role_request_role_schema)]
     role: Role,
 }
 
@@ -404,6 +403,7 @@ struct CreateUserRequest {
     display_name: String,
     /// Role for the new account. `child` and `admin` accounts are created only
     /// here, by an existing administrator.
+    #[schema(schema_with = crate::openapi::create_user_request_role_schema)]
     role: Role,
     /// Initial password, typed by the admin and handed off out-of-band. Required;
     /// enforced against the password policy (length, zxcvbn floor, HIBP breach).

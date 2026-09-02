@@ -887,15 +887,27 @@ async fn reset_password(
 
 /// `POST /auth/logout` — destroy the current session (idempotent).
 ///
+/// Public per the OpenAPI security scheme (no session is required to call
+/// it), but a session-authenticated caller is still a mutating request under
+/// [`crate::security::csrf::csrf_required`], which runs ahead of this
+/// handler and enforces the synchronizer token.
+///
 /// # Errors
-/// - [`AppError::Internal`] when session deletion fails at the store.
+/// - [`AppError::CsrfMissing`] (428) when a session-authenticated caller
+///   sends no `X-CSRF-Token` header.
+/// - [`AppError::CsrfMismatch`] (403) when the header does not match the
+///   session-stored token.
+/// - [`AppError::Internal`] when the session store read (CSRF check) or
+///   session deletion fails.
 #[utoipa::path(
     post,
     path = "/auth/logout",
     tag = "auth",
     security(()),
     responses(
-        (status = 204, description = "Session destroyed (no-op without one)")
+        (status = 204, description = "Session destroyed (no-op without one)"),
+        (status = 403, description = "X-CSRF-Token header present but does not match the session token", body = crate::openapi::ProblemDetails),
+        (status = 428, description = "X-CSRF-Token header required for a session-authenticated caller", body = crate::openapi::ProblemDetails)
     )
 )]
 async fn logout(session: Session) -> Result<impl IntoResponse, AppError> {
@@ -914,11 +926,9 @@ struct MeResponse {
     display_name: String,
     /// Email address; `null` when none on file.
     email: Option<String>,
-    /// Access-control role.
     role: crate::models::role::Role,
     /// Whether child content-visibility rules apply.
     is_child: bool,
-    /// Persisted UI theme preference.
     theme_preference: ThemePreference,
     /// Session-bound CSRF synchronizer token to echo as `X-CSRF-Token` on
     /// unsafe verbs; `null` for sessions that never completed
@@ -976,15 +986,13 @@ async fn me(
 /// Body for `PATCH /auth/me/theme`.
 #[derive(serde::Deserialize, utoipa::ToSchema)]
 struct UpdateThemeRequest {
-    /// New theme preference; invalid values are rejected at
-    /// deserialization (422).
+    #[schema(schema_with = crate::openapi::update_theme_request_theme_preference_schema)]
     theme_preference: ThemePreference,
 }
 
 /// Echo payload for `PATCH /auth/me/theme`.
 #[derive(serde::Serialize, utoipa::ToSchema)]
 struct ThemeResponse {
-    /// The persisted theme preference.
     theme_preference: ThemePreference,
 }
 

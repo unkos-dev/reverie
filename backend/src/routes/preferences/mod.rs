@@ -50,8 +50,6 @@ struct PreferencesResponse {
     /// The caller's overrides; a `null` group inherits from `defaults`.
     #[serde(flatten)]
     overrides: PreferenceOverrides,
-    /// Installation defaults in force for every group the caller has not
-    /// overridden.
     defaults: PreferenceDefaults,
 }
 

@@ -74,6 +74,7 @@ struct MetadataRow {
     /// Source that produced this value (e.g. `openlibrary`, `manual`).
     source: String,
     /// Proposed value in raw JSON form.
+    #[schema(schema_with = crate::openapi::metadata_row_new_value_schema)]
     new_value: Value,
     /// Review status (`pending`, `applied`, `rejected`, …).
     status: String,
@@ -1742,6 +1743,7 @@ struct ContributorsPatch {
 struct FieldVersionChange {
     /// Canonical value as applied, after server normalization (null when the
     /// field was cleared).
+    #[schema(schema_with = crate::openapi::field_version_change_value_schema)]
     value: Option<serde_json::Value>,
     /// Journal row now wired as canonical (null when the field was cleared
     /// to no version).
@@ -1812,7 +1814,7 @@ impl UpdateMetadataFields {
 /// Contributor names by role, mirroring [`ContributorsPatch`]'s roles for
 /// the matched-GET response.
 #[derive(Debug, Serialize, utoipa::ToSchema)]
-struct MetadataContributors {
+pub(crate) struct MetadataContributors {
     /// Ordered author names.
     author: Vec<String>,
     /// Ordered editor names.
@@ -1852,6 +1854,7 @@ struct BookMetadata {
     /// Tag names, alphabetical; empty when none are set.
     tags: Vec<String>,
     /// Author/editor/translator names, each in stored position order.
+    #[schema(schema_with = crate::openapi::book_metadata_contributors_schema)]
     contributors: MetadataContributors,
     /// Work-level external identifiers keyed by scheme.
     work_identifiers: BTreeMap<String, String>,

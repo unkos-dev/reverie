@@ -717,7 +717,7 @@
         ],
         "summary": "`GET /api/v1/books/{id}` — single-manifestation detail with the\nwork-level prose, tags, and a metadata-version summary used by the\nbook-detail Versions tab.",
         "description": "RLS hides manifestations the current user cannot see; the handler\nreports those as 404 rather than 403 so existence is not leaked.\n\n# Errors\n- [`AppError::NotFound`] when the manifestation is missing or\n  RLS-hidden.\n- [`AppError::Internal`] on database errors.",
-        "operationId": "detail",
+        "operationId": "book_detail",
         "parameters": [
           {
             "name": "id",
@@ -2887,7 +2887,7 @@
         ],
         "summary": "`GET /api/v1/series/{id}` — series + ordered works with visible\nmanifestations per work.",
         "description": "# Errors\n- [`AppError::NotFound`] when the series row is missing, the series\n  has no linked works, or every work in the series has zero visible\n  manifestations under the caller's RLS context (existence-not-leaked).\n- [`AppError::Internal`] on database errors.",
-        "operationId": "detail",
+        "operationId": "series_detail",
         "parameters": [
           {
             "name": "id",
@@ -5243,11 +5243,31 @@
           "auth"
         ],
         "summary": "`POST /auth/logout` — destroy the current session (idempotent).",
-        "description": "# Errors\n- [`AppError::Internal`] when session deletion fails at the store.",
+        "description": "Public per the OpenAPI security scheme (no session is required to call\nit), but a session-authenticated caller is still a mutating request under\n[`crate::security::csrf::csrf_required`], which runs ahead of this\nhandler and enforces the synchronizer token.\n\n# Errors\n- [`AppError::CsrfMissing`] (428) when a session-authenticated caller\n  sends no `X-CSRF-Token` header.\n- [`AppError::CsrfMismatch`] (403) when the header does not match the\n  session-stored token.\n- [`AppError::Internal`] when the session store read (CSRF check) or\n  session deletion fails.",
         "operationId": "logout",
         "responses": {
           "204": {
             "description": "Session destroyed (no-op without one)"
+          },
+          "403": {
+            "description": "X-CSRF-Token header present but does not match the session token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "428": {
+            "description": "X-CSRF-Token header required for a session-authenticated caller",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -7170,8 +7190,7 @@
             "description": "Long-form description (`works.description`)."
           },
           "enrichment_status": {
-            "$ref": "#/components/schemas/EnrichmentStatus",
-            "description": "Enrichment lifecycle state."
+            "$ref": "#/components/schemas/EnrichmentStatus"
           },
           "external_ids": {
             "type": "array",
@@ -7200,8 +7219,7 @@
             "description": "`manifestations.id`."
           },
           "ingestion_status": {
-            "$ref": "#/components/schemas/IngestionStatus",
-            "description": "Ingestion lifecycle state."
+            "$ref": "#/components/schemas/IngestionStatus"
           },
           "isbn_10": {
             "type": [
@@ -7225,8 +7243,7 @@
             "description": "BCP-47 language tag (`works.language`)."
           },
           "metadata_version_summary": {
-            "$ref": "#/components/schemas/MetadataVersionSummary",
-            "description": "Metadata-version counts for the Versions tab."
+            "$ref": "#/components/schemas/MetadataVersionSummary"
           },
           "metadata_versions": {
             "type": "array",
@@ -7299,8 +7316,7 @@
             "description": "`manifestations.updated_at`. RFC 3339 on the wire (see `created_at`)."
           },
           "validation_status": {
-            "$ref": "#/components/schemas/ValidationStatus",
-            "description": "Validation lifecycle state."
+            "$ref": "#/components/schemas/ValidationStatus"
           },
           "work_id": {
             "type": "string",
@@ -7386,8 +7402,7 @@
             "description": "`manifestations.created_at`. RFC 3339 on the wire; also the\nrecent-sort cursor key and the value behind the \"Added\" sort column."
           },
           "enrichment_status": {
-            "$ref": "#/components/schemas/EnrichmentStatus",
-            "description": "Enrichment lifecycle state."
+            "$ref": "#/components/schemas/EnrichmentStatus"
           },
           "external_ids": {
             "type": "array",
@@ -7416,8 +7431,7 @@
             "description": "`manifestations.id` — the canonical book id on the wire."
           },
           "ingestion_status": {
-            "$ref": "#/components/schemas/IngestionStatus",
-            "description": "Ingestion lifecycle state."
+            "$ref": "#/components/schemas/IngestionStatus"
           },
           "isbn_13": {
             "type": [
@@ -7482,8 +7496,7 @@
             "description": "`works.title` of the parent work."
           },
           "validation_status": {
-            "$ref": "#/components/schemas/ValidationStatus",
-            "description": "Validation lifecycle state."
+            "$ref": "#/components/schemas/ValidationStatus"
           },
           "work_id": {
             "type": "string",
@@ -7517,8 +7530,7 @@
             ]
           },
           "contributors": {
-            "$ref": "#/components/schemas/MetadataContributors",
-            "description": "Author/editor/translator names, each in stored position order."
+            "$ref": "#/components/schemas/MetadataContributors"
           },
           "description": {
             "type": [
@@ -7675,8 +7687,7 @@
             "description": "Contributor display name (`authors.name`)."
           },
           "role": {
-            "$ref": "#/components/schemas/ContributorRole",
-            "description": "Contribution role (`work_authors.role`); never\n[`ContributorRole::Author`] on this slot."
+            "$ref": "#/components/schemas/ContributorRole"
           }
         }
       },
@@ -7836,8 +7847,7 @@
             "description": "Initial password, typed by the admin and handed off out-of-band. Required;\nenforced against the password policy (length, zxcvbn floor, HIBP breach)."
           },
           "role": {
-            "$ref": "#/components/schemas/Role",
-            "description": "Role for the new account. `child` and `admin` accounts are created only\nhere, by an existing administrator."
+            "$ref": "#/components/schemas/Role"
           }
         }
       },
@@ -7918,8 +7928,7 @@
             "description": "The identifier value on that scheme."
           },
           "level": {
-            "$ref": "#/components/schemas/IdentifierLevel",
-            "description": "FRBR level the id attaches to: `work` ids are shared across\neditions, `manifestation` ids name this edition specifically."
+            "$ref": "#/components/schemas/IdentifierLevel"
           },
           "scheme": {
             "type": "string",
@@ -7979,7 +7988,15 @@
             "description": "Canonical field name (e.g. `\"title\"`, `\"isbn_13\"`)."
           },
           "new_value": {
-            "description": "The proposed new value in its raw `JSON` form."
+            "type": [
+              "string",
+              "number",
+              "boolean",
+              "object",
+              "array",
+              "null"
+            ],
+            "description": "The proposed new value in its raw JSON form."
           },
           "quorum": {
             "type": "integer",
@@ -8006,7 +8023,15 @@
             "description": "Version pointer that was canonical before this patch (null when the\nfield was previously unset, or when no pointer exists for the field\nkind)."
           },
           "value": {
-            "description": "Canonical value as applied, after server normalization (null when the\nfield was cleared)."
+            "type": [
+              "string",
+              "number",
+              "boolean",
+              "object",
+              "array",
+              "null"
+            ],
+            "description": "Canonical value as applied, after server normalization (null when the field was cleared)."
           },
           "version_id": {
             "type": [
@@ -8176,12 +8201,10 @@
             "description": "Whether child content-visibility rules apply."
           },
           "role": {
-            "$ref": "#/components/schemas/Role",
-            "description": "Access-control role."
+            "$ref": "#/components/schemas/Role"
           },
           "theme_preference": {
-            "$ref": "#/components/schemas/ThemePreference",
-            "description": "Persisted UI theme preference."
+            "$ref": "#/components/schemas/ThemePreference"
           }
         }
       },
@@ -8284,6 +8307,14 @@
             "description": "How the source matched the manifestation (e.g. `isbn`, `title`)."
           },
           "new_value": {
+            "type": [
+              "string",
+              "number",
+              "boolean",
+              "object",
+              "array",
+              "null"
+            ],
             "description": "Proposed value in raw JSON form."
           },
           "observation_count": {
@@ -8334,7 +8365,15 @@
             "description": "Match-type tag from the enrichment pipeline (`isbn`, `title`, …)."
           },
           "new_value": {
-            "description": "Proposed value, untyped JSON; field-specific shape (string for\ntitle/description, ISO date for `pub_date`, …)."
+            "type": [
+              "string",
+              "number",
+              "boolean",
+              "object",
+              "array",
+              "null"
+            ],
+            "description": "Proposed value, untyped JSON; field-specific shape (string for title/description, ISO date for `pub_date`, ...)."
           },
           "observation_count": {
             "type": "integer",
@@ -8384,8 +8423,7 @@
         ],
         "properties": {
           "density": {
-            "$ref": "#/components/schemas/LibraryDensity",
-            "description": "Density for an account that has not chosen."
+            "$ref": "#/components/schemas/LibraryDensity"
           },
           "hidden_columns": {
             "type": "array",
@@ -8399,8 +8437,7 @@
             "description": "Sort for an account that has not chosen."
           },
           "view": {
-            "$ref": "#/components/schemas/LibraryView",
-            "description": "View for an account that has not chosen."
+            "$ref": "#/components/schemas/LibraryView"
           }
         }
       },
@@ -8462,8 +8499,7 @@
             ],
             "properties": {
               "defaults": {
-                "$ref": "#/components/schemas/PreferenceDefaults",
-                "description": "Installation defaults in force for every group the caller has not\noverridden."
+                "$ref": "#/components/schemas/PreferenceDefaults"
               }
             }
           }
@@ -8770,16 +8806,19 @@
         "properties": {
           "failed": {
             "type": "integer",
+            "format": "int64",
             "description": "Files that errored during ingestion.",
             "minimum": 0
           },
           "processed": {
             "type": "integer",
+            "format": "int64",
             "description": "Files ingested successfully.",
             "minimum": 0
           },
           "skipped": {
             "type": "integer",
+            "format": "int64",
             "description": "Files skipped (already ingested or unsupported).",
             "minimum": 0
           }
@@ -8824,8 +8863,7 @@
             "description": "Primary id — `manifestations.id` for `book`, `authors.id` for\n`author`, `series.id` for `series`."
           },
           "kind": {
-            "$ref": "#/components/schemas/SearchHitKind",
-            "description": "Result kind. Currently always `\"book\"`; `\"author\"` and\n`\"series\"` ship in a follow-up that fans the hybrid CTE over\nthe existing `authors.name` / `series.name` trigram indexes."
+            "$ref": "#/components/schemas/SearchHitKind"
           },
           "snippet": {
             "type": [
@@ -9002,8 +9040,7 @@
         ],
         "properties": {
           "cleanup_mode": {
-            "$ref": "#/components/schemas/CleanupMode",
-            "description": "Post-ingestion cleanup mode (`all`, `ingested`, or `none`)."
+            "$ref": "#/components/schemas/CleanupMode"
           },
           "cover_download_timeout_secs": {
             "type": "integer",
@@ -9505,8 +9542,7 @@
         ],
         "properties": {
           "theme_preference": {
-            "$ref": "#/components/schemas/ThemePreference",
-            "description": "The persisted theme preference."
+            "$ref": "#/components/schemas/ThemePreference"
           }
         }
       },
@@ -9835,8 +9871,7 @@
         ],
         "properties": {
           "role": {
-            "$ref": "#/components/schemas/Role",
-            "description": "New role for the target user."
+            "$ref": "#/components/schemas/Role"
           }
         }
       },
@@ -10019,8 +10054,7 @@
         ],
         "properties": {
           "theme_preference": {
-            "$ref": "#/components/schemas/ThemePreference",
-            "description": "New theme preference; invalid values are rejected at\ndeserialization (422)."
+            "$ref": "#/components/schemas/ThemePreference"
           }
         }
       },
@@ -10084,8 +10118,7 @@
             "description": "Whether child content-visibility rules apply to this user."
           },
           "role": {
-            "$ref": "#/components/schemas/Role",
-            "description": "Access-control role."
+            "$ref": "#/components/schemas/Role"
           },
           "updated_at": {
             "type": "string",
@@ -10208,8 +10241,7 @@
             "description": "`manifestations.created_at`. RFC 3339 on the wire, which the\nfrontend `WorkManifestationSchema` requires."
           },
           "enrichment_status": {
-            "$ref": "#/components/schemas/EnrichmentStatus",
-            "description": "Enrichment lifecycle state."
+            "$ref": "#/components/schemas/EnrichmentStatus"
           },
           "id": {
             "type": "string",
@@ -10217,8 +10249,7 @@
             "description": "`manifestations.id`."
           },
           "ingestion_status": {
-            "$ref": "#/components/schemas/IngestionStatus",
-            "description": "Ingestion lifecycle state."
+            "$ref": "#/components/schemas/IngestionStatus"
           },
           "isbn_10": {
             "type": [
@@ -10243,8 +10274,7 @@
             "description": "`manifestations.pages`, when known."
           },
           "validation_status": {
-            "$ref": "#/components/schemas/ValidationStatus",
-            "description": "Validation lifecycle state."
+            "$ref": "#/components/schemas/ValidationStatus"
           }
         }
       }

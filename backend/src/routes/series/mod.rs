@@ -45,6 +45,7 @@ pub fn router() -> OpenApiRouter<AppState> {
 #[utoipa::path(
     get,
     path = "/api/v1/series/{id}",
+    operation_id = "series_detail",
     tag = "series",
     params(("id" = Uuid, Path, description = "Series id")),
     security(("session_cookie" = ["read"]), ("device_token_bearer" = ["read"]), ("oidc_jwt_bearer" = ["read"]), ("opds_basic" = ["read"])),
