@@ -41,7 +41,14 @@ pub fn router_enabled(dist_path: Option<&Path>) -> Option<Router<AppState>> {
 ///
 /// `None` is the SPA-route answer: a deep link like `/library/anything`
 /// matches no file and must receive `index.html` so the client router can
-/// resolve it. Callers therefore cannot treat `None` as an error.
+/// resolve it. Callers therefore cannot treat `None` as an error. 404 is
+/// the only `ServeDir` status treated as "no such file"; every other
+/// status is an answer about a real file and passes through unchanged,
+/// including a 304 on a matching `If-None-Match`, a 412 on a failed
+/// `If-Unmodified-Since`, a 416 on an unsatisfiable `Range`, and a 405 on
+/// a non-GET, since RFC 9110 identifies the target resource by URI alone
+/// and both non-reserved route classes serve static content that only
+/// supports GET and HEAD.
 ///
 /// Directory requests deliberately do not resolve to their `index.html`.
 /// Without that, `/` would be answered from here rather than by the
@@ -59,9 +66,9 @@ pub async fn try_dist_file(dist: &Path, req: Request<Body>) -> Option<Response> 
         .oneshot(req)
         .await
         .ok()?;
-    if resp.status().is_success() {
-        Some(resp.map(Body::new))
-    } else {
+    if resp.status() == axum::http::StatusCode::NOT_FOUND {
         None
+    } else {
+        Some(resp.map(Body::new))
     }
 }

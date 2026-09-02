@@ -155,7 +155,9 @@ pub async fn html_csp_layer(
 /// else is an SPA route and yields `index.html` + HTML CSP. The SPA-route
 /// class disregards `Accept`, which RFC 9110 §12.5.1 permits when no
 /// acceptable representation exists, so a missing file is answered as an
-/// SPA route rather than with a 404 or 406.
+/// SPA route rather than with a 404 or 406. A non-GET on either non-reserved
+/// class yields `ServeDir`'s 405 with `Allow`, because both serve static
+/// content that only supports GET and HEAD.
 ///
 /// The dist-file class exists because Vite copies `public/` to the dist
 /// root rather than into `assets/`, so the fonts, brand assets and favicons
@@ -654,15 +656,55 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn non_get_on_an_spa_route_still_serves_index_html() {
-        // ServeDir answers 405 for non-GET; that must not leak out as the
-        // response, because a deep link POST previously received index.html.
-        let html = b"<!doctype html><title>spa</title>";
-        let dist = fixture_dist(html);
+    async fn non_get_on_an_spa_route_returns_405_with_allow() {
+        let dist = fixture_dist(b"<!doctype html><title>spa</title>");
         let server = dist_server(&dist);
         let r = server.post("/library/anything").await;
-        r.assert_status_ok();
-        assert_eq!(r.as_bytes().as_ref(), html.as_ref());
+        r.assert_status(axum::http::StatusCode::METHOD_NOT_ALLOWED);
+        assert_eq!(r.headers().get("allow").unwrap(), "GET,HEAD");
+        let csp = r
+            .headers()
+            .get("content-security-policy")
+            .unwrap()
+            .to_str()
+            .unwrap()
+            .to_owned();
+        assert!(csp.contains("default-src 'self'"), "unexpected: {csp}");
+    }
+
+    #[tokio::test]
+    async fn dist_root_file_revalidation_returns_304_with_html_csp() {
+        let dist = fixture_dist(b"<!doctype html>");
+        let server = dist_server(&dist);
+        let first = server.get("/brand/glyph/slot.svg").await;
+        first.assert_status_ok();
+        let etag = first.headers().get("etag").unwrap().to_owned();
+
+        let r = server
+            .get("/brand/glyph/slot.svg")
+            .add_header(header::IF_NONE_MATCH, etag)
+            .await;
+        r.assert_status(axum::http::StatusCode::NOT_MODIFIED);
+        let csp = r
+            .headers()
+            .get("content-security-policy")
+            .unwrap()
+            .to_str()
+            .unwrap()
+            .to_owned();
+        assert!(csp.contains("default-src 'self'"), "unexpected: {csp}");
+    }
+
+    #[tokio::test]
+    async fn dist_root_file_range_request_returns_206_partial_bytes() {
+        let dist = fixture_dist(b"<!doctype html>");
+        let server = dist_server(&dist);
+        let r = server
+            .get("/brand/glyph/slot.svg")
+            .add_header(header::RANGE, HeaderValue::from_static("bytes=0-3"))
+            .await;
+        r.assert_status(axum::http::StatusCode::PARTIAL_CONTENT);
+        assert_eq!(r.as_bytes().as_ref(), &GLYPH_SVG[0..4]);
     }
 
     #[tokio::test]
