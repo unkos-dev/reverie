@@ -1,36 +1,29 @@
 name: CodeQL
 
 on:
-  push:
-    branches: [main]
-  pull_request:
-    branches: [main]
-  merge_group:
+  # PR, push and merge-queue runs arrive through ci.yml's caller. Direct
+  # triggers for those events would double every scan under clashing check
+  # names; the weekly deep scan has no caller and keeps its own.
+  workflow_call:
   schedule:
-    # Weekly scan, 17:37 UTC Sunday (~01:37 Monday Perth). Off-peak and
-    # avoids top-of-the-hour contention on GitHub-hosted runners.
+    # Off-peak, off top-of-the-hour, to dodge runner contention.
     - cron: "37 17 * * 0"
 
 permissions:
   contents: read
 
-# Never cancel main-branch runs (pushes and the weekly schedule both carry
-# refs/heads/main): a cancelled run reddens the README badge and drops the
-# commit's code-scanning results. Superseded PR runs cancel freely.
+# Inert under the caller, whose group governs composed runs; kept because it
+# still guards the direct weekly schedule. Never cancel main-branch runs: it
+# would drop that commit's code-scanning results.
 concurrency:
   group: codeql-${{ github.ref }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
-  # Detect which languages' source changed so analyze jobs can skip.
-  # Scheduled runs always analyze everything (the analyze jobs' `if:` falls
-  # through on `schedule`). The Actions analyzer is deliberately NOT
-  # path-gated: the ruleset requires code-scanning results, and a PR
-  # matching no path filter would otherwise have zero results and be
-  # permanently blocked from merging; Actions analysis is the cheapest of
-  # the three, so the always-on cost is modest.
+  # Gates the analyze jobs on push only. PR and merge-queue runs analyze every
+  # language: the ruleset's code-scanning rule expects per-category results, so
+  # a skipped analyzer blocks the PR forever.
   changes:
-    name: Detect changes
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
@@ -41,16 +34,9 @@ jobs:
         with:
           persist-credentials: false
       - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4
-        if: github.event_name != 'schedule'
+        if: github.event_name == 'push'
         id: filter
         with:
-          # On merge_group events, paths-filter's default base (HEAD~1)
-          # only sees the topmost commit in the synthetic merge ref —
-          # it would miss the diff for any PR sharing the queue. Pin
-          # explicitly to merge_group.base_sha so downstream skip
-          # decisions match the actual PR-against-main diff.
-          base: ${{ github.event.merge_group.base_sha || github.base_ref }}
-          ref: ${{ github.event.merge_group.head_sha || github.ref }}
           filters: |
             javascript-typescript:
               - 'frontend/**'
@@ -62,15 +48,12 @@ jobs:
               - '.github/workflows/codeql.yml'
               - '.github/codeql/**'
 
-  analyze-actions:
-    name: Analyze (actions)
-    # Always runs — guarantees a CodeQL result exists for every commit (see
-    # the changes-job comment).
+  actions:
+    # Always runs — guarantees a CodeQL result exists for every commit.
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
-      # security-events: write to upload SARIF; actions: read lets the
-      # extractor fetch referenced workflows.
+      # actions: read lets the extractor fetch referenced workflows.
       security-events: write
       actions: read
       contents: read
@@ -80,21 +63,20 @@ jobs:
           persist-credentials: false
 
       - name: Initialize CodeQL
-        uses: github/codeql-action/init@5595ccaf912efad79be6eef63a5619ff05969be3 # v4
+        uses: github/codeql-action/init@cdf488f595d80d6e07e03d4674febd5ab45fa938 # v4
         with:
           languages: actions
           build-mode: none
           config-file: ./.github/codeql/codeql-config.yml
 
       - name: Perform CodeQL Analysis
-        uses: github/codeql-action/analyze@5595ccaf912efad79be6eef63a5619ff05969be3 # v4
+        uses: github/codeql-action/analyze@cdf488f595d80d6e07e03d4674febd5ab45fa938 # v4
         with:
           category: /language:actions
 
-  analyze-javascript-typescript:
-    name: Analyze (javascript-typescript)
+  javascript-typescript:
     needs: changes
-    if: github.event_name == 'schedule' || needs.changes.outputs.javascript-typescript == 'true'
+    if: github.event_name != 'push' || needs.changes.outputs.javascript-typescript == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
@@ -107,21 +89,20 @@ jobs:
           persist-credentials: false
 
       - name: Initialize CodeQL
-        uses: github/codeql-action/init@5595ccaf912efad79be6eef63a5619ff05969be3 # v4
+        uses: github/codeql-action/init@cdf488f595d80d6e07e03d4674febd5ab45fa938 # v4
         with:
           languages: javascript-typescript
           build-mode: none
           config-file: ./.github/codeql/codeql-config.yml
 
       - name: Perform CodeQL Analysis
-        uses: github/codeql-action/analyze@5595ccaf912efad79be6eef63a5619ff05969be3 # v4
+        uses: github/codeql-action/analyze@cdf488f595d80d6e07e03d4674febd5ab45fa938 # v4
         with:
           category: /language:javascript-typescript
 
-  analyze-rust:
-    name: Analyze (rust)
+  rust:
     needs: changes
-    if: github.event_name == 'schedule' || needs.changes.outputs.rust == 'true'
+    if: github.event_name != 'push' || needs.changes.outputs.rust == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:
@@ -134,7 +115,7 @@ jobs:
           persist-credentials: false
 
       - name: Initialize CodeQL
-        uses: github/codeql-action/init@5595ccaf912efad79be6eef63a5619ff05969be3 # v4
+        uses: github/codeql-action/init@cdf488f595d80d6e07e03d4674febd5ab45fa938 # v4
         with:
           languages: rust
           # The Rust extractor (beta) pins Rust to `none` and rejects
@@ -143,33 +124,6 @@ jobs:
           config-file: ./.github/codeql/codeql-config.yml
 
       - name: Perform CodeQL Analysis
-        uses: github/codeql-action/analyze@5595ccaf912efad79be6eef63a5619ff05969be3 # v4
+        uses: github/codeql-action/analyze@cdf488f595d80d6e07e03d4674febd5ab45fa938 # v4
         with:
           category: /language:rust
-
-  # Single required CodeQL context for the branch ruleset. A gate in ci.yml
-  # cannot `needs:` jobs in this separate workflow, so CodeQL carries its own.
-  # Requiring this aggregate instead of the per-language Analyze (*) jobs means
-  # a PR that doesn't touch a given language (its analyze job skips) is not
-  # blocked by an unsatisfied required check. `analyze-actions` always runs, so
-  # there is always at least one real CodeQL result per commit. `if: always()`
-  # is load-bearing for the same reason as the CI gate.
-  codeql-gate:
-    name: CodeQL gate
-    if: always()
-    needs:
-      - changes
-      - analyze-actions
-      - analyze-javascript-typescript
-      - analyze-rust
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    steps:
-      - name: Fail if any analysis failed or was cancelled
-        if: contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')
-        env:
-          RESULTS: ${{ toJSON(needs) }}
-        run: |
-          echo "A required CodeQL analysis failed or was cancelled:"
-          echo "$RESULTS"
-          exit 1

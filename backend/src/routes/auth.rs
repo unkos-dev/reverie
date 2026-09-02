@@ -486,7 +486,14 @@ struct SetupRequest {
 /// to 409. Setup does NOT auto-login (parity with recovery; the session contract
 /// lives only at `/auth/local/login`).
 ///
+/// Rate-limited per source like the repeatable pre-auth handlers, despite
+/// succeeding only once. The 409 fast-reject bounds this endpoint only after an
+/// administrator exists; before that, every call reaches the Argon2 hash, so an
+/// un-bootstrapped instance would otherwise grind on demand for anyone who can
+/// reach it. The limit is enforced first, ahead of the `admin_exists` query.
+///
 /// # Errors
+/// - [`AppError::RateLimited`] (429) when the per-source limit is exceeded.
 /// - [`AppError::SetupAlreadyComplete`] (409) when an administrator already
 ///   exists (fast-reject or the marker-row race).
 /// - [`AppError::Validation`] (422) on a malformed email or too-short password.
@@ -500,13 +507,18 @@ struct SetupRequest {
     responses(
         (status = 201, description = "First administrator created (no auto-login)"),
         (status = 409, description = "An administrator already exists", body = crate::openapi::ProblemDetails),
-        (status = 422, description = "Validation failed", body = crate::openapi::ProblemDetails)
+        (status = 422, description = "Validation failed", body = crate::openapi::ProblemDetails),
+        (status = 429, description = "Too many requests", body = crate::openapi::ProblemDetails)
     )
 )]
 async fn setup(
     State(state): State<AppState>,
+    headers: HeaderMap,
+    peer: crate::auth::rate_limit::PeerAddr,
     Json(body): Json<SetupRequest>,
 ) -> Result<StatusCode, AppError> {
+    enforce_source_rate_limit(&state, &headers, &peer)?;
+
     // Cheap fast-reject; the authoritative guard is the marker insert below.
     if user::admin_exists(&state.pool)
         .await
@@ -551,10 +563,11 @@ struct RegisterRequest {
 /// `POST /auth/register`: config-gated self-service registration.
 ///
 /// Gated on `self_registration_enabled` (404 when off) AND `local_auth_enabled`.
-/// Mirrors the repeatable pre-auth handlers (`forgot_password`/`reset_password`),
-/// NOT `setup`: it is unauthenticated and repeatable, and each call fires an
-/// Argon2 hash plus an outbound HIBP request, so the per-source rate limit is
-/// enforced BEFORE any policy/hash/breach work.
+/// Unauthenticated and repeatable, and each call fires an Argon2 hash plus an
+/// outbound HIBP request, so the per-source rate limit is enforced BEFORE any
+/// policy/hash/breach work, as in `forgot_password`/`reset_password`. `setup`
+/// takes the same limit for the pre-bootstrap window, where its 409 fast-reject
+/// does not yet apply.
 ///
 /// THREAT (privilege escalation): a self-registered account is
 /// always an `adult`, never an admin or child. The DTO carries no role, and
@@ -2274,6 +2287,54 @@ mod tests {
             with_token.status_code(),
             StatusCode::FORBIDDEN,
             "a valid token must not be rejected by the CSRF layer"
+        );
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn setup_rate_limits_per_source_before_bootstrap(pool: sqlx::PgPool) {
+        let app_pool = test_support::db::app_pool_for(&pool).await;
+        let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+        let server = test_support::db::server_with_source_rate_limit(&app_pool, &ingestion_pool, 1);
+
+        let body = serde_json::json!({
+            "email": "admin@example.com",
+            "display_name": "Admin",
+            "password": "a strong password",
+        });
+
+        let first = server
+            .post("/auth/setup")
+            .add_header("x-forwarded-for", "203.0.113.7")
+            .json(&body)
+            .await;
+        assert_eq!(
+            first.status_code(),
+            StatusCode::CREATED,
+            "the first request from a source is within the limit"
+        );
+
+        let second = server
+            .post("/auth/setup")
+            .add_header("x-forwarded-for", "203.0.113.7")
+            .json(&body)
+            .await;
+        assert_eq!(
+            second.status_code(),
+            StatusCode::TOO_MANY_REQUESTS,
+            "the limit is enforced ahead of the admin_exists fast-reject, so a \
+             throttled source sees 429 rather than 409"
+        );
+
+        let other_source = server
+            .post("/auth/setup")
+            .add_header("x-forwarded-for", "203.0.113.8")
+            .json(&body)
+            .await;
+        assert_eq!(
+            other_source.status_code(),
+            StatusCode::CONFLICT,
+            "the limit is keyed per source, so an unthrottled one still reaches \
+             the fast-reject"
         );
     }
 

@@ -3,16 +3,23 @@
 .gitignore
 .vscode
 .idea
-# docs is excluded except its manifest: npm needs every workspace's
+# docs is excluded except its manifest: pnpm needs every project's
 # package.json to resolve the workspace graph (the frontend-builder stage
-# installs only the frontend workspace's deps). `docs/*` rather than a bare
+# installs only the frontend project's deps). `docs/*` rather than a bare
 # `docs` so the negation matches at the child level instead of relying on
 # the builder walking into an excluded parent directory.
 docs/*
 !docs/package.json
 target
+# Both forms are needed: a bare pattern is matched against the whole path, so
+# `node_modules` excludes only the root one and a developer's populated
+# `frontend/node_modules` would otherwise enter the context and collide with
+# the install the builder stage has already done. CI checks out clean, so this
+# only ever bites locally.
 node_modules
+**/node_modules
 dist
+**/dist
 # Static-guard allowlists are lint policy read by scripts/backend-guards.sh,
 # never build input.
 backend/guards

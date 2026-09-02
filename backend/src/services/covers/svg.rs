@@ -170,7 +170,7 @@ where
     // THREAT: usvg silently drops unresolvable <image> nodes and "succeeds"
     // with a transparent pixmap. Serving that as 200 would kill the spine
     // fallback. Reject all-transparent output.
-    if !pixmap.data().chunks_exact(4).any(|px| px[3] != 0) {
+    if !pixmap.data().as_chunks::<4>().0.iter().any(|px| px[3] != 0) {
         return Err(CoverError::Decode(
             "svg rendered no visible content".to_owned(),
         ));
@@ -331,7 +331,7 @@ fn find_after(hay: &[u8], needle: &[u8]) -> Option<usize> {
 /// From a slice starting at the `<` of an element-open tag, return the length
 /// consumed (up to and including `>`) and whether the tag self-closes. Quotes are
 /// respected so a `>` inside an attribute value does not end the tag early.
-fn scan_open_tag(rest: &[u8]) -> (usize, bool) {
+const fn scan_open_tag(rest: &[u8]) -> (usize, bool) {
     let mut quote = 0u8;
     let mut j = 1; // past '<'
     while j < rest.len() {

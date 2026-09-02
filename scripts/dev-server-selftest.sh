@@ -4,7 +4,15 @@ set -euo pipefail
 root="$(git rev-parse --show-toplevel)"
 lifecycle="${root}/scripts/dev-server.sh"
 tmp="$(mktemp -d)"
-port=45173
+
+# Derived from the checkout path rather than fixed. A literal port made two
+# checkouts running this at once collide, and the precondition below then
+# reported the second one as a failure of the tree it was testing. Hashing the
+# path gives each worktree its own port and keeps reruns from one checkout
+# reproducible. A collision within a single checkout is a different thing,
+# usually a fake server an earlier run leaked, and still fails loudly below.
+# The band is where the old literal sat.
+port=$((45000 + $(cksum <<<"${root}" | cut -d' ' -f1) % 1000))
 
 # The identity-mismatch case leaves a live foreign group behind on purpose;
 # every group this test starts is torn down here.
@@ -149,10 +157,9 @@ assert "startup timeout leaves no server" no_hang_server
 # signalled: cmdline pattern alone is not ownership.
 #
 # Waiting on the pidfile alone would be racy in the wrong direction: it appears
-# one statement before `cd /`, and until the exec the leader is still the bash
-# whose own cmdline carries the word "node" from the -c string while its cwd is
-# still the server directory. That window presents as genuinely owned, so wait
-# for the state this case is actually about.
+# one statement before `cd /`, so until the exec the leader is still the bash,
+# whose cwd is the server directory. Wait for the state this case is actually
+# about rather than for the pidfile.
 (setsid bash -c "echo \"\$\$\" > ${tmp}/.dev-server.pid; cd /; exec node ${tmp}/fake-hang.mjs" >/dev/null 2>&1 </dev/null &)
 for _ in $(seq 1 40); do
   [ -s "${tmp}/.dev-server.pid" ] &&

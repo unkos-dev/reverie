@@ -1,0 +1,26 @@
+# vacuum ignore file — consumed by the openapi-policy CI job alongside
+# .vacuum.yaml, which is where rules are enabled and disabled. This file is
+# narrower: it silences an enabled rule at named locations only.
+#
+# owasp-protection-global-unsafe-strict requires every write operation to name
+# a non-empty security scheme, and treats the `security: [{}]` opt-out as a
+# violation. The six operations below are unauthenticated because they cannot
+# be anything else: a client has no session to present when logging in,
+# registering, recovering a password, or bootstrapping the first admin.
+#
+# The rule stays on globally so a seventh public write operation fails the
+# gate. Adding a path here is a decision that an endpoint is public by design,
+# and belongs in review as one.
+#
+# Regenerate after a path rename with:
+#   vacuum report -r .vacuum.yaml docs/openapi.json <report>
+#   vacuum generate-ignorefile <report>.json .vacuum-ignore.yaml
+# then restore this header, which the generator does not preserve.
+
+owasp-protection-global-unsafe-strict:
+  - $.paths['/auth/forgot-password'].post.security[0]
+  - $.paths['/auth/local/login'].post.security[0]
+  - $.paths['/auth/logout'].post.security[0]
+  - $.paths['/auth/register'].post.security[0]
+  - $.paths['/auth/reset-password'].post.security[0]
+  - $.paths['/auth/setup'].post.security[0]

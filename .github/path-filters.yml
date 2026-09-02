@@ -1,32 +1,19 @@
-# Change-detection filters shared by CI and the local preflight scoper.
-#
-# CI's `changes` job feeds this file to dorny/paths-filter; downstream jobs
-# skip when their filter reports no match. `scripts/preflight-scope.sh` reads
-# the same definitions to decide which local verification lanes a working tree
-# actually needs, so a filter widened for CI widens the local gate with it and
-# the two can never silently diverge.
-#
-# Every filter includes ci.yml and this file itself: an edit to either one
-# changes what the gate covers, so every gated job has to re-run rather than
-# trust a skip decision the edit may have just invalidated.
-#
-# Patterns are restricted to literal paths and trailing `/**` recursive
-# suffixes, because the local scoper matches them without a glob engine and
-# refuses to run against anything it cannot translate faithfully.
+# Shared by every concern workflow's `changes` job and by
+# scripts/preflight-scope.sh; a filter edit changes both gates, which is why a
+# detector reads this file rather than inlining its own patterns. Every filter
+# includes this file and every workflow or composite action that defines a job
+# it gates, so editing the definition re-runs the job. Patterns
+# are literal paths and trailing `/**` only: the local scoper has no glob engine.
 backend:
   - "backend/**"
   - "docker/init-roles.sql"
   - "mise.toml"
   - ".github/workflows/ci.yml"
-  # The composite that installs the pinned compiler. It is listed here rather
-  # than left to the `workflows` filter because that filter runs only the
-  # workflow-security scan: an edit deciding which rustc every Rust job builds
-  # with would otherwise merge without one of them running. Its three consumers
-  # (backend-checks, coverage, MSRV) all gate on this filter, and MSRV has no
-  # push fallback to surface the breakage on main afterwards. Scoped to this
-  # action rather than all of .github/actions, since no other filter's jobs
-  # install a toolchain.
+  - ".github/workflows/backend.yml"
+  # Not under `workflows`: a toolchain edit must trigger the backend jobs.
   - ".github/actions/rust-toolchain/**"
+  - ".github/actions/setup/**"
+  - ".github/workflows/security.yml"
   - ".github/path-filters.yml"
 audit:
   - "backend/Cargo.toml"
@@ -34,18 +21,22 @@ audit:
   - "backend/deny.toml"
   - "mise.toml"
   - ".github/workflows/ci.yml"
+  - ".github/workflows/deps.yml"
+  - ".github/actions/setup/**"
   - ".github/path-filters.yml"
 frontend:
-  # Root workspace inputs drive the frontend too: the hoisted
-  # lockfile + shared overrides, the root vite.config.ts that
-  # owns the frontend lint config, and the .npmrc whose
-  # install-script policy every workspace install answers to.
+  # Root vite.config.ts, the lockfile, and pnpm-workspace.yaml (which declares
+  # the workspace members, the catalog and the install-script policy) govern
+  # every project.
   - "frontend/**"
   - "package.json"
-  - "package-lock.json"
-  - ".npmrc"
+  - "pnpm-lock.yaml"
+  - "pnpm-workspace.yaml"
   - "vite.config.ts"
   - ".github/workflows/ci.yml"
+  - ".github/workflows/frontend.yml"
+  - ".github/workflows/security.yml"
+  - ".github/actions/setup/**"
   - ".github/path-filters.yml"
 staging:
   - "docker/compose.staging.yml"
@@ -53,66 +44,74 @@ staging:
   - "docker/staging.env.bootstrap.example"
   - "docker/staging.env.runtime.example"
   - ".github/workflows/ci.yml"
+  - ".github/workflows/staging.yml"
   - ".github/path-filters.yml"
 workflows:
-  # A suppression edit in zizmor.yml must re-run the scan even
-  # with no workflow change (likewise .trivyignore and
-  # .checkov.yaml in their filters below).
+  # A suppression edit must re-run the scan without a workflow change.
   - ".github/workflows/**"
   - ".github/actions/**"
   - ".github/zizmor.yml"
+  - "mise.toml"
   - ".github/path-filters.yml"
 iac:
   - "Dockerfile"
   - "docker-compose.yml"
   - "docker/**"
   - ".trivyignore"
+  # trivy's own pin lives here, and this job has no push fallback, so a
+  # scanner bump would otherwise merge without the scan it gates ever running.
+  - "mise.toml"
   - ".github/workflows/ci.yml"
+  - ".github/workflows/security.yml"
+  - ".github/actions/setup/**"
   - ".github/path-filters.yml"
 docker:
-  # PR-time image build gate: the image definition plus every
-  # manifest that shapes the build context's structure. Code-only
-  # changes are deliberately excluded: compile breakage is the
-  # backend/frontend jobs' remit, and the failure class this gates
-  # (e.g. a lockfile hoist breaking a COPY) is manifest-level.
+  # Manifests only: this gates build-context failures (a lockfile hoist
+  # breaking a COPY); compile breakage is the backend/frontend jobs' remit.
+  # verify-frontend-sbom.mjs belongs here because the Dockerfile copies it into
+  # a stage and runs it, so a change to it can only be exercised by building
+  # the image.
   - "Dockerfile"
   - ".dockerignore"
+  - "scripts/verify-frontend-sbom.mjs"
   - "package.json"
-  - "package-lock.json"
+  - "pnpm-lock.yaml"
+  - "pnpm-workspace.yaml"
   - "frontend/package.json"
   - "docs/package.json"
   - "backend/Cargo.toml"
   - "backend/Cargo.lock"
   - ".github/workflows/ci.yml"
+  - ".github/workflows/docker.yml"
   - ".github/path-filters.yml"
 openapi:
   - "docs/openapi.json"
-  - ".checkov.yaml"
+  - ".vacuum.yaml"
+  - ".vacuum-ignore.yaml"
+  # vacuum's own pin lives here, and this job has no push fallback, so a
+  # linter bump would otherwise merge without the lint it gates ever running.
+  - "mise.toml"
   - ".github/workflows/ci.yml"
+  - ".github/workflows/security.yml"
+  - ".github/actions/setup/**"
   - ".github/path-filters.yml"
 npm:
-  # Licenses only change when the dependency tree changes, so
-  # PR-time gating is complete here, with no cron needed (unlike
-  # advisories, which drift over time; see scheduled-audit.yml).
   - "package.json"
-  - "package-lock.json"
+  - "pnpm-lock.yaml"
+  - "pnpm-workspace.yaml"
   - "frontend/package.json"
   - "docs/package.json"
   - ".github/workflows/ci.yml"
+  - ".github/workflows/deps.yml"
+  - ".github/actions/setup/**"
   - ".github/path-filters.yml"
 docs:
-  # Generated reference artifacts live under docs/, so a backend
-  # regen trips this filter without a separate backend trigger;
-  # a stale-but-unregenerated artifact is caught by the backend
-  # job's drift tests instead. docs is an npm workspace, so the
-  # root manifest, lockfile, and .npmrc affect its build.
-  # docs-build.yml is the shared build definition; docs.yml is
-  # the deploy lane that must still pass the PR-time gate here.
+  # docs/** includes generated reference artifacts, so a backend regen
+  # trips this filter.
   - "docs/**"
   - "package.json"
-  - "package-lock.json"
-  - ".npmrc"
+  - "pnpm-lock.yaml"
+  - "pnpm-workspace.yaml"
   - ".github/workflows/ci.yml"
   - ".github/workflows/docs.yml"
-  - ".github/workflows/docs-build.yml"
   - ".github/path-filters.yml"

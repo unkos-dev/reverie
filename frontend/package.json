@@ -7,13 +7,8 @@
     "node": ">=24.16.0"
   },
   "scripts": {
-    "dev": "vp dev",
-    "build": "vp build && node scripts/assert-no-design-chunk.mjs",
+    "build": "vp build",
     "lint": "vp lint --max-warnings 0",
-    "preview": "vp preview",
-    "test": "vp test run",
-    "test:watch": "vp test",
-    "test:coverage": "vp test run --coverage",
     "stylelint": "stylelint 'src/**/*.css' --max-warnings 0",
     "primitives:gen": "node scripts/radix-gen/emit-primitives.ts",
     "detect": "impeccable detect src",
@@ -28,7 +23,7 @@
     "clsx": "^2.1.1",
     "cmdk": "^1.1.1",
     "lucide-react": "^1.21.0",
-    "nuqs": "2.9.5",
+    "nuqs": "2.10.1",
     "radix-ui": "^1.4.3",
     "react": "^19.2.6",
     "react-data-grid": "7.0.0-beta.61",
@@ -52,7 +47,7 @@
     "@types/react": "^19.2.15",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^6.0.3",
-    "@vitest/coverage-v8": "^4.1.8",
+    "@vitest/coverage-v8": "catalog:",
     "bezier-easing": "3.0.1",
     "colorjs.io": "0.7.1",
     "impeccable": "^3.1.0",
@@ -61,8 +56,8 @@
     "stylelint-config-standard": "^40.0.0",
     "tailwindcss": "^4.3.1",
     "typescript": "~7.0.0",
-    "vite": "npm:@voidzero-dev/vite-plus-core@0.2.8",
-    "vite-plus": "0.2.8",
-    "vitest": "4.1.10"
+    "vite": "catalog:",
+    "vite-plus": "catalog:",
+    "vitest": "catalog:"
   }
 }

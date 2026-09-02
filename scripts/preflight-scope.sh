@@ -94,7 +94,7 @@ lanes_for() {
   case "$1" in
     backend) printf '%s\n' rust::guards db-up rust::check rust::doc-lint rust::test rust::doctests rust::sqlx-check rust::machete ;;
     audit) printf '%s\n' rust::deny ;;
-    frontend) printf '%s\n' js::check js::test js::build js::font-integrity js::a11y ;;
+    frontend) printf '%s\n' js::check js::test js::build js::font-integrity ;;
     docs) printf '%s\n' docs::check ;;
     workflows) printf '%s\n' infra::zizmor ;;
     staging | iac | docker | openapi | npm) : ;;
@@ -105,6 +105,23 @@ lanes_for() {
 # Emission order. Mirrors `just preflight-full`: the static guards that need no
 # toolchain, database, or install come first so they fail fastest, db-up
 # precedes every DB-backed recipe, and the network-backed audit runs last.
+#
+# Two recipes are deliberately absent, both because a laptop cannot answer for
+# them honestly.
+#
+# infra::selftests covers this repository's local developer tooling (doctor,
+# worktree, the dev-server lifecycle, the detached gate) against stubbed PATH,
+# docker, mise, npm, and git fixtures. CI has no stake in any of it. It is a
+# recipe to invoke by hand while editing one of those scripts, not a gate.
+#
+# js::a11y is CI-only for two reasons, and the second is the deciding one. It
+# reuses an already-running dev server with no ownership check, so a local run
+# scans whichever checkout happens to own port 5173 and reports that verdict as
+# this branch's. A dedicated scratch port would fix that much. What it would not
+# fix is that a browser and a server do not belong on every frontend branch's
+# gate to re-scan routes the branch did not touch. `just js::a11y` remains
+# available for the loop that fixes violations, where the caller picks the
+# server.
 LANE_ORDER=(
   rust::guards
   infra::check
@@ -120,14 +137,13 @@ LANE_ORDER=(
   js::test
   js::build
   js::font-integrity
-  js::a11y
   docs::check
   infra::zizmor
 )
 
 # infra::check mirrors CI's repo-lint job, which carries no path filter: it
-# lints the whole tree (shellcheck, yamllint, actionlint, prose, and the guard
-# self-tests), so any change at all can break it.
+# lints the whole tree (shellcheck, yamllint, actionlint, prose, and the guards
+# whose subject is committed configuration), so any change at all can break it.
 ALWAYS_LANES=(infra::check)
 
 # Changes to these reshape verification itself, so a scoped run cannot reason
@@ -305,6 +321,13 @@ for name in "${filter_names[@]}"; do
     continue
   fi
   note "filter '${name}' matched (${hit}) -> ${lanes[*]}"
+  # The announcement above only fires for a filter with no local lanes at all.
+  # frontend has four and still triggers a CI job with no local counterpart, so
+  # without this the accessibility gate is the one thing a scoped run silently
+  # does not cover.
+  if [ "$name" = frontend ]; then
+    matched_ci_only+=("frontend's a11y scan")
+  fi
   selected+=("${lanes[@]}")
 done
 

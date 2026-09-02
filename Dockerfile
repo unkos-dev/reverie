@@ -10,7 +10,7 @@
 # `:main` images with `GLIBC_2.38 not found` against a bookworm runner. Both
 # stages share the same codename so the dynamic linker can resolve every
 # symbol the release binary requests.
-FROM rust:1-slim-trixie@sha256:3b2879047d42784ca9403ad20c51ed3df361a50f1df96f5777d39b4e33aa65cd AS chef
+FROM rust:1-slim-trixie@sha256:17d1ba895198f9934c6314ec5346a0d5115372f3243390c3d731e242f35c2f27 AS chef
 # cargo-auditable embeds the resolved dependency list into the release
 # binary. Without it the published SBOM is silent about every crate,
 # because the runtime image holds a compiled binary rather than
@@ -43,62 +43,85 @@ ENV SQLX_OFFLINE=true
 # above is unaffected and stays cache-valid.
 RUN cargo auditable build --release --locked
 
-# Stage 2: Build frontend with buildkit npm cache mount.
-# The mount avoids re-fetching tarballs when the npm-ci layer cache is invalidated
-# but the lockfile is unchanged — buildkit reuses the mount within a single
-# build. GHA runners are ephemeral so the mount does not persist across runs;
-# cross-run npm reuse is provided by the gha layer cache instead.
+# Stage 2a: js-toolchain — the shared base for both JS stages. pnpm plus the
+# Node runtime it provisions, and nothing project-specific, so the two stages
+# below branch from it and run concurrently instead of one waiting on the other.
 #
-# npm workspaces: the lockfile is hoisted to the repo root, so the install
-# needs the root manifests plus every workspace manifest to resolve the
-# workspace graph. docs/package.json is present for graph resolution only —
-# `--workspace frontend` keeps its dependencies out of the install.
-# --ignore-scripts skips the root `prepare` hook (lefthook install), which
-# requires a .git directory the build context deliberately excludes; the
-# frontend build tools ship platform binaries as scriptless optional deps,
-# so nothing in the install relies on lifecycle scripts.
-FROM node:24.19.0-slim@sha256:3638d9a6fe4030bd716be989438248074489337ba3275657f93595428be4fc03 AS frontend-builder
-# vp's native binary initializes an HTTPS client at startup and aborts when
-# the system has no CA store; the slim base ships none.
-RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates \
-    && rm -rf /var/lib/apt/lists/*
+# The base is pnpm's own published image, per https://pnpm.io/docker. It is
+# Debian trixie — the same codename as the runtime stage, which UNK-253 below
+# requires — and it carries the pnpm standalone binary, a CA store and
+# libatomic.so.1. That replaces a GPG-verified mise installer, two apt packages
+# and a bootstrap that existed only to obtain pnpm.
+#
+# The image bundles no Node at all, so the runtime is installed explicitly.
+# `pnpm install` does not do it: neither a filtered nor an unfiltered install
+# leaves a `node` behind, because `devEngines.runtime` declares the version
+# without provisioning it. `pnpm runtime set` provisions it, and once that has
+# run `node` is on PATH at /pnpm/bin/node like any other interpreter.
+#
+# The version is read back out of package.json rather than written here.
+# Supplying it literally would put a second Node pin in the tree, which is the
+# thing devEngines.runtime exists to remove; omitting it entirely is worse,
+# because `pnpm runtime set node -g` with no version installs the latest
+# release and silently ignores the declaration. `pnpm pkg get` needs no Node of
+# its own, so it works before any runtime exists.
+FROM ghcr.io/pnpm/pnpm:11@sha256:eba76954b37ec1ba6187f0adb39caee1e31733194857eedd01319da0af3fa00d AS js-toolchain
 WORKDIR /build
-COPY package.json package-lock.json ./
+# pnpm resolves the workspace graph from the root manifests plus every project
+# manifest, and reads its own version from packageManager, so no line below can
+# drift from a pin it exists to satisfy.
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY frontend/package.json frontend/
 COPY docs/package.json docs/
-# devEngines pins npm exactly, and the base image's bundled npm lags it —
-# the `onFail: download` self-swap does not fire under `npm ci` here, it
-# just hard-fails (EBADDEVENGINES). Install the manifest-pinned npm first,
-# reading the version from package.json so this line can never drift from
-# the pin it exists to satisfy.
-RUN --mount=type=cache,target=/root/.npm npm install -g "npm@$(node -p "require('./package.json').devEngines.packageManager.version")"
-RUN --mount=type=cache,target=/root/.npm npm ci --workspace frontend --ignore-scripts
-COPY frontend/ frontend/
-RUN npm run build --workspace frontend
+# Installed once here so both stages below inherit one runtime from this layer
+# rather than provisioning it twice.
+#
+# `runtime set -g` uses pnpm's global project, not the repository lockfile.
+# The workspace fetch below validates committed entries but does not provision
+# the Node executable used by this build.
+RUN pnpm runtime set node "$(pnpm pkg get devEngines.runtime.version)" -g \
+    && node --version
+ENV pnpm_config_store_dir=/pnpm-store
 
-# Stage 2b: frontend-sbom — dependency record for the bundled frontend.
-# The frontend ships as a bundle, so its dependencies are not packages in
-# the runtime image and no image scanner can recover them. Emitting the
-# list from the tree that produced the bundle keeps the record from
-# drifting. --omit=dev because this describes what ships, not what built
-# it.
+# GHA does not preserve cache mounts, so required packages belong in a layer.
+RUN pnpm fetch
+
+# Stage 2b: Build the frontend bundle.
 #
-# Separate stage because `npm sbom` validates the whole workspace tree and
-# aborts with ESBOMPROBLEMS on any absent member, while the build above
-# deliberately installs only the frontend workspace. The full install
-# lives here so the builder stage keeps its narrow install and the
-# runtime image never sees either.
+# Workspace resolution needs every copied manifest; the filter excludes docs.
+# `--ignore-scripts` is defence in depth after the workspace allowlist.
+FROM js-toolchain AS frontend-builder
+RUN pnpm install --offline --frozen-lockfile --filter frontend... --ignore-scripts
+COPY frontend/ frontend/
+# Source timestamps can trigger pnpm 11's unscoped repair install. The explicit
+# frozen offline install above owns dependency validation for this stage.
+RUN PNPM_CONFIG_VERIFY_DEPS_BEFORE_RUN=false pnpm --filter frontend run build
+
+# Stage 2c: frontend-sbom — the dependency record for the bundled frontend. The
+# runtime image holds no packages for a scanner to find, so the document is
+# generated here and copied in.
 #
-# npm sbom also refuses when a workspace member lacks a version, and the
-# private root has none (EINVALIDPURLTYPE). Borrow the release version
-# for generation alone: this manifest is a build artefact that is never
-# published, so release-please stays the tree's only version authority.
-FROM frontend-builder AS frontend-sbom
-COPY version.txt ./
-RUN --mount=type=cache,target=/root/.npm npm ci --ignore-scripts \
-    && npm pkg set version="$(cat version.txt)" \
-    && npm sbom --sbom-format cyclonedx --omit=dev --workspace frontend \
-       > /build/frontend.cdx.json
+# `deploy` materialises the production closure instead of leaving store links
+# that a directory scan cannot follow. Syft's default dir scan excludes its
+# JavaScript cataloger, so it must be selected explicitly.
+FROM js-toolchain AS frontend-sbom
+# renovate: datasource=docker depName=anchore/syft
+COPY --from=anchore/syft:v1.51.1@sha256:95fe0835e5bebc6f8b1f8acef68d47d63d594ef4c0f25c097ff853b23cbac74c /syft /usr/local/bin/syft
+RUN pnpm deploy --ignore-scripts --filter frontend --prod /sbom-tree \
+    && syft dir:/sbom-tree --override-default-catalogers javascript-package-cataloger \
+      -o cyclonedx-json > /build/frontend.cdx.json
+
+# Consistency check for the document above. It records a verdict and never
+# fails the build: the SBOM is a published deliverable, not a security control
+# (Snyk and trivy scan the source and the image directly), so a defect here
+# must not block a release. The publish workflow's per-digest verification step
+# reads this verdict once the image is pushed and opens an issue, which is what
+# stops a broken SBOM going unnoticed. The script carries the reasoning for
+# what it compares and why.
+COPY scripts/verify-frontend-sbom.mjs /usr/local/lib/verify-frontend-sbom.mjs
+RUN node /usr/local/lib/verify-frontend-sbom.mjs /sbom-tree /build/frontend.cdx.json \
+      > /build/sbom-verify.txt \
+    && cat /build/sbom-verify.txt
 
 # Stage 3: Runtime
 # UNK-253: codename MUST match the builder stage above. See note on `chef`.
@@ -107,7 +130,12 @@ FROM debian:trixie-slim@sha256:020c0d20b9880058cbe785a9db107156c3c75c2ac944a6aa7
 # probe needs a working HTTP client baked in so docker / compose / Incus can
 # detect when the server is up and the schema check has passed before
 # flipping traffic.
-RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl \
+# The upgrade is standing design, not a patch: Debian's apt repo carries
+# security fixes days-to-weeks before the base image rebuilds with them,
+# and the publish gate fails on fixable CVEs, so every build applies the
+# suite's current fixes on top of the pinned base.
+RUN apt-get update && apt-get upgrade -y \
+    && apt-get install -y --no-install-recommends ca-certificates curl \
     && rm -rf /var/lib/apt/lists/*
 # Fixed numeric id rather than letting `useradd -r` pick one: the allocation
 # is whatever the base image happens to have free, so it can move under the
@@ -126,6 +154,11 @@ COPY --from=frontend-builder /build/frontend/dist /srv/frontend
 # records the provenance as "acquired package info from SBOM: <path>".
 # It also lets an operator read the list straight off the running image.
 COPY --from=frontend-sbom /build/frontend.cdx.json /usr/share/reverie/sbom/frontend.cdx.json
+# The verdict travels with the document it describes: the check runs where both
+# the SBOM and pnpm's resolved closure exist, but the thing that must notice a
+# failure is a workflow step with access to neither. Reading it back off each
+# published digest is what closes that gap.
+COPY --from=frontend-sbom /build/sbom-verify.txt /usr/share/reverie/sbom/verify.txt
 # UNK-106: the backend serves /assets/* and falls back to index.html for SPA
 # routes when this env var is set. Validation at startup panics the process
 # if the dir or its csp-hashes.json sidecar is missing.

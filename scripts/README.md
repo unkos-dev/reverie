@@ -30,14 +30,14 @@ under (cloud workspace URL, ngrok tunnel, reverse-proxy alias, etc).
 ```bash
 # Local workstation — env var unset. Loopback access works via
 # Vite's short-circuit; no other hostnames are accepted.
-npm run dev
+vp dev
 
 # Cloud dev environment (Coder, Codespaces) — set to the workspace's
 # stable hostname so the dev bundle is reachable through it.
-REVERIE_DEV_HOSTS=dev.example.com npm run dev
+REVERIE_DEV_HOSTS=dev.example.com vp dev
 
 # Multiple hostnames — comma-separated.
-REVERIE_DEV_HOSTS=dev.example.com,my-tunnel.ngrok.app npm run dev
+REVERIE_DEV_HOSTS=dev.example.com,my-tunnel.ngrok.app vp dev
 ```
 
 Parsing lives in `frontend/vite-plugins/allowed-hosts.ts`; the inline
@@ -69,7 +69,7 @@ that port.
 # Cloudflare tunnel scenario — workspace serves on 5173, edge serves
 # the bundle on 443. Pair with REVERIE_DEV_HOSTS so Vite accepts the
 # external Host header.
-REVERIE_DEV_HOSTS=dev.example.com REVERIE_DEV_HMR_CLIENT_PORT=443 npm run dev
+REVERIE_DEV_HOSTS=dev.example.com REVERIE_DEV_HMR_CLIENT_PORT=443 vp dev
 ```
 
 Parsing lives in `frontend/vite-plugins/hmr-config.ts`. Invalid values

@@ -1,15 +1,3 @@
-# CODEOWNERS — review routing for sensitive paths.
-#
-# Scoped narrowly to .github/workflows/** to surface workflow changes as
-# code-owner-required review in the PR UI, without adding review noise to
-# unrelated paths.
-#
-# Why this path specifically: a downstream privileged self-hosted runner
-# (homelab UNK-231 Phase 4) executes the contents of these workflow files
-# as root on the deploy host via mounted docker socket + incus binary.
-# The deploy step is gated by `github.event_name == 'push' && github.ref
-# == 'refs/heads/main' && github.actor == '<owner>'` on the runner side;
-# this CODEOWNERS entry adds a complementary review-surface signal so
-# workflow-touching PRs cannot land unnoticed inside a larger diff.
+# Workflow files execute as root on a privileged self-hosted runner.
 
 /.github/workflows/         @junkovich

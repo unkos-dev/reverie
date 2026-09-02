@@ -56,8 +56,8 @@ Chosen option: **`@playwright/test` + `@axe-core/playwright` for the CI gate, wi
   linux-arm64 Chromium build (chrome-headless-shell, falling back to full
   Chromium on arm64), so the chromedriver / Chrome-for-Testing gap that blocked
   `@axe-core/cli` never applied to Playwright. The gate reproduces locally on
-  ARM64 with `npx playwright install chromium` then `npm run a11y`, no browser
-  substitution required.
+  ARM64 with `vp exec playwright install chromium` then `just js::a11y`, no
+  browser substitution required.
 - **Stack consolidation.** The consolidation argument now points the other way.
   When the prior decision was made, `agent-browser` was the standardised
   verification binary and Playwright would have been the second stack. Playwright
@@ -66,11 +66,13 @@ Chosen option: **`@playwright/test` + `@axe-core/playwright` for the CI gate, wi
 
 Concretely:
 
-- **Automated gate.** The CI `a11y` job runs `@axe-core/playwright` against the
-  dev-only design showcase under `npm run dev`, using the full WCAG 2.2 AA tag
-  set (`wcag2a`, `wcag2aa`, `wcag21a`, `wcag21aa`, `wcag22aa`). Playwright's
-  `webServer` owns the dev-server lifecycle. It fails on any violation outside
-  the documented allowlist and is frontend-conditional. Locally: `npm run a11y`.
+- **Automated gate.** The CI `a11y` job runs `@axe-core/playwright` against
+  `/forgot-password`, using the full WCAG 2.2 AA tag set (`wcag2a`, `wcag2aa`,
+  `wcag21a`, `wcag21aa`, `wcag22aa`). Playwright's `webServer` owns the
+  dev-server lifecycle. It fails on any violation outside the documented
+  allowlist and is frontend-conditional. Locally: `just js::a11y`. The scan
+  originally covered a dev-only design showcase; it was moved onto a real route
+  so the gate judges what users receive.
 - **Allowlist unchanged.** The accepted carve-outs and the role-keyed matching
   that expresses them are unchanged: violations from axe are filtered through the
   same first-party `allowlist.mjs` (matching on element role read from node HTML,
@@ -92,13 +94,15 @@ Concretely:
 - Good, because the project converges on one browser-automation stack.
 - Neutral, because the allowlist/verdict layer stays first-party code (small,
   pure, unit-tested); only the driver changed.
-- Bad, because the gate still covers only the design showcase; post-login views
-  need an authenticated session and are added to the run targets as that becomes
-  possible.
+- Bad, because the gate covers one route. `/login` and `/setup` each call
+  `fetchSetupStatus` in a mount-time query, so against the Vite-only server this
+  gate boots they render an error branch rather than their real markup; scanning
+  them needs a backend. Post-login views need that and a stored-session fixture.
+  Both are added to the run targets as that becomes possible.
 
 ### Confirmation
 
-Enforced by the CI `a11y` job: `npm run a11y` (Playwright) fails on any WCAG 2.2
+Enforced by the CI `a11y` job: `vp run a11y` (Playwright) fails on any WCAG 2.2
 AA violation whose nodes are not covered by
 `frontend/scripts/a11y/allowlist.mjs`. The spec also asserts the scan ran (axe
 testEngine present, the scanned path matches the target, non-trivial

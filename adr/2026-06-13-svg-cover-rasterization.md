@@ -228,8 +228,7 @@ Load-bearing invariants, enforced by unit tests in `covers::svg`:
 - Security checklists consulted:
   [`docs/security/codeguard/codeguard-0-xml-and-serialization.md`](../docs/security/codeguard/codeguard-0-xml-and-serialization.md),
   [`docs/security/codeguard/codeguard-0-file-handling-and-uploads.md`](../docs/security/codeguard/codeguard-0-file-handling-and-uploads.md);
-  threat-model stance in
-  [`project_open_source_security_stance`](../.claude/projects/-home-coder-reverie/memory/project_open_source_security_stance.md).
+  threat-model stance: the multi-user exposed instance.
 - As-built note: the implementation hardens `resolve_data` (base64 data-URIs) in
   addition to `resolve_string`, going one step beyond the original plan, so the
   byte/megapixel caps cover both raster-ingress paths.

@@ -7,7 +7,7 @@ These rules define the React and TypeScript architecture. Do not deviate.
 
 1. **No Any:** `any` is forbidden. Use `unknown` and narrow with type guards.
 2. **No Inline Styles or Hex:** Do not use inline style objects (except dynamic calcs) or arbitrary hex values. Use Tailwind utility classes and the established theme variables.
-3. **shadcn via CLI only:** Do not manually create or paste shadcn/ui components. Run `npx shadcn@latest add <component>` from `frontend/` so the CLI reads the workspace `components.json`. The CLI is deliberately not a dependency: it is invoked only when adding a primitive, while retaining it adds a persistent package and advisory surface to every development install. Review and commit all generated source.
+3. **shadcn via CLI only:** Do not manually create or paste shadcn/ui components. Run `vp dlx shadcn@latest add <component>` from `frontend/` so the CLI reads the workspace `components.json`. The CLI is deliberately not a dependency: it is invoked only when adding a primitive, while retaining it adds a persistent package and advisory surface to every development install. Review and commit all generated source.
 4. **No console.log:** Do not leave `console.log` statements in production code.
    </cardinal_rules>
 
@@ -64,7 +64,7 @@ These rules define the React and TypeScript architecture. Do not deviate.
 
 - **Tailwind v4:** Use utility classes.
 - **Theme Tree:**
-  - `primitives.generated.css`: Generated from the brand anchors in `scripts/radix-gen/emit-primitives.ts`; regenerate with `npm run primitives:gen`. NEVER HAND-EDIT: a drift test pins the committed artifact to the emitter's output, so anchor or override changes happen in the emitter and ship with the regenerated file.
+  - `primitives.generated.css`: Generated from the brand anchors in `scripts/radix-gen/emit-primitives.ts`; regenerate with `vp run primitives:gen`. NEVER HAND-EDIT: a drift test pins the committed artifact to the emitter's output, so anchor or override changes happen in the emitter and ship with the regenerated file.
   - `index.css`: Semantic roles and shadcn aliases. Hex values are banned here by stylelint.
   - `atmosphere.css`: Sealed art-directed tier.
 - **Class Merging:** Use `clsx` or `cn` for conditional classes.
@@ -73,5 +73,5 @@ These rules define the React and TypeScript architecture. Do not deviate.
 <testing_standards>
 
 - **Behavioral Testing:** Use Vitest + React Testing Library. Test behavior, not implementation details.
-- **Accessibility Gate:** CI runs Playwright + axe-core (WCAG 2.2 AA) over the dev-only design showcase; reproduce locally with `npm run a11y` (Playwright owns the dev-server lifecycle). Never narrow the WCAG tag ladder. An accepted violation requires a rationale-bearing carve-out in `scripts/a11y/allowlist.mjs`; new scannable routes join the default target list in the same file's `parseTargets` (the `A11Y_TARGETS` env var is a per-run override that CI does not set).
+- **Accessibility Gate:** CI runs Playwright + axe-core (WCAG 2.2 AA) over the shipped pre-auth routes in `scripts/a11y/allowlist.mjs`'s `DEFAULT_TARGETS`; reproduce locally with `vp run a11y` (Playwright owns the dev-server lifecycle). Never narrow the WCAG tag ladder. An accepted violation requires a rationale-bearing carve-out in the same file; new scannable routes join `DEFAULT_TARGETS` (the `A11Y_TARGETS` env var is a per-run override that CI does not set). A route qualifies only when it renders a single top-level `<main>` without an API, since the lane boots Vite alone: a mount-time query renders an error branch the scan would certify as passing.
   </testing_standards>

@@ -28,7 +28,7 @@ path = "src/main.rs"
 
 [dependencies]
 anyhow = "1.0.103"
-argon2 = { version = "0.5.3", features = ["std"] }
+argon2 = "0.6.0"
 async-trait = "0.1.89"
 axum = "0.8.9"
 axum-extra = { version = "0.12.6", features = ["cookie", "query"] }
@@ -46,12 +46,22 @@ governor = { version = "0.10.4", features = ["dashmap"] }
 hickory-resolver = "0.26.1"
 image = { version = "0.25.10", default-features = false, features = ["jpeg", "png", "webp"] }
 # Resource-server JWT validation (RFC 9068) for IdP-issued Bearer access
-# tokens; jsonwebtoken has no default crypto backend as of 10.x, so a
-# backend feature is mandatory. jwks_client_rs pulls jsonwebtoken >=10.2
-# transitively; default-features = false drops native-tls in favour of
-# the workspace's rustls posture.
-jsonwebtoken = { version = "10.4", features = ["rust_crypto"] }
-jwks_client_rs = { version = "0.6", default-features = false, features = ["rustls", "rust_crypto"] }
+# tokens; jsonwebtoken has no default crypto backend, so a backend feature
+# is mandatory. jwks_client_rs pulls its own jsonwebtoken dependency
+# transitively, and its JwksClientError: From<jsonwebtoken::errors::Error>
+# impl only satisfies the trait bound in auth/jwt.rs when both crates
+# resolve the same jsonwebtoken major version — bump them together, never
+# independently, or the build breaks with two incompatible same-named
+# jsonwebtoken types in the graph. jwks_client_rs's own defaults already
+# select reqwest's rustls backend and rust_crypto (reqwest 0.13's
+# default-tls feature is itself an alias for rustls, not native-tls); the
+# explicit feature list below pins that selection by name rather than
+# relying on the crate's current defaults.
+jsonwebtoken = { version = "11.0", features = ["rust_crypto"] }
+jwks_client_rs = { version = "0.6.2", default-features = false, features = [
+  "rustls",
+  "rust_crypto",
+] }
 notify = "8.2.0"
 openidconnect = { version = "4.0.1", features = ["reqwest"] }
 quick-xml = "0.41.0"

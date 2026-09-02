@@ -26,15 +26,15 @@ _default:
 help:
     @just --list --list-submodules
 
-# npm workspaces hoist the frontend and docs dependency trees into the one root
-# node_modules, so this is the whole tree's install and there is no per-plane
-# equivalent. `npm ci` rather than `npm install`: it is lockfile-exact and it
-# works from nothing.
+# One install for the whole tree; there is no per-plane equivalent, because the
+# workspace members are declared centrally in pnpm-workspace.yaml.
+# --frozen-lockfile rather than a plain install: it is lockfile-exact, it fails
+# rather than silently updating the lockfile, and it works from nothing.
 #
-# Install the npm workspace (frontend + docs) from the root lockfile.
+# Install the pnpm workspace (frontend + docs) from the root lockfile.
 [group('aggregate')]
 install:
-    npm ci
+    pnpm install --frozen-lockfile
 
 # infra::zizmor-offline rides along here rather than inside infra::check
 # because it audits a different CI job (workflow-security) than the one
@@ -85,7 +85,16 @@ build: js::build rust::build docs::build
 # ZIZMOR_GITHUB_TOKEN is exported, offline-degraded otherwise, matching CI's
 # own token-driven coverage). Still CI-only, and not run here: the MSRV
 # toolchain check, coverage lanes, the docker image build, IaC/SAST/secret
-# scans, npm-license, and dependency-review.
+# scans, npm-license, dependency-review, and the accessibility scan.
+#
+# Two recipes are locally runnable and excluded anyway, because a laptop cannot
+# answer for either honestly. The accessibility scan reuses an already-running
+# dev server with no ownership check, so from any checkout that does not own
+# port 5173 it scans a different tree and reports the result as this branch's.
+# infra::selftests covers this repository's local developer tooling (doctor,
+# worktree, the dev-server lifecycle, the detached gate), which CI has no stake
+# in, and gates nothing anywhere. Run either by hand when working on what it
+# covers.
 #
 # The lanes are a list passed to scripts/gate-run.sh rather than just
 # dependencies, so the run ends with one `GATE: PASS`/`GATE: FAIL` line naming
@@ -94,9 +103,8 @@ build: js::build rust::build docs::build
 # last line of a captured run saying nothing about the run. See gate-run.sh for
 # why that matters and what it costs.
 #
-# `just preflight` is the default, scoped gate below; run this unconditional
-# form before any push (unless a scoped run already escalated to it), when
-# the change is broad, or when you are unsure.
+# `just preflight` is the default, scoped gate. This unconditional form requires
+# prior maintainer approval and a reason the scoped gate is insufficient.
 #
 # Run everything CI runs that is locally runnable, DB-backed tests included, unconditionally.
 [group('aggregate')]
@@ -106,12 +114,12 @@ preflight-full:
     scripts/gate-run.sh preflight-full \
         rust::guards db-up check rust::doc-lint test rust::doctests \
         rust::sqlx-check rust::machete rust::deny js::build \
-        js::font-integrity js::a11y infra::zizmor
+        js::font-integrity infra::zizmor
 
 # The same gate as `preflight-full`, minus the lanes CI itself would skip. A
 # frontend-only branch pays for the frontend lanes and the unconditional
 # repo-lint mirror, not a database, a Rust rebuild, and a dependency audit.
-# This is the default gate and the mid-branch reflex.
+# This is the default gate for both iteration and pre-push verification.
 #
 # The skip decisions come from .github/path-filters.yml, the same file CI's
 # `changes` job feeds to dorny/paths-filter, so widening a filter for CI
@@ -119,10 +127,9 @@ preflight-full:
 # (justfiles, scripts/, tool pins, that filter file) escalate to the full lane
 # set, because a scoped run cannot reason about a change to its own rules.
 #
-# `just preflight-full` stays the unconditional answer: run it when the
-# change is broad or you are unsure, though a scoped run's own escalation
-# reaches the same lanes automatically when it applies. Args pass through to
-# scripts/preflight-scope.sh (`--base <ref>` to compare against something
+# A scoped run escalates automatically when required. Running
+# `just preflight-full` directly requires prior maintainer approval. Args pass
+# through to scripts/preflight-scope.sh (`--base <ref>` compares against a ref
 # other than origin/main).
 #
 # Run only the preflight lanes this branch's changed paths require (the default gate).
@@ -473,22 +480,21 @@ worktree branch base="":
     # install scripts unrun in a fresh checkout also matches
     # adr/2026-08-03-package-ingress-default-deny.md.
     #
-    # npm enforces package.json's `devEngines.packageManager` on every direct
-    # invocation, hard-erroring when the running version disagrees, so the
-    # install runs under the npm the destination declares rather than the one
-    # this checkout has on PATH. The version has to be explicit: a branch old
-    # enough to declare a different npm also predates the "npm:npm" entry in
-    # mise.toml, so a bare `mise exec` there resolves nothing.
-    npm_pin=""
+    # The install runs under the pnpm the destination declares, not the one this
+    # checkout has on PATH, because a branch may pin a different version. The
+    # version has to be explicit: a branch old enough to declare a different
+    # pnpm also predates the `pnpm` entry in mise.toml, so a bare `mise exec`
+    # there resolves nothing.
+    pnpm_pin=""
     if [ -f "$dest/package.json" ] && command -v jq > /dev/null; then
-        npm_pin="$(jq -r '.devEngines.packageManager.version // empty' "$dest/package.json" 2> /dev/null || true)"
+        pnpm_pin="$(jq -r '.packageManager // empty' "$dest/package.json" 2> /dev/null | sed -n 's/^pnpm@//p' || true)"
     fi
-    if [ -n "$npm_pin" ] && command -v mise > /dev/null; then
-        echo "installing node dependencies in $dest (npm ${npm_pin} via mise)"
-        install_cmd=(mise exec "npm:npm@${npm_pin}" -- npm ci --ignore-scripts)
+    if [ -n "$pnpm_pin" ] && command -v mise > /dev/null; then
+        echo "installing node dependencies in $dest (pnpm ${pnpm_pin} via mise)"
+        install_cmd=(mise exec "pnpm@${pnpm_pin}" -- pnpm install --frozen-lockfile --ignore-scripts)
     else
-        echo "installing node dependencies in $dest (npm ci)"
-        install_cmd=(npm ci --ignore-scripts)
+        echo "installing node dependencies in $dest (pnpm install)"
+        install_cmd=(pnpm install --frozen-lockfile --ignore-scripts)
     fi
     # Not `&&`, for the reason given above the mise trust call: the recipe
     # would report a ready worktree that no JS lane can run in.
@@ -587,8 +593,7 @@ db-migrate:
 # `just db-reset` (destructive; discards the shared DB's data).
 #
 # Same migrator DSN default as db-migrate, as a deliberate copy that
-# nothing in just enforces; scripts/recipe-secret-echo-test.sh asserts
-# the two stay byte-identical, so change both together. Duplicated
+# nothing enforces, so change both together. Duplicated
 # rather than lifted into a just variable for the same reason db-migrate
 # inlines it: a just variable would echo an overridden credential into
 # dry-run/verbose recipe output.

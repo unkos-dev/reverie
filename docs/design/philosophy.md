@@ -95,8 +95,8 @@ the `gold-9` edge or `gold-9` text outside those mitigated cases. The
 restriction (use the light accent (`gold-9`) only as a fill (with ink
 text) or a recovery action, with focus rings reserved for the compliant
 `gold-11`) is the brand's mitigation, and it leaves the accent needing no
-accessibility exception: the `/design/system` gallery scans clean, and the
-axe gate carries no contrast carve-out for gold. Introducing gold as a
+accessibility exception: the axe gate's allowlist carries no contrast
+carve-out for gold. Introducing gold as a
 line, an icon stroke, or normal-size text on _new_ Light surfaces is a
 brand violation, not axe noise, and reviewers should reject it.
 

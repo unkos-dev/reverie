@@ -6,34 +6,39 @@ just = "1.58.0"
 # Linker for the Rust build, routed in via `-C link-arg=-fuse-ld=mold`. Pinned
 # here rather than installed with apt so CI resolves it through the same
 # checksum-verified path as every other tool.
-mold = "2.41.0"
+mold = "2.42.0"
+opengrep = "1.29.0"
 shellcheck = "0.11.0"
-typos = "1.49.0"
-vale = "3.16.0"
+snyk = "1.1307.0"
+trivy = "0.74.0"
+typos = "1.50.0"
+# OpenAPI linter for the generated spec, run by the openapi-policy CI job
+# against .vacuum.yaml.
+vacuum = "0.30.1"
+vale = "3.19.0"
 yamllint = "1.38.0"
 zizmor = "1.29.0"
-# npm enforces `devEngines.packageManager` in package.json on every direct
-# invocation, hard-erroring with EBADDEVENGINES when the running npm
-# disagrees rather than honouring the declared `onFail: download`. Without
-# this entry a checkout falls through to whatever npm the ambient config
-# supplies, so a machine whose global pin has moved ahead can run neither
-# `npm install` nor any lefthook step that shells out to npm. The JS jobs in
-# CI hit the same wall through their bare `npx` invocations, because the npm
-# bundled with node lags this pin, so mise-action installs this entry
-# alongside node and the shim outranks the bundled copy on PATH.
+# The package manager, resolved through mise's aqua backend and so
+# checksum-verified. Two bootstraps need pnpm before any node_modules exists
+# and therefore cannot reach it through vp: `just install`, which populates a
+# fresh clone, and `just worktree`, which does the same for a new checkout.
+# Everything past those points goes through vp instead. The image build used to
+# be a third; it now runs on pnpm's own published image and provisions nothing
+# through mise.
 #
-# Both node and this entry ship npm and npx bins, and mise resolves a
-# contested bin to the first tool listed in this table, for shims and for
-# the PATH order `mise env` exports. `"npm:npm"` must stay listed before
-# `node` below, or node's bundled npm shadows this pin and every direct
-# npm/npx invocation fails with EBADDEVENGINES.
-# `npm-pin-drift` holds this in lockstep with package.json and enforces
-# this ordering.
-# mise owns the node pin the same way it owns npm above: CI provisions node
-# through jdx/mise-action, which reads this table, and setup-vp is told not
-# to manage node (node-manager: false) so the two installers cannot disagree.
-"npm:npm" = "12.0.2"
-node = "24.19.0"
+# Unlike the npm pin this replaces, the version here is a convenience rather
+# than a correctness constraint. package.json's `packageManager` field is
+# authoritative, and a pnpm whose version disagrees with it downloads and
+# re-executes the declared version instead of refusing to run, so there is no
+# EBADDEVENGINES-shaped failure to hold in lockstep and no bin contest with
+# node to order around.
+pnpm = "11.25.0"
+# No node entry, deliberately. `devEngines.runtime` in package.json is the one
+# place the Node version is written: vp honours it (so `node-manager: true` in
+# CI resolves from the project rather than from a second pin here), pnpm
+# honours it in the image build, and pnpm-lock.yaml carries the per-platform
+# checksums for the download. A pin here would be the second declaration that
+# arrangement exists to remove.
 
 # SQL linter for backend/migrations, run by `just infra::sqruff`. No mise
 # registry shorthand exists, so it takes the explicit GitHub backend form.
@@ -49,7 +54,7 @@ version_prefix = "cargo-nextest-"
 filter_bins = "cargo-nextest"
 
 [tools."github:taiki-e/cargo-llvm-cov"]
-version = "0.8.7"
+version = "0.9.0"
 version_prefix = "v"
 filter_bins = "cargo-llvm-cov"
 
@@ -73,5 +78,5 @@ locked = true
 # builds. Pinning it here keeps `mise install` provisioning the same
 # version the wrapper is configured against.
 [tools."github:kunobi-ninja/kache"]
-version = "0.13.0"
+version = "0.16.0"
 filter_bins = "kache"

@@ -1,0 +1,466 @@
+name: Backend
+
+on:
+  workflow_call:
+    secrets:
+      R2_ACCOUNT_ID:
+        required: false
+      R2_ACCESS_KEY_ID_RW:
+        required: false
+      R2_ACCESS_KEY_ID_RO:
+        required: false
+      R2_SECRET_ACCESS_KEY_RW:
+        required: false
+      R2_SECRET_ACCESS_KEY_RO:
+        required: false
+      CODACY_PROJECT_TOKEN:
+        required: false
+
+permissions:
+  contents: read
+
+env:
+  # Kept in lockstep with the sqlx crate version by the checks job's guard below.
+  SQLX_CLI_VERSION: "0.9.0"
+
+jobs:
+  changes:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      backend: ${{ steps.filter.outputs.backend }}
+      kache: ${{ steps.kache.outputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      # Resolved once here so every job that needs it reads one source, not a drifting copy.
+      - name: Resolve pinned build-cache version
+        id: kache
+        run: |
+          set -euo pipefail
+          version=$(awk '
+            /^\[tools\."github:kunobi-ninja\/kache"\]/ { in_kache = 1; next }
+            in_kache && /^\[/ { exit }
+            in_kache && /^version[[:space:]]*=/ { gsub(/[^0-9.]/, ""); print; exit }
+          ' mise.toml || true)
+          if [[ ! "${version}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Could not extract a valid kache version from mise.toml (got: '${version}')" >&2
+            exit 1
+          fi
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+
+      - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4
+        id: filter
+        with:
+          # merge_group's default base (HEAD~1) sees only the synthetic merge ref's
+          # topmost commit; pin to base_sha to match the PR-against-main diff.
+          base: ${{ github.event.merge_group.base_sha || github.base_ref }}
+          ref: ${{ github.event.merge_group.head_sha || github.ref }}
+          # scripts/preflight-scope.sh reads the same file, so the two cannot drift.
+          filters: .github/path-filters.yml
+
+  checks:
+    needs: changes
+    if: needs.changes.outputs.backend == 'true' || github.event_name == 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: backend
+    services:
+      postgres:
+        # Same digest compose.dev.yml pins, for dev/CI postgres parity.
+        image: postgres:18@sha256:06cad38a5d9f5d24b4d83d86def30795d5e4b757fedbf5281172b576dedcd941
+        env:
+          POSTGRES_USER: reverie
+          # Non-secret credential scoped to this ephemeral CI run.
+          POSTGRES_PASSWORD: ci-${{ github.run_id }}-${{ github.run_attempt }}
+          POSTGRES_DB: reverie_dev
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U reverie -d reverie_dev"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      # sqlx::test connects as the schema owner; per-test role pools are built in code.
+      DATABASE_URL: postgres://reverie:ci-${{ github.run_id }}-${{ github.run_attempt }}@localhost:5432/reverie_dev
+      # Debuginfo deliberately absent here: backend/Cargo.toml declares it, so both
+      # planes compile the same way without two settings having to agree.
+      CARGO_INCREMENTAL: 0
+      RUSTFLAGS: -C link-arg=-fuse-ld=mold
+      # A captured runner log is never a terminal, so cargo needs colour forced.
+      CARGO_TERM_COLOR: always
+      # Belt and braces with the object-read credentials below: a pull request is told
+      # not to write to the store main restores from, not just relying on the bucket.
+      KACHE_REMOTE_READONLY: ${{ github.ref == 'refs/heads/main' && 'false' || 'true' }}
+      # -fmerge-all-constants is deterministic codegen so is safe to allowlist; kache
+      # otherwise refuses to cache it and zstd-sys recompiles every run. Set via env,
+      # not .kache.toml: these compiles run under ~/.cargo/registry, which the repo
+      # is not an ancestor of.
+      KACHE_CC_EXTRA_ALLOWLIST_FLAGS: -fmerge-all-constants
+      # Fork PRs have no repository secrets, so the remote doesn't exist for them; they
+      # fall back to the target/ tarball. In job env, since secrets reach env/with, not if.
+      R2_CONFIGURED: ${{ secrets.R2_ACCOUNT_ID != '' }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      # sqlx-cli must track the sqlx crate version, or `cargo sqlx prepare --check`
+      # validates against a cache built by a mismatched proc-macro.
+      - name: sqlx-cli pin matches sqlx crate version
+        run: |
+          crate="$(yq -p toml -o yaml '.dependencies.sqlx.version // .dependencies.sqlx' Cargo.toml)"
+          case "$crate" in
+            [0-9]*.[0-9]*) ;;
+            *)
+              echo "::error file=backend/Cargo.toml::could not parse sqlx crate version (got '$crate'); the dependency shape may have changed — update this guard"
+              exit 1
+              ;;
+          esac
+          if [ "$crate" != "$SQLX_CLI_VERSION" ]; then
+            echo "::error file=.github/workflows/backend.yml::SQLX_CLI_VERSION ($SQLX_CLI_VERSION) != sqlx crate version ($crate in backend/Cargo.toml) — keep the cli pin in lockstep with the crate"
+            exit 1
+          fi
+          echo "sqlx-cli pin ($SQLX_CLI_VERSION) matches sqlx crate ($crate)"
+
+      # Shims stay off for the whole job: rustc links a registry dependency from
+      # ~/.cargo/registry, which has no mise.toml above it for a shim to resolve
+      # against. Steps needing a mise tool run under `mise exec` instead.
+      - uses: ./.github/actions/setup
+        with:
+          mise-install-args: just
+          add-shims-to-path: "false"
+
+      - name: Backend static guards
+        working-directory: ${{ github.workspace }}
+        run: mise exec just -- just rust::guards
+
+      # Components are per-job: this one lints, so clippy and rustfmt, not llvm-tools.
+      - id: rust
+        uses: ./.github/actions/rust-toolchain
+        with:
+          components: clippy, rustfmt
+
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+        with:
+          workspaces: backend
+          # A fork has no store credentials and falls back to caching target/ instead
+          # (a cold compile once the last full-target generation expires). Tracked in
+          # debt/2026-07-26-fork-pr-cache-fallback.md.
+          cache-targets: ${{ secrets.R2_ACCOUNT_ID == '' }}
+          # Restore-only on PR branches: the 10 GiB repo quota can't hold per-branch
+          # copies of the gigabyte-scale rust caches without evicting others.
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+
+      # Content-addressed compile cache in R2, keyed per crate. See
+      # adr/2026-07-26-remote-build-cache-on-r2.md.
+      #
+      # Write credentials are reserved for pushes to main; a PR gets object-read keys.
+      #
+      # Digest pinned past v1 (published 2026-06-15, never re-pointed): that tag's
+      # contract has no `namespace` or `pr-comment` input, and GitHub silently drops
+      # an undeclared input rather than erroring. Check any new input against
+      # action.yml at this revision before returning to a tag. The digest is
+      # upstream main as of 2026-06-19. The trailing comment names the branch on
+      # its own because Renovate reads it as the ref to resolve, and a ref that
+      # carries the date resolves to nothing.
+      - name: Remote build cache (kache)
+        if: env.R2_CONFIGURED == 'true'
+        uses: kunobi-ninja/kache-action@78ff455251aa37139061201a39113a1924994035 # main
+        with:
+          version: ${{ needs.changes.outputs.kache }}
+          s3-bucket: reverie-ci-cache
+          s3-region: auto
+          s3-endpoint: https://${{ secrets.R2_ACCOUNT_ID }}.r2.cloudflarestorage.com
+          s3-access-key-id: ${{ github.ref == 'refs/heads/main' && secrets.R2_ACCESS_KEY_ID_RW || secrets.R2_ACCESS_KEY_ID_RO }}
+          s3-secret-access-key: ${{ github.ref == 'refs/heads/main' && secrets.R2_SECRET_ACCESS_KEY_RW || secrets.R2_SECRET_ACCESS_KEY_RO }}
+          # github-cache would refill the 10 GiB quota this cache exists to
+          # escape; pr-comment needs `pull-requests: write`, not granted here.
+          github-cache: false
+          pr-comment: false
+          # Explicit despite being the current Linux default: that default rests on
+          # platform debug-info placement, not a caching guarantee.
+          cache-executables: true
+          # Shards make prefetch useful; unset, hits arrive one at a time. Keyed on
+          # build configuration, not job name, so a toolchain bump rotates it rather
+          # than warming shards for artifacts that no longer exist. Coverage needs
+          # its own value: `-C instrument-coverage` is a separate key space.
+          namespace: x86_64-unknown-linux-gnu/${{ steps.rust.outputs.version }}/dev
+
+      # kache degrades quietly by design: it compiles for real when the store is
+      # unreachable and still exits 0, so a mistyped secret would leave every job
+      # uncached and green forever. Assert the remote resolved before depending on it.
+      - name: Verify the remote cache resolved
+        if: env.R2_CONFIGURED == 'true'
+        run: |
+          set -euo pipefail
+          stats="$(kache stats 2>&1 || true)"
+          printf '%s\n' "${stats}"
+          remote="$(printf '%s\n' "${stats}" | grep -m1 'Remote:' || true)"
+          if [ -z "${remote}" ]; then
+            echo "kache stats reported no Remote line; the output shape changed and this check can no longer tell configured from not" >&2
+            exit 1
+          fi
+          case "${remote}" in
+            *"not configured"*)
+              echo "kache has no remote configured: the S3 inputs did not reach it, so this job would compile uncached and still pass" >&2
+              exit 1
+              ;;
+          esac
+
+      - name: Check formatting
+        run: cargo fmt --check
+
+      - name: Create database roles
+        run: psql -v ON_ERROR_STOP=1 "$DATABASE_URL" -f docker/init-roles.sql
+        working-directory: ${{ github.workspace }}
+
+      # Must land before the first linking cargo invocation (sqlx-cli below), since
+      # job-level RUSTFLAGS routes every link through mold.
+      - uses: ./.github/actions/setup
+        with:
+          mise-install-args: mold github:bnjbvr/cargo-machete
+          add-shims-to-path: "false"
+
+      # Keyed on version + features alone, not workspace Cargo.lock, so Renovate lock
+      # churn cannot invalidate it. Bump the key suffix if the features change.
+      - name: Cache sqlx-cli binary
+        id: cache-sqlx-cli
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: |
+            ~/.cargo/bin/sqlx
+            ~/.cargo/bin/cargo-sqlx
+          key: sqlx-cli-${{ runner.os }}-${{ runner.arch }}-${{ env.SQLX_CLI_VERSION }}-postgres-rustls
+
+      - name: Install sqlx-cli (cache miss only)
+        if: steps.cache-sqlx-cli.outputs.cache-hit != 'true'
+        # No --locked: sqlx-cli 0.9 stopped shipping Cargo.lock in its published crate.
+        run: mise exec mold -- cargo install sqlx-cli --version ${{ env.SQLX_CLI_VERSION }} --no-default-features --features rustls,postgres
+
+      - name: Unused dependencies (cargo-machete)
+        run: mise exec github:bnjbvr/cargo-machete -- cargo machete
+
+      - name: Apply migrations
+        run: sqlx migrate run
+
+      - name: Lint
+        run: mise exec mold -- cargo clippy --workspace --all-targets --locked -- -D warnings
+
+      # Without --document-private-items the scope is pub items only, matching the
+      # Tier 1 comment-policy surface.
+      - name: Doc lint (broken intra-doc links)
+        env:
+          RUSTDOCFLAGS: "-D rustdoc::broken_intra_doc_links"
+        run: mise exec mold -- cargo doc --locked --no-deps --workspace
+
+      - name: Check sqlx query cache freshness
+        run: mise exec mold -- cargo sqlx prepare --check -- --locked --tests
+
+      # nextest does not run doctests; Reverie has none today, so this exists to fail
+      # CI from day one on doctest drift.
+      - name: Doctests
+        run: mise exec mold -- cargo test --locked --doc --workspace
+
+      # The cache action's post step runs from $GITHUB_WORKSPACE, which has no
+      # Cargo.lock (the crate root is backend/), so it skips this upload itself.
+      # Tracked in debt/2026-07-26-kache-shard-upload-step.md.
+      - name: Upload prefetch shards
+        if: env.R2_CONFIGURED == 'true' && github.ref == 'refs/heads/main'
+        run: kache save-manifest
+
+  # Kept off the checks job's serial critical path; raw execution profiles are
+  # deleted before every run so cached results can never enter the report.
+  tests:
+    needs: changes
+    if: needs.changes.outputs.backend == 'true' || github.event_name == 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: backend
+    services:
+      postgres:
+        image: postgres:18@sha256:06cad38a5d9f5d24b4d83d86def30795d5e4b757fedbf5281172b576dedcd941
+        env:
+          POSTGRES_USER: reverie
+          # Non-secret credential scoped to this ephemeral CI run.
+          POSTGRES_PASSWORD: ci-${{ github.run_id }}-${{ github.run_attempt }}
+          POSTGRES_DB: reverie_dev
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U reverie -d reverie_dev"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgres://reverie:ci-${{ github.run_id }}-${{ github.run_attempt }}@localhost:5432/reverie_dev
+      CARGO_INCREMENTAL: 0
+      RUSTFLAGS: -C link-arg=-fuse-ld=mold
+      # See the checks job.
+      CARGO_TERM_COLOR: always
+      CARGO_LLVM_COV_TARGET_DIR: target/llvm-cov-target
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      # Coverage instrumentation is read back by llvm-tools, so it's this job's alone.
+      - uses: ./.github/actions/rust-toolchain
+        with:
+          components: llvm-tools-preview
+
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+        with:
+          workspaces: backend -> target/llvm-cov-target
+          shared-key: llvm-cov
+          # Restore-only on PR branches; see the checks job's cache step.
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+
+      - name: Create database roles
+        run: psql -v ON_ERROR_STOP=1 "$DATABASE_URL" -f docker/init-roles.sql
+        working-directory: ${{ github.workspace }}
+
+      # Shims stay off here for the same reason as the checks job.
+      - uses: ./.github/actions/setup
+        with:
+          mise-install-args: mold github:nextest-rs/nextest github:taiki-e/cargo-llvm-cov
+          add-shims-to-path: "false"
+
+      - name: Cache sqlx-cli binary
+        id: cache-sqlx-cli
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: |
+            ~/.cargo/bin/sqlx
+            ~/.cargo/bin/cargo-sqlx
+          key: sqlx-cli-${{ runner.os }}-${{ runner.arch }}-${{ env.SQLX_CLI_VERSION }}-postgres-rustls
+
+      - name: Install sqlx-cli (cache miss only)
+        if: steps.cache-sqlx-cli.outputs.cache-hit != 'true'
+        run: mise exec mold -- cargo install sqlx-cli --version ${{ env.SQLX_CLI_VERSION }} --no-default-features --features rustls,postgres
+
+      - name: Apply migrations
+        run: sqlx migrate run
+
+      # Remove raw execution data before retaining compiled artifacts with --no-clean.
+      - name: Test (with coverage)
+        run: |
+          mkdir -p "$CARGO_LLVM_COV_TARGET_DIR"
+          find "$CARGO_LLVM_COV_TARGET_DIR" -type f -name '*.profraw' -delete
+          mise exec mold github:nextest-rs/nextest github:taiki-e/cargo-llvm-cov -- \
+            cargo llvm-cov nextest --no-clean --locked --workspace --remap-path-prefix --lcov --output-path lcov.info
+
+      - name: Upload backend coverage artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: backend-coverage
+          path: backend/lcov.info
+          if-no-files-found: error
+          retention-days: 1
+
+      # Codacy requires repo-root-relative SF: paths; the backend lcov is backend-relative.
+      - name: Normalize coverage paths to repo root
+        run: sed -i 's#^SF:#SF:backend/#' lcov.info
+
+      # Reports above 10 MB fail server-side with an opaque JSON parse error, so
+      # size is surfaced here instead.
+      - name: Check coverage report size
+        id: backend_lcov_size
+        run: |
+          size=$(wc -c < lcov.info)
+          if [ "${size}" -gt 10485760 ]; then
+            echo "::warning title=Coverage report oversized::backend/lcov.info is ${size} bytes; Codacy rejects reports above 10 MB."
+            echo 'skip=true' >> "${GITHUB_OUTPUT}"
+          else
+            echo 'skip=false' >> "${GITHUB_OUTPUT}"
+          fi
+
+      # Per-language advisory upload; PR-level Codacy contexts come from these steps.
+      # The SHA pins the wrapper, not the reporter: v1.3.0 fetches Codacy's bootstrap
+      # script from master on every run; no released revision accepts a reporter
+      # version. That script verifies the SHA512 of the binary it installs.
+      - name: Upload coverage to Codacy
+        if: >-
+          steps.backend_lcov_size.outputs.skip != 'true' &&
+          github.actor != 'dependabot[bot]' &&
+          github.actor != 'renovate[bot]' &&
+          (github.event_name != 'pull_request' ||
+           (github.event.pull_request.head.repo.full_name == github.repository &&
+            !startsWith(github.head_ref, 'renovate/') &&
+            !startsWith(github.head_ref, 'dependabot/')))
+        uses: codacy/codacy-coverage-reporter-action@89d6c85cfafaec52c72b6c5e8b2878d33104c699 # v1.3.0
+        continue-on-error: true
+        with:
+          project-token: ${{ secrets.CODACY_PROJECT_TOKEN }}
+          coverage-reports: backend/lcov.info
+          language: Rust
+
+  # Compiles on exactly the declared rust-version, so a dependency bump or new syntax
+  # that silently raises the real minimum fails here instead of breaking
+  # self-hosters building from source on the documented floor.
+  msrv:
+    needs: changes
+    if: needs.changes.outputs.backend == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: backend
+    env:
+      SQLX_OFFLINE: "true"
+      CARGO_INCREMENTAL: 0
+      # See the checks job.
+      CARGO_TERM_COLOR: always
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Resolve declared MSRV
+        id: msrv
+        run: |
+          set -euo pipefail
+          version=$(grep -m1 '^rust-version' Cargo.toml | sed -E 's/^rust-version[^"]*"([0-9.]+)".*/\1/' || true)
+          if [[ ! "${version}" =~ ^[0-9]+\.[0-9]+(\.[0-9]+)?$ ]]; then
+            echo "Could not extract a valid rust-version from backend/Cargo.toml (got: '${version}')" >&2
+            exit 1
+          fi
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+
+      # The one caller that overrides the pinned channel with the declared floor.
+      - uses: ./.github/actions/rust-toolchain
+        with:
+          toolchain: ${{ steps.msrv.outputs.version }}
+
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+        with:
+          workspaces: backend
+          # Restore-only on PR branches; see the checks job's cache step.
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+
+      # RUSTUP_TOOLCHAIN is what actually holds this job to the floor: rustup otherwise
+      # honours backend/rust-toolchain.toml, passing while checking nothing. The
+      # assertion below is the regression test for that override taking effect.
+      # rustc reports a full x.y.z while rust-version may be x.y, hence the
+      # patch-suffix match.
+      - name: Check workspace builds on MSRV
+        env:
+          RUSTUP_TOOLCHAIN: ${{ steps.msrv.outputs.version }}
+        run: |
+          set -euo pipefail
+          active=$(rustc --version | cut -d' ' -f2)
+          case "${active}" in
+            "${RUSTUP_TOOLCHAIN}" | "${RUSTUP_TOOLCHAIN}".*) ;;
+            *)
+              echo "MSRV job is compiling on rustc ${active}, not the declared floor ${RUSTUP_TOOLCHAIN}: the toolchain override is not in effect" >&2
+              exit 1
+              ;;
+          esac
+          cargo check --workspace --all-targets --locked

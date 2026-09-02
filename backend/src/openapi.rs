@@ -47,7 +47,7 @@ const API_VERSION: &str = "0.1.0";
 /// wired through `pilot_router` that omits a per-operation `security` annotation
 /// inherits the global requirement and documents-as-authed, never as-public,
 /// so an undocumented-public endpoint cannot silently enter the contract (OWASP
-/// fail-safe defaults; matches the Checkov `CKV_OPENAPI_4` shape). Routes outside
+/// fail-safe defaults). Routes outside
 /// `pilot_router` are not in the spec at all; runtime enforcement for every route
 /// lives in `auth/` middleware. The spec is a contract signal, not a gate.
 ///
@@ -73,9 +73,8 @@ const API_VERSION: &str = "0.1.0";
 /// are otherwise exposed in cleartext. Transport is enforced operationally
 /// (reverse-proxy TLS; the session cookie is `Secure` when `behind_https`),
 /// not by the spec, so the residual cleartext-credential findings are justified
-/// skips: `CKV_OPENAPI_3` on `opds_basic` (HTTP Basic) and `CKV_OPENAPI_20` on
-/// `device_token_bearer` and `oidc_jwt_bearer` (HTTP Bearer). All are
-/// registered in `.checkov.yaml`.
+/// skips: `owasp-no-http-basic` on `opds_basic`, and `owasp-jwt-best-practices`
+/// on the Bearer schemes. Both are registered in `.vacuum.yaml`.
 ///
 /// See `adr/2026-06-08-api-versioning-openapi.md`.
 struct SecurityAddon;
@@ -102,7 +101,7 @@ impl Modify for SecurityAddon {
                     .description(Some(
                         "HTTP Basic authentication for the OPDS feeds. MUST be used over \
                          HTTPS in production; Basic credentials are otherwise exposed in \
-                         transit (Checkov CKV_OPENAPI_3).",
+                         transit.",
                     ))
                     .build(),
             ),
@@ -115,7 +114,7 @@ impl Modify for SecurityAddon {
                     .description(Some(
                         "Personal device-token credential (`{prefix}{token_id}.{secret}`). \
                          MUST be used over HTTPS in production; the token is otherwise \
-                         exposed in transit (Checkov CKV_OPENAPI_20).",
+                         exposed in transit.",
                     ))
                     .build(),
             ),
@@ -129,7 +128,7 @@ impl Modify for SecurityAddon {
                     .description(Some(
                         "RFC 9068 resource-server access token issued by the configured IdP. \
                          MUST be used over HTTPS in production; the token is otherwise exposed \
-                         in transit (Checkov CKV_OPENAPI_20).",
+                         in transit.",
                     ))
                     .build(),
             ),

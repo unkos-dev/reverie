@@ -1,0 +1,111 @@
+# vacuum ruleset — consumed by the openapi-policy CI job
+# (.github/workflows/ci.yml), which lints the generated docs/openapi.json.
+#
+# The baseline is every rule in vacuum's oas and owasp rulesets that the
+# current spec already satisfies: 57 rules, all passing. The rules disabled
+# below are the ones that fire today. Each is off because turning it on is a
+# change to the spec or to the generator behind it, not a change to this file,
+# and adopting them is tracked as its own work.
+#
+# Adding a rule here means the spec was changed to satisfy it. Removing a
+# disable means committing to the remediation that rule demands.
+#
+# Location-scoped exceptions live in .vacuum-ignore.yaml instead, which
+# silences an enabled rule at named paths. Note that vacuum accepts a Spectral
+# `overrides:` block here and silently ignores it; the ignore file is the
+# mechanism that works.
+
+extends:
+  # The two-element form is load-bearing: a bare `vacuum:owasp` resolves to
+  # zero rules instead of erroring, which silently disables the whole ruleset.
+  - [vacuum:oas, recommended]
+  - [vacuum:owasp, all]
+
+rules:
+  # --- Security rules worth adopting; each needs spec or generator work ---
+
+  # Every string schema must declare format, pattern, enum, or const. An
+  # unconstrained string is an injection and storage-abuse surface. 234 hits.
+  owasp-string-restricted: false
+
+  # Integers must carry minimum and maximum. 78 hits.
+  owasp-integer-limit: false
+
+  # Integers must declare int32 or int64 so clients size them correctly. 3 hits.
+  owasp-integer-format: false
+
+  # Objects must not accept arbitrary extra properties, and must bound them
+  # with maxProperties where they do. 6 hits each.
+  owasp-no-additionalProperties: false
+  owasp-constrained-additionalProperties: false
+
+  # Operations must document the error responses they can return. Adopting
+  # these means the handlers actually return them, not just that the spec
+  # claims so. 87, 83, 37 and 20 hits.
+  owasp-define-error-responses-500: false
+  owasp-define-error-responses-429: false
+  owasp-define-error-validation: false
+  owasp-define-error-responses-401: false
+
+  # Responses must declare rate-limit headers. This is a product decision
+  # about whether the API implements rate limiting, not a spec fix. 323 hits.
+  owasp-rate-limit: false
+
+  # --- Deliberate, permanent exceptions ---
+
+  # Fires on the opds_basic scheme. OPDS clients, Kobo e-readers among them,
+  # support only Basic auth, so the scheme cannot be replaced. HTTPS is
+  # mandated in production by the scheme description and the operator docs,
+  # and the session cookie is issued Secure when behind_https is on. Transport
+  # cannot be asserted in a generated spec, so this is owned operationally.
+  owasp-no-http-basic: false
+
+  # Wants RFC8725 named in the description of every JWT-bearing scheme. The
+  # posture it asks about is already documented in the scheme descriptions;
+  # the rule checks for a specific citation string rather than the property.
+  owasp-jwt-best-practices: false
+
+  # --- Documentation quality, not gating material ---
+
+  # Every schema and parameter should carry an example. Worth knowing, wrong
+  # thing to block a merge on. 358 hits.
+  oas3-missing-example: false
+
+  # Flags descriptions reused across the spec. Generated docs repeat shared
+  # field descriptions by design. 312 hits.
+  description-duplication: false
+
+  # Missing or thin descriptions on operations, parameters, and components.
+  operation-description: false
+  oas3-parameter-description: false
+  component-description: false
+
+  # info.contact details, absent by choice: the repository is the contact.
+  info-contact: false
+
+  # --- Rules whose opinion this project does not share ---
+
+  # Requires camelCase property names. The API is deliberately snake_case
+  # across all 97 multi-word properties. Complying would rename the entire
+  # public surface. 193 hits.
+  camel-case-properties: false
+
+  # Requires tags in alphabetical order. The current order groups related
+  # resources, which reads better than an alphabetical shuffle.
+  openapi-tags-alphabetical: false
+
+  # --- Known defects, tracked ---
+
+  # Schemas missing an explicit type. 33 hits.
+  oas-missing-type: false
+
+  # Operations missing a 4xx response. 4 hits.
+  operation-4xx-response: false
+
+  # A duplicate operationId: GET /api/v1/series/{id} and another operation
+  # both use `detail`. A real defect in the generated spec.
+  operation-operationId-unique: false
+
+  # No servers block. The spec is served from the deployment that generated
+  # it, so there is no fixed server URL to declare.
+  oas3-api-servers: false

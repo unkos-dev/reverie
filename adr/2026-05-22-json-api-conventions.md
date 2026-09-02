@@ -34,8 +34,7 @@ referenced by the frontend `src/api/` client and must hold across
 the wire boundary; deciding it once avoids backend/frontend
 contract drift.
 
-The governing principle is
-[`feedback_industry_standard_default`](../.claude/projects/-home-coder-reverie/memory/feedback_industry_standard_default.md):
+The governing principle is to
 default to IETF / OWASP / W3C standards; any deviation requires
 conscious decision plus measurably better outcome plus an ADR.
 This document is that ADR for every API-shape convention Step 11
@@ -451,9 +450,7 @@ Cheapest CSRF story. OWASP guidance is "necessary but not
 sufficient"; in practice many small apps stop here.
 
 Rejected because Reverie's threat model is the
-"multi-user exposed instance"
-per
-[`project_open_source_security_stance`](../.claude/projects/-home-coder-reverie/memory/project_open_source_security_stance.md).
+"multi-user exposed instance".
 External contributors and self-hosters audit Reverie expecting
 OWASP-default defences. Synchronizer token is the OWASP-blessed
 primary; not adopting it is a deviation that would require its
@@ -516,17 +513,12 @@ their slugs.
 - Revisit trigger: the query-rejection invariant above is review-enforced;
   a repo-wide lint guard (deliberately out of scope for any single
   convention) is tracked in the API linting task.
-- Parent (security stance):
-  [`project_open_source_security_stance.md`](../.claude/projects/-home-coder-reverie/memory/project_open_source_security_stance.md):
-  threat model is the multi-user exposed instance.
-- Industry-standard default principle:
-  [`feedback_industry_standard_default.md`](../.claude/projects/-home-coder-reverie/memory/feedback_industry_standard_default.md).
+- Security stance: the threat model is the multi-user exposed instance.
+- Industry-standard default principle: prefer IETF, OWASP and W3C standards
+  over first-party invention.
 - IETF specs cited: RFC 9457 (Problem Details, formerly RFC 7807),
   RFC 8288 (Web Linking / Link header), RFC 7396 (JSON Merge
   Patch), RFC 9110 §12 (Content negotiation), RFC 9110 §13.1
   (`If-Match`), RFC 3339 (date format), RFC 8259 (JSON).
 - OWASP cheat sheet: Cross-Site Request Forgery Prevention.
-- Implementation plan ingest:
-  `.claude/PRPs/plans/library-ui.plan.md` (Sub-phase 11a Tasks
-  1, 1b, 1c).
 - Tracker: the Step 11 API conventions work

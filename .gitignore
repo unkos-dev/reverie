@@ -45,10 +45,6 @@ docker-compose.override.yml
 # Docs build output
 docs/.astro/
 
-# Drift-check temp copy of the generated just reference
-# (scripts/gen-just-reference.sh --check)
-docs/gen-just-reference.check.mdx
-
 # Test coverage
 coverage/
 *.lcov
@@ -97,3 +93,4 @@ backend/.dev-server.log
 backend/library/
 backend/ingestion/
 backend/quarantine/
+.npmrc

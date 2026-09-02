@@ -5,7 +5,8 @@
     ":semanticCommits",
     ":gitSignOff",
     "helpers:pinGitHubActionDigests",
-    "mergeConfidence:all-badges"
+    "mergeConfidence:all-badges",
+    "customManagers:dockerfileVersions"
   ],
   "configMigration": true,
   "timezone": "Australia/Perth",
@@ -39,9 +40,9 @@
       "rangeStrategy": "update-lockfile"
     },
     {
-      "description": "Do not manage the npm overrides block as first-class dependencies. Its entries are deliberate transitive security floors, and because the packages are transitive-only, a per-entry lockfile bump runs npm install <pkg>@<version>, which npm rejects with EOVERRIDE. That failure blocked the hono lockfile branch and the npm side of lock file maintenance. Pinned transitive versions still refresh within range through normal lockfile updates.",
+      "description": "Do not manage the workspace overrides block as first-class dependencies. Its entries are deliberate transitive security floors chosen for the advisory each one closes, not versions to track upstream, so a per-entry bump would raise the floor to whatever released last and drop the reason it was set. Pinned transitive versions still refresh within range through normal lockfile updates.",
       "matchManagers": ["npm"],
-      "matchDepTypes": ["overrides"],
+      "matchDepTypes": ["pnpm-workspace.overrides"],
       "enabled": false
     },
     {
@@ -116,7 +117,7 @@
       "groupName": "commitlint"
     },
     {
-      "description": "Keep every PostgreSQL image pin in one PR. scripts/compose-dev-invariants.sh requires docker/compose.dev.yml and the ci.yml backend service to pin the identical postgres digest, so a split across the docker-compose and github-actions managers fails the dev/CI parity gate on both branches. Grouping the CI workflow service with the compose images moves them together. The release-age hold is restated here because Renovate parses that workflow service image under the github-actions manager, so the digest exemption above would otherwise reach the CI half alone. Grouping does not wait for a member that is not yet eligible: it ships the eligible subset, which is a split by date rather than by manager and breaks the same gate.",
+      "description": "Keep every PostgreSQL image pin in one PR. docker/compose.dev.yml and the backend.yml services are meant to pin the identical postgres digest so dev and CI test against one database version; nothing checks that, so this grouping is what holds it. Splitting across the docker-compose and github-actions managers would drift them. The release-age hold is restated here because Renovate parses that workflow service image under the github-actions manager, so the digest exemption above would otherwise reach the CI half alone. Grouping does not wait for a member that is not yet eligible: it ships the eligible subset, which drifts the pins by date rather than by manager.",
       "matchManagers": ["docker-compose", "github-actions"],
       "matchPackageNames": ["postgres"],
       "matchUpdateTypes": ["patch", "pin", "digest"],
@@ -148,29 +149,13 @@
       "groupName": "vite-plus"
     },
     {
-      "description": "The generated color primitives pin these exactly; any bump fails the radix-gen drift test until npm run primitives:gen is rerun and the palette diff reviewed, so move them as one deliberate, dashboard-approved group.",
+      "description": "The generated color primitives pin these exactly; any bump fails the radix-gen drift test until `vp run primitives:gen` is rerun and the palette diff reviewed, so move them as one deliberate, dashboard-approved group.",
       "matchDepNames": ["@radix-ui/colors", "colorjs.io", "bezier-easing"],
       "groupName": "radix-gen",
       "dependencyDashboardApproval": true
-    },
-    {
-      "description": "Keep the two npm pins in one PR. scripts/npm-pin-drift.sh requires mise.toml and package.json's devEngines to name the identical npm version, and the two live behind different managers: mise sees the mise.toml entry, and the custom manager below is the only thing that sees devEngines at all. Ungrouped, the mise bump lands alone and every npm release becomes a red PR that cannot go green without a hand edit.",
-      "matchManagers": ["mise", "custom.regex"],
-      "matchDepNames": ["npm", "npm:npm"],
-      "groupName": "npm-pin"
     }
   ],
   "customManagers": [
-    {
-      "description": "Track devEngines.packageManager.version. Renovate's npm manager reads only the top-level packageManager field, never devEngines, so this copy is invisible to every built-in manager. Without it the mise manager raises an npm bump against mise.toml alone and reinstates the mismatch npm-pin-drift exists to catch; the npm-pin group above then moves both copies together.",
-      "customType": "regex",
-      "managerFilePatterns": ["/^package\\.json$/"],
-      "matchStrings": [
-        "\"packageManager\":\\s*\\{[^{}]*?\"version\":\\s*\"(?<currentValue>[0-9]+\\.[0-9]+\\.[0-9]+)\""
-      ],
-      "depNameTemplate": "npm",
-      "datasourceTemplate": "npm"
-    },
     {
       "description": "Track SQLX_CLI_VERSION because it is not embedded in an install-action tool list.",
       "customType": "regex",
@@ -180,11 +165,15 @@
       "datasourceTemplate": "crate"
     },
     {
-      "description": "Track annotated version pins in workflows (TruffleHog's image tag, mise itself, and the remaining install-pinned-tool binaries). When a sha256 line follows the version, the github-release-attachments datasource rewrites it alongside the bump, keeping the checksum control without the manual repin step.",
+      "description": "Track annotated version pins in workflows and composite action files. The first pattern matches a renovate comment above a version key; the second matches the SBOM generator, whose version and sha256 digest move together. File patterns are the customManagers:githubActionsVersions preset's verbatim, because the preset would double-claim these annotations while leaving that digest unrewritten. ARG-shaped Dockerfile pins belong to the dockerfileVersions preset in extends.",
       "customType": "regex",
-      "managerFilePatterns": ["/^\\.github/workflows/[^/]+\\.ya?ml$/"],
+      "managerFilePatterns": [
+        "/(^|/)(workflow-templates|\\.(?:github|gitea|forgejo)/(?:workflows|actions))/.+\\.ya?ml$/",
+        "/(^|/)action\\.ya?ml$/"
+      ],
       "matchStrings": [
-        "# renovate: datasource=(?<datasource>\\S+) depName=(?<depName>\\S+)(?: extractVersion=(?<extractVersion>\\S+))?\\s+version:\\s*\"(?<currentValue>[^\"]+)\"(?:\\s+sha256:\\s*\"(?<currentDigest>[a-f0-9]{64})\")?"
+        "# renovate: datasource=(?<datasource>\\S+) depName=(?<depName>\\S+)(?: extractVersion=(?<extractVersion>\\S+))?\\s+version:\\s*\"(?<currentValue>[^\"]+)\"(?:\\s+sha256:\\s*\"(?<currentDigest>[a-f0-9]{64})\")?",
+        "# renovate: datasource=(?<datasource>\\S+) depName=(?<depName>\\S+)\\s+sbom: generator=[^:\\s]+:(?<currentValue>[0-9.]+)@(?<currentDigest>sha256:[a-f0-9]{64})"
       ]
     }
   ]

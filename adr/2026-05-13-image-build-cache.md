@@ -62,12 +62,16 @@ dedicated cacheable layer.
    layer). The cooker layer is the cache target: warm hits skip ~3min
    of dep compilation when `Cargo.lock` is unchanged.
 
-3. **Frontend buildkit npm cache mount.**
-   `RUN --mount=type=cache,target=/root/.npm npm ci`. Survives within a
-   single build (buildkit-scoped, not layer-scoped). Cross-run npm
-   reuse comes from the gha layer cache for the `npm ci` layer when
-   `package-lock.json` is unchanged; the mount avoids tarball re-fetch
-   when the layer cache invalidates for unrelated reasons.
+3. **Frontend package store in an ordinary layer.** `pnpm fetch` populates
+   `/pnpm-store` from the lockfile before the frontend build and SBOM stages
+   diverge. Both stages inherit that store, and the bundle install consumes it
+   offline. The dependency layer is therefore complete when restored from the
+   GHA cache and remains valid when an ephemeral builder has no cache-mount
+   state. The store is separate from `PNPM_HOME`, where `pnpm runtime set`
+   installs Node. The build invocation disables pnpm's automatic
+   `verifyDepsBeforeRun` repair only after the explicit frozen offline install
+   succeeds, preventing source-layer timestamps from launching an unscoped
+   install.
 
 4. **Tier 1 observability only.** Post-build steps emit `docker buildx
 du` (this runner's local buildkit content store, ephemeral) and a
@@ -106,6 +110,10 @@ string across branches is the correct shape:
   miss → cold build. `cache-to` failure → silent fallthrough. No
   partial-state corruption surface; rollback is a single-commit
   revert with no data migration or external state to unwind.
+- Good: **frontend dependency state survives an external cache restore.**
+  `pnpm fetch` writes the store into a normal layer, and the offline bundle
+  install fails immediately if that layer is incomplete. BuildKit cache mounts
+  are not part of the frontend dependency contract.
 - Good: **mode=max preserves intermediate layers.** Partial-hit
   scenarios (e.g. a single dep version bump on a single arch) still
   reuse what they can.
@@ -132,6 +140,9 @@ string across branches is the correct shape:
 - Bad: **first main-push after merge is cold.** Cache writes from
   feature-branch verification go under `refs/heads/feat/...`; main's
   first cache-from miss is expected. Subsequent main-pushes warm.
+- Bad: **`pnpm fetch` is experimental.** The command is pnpm's documented
+  recommendation for Docker builds on ephemeral CI workers, and the pinned
+  pnpm image digest prevents its behaviour from changing without review.
 - Unknown: **tag-push (`refs/tags/v*`) cache hit behaviour.** Tag
   refs read with `base = main` fallback per GHA scoping rules.
   Documented behaviour for tag refs is ambiguous in practice. Both
@@ -241,6 +252,5 @@ Open a superseding or amending ADR if any of the following happen:
   - `Dockerfile`: cargo-chef split decided by this ADR
   - `.github/workflows/docker-publish.yml`: cache wiring + Tier 1
     obs + workflow_dispatch decided by this ADR
-  - `.claude/PRPs/plans/image-build-cache.plan.md`: implementation
-    plan; carry-over section enumerated the points folded into this
-    ADR
+  - The implementation plan for this work: its carry-over section
+    enumerated the points folded into this ADR

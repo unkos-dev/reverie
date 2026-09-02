@@ -5,15 +5,11 @@ on:
     branches:
       - main
 
-# Least privilege at the top; the single job widens to exactly the
-# writes release-please needs (create tags/releases + manage the
-# release PR), keeping write tokens off the workflow-wide scope.
+# Workflow stays read-only; the job below widens to the writes it needs.
 permissions:
   contents: read
 
-# Serialize release-please runs so rapid main pushes can't race updates to
-# the standing release PR. cancel-in-progress: false queues rather than
-# cancels — a half-applied release-PR update is worse than waiting.
+# Queue rather than cancel: a half-applied release-PR update is worse than waiting.
 concurrency:
   group: release-please-${{ github.ref }}
   cancel-in-progress: false

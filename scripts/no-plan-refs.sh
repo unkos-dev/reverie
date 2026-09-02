@@ -46,6 +46,33 @@ is_gated() {
   return 1
 }
 
+# Positive control, run on every invocation. An empty file list is legitimate
+# here (a commit touching nothing gated), so there is no census whose emptiness
+# could signal breakage: a decayed is_gated arm or a mangled pattern would
+# report every commit clean forever with nothing to notice. These assertions
+# hold the guard to its own documented examples, and unlike a fixture outside
+# the guard they run on the code path every real caller takes.
+# Each alternative is probed with a string only that alternative can match. A
+# single string carrying all four would keep matching after three of them
+# decayed, which is the failure this exists to catch.
+self_check() {
+  grep -qiE "$pattern" <<<'(S2)' || return 1
+  grep -qiE "$pattern" <<<'decision 10' || return 1
+  grep -qiE "$pattern" <<<'invariant 2' || return 1
+  grep -qiE "$pattern" <<<'plans/x.md' || return 1
+  grep -qE "$phase_pattern" <<<'Phase 2 enforces the check' || return 1
+  # Lowercase `phase 2` is deliberately left alone; assert that it still is.
+  grep -qE "$phase_pattern" <<<'phase 2 of the request lifecycle' && return 1
+  is_gated backend/src/main.rs || return 1
+  is_gated frontend/src/App.tsx || return 1
+  ! is_gated AGENTS.md || return 1
+  ! is_gated frontend/src/components/ui/button.tsx || return 1
+}
+if ! self_check; then
+  echo "no-plan-refs: self-check failed; the scope rules or the patterns no longer match their own documented examples, so a clean result would mean nothing" >&2
+  exit 2
+fi
+
 # lefthook and CI (paths-filter) both pass repo-relative paths. Normalise
 # anyway (the strip tolerates an absolute path), then keep only paths that exist.
 files=()

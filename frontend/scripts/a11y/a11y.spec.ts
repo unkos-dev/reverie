@@ -10,16 +10,17 @@ const WCAG_TAGS = ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa"];
 
 // Same env contract as the retired runner: comma-separated, root-relative
 // paths. parseTargets fails closed on an empty list or an off-origin target.
-// Future targets (/design/hero/*, authed Home/Library/Detail) are added here as
-// they become scannable.
+// The default list lives in allowlist.mjs. Authenticated Home, Library, and
+// Detail are the remaining gap: they need a storage-state fixture and a backend
+// in this lane before they can join it.
 const TARGETS = parseTargets(process.env.A11Y_TARGETS);
 
 for (const target of TARGETS) {
   test(`WCAG 2.2 AA: ${target}`, async ({ page }, testInfo) => {
     await page.goto(target);
-    // Web-first readiness marker: the design-system page renders its content
-    // inside a single top-level <main>. Preferred over networkidle, which
-    // Playwright discourages.
+    // Web-first readiness marker: every scannable target renders its content
+    // inside a single top-level <main>, which is the bar a route clears before
+    // it joins the list. Preferred over networkidle, which Playwright discourages.
     await expect(page.getByRole("main")).toBeVisible();
 
     const results = await new AxeBuilder({ page }).withTags(WCAG_TAGS).analyze();

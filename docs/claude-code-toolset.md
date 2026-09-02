@@ -1,1 +1,0 @@
-../../.config/coderv2/dotfiles/docs/claude-code-toolset.md

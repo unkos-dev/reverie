@@ -11,9 +11,8 @@ informed: "Reverie contributors"
 
 ## Context and Problem Statement
 
-Global Claude Code instructions (`~/.claude/CLAUDE.md`) ratify
-"default to no comments, only add one when the WHY is non-obvious"
-as the cross-project default. The rule is well-tuned for a solo-dev
+A cross-project convention ratifies "default to no comments, only add one
+when the WHY is non-obvious" as the default. The rule is well-tuned for a solo-dev
 or shared-team context where the readers are the author and a
 small group with shared conversation history; under those
 conditions, comments rot fast and self-explanatory naming carries
@@ -283,9 +282,8 @@ maintainer before landing.
 
 ## More Information
 
-- Global cross-project rule:
-  `~/.claude/CLAUDE.md` § "Comments": the rule this ADR amends
-  for the OSS-product context
+- The cross-project comment convention this ADR amends for the
+  OSS-product context
 - `adr/2026-05-03-strict-lint-policy.md`: the strict-lint
   policy whose pedantic clippy lints (`missing_errors_doc`,
   `missing_panics_doc`, `missing_safety_doc`) are the partial

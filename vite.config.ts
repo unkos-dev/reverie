@@ -5,6 +5,13 @@ import { defineConfig } from "vite-plus";
 // so every lint override is scoped to frontend/**. Ignores are root-relative.
 // Frontend build/server/test config stays in frontend/vite.config.ts.
 export default defineConfig({
+  // Built-ins take no package filter (vp run is the only workspace-selecting
+  // entry point), so a bare app command at the root would find no app. This
+  // covers vp dev, build, preview and pack only. vp test, lint, fmt and check
+  // are unaffected and still resolve from the current directory, which is why
+  // the recipes below keep [working-directory] rather than relying on this.
+  // Must stay a plain string literal: vp reads it without executing the config.
+  defaultPackage: "./frontend",
   fmt: {
     semi: true,
     singleQuote: false,
@@ -250,7 +257,29 @@ export default defineConfig({
           "react/no-unknown-property": "error",
           "react/jsx-no-duplicate-props": "error",
           "react/no-unstable-nested-components": "error",
-          "react/react-compiler": "error",
+          "react/capitalized-calls": "error",
+          "react/error-boundaries": "error",
+          "react/exhaustive-effect-dependencies": "error",
+          "react/globals": "error",
+          // react/hooks omitted: upstream ships it disabled because it duplicates
+          // react/rules-of-hooks (same check, compiler-derived instead of static).
+          "react/immutability": "error",
+          "react/incompatible-library": "error",
+          "react/invariant": "error",
+          "react/memo-dependencies": "error",
+          "react/no-deriving-state-in-effects": "error",
+          "react/preserve-manual-memoization": "error",
+          "react/purity": "error",
+          "react/refs": "error",
+          "react/rule-suppression": "error",
+          "react/set-state-in-effect": "error",
+          "react/set-state-in-render": "error",
+          "react/static-components": "error",
+          "react/syntax": "error",
+          "react/todo": "error",
+          "react/unsupported-syntax": "error",
+          "react/use-memo": "error",
+          "react/void-use-memo": "error",
         },
         env: {
           es2020: true,
@@ -273,10 +302,6 @@ export default defineConfig({
         // moment anything writes, and a write through it lands somewhere the
         // surface cannot read. The ban covers both directions, which is why it
         // is on the import rather than on the setter alone.
-        //
-        // The design-system pages under pages/design/** are deliberately out
-        // of scope: they are standalone specimens with their own local params
-        // and no shared filter state.
         files: [
           "frontend/src/pages/library/**",
           "frontend/src/components/library/**",

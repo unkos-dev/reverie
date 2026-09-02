@@ -3,32 +3,50 @@
 <project_hard_rules>
 These are absolute invariants for the Reverie repository.
 
-1. **NEVER MERGE TO MAIN:** The user performs all merges. You are encouraged to make regular commits at logical points for durability. You may use `gh pr create` to open the PR, but you must hand it off at "green and ready for review" and STOP. You are strictly FORBIDDEN from running `gh pr merge` or proposing a merge step.
-2. **NEVER COMMIT SECRETS:** No `.env`, tokens, or API keys.
-3. **REDACT SECRETS IN OUTPUT:** Never surface decrypted secret values in chat. Describe their presence (length, format) only. Do NOT read the redaction log.
-4. **VERSIONING:** Versions are release-please-managed; never hand-edit version in `Cargo.toml`/`package.json`.
-5. **TESTS ARE MANDATORY:** Every feature or fix must be accompanied by corresponding happy-path and edge-case tests in the exact same PR. Do not submit code without tests.
-6. **VERIFICATION PREREQUISITES:** Restore a declared project dependency only through the repository's documented, lockfile-backed setup command. If a system prerequisite or CI-only binary is missing, stop the affected verification and report the exact missing command. Never install system packages, weaken checks, or patch around a missing tool without explicit user approval.
+1. **Merges belong to the maintainer:** Commit freely at logical points for durability, and open the pull request with `gh pr create`. Hand off at "green and ready for review". Do not run `gh pr merge` and do not propose a merge step.
+2. **Never commit secrets:** No `.env`, tokens, or API keys.
+3. **Redact secrets in output:** Never surface a decrypted secret value. Describe its presence (length, format) only. Do not read the redaction log.
+4. **Versioning:** Versions are release-please-managed; never hand-edit version in `Cargo.toml`/`package.json`.
+5. **Tests are mandatory for the shipped product:**
+   - Every feature or fix in `backend/` or `frontend/` ships with happy-path and edge-case tests in the same PR.
+   - Do not submit product code without tests.
+   - Executable tooling anywhere else in the tree (`scripts/`, the justfiles, `.github/`, `docker/`, the root configs) is judged on one question: can it fail quietly?
+   - Prose and generated documentation are not in scope here; "Docs are part of done" below governs them.
+   - A guard that a pull request exercises and that fails loudly needs no self-test.
+   - A check that can pass while matching nothing needs an assertion inside it, not a fixture-driven test outside it.
+6. **Verification prerequisites:** Restore a declared project dependency only through the repository's documented, lockfile-backed setup command. If a system prerequisite or CI-only binary is missing, stop the affected verification and report the exact missing command. Never install system packages, weaken checks, or patch around a missing tool without the maintainer's explicit approval.
    </project_hard_rules>
 
 <git_and_linear_workflow>
 
 - **Branching:** Branch from `main`. Branch names MUST start with a commitlint-accepted type as prefix (`build/`, `chore/`, `ci/`, `docs/`, `feat/`, `fix/`, `perf/`, `refactor/`, `revert/`, `style/`, `test/`), matching the change type. Do not use agent-specific prefixes. Verify the branch name before the first push.
 - **Commits and PR titles:** Every commit subject and pull request title MUST follow Conventional Commits (`<type>(<scope>): <description>`). Pull request titles become squash-merge subjects. Explain the _why_, not the _what_.
-- **Sign-off:** Every commit MUST carry a `Signed-off-by` trailer, so commit with `git commit -s`. The `commit-msg` hook rejects an unsigned commit locally and CI rejects it on the pull request. `.github/CONTRIBUTING.md` carries the Developer Certificate of Origin text and the rest of the contributor process.
-- **Linear Integration:** Treat work as Linear-tracked only when the user says so or the task or current branch already identifies an `UNK-XXX` issue. For tracked work, include `Closes UNK-XXX` in the PR body so the active issue does not remain open. For untracked work, do not search for or create a Linear issue and do not add a synthetic closure reference.
-  </git_and_linear_workflow>
+- **PR descriptions:** Treat the pull request description as the durable squash commit body. Describe the final change in the project's voice. Keep session handoffs, review requests, next-step instructions, and other conversational material out of the description.
+- **Sign-off:** Every commit MUST carry a `Signed-off-by` trailer, so commit with `git commit -s`. The `commit-msg` hook rejects an unsigned commit locally, and the DCO app fails its required check on the pull request. `.github/CONTRIBUTING.md` carries the Developer Certificate of Origin text and the rest of the contributor process.
+- **Linear Integration:** Treat work as Linear-tracked only when the maintainer says so or the task or current branch already identifies an `UNK-XXX` issue.
+  - For tracked work, include `Closes UNK-XXX` in the PR body; omitting it leaves the issue open.
+  - Linear's own GitHub app attaches the pull request and transitions the issue: In Progress on open, Done on merge.
+  - Nothing in this repository closes issues; there is no workflow or credential behind the transition.
+  - The app matches the phrase anywhere in the body, even in prose that only quotes it, and writes on open regardless of the issue's state.
+  - A body that discusses a closing line without meaning it must write the identifier without the keyword.
+  - For untracked work, do not search for or create a Linear issue and do not add a synthetic closure reference.
+    </git_and_linear_workflow>
 
 <security_reference>
 
-- **CodeGuard:** Implementation work that touches authentication, authorization, sessions, secrets, input handling, file I/O, XML parsing, serialization, logging, client-side web security, outbound HTTP, response headers, or supply-chain controls MUST follow every applicable rule in `docs/security/codeguard/codeguard-*.md`. Those files come from an upstream third party; do not edit them or assess whether the change should amend them. If an applicable rule conflicts with required Reverie behavior, STOP and obtain the user's approval for a deviation. Record each approved deviation, its rationale, and its compensating controls in `docs/security/codeguard/README.md`. Work outside the listed areas requires no CodeGuard review or task-summary statement.
-  </security_reference>
+- **CodeGuard:** Implementation work in any covered area MUST follow every applicable rule in `docs/security/codeguard/codeguard-*.md`.
+  - Covered areas: authentication, authorization, sessions, secrets, input handling, file I/O, XML parsing, serialization, logging, client-side web security, outbound HTTP, response headers, and supply-chain controls.
+  - Those files come from an upstream third party. Do not edit them, and do not assess whether a change should amend them.
+  - If an applicable rule conflicts with required Reverie behavior, stop and obtain the maintainer's approval for a deviation.
+  - Record each approved deviation, its rationale, and its compensating controls in `docs/security/codeguard/README.md`.
+  - Work outside the covered areas requires no CodeGuard review or task-summary statement.
+    </security_reference>
 
 <design_authority>
 
 1. **Design comes from artifacts, not agents.** Visual, layout, and interaction design for user-facing surfaces is decided in the design workstream and recorded as design artifacts. Implementation work implements to those artifacts. If no artifact covers the surface being changed, make the minimum mechanical change and flag the gap; do not design ad hoc.
 2. **UI acceptance is the rendered page.** A UI change is done when the browser render matches the design artifact (layout, spacing, states, breakpoints): screenshot and compare. Passing tests alone never closes UI work.
-3. **Interaction-model changes are user decisions.** If the designed interaction model is blocked by a missing backend capability, surface the fork during planning. Never silently downgrade the design to whatever the current API supports.
+3. **Interaction-model changes are maintainer decisions.** If the designed interaction model is blocked by a missing backend capability, surface the fork during planning. Never silently downgrade the design to whatever the current API supports.
    </design_authority>
 
 <documentation_and_planning>
@@ -40,7 +58,7 @@ These are absolute invariants for the Reverie repository.
   - Tier 3 (Internal): Comment only when WHY is non-obvious. Default to no comments.
   - Tier 4 (Tests): No docstrings on test functions.
   - Density tiebreaker: New comments follow this tiered policy, not the density of surrounding legacy comments. Verbose nearby comments are legacy, not a target to match.
-- **Docstring Syntax:** No em dashes (`—`). No external references (PRs, Linear IDs). Describe current behavior, not history.
+- **Docstring Syntax:** No external references (PRs, Linear IDs). Describe current behavior, not history.
 - **Private Artifacts:** Store design specifications, implementation plans, and evaluation records in ignored `/plans/`. Never reference private artifact paths from public source, documentation, commits, or pull requests.
 - **State-Writer Census:** Any plan touching shared mutable state (URL params, stores, caches) must enumerate every writer, including debounced and async ones. More than one writer forces an explicit ownership-model decision in the plan before implementation starts.
 - **ADRs:** Write an ADR (in `adr/`) for any new cross-stack pattern, major dependency, or architectural choice. See `adr/AGENTS.md` for authoring rules.
@@ -77,23 +95,20 @@ anything else needs an explicit `--hidden` flag or a direct path.
 
 <task_runner>
 
-`just` is the task runner for every plane. Run `just --list`, or read
-`docs/src/content/docs/reference/just.mdx` for the full generated reference,
-before hand-rolling a command: the lint, format, test, and build definitions
+`just` is the task runner for every plane. Run `just --list` before
+hand-rolling a command: the lint, format, test, and build definitions
 CI uses live in the justfiles, so invoking a tool directly can apply different
 flags than the gate that will judge the change.
 
 Recipes are namespaced by module (`rust::check`, `js::check`, `docs::build`);
-the unprefixed aggregates fan out across planes. The reference page is
-generated by `just infra::just-reference` and a drift check in `infra::lint`
-fails if it goes stale, so document a recipe by writing its doc comment, never
-by editing the page.
+the unprefixed aggregates fan out across planes. Each recipe's doc comment is
+its documentation; `just --list` renders them.
 
 Use `just worktree <branch>` to create a worktree. It places the checkout
 outside the repository, where it cannot enter the Docker build context or
 cargo's workspace discovery, and refuses to create one on a temporary
 filesystem where unpushed commits would not survive a reboot. It installs the
-node dependencies in the new checkout, under the npm that branch's
+node dependencies in the new checkout, under the pnpm that branch's
 `package.json` declares, so the worktree is ready for the JS plane on its first
 turn; that install is the one step in the recipe that needs network access. It
 also writes a worktree-local cargo target dir, so concurrent worktree builds
@@ -122,18 +137,39 @@ Two aggregates anchor the local loop and should be the default reflex:
   dependency audit. Changes to the verification machinery itself (the
   justfiles, `scripts/`, `mise.toml`, that filter file) escalate to the full
   lane set, and the whole-tree repo-lint mirror always runs. This is the
-  default gate and the mid-branch reflex.
+  default gate for both iteration and pre-push verification.
 - `just preflight-full` runs everything the CI gate runs that is locally
   runnable, unconditionally: the DB-backed backend test suite, the sqlx
   cache check, the backend static guards, cargo-machete, cargo-deny, the
-  frontend build, the a11y scan, and the zizmor workflow-security audit
+  frontend build, and the zizmor workflow-security audit
   (online audits included when a GitHub token is in the environment,
-  offline-degraded otherwise). It brings the dev database up itself. Run it
-  before any push (unless a scoped run already escalated to it), when the
-  change is broad, or when you are unsure; a green run covers every locally
-  runnable CI check, leaving only the CI-only lanes (MSRV, coverage, the
-  docker image build, and the IaC, SAST, and secret scans) to the remote
-  run. `just check` remains the fast offline subset for mid-task iteration;
+  offline-degraded otherwise). It brings the dev database up itself. Do not run
+  it without the maintainer's prior approval. Before seeking approval, explain
+  why the scoped gate is insufficient for the change. What it cannot run stays
+  remote. The
+  MSRV (minimum supported Rust version) check, coverage, the docker image build,
+  and the IaC, SAST (static application security testing), and secret scans each
+  need a runner, an image, or a token no workstation has.
+- Two recipes gate nowhere and are invoked by hand when you are working on what
+  they cover. `just js::a11y` reuses an already-running dev server without
+  checking who owns it, so from a checkout that does not hold port 5173 it scans
+  a different tree; a clean CI runner cannot be ambiguous that way, so CI owns
+  the gate and you run the recipe while fixing violations.
+  `just infra::selftests` covers this repository's local developer tooling
+  against stubbed fixtures: `doctor`, `worktree`, the dev-server lifecycle, the
+  detached gate. CI has no stake in any of it. Run it while editing one of
+  those scripts. The self-tests that used to sit beside it, covering guards CI
+  runs for real on every pull request, are gone; those guards assert their own
+  non-degeneracy instead, which fires on every real invocation rather than only
+  where a fixture runs.
+  Two self-tests are not in that recipe and do gate, in `infra::lint` and in
+  CI's repo-lint job. `filter-sarif-unfixable-os-selftest`, because its subject
+  decides which container CVEs reach the code-scanning dashboard and an edit
+  that widens the match hides fixable findings with nothing else to notice.
+  `preflight-scope-selftest`, because its subject decides which lanes a local
+  gate runs, so an edit that narrows the gate can deselect the very check that
+  would catch it. Neither failure can be asserted from inside its own subject.
+- `just check` remains the fast offline subset for mid-task iteration;
   it includes zizmor's offline-only audits but not the token-gated ones.
 - `just preflight-detach [scoped|full]` runs either gate detached from the
   terminal (setsid), so a long run survives a session or turn boundary

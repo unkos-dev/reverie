@@ -1,0 +1,63 @@
+# Server-side gate: the local commit-msg hook is bypassable and never runs on
+# fork PRs. Lints both the PR's commit range and its title (the one subject
+# the hook never sees, and the one release-please consumes via squash-merge).
+# Standalone rather than a ci.yml concern, because `edited` belongs on this
+# trigger and nowhere else: putting it on the caller would rerun all of CI on
+# every title edit.
+name: PR hygiene
+
+on:
+  pull_request:
+    types: [opened, edited, reopened, synchronize]
+  # A required context whose workflow lacks this trigger deadlocks the merge
+  # queue. The job below skips on it, and a skipped required check passes.
+  merge_group:
+
+permissions: {}
+
+# A title edit supersedes the run before it, so the required check can't
+# resolve against a stale title. A cancelled run is not a success (fails closed),
+# which is why the key falls back to the run id: `pull_request.number` is empty
+# on merge_group, and a shared empty key would make queue entries cancel
+# each other.
+concurrency:
+  group: pr-hygiene-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: true
+
+jobs:
+  # Free-text display name, faux-namespaced so the ruleset's required-context
+  # column reads the same as the composed concerns'.
+  commits:
+    name: hygiene / commits
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          # Full history so commitlint can walk the whole PR range.
+          fetch-depth: 0
+          persist-credentials: false
+
+      # Root lockfile carries the same pinned commitlint the local hook runs.
+      - uses: ./.github/actions/setup
+        with:
+          vp: "true"
+
+      # base.sha pins the fork point even if the base branch moves mid-run.
+      - name: Lint PR commit range
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: vp exec commitlint --from "$BASE_SHA" --to "$HEAD_SHA" --verbose
+
+      # GitHub appends ` (#N)` to the squash subject; the bare title still
+      # matches what commitlint/release-please will see.
+      # THREAT: PR title is attacker-controlled; it reaches the shell only via
+      # env, never template interpolation into the script.
+      - name: Lint PR title (squash-merge subject)
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+        run: printf '%s\n' "$PR_TITLE" | vp exec commitlint --verbose

@@ -1,5 +1,12 @@
 <!-- markdownlint-disable-file MD041 -- PR template is a fragment, not a standalone document; top-level h1 is not wanted here. -->
 
+<!--
+The title and description become the squash commit message. Write the
+description as a durable account of why the change was needed and what resulted.
+Keep review discussion in comments and delete optional sections that do not
+apply.
+-->
+
 ## Summary
 
 <!-- 1-3 bullet points describing what this PR does. Keep it tight. -->
@@ -19,9 +26,7 @@
 ## Accessibility
 
 <!-- Required for UI-touching PRs. Delete this whole section for backend-only,
-docs-only, or other non-UI changes. Process:
-adr/superseded/2026-06-05-accessibility-review-process.md (gate mechanism
-superseded by adr/2026-07-13-a11y-gate-on-playwright.md). -->
+docs-only, or other non-UI changes. -->
 
 - [ ] Keyboard navigation reaches every interactive element.
 - [ ] Focus is visible on every interactive element (gold 3 px ring per DESIGN.md).
@@ -31,17 +36,13 @@ superseded by adr/2026-07-13-a11y-gate-on-playwright.md). -->
 - [ ] Any new colour is already a design token (no arbitrary hex).
 - [ ] Reverie Alarm appears only in one of its two carve-out contexts.
 
-<!-- Optional tracking issue: add `Closes UNK-NNN` when this work is tracked.
-Delete this comment when it is not. Never submit placeholder or N/A content. -->
-
 <!--
 Reminders (see CONTRIBUTING.md for the full conventions):
 
 - Title MUST follow Conventional Commits: <type>(<scope>): <description>
   Types: feat, fix, refactor, docs, chore, test, perf
-- Include the tracking issue ID in the branch name when applicable
-  (e.g. feat/unk-42-epub-import) and reference it in the body where relevant.
-- Tests are mandatory: happy path, negative cases, and non-obvious edge
-  cases. PRs without tests will not be approved.
+- Tests are mandatory for backend/ and frontend/: happy path, negative
+  cases, and non-obvious edge cases. Tooling elsewhere is judged on
+  whether it can fail quietly (AGENTS.md hard rule 5).
 - Maintainer review and approval gate every merge.
 -->

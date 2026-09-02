@@ -1,42 +1,27 @@
-name: Snyk advisory scan
+name: Snyk
 
-# Snyk runs alongside the incumbent scanners (cargo-deny, npm audit,
-# trivy, checkov, zizmor, CodeQL, dependency-review) in advisory mode:
-# findings upload to the code-scanning dashboard and annotate PRs, but a
-# finding never fails the check. The overlap is deliberate. A triaged
-# Snyk baseline has to accrue before any decision on promoting Snyk to a
-# gate or retiring the scanners it duplicates, and none of the incumbent
-# gates are weakened in the meantime.
+# Advisory mode alongside the incumbent scanners: findings upload to the
+# dashboard and annotate PRs, but never fail the check, until a triaged
+# baseline justifies promoting Snyk to a gate.
 #
-# Coverage split: Snyk Code (SAST) analyzes the Rust and TypeScript
-# sources; Snyk Open Source reads the npm lockfile only; Snyk Container
-# reads the published runtime image, covering the Debian base layer that
-# neither source-side scanner sees.
+# Coverage split: Snyk Code (SAST) covers Rust/TypeScript sources; Snyk Open
+# Source reads the npm lockfile only; Snyk Container covers the Debian base
+# layer neither source scanner sees. Rust dependencies are absent by product
+# limitation — see debt/ for the lift condition.
 #
-# Rust dependencies are absent by product limitation, not by choice:
-# Snyk supports Cargo through `snyk sbom test` alone, which creates no
-# monitored target and so yields neither a dashboard entry nor a
-# baseline. cargo-deny scans Cargo.lock directly and is the higher
-# fidelity tool for that job regardless; see debt/ for the lift
-# condition.
+# Deliberately unfiltered by changed paths: continuous review of every push is
+# what the advisory baseline is for, and a path-gated scan leaves it stale.
 on:
-  pull_request:
-  push:
-    branches: [main]
+  workflow_call:
+    secrets:
+      SNYK_TOKEN:
+        required: false
 
 permissions:
   contents: read
 
-# Superseded PR pushes cancel as usual, but main runs complete: a rapid
-# follow-up merge must not cancel the prior commit's SARIF upload and
-# baseline snapshot, which are the artifacts this workflow exists for.
-concurrency:
-  group: snyk-${{ github.ref }}
-  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
-
 jobs:
   code:
-    name: Snyk Code (SAST)
     # Fork PRs run without secrets, so the scan can only fail on auth;
     # skip rather than hand every external contribution two red checks.
     if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
@@ -51,20 +36,12 @@ jobs:
         with:
           persist-credentials: false
 
-      # Keep this pin in lockstep with the deps job below.
-      - name: Install snyk
-        uses: ./.github/actions/install-pinned-tool
+      - uses: ./.github/actions/setup
         with:
-          # renovate: datasource=github-release-attachments depName=snyk/cli extractVersion=^v(?<version>.+)$
-          version: "1.1306.0"
-          sha256: "aad6d43f936e4357b3bda299c02d446c80602106484c36615bb4b654ef7de740"
-          url: "https://github.com/snyk/cli/releases/download/v{version}/snyk-linux"
-          binary: snyk
+          mise-install-args: snyk
 
-      # Exit 1 means findings and is tolerated while the job is advisory
-      # (the SARIF still lands in the dashboard). Anything above 1 is a
-      # scan failure (auth, engine error, no supported files) and fails
-      # loud rather than reporting a silently empty scan.
+      # Exit 1 (findings) is tolerated while advisory; anything above 1 is a
+      # scan failure and fails loud rather than reporting an empty scan.
       - name: Snyk Code scan
         env:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
@@ -74,13 +51,8 @@ jobs:
           snyk code test --org=reverie --sarif-file-output=snyk-code.sarif || rc=$?
           if [ "$rc" -gt 1 ]; then exit "$rc"; fi
 
-      # Snyk labels a finding it places in test code with a distinct
-      # `<rule>/test` rule ID. Registered ones are analysed but withheld
-      # from the dashboard so the alert queue stays actionable. The scan
-      # itself is unchanged, so a trace running from a test helper into
-      # production code is still found and still reported, under its
-      # ordinary rule ID. An unregistered `/test` ID fails the job rather
-      # than widening the suppression on its own.
+      # Withholds only registered `<rule>/test` findings from the dashboard;
+      # an unregistered `/test` ID fails the job instead of silently widening.
       - name: Withhold registered test-variant rules
         run: |
           scripts/filter-sarif-test-rules.sh \
@@ -89,21 +61,14 @@ jobs:
             >>"$GITHUB_STEP_SUMMARY"
 
       - name: Upload to code-scanning
-        uses: github/codeql-action/upload-sarif@5595ccaf912efad79be6eef63a5619ff05969be3 # v4
+        uses: github/codeql-action/upload-sarif@cdf488f595d80d6e07e03d4674febd5ab45fa938 # v4
         with:
           sarif_file: snyk-code-filtered.sarif
           category: snyk-code
 
-      # Withheld must not mean unobservable: the pre-filter SARIF is
-      # retained so a reviewer can audit exactly what the dashboard did
-      # not receive, without rerunning the scan.
-      #
-      # always() because the case that most needs this artifact is the
-      # filter refusing an unregistered rule. `warn` rather than `error`
-      # for the same reason: on a hard scan failure there is no SARIF to
-      # retain, and a second red step there would only bury the real
-      # cause. A silently absent file still fails loud one step later,
-      # where the filter cannot read its input.
+      # Retain the pre-filter SARIF so withheld findings stay auditable.
+      # always() covers the filter-refusal case; `warn` avoids a second red
+      # step on top of a scan failure that already left no SARIF to retain.
       - name: Upload unfiltered SARIF
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
@@ -113,8 +78,7 @@ jobs:
           if-no-files-found: warn
           retention-days: 14
 
-  deps:
-    name: Snyk Open Source (npm SCA)
+  open-source:
     # Same fork guard as the code job above.
     if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
@@ -128,20 +92,12 @@ jobs:
         with:
           persist-credentials: false
 
-      # Keep this pin in lockstep with the code job above.
-      - name: Install snyk
-        uses: ./.github/actions/install-pinned-tool
+      - uses: ./.github/actions/setup
         with:
-          # renovate: datasource=github-release-attachments depName=snyk/cli extractVersion=^v(?<version>.+)$
-          version: "1.1306.0"
-          sha256: "aad6d43f936e4357b3bda299c02d446c80602106484c36615bb4b654ef7de740"
-          url: "https://github.com/snyk/cli/releases/download/v{version}/snyk-linux"
-          binary: snyk
+          mise-install-args: snyk
 
-      # Resolved from the committed lockfile alone, no install needed.
-      # --dev includes devDependencies for the same reason the npm-audit
-      # cron does: a compromised dev tool runs with repo write access.
-      # Same advisory exit-code split as the code job.
+      # --dev includes devDependencies: a compromised dev tool has the same
+      # repo write access as a runtime one.
       - name: Snyk Open Source scan
         env:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
@@ -152,33 +108,21 @@ jobs:
             --sarif-file-output=snyk-oss.sarif || rc=$?
           if [ "$rc" -gt 1 ]; then exit "$rc"; fi
 
-      # Snyk stamps license-issue rules with a security-severity of
-      # "undefined" (license findings carry no CVSS), which the
-      # code-scanning SARIF processor rejects as non-numeric. The shared
-      # sanitizer drops only the invalid property; every finding is
-      # preserved.
+      # License findings carry no CVSS, so Snyk stamps them security-severity
+      # "undefined", which the SARIF processor rejects as non-numeric.
       - name: Sanitize SARIF severities
         run: scripts/sanitize-sarif-severities.sh snyk-oss.sarif snyk-oss-clean.sarif
 
       - name: Upload to code-scanning
-        uses: github/codeql-action/upload-sarif@5595ccaf912efad79be6eef63a5619ff05969be3 # v4
+        uses: github/codeql-action/upload-sarif@cdf488f595d80d6e07e03d4674febd5ab45fa938 # v4
         with:
           sarif_file: snyk-oss-clean.sarif
           category: snyk-open-source
 
-      # Refresh the Snyk-side dependency snapshot the advisory baseline
-      # is judged against; PRs only test, main also monitors.
-      #
-      # --target-reference names the branch the snapshot belongs to.
-      # Without it every monitored project collapses into one unlabelled
-      # group, so a future branch-scoped monitor would silently overwrite
-      # the main baseline instead of sitting beside it.
-      #
-      # --remote-repo-url pins the snapshot to this repository's target so
-      # CLI runs land on the same dashboard entry rather than minting a
-      # parallel listing; drift and remediation history stay on one target.
-      # Derived from the run context so a fork or rename cannot leave a
-      # stale hardcoded URL behind.
+      # Refreshes the dependency snapshot the advisory baseline is judged
+      # against; PRs only test, main also monitors. --target-reference keeps
+      # this labelled separately so a future branch-scoped monitor can't
+      # overwrite the main baseline.
       - name: Snyk baseline snapshot
         if: github.event_name == 'push'
         env:
@@ -190,14 +134,16 @@ jobs:
             --remote-repo-url="$REPO_URL"
 
   container:
-    name: Snyk Container (image CVEs)
-    # Scans the published runtime image, which only exists for main, so
-    # this lane has no PR form: a PR's image is not built until merge and
-    # scanning main's image from a PR would report the wrong artifact.
-    # The PR-time image gate is trivy's, in docker-publish.yml.
+    # No PR form: a PR's image isn't built until merge. The PR-time image
+    # gate is trivy's, in docker-publish.yml.
     if: github.event_name == 'push'
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    env:
+      # Declared once: the scan flag and the monitored project's name both read
+      # it, so a second published architecture is one more value rather than
+      # two strings that must be kept in step.
+      PLATFORM: linux/arm64
     permissions:
       contents: read
       # Pull the image from GHCR.
@@ -209,15 +155,9 @@ jobs:
         with:
           persist-credentials: false
 
-      # Keep this pin in lockstep with the jobs above.
-      - name: Install snyk
-        uses: ./.github/actions/install-pinned-tool
+      - uses: ./.github/actions/setup
         with:
-          # renovate: datasource=github-release-attachments depName=snyk/cli extractVersion=^v(?<version>.+)$
-          version: "1.1306.0"
-          sha256: "aad6d43f936e4357b3bda299c02d446c80602106484c36615bb4b654ef7de740"
-          url: "https://github.com/snyk/cli/releases/download/v{version}/snyk-linux"
-          binary: snyk
+          mise-install-args: snyk
 
       - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4
         with:
@@ -225,33 +165,11 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # The floating :main tag rather than :sha-<7>: docker-publish.yml
-      # runs independently of this workflow and may not have published
-      # this commit's image yet, and a main push that changes no image
-      # input never builds one at all. Scanning whatever main currently
-      # ships is the honest reading and never races a per-commit tag.
-      #
-      # The tag can still be absent outright: before the first
-      # image-producing push, after the package is deleted, or after a
-      # rename. Snyk cannot distinguish that from a broken scan and exits
-      # above 1, so probe first and record the outcome.
-      #
-      # The probe fails closed. A registry error is not an absent tag:
-      # network faults, expired credentials and GHCR outages all make
-      # `inspect` exit non-zero, and treating those as "nothing to scan"
-      # would let a real image slip past both the scan and the baseline
-      # while the workflow reported success. Only an explicit
-      # manifest-unknown response counts as absent; every other failure
-      # exits non-zero and reddens the job. Transient faults get three
-      # attempts before that verdict.
-      #
-      # Skipping is reported as a warning annotation and in the step
-      # summary rather than passing quietly, because "no image to scan"
-      # must stay distinguishable from "image scanned clean" once this
-      # lane is promoted from advisory to a gate.
-      #
-      # Lowercasing is required for forks: image references must be
-      # lowercase, and github.repository preserves account casing.
+      # Scans the floating :main tag (docker-publish.yml runs independently
+      # and may not have published this commit's image yet). Snyk can't tell
+      # "tag absent" from "scan broken" itself, so probe first and fail
+      # closed: only an explicit manifest-unknown counts as absent, every
+      # other inspect failure reddens the job after three retries.
       - name: Resolve image reference
         id: image
         env:
@@ -281,13 +199,9 @@ jobs:
           echo "::error::Could not determine whether ${ref} exists. Last error: ${err}"
           exit 1
 
-      # --platform is required because main publishes linux/arm64 only, so
-      # the manifest list carries no entry matching this amd64 runner.
-      # Scanning is layer analysis, not execution, so the arch mismatch is
-      # immaterial. --file lets Snyk attribute findings to base-image
-      # lines and suggest base-image upgrades.
-      #
-      # Same advisory exit-code split as the jobs above.
+      # --platform is required: main publishes linux/arm64 only, so this
+      # amd64 runner has no matching manifest entry (layer analysis, not
+      # execution, so the mismatch is immaterial).
       - name: Snyk Container scan
         if: steps.image.outputs.present == 'true'
         env:
@@ -298,31 +212,20 @@ jobs:
           rc=0
           snyk container test "$IMAGE_REF" \
             --org=reverie \
-            --platform=linux/arm64 \
+            --platform="$PLATFORM" \
             --file=Dockerfile \
             --sarif-file-output=snyk-container.sarif || rc=$?
           if [ "$rc" -gt 1 ]; then exit "$rc"; fi
 
-      # Container rules for advisories without an assigned CVSS score carry
-      # a security-severity of null, which the code-scanning SARIF processor
-      # rejects as non-numeric; same failure class, and same shared
-      # sanitizer, as the "undefined" license rules in the npm job above.
+      # Unscored advisories carry security-severity null, same failure class
+      # as the license rules in the npm job above.
       - name: Sanitize SARIF severities
         if: steps.image.outputs.present == 'true'
         run: scripts/sanitize-sarif-severities.sh snyk-container.sarif snyk-container-clean.sarif
 
-      # The runtime image is Debian slim plus ca-certificates and curl, so
-      # most of what a container scan finds is base-layer CVEs Debian has
-      # not fixed and this project cannot fix either. Withholding those
-      # keeps the dashboard an actionable queue instead of a standing
-      # inventory of the base image.
-      #
-      # The predicate is evaluated against each scan rather than held in a
-      # static ignore list, so nothing can go stale: when Debian ships a
-      # fix the remediation text changes, the finding stops matching, and
-      # the alert reappears on its own. It also fails closed. A finding
-      # with a fix available, an application-layer finding, or one the
-      # filter cannot classify is ingested.
+      # Withholds base-layer CVEs Debian hasn't fixed and we can't fix either,
+      # keeping the dashboard actionable. Evaluated per-scan, not a static
+      # ignore list, so a Debian fix un-suppresses the finding on its own.
       - name: Withhold unfixable base-OS findings
         if: steps.image.outputs.present == 'true'
         run: |
@@ -332,14 +235,12 @@ jobs:
 
       - name: Upload to code-scanning
         if: steps.image.outputs.present == 'true'
-        uses: github/codeql-action/upload-sarif@5595ccaf912efad79be6eef63a5619ff05969be3 # v4
+        uses: github/codeql-action/upload-sarif@cdf488f595d80d6e07e03d4674febd5ab45fa938 # v4
         with:
           sarif_file: snyk-container-filtered.sarif
           category: snyk-container
 
-      # Same audit trail, and the same always()/warn reasoning, as the
-      # Snyk Code job above: the full result set stays retrievable so
-      # "withheld" is reviewable rather than invisible.
+      # Same audit-trail reasoning as the Snyk Code job above.
       - name: Upload unfiltered SARIF
         if: always() && steps.image.outputs.present == 'true'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
@@ -349,15 +250,14 @@ jobs:
           if-no-files-found: warn
           retention-days: 14
 
-      # The image's counterpart to the npm baseline snapshot above:
-      # `test` reports today's findings, `monitor` is what accrues the
-      # base-layer drift and remediation history the advisory period
-      # exists to gather.
+      # Image counterpart to the npm baseline snapshot above; container
+      # targets are keyed by image reference, so no --remote-repo-url here.
       #
-      # No --remote-repo-url here: container targets are keyed by image
-      # reference, not repository, so the flag has no documented effect on
-      # this command. --target-reference still applies and keeps the
-      # snapshot labelled by branch, matching the npm baseline.
+      # The name carries the platform because a container project is keyed by
+      # name within its image-reference target: two architectures monitored
+      # under one name would overwrite each other's snapshot, leaving only the
+      # last one scanned. --target-reference stays the branch, which is what it
+      # is for.
       - name: Snyk container baseline snapshot
         if: steps.image.outputs.present == 'true'
         env:
@@ -366,6 +266,7 @@ jobs:
         run: |
           snyk container monitor "$IMAGE_REF" \
             --org=reverie \
-            --platform=linux/arm64 \
+            --platform="$PLATFORM" \
             --file=Dockerfile \
+            --project-name="reverie image (${PLATFORM})" \
             --target-reference=main
