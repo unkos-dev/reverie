@@ -221,6 +221,14 @@ async fn spa_fallback_response(state: &AppState) -> Response {
     resp
 }
 
+/// `Router::method_not_allowed_fallback` handler for the API-like router.
+/// Substitutes problem details for axum's bare 405. Must not set its own
+/// `Allow` header: axum appends the registered methods for the matched
+/// path after this fallback returns, unless one is already present.
+pub async fn api_method_not_allowed_fallback() -> Response {
+    crate::error::AppError::MethodNotAllowed.into_response()
+}
+
 fn plain_404() -> Response {
     (StatusCode::NOT_FOUND, "not found").into_response()
 }
@@ -502,6 +510,68 @@ mod tests {
         assert!(csp.contains("default-src 'none'"));
     }
 
+    // --- Wrong method on a matched API route: 405 problem details ---
+
+    #[tokio::test]
+    async fn wrong_method_on_matched_route_returns_405_problem_with_allow_and_csp() {
+        let server = test_server_with_security(SecurityConfig {
+            csp_api_header: Some(HeaderValue::from_static(
+                "default-src 'none'; frame-ancestors 'none'; base-uri 'none'",
+            )),
+            ..crate::test_support::test_config().security
+        });
+        let r = server.post("/health").await;
+        let body = crate::test_support::assert_problem(
+            &r,
+            crate::error::problems::METHOD_NOT_ALLOWED,
+            StatusCode::METHOD_NOT_ALLOWED,
+        );
+        assert_eq!(body["status"].as_u64(), Some(405));
+        assert_eq!(body["instance"].as_str(), Some("/health"));
+        let allow = r
+            .headers()
+            .get(header::ALLOW)
+            .expect("Allow header present")
+            .to_str()
+            .unwrap()
+            .to_owned();
+        assert!(
+            allow.contains("GET"),
+            "expected Allow to list GET, got: {allow}"
+        );
+        let csp = r
+            .headers()
+            .get("content-security-policy")
+            .unwrap()
+            .to_str()
+            .unwrap()
+            .to_owned();
+        assert!(csp.contains("default-src 'none'"), "unexpected CSP: {csp}");
+    }
+
+    #[tokio::test]
+    async fn wrong_method_on_matched_v1_route_returns_405_problem() {
+        let server = test_support::test_server();
+        let r = server.post("/api/v1/enrichment/status").await;
+        let body = crate::test_support::assert_problem(
+            &r,
+            crate::error::problems::METHOD_NOT_ALLOWED,
+            StatusCode::METHOD_NOT_ALLOWED,
+        );
+        assert_eq!(body["instance"].as_str(), Some("/api/v1/enrichment/status"));
+        let allow = r
+            .headers()
+            .get(header::ALLOW)
+            .expect("Allow header present")
+            .to_str()
+            .unwrap()
+            .to_owned();
+        assert!(
+            allow.contains("GET"),
+            "expected Allow to list GET, got: {allow}"
+        );
+    }
+
     // --- Composite fallback: SPA index.html + HTML CSP ---
 
     #[tokio::test]
@@ -569,6 +639,51 @@ mod tests {
             .unwrap()
             .to_owned();
         assert!(csp.contains("default-src 'self'"), "unexpected: {csp}");
+    }
+
+    #[tokio::test]
+    async fn post_to_spa_route_is_unaffected_by_method_not_allowed_fallback() {
+        let html = b"<!doctype html><title>fixture</title>";
+        let dist = fixture_dist(html);
+        let server = test_server_with_security(SecurityConfig {
+            frontend_dist_path: Some(dist.path().to_path_buf()),
+            csp_html_header: Some(HeaderValue::from_static("default-src 'self'")),
+            csp_api_header: Some(HeaderValue::from_static("default-src 'none'")),
+            ..crate::test_support::test_config().security
+        });
+        let r = server.post("/library/anything").await;
+        let content_type = r
+            .headers()
+            .get(header::CONTENT_TYPE)
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or_default()
+            .to_owned();
+        assert!(
+            !content_type.contains("application/problem+json"),
+            "SPA route must not start emitting problem+json, got: {content_type}"
+        );
+    }
+
+    #[tokio::test]
+    async fn post_to_assets_is_unaffected_by_method_not_allowed_fallback() {
+        let dist = fixture_dist(b"<!doctype html>");
+        let server = test_server_with_security(SecurityConfig {
+            frontend_dist_path: Some(dist.path().to_path_buf()),
+            csp_html_header: Some(HeaderValue::from_static("default-src 'self'")),
+            csp_api_header: Some(HeaderValue::from_static("default-src 'none'")),
+            ..crate::test_support::test_config().security
+        });
+        let r = server.post("/assets/main.js").await;
+        let content_type = r
+            .headers()
+            .get(header::CONTENT_TYPE)
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or_default()
+            .to_owned();
+        assert!(
+            !content_type.contains("application/problem+json"),
+            "/assets must not start emitting problem+json, got: {content_type}"
+        );
     }
 
     #[tokio::test]

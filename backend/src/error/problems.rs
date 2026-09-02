@@ -81,6 +81,11 @@ pub const SETUP_ALREADY_COMPLETE: &str = "setup-already-complete";
 /// ([`crate::error::AppError::EmailConflict`]). HTTP 409.
 pub const EMAIL_CONFLICT: &str = "email-conflict";
 
+/// Method not supported on an otherwise-matched route
+/// ([`crate::error::AppError::MethodNotAllowed`]). HTTP 405; the `Allow`
+/// header (added by axum) lists the methods registered for the path.
+pub const METHOD_NOT_ALLOWED: &str = "method-not-allowed";
+
 /// Generic internal error (anything wrapped in
 /// [`crate::error::AppError::Internal`]). `detail` is a fixed
 /// non-leaking string; the inner cause is `tracing::error!`-logged

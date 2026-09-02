@@ -180,7 +180,10 @@ invalid field values, business-rule rejections) are 422, mapped by
 `AppError::Validation`. Semantic codes are reserved for
 well-formed requests that fail against current server state
 rather than against their own shape: 404 for existence (including
-the deliberate 404-over-403 ownership convention above), 409 for
+the deliberate 404-over-403 ownership convention above), 405
+Method Not Allowed (RFC 9110 §15.5.6) when the target resource
+exists but does not support the request's method, emitted as
+problem details with the `Allow` header intact, 409 for
 conflict, 412 Precondition Failed when a precondition evaluates
 false (RFC 9110 §13.1), and 428 Precondition Required when a
 required precondition is missing entirely (RFC 6585 §3).
