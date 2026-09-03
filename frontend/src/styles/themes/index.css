@@ -34,6 +34,10 @@
 /* Tokens that generate utilities (bg-canvas, text-fg, border-border, etc.).
    `inline` keyword is what allows tokens to reference runtime var(--…) values. */
 @theme inline {
+  /* identity.md §4 requires the default Tailwind color ramps to be absent, not
+     merely unused (a wall, not a fence); this also clears --color-black/-white. */
+  /* stylelint-disable-next-line custom-property-pattern -- Tailwind's documented namespace-reset wildcard, not a custom property name */
+  --color-*: initial;
   --color-canvas: var(--canvas);
   --color-canvas-2: var(--canvas-2);
   --color-surface: var(--surface);
