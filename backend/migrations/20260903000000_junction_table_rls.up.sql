@@ -1,3 +1,6 @@
+-- These policy blocks mirror the shipped manifestation_external_identifiers policies byte for
+-- byte; the correlated references in a policy predicate are what RF01/RF03 flag.
+-- noqa: disable=RF01,RF03,CV11,CP03,CP04
 ALTER TABLE public.manifestation_genres ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY manifestation_genres_select ON public.manifestation_genres FOR SELECT
