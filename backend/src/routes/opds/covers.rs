@@ -114,7 +114,7 @@ pub fn api_router() -> OpenApiRouter<AppState> {
     responses(
         (status = 200, description = "Cover image stream (`image/jpeg` / `image/png`); Cache-Control: private, max-age=86400; carries a strong ETag"),
         (status = 304, description = "Not Modified — the request's If-None-Match matched the cover ETag"),
-        (status = 401, description = "Basic authentication required (WWW-Authenticate: Basic)"),
+        (status = 401, description = "Basic authentication required (WWW-Authenticate: Basic); body is empty", body = String),
         (status = 404, description = "Manifestation missing, RLS-hidden, or coverless", body = crate::openapi::ProblemDetails)
     )
 )]
@@ -147,7 +147,7 @@ async fn opds_cover(
     responses(
         (status = 200, description = "Thumbnail image stream (`image/jpeg`); Cache-Control: private, max-age=86400; carries a strong ETag"),
         (status = 304, description = "Not Modified — the request's If-None-Match matched the cover ETag"),
-        (status = 401, description = "Basic authentication required (WWW-Authenticate: Basic)"),
+        (status = 401, description = "Basic authentication required (WWW-Authenticate: Basic); body is empty", body = String),
         (status = 404, description = "Manifestation missing, RLS-hidden, or coverless", body = crate::openapi::ProblemDetails)
     )
 )]

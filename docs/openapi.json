@@ -5801,7 +5801,14 @@
             }
           },
           "401": {
-            "description": "Basic authentication required (WWW-Authenticate: Basic)"
+            "description": "Basic authentication required (WWW-Authenticate: Basic); body is empty",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -5839,7 +5846,14 @@
             "description": "Not Modified — the request's If-None-Match matched the cover ETag"
           },
           "401": {
-            "description": "Basic authentication required (WWW-Authenticate: Basic)"
+            "description": "Basic authentication required (WWW-Authenticate: Basic); body is empty",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
           },
           "404": {
             "description": "Manifestation missing, RLS-hidden, or coverless",
@@ -5887,7 +5901,14 @@
             "description": "Not Modified — the request's If-None-Match matched the cover ETag"
           },
           "401": {
-            "description": "Basic authentication required (WWW-Authenticate: Basic)"
+            "description": "Basic authentication required (WWW-Authenticate: Basic); body is empty",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
           },
           "404": {
             "description": "Manifestation missing, RLS-hidden, or coverless",
@@ -5935,7 +5956,14 @@
             }
           },
           "401": {
-            "description": "Basic authentication required (WWW-Authenticate: Basic)"
+            "description": "Basic authentication required (WWW-Authenticate: Basic); body is empty",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
           },
           "403": {
             "description": "File path escapes the library root",
@@ -5985,7 +6013,14 @@
             }
           },
           "401": {
-            "description": "Basic authentication required (WWW-Authenticate: Basic)"
+            "description": "Basic authentication required (WWW-Authenticate: Basic); body is empty",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -6036,7 +6071,14 @@
             }
           },
           "401": {
-            "description": "Basic authentication required (WWW-Authenticate: Basic)"
+            "description": "Basic authentication required (WWW-Authenticate: Basic); body is empty",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
           },
           "422": {
             "description": "Malformed cursor",
@@ -6107,7 +6149,14 @@
             }
           },
           "401": {
-            "description": "Basic authentication required (WWW-Authenticate: Basic)"
+            "description": "Basic authentication required (WWW-Authenticate: Basic); body is empty",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
           },
           "422": {
             "description": "Malformed cursor",
@@ -6168,7 +6217,14 @@
             }
           },
           "401": {
-            "description": "Basic authentication required (WWW-Authenticate: Basic)"
+            "description": "Basic authentication required (WWW-Authenticate: Basic); body is empty",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
           },
           "422": {
             "description": "Malformed cursor",
@@ -6208,7 +6264,14 @@
             }
           },
           "401": {
-            "description": "Basic authentication required (WWW-Authenticate: Basic)"
+            "description": "Basic authentication required (WWW-Authenticate: Basic); body is empty",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -6259,7 +6322,14 @@
             }
           },
           "401": {
-            "description": "Basic authentication required (WWW-Authenticate: Basic)"
+            "description": "Basic authentication required (WWW-Authenticate: Basic); body is empty",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -6310,7 +6380,14 @@
             }
           },
           "401": {
-            "description": "Basic authentication required (WWW-Authenticate: Basic)"
+            "description": "Basic authentication required (WWW-Authenticate: Basic); body is empty",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
           },
           "422": {
             "description": "Malformed cursor",
@@ -6381,7 +6458,14 @@
             }
           },
           "401": {
-            "description": "Basic authentication required (WWW-Authenticate: Basic)"
+            "description": "Basic authentication required (WWW-Authenticate: Basic); body is empty",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
           },
           "422": {
             "description": "Malformed cursor",
@@ -6433,7 +6517,14 @@
             }
           },
           "401": {
-            "description": "Basic authentication required (WWW-Authenticate: Basic)"
+            "description": "Basic authentication required (WWW-Authenticate: Basic); body is empty",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
           },
           "404": {
             "description": "Shelf missing or not owned by the caller",
@@ -6504,7 +6595,14 @@
             }
           },
           "401": {
-            "description": "Basic authentication required (WWW-Authenticate: Basic)"
+            "description": "Basic authentication required (WWW-Authenticate: Basic); body is empty",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
           },
           "404": {
             "description": "Shelf missing or not owned by the caller",
@@ -6595,7 +6693,14 @@
             }
           },
           "401": {
-            "description": "Basic authentication required (WWW-Authenticate: Basic)"
+            "description": "Basic authentication required (WWW-Authenticate: Basic); body is empty",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
           },
           "404": {
             "description": "Shelf missing or not owned by the caller",
@@ -6676,7 +6781,14 @@
             }
           },
           "401": {
-            "description": "Basic authentication required (WWW-Authenticate: Basic)"
+            "description": "Basic authentication required (WWW-Authenticate: Basic); body is empty",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
           },
           "404": {
             "description": "Shelf missing or not owned by the caller",
@@ -6738,7 +6850,14 @@
             }
           },
           "401": {
-            "description": "Basic authentication required (WWW-Authenticate: Basic)"
+            "description": "Basic authentication required (WWW-Authenticate: Basic); body is empty",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
           },
           "404": {
             "description": "Shelf missing or not owned by the caller",
@@ -6809,7 +6928,14 @@
             }
           },
           "401": {
-            "description": "Basic authentication required (WWW-Authenticate: Basic)"
+            "description": "Basic authentication required (WWW-Authenticate: Basic); body is empty",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
           },
           "404": {
             "description": "Shelf missing or not owned by the caller",
@@ -6880,7 +7006,14 @@
             }
           },
           "401": {
-            "description": "Basic authentication required (WWW-Authenticate: Basic)"
+            "description": "Basic authentication required (WWW-Authenticate: Basic); body is empty",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
           },
           "404": {
             "description": "Shelf missing or not owned by the caller",
@@ -6971,7 +7104,14 @@
             }
           },
           "401": {
-            "description": "Basic authentication required (WWW-Authenticate: Basic)"
+            "description": "Basic authentication required (WWW-Authenticate: Basic); body is empty",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
           },
           "404": {
             "description": "Shelf missing or not owned by the caller",

@@ -25,7 +25,7 @@ rules:
   # --- Security rules worth adopting; each needs spec or generator work ---
 
   # Every string schema must declare format, pattern, enum, or const. An
-  # unconstrained string is an injection and storage-abuse surface. 234 hits.
+  # unconstrained string is an injection and storage-abuse surface. 254 hits.
   owasp-string-restricted: false
 
   # Integers must carry minimum and maximum. 78 hits.
@@ -38,11 +38,10 @@ rules:
 
   # Operations must document the error responses they can return. Adopting
   # these means the handlers actually return them, not just that the spec
-  # claims so. 87, 83, 37 and 20 hits.
+  # claims so. 87, 83 and 37 hits.
   owasp-define-error-responses-500: false
   owasp-define-error-responses-429: false
   owasp-define-error-validation: false
-  owasp-define-error-responses-401: false
 
   # Responses must declare rate-limit headers. This is a product decision
   # about whether the API implements rate limiting, not a spec fix. 323 hits.

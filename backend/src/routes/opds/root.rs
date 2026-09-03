@@ -53,7 +53,7 @@ pub(super) fn atom_response(body: Vec<u8>, content_type: &str) -> Response {
     security(("opds_basic" = [])),
     responses(
         (status = 200, description = "OPDS navigation feed linking the library catalog and the user's shelves", content_type = "application/atom+xml;profile=opds-catalog;kind=navigation", body = String),
-        (status = 401, description = "Basic authentication required (WWW-Authenticate: Basic)")
+        (status = 401, description = "Basic authentication required (WWW-Authenticate: Basic); body is empty", body = String)
     )
 )]
 async fn opds_root(
