@@ -4,13 +4,13 @@ import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { compile } from "tailwindcss";
 
-// UNK-551 wall guard. identity.md §4 requires Tailwind's default color ramps
-// to be absent, not merely unused: a source grep only proves current
-// non-use (the fence the ticket rejects). This compiles a fixture through the
-// real Tailwind v4 Node API against this repository's actual theme entry and
-// asserts stock-ramp candidates produce no utility rule. `loadStylesheet` is
-// hand-written because `@tailwindcss/node` is not a declared dependency and
-// pnpm's strict resolution would refuse an undeclared import.
+// identity.md §4 requires Tailwind's default color ramps to be absent, not
+// merely unused. A source grep only proves current non-use, so this compiles
+// a fixture through the real Tailwind v4 Node API against this repository's
+// actual theme entry and asserts stock-ramp candidates produce no utility
+// rule. `loadStylesheet` is hand-written because `@tailwindcss/node` is not a
+// declared dependency and pnpm's strict resolution would refuse an undeclared
+// import.
 //
 // Lives under `vite-plugins/__tests__/` (not co-located with the CSS) for the
 // same reason as tokens.test.ts: it reads files from disk and needs node
@@ -43,7 +43,7 @@ async function compileEntry(): Promise<string> {
   return result.build([...forbidden, ...control]);
 }
 
-describe("default Tailwind color ramps are reset to absent (UNK-551)", () => {
+describe("default Tailwind color ramps are reset to absent", () => {
   it("produces no rule for any stock-ramp candidate", async () => {
     const css = await compileEntry();
     for (const candidate of [
