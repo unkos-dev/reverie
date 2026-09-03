@@ -1699,14 +1699,66 @@ struct UpdateMetadataFields {
     /// leaves all work-level identifiers unchanged. Handled separately from
     /// the scalar fields — not part of [`Self::populated`].
     #[serde(default)]
-    #[schema(value_type = Option<BTreeMap<String, Option<String>>>)]
+    #[schema(schema_with = update_metadata_work_identifiers_schema)]
     work_identifiers: Option<BTreeMap<String, Option<String>>>,
     /// Manifestation-level external identifiers keyed by scheme (e.g.
     /// `{"googlebooks": "zyTZAAAAYAAJ"}`). Same per-entry set/clear semantics
     /// as `work_identifiers`.
     #[serde(default)]
-    #[schema(value_type = Option<BTreeMap<String, Option<String>>>)]
+    #[schema(schema_with = update_metadata_manifestation_identifiers_schema)]
     manifestation_identifiers: Option<BTreeMap<String, Option<String>>>,
+}
+
+/// utoipa 5.5's `#[schema(...)]` derive attribute has no `max_properties`
+/// (`openapi::schema::Object` does), so the bounded identifier/response map
+/// fields below build their schema by hand via `schema_with`.
+fn nullable_string_value_schema() -> utoipa::openapi::schema::Object {
+    use utoipa::openapi::schema::{ObjectBuilder, SchemaType, Type};
+    ObjectBuilder::new()
+        .schema_type(SchemaType::from_iter([Type::String, Type::Null]))
+        .build()
+}
+
+fn string_property_names() -> utoipa::openapi::schema::Object {
+    utoipa::openapi::schema::ObjectBuilder::new()
+        .schema_type(utoipa::openapi::schema::Type::String)
+        .build()
+}
+
+fn update_metadata_work_identifiers_schema() -> utoipa::openapi::schema::Object {
+    use utoipa::openapi::schema::{ObjectBuilder, SchemaType, Type};
+    ObjectBuilder::new()
+        .schema_type(SchemaType::from_iter([Type::Object, Type::Null]))
+        .description(Some(
+            "Work-level external identifiers keyed by scheme (e.g.\n\
+             `{\"openlibrary\": \"OL45804W\"}`). Each entry independently sets its\n\
+             scheme's single slot; a `null` entry clears it. Absent (or `null`)\n\
+             leaves all work-level identifiers unchanged. Handled separately from\n\
+             the scalar fields — not part of [`Self::populated`].",
+        ))
+        .additional_properties(Some(utoipa::openapi::Schema::Object(
+            nullable_string_value_schema(),
+        )))
+        .property_names(Some(string_property_names()))
+        .max_properties(Some(MAX_IDENTIFIERS_PER_LEVEL))
+        .build()
+}
+
+fn update_metadata_manifestation_identifiers_schema() -> utoipa::openapi::schema::Object {
+    use utoipa::openapi::schema::{ObjectBuilder, SchemaType, Type};
+    ObjectBuilder::new()
+        .schema_type(SchemaType::from_iter([Type::Object, Type::Null]))
+        .description(Some(
+            "Manifestation-level external identifiers keyed by scheme (e.g.\n\
+             `{\"googlebooks\": \"zyTZAAAAYAAJ\"}`). Same per-entry set/clear semantics\n\
+             as `work_identifiers`.",
+        ))
+        .additional_properties(Some(utoipa::openapi::Schema::Object(
+            nullable_string_value_schema(),
+        )))
+        .property_names(Some(string_property_names()))
+        .max_properties(Some(MAX_IDENTIFIERS_PER_LEVEL))
+        .build()
 }
 
 /// Per-role contributor replace/clear, nested under `UpdateMetadataFields::contributors`.
@@ -1738,8 +1790,11 @@ struct ContributorsPatch {
 }
 
 /// One field's outcome from `PATCH /api/v1/books/{id}/metadata`.
+///
+/// `pub(crate)`: registered explicitly in `crate::openapi`'s `components`
+/// list (see the comment there for why).
 #[derive(Debug, Serialize, utoipa::ToSchema)]
-struct FieldVersionChange {
+pub(crate) struct FieldVersionChange {
     /// Canonical value as applied, after server normalization (null when the
     /// field was cleared).
     value: Option<serde_json::Value>,
@@ -1756,7 +1811,31 @@ struct FieldVersionChange {
 #[derive(Debug, Serialize, utoipa::ToSchema)]
 struct UpdateMetadataResponse {
     /// Keyed by patched field name, including `contributors.<role>` keys.
+    /// Bounded by [`FIXED_EDITABLE_FIELD_COUNT`] plus up to
+    /// `MAX_IDENTIFIERS_PER_LEVEL` keys per identifier level.
+    #[schema(schema_with = update_metadata_response_fields_schema)]
     fields: BTreeMap<String, FieldVersionChange>,
+}
+
+/// Scalar fields (10, from [`UpdateMetadataFields::populated`]) plus
+/// vocabulary fields (3: genres/moods/tags) plus contributor roles (3:
+/// author/editor/translator): the editable response keys independent of the
+/// identifier maps.
+const FIXED_EDITABLE_FIELD_COUNT: usize = 16;
+
+fn update_metadata_response_fields_schema() -> utoipa::openapi::schema::Object {
+    use utoipa::openapi::schema::{ObjectBuilder, Ref, Type};
+    ObjectBuilder::new()
+        .schema_type(Type::Object)
+        .description(Some(
+            "Keyed by patched field name, including `contributors.<role>` keys.",
+        ))
+        .additional_properties(Some(Ref::from_schema_name("FieldVersionChange")))
+        .property_names(Some(string_property_names()))
+        .max_properties(Some(
+            FIXED_EDITABLE_FIELD_COUNT + 2 * MAX_IDENTIFIERS_PER_LEVEL,
+        ))
+        .build()
 }
 
 impl UpdateMetadataFields {
@@ -1854,9 +1933,35 @@ struct BookMetadata {
     /// Author/editor/translator names, each in stored position order.
     contributors: MetadataContributors,
     /// Work-level external identifiers keyed by scheme.
+    #[schema(schema_with = book_metadata_work_identifiers_schema)]
     work_identifiers: BTreeMap<String, String>,
     /// Manifestation-level external identifiers keyed by scheme.
+    #[schema(schema_with = book_metadata_manifestation_identifiers_schema)]
     manifestation_identifiers: BTreeMap<String, String>,
+}
+
+fn book_metadata_work_identifiers_schema() -> utoipa::openapi::schema::Object {
+    use utoipa::openapi::schema::{ObjectBuilder, Type};
+    ObjectBuilder::new()
+        .schema_type(Type::Object)
+        .description(Some("Work-level external identifiers keyed by scheme."))
+        .additional_properties(Some(ObjectBuilder::new().schema_type(Type::String)))
+        .property_names(Some(string_property_names()))
+        .max_properties(Some(MAX_IDENTIFIERS_PER_LEVEL))
+        .build()
+}
+
+fn book_metadata_manifestation_identifiers_schema() -> utoipa::openapi::schema::Object {
+    use utoipa::openapi::schema::{ObjectBuilder, Type};
+    ObjectBuilder::new()
+        .schema_type(Type::Object)
+        .description(Some(
+            "Manifestation-level external identifiers keyed by scheme.",
+        ))
+        .additional_properties(Some(ObjectBuilder::new().schema_type(Type::String)))
+        .property_names(Some(string_property_names()))
+        .max_properties(Some(MAX_IDENTIFIERS_PER_LEVEL))
+        .build()
 }
 
 /// Load the editable metadata span for one manifestation, in exactly the
@@ -2346,6 +2451,11 @@ async fn apply_scalar_patch_field(
     }
 }
 
+/// `identifier_schemes` seeds 10 rows (`backend/migrations/20260810000000_initial_schema.up.sql`);
+/// bounds the entries accepted per level in one patch with headroom for
+/// growth in the scheme vocabulary.
+const MAX_IDENTIFIERS_PER_LEVEL: usize = 64;
+
 /// Apply both identifier maps from the manual PATCH surface, then re-queue
 /// enrichment once if anything changed. Resetting the attempt counter and
 /// timestamp alongside the status clears any backoff window from a prior
@@ -2369,6 +2479,21 @@ async fn apply_identifier_patches(
     manifestation_identifiers: Option<BTreeMap<String, Option<String>>>,
     response_fields: &mut BTreeMap<String, FieldVersionChange>,
 ) -> Result<(), AppError> {
+    // Checked before any per-entry work so an oversized map never reaches the
+    // scheme registry lookup in `apply_identifier_patch`.
+    for (level, map) in [
+        (IdentifierLevel::Work, &work_identifiers),
+        (IdentifierLevel::Manifestation, &manifestation_identifiers),
+    ] {
+        if let Some(map) = map
+            && map.len() > MAX_IDENTIFIERS_PER_LEVEL
+        {
+            return Err(AppError::Validation(format!(
+                "{}-level identifiers exceed {MAX_IDENTIFIERS_PER_LEVEL} entries",
+                level.as_str()
+            )));
+        }
+    }
     let mut touched = false;
     for (level, map) in [
         (IdentifierLevel::Work, work_identifiers),
@@ -7156,6 +7281,98 @@ mod tests {
             writeback_job_count(&app_pool, m_id).await,
             0,
             "identifier set + clear must enqueue no writeback"
+        );
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn patch_work_identifiers_over_cap_returns_422(pool: sqlx::PgPool) {
+        let app_pool = test_support::db::app_pool_for(&pool).await;
+        let ing_pool = test_support::db::ingestion_pool_for(&pool).await;
+        let (_admin_id, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+        let marker = Uuid::new_v4().simple().to_string();
+        let (_work_id, m_id) =
+            test_support::db::insert_work_and_manifestation(&ing_pool, &marker).await;
+        let server = test_support::db::server_with_real_pools(&app_pool, &ing_pool);
+        let initial = server
+            .get(&format!("/api/v1/books/{m_id}/metadata"))
+            .add_header(AUTHORIZATION, basic.clone())
+            .await;
+        let etag = etag_value(initial.headers());
+
+        // Synthetic scheme names: the cap check runs before the registry
+        // lookup, so an oversized map is rejected without ever validating
+        // any individual scheme.
+        let identifiers: serde_json::Map<String, serde_json::Value> = (0
+            ..=super::MAX_IDENTIFIERS_PER_LEVEL)
+            .map(|i| (format!("scheme{i}"), serde_json::Value::String("x".into())))
+            .collect();
+        let response = server
+            .patch(&format!("/api/v1/books/{m_id}/metadata"))
+            .add_header(AUTHORIZATION, basic)
+            .add_header(
+                axum::http::header::IF_MATCH,
+                axum::http::HeaderValue::from_str(&etag).unwrap(),
+            )
+            .json(&serde_json::json!({"work_identifiers": identifiers}))
+            .await;
+        assert_eq!(
+            response.status_code(),
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "body = {}",
+            response.text()
+        );
+        let body: serde_json::Value = response.json();
+        let detail = body["detail"].as_str().unwrap_or_default();
+        assert!(
+            detail.contains("work-level identifiers exceed 64 entries"),
+            "expected the entry-count cap message, got {detail}"
+        );
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn patch_manifestation_identifiers_at_cap_passes_count_check(pool: sqlx::PgPool) {
+        let app_pool = test_support::db::app_pool_for(&pool).await;
+        let ing_pool = test_support::db::ingestion_pool_for(&pool).await;
+        let (_admin_id, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+        let marker = Uuid::new_v4().simple().to_string();
+        let (_work_id, m_id) =
+            test_support::db::insert_work_and_manifestation(&ing_pool, &marker).await;
+        let server = test_support::db::server_with_real_pools(&app_pool, &ing_pool);
+        let initial = server
+            .get(&format!("/api/v1/books/{m_id}/metadata"))
+            .add_header(AUTHORIZATION, basic.clone())
+            .await;
+        let etag = etag_value(initial.headers());
+
+        // The registry seeds only 10 real manifestation-level schemes, so a
+        // request at the 64-entry cap cannot also be all valid keys.
+        // Asserting the rejection names an unknown scheme, not the count
+        // cap, proves the count check let 64 entries through to the
+        // registry lookup.
+        let identifiers: serde_json::Map<String, serde_json::Value> = (0
+            ..super::MAX_IDENTIFIERS_PER_LEVEL)
+            .map(|i| (format!("scheme{i}"), serde_json::Value::String("x".into())))
+            .collect();
+        let response = server
+            .patch(&format!("/api/v1/books/{m_id}/metadata"))
+            .add_header(AUTHORIZATION, basic)
+            .add_header(
+                axum::http::header::IF_MATCH,
+                axum::http::HeaderValue::from_str(&etag).unwrap(),
+            )
+            .json(&serde_json::json!({"manifestation_identifiers": identifiers}))
+            .await;
+        assert_eq!(
+            response.status_code(),
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "body = {}",
+            response.text()
+        );
+        let body: serde_json::Value = response.json();
+        let detail = body["detail"].as_str().unwrap_or_default();
+        assert!(
+            detail.contains("unknown identifier scheme"),
+            "expected the registry rejection, not the count cap, got {detail}"
         );
     }
 

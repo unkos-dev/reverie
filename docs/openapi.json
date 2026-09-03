@@ -7723,7 +7723,8 @@
             },
             "propertyNames": {
               "type": "string"
-            }
+            },
+            "maxProperties": 64
           },
           "moods": {
             "type": "array",
@@ -7780,7 +7781,8 @@
             },
             "propertyNames": {
               "type": "string"
-            }
+            },
+            "maxProperties": 64
           }
         }
       },
@@ -8155,7 +8157,7 @@
       },
       "FieldVersionChange": {
         "type": "object",
-        "description": "One field's outcome from `PATCH /api/v1/books/{id}/metadata`.",
+        "description": "One field's outcome from `PATCH /api/v1/books/{id}/metadata`.\n\n`pub(crate)`: registered explicitly in `crate::openapi`'s `components`\nlist (see the comment there for why).",
         "properties": {
           "previous_version_id": {
             "type": [
@@ -9814,7 +9816,8 @@
             },
             "propertyNames": {
               "type": "string"
-            }
+            },
+            "maxProperties": 64
           },
           "moods": {
             "type": [
@@ -9889,7 +9892,8 @@
             },
             "propertyNames": {
               "type": "string"
-            }
+            },
+            "maxProperties": 64
           }
         }
       },
@@ -9908,7 +9912,8 @@
             },
             "propertyNames": {
               "type": "string"
-            }
+            },
+            "maxProperties": 144
           }
         }
       },
@@ -10138,7 +10143,8 @@
             },
             "propertyNames": {
               "type": "string"
-            }
+            },
+            "maxProperties": 64
           },
           "writeback_concurrency": {
             "type": [
