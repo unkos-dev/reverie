@@ -2,7 +2,7 @@
 # (.github/workflows/ci.yml), which lints the generated docs/openapi.json.
 #
 # The baseline is every rule in vacuum's oas and owasp rulesets that the
-# current spec already satisfies: 57 rules, all passing. The rules disabled
+# current spec already satisfies: 58 rules, all passing. The rules disabled
 # below are the ones that fire today. Each is off because turning it on is a
 # change to the spec or to the generator behind it, not a change to this file,
 # and adopting them is tracked as its own work.
@@ -30,11 +30,6 @@ rules:
 
   # Integers must carry minimum and maximum. 78 hits.
   owasp-integer-limit: false
-
-  # Objects must not accept arbitrary extra properties, and must bound them
-  # with maxProperties where they do. 6 hits each.
-  owasp-no-additionalProperties: false
-  owasp-constrained-additionalProperties: false
 
   # Operations must document the error responses they can return. Adopting
   # these means the handlers actually return them, not just that the spec
@@ -67,6 +62,10 @@ rules:
   # with a sibling description). The remaining hits are serde_json::Value
   # fields, where an empty schema already means any value.
   oas-missing-type: false
+
+  # Fires on every dictionary-typed field regardless of bounds, so a map with
+  # maxProperties still fails it. There is no satisfiable form for a map.
+  owasp-no-additionalProperties: false
 
   # --- Documentation quality, not gating material ---
 

@@ -410,6 +410,58 @@ async fn put_settings_provider_visibility_non_bool_value_returns_422(pool: PgPoo
 }
 
 #[sqlx::test(migrations = "./migrations")]
+async fn put_settings_provider_visibility_over_cap_returns_422(pool: PgPool) {
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let (_admin_id, admin_basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+    let server = server(&app_pool, &ingestion_pool);
+
+    let visibility: serde_json::Map<String, serde_json::Value> = (0..65)
+        .map(|i| (format!("provider{i}"), serde_json::Value::Bool(true)))
+        .collect();
+    let r = server
+        .put("/api/v1/settings")
+        .add_header(axum::http::header::AUTHORIZATION, admin_basic)
+        .json(&serde_json::json!({"provider_visibility": visibility}))
+        .await;
+    assert_eq!(r.status_code(), StatusCode::UNPROCESSABLE_ENTITY);
+    let body: serde_json::Value = r.json();
+    let detail = body["detail"].as_str().unwrap_or_default();
+    assert!(
+        detail.contains("exceeds 64 entries"),
+        "expected the entry-count cap message, got {detail}"
+    );
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn put_settings_provider_visibility_at_cap_passes_count_check(pool: PgPool) {
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let (_admin_id, admin_basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+    let server = server(&app_pool, &ingestion_pool);
+
+    // The registry seeds only 11 real provider ids, so a request at the
+    // 64-entry cap cannot also be all valid keys. Asserting the rejection
+    // is the registry's "unknown key" error, not the count-cap message,
+    // proves the count check let 64 entries through to the registry lookup.
+    let visibility: serde_json::Map<String, serde_json::Value> = (0..64)
+        .map(|i| (format!("provider{i}"), serde_json::Value::Bool(true)))
+        .collect();
+    let r = server
+        .put("/api/v1/settings")
+        .add_header(axum::http::header::AUTHORIZATION, admin_basic)
+        .json(&serde_json::json!({"provider_visibility": visibility}))
+        .await;
+    assert_eq!(r.status_code(), StatusCode::UNPROCESSABLE_ENTITY);
+    let body: serde_json::Value = r.json();
+    let detail = body["detail"].as_str().unwrap_or_default();
+    assert!(
+        detail.contains("unknown provider_visibility key"),
+        "expected the registry rejection, not the count cap, got {detail}"
+    );
+}
+
+#[sqlx::test(migrations = "./migrations")]
 async fn put_settings_revision_increases_per_update(pool: PgPool) {
     let app_pool = test_support::db::app_pool_for(&pool).await;
     let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;

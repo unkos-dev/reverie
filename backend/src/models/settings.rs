@@ -185,7 +185,33 @@ pub struct UpdateSettings {
     /// Per-provider display visibility, replacing the stored map wholesale.
     /// Values must be booleans; keys are validated against the union of
     /// `identifier_schemes` and `rating_sources`.
+    #[schema(schema_with = provider_visibility_schema)]
     pub provider_visibility: Option<std::collections::BTreeMap<String, bool>>,
+}
+
+/// Size of the union of `identifier_schemes` and `rating_sources` (11 rows,
+/// seeded in the initial migration) with headroom:
+/// bounds `provider_visibility` entries accepted in one patch, checked in
+/// [`validate_update`] before the registry lookup in `validate_provider_keys`.
+const MAX_PROVIDER_VISIBILITY_ENTRIES: usize = 64;
+
+/// Schema for `provider_visibility`: a nullable map of provider id to
+/// boolean, bounded by [`MAX_PROVIDER_VISIBILITY_ENTRIES`]. utoipa 5.5's
+/// `#[schema(...)]` derive attribute has no `max_properties`, so the bound
+/// is built by hand.
+fn provider_visibility_schema() -> utoipa::openapi::schema::Object {
+    use utoipa::openapi::schema::{ObjectBuilder, SchemaType, Type};
+    ObjectBuilder::new()
+        .schema_type(SchemaType::from_iter([Type::Object, Type::Null]))
+        .description(Some(
+            "Per-provider display visibility, replacing the stored map wholesale.\n\
+             Values must be booleans; keys are validated against the union of\n\
+             `identifier_schemes` and `rating_sources`.",
+        ))
+        .additional_properties(Some(ObjectBuilder::new().schema_type(Type::Boolean)))
+        .property_names(Some(ObjectBuilder::new().schema_type(Type::String)))
+        .max_properties(Some(MAX_PROVIDER_VISIBILITY_ENTRIES))
+        .build()
 }
 
 impl UpdateSettings {
@@ -305,6 +331,13 @@ pub fn validate_update(req: &UpdateSettings) -> Result<(), String> {
     validate_url_field(req.openlibrary_base_url.as_ref(), "openlibrary_base_url")?;
     validate_url_field(req.googlebooks_base_url.as_ref(), "googlebooks_base_url")?;
     validate_url_field(req.hardcover_base_url.as_ref(), "hardcover_base_url")?;
+    if let Some(ref v) = req.provider_visibility
+        && v.len() > MAX_PROVIDER_VISIBILITY_ENTRIES
+    {
+        return Err(format!(
+            "provider_visibility exceeds {MAX_PROVIDER_VISIBILITY_ENTRIES} entries"
+        ));
+    }
     Ok(())
 }
 
