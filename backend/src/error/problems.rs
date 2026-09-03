@@ -29,6 +29,11 @@ pub const UNAUTHORIZED: &str = "unauthorized";
 /// the requested action.
 pub const FORBIDDEN: &str = "forbidden";
 
+/// Caller is unauthenticated on an OPDS route. Carries `WWW-Authenticate:
+/// Basic` (RFC 7617) alongside this RFC 9457 body; see
+/// [`crate::error::AppError::BasicAuthRequired`].
+pub const BASIC_AUTH_REQUIRED: &str = "basic-auth-required";
+
 /// Request body or query failed validation; `detail` carries the
 /// caller-visible message.
 pub const VALIDATION: &str = "validation";

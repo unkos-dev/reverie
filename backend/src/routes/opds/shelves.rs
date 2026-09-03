@@ -72,7 +72,7 @@ async fn assert_shelf_owned(
     params(("shelf_id" = Uuid, Path, description = "Shelf id")),
     responses(
         (status = 200, description = "OPDS navigation feed linking the shelf's New / Authors / Series subcatalogs", content_type = "application/atom+xml;profile=opds-catalog;kind=navigation", body = String),
-        (status = 401, description = "Basic authentication required (WWW-Authenticate: Basic)"),
+        (status = 401, description = "Basic authentication required (WWW-Authenticate: Basic)", body = crate::openapi::ProblemDetails),
         (status = 404, description = "Shelf missing or not owned by the caller", body = crate::openapi::ProblemDetails)
     )
 )]
@@ -105,7 +105,7 @@ async fn shelf_root(
     responses(
         (status = 200, description = "OPDS acquisition feed of the shelf's newest visible books; rel=\"next\" link carries the cursor", content_type = "application/atom+xml;profile=opds-catalog;kind=acquisition", body = String),
         (status = 400, description = "Malformed query parameter", body = crate::openapi::ProblemDetails),
-        (status = 401, description = "Basic authentication required (WWW-Authenticate: Basic)"),
+        (status = 401, description = "Basic authentication required (WWW-Authenticate: Basic)", body = crate::openapi::ProblemDetails),
         (status = 404, description = "Shelf missing or not owned by the caller", body = crate::openapi::ProblemDetails),
         (status = 422, description = "Malformed cursor", body = crate::openapi::ProblemDetails)
     )
@@ -149,7 +149,7 @@ async fn shelf_new(
     responses(
         (status = 200, description = "OPDS navigation feed of authors with books on the shelf", content_type = "application/atom+xml;profile=opds-catalog;kind=navigation", body = String),
         (status = 400, description = "Malformed query parameter", body = crate::openapi::ProblemDetails),
-        (status = 401, description = "Basic authentication required (WWW-Authenticate: Basic)"),
+        (status = 401, description = "Basic authentication required (WWW-Authenticate: Basic)", body = crate::openapi::ProblemDetails),
         (status = 404, description = "Shelf missing or not owned by the caller", body = crate::openapi::ProblemDetails),
         (status = 422, description = "Malformed cursor", body = crate::openapi::ProblemDetails)
     )
@@ -197,7 +197,7 @@ async fn shelf_authors(
     responses(
         (status = 200, description = "OPDS acquisition feed of the author's books on the shelf (empty for unknown authors)", content_type = "application/atom+xml;profile=opds-catalog;kind=acquisition", body = String),
         (status = 400, description = "Malformed query parameter", body = crate::openapi::ProblemDetails),
-        (status = 401, description = "Basic authentication required (WWW-Authenticate: Basic)"),
+        (status = 401, description = "Basic authentication required (WWW-Authenticate: Basic)", body = crate::openapi::ProblemDetails),
         (status = 404, description = "Shelf missing or not owned by the caller", body = crate::openapi::ProblemDetails),
         (status = 422, description = "Malformed cursor", body = crate::openapi::ProblemDetails)
     )
@@ -242,7 +242,7 @@ async fn shelf_author_books(
     responses(
         (status = 200, description = "OPDS navigation feed of series with books on the shelf", content_type = "application/atom+xml;profile=opds-catalog;kind=navigation", body = String),
         (status = 400, description = "Malformed query parameter", body = crate::openapi::ProblemDetails),
-        (status = 401, description = "Basic authentication required (WWW-Authenticate: Basic)"),
+        (status = 401, description = "Basic authentication required (WWW-Authenticate: Basic)", body = crate::openapi::ProblemDetails),
         (status = 404, description = "Shelf missing or not owned by the caller", body = crate::openapi::ProblemDetails),
         (status = 422, description = "Malformed cursor", body = crate::openapi::ProblemDetails)
     )
@@ -290,7 +290,7 @@ async fn shelf_series(
     responses(
         (status = 200, description = "OPDS acquisition feed of the series' books on the shelf (empty for unknown series)", content_type = "application/atom+xml;profile=opds-catalog;kind=acquisition", body = String),
         (status = 400, description = "Malformed query parameter", body = crate::openapi::ProblemDetails),
-        (status = 401, description = "Basic authentication required (WWW-Authenticate: Basic)"),
+        (status = 401, description = "Basic authentication required (WWW-Authenticate: Basic)", body = crate::openapi::ProblemDetails),
         (status = 404, description = "Shelf missing or not owned by the caller", body = crate::openapi::ProblemDetails),
         (status = 422, description = "Malformed cursor", body = crate::openapi::ProblemDetails)
     )
@@ -334,7 +334,7 @@ async fn shelf_series_books(
     responses(
         (status = 200, description = "OPDS acquisition feed of search results scoped to the shelf; empty/whitespace query yields an empty feed", content_type = "application/atom+xml;profile=opds-catalog;kind=acquisition", body = String),
         (status = 400, description = "Malformed query parameter", body = crate::openapi::ProblemDetails),
-        (status = 401, description = "Basic authentication required (WWW-Authenticate: Basic)"),
+        (status = 401, description = "Basic authentication required (WWW-Authenticate: Basic)", body = crate::openapi::ProblemDetails),
         (status = 404, description = "Shelf missing or not owned by the caller", body = crate::openapi::ProblemDetails)
     )
 )]

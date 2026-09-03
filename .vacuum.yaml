@@ -38,11 +38,10 @@ rules:
 
   # Operations must document the error responses they can return. Adopting
   # these means the handlers actually return them, not just that the spec
-  # claims so. 87, 83, 37 and 20 hits.
+  # claims so. 87, 83 and 37 hits.
   owasp-define-error-responses-500: false
   owasp-define-error-responses-429: false
   owasp-define-error-validation: false
-  owasp-define-error-responses-401: false
 
   # Responses must declare rate-limit headers. This is a product decision
   # about whether the API implements rate limiting, not a spec fix. 323 hits.

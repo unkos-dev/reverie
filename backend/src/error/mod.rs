@@ -4,12 +4,10 @@
 //! `Result<impl IntoResponse, AppError>`. Its
 //! [`axum::response::IntoResponse`] impl emits RFC 9457 (obsoletes
 //! RFC 7807) Problem Details (`application/problem+json`) for every
-//! variant except
-//! [`AppError::BasicAuthRequired`], which keeps its pre-Problem-Details
-//! empty-body + `WWW-Authenticate: Basic` shape per RFC 7617 because
-//! it is consumed by OPDS clients (Atom XML feeds, e-readers) that
-//! expect that exact shape — RFC 9457 applies to the JSON API
-//! surface only.
+//! variant, including [`AppError::BasicAuthRequired`], which additionally
+//! carries the RFC 7617 `WWW-Authenticate: Basic` challenge OPDS clients
+//! (Atom XML feeds, e-readers) rely on to prompt for credentials; those
+//! clients ignore the JSON body.
 //!
 //! See `adr/2026-05-22-json-api-conventions.md` for the full
 //! convention and migration rationale.
@@ -80,11 +78,12 @@ pub enum AppError {
     /// same response) to avoid handing an attacker an oracle.
     #[error("invalid credential")]
     InvalidCredential,
-    /// 401 with `WWW-Authenticate: Basic` challenge (RFC 7617).
-    /// **Not RFC 9457** — emits an EMPTY body for compatibility with
-    /// OPDS Basic-auth clients (`KOReader`, `Foliate`). `realm` is
-    /// operator-configured and validated at startup (no embedded
-    /// `"` allowed).
+    /// 401 with `WWW-Authenticate: Basic` challenge (RFC 7617) for OPDS
+    /// Basic-auth clients (`KOReader`, `Foliate`), carrying the same RFC
+    /// 9457 body as every other variant — e-reader clients ignore the body
+    /// and act on the status and challenge header alone. RFC 9457 `type`
+    /// [`problems::BASIC_AUTH_REQUIRED`]. `realm` is operator-configured
+    /// and validated at startup (no embedded `"` allowed).
     #[error("basic auth required")]
     BasicAuthRequired {
         /// The `realm` value emitted in the `WWW-Authenticate: Basic`
@@ -193,30 +192,18 @@ impl IntoResponse for AppError {
         reason = "flat exhaustive variant-to-RFC-9457 dispatcher; splitting scatters the status/slug/title mapping without reducing complexity"
     )]
     fn into_response(self) -> Response {
-        // BasicAuthRequired keeps its pre-Problem-Details shape: empty body +
-        // WWW-Authenticate per RFC 7617. OPDS clients depend on this
-        // exact contract; the JSON API surface uses 9457 for every
-        // other variant.
-        if let Self::BasicAuthRequired { realm } = &self {
-            let challenge = format!("Basic realm=\"{realm}\", charset=\"UTF-8\"");
-            let mut response = Response::new(axum::body::Body::empty());
-            *response.status_mut() = StatusCode::UNAUTHORIZED;
-            if let Ok(value) = HeaderValue::from_str(&challenge) {
-                response
-                    .headers_mut()
-                    .insert(header::WWW_AUTHENTICATE, value);
-            }
-            return response;
-        }
-
-        // Computed before the variant is consumed below: the two Bearer
-        // challenge variants carry an identical Problem Details body and
+        // Computed before the variant is consumed below: the three
+        // WWW-Authenticate variants carry a Problem Details body and
         // differ only in this header, so the header is applied to the
         // finished response rather than threaded through the body match.
         let challenge = match &self {
             Self::Unauthorized => Some(HeaderValue::from_static("Bearer")),
             Self::InvalidCredential => {
                 Some(HeaderValue::from_static(r#"Bearer error="invalid_token""#))
+            }
+            Self::BasicAuthRequired { realm } => {
+                let challenge = format!("Basic realm=\"{realm}\", charset=\"UTF-8\"");
+                HeaderValue::from_str(&challenge).ok()
             }
             _ => None,
         };
@@ -237,7 +224,12 @@ impl IntoResponse for AppError {
                 "Unauthorized",
                 "Authentication required.".to_owned(),
             ),
-            Self::BasicAuthRequired { .. } => unreachable!("handled above"),
+            Self::BasicAuthRequired { .. } => (
+                StatusCode::UNAUTHORIZED,
+                problems::BASIC_AUTH_REQUIRED,
+                "Unauthorized",
+                "Basic authentication required.".to_owned(),
+            ),
             Self::Forbidden => (
                 StatusCode::FORBIDDEN,
                 problems::FORBIDDEN,
@@ -573,13 +565,12 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn basic_auth_required_keeps_pre_problem_details_shape() {
-        let response = AppError::BasicAuthRequired {
+    async fn basic_auth_required_carries_challenge_and_problem_body() {
+        let challenge_response = AppError::BasicAuthRequired {
             realm: "Reverie OPDS".into(),
         }
         .into_response();
-        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
-        let challenge = response
+        let challenge = challenge_response
             .headers()
             .get(header::WWW_AUTHENTICATE)
             .expect("WWW-Authenticate header present")
@@ -587,8 +578,17 @@ mod tests {
             .unwrap()
             .to_owned();
         assert_eq!(challenge, r#"Basic realm="Reverie OPDS", charset="UTF-8""#);
-        let body = to_bytes(response.into_body(), 1024).await.unwrap();
-        assert!(body.is_empty(), "BasicAuthRequired body must be empty");
+
+        let (status, ct, json) = parse_problem(AppError::BasicAuthRequired {
+            realm: "Reverie OPDS".into(),
+        })
+        .await;
+        assert_eq!(status, StatusCode::UNAUTHORIZED);
+        assert!(
+            ct.contains("application/problem+json"),
+            "wrong content-type: {ct}"
+        );
+        assert_problem_shape(&json, problems::BASIC_AUTH_REQUIRED, 401, "Unauthorized");
     }
 
     #[tokio::test]
