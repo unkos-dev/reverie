@@ -24,3 +24,13 @@ owasp-protection-global-unsafe-strict:
   - $.paths['/auth/register'].post.security[0]
   - $.paths['/auth/reset-password'].post.security[0]
   - $.paths['/auth/setup'].post.security[0]
+
+# operation-4xx-response requires every operation to document at least one
+# 4xx. The three operations below cannot produce one: each has a single
+# infallible extractor (or none) and no mutating-verb CSRF exposure, so
+# their only non-2xx outcome is a 5xx (or, for /health/ready, 503).
+# /auth/logout is not here: it is CSRF-gated and documents 403/428 instead.
+operation-4xx-response:
+  - $.paths['/health'].get.responses
+  - $.paths['/health/ready'].get.responses
+  - $.paths['/auth/setup/status'].get.responses

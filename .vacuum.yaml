@@ -31,9 +31,6 @@ rules:
   # Integers must carry minimum and maximum. 78 hits.
   owasp-integer-limit: false
 
-  # Integers must declare int32 or int64 so clients size them correctly. 3 hits.
-  owasp-integer-format: false
-
   # Objects must not accept arbitrary extra properties, and must bound them
   # with maxProperties where they do. 6 hits each.
   owasp-no-additionalProperties: false
@@ -64,6 +61,12 @@ rules:
   # posture it asks about is already documented in the scheme descriptions;
   # the rule checks for a specific citation string rather than the property.
   owasp-jwt-best-practices: false
+
+  # Schemas missing an explicit type. The rule does not resolve $ref, so it
+  # flags the OpenAPI 3.1 form utoipa emits for an annotated reference ($ref
+  # with a sibling description). The remaining hits are serde_json::Value
+  # fields, where an empty schema already means any value.
+  oas-missing-type: false
 
   # --- Documentation quality, not gating material ---
 
@@ -96,16 +99,12 @@ rules:
 
   # --- Known defects, tracked ---
 
-  # Schemas missing an explicit type. 33 hits.
-  oas-missing-type: false
-
-  # Operations missing a 4xx response. 4 hits.
-  operation-4xx-response: false
-
-  # A duplicate operationId: GET /api/v1/series/{id} and another operation
-  # both use `detail`. A real defect in the generated spec.
-  operation-operationId-unique: false
-
   # No servers block. The spec is served from the deployment that generated
   # it, so there is no fixed server URL to declare.
   oas3-api-servers: false
+
+  # Opt-in: NOT part of vacuum:oas recommended, so this line is load-bearing
+  # rather than a redundant override. Every operation must document at least
+  # one 4xx it can actually return; location-scoped exceptions for the
+  # handful that cannot live in .vacuum-ignore.yaml.
+  operation-4xx-response: true

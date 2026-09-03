@@ -717,7 +717,7 @@
         ],
         "summary": "`GET /api/v1/books/{id}` — single-manifestation detail with the\nwork-level prose, tags, and a metadata-version summary used by the\nbook-detail Versions tab.",
         "description": "RLS hides manifestations the current user cannot see; the handler\nreports those as 404 rather than 403 so existence is not leaked.\n\n# Errors\n- [`AppError::NotFound`] when the manifestation is missing or\n  RLS-hidden.\n- [`AppError::Internal`] on database errors.",
-        "operationId": "detail",
+        "operationId": "book_detail",
         "parameters": [
           {
             "name": "id",
@@ -2887,7 +2887,7 @@
         ],
         "summary": "`GET /api/v1/series/{id}` — series + ordered works with visible\nmanifestations per work.",
         "description": "# Errors\n- [`AppError::NotFound`] when the series row is missing, the series\n  has no linked works, or every work in the series has zero visible\n  manifestations under the caller's RLS context (existence-not-leaked).\n- [`AppError::Internal`] on database errors.",
-        "operationId": "detail",
+        "operationId": "series_detail",
         "parameters": [
           {
             "name": "id",
@@ -5243,11 +5243,31 @@
           "auth"
         ],
         "summary": "`POST /auth/logout` — destroy the current session (idempotent).",
-        "description": "# Errors\n- [`AppError::Internal`] when session deletion fails at the store.",
+        "description": "Public per the OpenAPI security scheme (no session is required to call\nit), but a session-authenticated caller is still a mutating request under\n[`crate::security::csrf::csrf_required`], which runs ahead of this\nhandler and enforces the synchronizer token.\n\n# Errors\n- [`AppError::CsrfMissing`] (428) when a session-authenticated caller\n  sends no `X-CSRF-Token` header.\n- [`AppError::CsrfMismatch`] (403) when the header does not match the\n  session-stored token.\n- [`AppError::Internal`] when the session store read (CSRF check) or\n  session deletion fails.",
         "operationId": "logout",
         "responses": {
           "204": {
             "description": "Session destroyed (no-op without one)"
+          },
+          "403": {
+            "description": "X-CSRF-Token header present but does not match the session token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "428": {
+            "description": "X-CSRF-Token header required for a session-authenticated caller",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -8770,16 +8790,19 @@
         "properties": {
           "failed": {
             "type": "integer",
+            "format": "int64",
             "description": "Files that errored during ingestion.",
             "minimum": 0
           },
           "processed": {
             "type": "integer",
+            "format": "int64",
             "description": "Files ingested successfully.",
             "minimum": 0
           },
           "skipped": {
             "type": "integer",
+            "format": "int64",
             "description": "Files skipped (already ingested or unsupported).",
             "minimum": 0
           }

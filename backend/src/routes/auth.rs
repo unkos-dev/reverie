@@ -887,15 +887,27 @@ async fn reset_password(
 
 /// `POST /auth/logout` — destroy the current session (idempotent).
 ///
+/// Public per the OpenAPI security scheme (no session is required to call
+/// it), but a session-authenticated caller is still a mutating request under
+/// [`crate::security::csrf::csrf_required`], which runs ahead of this
+/// handler and enforces the synchronizer token.
+///
 /// # Errors
-/// - [`AppError::Internal`] when session deletion fails at the store.
+/// - [`AppError::CsrfMissing`] (428) when a session-authenticated caller
+///   sends no `X-CSRF-Token` header.
+/// - [`AppError::CsrfMismatch`] (403) when the header does not match the
+///   session-stored token.
+/// - [`AppError::Internal`] when the session store read (CSRF check) or
+///   session deletion fails.
 #[utoipa::path(
     post,
     path = "/auth/logout",
     tag = "auth",
     security(()),
     responses(
-        (status = 204, description = "Session destroyed (no-op without one)")
+        (status = 204, description = "Session destroyed (no-op without one)"),
+        (status = 403, description = "X-CSRF-Token header present but does not match the session token", body = crate::openapi::ProblemDetails),
+        (status = 428, description = "X-CSRF-Token header required for a session-authenticated caller", body = crate::openapi::ProblemDetails)
     )
 )]
 async fn logout(session: Session) -> Result<impl IntoResponse, AppError> {

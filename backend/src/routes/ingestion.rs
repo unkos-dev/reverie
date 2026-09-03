@@ -28,10 +28,13 @@ pub fn router() -> OpenApiRouter<AppState> {
 #[derive(serde::Serialize, utoipa::ToSchema)]
 struct ScanResponse {
     /// Files ingested successfully.
+    #[schema(format = Int64)]
     processed: usize,
     /// Files that errored during ingestion.
+    #[schema(format = Int64)]
     failed: usize,
     /// Files skipped (already ingested or unsupported).
+    #[schema(format = Int64)]
     skipped: usize,
 }
 
