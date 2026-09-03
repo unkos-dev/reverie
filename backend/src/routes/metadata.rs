@@ -6084,13 +6084,16 @@ mod tests {
             "resolved_by should record the operator"
         );
 
+        // Reads go through the owner pool: `manifestation_genres` is
+        // RLS-scoped by manifestation visibility, which an unauthenticated
+        // GUC-less pool cannot satisfy, unlike this test's real request path.
         let genre_names: Vec<String> = sqlx::query_scalar!(
             "SELECT g.name FROM genres g \
              JOIN manifestation_genres mg ON mg.genre_id = g.id \
              WHERE mg.manifestation_id = $1 ORDER BY g.name",
             m_id,
         )
-        .fetch_all(&app_pool)
+        .fetch_all(&pool)
         .await
         .expect("fetch genre names");
         assert_eq!(
@@ -6103,7 +6106,7 @@ mod tests {
              WHERE manifestation_id = $1",
             m_id,
         )
-        .fetch_all(&app_pool)
+        .fetch_all(&pool)
         .await
         .expect("fetch junction source_version_id");
         assert_eq!(
@@ -6151,13 +6154,14 @@ mod tests {
             .await;
         assert_eq!(second.status_code(), StatusCode::OK);
 
+        // Owner pool: see the comment on the equivalent read above.
         let genre_names: Vec<String> = sqlx::query_scalar!(
             "SELECT g.name FROM genres g \
              JOIN manifestation_genres mg ON mg.genre_id = g.id \
              WHERE mg.manifestation_id = $1",
             m_id,
         )
-        .fetch_all(&app_pool)
+        .fetch_all(&pool)
         .await
         .expect("fetch genre names after replace");
         assert_eq!(
@@ -6210,13 +6214,14 @@ mod tests {
             response.text()
         );
 
+        // Owner pool: see the comment on the equivalent genres read above.
         let mood_name: String = sqlx::query_scalar!(
             "SELECT mo.name FROM moods mo \
              JOIN manifestation_moods mm ON mm.mood_id = mo.id \
              WHERE mm.manifestation_id = $1",
             m_id,
         )
-        .fetch_one(&app_pool)
+        .fetch_one(&pool)
         .await
         .expect("fetch mood name");
         assert_eq!(mood_name, "Gloomy");
@@ -6227,7 +6232,7 @@ mod tests {
              WHERE mt.manifestation_id = $1",
             m_id,
         )
-        .fetch_one(&app_pool)
+        .fetch_one(&pool)
         .await
         .expect("fetch tag name");
         assert_eq!(tag_name, "Signed");
@@ -6675,13 +6680,14 @@ mod tests {
             response.text()
         );
 
+        // Owner pool: see the comment on the equivalent read above.
         let genre_names: Vec<String> = sqlx::query_scalar!(
             "SELECT g.name FROM genres g \
              JOIN manifestation_genres mg ON mg.genre_id = g.id \
              WHERE mg.manifestation_id = $1 ORDER BY g.name",
             m_id,
         )
-        .fetch_all(&app_pool)
+        .fetch_all(&pool)
         .await
         .expect("fetch genre names");
         assert_eq!(
@@ -6694,7 +6700,7 @@ mod tests {
              WHERE manifestation_id = $1",
             m_id,
         )
-        .fetch_all(&app_pool)
+        .fetch_all(&pool)
         .await
         .expect("fetch junction source_version_id");
         assert_eq!(source_version_ids, vec![Some(version_id)]);
@@ -7836,5 +7842,443 @@ mod tests {
             problems::IF_MATCH_MISMATCH,
             StatusCode::PRECONDITION_FAILED,
         );
+    }
+
+    /// RLS coverage for the taxonomy junction tables (`manifestation_genres`,
+    /// `manifestation_moods`, `manifestation_tags`): a direct read or write on
+    /// these tables must be scoped through `manifestations` visibility the
+    /// same way the identifier registry is, so a caller that forgets the join
+    /// cannot see or change associations outside its authorization.
+    mod junction_rls {
+        use crate::db::acquire_with_rls;
+        use crate::test_support::db::{
+            add_to_shelf, app_pool_for, create_adult_and_basic_auth,
+            create_child_user_and_basic_auth, create_shelf, ingestion_pool_for,
+            insert_work_and_manifestation, readonly_pool_for,
+        };
+        use sqlx::PgPool;
+        use uuid::Uuid;
+
+        fn is_rls_denied(err: &sqlx::Error) -> bool {
+            // 42501 = insufficient_privilege: the clean RLS policy miss.
+            err.as_database_error()
+                .and_then(sqlx::error::DatabaseError::code)
+                .as_deref()
+                == Some("42501")
+        }
+
+        // ---- manifestation_genres ----
+
+        async fn seed_genre(ingestion: &PgPool, name: &str) -> Uuid {
+            sqlx::query_scalar!("INSERT INTO genres (name) VALUES ($1) RETURNING id", name)
+                .fetch_one(ingestion)
+                .await
+                .expect("insert genre")
+        }
+
+        async fn link_genre(ingestion: &PgPool, manifestation_id: Uuid, genre_id: Uuid) {
+            sqlx::query!(
+                "INSERT INTO manifestation_genres (manifestation_id, genre_id) VALUES ($1, $2)",
+                manifestation_id,
+                genre_id,
+            )
+            .execute(ingestion)
+            .await
+            .expect("insert manifestation_genres");
+        }
+
+        #[sqlx::test(migrations = "./migrations")]
+        async fn genres_child_reads_only_shelf_visible(pool: PgPool) {
+            let ingestion = ingestion_pool_for(&pool).await;
+            let app = app_pool_for(&pool).await;
+            let (_vw, visible_m) = insert_work_and_manifestation(&ingestion, "genre-vis").await;
+            let (_hw, hidden_m) = insert_work_and_manifestation(&ingestion, "genre-hid").await;
+            let genre = seed_genre(&ingestion, "genre-child-scope").await;
+            link_genre(&ingestion, visible_m, genre).await;
+            link_genre(&ingestion, hidden_m, genre).await;
+
+            let (child_id, _) = create_child_user_and_basic_auth(&app, "genre-child").await;
+            let shelf = create_shelf(&app, child_id, "kids").await;
+            add_to_shelf(&app, shelf, visible_m).await;
+
+            let mut tx = acquire_with_rls(&app, child_id).await.expect("rls tx");
+            let rows: Vec<Uuid> = sqlx::query_scalar!(
+                "SELECT manifestation_id FROM manifestation_genres ORDER BY manifestation_id",
+            )
+            .fetch_all(&mut *tx)
+            .await
+            .expect("child select");
+            assert_eq!(
+                rows,
+                vec![visible_m],
+                "child sees only the shelf-visible manifestation's genre link"
+            );
+        }
+
+        #[sqlx::test(migrations = "./migrations")]
+        async fn genres_adult_reads_all(pool: PgPool) {
+            let ingestion = ingestion_pool_for(&pool).await;
+            let app = app_pool_for(&pool).await;
+            let (_w, m) = insert_work_and_manifestation(&ingestion, "genre-adult").await;
+            let genre = seed_genre(&ingestion, "genre-adult-scope").await;
+            link_genre(&ingestion, m, genre).await;
+
+            let (adult_id, _) = create_adult_and_basic_auth(&app, "genre-adult").await;
+            let mut tx = acquire_with_rls(&app, adult_id).await.expect("rls tx");
+            let count: i64 = sqlx::query_scalar!(
+                "SELECT count(*) AS \"c!\" FROM manifestation_genres WHERE manifestation_id = $1",
+                m,
+            )
+            .fetch_one(&mut *tx)
+            .await
+            .expect("select");
+            assert_eq!(count, 1, "adult sees all genre links");
+        }
+
+        #[sqlx::test(migrations = "./migrations")]
+        async fn genres_readonly_reads_scoped_but_cannot_write(pool: PgPool) {
+            let ingestion = ingestion_pool_for(&pool).await;
+            let app = app_pool_for(&pool).await;
+            let readonly = readonly_pool_for(&pool).await;
+            let (_w, m) = insert_work_and_manifestation(&ingestion, "genre-ro").await;
+            let genre = seed_genre(&ingestion, "genre-ro-scope").await;
+            link_genre(&ingestion, m, genre).await;
+
+            let (adult_id, _) = create_adult_and_basic_auth(&app, "genre-ro").await;
+            let mut tx = acquire_with_rls(&readonly, adult_id).await.expect("rls tx");
+            let count: i64 = sqlx::query_scalar!(
+                "SELECT count(*) AS \"c!\" FROM manifestation_genres WHERE manifestation_id = $1",
+                m,
+            )
+            .fetch_one(&mut *tx)
+            .await
+            .expect("readonly select");
+            assert_eq!(count, 1, "readonly reads the same scoped rows");
+
+            let err = sqlx::query!(
+                "INSERT INTO manifestation_genres (manifestation_id, genre_id) VALUES ($1, $2)",
+                m,
+                genre,
+            )
+            .execute(&mut *tx)
+            .await
+            .expect_err("readonly insert denied");
+            assert!(is_rls_denied(&err), "expected 42501, got {err:?}");
+        }
+
+        #[sqlx::test(migrations = "./migrations")]
+        async fn genres_ingestion_inserts_and_deletes_unimpeded(pool: PgPool) {
+            let ingestion = ingestion_pool_for(&pool).await;
+            let (_w, m) = insert_work_and_manifestation(&ingestion, "genre-ing").await;
+            let genre = seed_genre(&ingestion, "genre-ing-scope").await;
+            link_genre(&ingestion, m, genre).await;
+
+            let done = sqlx::query!(
+                "DELETE FROM manifestation_genres WHERE manifestation_id = $1 AND genre_id = $2",
+                m,
+                genre,
+            )
+            .execute(&ingestion)
+            .await
+            .expect("ingestion delete succeeds");
+            assert_eq!(done.rows_affected(), 1);
+        }
+
+        #[sqlx::test(migrations = "./migrations")]
+        async fn genres_rls_enabled_fresh_child_sees_no_rows(pool: PgPool) {
+            let ingestion = ingestion_pool_for(&pool).await;
+            let app = app_pool_for(&pool).await;
+            let (_w, m) = insert_work_and_manifestation(&ingestion, "genre-fresh").await;
+            let genre = seed_genre(&ingestion, "genre-fresh-scope").await;
+            link_genre(&ingestion, m, genre).await;
+
+            let (child_id, _) = create_child_user_and_basic_auth(&app, "genre-fresh-child").await;
+            let mut tx = acquire_with_rls(&app, child_id).await.expect("rls tx");
+            let count: i64 =
+                sqlx::query_scalar!("SELECT count(*) AS \"c!\" FROM manifestation_genres")
+                    .fetch_one(&mut *tx)
+                    .await
+                    .expect("select");
+            assert_eq!(
+                count, 0,
+                "RLS ENABLE hides all rows from a shelf-less child"
+            );
+        }
+
+        // ---- manifestation_moods ----
+
+        async fn seed_mood(ingestion: &PgPool, name: &str) -> Uuid {
+            sqlx::query_scalar!("INSERT INTO moods (name) VALUES ($1) RETURNING id", name)
+                .fetch_one(ingestion)
+                .await
+                .expect("insert mood")
+        }
+
+        async fn link_mood(ingestion: &PgPool, manifestation_id: Uuid, mood_id: Uuid) {
+            sqlx::query!(
+                "INSERT INTO manifestation_moods (manifestation_id, mood_id) VALUES ($1, $2)",
+                manifestation_id,
+                mood_id,
+            )
+            .execute(ingestion)
+            .await
+            .expect("insert manifestation_moods");
+        }
+
+        #[sqlx::test(migrations = "./migrations")]
+        async fn moods_child_reads_only_shelf_visible(pool: PgPool) {
+            let ingestion = ingestion_pool_for(&pool).await;
+            let app = app_pool_for(&pool).await;
+            let (_vw, visible_m) = insert_work_and_manifestation(&ingestion, "mood-vis").await;
+            let (_hw, hidden_m) = insert_work_and_manifestation(&ingestion, "mood-hid").await;
+            let mood = seed_mood(&ingestion, "mood-child-scope").await;
+            link_mood(&ingestion, visible_m, mood).await;
+            link_mood(&ingestion, hidden_m, mood).await;
+
+            let (child_id, _) = create_child_user_and_basic_auth(&app, "mood-child").await;
+            let shelf = create_shelf(&app, child_id, "kids").await;
+            add_to_shelf(&app, shelf, visible_m).await;
+
+            let mut tx = acquire_with_rls(&app, child_id).await.expect("rls tx");
+            let rows: Vec<Uuid> = sqlx::query_scalar!(
+                "SELECT manifestation_id FROM manifestation_moods ORDER BY manifestation_id",
+            )
+            .fetch_all(&mut *tx)
+            .await
+            .expect("child select");
+            assert_eq!(
+                rows,
+                vec![visible_m],
+                "child sees only the shelf-visible manifestation's mood link"
+            );
+        }
+
+        #[sqlx::test(migrations = "./migrations")]
+        async fn moods_adult_reads_all(pool: PgPool) {
+            let ingestion = ingestion_pool_for(&pool).await;
+            let app = app_pool_for(&pool).await;
+            let (_w, m) = insert_work_and_manifestation(&ingestion, "mood-adult").await;
+            let mood = seed_mood(&ingestion, "mood-adult-scope").await;
+            link_mood(&ingestion, m, mood).await;
+
+            let (adult_id, _) = create_adult_and_basic_auth(&app, "mood-adult").await;
+            let mut tx = acquire_with_rls(&app, adult_id).await.expect("rls tx");
+            let count: i64 = sqlx::query_scalar!(
+                "SELECT count(*) AS \"c!\" FROM manifestation_moods WHERE manifestation_id = $1",
+                m,
+            )
+            .fetch_one(&mut *tx)
+            .await
+            .expect("select");
+            assert_eq!(count, 1, "adult sees all mood links");
+        }
+
+        #[sqlx::test(migrations = "./migrations")]
+        async fn moods_readonly_reads_scoped_but_cannot_write(pool: PgPool) {
+            let ingestion = ingestion_pool_for(&pool).await;
+            let app = app_pool_for(&pool).await;
+            let readonly = readonly_pool_for(&pool).await;
+            let (_w, m) = insert_work_and_manifestation(&ingestion, "mood-ro").await;
+            let mood = seed_mood(&ingestion, "mood-ro-scope").await;
+            link_mood(&ingestion, m, mood).await;
+
+            let (adult_id, _) = create_adult_and_basic_auth(&app, "mood-ro").await;
+            let mut tx = acquire_with_rls(&readonly, adult_id).await.expect("rls tx");
+            let count: i64 = sqlx::query_scalar!(
+                "SELECT count(*) AS \"c!\" FROM manifestation_moods WHERE manifestation_id = $1",
+                m,
+            )
+            .fetch_one(&mut *tx)
+            .await
+            .expect("readonly select");
+            assert_eq!(count, 1, "readonly reads the same scoped rows");
+
+            let err = sqlx::query!(
+                "INSERT INTO manifestation_moods (manifestation_id, mood_id) VALUES ($1, $2)",
+                m,
+                mood,
+            )
+            .execute(&mut *tx)
+            .await
+            .expect_err("readonly insert denied");
+            assert!(is_rls_denied(&err), "expected 42501, got {err:?}");
+        }
+
+        #[sqlx::test(migrations = "./migrations")]
+        async fn moods_ingestion_inserts_and_deletes_unimpeded(pool: PgPool) {
+            let ingestion = ingestion_pool_for(&pool).await;
+            let (_w, m) = insert_work_and_manifestation(&ingestion, "mood-ing").await;
+            let mood = seed_mood(&ingestion, "mood-ing-scope").await;
+            link_mood(&ingestion, m, mood).await;
+
+            let done = sqlx::query!(
+                "DELETE FROM manifestation_moods WHERE manifestation_id = $1 AND mood_id = $2",
+                m,
+                mood,
+            )
+            .execute(&ingestion)
+            .await
+            .expect("ingestion delete succeeds");
+            assert_eq!(done.rows_affected(), 1);
+        }
+
+        #[sqlx::test(migrations = "./migrations")]
+        async fn moods_rls_enabled_fresh_child_sees_no_rows(pool: PgPool) {
+            let ingestion = ingestion_pool_for(&pool).await;
+            let app = app_pool_for(&pool).await;
+            let (_w, m) = insert_work_and_manifestation(&ingestion, "mood-fresh").await;
+            let mood = seed_mood(&ingestion, "mood-fresh-scope").await;
+            link_mood(&ingestion, m, mood).await;
+
+            let (child_id, _) = create_child_user_and_basic_auth(&app, "mood-fresh-child").await;
+            let mut tx = acquire_with_rls(&app, child_id).await.expect("rls tx");
+            let count: i64 =
+                sqlx::query_scalar!("SELECT count(*) AS \"c!\" FROM manifestation_moods")
+                    .fetch_one(&mut *tx)
+                    .await
+                    .expect("select");
+            assert_eq!(
+                count, 0,
+                "RLS ENABLE hides all rows from a shelf-less child"
+            );
+        }
+
+        // ---- manifestation_tags ----
+
+        async fn seed_tag(ingestion: &PgPool, name: &str) -> Uuid {
+            sqlx::query_scalar!("INSERT INTO tags (name) VALUES ($1) RETURNING id", name)
+                .fetch_one(ingestion)
+                .await
+                .expect("insert tag")
+        }
+
+        async fn link_tag(ingestion: &PgPool, manifestation_id: Uuid, tag_id: Uuid) {
+            sqlx::query!(
+                "INSERT INTO manifestation_tags (manifestation_id, tag_id) VALUES ($1, $2)",
+                manifestation_id,
+                tag_id,
+            )
+            .execute(ingestion)
+            .await
+            .expect("insert manifestation_tags");
+        }
+
+        #[sqlx::test(migrations = "./migrations")]
+        async fn tags_child_reads_only_shelf_visible(pool: PgPool) {
+            let ingestion = ingestion_pool_for(&pool).await;
+            let app = app_pool_for(&pool).await;
+            let (_vw, visible_m) = insert_work_and_manifestation(&ingestion, "tag-vis").await;
+            let (_hw, hidden_m) = insert_work_and_manifestation(&ingestion, "tag-hid").await;
+            let tag = seed_tag(&ingestion, "tag-child-scope").await;
+            link_tag(&ingestion, visible_m, tag).await;
+            link_tag(&ingestion, hidden_m, tag).await;
+
+            let (child_id, _) = create_child_user_and_basic_auth(&app, "tag-child").await;
+            let shelf = create_shelf(&app, child_id, "kids").await;
+            add_to_shelf(&app, shelf, visible_m).await;
+
+            let mut tx = acquire_with_rls(&app, child_id).await.expect("rls tx");
+            let rows: Vec<Uuid> = sqlx::query_scalar!(
+                "SELECT manifestation_id FROM manifestation_tags ORDER BY manifestation_id",
+            )
+            .fetch_all(&mut *tx)
+            .await
+            .expect("child select");
+            assert_eq!(
+                rows,
+                vec![visible_m],
+                "child sees only the shelf-visible manifestation's tag link"
+            );
+        }
+
+        #[sqlx::test(migrations = "./migrations")]
+        async fn tags_adult_reads_all(pool: PgPool) {
+            let ingestion = ingestion_pool_for(&pool).await;
+            let app = app_pool_for(&pool).await;
+            let (_w, m) = insert_work_and_manifestation(&ingestion, "tag-adult").await;
+            let tag = seed_tag(&ingestion, "tag-adult-scope").await;
+            link_tag(&ingestion, m, tag).await;
+
+            let (adult_id, _) = create_adult_and_basic_auth(&app, "tag-adult").await;
+            let mut tx = acquire_with_rls(&app, adult_id).await.expect("rls tx");
+            let count: i64 = sqlx::query_scalar!(
+                "SELECT count(*) AS \"c!\" FROM manifestation_tags WHERE manifestation_id = $1",
+                m,
+            )
+            .fetch_one(&mut *tx)
+            .await
+            .expect("select");
+            assert_eq!(count, 1, "adult sees all tag links");
+        }
+
+        #[sqlx::test(migrations = "./migrations")]
+        async fn tags_readonly_reads_scoped_but_cannot_write(pool: PgPool) {
+            let ingestion = ingestion_pool_for(&pool).await;
+            let app = app_pool_for(&pool).await;
+            let readonly = readonly_pool_for(&pool).await;
+            let (_w, m) = insert_work_and_manifestation(&ingestion, "tag-ro").await;
+            let tag = seed_tag(&ingestion, "tag-ro-scope").await;
+            link_tag(&ingestion, m, tag).await;
+
+            let (adult_id, _) = create_adult_and_basic_auth(&app, "tag-ro").await;
+            let mut tx = acquire_with_rls(&readonly, adult_id).await.expect("rls tx");
+            let count: i64 = sqlx::query_scalar!(
+                "SELECT count(*) AS \"c!\" FROM manifestation_tags WHERE manifestation_id = $1",
+                m,
+            )
+            .fetch_one(&mut *tx)
+            .await
+            .expect("readonly select");
+            assert_eq!(count, 1, "readonly reads the same scoped rows");
+
+            let err = sqlx::query!(
+                "INSERT INTO manifestation_tags (manifestation_id, tag_id) VALUES ($1, $2)",
+                m,
+                tag,
+            )
+            .execute(&mut *tx)
+            .await
+            .expect_err("readonly insert denied");
+            assert!(is_rls_denied(&err), "expected 42501, got {err:?}");
+        }
+
+        #[sqlx::test(migrations = "./migrations")]
+        async fn tags_ingestion_inserts_and_deletes_unimpeded(pool: PgPool) {
+            let ingestion = ingestion_pool_for(&pool).await;
+            let (_w, m) = insert_work_and_manifestation(&ingestion, "tag-ing").await;
+            let tag = seed_tag(&ingestion, "tag-ing-scope").await;
+            link_tag(&ingestion, m, tag).await;
+
+            let done = sqlx::query!(
+                "DELETE FROM manifestation_tags WHERE manifestation_id = $1 AND tag_id = $2",
+                m,
+                tag,
+            )
+            .execute(&ingestion)
+            .await
+            .expect("ingestion delete succeeds");
+            assert_eq!(done.rows_affected(), 1);
+        }
+
+        #[sqlx::test(migrations = "./migrations")]
+        async fn tags_rls_enabled_fresh_child_sees_no_rows(pool: PgPool) {
+            let ingestion = ingestion_pool_for(&pool).await;
+            let app = app_pool_for(&pool).await;
+            let (_w, m) = insert_work_and_manifestation(&ingestion, "tag-fresh").await;
+            let tag = seed_tag(&ingestion, "tag-fresh-scope").await;
+            link_tag(&ingestion, m, tag).await;
+
+            let (child_id, _) = create_child_user_and_basic_auth(&app, "tag-fresh-child").await;
+            let mut tx = acquire_with_rls(&app, child_id).await.expect("rls tx");
+            let count: i64 =
+                sqlx::query_scalar!("SELECT count(*) AS \"c!\" FROM manifestation_tags")
+                    .fetch_one(&mut *tx)
+                    .await
+                    .expect("select");
+            assert_eq!(
+                count, 0,
+                "RLS ENABLE hides all rows from a shelf-less child"
+            );
+        }
     }
 }

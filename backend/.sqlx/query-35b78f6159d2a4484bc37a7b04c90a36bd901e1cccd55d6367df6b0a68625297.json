@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM manifestation_moods WHERE manifestation_id = $1 AND mood_id = $2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "35b78f6159d2a4484bc37a7b04c90a36bd901e1cccd55d6367df6b0a68625297"
+}

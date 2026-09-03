@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM manifestation_genres WHERE manifestation_id = $1 AND genre_id = $2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "6d256aec97978e50fe8aed883782e3009f3ef2c5e119faba54404210ff588014"
+}

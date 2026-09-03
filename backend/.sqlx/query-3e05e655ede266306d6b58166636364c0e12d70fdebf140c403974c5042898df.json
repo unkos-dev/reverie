@@ -1,0 +1,26 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT manifestation_id FROM manifestation_tags ORDER BY manifestation_id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "manifestation_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "manifestation_tags",
+            "name": "manifestation_id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "3e05e655ede266306d6b58166636364c0e12d70fdebf140c403974c5042898df"
+}
