@@ -7935,7 +7935,7 @@ mod tests {
         }
 
         #[sqlx::test(migrations = "./migrations")]
-        async fn genres_readonly_reads_scoped_but_cannot_write(pool: PgPool) {
+        async fn genres_readonly_reads_scoped_and_lacks_write_grant(pool: PgPool) {
             let ingestion = ingestion_pool_for(&pool).await;
             let app = app_pool_for(&pool).await;
             let readonly = readonly_pool_for(&pool).await;
@@ -8073,7 +8073,7 @@ mod tests {
         }
 
         #[sqlx::test(migrations = "./migrations")]
-        async fn moods_readonly_reads_scoped_but_cannot_write(pool: PgPool) {
+        async fn moods_readonly_reads_scoped_and_lacks_write_grant(pool: PgPool) {
             let ingestion = ingestion_pool_for(&pool).await;
             let app = app_pool_for(&pool).await;
             let readonly = readonly_pool_for(&pool).await;
@@ -8211,7 +8211,7 @@ mod tests {
         }
 
         #[sqlx::test(migrations = "./migrations")]
-        async fn tags_readonly_reads_scoped_but_cannot_write(pool: PgPool) {
+        async fn tags_readonly_reads_scoped_and_lacks_write_grant(pool: PgPool) {
             let ingestion = ingestion_pool_for(&pool).await;
             let app = app_pool_for(&pool).await;
             let readonly = readonly_pool_for(&pool).await;
