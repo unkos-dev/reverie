@@ -174,6 +174,24 @@ Six per-operation policies control access:
 Children cannot UPDATE or DELETE manifestations: these are shared library records.
 Children manage their visibility through `shelf_items` instead.
 
+### `manifestation_genres`, `manifestation_moods`, `manifestation_tags`
+
+Each junction table carries the same five policies, scoped through
+`manifestations` visibility rather than a direct role or shelf check, so a
+session that reads or writes the junction table directly gets the same
+authorization result as a session that joins through `manifestations`:
+
+| Policy                          | Operation | Roles                             | Logic                                           |
+| ------------------------------- | --------- | --------------------------------- | ----------------------------------------------- |
+| `<table>_select`                | SELECT    | `reverie_app`, `reverie_readonly` | Visible iff the linked manifestation is visible |
+| `<table>_insert`                | INSERT    | `reverie_app`                     | Admin/adult, and the manifestation is visible   |
+| `<table>_update`                | UPDATE    | `reverie_app`                     | Admin/adult, and the manifestation is visible   |
+| `<table>_delete`                | DELETE    | `reverie_app`                     | Admin/adult, and the manifestation is visible   |
+| `<table>_ingestion_full_access` | ALL       | `reverie_ingestion`               | Unconditional access                            |
+
+The vocabulary tables (`genres`, `moods`, `tags`) hold no per-manifestation
+data and carry no RLS.
+
 ### Owner-scoped tables
 
 Tables holding one row per user carry a single `ALL` policy keyed on the

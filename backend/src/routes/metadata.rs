@@ -6084,9 +6084,8 @@ mod tests {
             "resolved_by should record the operator"
         );
 
-        // Reads go through the owner pool: `manifestation_genres` is
-        // RLS-scoped by manifestation visibility, which an unauthenticated
-        // GUC-less pool cannot satisfy, unlike this test's real request path.
+        // Owner pool: `manifestation_genres` is RLS-scoped, and this
+        // assertion pool never sets the GUC the SELECT policy needs.
         let genre_names: Vec<String> = sqlx::query_scalar!(
             "SELECT g.name FROM genres g \
              JOIN manifestation_genres mg ON mg.genre_id = g.id \
