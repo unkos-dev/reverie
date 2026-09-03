@@ -926,9 +926,11 @@ struct MeResponse {
     display_name: String,
     /// Email address; `null` when none on file.
     email: Option<String>,
+    /// Access-control role.
     role: crate::models::role::Role,
     /// Whether child content-visibility rules apply.
     is_child: bool,
+    /// Persisted UI theme preference.
     theme_preference: ThemePreference,
     /// Session-bound CSRF synchronizer token to echo as `X-CSRF-Token` on
     /// unsafe verbs; `null` for sessions that never completed
@@ -986,13 +988,15 @@ async fn me(
 /// Body for `PATCH /auth/me/theme`.
 #[derive(serde::Deserialize, utoipa::ToSchema)]
 struct UpdateThemeRequest {
-    #[schema(schema_with = crate::openapi::update_theme_request_theme_preference_schema)]
+    /// New theme preference; invalid values are rejected at
+    /// deserialization (422).
     theme_preference: ThemePreference,
 }
 
 /// Echo payload for `PATCH /auth/me/theme`.
 #[derive(serde::Serialize, utoipa::ToSchema)]
 struct ThemeResponse {
+    /// The persisted theme preference.
     theme_preference: ThemePreference,
 }
 

@@ -102,10 +102,8 @@ pub struct PreferenceDefaults {
     #[schema(value_type = Vec<String>)]
     pub hidden_columns: &'static [&'static str],
     /// Density for an account that has not chosen.
-    #[schema(schema_with = crate::openapi::preference_defaults_density_schema)]
     pub density: LibraryDensity,
     /// View for an account that has not chosen.
-    #[schema(schema_with = crate::openapi::preference_defaults_view_schema)]
     pub view: LibraryView,
     /// Sort for an account that has not chosen.
     #[schema(value_type = String)]

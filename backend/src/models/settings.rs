@@ -56,7 +56,7 @@ pub struct Settings {
     /// Post-ingestion cleanup mode (`all`, `ingested`, or `none`).
     // Raw TEXT column (DB CHECK-validated); documented as the typed enum so
     // read and write schemas agree — see `UpdateSettings.cleanup_mode`.
-    #[schema(schema_with = crate::openapi::cleanup_mode_schema)]
+    #[schema(value_type = CleanupMode)]
     pub cleanup_mode: String,
 
     /// `OpenLibrary` API base URL.

@@ -47,7 +47,6 @@ pub struct FieldChange {
     /// Source that produced this value (e.g. `"openlibrary"`, `"googlebooks"`).
     pub source_id: String,
     /// The proposed new value in its raw `JSON` form.
-    #[schema(schema_with = crate::openapi::field_change_new_value_schema)]
     pub new_value: serde_json::Value,
     /// Number of sources that reported the same value (quorum count).
     pub quorum: u32,

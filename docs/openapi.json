@@ -7190,7 +7190,8 @@
             "description": "Long-form description (`works.description`)."
           },
           "enrichment_status": {
-            "$ref": "#/components/schemas/EnrichmentStatus"
+            "$ref": "#/components/schemas/EnrichmentStatus",
+            "description": "Enrichment lifecycle state."
           },
           "external_ids": {
             "type": "array",
@@ -7219,7 +7220,8 @@
             "description": "`manifestations.id`."
           },
           "ingestion_status": {
-            "$ref": "#/components/schemas/IngestionStatus"
+            "$ref": "#/components/schemas/IngestionStatus",
+            "description": "Ingestion lifecycle state."
           },
           "isbn_10": {
             "type": [
@@ -7243,7 +7245,8 @@
             "description": "BCP-47 language tag (`works.language`)."
           },
           "metadata_version_summary": {
-            "$ref": "#/components/schemas/MetadataVersionSummary"
+            "$ref": "#/components/schemas/MetadataVersionSummary",
+            "description": "Metadata-version counts for the Versions tab."
           },
           "metadata_versions": {
             "type": "array",
@@ -7316,7 +7319,8 @@
             "description": "`manifestations.updated_at`. RFC 3339 on the wire (see `created_at`)."
           },
           "validation_status": {
-            "$ref": "#/components/schemas/ValidationStatus"
+            "$ref": "#/components/schemas/ValidationStatus",
+            "description": "Validation lifecycle state."
           },
           "work_id": {
             "type": "string",
@@ -7402,7 +7406,8 @@
             "description": "`manifestations.created_at`. RFC 3339 on the wire; also the\nrecent-sort cursor key and the value behind the \"Added\" sort column."
           },
           "enrichment_status": {
-            "$ref": "#/components/schemas/EnrichmentStatus"
+            "$ref": "#/components/schemas/EnrichmentStatus",
+            "description": "Enrichment lifecycle state."
           },
           "external_ids": {
             "type": "array",
@@ -7431,7 +7436,8 @@
             "description": "`manifestations.id` — the canonical book id on the wire."
           },
           "ingestion_status": {
-            "$ref": "#/components/schemas/IngestionStatus"
+            "$ref": "#/components/schemas/IngestionStatus",
+            "description": "Ingestion lifecycle state."
           },
           "isbn_13": {
             "type": [
@@ -7496,7 +7502,8 @@
             "description": "`works.title` of the parent work."
           },
           "validation_status": {
-            "$ref": "#/components/schemas/ValidationStatus"
+            "$ref": "#/components/schemas/ValidationStatus",
+            "description": "Validation lifecycle state."
           },
           "work_id": {
             "type": "string",
@@ -7530,7 +7537,8 @@
             ]
           },
           "contributors": {
-            "$ref": "#/components/schemas/MetadataContributors"
+            "$ref": "#/components/schemas/MetadataContributors",
+            "description": "Author/editor/translator names, each in stored position order."
           },
           "description": {
             "type": [
@@ -7687,7 +7695,8 @@
             "description": "Contributor display name (`authors.name`)."
           },
           "role": {
-            "$ref": "#/components/schemas/ContributorRole"
+            "$ref": "#/components/schemas/ContributorRole",
+            "description": "Contribution role (`work_authors.role`); never\n[`ContributorRole::Author`] on this slot."
           }
         }
       },
@@ -7847,7 +7856,8 @@
             "description": "Initial password, typed by the admin and handed off out-of-band. Required;\nenforced against the password policy (length, zxcvbn floor, HIBP breach)."
           },
           "role": {
-            "$ref": "#/components/schemas/Role"
+            "$ref": "#/components/schemas/Role",
+            "description": "Role for the new account. `child` and `admin` accounts are created only\nhere, by an existing administrator."
           }
         }
       },
@@ -7928,7 +7938,8 @@
             "description": "The identifier value on that scheme."
           },
           "level": {
-            "$ref": "#/components/schemas/IdentifierLevel"
+            "$ref": "#/components/schemas/IdentifierLevel",
+            "description": "FRBR level the id attaches to: `work` ids are shared across\neditions, `manifestation` ids name this edition specifically."
           },
           "scheme": {
             "type": "string",
@@ -7988,15 +7999,7 @@
             "description": "Canonical field name (e.g. `\"title\"`, `\"isbn_13\"`)."
           },
           "new_value": {
-            "type": [
-              "string",
-              "number",
-              "boolean",
-              "object",
-              "array",
-              "null"
-            ],
-            "description": "The proposed new value in its raw JSON form."
+            "description": "The proposed new value in its raw `JSON` form."
           },
           "quorum": {
             "type": "integer",
@@ -8023,15 +8026,7 @@
             "description": "Version pointer that was canonical before this patch (null when the\nfield was previously unset, or when no pointer exists for the field\nkind)."
           },
           "value": {
-            "type": [
-              "string",
-              "number",
-              "boolean",
-              "object",
-              "array",
-              "null"
-            ],
-            "description": "Canonical value as applied, after server normalization (null when the field was cleared)."
+            "description": "Canonical value as applied, after server normalization (null when the\nfield was cleared)."
           },
           "version_id": {
             "type": [
@@ -8201,10 +8196,12 @@
             "description": "Whether child content-visibility rules apply."
           },
           "role": {
-            "$ref": "#/components/schemas/Role"
+            "$ref": "#/components/schemas/Role",
+            "description": "Access-control role."
           },
           "theme_preference": {
-            "$ref": "#/components/schemas/ThemePreference"
+            "$ref": "#/components/schemas/ThemePreference",
+            "description": "Persisted UI theme preference."
           }
         }
       },
@@ -8307,14 +8304,6 @@
             "description": "How the source matched the manifestation (e.g. `isbn`, `title`)."
           },
           "new_value": {
-            "type": [
-              "string",
-              "number",
-              "boolean",
-              "object",
-              "array",
-              "null"
-            ],
             "description": "Proposed value in raw JSON form."
           },
           "observation_count": {
@@ -8365,15 +8354,7 @@
             "description": "Match-type tag from the enrichment pipeline (`isbn`, `title`, …)."
           },
           "new_value": {
-            "type": [
-              "string",
-              "number",
-              "boolean",
-              "object",
-              "array",
-              "null"
-            ],
-            "description": "Proposed value, untyped JSON; field-specific shape (string for title/description, ISO date for `pub_date`, ...)."
+            "description": "Proposed value, untyped JSON; field-specific shape (string for\ntitle/description, ISO date for `pub_date`, …)."
           },
           "observation_count": {
             "type": "integer",
@@ -8423,7 +8404,8 @@
         ],
         "properties": {
           "density": {
-            "$ref": "#/components/schemas/LibraryDensity"
+            "$ref": "#/components/schemas/LibraryDensity",
+            "description": "Density for an account that has not chosen."
           },
           "hidden_columns": {
             "type": "array",
@@ -8437,7 +8419,8 @@
             "description": "Sort for an account that has not chosen."
           },
           "view": {
-            "$ref": "#/components/schemas/LibraryView"
+            "$ref": "#/components/schemas/LibraryView",
+            "description": "View for an account that has not chosen."
           }
         }
       },
@@ -8499,7 +8482,8 @@
             ],
             "properties": {
               "defaults": {
-                "$ref": "#/components/schemas/PreferenceDefaults"
+                "$ref": "#/components/schemas/PreferenceDefaults",
+                "description": "Installation defaults in force for every group the caller has not\noverridden."
               }
             }
           }
@@ -8863,7 +8847,8 @@
             "description": "Primary id — `manifestations.id` for `book`, `authors.id` for\n`author`, `series.id` for `series`."
           },
           "kind": {
-            "$ref": "#/components/schemas/SearchHitKind"
+            "$ref": "#/components/schemas/SearchHitKind",
+            "description": "Result kind. Currently always `\"book\"`; `\"author\"` and\n`\"series\"` ship in a follow-up that fans the hybrid CTE over\nthe existing `authors.name` / `series.name` trigram indexes."
           },
           "snippet": {
             "type": [
@@ -9040,7 +9025,8 @@
         ],
         "properties": {
           "cleanup_mode": {
-            "$ref": "#/components/schemas/CleanupMode"
+            "$ref": "#/components/schemas/CleanupMode",
+            "description": "Post-ingestion cleanup mode (`all`, `ingested`, or `none`)."
           },
           "cover_download_timeout_secs": {
             "type": "integer",
@@ -9542,7 +9528,8 @@
         ],
         "properties": {
           "theme_preference": {
-            "$ref": "#/components/schemas/ThemePreference"
+            "$ref": "#/components/schemas/ThemePreference",
+            "description": "The persisted theme preference."
           }
         }
       },
@@ -9871,7 +9858,8 @@
         ],
         "properties": {
           "role": {
-            "$ref": "#/components/schemas/Role"
+            "$ref": "#/components/schemas/Role",
+            "description": "New role for the target user."
           }
         }
       },
@@ -10054,7 +10042,8 @@
         ],
         "properties": {
           "theme_preference": {
-            "$ref": "#/components/schemas/ThemePreference"
+            "$ref": "#/components/schemas/ThemePreference",
+            "description": "New theme preference; invalid values are rejected at\ndeserialization (422)."
           }
         }
       },
@@ -10118,7 +10107,8 @@
             "description": "Whether child content-visibility rules apply to this user."
           },
           "role": {
-            "$ref": "#/components/schemas/Role"
+            "$ref": "#/components/schemas/Role",
+            "description": "Access-control role."
           },
           "updated_at": {
             "type": "string",
@@ -10241,7 +10231,8 @@
             "description": "`manifestations.created_at`. RFC 3339 on the wire, which the\nfrontend `WorkManifestationSchema` requires."
           },
           "enrichment_status": {
-            "$ref": "#/components/schemas/EnrichmentStatus"
+            "$ref": "#/components/schemas/EnrichmentStatus",
+            "description": "Enrichment lifecycle state."
           },
           "id": {
             "type": "string",
@@ -10249,7 +10240,8 @@
             "description": "`manifestations.id`."
           },
           "ingestion_status": {
-            "$ref": "#/components/schemas/IngestionStatus"
+            "$ref": "#/components/schemas/IngestionStatus",
+            "description": "Ingestion lifecycle state."
           },
           "isbn_10": {
             "type": [
@@ -10274,7 +10266,8 @@
             "description": "`manifestations.pages`, when known."
           },
           "validation_status": {
-            "$ref": "#/components/schemas/ValidationStatus"
+            "$ref": "#/components/schemas/ValidationStatus",
+            "description": "Validation lifecycle state."
           }
         }
       }

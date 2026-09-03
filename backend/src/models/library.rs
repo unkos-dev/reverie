@@ -58,7 +58,6 @@ pub struct ContributorRef {
     pub name: String,
     /// Contribution role (`work_authors.role`); never
     /// [`ContributorRole::Author`] on this slot.
-    #[schema(schema_with = crate::openapi::contributor_ref_role_schema)]
     pub role: ContributorRole,
 }
 
@@ -70,7 +69,6 @@ pub struct ContributorRef {
 pub struct ExternalIdRef {
     /// FRBR level the id attaches to: `work` ids are shared across
     /// editions, `manifestation` ids name this edition specifically.
-    #[schema(schema_with = crate::openapi::external_id_ref_level_schema)]
     pub level: IdentifierLevel,
     /// Identifier scheme (`identifier_schemes.id`, e.g. `openlibrary`).
     pub scheme: String,
@@ -147,13 +145,10 @@ pub struct BookListRow {
     /// truth for the cover surface.
     pub cover_url: String,
     /// Ingestion lifecycle state.
-    #[schema(schema_with = crate::openapi::ingestion_status_schema)]
     pub ingestion_status: IngestionStatus,
     /// Validation lifecycle state.
-    #[schema(schema_with = crate::openapi::validation_status_schema)]
     pub validation_status: ValidationStatus,
     /// Enrichment lifecycle state.
-    #[schema(schema_with = crate::openapi::enrichment_status_schema)]
     pub enrichment_status: EnrichmentStatus,
     /// Caller's reading state for this book; `None` when unread (no
     /// `reading_state` row). Batch-loaded alongside `authors`.
@@ -223,13 +218,10 @@ pub struct BookDetail {
     /// `None` when unrated.
     pub content_rating: Option<ContentRating>,
     /// Ingestion lifecycle state.
-    #[schema(schema_with = crate::openapi::ingestion_status_schema)]
     pub ingestion_status: IngestionStatus,
     /// Validation lifecycle state.
-    #[schema(schema_with = crate::openapi::validation_status_schema)]
     pub validation_status: ValidationStatus,
     /// Enrichment lifecycle state.
-    #[schema(schema_with = crate::openapi::enrichment_status_schema)]
     pub enrichment_status: EnrichmentStatus,
     /// External-source identifiers for visible providers: the parent
     /// work's ids followed by this edition's, each sorted by scheme.
@@ -239,7 +231,6 @@ pub struct BookDetail {
     /// source.
     pub external_ratings: Vec<ExternalRatingRef>,
     /// Metadata-version counts for the Versions tab.
-    #[schema(schema_with = crate::openapi::metadata_version_summary_schema)]
     pub metadata_version_summary: MetadataVersionSummary,
     /// Pending `metadata_versions` rows for this manifestation. Filtered
     /// to `status = 'pending'` AND not currently promoted as a canonical
@@ -272,7 +263,6 @@ pub struct MetadataVersionRow {
     pub source: String,
     /// Proposed value, untyped JSON; field-specific shape (string for
     /// title/description, ISO date for `pub_date`, …).
-    #[schema(schema_with = crate::openapi::metadata_version_row_new_value_schema)]
     pub new_value: Value,
     /// Always `pending` for rows surfaced here; promotion lives on
     /// canonical pointer columns, not this enum.
@@ -345,7 +335,6 @@ pub struct SearchHit {
     /// Result kind. Currently always `"book"`; `"author"` and
     /// `"series"` ship in a follow-up that fans the hybrid CTE over
     /// the existing `authors.name` / `series.name` trigram indexes.
-    #[schema(schema_with = crate::openapi::search_hit_kind_schema)]
     pub kind: SearchHitKind,
     /// Primary id — `manifestations.id` for `book`, `authors.id` for
     /// `author`, `series.id` for `series`.
@@ -397,13 +386,10 @@ pub struct WorkManifestation {
     /// [`BookListRow::cover_url`].
     pub cover_url: String,
     /// Ingestion lifecycle state.
-    #[schema(schema_with = crate::openapi::ingestion_status_schema)]
     pub ingestion_status: IngestionStatus,
     /// Validation lifecycle state.
-    #[schema(schema_with = crate::openapi::validation_status_schema)]
     pub validation_status: ValidationStatus,
     /// Enrichment lifecycle state.
-    #[schema(schema_with = crate::openapi::enrichment_status_schema)]
     pub enrichment_status: EnrichmentStatus,
     /// `manifestations.created_at`. RFC 3339 on the wire, which the
     /// frontend `WorkManifestationSchema` requires.
