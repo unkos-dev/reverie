@@ -36,7 +36,11 @@ same file maps each one to a `--color-*` name so Tailwind emits the
 matching utility (`bg-canvas`, `text-fg`, `border-border-strong`). Write
 utilities in components; read the semantic name when tracing a value.
 The three-tier contract itself is documented in
-[Color Tokens](./color-tokens.md).
+[Color Tokens](./color-tokens.md). The `@theme inline` block resets
+Tailwind's default color ramps to absent (`--color-*: initial;`) before
+re-declaring the tokens above, so a stock class such as `bg-red-500`
+cannot compile; `frontend/vite-plugins/__tests__/no-default-tailwind-ramps.guard.test.ts`
+enforces this.
 
 Every value below is a step in a generated Radix ramp. The primitive
 column is the traceable source; the hex is what that step currently
