@@ -5801,11 +5801,11 @@
             }
           },
           "401": {
-            "description": "Basic authentication required (WWW-Authenticate: Basic); body is empty",
+            "description": "Basic authentication required (WWW-Authenticate: Basic)",
             "content": {
-              "text/plain": {
+              "application/json": {
                 "schema": {
-                  "type": "string"
+                  "$ref": "#/components/schemas/ProblemDetails"
                 }
               }
             }
@@ -5846,11 +5846,11 @@
             "description": "Not Modified — the request's If-None-Match matched the cover ETag"
           },
           "401": {
-            "description": "Basic authentication required (WWW-Authenticate: Basic); body is empty",
+            "description": "Basic authentication required (WWW-Authenticate: Basic)",
             "content": {
-              "text/plain": {
+              "application/json": {
                 "schema": {
-                  "type": "string"
+                  "$ref": "#/components/schemas/ProblemDetails"
                 }
               }
             }
@@ -5901,11 +5901,11 @@
             "description": "Not Modified — the request's If-None-Match matched the cover ETag"
           },
           "401": {
-            "description": "Basic authentication required (WWW-Authenticate: Basic); body is empty",
+            "description": "Basic authentication required (WWW-Authenticate: Basic)",
             "content": {
-              "text/plain": {
+              "application/json": {
                 "schema": {
-                  "type": "string"
+                  "$ref": "#/components/schemas/ProblemDetails"
                 }
               }
             }
@@ -5956,11 +5956,11 @@
             }
           },
           "401": {
-            "description": "Basic authentication required (WWW-Authenticate: Basic); body is empty",
+            "description": "Basic authentication required (WWW-Authenticate: Basic)",
             "content": {
-              "text/plain": {
+              "application/json": {
                 "schema": {
-                  "type": "string"
+                  "$ref": "#/components/schemas/ProblemDetails"
                 }
               }
             }
@@ -6013,11 +6013,11 @@
             }
           },
           "401": {
-            "description": "Basic authentication required (WWW-Authenticate: Basic); body is empty",
+            "description": "Basic authentication required (WWW-Authenticate: Basic)",
             "content": {
-              "text/plain": {
+              "application/json": {
                 "schema": {
-                  "type": "string"
+                  "$ref": "#/components/schemas/ProblemDetails"
                 }
               }
             }
@@ -6071,11 +6071,11 @@
             }
           },
           "401": {
-            "description": "Basic authentication required (WWW-Authenticate: Basic); body is empty",
+            "description": "Basic authentication required (WWW-Authenticate: Basic)",
             "content": {
-              "text/plain": {
+              "application/json": {
                 "schema": {
-                  "type": "string"
+                  "$ref": "#/components/schemas/ProblemDetails"
                 }
               }
             }
@@ -6149,11 +6149,11 @@
             }
           },
           "401": {
-            "description": "Basic authentication required (WWW-Authenticate: Basic); body is empty",
+            "description": "Basic authentication required (WWW-Authenticate: Basic)",
             "content": {
-              "text/plain": {
+              "application/json": {
                 "schema": {
-                  "type": "string"
+                  "$ref": "#/components/schemas/ProblemDetails"
                 }
               }
             }
@@ -6217,11 +6217,11 @@
             }
           },
           "401": {
-            "description": "Basic authentication required (WWW-Authenticate: Basic); body is empty",
+            "description": "Basic authentication required (WWW-Authenticate: Basic)",
             "content": {
-              "text/plain": {
+              "application/json": {
                 "schema": {
-                  "type": "string"
+                  "$ref": "#/components/schemas/ProblemDetails"
                 }
               }
             }
@@ -6264,11 +6264,11 @@
             }
           },
           "401": {
-            "description": "Basic authentication required (WWW-Authenticate: Basic); body is empty",
+            "description": "Basic authentication required (WWW-Authenticate: Basic)",
             "content": {
-              "text/plain": {
+              "application/json": {
                 "schema": {
-                  "type": "string"
+                  "$ref": "#/components/schemas/ProblemDetails"
                 }
               }
             }
@@ -6322,11 +6322,11 @@
             }
           },
           "401": {
-            "description": "Basic authentication required (WWW-Authenticate: Basic); body is empty",
+            "description": "Basic authentication required (WWW-Authenticate: Basic)",
             "content": {
-              "text/plain": {
+              "application/json": {
                 "schema": {
-                  "type": "string"
+                  "$ref": "#/components/schemas/ProblemDetails"
                 }
               }
             }
@@ -6380,11 +6380,11 @@
             }
           },
           "401": {
-            "description": "Basic authentication required (WWW-Authenticate: Basic); body is empty",
+            "description": "Basic authentication required (WWW-Authenticate: Basic)",
             "content": {
-              "text/plain": {
+              "application/json": {
                 "schema": {
-                  "type": "string"
+                  "$ref": "#/components/schemas/ProblemDetails"
                 }
               }
             }
@@ -6458,11 +6458,11 @@
             }
           },
           "401": {
-            "description": "Basic authentication required (WWW-Authenticate: Basic); body is empty",
+            "description": "Basic authentication required (WWW-Authenticate: Basic)",
             "content": {
-              "text/plain": {
+              "application/json": {
                 "schema": {
-                  "type": "string"
+                  "$ref": "#/components/schemas/ProblemDetails"
                 }
               }
             }
@@ -6517,11 +6517,11 @@
             }
           },
           "401": {
-            "description": "Basic authentication required (WWW-Authenticate: Basic); body is empty",
+            "description": "Basic authentication required (WWW-Authenticate: Basic)",
             "content": {
-              "text/plain": {
+              "application/json": {
                 "schema": {
-                  "type": "string"
+                  "$ref": "#/components/schemas/ProblemDetails"
                 }
               }
             }
@@ -6595,11 +6595,11 @@
             }
           },
           "401": {
-            "description": "Basic authentication required (WWW-Authenticate: Basic); body is empty",
+            "description": "Basic authentication required (WWW-Authenticate: Basic)",
             "content": {
-              "text/plain": {
+              "application/json": {
                 "schema": {
-                  "type": "string"
+                  "$ref": "#/components/schemas/ProblemDetails"
                 }
               }
             }
@@ -6693,11 +6693,11 @@
             }
           },
           "401": {
-            "description": "Basic authentication required (WWW-Authenticate: Basic); body is empty",
+            "description": "Basic authentication required (WWW-Authenticate: Basic)",
             "content": {
-              "text/plain": {
+              "application/json": {
                 "schema": {
-                  "type": "string"
+                  "$ref": "#/components/schemas/ProblemDetails"
                 }
               }
             }
@@ -6781,11 +6781,11 @@
             }
           },
           "401": {
-            "description": "Basic authentication required (WWW-Authenticate: Basic); body is empty",
+            "description": "Basic authentication required (WWW-Authenticate: Basic)",
             "content": {
-              "text/plain": {
+              "application/json": {
                 "schema": {
-                  "type": "string"
+                  "$ref": "#/components/schemas/ProblemDetails"
                 }
               }
             }
@@ -6850,11 +6850,11 @@
             }
           },
           "401": {
-            "description": "Basic authentication required (WWW-Authenticate: Basic); body is empty",
+            "description": "Basic authentication required (WWW-Authenticate: Basic)",
             "content": {
-              "text/plain": {
+              "application/json": {
                 "schema": {
-                  "type": "string"
+                  "$ref": "#/components/schemas/ProblemDetails"
                 }
               }
             }
@@ -6928,11 +6928,11 @@
             }
           },
           "401": {
-            "description": "Basic authentication required (WWW-Authenticate: Basic); body is empty",
+            "description": "Basic authentication required (WWW-Authenticate: Basic)",
             "content": {
-              "text/plain": {
+              "application/json": {
                 "schema": {
-                  "type": "string"
+                  "$ref": "#/components/schemas/ProblemDetails"
                 }
               }
             }
@@ -7006,11 +7006,11 @@
             }
           },
           "401": {
-            "description": "Basic authentication required (WWW-Authenticate: Basic); body is empty",
+            "description": "Basic authentication required (WWW-Authenticate: Basic)",
             "content": {
-              "text/plain": {
+              "application/json": {
                 "schema": {
-                  "type": "string"
+                  "$ref": "#/components/schemas/ProblemDetails"
                 }
               }
             }
@@ -7104,11 +7104,11 @@
             }
           },
           "401": {
-            "description": "Basic authentication required (WWW-Authenticate: Basic); body is empty",
+            "description": "Basic authentication required (WWW-Authenticate: Basic)",
             "content": {
-              "text/plain": {
+              "application/json": {
                 "schema": {
-                  "type": "string"
+                  "$ref": "#/components/schemas/ProblemDetails"
                 }
               }
             }

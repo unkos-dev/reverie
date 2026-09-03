@@ -64,7 +64,7 @@ pub fn router() -> OpenApiRouter<AppState> {
     security(("opds_basic" = [])),
     responses(
         (status = 200, description = "OPDS navigation feed linking the New / Authors / Series subcatalogs", content_type = "application/atom+xml;profile=opds-catalog;kind=navigation", body = String),
-        (status = 401, description = "Basic authentication required (WWW-Authenticate: Basic); body is empty", body = String)
+        (status = 401, description = "Basic authentication required (WWW-Authenticate: Basic)", body = crate::openapi::ProblemDetails)
     )
 )]
 async fn library_root(
@@ -128,7 +128,7 @@ pub struct PageParams {
     responses(
         (status = 200, description = "OPDS acquisition feed of the newest visible books; rel=\"next\" link carries the cursor", content_type = "application/atom+xml;profile=opds-catalog;kind=acquisition", body = String),
         (status = 400, description = "Malformed query parameter", body = crate::openapi::ProblemDetails),
-        (status = 401, description = "Basic authentication required (WWW-Authenticate: Basic); body is empty", body = String),
+        (status = 401, description = "Basic authentication required (WWW-Authenticate: Basic)", body = crate::openapi::ProblemDetails),
         (status = 422, description = "Malformed cursor", body = crate::openapi::ProblemDetails)
     )
 )]
@@ -165,7 +165,7 @@ async fn library_new(
     responses(
         (status = 200, description = "OPDS navigation feed of authors with visible books", content_type = "application/atom+xml;profile=opds-catalog;kind=navigation", body = String),
         (status = 400, description = "Malformed query parameter", body = crate::openapi::ProblemDetails),
-        (status = 401, description = "Basic authentication required (WWW-Authenticate: Basic); body is empty", body = String),
+        (status = 401, description = "Basic authentication required (WWW-Authenticate: Basic)", body = crate::openapi::ProblemDetails),
         (status = 422, description = "Malformed cursor", body = crate::openapi::ProblemDetails)
     )
 )]
@@ -203,7 +203,7 @@ async fn library_authors(
     responses(
         (status = 200, description = "OPDS acquisition feed of the author's visible books (empty for unknown authors)", content_type = "application/atom+xml;profile=opds-catalog;kind=acquisition", body = String),
         (status = 400, description = "Malformed query parameter", body = crate::openapi::ProblemDetails),
-        (status = 401, description = "Basic authentication required (WWW-Authenticate: Basic); body is empty", body = String),
+        (status = 401, description = "Basic authentication required (WWW-Authenticate: Basic)", body = crate::openapi::ProblemDetails),
         (status = 422, description = "Malformed cursor", body = crate::openapi::ProblemDetails)
     )
 )]
@@ -242,7 +242,7 @@ async fn library_author_books(
     responses(
         (status = 200, description = "OPDS navigation feed of series with visible books", content_type = "application/atom+xml;profile=opds-catalog;kind=navigation", body = String),
         (status = 400, description = "Malformed query parameter", body = crate::openapi::ProblemDetails),
-        (status = 401, description = "Basic authentication required (WWW-Authenticate: Basic); body is empty", body = String),
+        (status = 401, description = "Basic authentication required (WWW-Authenticate: Basic)", body = crate::openapi::ProblemDetails),
         (status = 422, description = "Malformed cursor", body = crate::openapi::ProblemDetails)
     )
 )]
@@ -280,7 +280,7 @@ async fn library_series(
     responses(
         (status = 200, description = "OPDS acquisition feed of the series' visible books (empty for unknown series)", content_type = "application/atom+xml;profile=opds-catalog;kind=acquisition", body = String),
         (status = 400, description = "Malformed query parameter", body = crate::openapi::ProblemDetails),
-        (status = 401, description = "Basic authentication required (WWW-Authenticate: Basic); body is empty", body = String),
+        (status = 401, description = "Basic authentication required (WWW-Authenticate: Basic)", body = crate::openapi::ProblemDetails),
         (status = 422, description = "Malformed cursor", body = crate::openapi::ProblemDetails)
     )
 )]
@@ -328,7 +328,7 @@ pub struct SearchParams {
     responses(
         (status = 200, description = "OPDS acquisition feed of search results; empty/whitespace query yields an empty feed", content_type = "application/atom+xml;profile=opds-catalog;kind=acquisition", body = String),
         (status = 400, description = "Malformed query parameter", body = crate::openapi::ProblemDetails),
-        (status = 401, description = "Basic authentication required (WWW-Authenticate: Basic); body is empty", body = String)
+        (status = 401, description = "Basic authentication required (WWW-Authenticate: Basic)", body = crate::openapi::ProblemDetails)
     )
 )]
 async fn library_search(

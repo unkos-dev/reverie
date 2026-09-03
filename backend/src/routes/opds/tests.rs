@@ -116,6 +116,12 @@ async fn unauthenticated_returns_challenge(pool: PgPool) {
         .unwrap()
         .to_owned();
     assert_eq!(challenge, r#"Basic realm="Reverie OPDS", charset="UTF-8""#);
+    let problem = test_support::assert_problem(
+        &response,
+        crate::error::problems::BASIC_AUTH_REQUIRED,
+        StatusCode::UNAUTHORIZED,
+    );
+    assert_eq!(problem["status"], 401);
 }
 
 // ── Regression: DB failure surfaces as 500, not a 401 challenge ──────────

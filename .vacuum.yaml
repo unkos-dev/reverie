@@ -25,7 +25,7 @@ rules:
   # --- Security rules worth adopting; each needs spec or generator work ---
 
   # Every string schema must declare format, pattern, enum, or const. An
-  # unconstrained string is an injection and storage-abuse surface. 254 hits.
+  # unconstrained string is an injection and storage-abuse surface. 234 hits.
   owasp-string-restricted: false
 
   # Integers must carry minimum and maximum. 78 hits.
