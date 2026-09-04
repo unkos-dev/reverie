@@ -479,6 +479,7 @@ Snyk
 SonarCloud
 SonarQube
 sortable
+Specful
 sqlite
 sqlx
 src

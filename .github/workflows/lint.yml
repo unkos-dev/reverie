@@ -7,7 +7,7 @@ permissions:
   contents: read
 
 env:
-  MISE_TOOLS: just shellcheck hadolint typos vale yamllint github:quarylabs/sqruff actionlint zizmor
+  MISE_TOOLS: just shellcheck hadolint typos vale yamllint github:quarylabs/sqruff actionlint zizmor github:unkos-dev/specful
 
 jobs:
   changes:
@@ -141,6 +141,9 @@ jobs:
       # Emits at `warning`, so this surfaces findings without failing the build.
       - name: Prose lint (Vale)
         run: just infra::prose
+
+      - name: Specification corpus (specful)
+        run: just infra::specful
 
   files:
     runs-on: ubuntu-latest

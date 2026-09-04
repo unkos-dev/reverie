@@ -111,7 +111,8 @@ Install the repository-pinned hook and local-check tools with [mise](https://mis
 
 ```sh
 mise install actionlint gitleaks hadolint just shellcheck typos vale yamllint \
-  pnpm github:nextest-rs/nextest github:taiki-e/cargo-llvm-cov
+  pnpm github:nextest-rs/nextest github:taiki-e/cargo-llvm-cov \
+  github:quarylabs/sqruff github:unkos-dev/specful
 ```
 
 Then install [vite-plus](https://viteplus.dev). It is a standalone binary, so an install inside the checkout does not provide it, and it is what provisions Node: the version comes from `devEngines.runtime` in [`package.json`](../package.json), so nothing else needs to pin it. Run this from the repository root. The version is read out of the catalog in [`pnpm-workspace.yaml`](../pnpm-workspace.yaml), which is where the `vite-plus` pin lives; the root manifest only carries `catalog:`, and reading that would hand the installer a version string of `catalog:`.
@@ -148,6 +149,10 @@ CI installs vp through [`voidzero-dev/setup-vp`](https://github.com/voidzero-dev
 PRs touching product code without tests will not be approved.
 
 Executable tooling elsewhere in the tree (`scripts/`, the justfiles, `.github/`, `docker/`, the root configs) is judged on whether it can fail quietly rather than on a fixed test requirement: a guard a pull request exercises and that fails loudly needs no separate test, while a check that can pass while matching nothing needs an assertion inside it. `AGENTS.md` hard rule 5 is the single source for both halves.
+
+## Specifications
+
+Requirements and Designs live under `docs/specs/` and are created with `specful new`. `specful index` regenerates the navigation views, and the regenerated files are committed alongside the change that prompted them. `specful index --check` and `specful validate` gate the corpus in pre-commit and in CI. The pinned version lives in `mise.toml`.
 
 ## Accessibility
 

@@ -80,3 +80,8 @@ locked = true
 [tools."github:kunobi-ninja/kache"]
 version = "0.16.0"
 filter_bins = "kache"
+
+# Specification linter for docs/specs, run by `just infra::specful`.
+[tools."github:unkos-dev/specful"]
+version = "0.4.1"
+filter_bins = "specful"
