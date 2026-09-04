@@ -13,7 +13,7 @@ set dotenv-load := false
 mod js
 mod rust
 mod infra
-mod docs
+mod website
 
 # List recipes (default target).
 _default:
@@ -31,7 +31,7 @@ help:
 # --frozen-lockfile rather than a plain install: it is lockfile-exact, it fails
 # rather than silently updating the lockfile, and it works from nothing.
 #
-# Install the pnpm workspace (frontend + docs) from the root lockfile.
+# Install the pnpm workspace (frontend + website) from the root lockfile.
 [group('aggregate')]
 install:
     pnpm install --frozen-lockfile
@@ -46,16 +46,16 @@ install:
 #
 # Verify every plane (locally-runnable gates only; DB/CI recipes and a11y excluded).
 [group('aggregate')]
-check: js::check rust::check infra::check docs::check infra::zizmor-offline
+check: js::check rust::check infra::check website::check infra::zizmor-offline
 
 # Docs content is linted whole-tree by infra::prose and js::markdownlint, so the
-# docs plane carries no lint recipe of its own.
+# website plane carries no lint recipe of its own.
 #
 # Lint the js, rust, and infra surfaces.
 [group('aggregate')]
 lint: js::lint rust::lint infra::lint
 
-# oxfmt (js::fmt) covers all its types whole-tree, incl. docs and backend TOML;
+# oxfmt (js::fmt) covers all its types whole-tree, incl. website and backend TOML;
 # cargo fmt (rust::fmt) covers Rust. Together they format the whole tree.
 #
 # Format the whole tree in place. WRITES; never depended on by check/lint.
@@ -71,7 +71,7 @@ test: js::test rust::test
 
 # Build every shippable artifact.
 [group('aggregate')]
-build: js::build rust::build docs::build
+build: js::build rust::build website::build
 
 # CI-parity local gate: everything the GitHub CI gate runs that is runnable on
 # a workstation. rust::guards runs first: it needs no toolchain, database, or

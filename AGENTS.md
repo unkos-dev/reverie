@@ -74,7 +74,8 @@ These are absolute invariants for the Reverie repository.
 
 - `backend/` — Rust + Axum (See `backend/AGENTS.md` for specific rules)
 - `frontend/` — React + Vite + TS (See `frontend/AGENTS.md` for specific rules)
-- `docs/` — Starlight site
+- `docs/` — Repository documentation (deployment, design, security, schema)
+- `website/` — Starlight site
 - `adr/` — Architecture Decision Records
 
 Files that gate a change and are easy to miss:
@@ -100,7 +101,7 @@ hand-rolling a command: the lint, format, test, and build definitions
 CI uses live in the justfiles, so invoking a tool directly can apply different
 flags than the gate that will judge the change.
 
-Recipes are namespaced by module (`rust::check`, `js::check`, `docs::build`);
+Recipes are namespaced by module (`rust::check`, `js::check`, `website::build`);
 the unprefixed aggregates fan out across planes. Each recipe's doc comment is
 its documentation; `just --list` renders them.
 
