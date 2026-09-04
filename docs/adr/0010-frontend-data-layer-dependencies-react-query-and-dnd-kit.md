@@ -68,8 +68,8 @@ cross-cutting state in the app, being able to inspect cache entries by key at ru
 short debug and a long one when invalidation is wrong; devtools is the TanStack-maintained inspector and no
 third-party tool covers the same surface.
 
-`@dnd-kit/sortable@^8` is pinned under `dependencies` alongside `@dnd-kit/core@^6` (a transitive dependency pinned
-directly so version bumps surface in `npm install`) and `@dnd-kit/utilities@^3` (CSS-transform helpers). It serves
+`@dnd-kit/sortable` is pinned under `dependencies` alongside `@dnd-kit/core` (a transitive dependency pinned
+directly so version bumps surface at install) and `@dnd-kit/utilities` (CSS-transform helpers). It serves
 the shelf-item reorder UI: dragging rows to reorder, backed by a server-side `PUT` to a shelf's item-order endpoint
 with an optimistic update and rollback on an RFC 9110 `If-Match` precondition failure (412). Chosen over react-dnd
 because dnd-kit is the actively maintained successor, supports React 19, has zero external dependencies beyond peer

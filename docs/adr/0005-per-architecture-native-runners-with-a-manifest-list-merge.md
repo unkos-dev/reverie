@@ -147,8 +147,9 @@ cancelled, a later change than this decision.
 
 ## More information
 
-This record replaces the earlier record's build-shape decision. That record's two-channel publication policy and
-its decision to leave `:latest` unassigned remain in force here.
+This record replaces the build-shape decision of the earlier record, Decouple staging Docker image publication from
+semver release tags (retired; history holds the record). That record's two-channel publication policy and its
+decision to leave `:latest` unassigned remain in force here.
 
 ### Publication-channel alternatives
 

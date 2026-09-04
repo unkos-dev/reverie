@@ -69,8 +69,10 @@ code; the only remaining bare `reqwest::Client::new()` call sites target wiremoc
 where the exemption holds because wiremock does not score User-Agents and the test surface is not exposed to WAF
 rules.
 
-This record captures the convention; per-site enforcement is by code review. The OIDC module carries the constraint
-in its top-of-file `//!` docs so a future reader meets it without first finding this record.
+This record captures the convention. Per-site enforcement was by code review at the decision; the escalation
+condition it set (a second lapse) has since fired, and the `disallowed-methods` entries in `backend/clippy.toml`
+now back the convention by banning the bare `reqwest` constructors. The OIDC module carries the constraint in its
+top-of-file `//!` docs so a future reader meets it without first finding this record.
 
 ### Consequences
 
@@ -112,8 +114,9 @@ changes shape.
 
 ### Compile-time lint
 
-- Negative: no off-the-shelf lint exists for this rule, and writing one for a six-call-site codebase is
-  disproportionate to the problem.
+- Negative: no off-the-shelf lint existed for this rule at the decision, and writing one for a six-call-site
+  codebase was disproportionate to the problem; the `disallowed-methods` entries in `backend/clippy.toml` later took
+  that role once the escalation condition fired.
 
 ### Do nothing, document in the deployment guide
 
