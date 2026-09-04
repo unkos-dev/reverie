@@ -3,6 +3,8 @@ type: REQ
 profile-version: 1
 id: "REV-REQ-0002"
 title: "Library filter state has exactly one writer"
+governed-by:
+  - "REV-ADR-0001"
 ---
 
 # Library filter state has exactly one writer
@@ -26,7 +28,7 @@ that satisfies this Requirement.
 
 - Every filter-editing component under the library route (the filter rail's per-field sections, the quick-search input,
   the filter chips, and the clear-all and clear-filters affordances) changes filter state by calling a commit function
-  supplied by the one filter writer; none constructs or mutates a `URLSearchParams` instance itself.
+  supplied by the one filter writer; none writes a filter key through a `URLSearchParams` instance it constructs itself.
 - No component under the library route calls React Router's `useSearchParams` to read or write a library filter key.
 - A gesture that edits one filter slice (for example the pages range) writes only that slice's URL keys, so a sibling
   slice mid-edit is never overwritten by a stale snapshot of its current value.

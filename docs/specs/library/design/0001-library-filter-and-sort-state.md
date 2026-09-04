@@ -7,6 +7,8 @@ satisfies:
   - "REV-REQ-0001"
   - "REV-REQ-0002"
   - "REV-REQ-0003"
+governed-by:
+  - "REV-ADR-0001"
 ---
 
 # Library filter and sort state

@@ -3,6 +3,8 @@ type: REQ
 profile-version: 1
 id: "REV-REQ-0003"
 title: "Library list filter values that fail to decode are rejected"
+governed-by:
+  - "REV-ADR-0001"
 ---
 
 # Library list filter values that fail to decode are rejected
