@@ -15,6 +15,13 @@
       "title": "Strict lint policy: pedantic clippy and strict frontend lint"
     },
     {
+      "id": "REV-ADR-0003",
+      "kind": "adr",
+      "path": "docs/adr/0003-single-image-distribution-with-central-csp-enforcement.md",
+      "status": "accepted",
+      "title": "Single-image distribution with central CSP enforcement"
+    },
+    {
       "id": "REV-DESIGN-0001",
       "kind": "design",
       "path": "docs/specs/library/design/0001-library-filter-and-sort-state.md",
