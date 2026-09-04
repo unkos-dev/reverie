@@ -1,7 +1,7 @@
 //! Renders the operator-facing configuration reference (Starlight MDX) from the
 //! declarative config schema plus `ENV_MAP`.
 //!
-//! The committed artifact (`docs/src/content/docs/reference/configuration.mdx`)
+//! The committed artifact (`website/src/content/docs/reference/configuration.mdx`)
 //! is drift-gated by `tests/gen_config_ref.rs`: editing a config field's
 //! `///` doc, default, or range without regenerating the page fails CI. The
 //! schema (`schemars::schema_for!(Config)` — the same value the CI-gated

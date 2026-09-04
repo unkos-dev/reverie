@@ -9,7 +9,7 @@ rules:
   cache-poisoning:
     ignore:
       # setup-node there has no cache: input; the finding fires on presence.
-      - docs.yml
+      - website.yml
   dangerous-triggers:
     ignore:
       # sonar.yml runs read-only on main CI completions and executes no

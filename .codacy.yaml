@@ -9,7 +9,7 @@
 # content is analysed in place.
 #
 # Being generated is not itself grounds for exclusion, since generated code
-# ships and can carry a real vulnerability. docs/openapi.json is rewritten by
+# ships and can carry a real vulnerability. backend/openapi.json is rewritten by
 # the same command as two of these entries and stays in scope: global security
 # schemes, operation coverage, and cross-endpoint naming are properties of the
 # composed document that no single annotation expresses, so a finding there

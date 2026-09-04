@@ -27,8 +27,8 @@ export default defineConfig({
       "frontend/src/components/ui/",
       "docs/security/codeguard/",
       "backend/config.schema.json",
-      "docs/src/content/docs/reference/configuration.mdx",
-      "docs/openapi.json",
+      "website/src/content/docs/reference/configuration.mdx",
+      "backend/openapi.json",
     ],
   },
   lint: {

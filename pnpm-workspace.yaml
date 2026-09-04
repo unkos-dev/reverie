@@ -1,6 +1,6 @@
 packages:
   - frontend
-  - docs
+  - website
 
 # Required by `pnpm deploy`, which the image build uses to materialise the
 # frontend's production closure for the SBOM. Since pnpm v10 deploy runs only

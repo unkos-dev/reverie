@@ -1,5 +1,5 @@
 # vacuum ruleset — consumed by the openapi-policy CI job
-# (.github/workflows/ci.yml), which lints the generated docs/openapi.json.
+# (.github/workflows/ci.yml), which lints the generated backend/openapi.json.
 #
 # The baseline is every rule in vacuum's oas and owasp rulesets that the
 # current spec already satisfies: 58 rules, all passing. The rules disabled

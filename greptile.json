@@ -39,8 +39,8 @@
     "**/Cargo.lock",
     "backend/.sqlx/**",
     "backend/config.schema.json",
-    "docs/openapi.json",
-    "docs/src/content/docs/reference/configuration.mdx",
+    "backend/openapi.json",
+    "website/src/content/docs/reference/configuration.mdx",
     "frontend/src/styles/themes/primitives.generated.css"
   ],
   "instructions": "ADRs in adr/ are authoritative architectural constraints, not background reading. Before flagging a pattern as wrong, check whether a relevant ADR in adr/ already decided it — a change that conforms to an accepted ADR is correct even if it looks unusual; a change that contradicts one is a finding. Cross-cutting ADRs (JSON:API conventions, API versioning and OpenAPI, validation-status vocabulary, keyset pagination and its sort and filter extensions, first-party session layer, standards-first integrations, authentication and identity model, API authorization model, password policy, lint-suppression policy, monorepo toolchain) are pinned below; consult the others in adr/ by filename when a diff touches their area.",
@@ -92,7 +92,7 @@
       },
       {
         "path": "adr/2026-06-08-api-versioning-openapi.md",
-        "description": "Cross-cutting: the /api/v1 version prefix and the OpenAPI generation contract. The generated docs/openapi.json (ignored below) derives from utoipa annotations across backend/src/models/* aggregated in backend/src/lib.rs; an API-surface change must keep this contract and regenerate the spec."
+        "description": "Cross-cutting: the /api/v1 version prefix and the OpenAPI generation contract. The generated backend/openapi.json (ignored below) derives from utoipa annotations across backend/src/models/* aggregated in backend/src/lib.rs; an API-surface change must keep this contract and regenerate the spec."
       },
       {
         "path": "adr/2026-07-13-a11y-gate-on-playwright.md",
@@ -104,7 +104,7 @@
       },
       {
         "path": "adr/2026-06-30-adopt-vite-plus-monorepo-toolchain.md",
-        "description": "Structural: single pnpm workspace (frontend, docs) declared in pnpm-workspace.yaml and driven by Vite+ (vp), with one root pnpm-lock.yaml and tsgo as the sole typechecker. pnpm's layout is isolated, so a per-project node_modules is correct and expected; a per-project lockfile, a second package manager, or a tsc invocation in scripts or CI is a finding."
+        "description": "Structural: single pnpm workspace (frontend, website) declared in pnpm-workspace.yaml and driven by Vite+ (vp), with one root pnpm-lock.yaml and tsgo as the sole typechecker. pnpm's layout is isolated, so a per-project node_modules is correct and expected; a per-project lockfile, a second package manager, or a tsc invocation in scripts or CI is a finding."
       },
       {
         "path": "adr/2026-06-30-password-policy-hibp-zxcvbn.md",
@@ -127,11 +127,11 @@
         "description": "Source of the four-tier comment policy AGENTS.md summarises, and the reasoning behind it. Tier 1 public items describe purpose, invariants, and non-obvious WHY; Tier 2 security and auth code carries explicit `// THREAT:` annotations; Tier 3 internal code comments only where the WHY is non-obvious and otherwise not at all; Tier 4 test functions carry no docstrings. The density tiebreaker matters on review: new comments follow the tiers, never the density of verbose legacy neighbours."
       },
       {
-        "path": "docs/astro.config.mjs",
+        "path": "website/astro.config.mjs",
         "description": "Starlight (Astro) documentation-site config: site nav, sidebar, and integrations. Changes to docs structure or the docs build go through here."
       },
       {
-        "path": "docs/src/content.config.ts",
+        "path": "website/src/content.config.ts",
         "description": "Astro content-collection schema for the Starlight docs site; governs the frontmatter shape of docs pages."
       },
       {

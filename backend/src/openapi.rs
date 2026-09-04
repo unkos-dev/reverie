@@ -4,7 +4,7 @@
 //! The spec is generated code-first from the handlers: [`ApiDoc`] supplies the
 //! document metadata and shared component schemas, and each documented module
 //! contributes its paths through an [`OpenApiRouter`]. [`spec_json`] serializes
-//! the merged document; the committed `docs/openapi.json` is drift-gated by
+//! the merged document; the committed `backend/openapi.json` is drift-gated by
 //! `tests/gen_openapi.rs`, and `starlight-openapi` renders it on the docs site.
 //!
 //! `health` was the original single pilot module proving the pipeline end to
@@ -32,7 +32,7 @@ use crate::state::AppState;
 /// Version of the API *contract* surfaced in the spec's `info.version`.
 ///
 /// Deliberately decoupled from the crate/release version (`CARGO_PKG_VERSION`):
-/// the committed `docs/openapi.json` is byte-for-byte drift-gated, so tying it
+/// the committed `backend/openapi.json` is byte-for-byte drift-gated, so tying it
 /// to the release-please-managed crate version would turn every version bump
 /// into a spec regeneration. It tracks the API surface, not the binary — the
 /// URL-path major version (`/api/v1`, phase 2) is the unit of breaking change.

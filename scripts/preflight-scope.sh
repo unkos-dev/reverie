@@ -95,7 +95,7 @@ lanes_for() {
     backend) printf '%s\n' rust::guards db-up rust::check rust::doc-lint rust::test rust::doctests rust::sqlx-check rust::machete ;;
     audit) printf '%s\n' rust::deny ;;
     frontend) printf '%s\n' js::check js::test js::build js::font-integrity ;;
-    docs) printf '%s\n' docs::check ;;
+    website) printf '%s\n' website::check ;;
     workflows) printf '%s\n' infra::zizmor ;;
     staging | iac | docker | openapi | npm) : ;;
     *) return 1 ;;
@@ -137,7 +137,7 @@ LANE_ORDER=(
   js::test
   js::build
   js::font-integrity
-  docs::check
+  website::check
   infra::zizmor
 )
 
@@ -229,7 +229,7 @@ else
       "fetch the base branch, or pass --base <ref>"
   # --no-renames is load-bearing, not a style choice. With rename detection on,
   # `git diff --name-only` reports a rename as the destination path alone, so
-  # moving backend/foo.rs to docs/foo.mdx would select the docs lane and drop
+  # moving backend/foo.rs to website/foo.mdx would select the website lane and drop
   # every Rust lane the vacated path required. Treating a rename as a delete
   # plus an add names both sides, so no lane a move implicates can be missed.
   #

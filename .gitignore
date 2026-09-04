@@ -42,9 +42,6 @@ docker-compose.override.yml
 .github/hooks
 .github/skills
 
-# Docs build output
-docs/.astro/
-
 # Test coverage
 coverage/
 *.lcov

@@ -12,7 +12,7 @@ artifacts feed it:
   required flag comes straight from the code that reads it. Secret-bearing
   variables are listed by name only; their values never appear.
 - **API Reference**: rendered by `starlight-openapi` from the committed
-  OpenAPI 3.1 spec (`docs/openapi.json`), itself generated code-first from the
+  OpenAPI 3.1 spec (`backend/openapi.json`), itself generated code-first from the
   annotated route handlers.
 
 ## Regenerating

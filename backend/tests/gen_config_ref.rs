@@ -16,7 +16,7 @@ fn artifact_path() -> PathBuf {
         std::env::var_os("CARGO_MANIFEST_DIR")
             .unwrap_or_else(|| panic!("cargo sets CARGO_MANIFEST_DIR")),
     )
-    .join("../docs/src/content/docs/reference/configuration.mdx")
+    .join("../website/src/content/docs/reference/configuration.mdx")
 }
 
 fn row<'a>(md: &'a str, var: &str) -> &'a str {

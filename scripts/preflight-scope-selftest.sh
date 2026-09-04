@@ -67,7 +67,7 @@ js::check
 js::test
 js::build
 js::font-integrity
-docs::check
+website::check
 infra::zizmor'
 
 BACKEND='rust::guards
@@ -97,13 +97,13 @@ expect_lanes 'a nested backend path still matches backend/**' \
 expect_lanes 'frontend source selects the js lanes' \
   'frontend/src/App.tsx' "$FRONTEND"
 
-expect_lanes 'docs content selects the docs lane' \
-  'docs/src/content/docs/index.mdx' 'infra::check
-docs::check'
+expect_lanes 'site content selects the website lane' \
+  'website/src/content/docs/index.mdx' 'infra::check
+website::check'
 
 expect_lanes 'a workflow edit selects the zizmor audit' \
-  '.github/workflows/docs.yml' 'infra::check
-docs::check
+  '.github/workflows/website.yml' 'infra::check
+website::check
 infra::zizmor'
 
 # A literal pattern must match only that exact path, never a sibling that
@@ -229,7 +229,7 @@ expect_failure 'a missing filters file aborts' 'missing' \
 # the scoper from inside it: the script derives its own root from $0, so a
 # copy under <fixture>/scripts/ treats the fixture as the repo.
 fixture="$tmpdir/fixture"
-mkdir -p "$fixture/scripts" "$fixture/.github" "$fixture/backend" "$fixture/docs"
+mkdir -p "$fixture/scripts" "$fixture/.github" "$fixture/backend" "$fixture/website"
 cp "$scope" "$fixture/scripts/preflight-scope.sh"
 cp .github/path-filters.yml "$fixture/.github/path-filters.yml"
 git -C "$fixture" init -q -b main
@@ -239,15 +239,15 @@ echo 'fn main() {}' > "$fixture/backend/moved.rs"
 git -C "$fixture" add -A
 git -C "$fixture" commit -qm 'base'
 git -C "$fixture" checkout -q -b topic
-git -C "$fixture" mv backend/moved.rs docs/moved.mdx
+git -C "$fixture" mv backend/moved.rs website/moved.mdx
 git -C "$fixture" commit -qm 'move across filter scopes'
 
 # git's rename detection reports only the destination of a move, which would
-# select the docs lane and silently drop every Rust lane the vacated backend
+# select the website lane and silently drop every Rust lane the vacated backend
 # path required. Both sides of the move have to be named.
 rename_got="$(cd "$fixture" && ./scripts/preflight-scope.sh --base main 2> /dev/null)"
 rename_want="$BACKEND
-docs::check"
+website::check"
 if [ "$rename_got" = "$rename_want" ]; then
   printf 'ok   %s\n' 'a rename across filter scopes keeps the source lane'
 else

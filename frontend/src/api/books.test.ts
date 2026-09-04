@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, test, vi } from "vite-plus/test";
 
 // Raw import so the committed OpenAPI artifact is usable as a fixture
 // without pulling Node fs types into the browser-typed src tree.
-import openapiRaw from "../../../docs/openapi.json?raw";
+import openapiRaw from "../../../backend/openapi.json?raw";
 
 import { __seedCsrfTokenForTesting } from "./csrf";
 import {
@@ -59,7 +59,7 @@ describe("wire enum parity with the generated OpenAPI schema", () => {
       const generated = spec.components.schemas[name]?.enum;
       expect(
         generated,
-        `components.schemas.${name}.enum missing from docs/openapi.json`,
+        `components.schemas.${name}.enum missing from backend/openapi.json`,
       ).toBeDefined();
       expect([...schema.options].sort()).toEqual([...(generated ?? [])].sort());
     });

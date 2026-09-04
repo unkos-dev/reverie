@@ -227,7 +227,7 @@ that matrix, since it is enforcement infrastructure rather than a single
 handler decision.
 
 **Reverie's position:** `backend/src/authz_matrix.rs` parses the OpenAPI
-document generated in-process (not the committed `docs/openapi.json`) and
+document generated in-process (not the committed `backend/openapi.json`) and
 asserts, for every `/api/v1` operation, that it declares a scope requirement
 and that a credential one level below the required scope in the hierarchy
 (`read` < `write` < `admin`) is rejected with 403, while a scopeless credential

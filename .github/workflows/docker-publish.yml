@@ -57,7 +57,7 @@ jobs:
               - 'frontend/**'
               - 'package.json'
               - 'pnpm-lock.yaml'
-              - 'docs/package.json'
+              - 'website/package.json'
               - 'version.txt'
               - 'scripts/verify-frontend-sbom.mjs'
               - '.github/workflows/docker-publish.yml'
