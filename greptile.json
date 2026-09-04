@@ -92,7 +92,7 @@
       },
       {
         "path": "adr/2026-06-08-api-versioning-openapi.md",
-        "description": "Cross-cutting: the /api/v1 version prefix and the OpenAPI generation contract. The generated docs/openapi.json (ignored below) derives from utoipa annotations across backend/src/models/* aggregated in backend/src/lib.rs; an API-surface change must keep this contract and regenerate the spec."
+        "description": "Cross-cutting: the /api/v1 version prefix and the OpenAPI generation contract. The generated backend/openapi.json (ignored below) derives from utoipa annotations across backend/src/models/* aggregated in backend/src/lib.rs; an API-surface change must keep this contract and regenerate the spec."
       },
       {
         "path": "adr/2026-07-13-a11y-gate-on-playwright.md",
