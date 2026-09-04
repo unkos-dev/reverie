@@ -21,9 +21,7 @@ An Architecture Decision Record (ADR) captures an important architecture decisio
 
 ## ADRs
 
-- [Adopt architecture decision records](2026-04-30-adopt-architecture-decision-records.md) (accepted, 2026-04-30)
 - [Strict lint policy: clippy pedantic + ESLint strict-tier](2026-05-03-strict-lint-policy.md) (accepted, 2026-05-03)
-- [Replace eslint-plugin-react with @eslint-react/eslint-plugin](superseded/2026-05-04-replace-eslint-plugin-react.md) (superseded by [Adopt oxlint, replacing the ESLint toolchain](2026-06-27-adopt-oxlint-toolchain.md), 2026-06-27)
 - [Single-image distribution with backend-served frontend and central CSP enforcement](2026-05-05-single-image-distribution-central-csp.md) (accepted, 2026-05-05)
 - [Tiered comment policy for an OSS-released codebase](2026-05-08-tiered-comment-policy.md) (accepted, 2026-05-08)
 - [Adopt tower-sessions-sqlx-store for Postgres-backed sessions](superseded/2026-05-08-tower-sessions-sqlx-store.md) (superseded by [First-party session layer on tower-sessions core](2026-06-04-first-party-session-layer.md), 2026-06-04)
