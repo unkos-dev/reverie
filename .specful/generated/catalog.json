@@ -64,6 +64,13 @@
       "title": "Backend auxiliary crates: axum-extra, serde_with, and subtle"
     },
     {
+      "id": "REV-ADR-0010",
+      "kind": "adr",
+      "path": "docs/adr/0010-frontend-data-layer-dependencies-react-query-and-dnd-kit.md",
+      "status": "accepted",
+      "title": "Frontend data-layer dependencies: React Query and dnd-kit"
+    },
+    {
       "id": "REV-DESIGN-0001",
       "kind": "design",
       "path": "docs/specs/library/design/0001-library-filter-and-sort-state.md",
