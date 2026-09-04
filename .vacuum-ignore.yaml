@@ -13,7 +13,7 @@
 # and belongs in review as one.
 #
 # Regenerate after a path rename with:
-#   vacuum report -r .vacuum.yaml docs/openapi.json <report>
+#   vacuum report -r .vacuum.yaml backend/openapi.json <report>
 #   vacuum generate-ignorefile <report>.json .vacuum-ignore.yaml
 # then restore this header, which the generator does not preserve.
 

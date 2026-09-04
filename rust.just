@@ -101,7 +101,7 @@ sqlx-check:
 sqlx-prepare:
     DATABASE_URL="${REVERIE_DEV_DB_URL:-postgres:///reverie_dev?host=${XDG_STATE_HOME:-$HOME/.local/state}/reverie/pgsock&user=reverie&password=reverie}" cargo sqlx prepare -- --locked --tests
 
-# WRITES docs/openapi.json plus the generated config reference and schema;
+# WRITES backend/openapi.json plus the generated config reference and schema;
 # commit the result in the same change that moved the API or config surface.
 # `drift` is the read-only gate form. Offline: compiles against the sqlx
 # cache, so run `sqlx-prepare` first when queries changed.

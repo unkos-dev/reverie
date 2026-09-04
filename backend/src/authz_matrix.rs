@@ -12,7 +12,7 @@
 //! invisible to the separate integration-test crates under `backend/tests/`.
 //!
 //! Parses the in-process OpenAPI spec ([`crate::openapi::spec_json`]) rather
-//! than the committed `docs/openapi.json`, so the grid always tests the
+//! than the committed `backend/openapi.json`, so the grid always tests the
 //! annotations the running server actually serves.
 
 use axum::http::StatusCode;

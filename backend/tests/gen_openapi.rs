@@ -1,6 +1,6 @@
 //! Drift gate for the generated OpenAPI spec (docs-as-done, UNK-370).
 //!
-//! The committed `docs/openapi.json` must equal what the handlers produce;
+//! The committed `backend/openapi.json` must equal what the handlers produce;
 //! changing a documented response without regenerating fails here — the same
 //! generate→commit→`--check` contract as `cargo sqlx prepare --check`.
 //! `REGEN=1` rewrites the artifact (`REGEN=1 cargo test --test gen_openapi`).
@@ -20,7 +20,7 @@ fn artifact_path() -> PathBuf {
         std::env::var_os("CARGO_MANIFEST_DIR")
             .unwrap_or_else(|| panic!("cargo sets CARGO_MANIFEST_DIR")),
     )
-    .join("../docs/openapi.json")
+    .join("openapi.json")
 }
 
 #[test]

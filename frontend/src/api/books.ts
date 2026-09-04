@@ -55,7 +55,7 @@ export { ReadingStatusSchema };
 
 // The wire-enum schemas are exported for the OpenAPI parity test in
 // books.test.ts, which pins each hand-mirrored option set to the
-// generated docs/openapi.json.
+// generated backend/openapi.json.
 export {
   ContentRatingSchema,
   ContributorRoleSchema,
