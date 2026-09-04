@@ -33,13 +33,45 @@ for bin in git just docker cargo rustc node pnpm mise jq; do
   fi
 done
 
-# 1b. vp resolves on PATH. Separate from the loop above because it is a
-# standalone binary rather than a mise pin, so `mise install` cannot supply it
-# and the loop's fix text would send a contributor somewhere that never helps.
-# Every js recipe and four lefthook jobs invoke it directly, so a machine
-# without it fails at commit time.
+# 1b. vp resolves on PATH, at the version the pnpm-workspace.yaml catalog
+# pins. Separate from the loop above because it is a standalone binary rather
+# than a mise pin, so `mise install` cannot supply or move it and the loop's
+# fix text would send a contributor somewhere that never helps. Every js
+# recipe and four lefthook jobs invoke it directly, so a machine without it
+# fails at commit time.
+#
+# The version matters because the global vp runs its own bundled oxlint and
+# vitest, not the project's: a global behind the catalog pin fails `just
+# check` on lint rules its older oxlint has never heard of, while CI's
+# setup-vp resolves the pin and stays green. Only the first line of
+# `vp --version` names the global; the block after it describes node_modules.
+# Fail closed on both reads, since an empty pin compared to an empty version
+# would read as a match. The whole of `vp --version` is captured before the
+# first line is taken: piping it into head would close the pipe early, and
+# under pipefail vp's SIGPIPE would then read as a failed query. vp may run
+# its own periodic upgrade check on any invocation, which this script cannot
+# switch off.
 if command -v vp >/dev/null 2>&1; then
   pass "binary 'vp' resolves on PATH"
+  vp_pin="$(grep -E '^  vite-plus:' pnpm-workspace.yaml 2>/dev/null | cut -d'"' -f2)" || vp_pin=""
+  vp_out="$(vp --version 2>/dev/null)" || vp_out=""
+  vp_first="${vp_out%%$'\n'*}"
+  case "${vp_first}" in
+    "vp v"*) vp_global="${vp_first#vp v}" ;;
+    *) vp_global="" ;;
+  esac
+  if ! printf '%s' "${vp_global}" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+([-+][0-9A-Za-z.]+)?$'; then
+    vp_global=""
+  fi
+  if ! printf '%s' "${vp_pin}" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+([-+][0-9A-Za-z.]+)?$'; then
+    fail "global vp matches the vite-plus catalog pin (pin query failed)" "check the vite-plus entry under catalog: in pnpm-workspace.yaml"
+  elif [ -z "${vp_global}" ]; then
+    fail "global vp matches the vite-plus catalog pin (vp --version query failed)" "run 'vp --version' manually and investigate"
+  elif [ "${vp_global}" = "${vp_pin}" ]; then
+    pass "global vp ${vp_global} matches the vite-plus catalog pin"
+  else
+    fail "global vp ${vp_global} matches the vite-plus catalog pin ${vp_pin}" "vp upgrade ${vp_pin}"
+  fi
 else
   fail "binary 'vp' resolves on PATH" "see the vite-plus install in .github/CONTRIBUTING.md"
 fi

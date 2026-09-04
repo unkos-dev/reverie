@@ -35,6 +35,12 @@ cat > "${fixture}/package.json" << EOF
 }
 EOF
 
+# The catalog pin check 1b compares the global vp against.
+cat > "${fixture}/pnpm-workspace.yaml" << EOF
+catalog:
+  vite-plus: "0.3.0"
+EOF
+
 # A minimal, real git repo so git-derived checks (branch, ahead/behind,
 # origin/main staleness) exercise real git plumbing rather than a stub.
 git -C "${fixture}" init -q -b main
@@ -82,9 +88,30 @@ mkdir -p "${stub_bin}"
 for real in env bash git jq ls df date dirname cat head tail tr cut uname grep stat cmp; do
   link_real "${stub_bin}" "${real}"
 done
-for tool in just cargo rustc node pnpm vp; do
+for tool in just cargo rustc node pnpm; do
   noop_stub "${stub_bin}" "${tool}"
 done
+
+cat >"${stub_bin}/vp" <<'VP_STUB'
+#!/usr/bin/env bash
+# Fixture stub: asserts the single invocation doctor.sh makes (--version) and
+# exits 2 on anything else. Reproduces real vp's shape, the global version on
+# the first line and a local-toolchain block after it, so the check is proven
+# to read the global line and not the local one. DOCTOR_STUB_VP_VERSION sets
+# the global version; DOCTOR_STUB_VP_OUTPUT, when set, replaces the whole
+# output to model a future release changing the format.
+set -euo pipefail
+if [ "$#" -eq 1 ] && [ "$1" = "--version" ]; then
+  if [ -n "${DOCTOR_STUB_VP_OUTPUT+x}" ]; then
+    printf '%s\n' "${DOCTOR_STUB_VP_OUTPUT}"
+    exit 0
+  fi
+  printf 'vp v%s\n\nLocal vite-plus:\n  vite-plus  v0.3.0\n' "${DOCTOR_STUB_VP_VERSION:-0.3.0}"
+  exit 0
+fi
+exit 2
+VP_STUB
+chmod +x "${stub_bin}/vp"
 
 # Scratch HOME so the kache platform-default and XDG_CACHE_HOME-fallback
 # resolution below never reads or sizes the real machine's build cache.
@@ -311,6 +338,32 @@ export DOCTOR_STUB_MISE_ERROR=1
 expect_exit "mise query failure fails closed" 1 "${stub_bin}"
 expect_contains "mise query failure is reported, not silently passed" "FAIL mise-pinned tools are installed (mise query failed)"
 unset DOCTOR_STUB_MISE_ERROR
+
+# --- global vp against the catalog pin: a match passes and is named; a global
+# behind the pin fails with the upgrade command carrying the pinned version,
+# since `vp lint` runs the global's own oxlint and an older one rejects the
+# rule names the project's config uses. ---
+expect_exit "matching global vp passes" 0 "${stub_bin}"
+expect_contains "matching global vp is reported with its version" "PASS global vp 0.3.0 matches the vite-plus catalog pin"
+export DOCTOR_STUB_VP_VERSION=0.2.9
+expect_exit "drifted global vp fails the run" 1 "${stub_bin}"
+expect_contains "drifted global vp names the upgrade to the pin" "FAIL global vp 0.2.9 matches the vite-plus catalog pin 0.3.0 -- fix: vp upgrade 0.3.0"
+unset DOCTOR_STUB_VP_VERSION
+
+# --- both reads fail closed: an unparsable `vp --version` and a catalog
+# without the pin must each FAIL, never compare two empty strings as a match. ---
+export DOCTOR_STUB_VP_OUTPUT=""
+expect_exit "unparsable vp --version fails closed" 1 "${stub_bin}"
+expect_contains "unparsable vp --version is reported" "FAIL global vp matches the vite-plus catalog pin (vp --version query failed)"
+unset DOCTOR_STUB_VP_OUTPUT
+
+printf 'catalog: {}\n' >"${fixture}/pnpm-workspace.yaml"
+expect_exit "a catalog without the vite-plus pin fails closed" 1 "${stub_bin}"
+expect_contains "a missing pin is reported" "FAIL global vp matches the vite-plus catalog pin (pin query failed)"
+cat > "${fixture}/pnpm-workspace.yaml" << EOF
+catalog:
+  vite-plus: "0.3.0"
+EOF
 
 # --- pg_isready succeeding is not enough: a broken/missing reverie_app
 # role must independently fail the run when no override signal explains it. ---
