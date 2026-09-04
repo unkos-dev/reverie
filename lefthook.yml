@@ -84,6 +84,10 @@ pre-commit:
           - name: vale
             glob: "**/*.{md,mdx}"
             run: vale {staged_files}
+          # The glob gates whether it runs; specful validates the whole corpus.
+          - name: specful
+            glob: "{docs/specs/**,docs/adr/**,.specful/**}"
+            run: just infra::specful
           # oxlint and stylelint route through the just recipes for their
           # frontend/ prefix-strip (repo-relative staged paths against a
           # frontend/ CWD). oxlint is type-aware: it loads the whole tsconfig

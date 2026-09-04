@@ -72,6 +72,15 @@ zizmor:
 zizmor-offline:
     zizmor --offline --config .github/zizmor.yml .
 
+# index --check runs first so a stale generated view is reported as drift, not
+# as a validation failure of the artifacts it was derived from.
+#
+# Check the specification corpus (generated views current, artifacts valid).
+[group('infra')]
+specful:
+    specful index --check
+    specful validate
+
 # Every tracked Markdown file, so nothing rots unlinted. The lefthook job runs
 # vale over staged files whatever their path, so a narrower gate than this one
 # does not spare anyone the findings: it only defers them to whoever next edits
@@ -162,7 +171,7 @@ no-plan-refs *files:
 #
 # Whole repo-lint surface (the non-JS half of CI's lint concern).
 [group('infra')]
-lint: shellcheck hadolint typos yamllint sqruff actionlint prose filter-sarif-unfixable-os-selftest preflight-scope-selftest cargo-locked-guard
+lint: shellcheck hadolint typos yamllint sqruff actionlint prose specful filter-sarif-unfixable-os-selftest preflight-scope-selftest cargo-locked-guard
 
 # Everything left here covers local-only developer tooling, and that is now the
 # entry criterion. CI has no stake in `just doctor`, `just worktree`, or the

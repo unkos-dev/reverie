@@ -1,0 +1,33 @@
+{
+  "artifacts": [
+    {
+      "id": "REV-DESIGN-0001",
+      "kind": "design",
+      "path": "docs/specs/library/design/0001-library-filter-and-sort-state.md",
+      "satisfies": [
+        "REV-REQ-0001",
+        "REV-REQ-0002",
+        "REV-REQ-0003"
+      ],
+      "title": "Library filter and sort state"
+    },
+    {
+      "id": "REV-REQ-0001",
+      "kind": "req",
+      "path": "docs/specs/library/requirements/0001-library-sort-resolves-only-from-the-per-user-preference.md",
+      "title": "Library sort resolves only from the per-user preference"
+    },
+    {
+      "id": "REV-REQ-0002",
+      "kind": "req",
+      "path": "docs/specs/library/requirements/0002-library-filter-state-has-exactly-one-writer.md",
+      "title": "Library filter state has exactly one writer"
+    },
+    {
+      "id": "REV-REQ-0003",
+      "kind": "req",
+      "path": "docs/specs/library/requirements/0003-library-list-filter-values-that-fail-to-decode-are-rejected.md",
+      "title": "Library list filter values that fail to decode are rejected"
+    }
+  ]
+}
