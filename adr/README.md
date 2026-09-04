@@ -22,7 +22,6 @@ An Architecture Decision Record (ADR) captures an important architecture decisio
 ## ADRs
 
 - [Adopt tower-sessions-sqlx-store for Postgres-backed sessions](superseded/2026-05-08-tower-sessions-sqlx-store.md) (superseded by [First-party session layer on tower-sessions core](2026-06-04-first-party-session-layer.md), 2026-06-04)
-- [Outbound HTTP clients in Reverie must send an explicit User-Agent](2026-05-18-outbound-http-user-agent.md) (accepted, 2026-05-18)
 - [Adopt `impeccable` as the frontend design anti-pattern detector](2026-05-21-impeccable-adoption.md) (accepted, 2026-05-21)
 - [Frontend docstring linting via `eslint-plugin-jsdoc`](superseded/2026-05-22-frontend-docstring-tooling.md) (superseded by [Adopt oxlint, replacing the ESLint toolchain](2026-06-27-adopt-oxlint-toolchain.md), 2026-06-27)
 - [JSON API conventions for Reverie's browser-facing REST surface](2026-05-22-json-api-conventions.md) (accepted, 2026-05-22)
