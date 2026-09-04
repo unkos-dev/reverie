@@ -21,7 +21,6 @@ An Architecture Decision Record (ADR) captures an important architecture decisio
 
 ## ADRs
 
-- [Strict lint policy: clippy pedantic + ESLint strict-tier](2026-05-03-strict-lint-policy.md) (accepted, 2026-05-03)
 - [Single-image distribution with backend-served frontend and central CSP enforcement](2026-05-05-single-image-distribution-central-csp.md) (accepted, 2026-05-05)
 - [Tiered comment policy for an OSS-released codebase](2026-05-08-tiered-comment-policy.md) (accepted, 2026-05-08)
 - [Adopt tower-sessions-sqlx-store for Postgres-backed sessions](superseded/2026-05-08-tower-sessions-sqlx-store.md) (superseded by [First-party session layer on tower-sessions core](2026-06-04-first-party-session-layer.md), 2026-06-04)

@@ -8,6 +8,13 @@
       "title": "Adopt Specful for requirements, designs, and decision records"
     },
     {
+      "id": "REV-ADR-0002",
+      "kind": "adr",
+      "path": "docs/adr/0002-strict-lint-policy-pedantic-clippy-and-strict-frontend-lint.md",
+      "status": "accepted",
+      "title": "Strict lint policy: pedantic clippy and strict frontend lint"
+    },
+    {
       "id": "REV-DESIGN-0001",
       "kind": "design",
       "path": "docs/specs/library/design/0001-library-filter-and-sort-state.md",
