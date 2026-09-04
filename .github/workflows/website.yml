@@ -1,4 +1,4 @@
-name: Docs
+name: Website
 
 on:
   workflow_call:
@@ -12,7 +12,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
-      docs: ${{ steps.filter.outputs.docs == 'true' || github.event_name == 'workflow_dispatch' }}
+      website: ${{ steps.filter.outputs.website == 'true' || github.event_name == 'workflow_dispatch' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -33,7 +33,7 @@ jobs:
 
   build:
     needs: changes
-    if: needs.changes.outputs.docs == 'true'
+    if: needs.changes.outputs.website == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -53,16 +53,16 @@ jobs:
         run: vp install
 
       # --fail-if-no-match: a filter matching nothing exits 0, so without it a
-      # renamed or relocated docs package passes this job having built nothing.
+      # renamed or relocated website package passes this job having built nothing.
       - name: Build Starlight
-        run: vp run --filter docs --fail-if-no-match build
+        run: vp run --filter website --fail-if-no-match build
 
       # Links render root-relative under /reverie/; symlink dist under a
       # `reverie` subdir so lychee's --root-dir resolution matches.
-      - name: Stage built docs at the Pages base path
+      - name: Stage built site at the Pages base path
         run: |
           mkdir -p "${RUNNER_TEMP}/linkroot"
-          ln -sfn "${GITHUB_WORKSPACE}/docs/dist" "${RUNNER_TEMP}/linkroot/reverie"
+          ln -sfn "${GITHUB_WORKSPACE}/website/dist" "${RUNNER_TEMP}/linkroot/reverie"
 
       # --offline means this gating pass cannot flake on external network state.
       - name: Check internal links (gating)
@@ -86,13 +86,13 @@ jobs:
       # Annotate so a green job doesn't hide broken links in the step log.
       - name: Flag broken external links
         if: steps.external-links.outcome == 'failure'
-        run: echo "::warning::lychee found broken external links in the docs — see the 'Check external links (advisory)' step summary."
+        run: echo "::warning::lychee found broken external links on the site — see the 'Check external links (advisory)' step summary."
 
       - name: Upload Pages artifact
         if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
         uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5
         with:
-          path: docs/dist
+          path: website/dist
 
   # An allowlist, never a denylist: `merge_group` satisfies `!= 'pull_request'`
   # and would publish an unmerged queue ref or eject the batch on the
@@ -100,7 +100,7 @@ jobs:
   deploy:
     needs: [changes, build]
     if: >-
-      needs.changes.outputs.docs == 'true' &&
+      needs.changes.outputs.website == 'true' &&
       (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
     runs-on: ubuntu-latest
     timeout-minutes: 10

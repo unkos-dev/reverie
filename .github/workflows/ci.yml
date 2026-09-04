@@ -56,9 +56,9 @@ jobs:
 
   # The only caller granting more than the top-level default: a called workflow
   # can downgrade its caller's token but never elevate it, so the deploy job's
-  # needs are declared here and narrowed again inside docs.yml.
-  docs:
-    uses: ./.github/workflows/docs.yml
+  # needs are declared here and narrowed again inside website.yml.
+  website:
+    uses: ./.github/workflows/website.yml
     permissions:
       contents: read
       pages: write
@@ -107,7 +107,7 @@ jobs:
       - deps
       - security
       - lint
-      - docs
+      - website
       - staging
       - docker
       - codeql

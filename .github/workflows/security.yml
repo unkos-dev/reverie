@@ -91,7 +91,7 @@ jobs:
           trivy config \
             --severity HIGH,CRITICAL \
             --exit-code 1 \
-            --skip-dirs node_modules,frontend/node_modules,docs/node_modules,backend/target \
+            --skip-dirs node_modules,frontend/node_modules,website/node_modules,backend/target \
             --skip-dirs .github \
             .
 
@@ -117,7 +117,7 @@ jobs:
         # The baseline is zero findings at every severity, so nothing else moves.
         run: >-
           vacuum lint --ruleset .vacuum.yaml --ignore-file .vacuum-ignore.yaml
-          --fail-severity info --details docs/openapi.json
+          --fail-severity info --details backend/openapi.json
 
   secrets:
     runs-on: ubuntu-latest

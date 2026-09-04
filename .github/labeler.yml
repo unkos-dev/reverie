@@ -12,6 +12,7 @@
   - changed-files:
       - any-glob-to-any-file:
           - "docs/**"
+          - "website/**"
           - "README.md"
           - "**/CLAUDE.md"
           - "**/AGENTS.md"

@@ -107,7 +107,7 @@ the caller job's `permissions:` must be the union of what its jobs declare. The
 grant is then a ceiling shared by every job in the concern file, which is why
 the file keeps its own restrictive top level: without it, a job running
 third-party lifecycle scripts would inherit a publish token it has no use for.
-`docs` is the only concern that needs this today.
+`website` is the only concern that needs this today.
 
 Called workflows inherit `secrets.GITHUB_TOKEN` from the caller, so a concern
 file needs no `secrets:` block for it. Anything else is passed explicitly; a
@@ -193,12 +193,12 @@ release automation. None of them has a PR-time surface to compose.
 
 Everything above is portable. These are the parts that are not:
 
-- Concerns: `backend`, `frontend`, `deps`, `security`, `lint`, `docs`,
+- Concerns: `backend`, `frontend`, `deps`, `security`, `lint`, `website`,
   `staging`, `docker`, `codeql`, and `snyk`.
 - `snyk` is the one concern with no `changes` job. Its scans are continuous
   advisory review whose value is a fresh baseline on every push, which path
   gating would defeat, so its jobs filter on event and fork origin only.
-- `codeql` and `docs` keep a direct trigger beside `workflow_call`: a weekly
+- `codeql` and `website` keep a direct trigger beside `workflow_call`: a weekly
   schedule and a manual dispatch respectively. Neither carries a required
   context on that path, so the bare job names those runs report are fine.
 - Filters live in `.github/path-filters.yml` and are consumed by both CI and
