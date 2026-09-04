@@ -5,7 +5,7 @@ product surface is built out. Each item names the decision or feature
 whose rationale needs a proper Starlight page before a public release,
 rather than a half-built page written ahead of the surface it documents.
 
-This file is the holding area; items graduate into `docs/` Starlight
+This file is the holding area; items graduate into `website/` Starlight
 pages when their surface lands.
 
 ## Items

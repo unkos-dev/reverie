@@ -12,9 +12,7 @@
   "paths": {
     "/api/v1/account/password": {
       "post": {
-        "tags": [
-          "users"
-        ],
+        "tags": ["users"],
         "summary": "`POST /api/v1/account/password` — the authenticated caller changes their own\npassword.",
         "description": "THREAT (IDOR): the target is ALWAYS the session user. The\nendpoint accepts no id from the path or body, so it cannot be turned against\nanother account. It verifies the current password, enforces the policy on the\nnew one, writes it, and bumps `session_version`, which forces re-auth of every\nsession including the caller's own.\n\n# Errors\n- [`AppError::Unauthorized`] when unauthenticated.\n- [`AppError::Validation`] (422) when the current password is wrong, the new\n  password fails the policy, or the account has no local credential (it signs\n  in through an identity provider).\n- [`AppError::Internal`] on database errors.",
         "operationId": "change_own_password",
@@ -55,33 +53,23 @@
         },
         "security": [
           {
-            "session_cookie": [
-              "write"
-            ]
+            "session_cookie": ["write"]
           },
           {
-            "device_token_bearer": [
-              "write"
-            ]
+            "device_token_bearer": ["write"]
           },
           {
-            "oidc_jwt_bearer": [
-              "write"
-            ]
+            "oidc_jwt_bearer": ["write"]
           },
           {
-            "opds_basic": [
-              "write"
-            ]
+            "opds_basic": ["write"]
           }
         ]
       }
     },
     "/api/v1/authors": {
       "get": {
-        "tags": [
-          "suggest"
-        ],
+        "tags": ["suggest"],
         "summary": "`GET /api/v1/authors?id=<uuid>&id=<uuid>`: resolve author ids to their\ndisplay names so a filter chip restored from a bookmarked URL can label\nitself (the list payload carries author names, not ids, and a none-of\nfilter hides the author's rows entirely).",
         "description": "The `id` filter is required and capped, keeping this route bounded by\nconstruction: it is the seed of a future paginated authors collection,\nbut until that lands a bare `GET /api/v1/authors` is a 422, not a\nlist-all. Ids are RLS-scoped through the same in-use join as\n`authors/suggest` and restricted to the `author` role, so the chip label\nresolves the same author set the `?author=` filter matches; an id the\ncaller cannot see (or one that is not an author) is silently omitted\nrather than 404'd, and unknown ids drop out the same way.\n\n# Errors\n- [`AppError::MalformedQuery`] when an `id` value is not a UUID.\n- [`AppError::Validation`] when `id` is absent/empty or over\n  [`MAX_RESOLVE_IDS`] values.\n- [`AppError::Internal`] on database errors.",
         "operationId": "authors_by_id",
@@ -144,33 +132,23 @@
         },
         "security": [
           {
-            "session_cookie": [
-              "read"
-            ]
+            "session_cookie": ["read"]
           },
           {
-            "device_token_bearer": [
-              "read"
-            ]
+            "device_token_bearer": ["read"]
           },
           {
-            "oidc_jwt_bearer": [
-              "read"
-            ]
+            "oidc_jwt_bearer": ["read"]
           },
           {
-            "opds_basic": [
-              "read"
-            ]
+            "opds_basic": ["read"]
           }
         ]
       }
     },
     "/api/v1/authors/suggest": {
       "get": {
-        "tags": [
-          "suggest"
-        ],
+        "tags": ["suggest"],
         "summary": "`GET /api/v1/authors/suggest`: author names in use on a visible\nmanifestation, ranked prefix-first then by similarity. Scoped to the\n`author` role (see [`query_authors`]), matching the `?author=` filter it\nfeeds.",
         "description": "# Errors\nSame as [`suggest_genres`].",
         "operationId": "suggest_authors",
@@ -239,33 +217,23 @@
         },
         "security": [
           {
-            "session_cookie": [
-              "read"
-            ]
+            "session_cookie": ["read"]
           },
           {
-            "device_token_bearer": [
-              "read"
-            ]
+            "device_token_bearer": ["read"]
           },
           {
-            "oidc_jwt_bearer": [
-              "read"
-            ]
+            "oidc_jwt_bearer": ["read"]
           },
           {
-            "opds_basic": [
-              "read"
-            ]
+            "opds_basic": ["read"]
           }
         ]
       }
     },
     "/api/v1/books": {
       "get": {
-        "tags": [
-          "library"
-        ],
+        "tags": ["library"],
         "summary": "List the manifestations visible to the current user, paginated\nvia an opaque cursor and ordered per the requested sort stack.",
         "description": "# Errors\n- [`AppError::MalformedQuery`] when a filter param fails to\n  deserialize (a malformed UUID in `?author=`/`?series=`/`?shelf=`,\n  via the `From<QueryRejection>` impl), or when `?sort=` names an\n  unwhitelisted field, repeats a column, or exceeds\n  [`crate::routes::sort_spec::MAX_SORT_LEVELS`] levels.\n- [`AppError::Validation`] when the cursor is malformed, its\n  embedded sort spec mismatches the requested stack, or any\n  vocabulary filter param carries more than [`MAX_TAG_FILTERS`]\n  values.\n- [`AppError::Internal`] on database errors.",
         "operationId": "list",
@@ -688,33 +656,23 @@
         },
         "security": [
           {
-            "session_cookie": [
-              "read"
-            ]
+            "session_cookie": ["read"]
           },
           {
-            "device_token_bearer": [
-              "read"
-            ]
+            "device_token_bearer": ["read"]
           },
           {
-            "oidc_jwt_bearer": [
-              "read"
-            ]
+            "oidc_jwt_bearer": ["read"]
           },
           {
-            "opds_basic": [
-              "read"
-            ]
+            "opds_basic": ["read"]
           }
         ]
       }
     },
     "/api/v1/books/{id}": {
       "get": {
-        "tags": [
-          "library"
-        ],
+        "tags": ["library"],
         "summary": "`GET /api/v1/books/{id}` — single-manifestation detail with the\nwork-level prose, tags, and a metadata-version summary used by the\nbook-detail Versions tab.",
         "description": "RLS hides manifestations the current user cannot see; the handler\nreports those as 404 rather than 403 so existence is not leaked.\n\n# Errors\n- [`AppError::NotFound`] when the manifestation is missing or\n  RLS-hidden.\n- [`AppError::Internal`] on database errors.",
         "operationId": "book_detail",
@@ -764,33 +722,23 @@
         },
         "security": [
           {
-            "session_cookie": [
-              "read"
-            ]
+            "session_cookie": ["read"]
           },
           {
-            "device_token_bearer": [
-              "read"
-            ]
+            "device_token_bearer": ["read"]
           },
           {
-            "oidc_jwt_bearer": [
-              "read"
-            ]
+            "oidc_jwt_bearer": ["read"]
           },
           {
-            "opds_basic": [
-              "read"
-            ]
+            "opds_basic": ["read"]
           }
         ]
       }
     },
     "/api/v1/books/{id}/cover": {
       "get": {
-        "tags": [
-          "library"
-        ],
+        "tags": ["library"],
         "summary": "`GET /api/v1/books/{id}/cover` — full-size cover for the web UI.",
         "description": "# Errors\nSee [`opds_cover`].",
         "operationId": "api_cover",
@@ -836,33 +784,23 @@
         },
         "security": [
           {
-            "session_cookie": [
-              "read"
-            ]
+            "session_cookie": ["read"]
           },
           {
-            "device_token_bearer": [
-              "read"
-            ]
+            "device_token_bearer": ["read"]
           },
           {
-            "oidc_jwt_bearer": [
-              "read"
-            ]
+            "oidc_jwt_bearer": ["read"]
           },
           {
-            "opds_basic": [
-              "read"
-            ]
+            "opds_basic": ["read"]
           }
         ]
       }
     },
     "/api/v1/books/{id}/cover/thumb": {
       "get": {
-        "tags": [
-          "library"
-        ],
+        "tags": ["library"],
         "summary": "`GET /api/v1/books/{id}/cover/thumb` — thumbnail cover for the web UI.",
         "description": "# Errors\nSee [`opds_cover`].",
         "operationId": "api_cover_thumb",
@@ -908,33 +846,23 @@
         },
         "security": [
           {
-            "session_cookie": [
-              "read"
-            ]
+            "session_cookie": ["read"]
           },
           {
-            "device_token_bearer": [
-              "read"
-            ]
+            "device_token_bearer": ["read"]
           },
           {
-            "oidc_jwt_bearer": [
-              "read"
-            ]
+            "oidc_jwt_bearer": ["read"]
           },
           {
-            "opds_basic": [
-              "read"
-            ]
+            "opds_basic": ["read"]
           }
         ]
       }
     },
     "/api/v1/books/{id}/metadata": {
       "get": {
-        "tags": [
-          "metadata"
-        ],
+        "tags": ["metadata"],
         "summary": "`GET /api/v1/books/{id}/metadata` — the editable metadata span for one\nmanifestation: the matched-pair read for [`update_book_metadata`], same\nURI and id key, so a read-modify-write flow targets one resource.",
         "description": "# Errors\n- [`AppError::Forbidden`] when the caller is a child account.\n- [`AppError::NotFound`] when the manifestation is missing or hidden by\n  RLS for the current user (existence-not-leaked).\n- [`AppError::Internal`] on database errors.",
         "operationId": "get_book_metadata",
@@ -1002,31 +930,21 @@
         },
         "security": [
           {
-            "session_cookie": [
-              "read"
-            ]
+            "session_cookie": ["read"]
           },
           {
-            "device_token_bearer": [
-              "read"
-            ]
+            "device_token_bearer": ["read"]
           },
           {
-            "oidc_jwt_bearer": [
-              "read"
-            ]
+            "oidc_jwt_bearer": ["read"]
           },
           {
-            "opds_basic": [
-              "read"
-            ]
+            "opds_basic": ["read"]
           }
         ]
       },
       "patch": {
-        "tags": [
-          "metadata"
-        ],
+        "tags": ["metadata"],
         "summary": "`PATCH /api/v1/books/{id}/metadata` — manual operator edit.",
         "description": "Bare RFC 7396 JSON Merge Patch body (no envelope): absent keys are\nunchanged, `null` clears (except `title`). Accepts both\n`application/json` and `application/merge-patch+json`: axum's `Json`\nextractor already treats any `+json`-suffixed content type as JSON.\n\nFor each touched field the handler inserts a `metadata_versions` row\nwith `source = 'manual'` and then either promotes that row to canonical\nvia [`apply_version`] (when a value is supplied) or clears the\ncanonical column via [`clear_field`] (when the value is `null`). The\npending AI/OPF drafts on the same field stay `status = 'pending'`, so the\noperator can revert to one of them later. The response carries the\napplied (normalized) value plus the new and previous version pointers\nper field, so a caller can offer undo without a follow-up read.\n\n# Errors\n- [`AppError::Validation`] when the body has no populated fields,\n  when an ISBN/date value fails parsing, when a vocabulary list\n  (`genres`/`moods`/`tags`) contains an empty, duplicate, or\n  over-length term, or when the operator tries to clear `title`\n  (canonical title is `NOT NULL` on `works`). Reached only once\n  `If-Match` has matched, so a stale tag yields 412 rather than a\n  body error.\n- [`AppError::MalformedHeader`] when `If-Match` violates the RFC 9110\n  §8.8.3 entity-tag grammar, or carries a form this API refuses by\n  policy: the `*` wildcard, an entity-tag list, a weak validator, or\n  more than one instance of the field.\n- [`AppError::NotFound`] when the manifestation is missing or hidden\n  by RLS for the current user (existence-not-leaked).\n- [`AppError::Forbidden`] when the caller is a child account.\n- [`AppError::IfMatchRequired`] (428) when `If-Match` is absent.\n- [`AppError::IfMatchMismatch`] (412) when `If-Match` does not match the\n  manifestation's current metadata `ETag`; the response carries the\n  current `ETag` so the caller can resync in one round trip.\n- [`AppError::Internal`] on database errors.",
         "operationId": "update_book_metadata",
@@ -1162,33 +1080,23 @@
         },
         "security": [
           {
-            "session_cookie": [
-              "write"
-            ]
+            "session_cookie": ["write"]
           },
           {
-            "device_token_bearer": [
-              "write"
-            ]
+            "device_token_bearer": ["write"]
           },
           {
-            "oidc_jwt_bearer": [
-              "write"
-            ]
+            "oidc_jwt_bearer": ["write"]
           },
           {
-            "opds_basic": [
-              "write"
-            ]
+            "opds_basic": ["write"]
           }
         ]
       }
     },
     "/api/v1/books/{id}/reading": {
       "get": {
-        "tags": [
-          "reading"
-        ],
+        "tags": ["reading"],
         "summary": "`GET /api/v1/books/{id}/reading`: the caller's reading state for one\nbook.",
         "description": "# Errors\n- [`AppError::NotFound`] when the manifestation is missing or hidden by\n  RLS for the current user (existence-not-leaked).\n- [`AppError::Internal`] on database errors.",
         "operationId": "get_reading",
@@ -1246,31 +1154,21 @@
         },
         "security": [
           {
-            "session_cookie": [
-              "read"
-            ]
+            "session_cookie": ["read"]
           },
           {
-            "device_token_bearer": [
-              "read"
-            ]
+            "device_token_bearer": ["read"]
           },
           {
-            "oidc_jwt_bearer": [
-              "read"
-            ]
+            "oidc_jwt_bearer": ["read"]
           },
           {
-            "opds_basic": [
-              "read"
-            ]
+            "opds_basic": ["read"]
           }
         ]
       },
       "patch": {
-        "tags": [
-          "reading"
-        ],
+        "tags": ["reading"],
         "summary": "`PATCH /api/v1/books/{id}/reading`: upsert the caller's reading state.",
         "description": "Transition stamps fire only when the patch itself carries a non-null\n`status` (no before/after diff, so repeating the current status\nre-applies its stamp; a patch without `status` never touches stamps):\n- patched `status = reading` → `started_at := COALESCE(started_at, now())`\n- patched `status = finished` → `finished_at := now()`,\n  `progress_pct := 100`, `last_read_at := now()`\n- any other patched `status`, an explicit `null` clear, or a patch\n  without `status` → no stamps; `progress_pct` / `started_at` /\n  `finished_at` / `last_read_at` carry over unchanged\n\n# Errors\n- [`AppError::Validation`] when the body has no populated fields,\n  `rating` is outside `1..=5`, or `notes` exceeds 10000 characters.\n  Reached only once `If-Match` has matched, so a stale tag yields 412\n  rather than a body error.\n- [`AppError::MalformedHeader`] when `If-Match` violates the RFC 9110\n  §8.8.3 entity-tag grammar, or carries a form this API refuses by\n  policy: the `*` wildcard, an entity-tag list, a weak validator, or\n  more than one instance of the field.\n- [`AppError::NotFound`] when the manifestation is missing or hidden by\n  RLS for the current user (existence-not-leaked).\n- [`AppError::IfMatchRequired`] (428) when `If-Match` is absent.\n- [`AppError::IfMatchMismatch`] (412) when `If-Match` does not match the\n  caller's current reading-state `ETag`; the response carries the\n  current `ETag` so the caller can resync in one round trip.\n- [`AppError::Internal`] on database errors.",
         "operationId": "patch_reading",
@@ -1396,33 +1294,23 @@
         },
         "security": [
           {
-            "session_cookie": [
-              "write"
-            ]
+            "session_cookie": ["write"]
           },
           {
-            "device_token_bearer": [
-              "write"
-            ]
+            "device_token_bearer": ["write"]
           },
           {
-            "oidc_jwt_bearer": [
-              "write"
-            ]
+            "oidc_jwt_bearer": ["write"]
           },
           {
-            "opds_basic": [
-              "write"
-            ]
+            "opds_basic": ["write"]
           }
         ]
       }
     },
     "/api/v1/dashboard/activity": {
       "get": {
-        "tags": [
-          "dashboard"
-        ],
+        "tags": ["dashboard"],
         "summary": "`GET /api/v1/dashboard/activity?limit=N` — most-recent ingestion batches,\nnewest first (admin only).",
         "description": "Groups `ingestion_jobs` by `batch_id` into per-batch outcome counts.\n`acquire_with_rls` is used for pattern consistency but is not load-bearing\nhere — `ingestion_jobs` has no RLS.\n\n# Errors\n- [`AppError::Forbidden`] when the caller is not an admin.\n- [`AppError::Internal`] on database errors.",
         "operationId": "activity",
@@ -1482,33 +1370,23 @@
         },
         "security": [
           {
-            "session_cookie": [
-              "admin"
-            ]
+            "session_cookie": ["admin"]
           },
           {
-            "device_token_bearer": [
-              "admin"
-            ]
+            "device_token_bearer": ["admin"]
           },
           {
-            "oidc_jwt_bearer": [
-              "admin"
-            ]
+            "oidc_jwt_bearer": ["admin"]
           },
           {
-            "opds_basic": [
-              "admin"
-            ]
+            "opds_basic": ["admin"]
           }
         ]
       }
     },
     "/api/v1/dashboard/stats": {
       "get": {
-        "tags": [
-          "dashboard"
-        ],
+        "tags": ["dashboard"],
         "summary": "`GET /api/v1/dashboard/stats` — library-wide aggregate health metrics\n(admin only).",
         "description": "Computes the manifestation-side metrics in a single conditional-aggregate\nscan joined to `works` (query A), plus one per-format `GROUP BY` (query\nB). Validation/enrichment breakdowns are reassembled in Rust from the\nfixed `FILTER` columns so the closed enum sets render deterministically.\n\n# Errors\n- [`AppError::Forbidden`] when the caller is not an admin.\n- [`AppError::Internal`] on database errors.",
         "operationId": "stats",
@@ -1546,33 +1424,23 @@
         },
         "security": [
           {
-            "session_cookie": [
-              "admin"
-            ]
+            "session_cookie": ["admin"]
           },
           {
-            "device_token_bearer": [
-              "admin"
-            ]
+            "device_token_bearer": ["admin"]
           },
           {
-            "oidc_jwt_bearer": [
-              "admin"
-            ]
+            "oidc_jwt_bearer": ["admin"]
           },
           {
-            "opds_basic": [
-              "admin"
-            ]
+            "opds_basic": ["admin"]
           }
         ]
       }
     },
     "/api/v1/enrichment/status": {
       "get": {
-        "tags": [
-          "enrichment"
-        ],
+        "tags": ["enrichment"],
         "summary": "`GET /api/v1/enrichment/status` — aggregate queue counters over the\nmanifestations visible to the caller.",
         "description": "# Errors\n- [`AppError::Forbidden`] when the caller is a child account.\n- [`AppError::Internal`] on database errors.",
         "operationId": "status",
@@ -1610,33 +1478,23 @@
         },
         "security": [
           {
-            "session_cookie": [
-              "read"
-            ]
+            "session_cookie": ["read"]
           },
           {
-            "device_token_bearer": [
-              "read"
-            ]
+            "device_token_bearer": ["read"]
           },
           {
-            "oidc_jwt_bearer": [
-              "read"
-            ]
+            "oidc_jwt_bearer": ["read"]
           },
           {
-            "opds_basic": [
-              "read"
-            ]
+            "opds_basic": ["read"]
           }
         ]
       }
     },
     "/api/v1/genres/suggest": {
       "get": {
-        "tags": [
-          "suggest"
-        ],
+        "tags": ["suggest"],
         "summary": "`GET /api/v1/genres/suggest`: genre names in use on a visible\nmanifestation, ranked prefix-first then by similarity.",
         "description": "Read-scope gated exactly like `GET /api/v1/books` (the least-privilege\nfloor); every other suggest handler below shares the same shape.\n\n# Errors\n- [`AppError::MalformedQuery`] when `?limit=` fails to parse as an\n  integer; HTTP 400 via the `From<QueryRejection>` impl.\n- [`AppError::Validation`] when `q` is empty after trimming or exceeds\n  [`MAX_Q_CHARS`] characters.\n- [`AppError::Internal`] on database errors.",
         "operationId": "suggest_genres",
@@ -1705,33 +1563,23 @@
         },
         "security": [
           {
-            "session_cookie": [
-              "read"
-            ]
+            "session_cookie": ["read"]
           },
           {
-            "device_token_bearer": [
-              "read"
-            ]
+            "device_token_bearer": ["read"]
           },
           {
-            "oidc_jwt_bearer": [
-              "read"
-            ]
+            "oidc_jwt_bearer": ["read"]
           },
           {
-            "opds_basic": [
-              "read"
-            ]
+            "opds_basic": ["read"]
           }
         ]
       }
     },
     "/api/v1/ingestion/scan": {
       "post": {
-        "tags": [
-          "ingestion"
-        ],
+        "tags": ["ingestion"],
         "summary": "`POST /api/v1/ingestion/scan` — synchronously scan the ingestion\ndirectory (admin only).",
         "description": "# Errors\n- [`AppError::Forbidden`] when the caller is not an admin.\n- [`AppError::Internal`] when the scan fails at the service layer.",
         "operationId": "scan",
@@ -1769,33 +1617,23 @@
         },
         "security": [
           {
-            "session_cookie": [
-              "admin"
-            ]
+            "session_cookie": ["admin"]
           },
           {
-            "device_token_bearer": [
-              "admin"
-            ]
+            "device_token_bearer": ["admin"]
           },
           {
-            "oidc_jwt_bearer": [
-              "admin"
-            ]
+            "oidc_jwt_bearer": ["admin"]
           },
           {
-            "opds_basic": [
-              "admin"
-            ]
+            "opds_basic": ["admin"]
           }
         ]
       }
     },
     "/api/v1/manifestations/{id}/enrichment/dry-run": {
       "post": {
-        "tags": [
-          "enrichment"
-        ],
+        "tags": ["enrichment"],
         "summary": "`POST /api/v1/manifestations/{id}/enrichment/dry-run` — synchronous\npreview of what an enrichment pass would change. No side effects\nbeyond the source cache.",
         "description": "# Errors\n- [`AppError::Forbidden`] when the caller is a child account.\n- [`AppError::NotFound`] when the manifestation is missing or\n  RLS-hidden (existence-not-leaked).\n- [`AppError::Internal`] on database errors or fan-out infrastructure\n  failure.",
         "operationId": "dry_run",
@@ -1855,33 +1693,23 @@
         },
         "security": [
           {
-            "session_cookie": [
-              "read"
-            ]
+            "session_cookie": ["read"]
           },
           {
-            "device_token_bearer": [
-              "read"
-            ]
+            "device_token_bearer": ["read"]
           },
           {
-            "oidc_jwt_bearer": [
-              "read"
-            ]
+            "oidc_jwt_bearer": ["read"]
           },
           {
-            "opds_basic": [
-              "read"
-            ]
+            "opds_basic": ["read"]
           }
         ]
       }
     },
     "/api/v1/manifestations/{id}/enrichment/trigger": {
       "post": {
-        "tags": [
-          "enrichment"
-        ],
+        "tags": ["enrichment"],
         "summary": "`POST /api/v1/manifestations/{id}/enrichment/trigger` — re-queue the\nmanifestation for a fresh enrichment pass.",
         "description": "An `in_progress` row is not flipped to `pending`: the active worker\nstill owns the claim, and releasing it would let a second worker run\nthe same manifestation concurrently. The trigger sets\n`enrichment_rerun_requested` instead, and the worker's completion\nbookkeeping converts the flag into a fresh eligible row. All CASE arms\nread the pre-update row state, so the status test is consistent across\nevery column.\n\n# Errors\n- [`AppError::Forbidden`] when the caller is a child account.\n- [`AppError::NotFound`] when the manifestation is missing or\n  RLS-hidden (existence-not-leaked).\n- [`AppError::Internal`] on database errors.",
         "operationId": "trigger",
@@ -1934,33 +1762,23 @@
         },
         "security": [
           {
-            "session_cookie": [
-              "write"
-            ]
+            "session_cookie": ["write"]
           },
           {
-            "device_token_bearer": [
-              "write"
-            ]
+            "device_token_bearer": ["write"]
           },
           {
-            "oidc_jwt_bearer": [
-              "write"
-            ]
+            "oidc_jwt_bearer": ["write"]
           },
           {
-            "opds_basic": [
-              "write"
-            ]
+            "opds_basic": ["write"]
           }
         ]
       }
     },
     "/api/v1/manifestations/{id}/metadata": {
       "get": {
-        "tags": [
-          "metadata"
-        ],
+        "tags": ["metadata"],
         "summary": "`GET /api/v1/manifestations/{id}/metadata` — review queue for one\nmanifestation, newest first.",
         "description": "# Errors\n- [`AppError::Forbidden`] when the caller is a child account.\n- [`AppError::Internal`] on database errors.",
         "operationId": "get_manifestation_metadata",
@@ -2013,33 +1831,23 @@
         },
         "security": [
           {
-            "session_cookie": [
-              "read"
-            ]
+            "session_cookie": ["read"]
           },
           {
-            "device_token_bearer": [
-              "read"
-            ]
+            "device_token_bearer": ["read"]
           },
           {
-            "oidc_jwt_bearer": [
-              "read"
-            ]
+            "oidc_jwt_bearer": ["read"]
           },
           {
-            "opds_basic": [
-              "read"
-            ]
+            "opds_basic": ["read"]
           }
         ]
       }
     },
     "/api/v1/manifestations/{id}/metadata/accept": {
       "post": {
-        "tags": [
-          "metadata"
-        ],
+        "tags": ["metadata"],
         "summary": "`POST /api/v1/manifestations/{id}/metadata/accept` — promote a pending\nmetadata version to canonical.",
         "description": "# Errors\n- [`AppError::Forbidden`] when the caller is a child account.\n- [`AppError::NotFound`] when the version row does not belong to the\n  manifestation or is RLS-hidden.\n- [`AppError::Validation`] when the stored value fails field parsing.\n- [`AppError::Internal`] on database errors.",
         "operationId": "accept_manifestation",
@@ -2112,33 +1920,23 @@
         },
         "security": [
           {
-            "session_cookie": [
-              "write"
-            ]
+            "session_cookie": ["write"]
           },
           {
-            "device_token_bearer": [
-              "write"
-            ]
+            "device_token_bearer": ["write"]
           },
           {
-            "oidc_jwt_bearer": [
-              "write"
-            ]
+            "oidc_jwt_bearer": ["write"]
           },
           {
-            "opds_basic": [
-              "write"
-            ]
+            "opds_basic": ["write"]
           }
         ]
       }
     },
     "/api/v1/manifestations/{id}/metadata/lock": {
       "post": {
-        "tags": [
-          "metadata"
-        ],
+        "tags": ["metadata"],
         "summary": "`POST /api/v1/manifestations/{id}/metadata/lock` — lock a field\nagainst future enrichment writes.",
         "description": "# Errors\n- [`AppError::Forbidden`] when the caller is a child account.\n- [`AppError::Validation`] when `entity_type` is not `work` /\n  `manifestation`.\n- [`AppError::Internal`] on database errors.",
         "operationId": "lock_field",
@@ -2201,33 +1999,23 @@
         },
         "security": [
           {
-            "session_cookie": [
-              "write"
-            ]
+            "session_cookie": ["write"]
           },
           {
-            "device_token_bearer": [
-              "write"
-            ]
+            "device_token_bearer": ["write"]
           },
           {
-            "oidc_jwt_bearer": [
-              "write"
-            ]
+            "oidc_jwt_bearer": ["write"]
           },
           {
-            "opds_basic": [
-              "write"
-            ]
+            "opds_basic": ["write"]
           }
         ]
       }
     },
     "/api/v1/manifestations/{id}/metadata/reject": {
       "post": {
-        "tags": [
-          "metadata"
-        ],
+        "tags": ["metadata"],
         "summary": "`POST /api/v1/manifestations/{id}/metadata/reject` — mark a pending\nmetadata version as rejected.",
         "description": "# Errors\n- [`AppError::Forbidden`] when the caller is a child account.\n- [`AppError::NotFound`] when the version row does not belong to the\n  manifestation or is RLS-hidden.\n- [`AppError::Internal`] on database errors.",
         "operationId": "reject_manifestation",
@@ -2290,33 +2078,23 @@
         },
         "security": [
           {
-            "session_cookie": [
-              "write"
-            ]
+            "session_cookie": ["write"]
           },
           {
-            "device_token_bearer": [
-              "write"
-            ]
+            "device_token_bearer": ["write"]
           },
           {
-            "oidc_jwt_bearer": [
-              "write"
-            ]
+            "oidc_jwt_bearer": ["write"]
           },
           {
-            "opds_basic": [
-              "write"
-            ]
+            "opds_basic": ["write"]
           }
         ]
       }
     },
     "/api/v1/manifestations/{id}/metadata/revert": {
       "post": {
-        "tags": [
-          "metadata"
-        ],
+        "tags": ["metadata"],
         "summary": "`POST /api/v1/manifestations/{id}/metadata/revert` — restore a prior\nversion as canonical, or clear the field entirely.",
         "description": "# Errors\n- [`AppError::Forbidden`] when the caller is a child account.\n- [`AppError::NotFound`] when the manifestation or version is missing\n  or RLS-hidden.\n- [`AppError::Validation`] when clearing a non-clearable field (e.g.\n  `title`) or the stored value fails parsing.\n- [`AppError::Internal`] on database errors.",
         "operationId": "revert_manifestation",
@@ -2389,33 +2167,23 @@
         },
         "security": [
           {
-            "session_cookie": [
-              "write"
-            ]
+            "session_cookie": ["write"]
           },
           {
-            "device_token_bearer": [
-              "write"
-            ]
+            "device_token_bearer": ["write"]
           },
           {
-            "oidc_jwt_bearer": [
-              "write"
-            ]
+            "oidc_jwt_bearer": ["write"]
           },
           {
-            "opds_basic": [
-              "write"
-            ]
+            "opds_basic": ["write"]
           }
         ]
       }
     },
     "/api/v1/manifestations/{id}/metadata/unlock": {
       "post": {
-        "tags": [
-          "metadata"
-        ],
+        "tags": ["metadata"],
         "summary": "`POST /api/v1/manifestations/{id}/metadata/unlock` — remove a field\nlock.",
         "description": "# Errors\n- [`AppError::Forbidden`] when the caller is a child account.\n- [`AppError::NotFound`] when no matching lock exists.\n- [`AppError::Validation`] when `entity_type` is not `work` /\n  `manifestation`.\n- [`AppError::Internal`] on database errors.",
         "operationId": "unlock_field",
@@ -2488,33 +2256,23 @@
         },
         "security": [
           {
-            "session_cookie": [
-              "write"
-            ]
+            "session_cookie": ["write"]
           },
           {
-            "device_token_bearer": [
-              "write"
-            ]
+            "device_token_bearer": ["write"]
           },
           {
-            "oidc_jwt_bearer": [
-              "write"
-            ]
+            "oidc_jwt_bearer": ["write"]
           },
           {
-            "opds_basic": [
-              "write"
-            ]
+            "opds_basic": ["write"]
           }
         ]
       }
     },
     "/api/v1/moods/suggest": {
       "get": {
-        "tags": [
-          "suggest"
-        ],
+        "tags": ["suggest"],
         "summary": "`GET /api/v1/moods/suggest`: mood names in use on a visible\nmanifestation, ranked prefix-first then by similarity.",
         "description": "# Errors\nSame as [`suggest_genres`].",
         "operationId": "suggest_moods",
@@ -2583,33 +2341,23 @@
         },
         "security": [
           {
-            "session_cookie": [
-              "read"
-            ]
+            "session_cookie": ["read"]
           },
           {
-            "device_token_bearer": [
-              "read"
-            ]
+            "device_token_bearer": ["read"]
           },
           {
-            "oidc_jwt_bearer": [
-              "read"
-            ]
+            "oidc_jwt_bearer": ["read"]
           },
           {
-            "opds_basic": [
-              "read"
-            ]
+            "opds_basic": ["read"]
           }
         ]
       }
     },
     "/api/v1/publishers/suggest": {
       "get": {
-        "tags": [
-          "suggest"
-        ],
+        "tags": ["suggest"],
         "summary": "`GET /api/v1/publishers/suggest`: distinct publisher values in use on a\nvisible manifestation, ranked prefix-first then by similarity. Every\nreturned [`Suggestion`] carries `id: None` (publishers have no dedicated\nvocabulary table; see [`query_publishers`]).",
         "description": "# Errors\nSame as [`suggest_genres`].",
         "operationId": "suggest_publishers",
@@ -2678,33 +2426,23 @@
         },
         "security": [
           {
-            "session_cookie": [
-              "read"
-            ]
+            "session_cookie": ["read"]
           },
           {
-            "device_token_bearer": [
-              "read"
-            ]
+            "device_token_bearer": ["read"]
           },
           {
-            "oidc_jwt_bearer": [
-              "read"
-            ]
+            "oidc_jwt_bearer": ["read"]
           },
           {
-            "opds_basic": [
-              "read"
-            ]
+            "opds_basic": ["read"]
           }
         ]
       }
     },
     "/api/v1/search": {
       "get": {
-        "tags": [
-          "library"
-        ],
+        "tags": ["library"],
         "summary": "`GET /api/v1/search` — return the top hybrid-ranked manifestations\nmatching `q`, snippet-highlighted via `ts_headline`.",
         "description": "# Errors\n- [`AppError::Validation`] when `q` is missing, empty, or longer\n  than [`MAX_Q_LEN`] characters.\n- [`AppError::Internal`] on database errors.",
         "operationId": "search",
@@ -2763,33 +2501,23 @@
         },
         "security": [
           {
-            "session_cookie": [
-              "read"
-            ]
+            "session_cookie": ["read"]
           },
           {
-            "device_token_bearer": [
-              "read"
-            ]
+            "device_token_bearer": ["read"]
           },
           {
-            "oidc_jwt_bearer": [
-              "read"
-            ]
+            "oidc_jwt_bearer": ["read"]
           },
           {
-            "opds_basic": [
-              "read"
-            ]
+            "opds_basic": ["read"]
           }
         ]
       }
     },
     "/api/v1/series/suggest": {
       "get": {
-        "tags": [
-          "suggest"
-        ],
+        "tags": ["suggest"],
         "summary": "`GET /api/v1/series/suggest`: series names in use on a visible\nmanifestation, ranked prefix-first then by similarity.",
         "description": "# Errors\nSame as [`suggest_genres`].",
         "operationId": "suggest_series",
@@ -2858,33 +2586,23 @@
         },
         "security": [
           {
-            "session_cookie": [
-              "read"
-            ]
+            "session_cookie": ["read"]
           },
           {
-            "device_token_bearer": [
-              "read"
-            ]
+            "device_token_bearer": ["read"]
           },
           {
-            "oidc_jwt_bearer": [
-              "read"
-            ]
+            "oidc_jwt_bearer": ["read"]
           },
           {
-            "opds_basic": [
-              "read"
-            ]
+            "opds_basic": ["read"]
           }
         ]
       }
     },
     "/api/v1/series/{id}": {
       "get": {
-        "tags": [
-          "series"
-        ],
+        "tags": ["series"],
         "summary": "`GET /api/v1/series/{id}` — series + ordered works with visible\nmanifestations per work.",
         "description": "# Errors\n- [`AppError::NotFound`] when the series row is missing, the series\n  has no linked works, or every work in the series has zero visible\n  manifestations under the caller's RLS context (existence-not-leaked).\n- [`AppError::Internal`] on database errors.",
         "operationId": "series_detail",
@@ -2934,33 +2652,23 @@
         },
         "security": [
           {
-            "session_cookie": [
-              "read"
-            ]
+            "session_cookie": ["read"]
           },
           {
-            "device_token_bearer": [
-              "read"
-            ]
+            "device_token_bearer": ["read"]
           },
           {
-            "oidc_jwt_bearer": [
-              "read"
-            ]
+            "oidc_jwt_bearer": ["read"]
           },
           {
-            "opds_basic": [
-              "read"
-            ]
+            "opds_basic": ["read"]
           }
         ]
       }
     },
     "/api/v1/settings": {
       "get": {
-        "tags": [
-          "settings"
-        ],
+        "tags": ["settings"],
         "summary": "`GET /api/v1/settings` — return current persisted settings (admin only).",
         "description": "Reads directly from the database so the response always reflects\nthe latest persisted state (admin endpoint, single-row read,\ncalled infrequently). Workers use the `RwLock` cache for zero-DB\nper-request reads.\n\nAlso includes `last_successful_reload_at` from the background\nLISTEN/NOTIFY task so operators can verify the live-reload\nmechanism is healthy.\n\n# Errors\n- [`AppError::Forbidden`] when the caller is not an admin.\n- [`AppError::Internal`] on database errors.",
         "operationId": "get_settings",
@@ -2998,31 +2706,21 @@
         },
         "security": [
           {
-            "session_cookie": [
-              "admin"
-            ]
+            "session_cookie": ["admin"]
           },
           {
-            "device_token_bearer": [
-              "admin"
-            ]
+            "device_token_bearer": ["admin"]
           },
           {
-            "oidc_jwt_bearer": [
-              "admin"
-            ]
+            "oidc_jwt_bearer": ["admin"]
           },
           {
-            "opds_basic": [
-              "admin"
-            ]
+            "opds_basic": ["admin"]
           }
         ]
       },
       "put": {
-        "tags": [
-          "settings"
-        ],
+        "tags": ["settings"],
         "summary": "`PUT /api/v1/settings` — partial update of settings (admin only).",
         "description": "Accepts RFC 7396 JSON Merge Patch: absent fields are unchanged.\nValidates field values before persisting. Updates the local\n`RwLock` cache immediately (no NOTIFY round-trip for same-process\nreads). The DB trigger also fires `NOTIFY settings_changed` to\npropagate changes to other connected processes.\n\n# Errors\n- [`AppError::Forbidden`] when the caller is not an admin.\n- [`AppError::Validation`] when the body is empty or contains\n  invalid field values.\n- [`AppError::Internal`] on database errors.",
         "operationId": "put_settings",
@@ -3081,33 +2779,23 @@
         },
         "security": [
           {
-            "session_cookie": [
-              "admin"
-            ]
+            "session_cookie": ["admin"]
           },
           {
-            "device_token_bearer": [
-              "admin"
-            ]
+            "device_token_bearer": ["admin"]
           },
           {
-            "oidc_jwt_bearer": [
-              "admin"
-            ]
+            "oidc_jwt_bearer": ["admin"]
           },
           {
-            "opds_basic": [
-              "admin"
-            ]
+            "opds_basic": ["admin"]
           }
         ]
       }
     },
     "/api/v1/shelves": {
       "get": {
-        "tags": [
-          "shelves"
-        ],
+        "tags": ["shelves"],
         "summary": "`GET /api/v1/shelves` — list the caller's shelves, keyset-paginated\nover `(is_system DESC, name ASC, id ASC)` — every list is bounded by\nconstruction.",
         "description": "# Errors\n- [`AppError::Validation`] when the cursor is malformed.\n- [`AppError::Internal`] on database errors.",
         "operationId": "list_shelves",
@@ -3174,31 +2862,21 @@
         },
         "security": [
           {
-            "session_cookie": [
-              "read"
-            ]
+            "session_cookie": ["read"]
           },
           {
-            "device_token_bearer": [
-              "read"
-            ]
+            "device_token_bearer": ["read"]
           },
           {
-            "oidc_jwt_bearer": [
-              "read"
-            ]
+            "oidc_jwt_bearer": ["read"]
           },
           {
-            "opds_basic": [
-              "read"
-            ]
+            "opds_basic": ["read"]
           }
         ]
       },
       "post": {
-        "tags": [
-          "shelves"
-        ],
+        "tags": ["shelves"],
         "summary": "`POST /api/v1/shelves` — create a new (non-system) shelf for the\ncaller.",
         "description": "# Errors\n- [`AppError::Forbidden`] when the caller is a child account.\n- [`AppError::Validation`] when the body is missing or `name` is\n  empty / whitespace-only.\n- [`AppError::Internal`] on database errors.",
         "operationId": "create_shelf",
@@ -3264,33 +2942,23 @@
         },
         "security": [
           {
-            "session_cookie": [
-              "write"
-            ]
+            "session_cookie": ["write"]
           },
           {
-            "device_token_bearer": [
-              "write"
-            ]
+            "device_token_bearer": ["write"]
           },
           {
-            "oidc_jwt_bearer": [
-              "write"
-            ]
+            "oidc_jwt_bearer": ["write"]
           },
           {
-            "opds_basic": [
-              "write"
-            ]
+            "opds_basic": ["write"]
           }
         ]
       }
     },
     "/api/v1/shelves/{id}": {
       "get": {
-        "tags": [
-          "shelves"
-        ],
+        "tags": ["shelves"],
         "summary": "`GET /api/v1/shelves/{id}` — shelf identity plus ordered items,\nkeyset-paginated over `(position, added_at, manifestation_id)` — every\nlist is bounded by construction. The ETag/If-Match contract is\nunaffected by item paging:\nthe entity-tag carries the shelf's `updated_at` regardless of which\nitems page is requested.",
         "description": "# Errors\n- [`AppError::NotFound`] when missing or not owned by caller.\n- [`AppError::Validation`] when the cursor is malformed.\n- [`AppError::Internal`] on database errors.",
         "operationId": "get_shelf_with_items",
@@ -3383,31 +3051,21 @@
         },
         "security": [
           {
-            "session_cookie": [
-              "read"
-            ]
+            "session_cookie": ["read"]
           },
           {
-            "device_token_bearer": [
-              "read"
-            ]
+            "device_token_bearer": ["read"]
           },
           {
-            "oidc_jwt_bearer": [
-              "read"
-            ]
+            "oidc_jwt_bearer": ["read"]
           },
           {
-            "opds_basic": [
-              "read"
-            ]
+            "opds_basic": ["read"]
           }
         ]
       },
       "delete": {
-        "tags": [
-          "shelves"
-        ],
+        "tags": ["shelves"],
         "summary": "`DELETE /api/v1/shelves/{id}` — delete a non-system shelf.",
         "description": "# Errors\n- [`AppError::Forbidden`] when the caller is a child account.\n- [`AppError::NotFound`] when the shelf is missing / not owned by\n  the caller.\n- [`AppError::SystemShelfImmutable`] when `is_system = TRUE`.\n- [`AppError::Internal`] on database errors.",
         "operationId": "delete_shelf",
@@ -3470,31 +3128,21 @@
         },
         "security": [
           {
-            "session_cookie": [
-              "write"
-            ]
+            "session_cookie": ["write"]
           },
           {
-            "device_token_bearer": [
-              "write"
-            ]
+            "device_token_bearer": ["write"]
           },
           {
-            "oidc_jwt_bearer": [
-              "write"
-            ]
+            "oidc_jwt_bearer": ["write"]
           },
           {
-            "opds_basic": [
-              "write"
-            ]
+            "opds_basic": ["write"]
           }
         ]
       },
       "patch": {
-        "tags": [
-          "shelves"
-        ],
+        "tags": ["shelves"],
         "summary": "`PATCH /api/v1/shelves/{id}` — rename a non-system shelf owned by\nthe caller.",
         "description": "# Errors\n- [`AppError::Forbidden`] when the caller is a child account.\n- [`AppError::NotFound`] when the shelf does not exist or belongs\n  to another user (existence-not-leaked).\n- [`AppError::SystemShelfImmutable`] (409) when the target shelf\n  has `is_system = TRUE`.\n- [`AppError::Validation`] when `name` is missing or\n  whitespace-only.\n- [`AppError::Internal`] on database errors.",
         "operationId": "rename_shelf",
@@ -3592,33 +3240,23 @@
         },
         "security": [
           {
-            "session_cookie": [
-              "write"
-            ]
+            "session_cookie": ["write"]
           },
           {
-            "device_token_bearer": [
-              "write"
-            ]
+            "device_token_bearer": ["write"]
           },
           {
-            "oidc_jwt_bearer": [
-              "write"
-            ]
+            "oidc_jwt_bearer": ["write"]
           },
           {
-            "opds_basic": [
-              "write"
-            ]
+            "opds_basic": ["write"]
           }
         ]
       }
     },
     "/api/v1/shelves/{id}/items": {
       "put": {
-        "tags": [
-          "shelves"
-        ],
+        "tags": ["shelves"],
         "summary": "`PUT /api/v1/shelves/{id}/items` — transactionally rewrite\n`shelf_items.position` based on the supplied order.",
         "description": "Optimistic-concurrency: requires `If-Match: \"<updated_at>\"`\nheader matching the shelf's current `updated_at`; otherwise 412.\n\n# Errors\n- [`AppError::IfMatchRequired`] (428) when the header is absent.\n- [`AppError::Validation`] when the header is malformed or the\n  posted items list contains UUIDs that are not currently on the\n  shelf.\n- [`AppError::NotFound`] when the shelf is missing / not owned.\n- [`AppError::IfMatchMismatch`] (412) when the `ETag` does not match.\n- [`AppError::Internal`] on database errors.",
         "operationId": "reorder_shelf_items",
@@ -3718,31 +3356,21 @@
         },
         "security": [
           {
-            "session_cookie": [
-              "write"
-            ]
+            "session_cookie": ["write"]
           },
           {
-            "device_token_bearer": [
-              "write"
-            ]
+            "device_token_bearer": ["write"]
           },
           {
-            "oidc_jwt_bearer": [
-              "write"
-            ]
+            "oidc_jwt_bearer": ["write"]
           },
           {
-            "opds_basic": [
-              "write"
-            ]
+            "opds_basic": ["write"]
           }
         ]
       },
       "post": {
-        "tags": [
-          "shelves"
-        ],
+        "tags": ["shelves"],
         "summary": "`POST /api/v1/shelves/{id}/items` — append a manifestation at\n`max(position) + 1`. Bumps the shelf's `updated_at` (`ETag`).",
         "description": "# Errors\n- [`AppError::Validation`] when the request body is missing,\n  malformed, or lacks the `manifestation_id` field.\n- [`AppError::NotFound`] when the shelf is missing / not owned, OR\n  when the manifestation is not visible to the caller (verified\n  via an RLS-scoped existence probe to prevent shelf-existence\n  probing of arbitrary manifestation ids).\n- [`AppError::Internal`] on database errors.",
         "operationId": "add_shelf_item",
@@ -3813,33 +3441,23 @@
         },
         "security": [
           {
-            "session_cookie": [
-              "write"
-            ]
+            "session_cookie": ["write"]
           },
           {
-            "device_token_bearer": [
-              "write"
-            ]
+            "device_token_bearer": ["write"]
           },
           {
-            "oidc_jwt_bearer": [
-              "write"
-            ]
+            "oidc_jwt_bearer": ["write"]
           },
           {
-            "opds_basic": [
-              "write"
-            ]
+            "opds_basic": ["write"]
           }
         ]
       }
     },
     "/api/v1/shelves/{id}/items/{manifestation_id}": {
       "delete": {
-        "tags": [
-          "shelves"
-        ],
+        "tags": ["shelves"],
         "summary": "`DELETE /api/v1/shelves/{id}/items/{manifestation_id}` — remove a\nshelf item. Bumps the shelf's `updated_at` (`ETag`).",
         "description": "# Errors\n- [`AppError::NotFound`] when the shelf is missing / not owned by\n  the caller, OR when the item is not on the shelf (the second\n  case prevents silent `ETag` drift from a no-op delete: bumping\n  `updated_at` on zero `rows_affected` would invalidate a\n  correctly-held client `If-Match` for the next reorder).\n- [`AppError::Internal`] on database errors.",
         "operationId": "remove_shelf_item",
@@ -3900,33 +3518,23 @@
         },
         "security": [
           {
-            "session_cookie": [
-              "write"
-            ]
+            "session_cookie": ["write"]
           },
           {
-            "device_token_bearer": [
-              "write"
-            ]
+            "device_token_bearer": ["write"]
           },
           {
-            "oidc_jwt_bearer": [
-              "write"
-            ]
+            "oidc_jwt_bearer": ["write"]
           },
           {
-            "opds_basic": [
-              "write"
-            ]
+            "opds_basic": ["write"]
           }
         ]
       }
     },
     "/api/v1/tags/suggest": {
       "get": {
-        "tags": [
-          "suggest"
-        ],
+        "tags": ["suggest"],
         "summary": "`GET /api/v1/tags/suggest`: tag names in use on a visible\nmanifestation, ranked prefix-first then by similarity.",
         "description": "# Errors\nSame as [`suggest_genres`].",
         "operationId": "suggest_tags",
@@ -3995,33 +3603,23 @@
         },
         "security": [
           {
-            "session_cookie": [
-              "read"
-            ]
+            "session_cookie": ["read"]
           },
           {
-            "device_token_bearer": [
-              "read"
-            ]
+            "device_token_bearer": ["read"]
           },
           {
-            "oidc_jwt_bearer": [
-              "read"
-            ]
+            "oidc_jwt_bearer": ["read"]
           },
           {
-            "opds_basic": [
-              "read"
-            ]
+            "opds_basic": ["read"]
           }
         ]
       }
     },
     "/api/v1/tokens": {
       "get": {
-        "tags": [
-          "tokens"
-        ],
+        "tags": ["tokens"],
         "summary": "`GET /api/v1/tokens` — list the caller's active (non-revoked) tokens.",
         "description": "# Errors\n- [`AppError::Internal`] on database errors.",
         "operationId": "list_tokens",
@@ -4052,31 +3650,21 @@
         },
         "security": [
           {
-            "session_cookie": [
-              "read"
-            ]
+            "session_cookie": ["read"]
           },
           {
-            "device_token_bearer": [
-              "read"
-            ]
+            "device_token_bearer": ["read"]
           },
           {
-            "oidc_jwt_bearer": [
-              "read"
-            ]
+            "oidc_jwt_bearer": ["read"]
           },
           {
-            "opds_basic": [
-              "read"
-            ]
+            "opds_basic": ["read"]
           }
         ]
       },
       "post": {
-        "tags": [
-          "tokens"
-        ],
+        "tags": ["tokens"],
         "summary": "`POST /api/v1/tokens` — issue a new device token for the caller.",
         "description": "# Errors\n- [`AppError::Validation`] when the trimmed name is empty or longer than\n  255 characters, the scope set is empty, `expires_in_days` is not one of\n  30/60/90/365, or the caller already has 10 active tokens.\n- [`AppError::Forbidden`] when a requested scope exceeds the caller's\n  role ceiling (e.g. a non-admin requesting `admin`).\n- [`AppError::Internal`] on database errors.",
         "operationId": "create_token",
@@ -4134,33 +3722,23 @@
         },
         "security": [
           {
-            "session_cookie": [
-              "write"
-            ]
+            "session_cookie": ["write"]
           },
           {
-            "device_token_bearer": [
-              "write"
-            ]
+            "device_token_bearer": ["write"]
           },
           {
-            "oidc_jwt_bearer": [
-              "write"
-            ]
+            "oidc_jwt_bearer": ["write"]
           },
           {
-            "opds_basic": [
-              "write"
-            ]
+            "opds_basic": ["write"]
           }
         ]
       }
     },
     "/api/v1/tokens/{id}": {
       "delete": {
-        "tags": [
-          "tokens"
-        ],
+        "tags": ["tokens"],
         "summary": "`DELETE /api/v1/tokens/{id}` — revoke one of the caller's tokens.",
         "description": "# Errors\n- [`AppError::NotFound`] when the id does not exist, belongs to another\n  user, or is already revoked (ownership is not leaked).\n- [`AppError::Internal`] on database errors.",
         "operationId": "revoke_token",
@@ -4213,33 +3791,23 @@
         },
         "security": [
           {
-            "session_cookie": [
-              "write"
-            ]
+            "session_cookie": ["write"]
           },
           {
-            "device_token_bearer": [
-              "write"
-            ]
+            "device_token_bearer": ["write"]
           },
           {
-            "oidc_jwt_bearer": [
-              "write"
-            ]
+            "oidc_jwt_bearer": ["write"]
           },
           {
-            "opds_basic": [
-              "write"
-            ]
+            "opds_basic": ["write"]
           }
         ]
       }
     },
     "/api/v1/users": {
       "get": {
-        "tags": [
-          "users"
-        ],
+        "tags": ["users"],
         "summary": "`GET /api/v1/users` — list all users (admin only).",
         "description": "# Errors\n- [`AppError::Forbidden`] when the caller is not an admin.\n- [`AppError::Internal`] on database errors.",
         "operationId": "list_users",
@@ -4280,31 +3848,21 @@
         },
         "security": [
           {
-            "session_cookie": [
-              "admin"
-            ]
+            "session_cookie": ["admin"]
           },
           {
-            "device_token_bearer": [
-              "admin"
-            ]
+            "device_token_bearer": ["admin"]
           },
           {
-            "oidc_jwt_bearer": [
-              "admin"
-            ]
+            "oidc_jwt_bearer": ["admin"]
           },
           {
-            "opds_basic": [
-              "admin"
-            ]
+            "opds_basic": ["admin"]
           }
         ]
       },
       "post": {
-        "tags": [
-          "users"
-        ],
+        "tags": ["users"],
         "summary": "`POST /api/v1/users` — create an account with an admin-typed initial\npassword (admin only). This is the create-and-invite path: there is no\nseparate invite mechanism, no email, and no forced first-login change. The\nadmin relays the password out-of-band; the user may self-service change it.",
         "description": "# Errors\n- [`AppError::Forbidden`] when the caller is not an admin or is a child.\n- [`AppError::Validation`] (422) on an invalid email or a password that\n  fails the policy (too short/long, too weak, or breached).\n- [`AppError::EmailConflict`] (409) when the email is already in use.\n- [`AppError::Internal`] on database errors.",
         "operationId": "create_user",
@@ -4372,33 +3930,23 @@
         },
         "security": [
           {
-            "session_cookie": [
-              "admin"
-            ]
+            "session_cookie": ["admin"]
           },
           {
-            "device_token_bearer": [
-              "admin"
-            ]
+            "device_token_bearer": ["admin"]
           },
           {
-            "oidc_jwt_bearer": [
-              "admin"
-            ]
+            "oidc_jwt_bearer": ["admin"]
           },
           {
-            "opds_basic": [
-              "admin"
-            ]
+            "opds_basic": ["admin"]
           }
         ]
       }
     },
     "/api/v1/users/{id}": {
       "patch": {
-        "tags": [
-          "users"
-        ],
+        "tags": ["users"],
         "summary": "`PATCH /api/v1/users/{id}` — update `display_name` / `email` (admin only).",
         "description": "Does not bump `session_version`: neither `email` nor `display_name` gates\naccess (login identity is the OIDC `sub`, not email; see module-level\nsession-invalidation policy).\n\n# Errors\n- [`AppError::Forbidden`] when the caller is not an admin.\n- [`AppError::NotFound`] when the target user does not exist.\n- [`AppError::Validation`] when `display_name` is null or empty, when\n  `email` is not a valid RFC 5322 addr-spec (display-name and domain-literal\n  forms are rejected), or when `email` is already in use by another user.\n- [`AppError::Internal`] on database errors.",
         "operationId": "update_user",
@@ -4479,33 +4027,23 @@
         },
         "security": [
           {
-            "session_cookie": [
-              "admin"
-            ]
+            "session_cookie": ["admin"]
           },
           {
-            "device_token_bearer": [
-              "admin"
-            ]
+            "device_token_bearer": ["admin"]
           },
           {
-            "oidc_jwt_bearer": [
-              "admin"
-            ]
+            "oidc_jwt_bearer": ["admin"]
           },
           {
-            "opds_basic": [
-              "admin"
-            ]
+            "opds_basic": ["admin"]
           }
         ]
       }
     },
     "/api/v1/users/{id}/account-status": {
       "put": {
-        "tags": [
-          "users"
-        ],
+        "tags": ["users"],
         "summary": "`PUT /api/v1/users/{id}/account-status` — soft-disable or re-enable an\naccount (admin only). Disabling stamps `disabled_at`, bumps the target's\n`session_version` (killing live sessions at once), and locks them out of\nevery auth path; re-enabling clears it.",
         "description": "Last-enabled-admin protection (TOCTOU-safe): when disabling an admin, all\nenabled admin rows are locked `FOR UPDATE` (same `ORDER BY id` order as\n[`update_role`]) and the request is rejected if it would leave zero enabled\nadmins. An admin cannot disable their own account.\n\n# Errors\n- [`AppError::Forbidden`] when the caller is not an admin or is a child.\n- [`AppError::Validation`] (422) on a self-disable attempt or when disabling\n  the last enabled admin.\n- [`AppError::NotFound`] when the target does not exist.\n- [`AppError::Internal`] on database errors.",
         "operationId": "update_account_status",
@@ -4585,33 +4123,23 @@
         },
         "security": [
           {
-            "session_cookie": [
-              "admin"
-            ]
+            "session_cookie": ["admin"]
           },
           {
-            "device_token_bearer": [
-              "admin"
-            ]
+            "device_token_bearer": ["admin"]
           },
           {
-            "oidc_jwt_bearer": [
-              "admin"
-            ]
+            "oidc_jwt_bearer": ["admin"]
           },
           {
-            "opds_basic": [
-              "admin"
-            ]
+            "opds_basic": ["admin"]
           }
         ]
       }
     },
     "/api/v1/users/{id}/child-status": {
       "put": {
-        "tags": [
-          "users"
-        ],
+        "tags": ["users"],
         "summary": "`PUT /api/v1/users/{id}/child-status` — toggle child status (admin only).",
         "description": "When `is_child` is set to `true`, `role` is simultaneously set to\n`'child'` in the same transaction to satisfy `chk_child_role_sync`.\nWhen `is_child` is set to `false`, `role` is reverted to `'adult'` only\nif the current role is `'child'`; other roles (e.g. `'admin'`) are left\nunchanged to prevent privilege escalation through the child-status toggle.\n\nBumps `session_version` — child/adult visibility rules differ under\nRLS, so existing sessions must re-evaluate.\n\n# Errors\n- [`AppError::Forbidden`] when the caller is not an admin.\n- [`AppError::NotFound`] when the target user does not exist.\n- [`AppError::Validation`] with detail \"would leave zero admins\"\n  when marking an admin as child would remove the last admin.\n- [`AppError::Internal`] on database errors.",
         "operationId": "update_child_status",
@@ -4691,33 +4219,23 @@
         },
         "security": [
           {
-            "session_cookie": [
-              "admin"
-            ]
+            "session_cookie": ["admin"]
           },
           {
-            "device_token_bearer": [
-              "admin"
-            ]
+            "device_token_bearer": ["admin"]
           },
           {
-            "oidc_jwt_bearer": [
-              "admin"
-            ]
+            "oidc_jwt_bearer": ["admin"]
           },
           {
-            "opds_basic": [
-              "admin"
-            ]
+            "opds_basic": ["admin"]
           }
         ]
       }
     },
     "/api/v1/users/{id}/password-reset": {
       "post": {
-        "tags": [
-          "users"
-        ],
+        "tags": ["users"],
         "summary": "`POST /api/v1/users/{id}/password-reset` — an admin sets a new password for\na target account (admin only). Consistent with create: the admin types the\npassword and hands it off; no PIN, no email. Bumps the target's\n`session_version` so their existing sessions are invalidated. Works for an\nOIDC-only account too (the local credential is upserted).",
         "description": "# Errors\n- [`AppError::Forbidden`] when the caller is not an admin or is a child.\n- [`AppError::Validation`] (422) when the password fails the policy.\n- [`AppError::NotFound`] when the target does not exist.\n- [`AppError::Internal`] on database errors.",
         "operationId": "admin_reset_password",
@@ -4790,33 +4308,23 @@
         },
         "security": [
           {
-            "session_cookie": [
-              "admin"
-            ]
+            "session_cookie": ["admin"]
           },
           {
-            "device_token_bearer": [
-              "admin"
-            ]
+            "device_token_bearer": ["admin"]
           },
           {
-            "oidc_jwt_bearer": [
-              "admin"
-            ]
+            "oidc_jwt_bearer": ["admin"]
           },
           {
-            "opds_basic": [
-              "admin"
-            ]
+            "opds_basic": ["admin"]
           }
         ]
       }
     },
     "/api/v1/users/{id}/role": {
       "put": {
-        "tags": [
-          "users"
-        ],
+        "tags": ["users"],
         "summary": "`PUT /api/v1/users/{id}/role` — change a user's role (admin only).",
         "description": "Last-admin protection: acquires `FOR UPDATE` on all admin rows\nbefore the demotion check to prevent TOCTOU races.\n\nBumps `session_version` for the target user in the same transaction\nso their active sessions are invalidated.\n\n# Errors\n- [`AppError::Forbidden`] when the caller is not an admin.\n- [`AppError::NotFound`] when the target user does not exist.\n- [`AppError::Validation`] with detail \"would leave zero admins\"\n  when the demotion would remove the last admin.\n- [`AppError::Validation`] with message \"cannot set role to child without\n  enabling child status first\" when `role = child` on an `is_child = false`\n  user, or \"cannot change role from child without disabling child status\n  first\" when setting a non-child role on an `is_child = true` user.\n- [`AppError::Internal`] on database errors.",
         "operationId": "update_role",
@@ -4896,33 +4404,23 @@
         },
         "security": [
           {
-            "session_cookie": [
-              "admin"
-            ]
+            "session_cookie": ["admin"]
           },
           {
-            "device_token_bearer": [
-              "admin"
-            ]
+            "device_token_bearer": ["admin"]
           },
           {
-            "oidc_jwt_bearer": [
-              "admin"
-            ]
+            "oidc_jwt_bearer": ["admin"]
           },
           {
-            "opds_basic": [
-              "admin"
-            ]
+            "opds_basic": ["admin"]
           }
         ]
       }
     },
     "/api/v1/works/{id}": {
       "get": {
-        "tags": [
-          "library"
-        ],
+        "tags": ["library"],
         "summary": "`GET /api/v1/works/{id}` — work-level prose with every manifestation\nof that work the current user can see.",
         "description": "`works` carries no RLS policy on its own; RLS lives on\n`manifestations`. The handler fetches the manifestations first\nunder the RLS transaction and treats an empty result as 404 — the\nsame row set drives both visibility gating and the response body,\nso an interleaved shelf-revoke or manifestation-delete between\nstatements (`PostgreSQL` `READ COMMITTED` per-statement snapshots)\ncannot leave the existence-not-leaked invariant in an \"EXISTS=true,\nrows=[]\" half-state. Without this, the handler could return 200\nwith `manifestations: []`, leaking the existence of the work row.\n\n# Errors\n- [`AppError::NotFound`] when the work is missing or every\n  manifestation is RLS-hidden (or the work row was deleted between\n  the manifestations fetch and the work fetch).\n- [`AppError::Internal`] on database errors.",
         "operationId": "work_detail",
@@ -4972,33 +4470,23 @@
         },
         "security": [
           {
-            "session_cookie": [
-              "read"
-            ]
+            "session_cookie": ["read"]
           },
           {
-            "device_token_bearer": [
-              "read"
-            ]
+            "device_token_bearer": ["read"]
           },
           {
-            "oidc_jwt_bearer": [
-              "read"
-            ]
+            "oidc_jwt_bearer": ["read"]
           },
           {
-            "opds_basic": [
-              "read"
-            ]
+            "opds_basic": ["read"]
           }
         ]
       }
     },
     "/api/v1/works/{id}/metadata": {
       "get": {
-        "tags": [
-          "metadata"
-        ],
+        "tags": ["metadata"],
         "summary": "`GET /api/v1/works/{id}/metadata` — review queue across every\nmanifestation of a work, newest first.",
         "description": "# Errors\n- [`AppError::Forbidden`] when the caller is a child account.\n- [`AppError::Internal`] on database errors.",
         "operationId": "get_work_metadata",
@@ -5051,33 +4539,23 @@
         },
         "security": [
           {
-            "session_cookie": [
-              "read"
-            ]
+            "session_cookie": ["read"]
           },
           {
-            "device_token_bearer": [
-              "read"
-            ]
+            "device_token_bearer": ["read"]
           },
           {
-            "oidc_jwt_bearer": [
-              "read"
-            ]
+            "oidc_jwt_bearer": ["read"]
           },
           {
-            "opds_basic": [
-              "read"
-            ]
+            "opds_basic": ["read"]
           }
         ]
       }
     },
     "/auth/callback": {
       "get": {
-        "tags": [
-          "auth"
-        ],
+        "tags": ["auth"],
         "summary": "`GET /auth/callback` — OIDC redirect target: validate state, exchange\nthe code, establish the session, and issue the CSRF synchronizer token.",
         "description": "# Errors\n- [`AppError::Unauthorized`] when the anti-forgery state is missing or\n  mismatched, or the ID token fails validation.\n- [`AppError::Internal`] on token-exchange or session-storage failure.",
         "operationId": "callback",
@@ -5126,16 +4604,12 @@
             }
           }
         },
-        "security": [
-          {}
-        ]
+        "security": [{}]
       }
     },
     "/auth/forgot-password": {
       "post": {
-        "tags": [
-          "auth"
-        ],
+        "tags": ["auth"],
         "summary": "`POST /auth/forgot-password`: start email-less PIN recovery.",
         "description": "THREAT (codeguard #2): always returns a generic 200; the response never\nreveals whether the email exists. When it does, a fresh CSPRNG PIN is\ngenerated, prior active PINs for the user are superseded (at most one active\nPIN), the Argon2id hash row is persisted FIRST, then the clear PIN is written\nto a per-user operator-readable file (mode 0600). Both writes happen under one\nper-user issuance lock, so the published file always describes the single\nactive row even when another process issues concurrently. A failed file write\nleaves an unconsumed-but-unusable row that simply expires; it is never a\ncleartext PIN with no consuming row. On an unknown email, equivalent Argon2 work is spent so\ntiming does not leak existence (a small DB/file residual is\naccepted).\n\n# Errors\n- [`AppError::NotFound`] when local authentication is disabled.\n- [`AppError::RateLimited`] (429) when the per-source limit is exceeded.\n- [`AppError::Internal`] on hashing or database failure.",
         "operationId": "forgot_password",
@@ -5174,16 +4648,12 @@
             }
           }
         },
-        "security": [
-          {}
-        ]
+        "security": [{}]
       }
     },
     "/auth/local/login": {
       "post": {
-        "tags": [
-          "auth"
-        ],
+        "tags": ["auth"],
         "summary": "`POST /auth/local/login`: email + password sign-in, establishing the same\nsession contract as the OIDC callback.",
         "description": "THREAT (enumeration): unknown email and wrong password return the identical\ngeneric 422, and both spend equivalent Argon2 work, so neither\nthe response nor the timing distinguishes a non-existent account.\n\n# Errors\n- [`AppError::NotFound`] when local authentication is disabled.\n- [`AppError::RateLimited`] (429) when the per-source limit is exceeded, or a\n  failed attempt arrives during an active per-account backoff.\n- [`AppError::Validation`] (422) on bad credentials (generic; no enumeration).\n- [`AppError::Internal`] on session-store or database failure.",
         "operationId": "local_login",
@@ -5232,16 +4702,12 @@
             }
           }
         },
-        "security": [
-          {}
-        ]
+        "security": [{}]
       }
     },
     "/auth/logout": {
       "post": {
-        "tags": [
-          "auth"
-        ],
+        "tags": ["auth"],
         "summary": "`POST /auth/logout` — destroy the current session (idempotent).",
         "description": "Public per the OpenAPI security scheme (no session is required to call\nit), but a session-authenticated caller is still a mutating request under\n[`crate::security::csrf::csrf_required`], which runs ahead of this\nhandler and enforces the synchronizer token.\n\n# Errors\n- [`AppError::CsrfMissing`] (428) when a session-authenticated caller\n  sends no `X-CSRF-Token` header.\n- [`AppError::CsrfMismatch`] (403) when the header does not match the\n  session-stored token.\n- [`AppError::Internal`] when the session store read (CSRF check) or\n  session deletion fails.",
         "operationId": "logout",
@@ -5270,16 +4736,12 @@
             }
           }
         },
-        "security": [
-          {}
-        ]
+        "security": [{}]
       }
     },
     "/auth/me": {
       "get": {
-        "tags": [
-          "auth"
-        ],
+        "tags": ["auth"],
         "summary": "`GET /auth/me` — the authenticated caller's profile + CSRF token.",
         "description": "# Errors\n- [`AppError::Unauthorized`] when the session user no longer exists.\n- [`AppError::Internal`] on database or session-store errors.",
         "operationId": "me",
@@ -5309,9 +4771,7 @@
     },
     "/auth/me/preferences": {
       "get": {
-        "tags": [
-          "auth"
-        ],
+        "tags": ["auth"],
         "summary": "`GET /auth/me/preferences`: the caller's display preferences.",
         "description": "An account with no row reads as all-null overrides. The read is\ndeliberately non-materialising: rows appear on first write, so \"has this\nuser customised anything?\" stays answerable.\n\n# Errors\n- [`AppError::Internal`] on database errors.",
         "operationId": "get_preferences",
@@ -5339,31 +4799,21 @@
         },
         "security": [
           {
-            "session_cookie": [
-              "read"
-            ]
+            "session_cookie": ["read"]
           },
           {
-            "device_token_bearer": [
-              "read"
-            ]
+            "device_token_bearer": ["read"]
           },
           {
-            "oidc_jwt_bearer": [
-              "read"
-            ]
+            "oidc_jwt_bearer": ["read"]
           },
           {
-            "opds_basic": [
-              "read"
-            ]
+            "opds_basic": ["read"]
           }
         ]
       },
       "patch": {
-        "tags": [
-          "auth"
-        ],
+        "tags": ["auth"],
         "summary": "`PATCH /auth/me/preferences`: merge a partial update into the caller's\npreferences, creating the row on first write.",
         "description": "Last write wins, with no precondition header. A preferences row is\nwritten by exactly one person, so the only possible conflict is between\ntwo of that person's own tabs, where the later click is the intended\noutcome. Two tabs can therefore drift until one of them reloads; nothing\nis silently corrupted, and no partial merge is ever persisted, because\nthe whole patch is applied in one statement.\n\n# Errors\n- [`AppError::Validation`] when the body names no group, carries an\n  unknown density or view, submits a `sort_stack` outside the whitelisted\n  grammar, or submits column keys that are too many or out of shape.\n- [`AppError::Internal`] on database errors.",
         "operationId": "patch_preferences",
@@ -5412,33 +4862,23 @@
         },
         "security": [
           {
-            "session_cookie": [
-              "write"
-            ]
+            "session_cookie": ["write"]
           },
           {
-            "device_token_bearer": [
-              "write"
-            ]
+            "device_token_bearer": ["write"]
           },
           {
-            "oidc_jwt_bearer": [
-              "write"
-            ]
+            "oidc_jwt_bearer": ["write"]
           },
           {
-            "opds_basic": [
-              "write"
-            ]
+            "opds_basic": ["write"]
           }
         ]
       }
     },
     "/auth/me/theme": {
       "patch": {
-        "tags": [
-          "auth"
-        ],
+        "tags": ["auth"],
         "summary": "`PATCH /auth/me/theme` — persist the caller's theme preference and\nrefresh the FOUC theme cookie.",
         "description": "# Errors\n- [`AppError::Internal`] on database errors.",
         "operationId": "update_theme",
@@ -5488,9 +4928,7 @@
     },
     "/auth/oidc/login": {
       "get": {
-        "tags": [
-          "auth"
-        ],
+        "tags": ["auth"],
         "summary": "`GET /auth/oidc/login`: start the OIDC authorization-code + PKCE flow.",
         "description": "Renamed from `/auth/login` so the user-facing login page (a SPA route served\nat `/login`) does not collide with this auth-protocol endpoint; `/auth/*` is\nthe auth API namespace. The OIDC callback path deliberately stays\n`/auth/callback` (NOT `/auth/oidc/callback`) so operators need not reconfigure\n`OIDC_REDIRECT_URI` at their `IdP`.\n\n# Errors\n- [`AppError::NotFound`] when OIDC is not configured.\n- [`AppError::Internal`] when session storage fails.",
         "operationId": "oidc_login",
@@ -5509,16 +4947,12 @@
             }
           }
         },
-        "security": [
-          {}
-        ]
+        "security": [{}]
       }
     },
     "/auth/register": {
       "post": {
-        "tags": [
-          "auth"
-        ],
+        "tags": ["auth"],
         "summary": "`POST /auth/register`: config-gated self-service registration.",
         "description": "Gated on `self_registration_enabled` (404 when off) AND `local_auth_enabled`.\nUnauthenticated and repeatable, and each call fires an Argon2 hash plus an\noutbound HIBP request, so the per-source rate limit is enforced BEFORE any\npolicy/hash/breach work, as in `forgot_password`/`reset_password`. `setup`\ntakes the same limit for the pre-bootstrap window, where its 409 fast-reject\ndoes not yet apply.\n\nTHREAT (privilege escalation): a self-registered account is\nalways an `adult`, never an admin or child. The DTO carries no role, and\n`create_local` is called with [`Role::Adult`]; admin and child accounts are\nminted only by an existing administrator. No session is established (parity\nwith setup/reset: the session contract lives only at `/auth/local/login`).\n\n# Errors\n- [`AppError::NotFound`] when self-registration or local auth is disabled.\n- [`AppError::RateLimited`] (429) when the per-source limit is exceeded.\n- [`AppError::Validation`] (422) on a malformed email or a policy failure.\n- [`AppError::EmailConflict`] (409) when the email is already in use.\n- [`AppError::Internal`] on hashing or database failure.",
         "operationId": "register",
@@ -5577,16 +5011,12 @@
             }
           }
         },
-        "security": [
-          {}
-        ]
+        "security": [{}]
       }
     },
     "/auth/reset-password": {
       "post": {
-        "tags": [
-          "auth"
-        ],
+        "tags": ["auth"],
         "summary": "`POST /auth/reset-password`: complete recovery with a PIN.",
         "description": "THREAT (codeguard #2): the PIN is single-use (race-safe consume), short-lived,\nand verified constant-time via Argon2. Any failure (unknown email, no active\nPIN, wrong PIN, expired, too-short password) returns one generic 422, so the\nresponse never distinguishes which part failed; the no-PIN path spends\nequivalent work. Reset does NOT establish a session (no auto-login). Consuming\nthe PIN, writing the new credential, and bumping `session_version` (which\ninvalidates every session predating the reset) run in one transaction, so a\npartial apply cannot leave the account locked out or a stale session live.\nThe PIN file is removed after the transaction commits.\n\n# Errors\n- [`AppError::NotFound`] when local authentication is disabled.\n- [`AppError::RateLimited`] (429) when the per-source limit is exceeded.\n- [`AppError::Validation`] (422) generic failure.\n- [`AppError::Internal`] on hashing or database failure.",
         "operationId": "reset_password",
@@ -5635,16 +5065,12 @@
             }
           }
         },
-        "security": [
-          {}
-        ]
+        "security": [{}]
       }
     },
     "/auth/setup": {
       "post": {
-        "tags": [
-          "auth"
-        ],
+        "tags": ["auth"],
         "summary": "`POST /auth/setup`: first-run bootstrap: mint the first administrator.",
         "description": "THREAT: bootstrap is the ONLY first-admin path. The race\nguarantee is the DB `instance_bootstrap` singleton insert inside\n[`user::create_first_admin`], NOT this `admin_exists` pre-check (which is only\na cheap fast-reject; a `SELECT EXISTS ... INSERT` does not serialize under\nREAD COMMITTED). A second concurrent setup loses the marker-row race and maps\nto 409. Setup does NOT auto-login (parity with recovery; the session contract\nlives only at `/auth/local/login`).\n\nRate-limited per source like the repeatable pre-auth handlers, despite\nsucceeding only once. The 409 fast-reject bounds this endpoint only after an\nadministrator exists; before that, every call reaches the Argon2 hash, so an\nun-bootstrapped instance would otherwise grind on demand for anyone who can\nreach it. The limit is enforced first, ahead of the `admin_exists` query.\n\n# Errors\n- [`AppError::RateLimited`] (429) when the per-source limit is exceeded.\n- [`AppError::SetupAlreadyComplete`] (409) when an administrator already\n  exists (fast-reject or the marker-row race).\n- [`AppError::Validation`] (422) on a malformed email or too-short password.\n- [`AppError::Internal`] on hashing or database failure.",
         "operationId": "setup",
@@ -5693,16 +5119,12 @@
             }
           }
         },
-        "security": [
-          {}
-        ]
+        "security": [{}]
       }
     },
     "/auth/setup/status": {
       "get": {
-        "tags": [
-          "auth"
-        ],
+        "tags": ["auth"],
         "summary": "`GET /auth/setup/status`: public provider/bootstrap state for the SPA.",
         "description": "# Errors\n- [`AppError::Internal`] on database failure.",
         "operationId": "setup_status",
@@ -5718,16 +5140,12 @@
             }
           }
         },
-        "security": [
-          {}
-        ]
+        "security": [{}]
       }
     },
     "/health": {
       "get": {
-        "tags": [
-          "health"
-        ],
+        "tags": ["health"],
         "summary": "Liveness probe: returns `200 ok` as soon as the process is serving.",
         "operationId": "health",
         "responses": {
@@ -5742,16 +5160,12 @@
             }
           }
         },
-        "security": [
-          {}
-        ]
+        "security": [{}]
       }
     },
     "/health/ready": {
       "get": {
-        "tags": [
-          "health"
-        ],
+        "tags": ["health"],
         "summary": "Readiness probe: pings the application pool with `SELECT 1` and returns\n`503` with an RFC 9457 body while the database is unreachable so\norchestrators withhold traffic.",
         "operationId": "ready",
         "responses": {
@@ -5776,16 +5190,12 @@
             }
           }
         },
-        "security": [
-          {}
-        ]
+        "security": [{}]
       }
     },
     "/opds": {
       "get": {
-        "tags": [
-          "opds"
-        ],
+        "tags": ["opds"],
         "summary": "`GET /opds` — catalog root: navigation feed linking `/opds/library`\nand every shelf owned by the authenticated user.",
         "description": "# Errors\n- [`AppError::Internal`] on database errors or unconfigured base URL.",
         "operationId": "opds_root",
@@ -5820,9 +5230,7 @@
     },
     "/opds/books/{id}/cover": {
       "get": {
-        "tags": [
-          "opds"
-        ],
+        "tags": ["opds"],
         "summary": "`GET /opds/books/{id}/cover` — full-size cover, Basic auth.",
         "description": "# Errors\n- [`AppError::NotFound`] when the manifestation is missing, RLS-hidden,\n  or has no cover.\n- [`AppError::Internal`] on cover-generation or file IO errors.",
         "operationId": "opds_cover",
@@ -5875,9 +5283,7 @@
     },
     "/opds/books/{id}/cover/thumb": {
       "get": {
-        "tags": [
-          "opds"
-        ],
+        "tags": ["opds"],
         "summary": "`GET /opds/books/{id}/cover/thumb` — thumbnail cover, Basic auth.",
         "description": "# Errors\nSee [`opds_cover`].",
         "operationId": "opds_cover_thumb",
@@ -5930,9 +5336,7 @@
     },
     "/opds/books/{id}/file": {
       "get": {
-        "tags": [
-          "opds"
-        ],
+        "tags": ["opds"],
         "summary": "`GET /opds/books/{id}/file` — streamed EPUB download. The response\ncarries an RFC 6266 `Content-Disposition: attachment` header whose\nfilename is derived from the work title (ASCII fallback plus RFC 5987\nUTF-8 form).",
         "description": "# Errors\n- [`AppError::NotFound`] when the manifestation is missing, RLS-hidden,\n  or its file is gone from disk.\n- [`AppError::Forbidden`] when the on-disk path escapes the configured\n  library root (canonicalisation guard).\n- [`AppError::Internal`] on database or file IO errors.",
         "operationId": "download_epub",
@@ -5995,9 +5399,7 @@
     },
     "/opds/library": {
       "get": {
-        "tags": [
-          "opds"
-        ],
+        "tags": ["opds"],
         "summary": "`GET /opds/library` — library subcatalog navigation root.",
         "description": "# Errors\n- [`AppError::Internal`] when the OPDS base URL is unconfigured.",
         "operationId": "library_root",
@@ -6032,9 +5434,7 @@
     },
     "/opds/library/authors": {
       "get": {
-        "tags": [
-          "opds"
-        ],
+        "tags": ["opds"],
         "summary": "`GET /opds/library/authors` — author index, cursor-paginated.",
         "description": "# Errors\n- [`AppError::Validation`] on a malformed cursor.\n- [`AppError::Internal`] on database errors or unconfigured base URL.",
         "operationId": "library_authors",
@@ -6100,9 +5500,7 @@
     },
     "/opds/library/authors/{id}": {
       "get": {
-        "tags": [
-          "opds"
-        ],
+        "tags": ["opds"],
         "summary": "`GET /opds/library/authors/{id}` — one author's books,\ncursor-paginated.",
         "description": "# Errors\n- [`AppError::Validation`] on a malformed cursor.\n- [`AppError::Internal`] on database errors or unconfigured base URL.",
         "operationId": "library_author_books",
@@ -6178,9 +5576,7 @@
     },
     "/opds/library/new": {
       "get": {
-        "tags": [
-          "opds"
-        ],
+        "tags": ["opds"],
         "summary": "`GET /opds/library/new` — newest books, cursor-paginated.",
         "description": "# Errors\n- [`AppError::Validation`] on a malformed cursor.\n- [`AppError::Internal`] on database errors or unconfigured base URL.",
         "operationId": "library_new",
@@ -6246,9 +5642,7 @@
     },
     "/opds/library/opensearch.xml": {
       "get": {
-        "tags": [
-          "opds"
-        ],
+        "tags": ["opds"],
         "summary": "`GET /opds/library/opensearch.xml` — `OpenSearch` descriptor whose\nsearch template targets the library-wide `/opds/library/search`.",
         "description": "# Errors\n- [`AppError::Internal`] when the OPDS base URL is unconfigured.",
         "operationId": "library_opensearch",
@@ -6283,9 +5677,7 @@
     },
     "/opds/library/search": {
       "get": {
-        "tags": [
-          "opds"
-        ],
+        "tags": ["opds"],
         "summary": "`GET /opds/library/search` — full-text search over visible books.",
         "description": "# Errors\n- [`AppError::Internal`] on database errors or unconfigured base URL.",
         "operationId": "library_search",
@@ -6341,9 +5733,7 @@
     },
     "/opds/library/series": {
       "get": {
-        "tags": [
-          "opds"
-        ],
+        "tags": ["opds"],
         "summary": "`GET /opds/library/series` — series index, cursor-paginated.",
         "description": "# Errors\n- [`AppError::Validation`] on a malformed cursor.\n- [`AppError::Internal`] on database errors or unconfigured base URL.",
         "operationId": "library_series",
@@ -6409,9 +5799,7 @@
     },
     "/opds/library/series/{id}": {
       "get": {
-        "tags": [
-          "opds"
-        ],
+        "tags": ["opds"],
         "summary": "`GET /opds/library/series/{id}` — one series' books, in series order,\ncursor-paginated.",
         "description": "# Errors\n- [`AppError::Validation`] on a malformed cursor.\n- [`AppError::Internal`] on database errors or unconfigured base URL.",
         "operationId": "library_series_books",
@@ -6487,9 +5875,7 @@
     },
     "/opds/shelves/{shelf_id}": {
       "get": {
-        "tags": [
-          "opds"
-        ],
+        "tags": ["opds"],
         "summary": "`GET /opds/shelves/{shelf_id}` — shelf subcatalog navigation root.",
         "description": "# Errors\n- [`AppError::NotFound`] when the shelf is missing or not owned by the\n  caller (existence not leaked).\n- [`AppError::Internal`] on database errors or unconfigured base URL.",
         "operationId": "shelf_root",
@@ -6546,9 +5932,7 @@
     },
     "/opds/shelves/{shelf_id}/authors": {
       "get": {
-        "tags": [
-          "opds"
-        ],
+        "tags": ["opds"],
         "summary": "`GET /opds/shelves/{shelf_id}/authors` — the shelf's author index,\ncursor-paginated.",
         "description": "# Errors\n- [`AppError::NotFound`] when the shelf is missing or not owned by the\n  caller (existence not leaked).\n- [`AppError::Validation`] on a malformed cursor.\n- [`AppError::Internal`] on database errors or unconfigured base URL.",
         "operationId": "shelf_authors",
@@ -6634,9 +6018,7 @@
     },
     "/opds/shelves/{shelf_id}/authors/{author_id}": {
       "get": {
-        "tags": [
-          "opds"
-        ],
+        "tags": ["opds"],
         "summary": "`GET /opds/shelves/{shelf_id}/authors/{author_id}` — one author's books\non the shelf, cursor-paginated.",
         "description": "# Errors\n- [`AppError::NotFound`] when the shelf is missing or not owned by the\n  caller (existence not leaked).\n- [`AppError::Validation`] on a malformed cursor.\n- [`AppError::Internal`] on database errors or unconfigured base URL.",
         "operationId": "shelf_author_books",
@@ -6732,9 +6114,7 @@
     },
     "/opds/shelves/{shelf_id}/new": {
       "get": {
-        "tags": [
-          "opds"
-        ],
+        "tags": ["opds"],
         "summary": "`GET /opds/shelves/{shelf_id}/new` — the shelf's newest books,\ncursor-paginated.",
         "description": "# Errors\n- [`AppError::NotFound`] when the shelf is missing or not owned by the\n  caller (existence not leaked).\n- [`AppError::Validation`] on a malformed cursor.\n- [`AppError::Internal`] on database errors or unconfigured base URL.",
         "operationId": "shelf_new",
@@ -6820,9 +6200,7 @@
     },
     "/opds/shelves/{shelf_id}/opensearch.xml": {
       "get": {
-        "tags": [
-          "opds"
-        ],
+        "tags": ["opds"],
         "summary": "`GET /opds/shelves/{shelf_id}/opensearch.xml` — `OpenSearch` descriptor\nwhose search template is scoped to the shelf.",
         "description": "# Errors\n- [`AppError::NotFound`] when the shelf is missing or not owned by the\n  caller (existence not leaked).\n- [`AppError::Internal`] on database errors or unconfigured base URL.",
         "operationId": "shelf_opensearch",
@@ -6879,9 +6257,7 @@
     },
     "/opds/shelves/{shelf_id}/search": {
       "get": {
-        "tags": [
-          "opds"
-        ],
+        "tags": ["opds"],
         "summary": "`GET /opds/shelves/{shelf_id}/search` — full-text search over the\nshelf's books.",
         "description": "# Errors\n- [`AppError::NotFound`] when the shelf is missing or not owned by the\n  caller (existence not leaked).\n- [`AppError::Internal`] on database errors or unconfigured base URL.",
         "operationId": "shelf_search",
@@ -6957,9 +6333,7 @@
     },
     "/opds/shelves/{shelf_id}/series": {
       "get": {
-        "tags": [
-          "opds"
-        ],
+        "tags": ["opds"],
         "summary": "`GET /opds/shelves/{shelf_id}/series` — the shelf's series index,\ncursor-paginated.",
         "description": "# Errors\n- [`AppError::NotFound`] when the shelf is missing or not owned by the\n  caller (existence not leaked).\n- [`AppError::Validation`] on a malformed cursor.\n- [`AppError::Internal`] on database errors or unconfigured base URL.",
         "operationId": "shelf_series",
@@ -7045,9 +6419,7 @@
     },
     "/opds/shelves/{shelf_id}/series/{series_id}": {
       "get": {
-        "tags": [
-          "opds"
-        ],
+        "tags": ["opds"],
         "summary": "`GET /opds/shelves/{shelf_id}/series/{series_id}` — one series' books\non the shelf, in series order, cursor-paginated.",
         "description": "# Errors\n- [`AppError::NotFound`] when the shelf is missing or not owned by the\n  caller (existence not leaked).\n- [`AppError::Validation`] on a malformed cursor.\n- [`AppError::Internal`] on database errors or unconfigured base URL.",
         "operationId": "shelf_series_books",
@@ -7147,9 +6519,7 @@
       "AccountStatusRequest": {
         "type": "object",
         "description": "Body for `PUT /api/v1/users/{id}/account-status`.",
-        "required": [
-          "disabled"
-        ],
+        "required": ["disabled"],
         "properties": {
           "disabled": {
             "type": "boolean",
@@ -7160,9 +6530,7 @@
       "ActivityResponse": {
         "type": "object",
         "description": "Response shape for `GET /api/v1/dashboard/activity`.",
-        "required": [
-          "batches"
-        ],
+        "required": ["batches"],
         "properties": {
           "batches": {
             "type": "array",
@@ -7175,9 +6543,7 @@
       "AddItemRequest": {
         "type": "object",
         "description": "Body for `POST /api/v1/shelves/{id}/items`.",
-        "required": [
-          "manifestation_id"
-        ],
+        "required": ["manifestation_id"],
         "properties": {
           "manifestation_id": {
             "type": "string",
@@ -7189,9 +6555,7 @@
       "AdminPasswordResetRequest": {
         "type": "object",
         "description": "Body for `POST /api/v1/users/{id}/password-reset`.",
-        "required": [
-          "new_password"
-        ],
+        "required": ["new_password"],
         "properties": {
           "new_password": {
             "type": "string",
@@ -7202,9 +6566,7 @@
       "AuthorsResponse": {
         "type": "object",
         "description": "`GET /api/v1/authors` response envelope: the resolved author labels for\nthe requested ids, as a plain collection.",
-        "required": [
-          "items"
-        ],
+        "required": ["items"],
         "properties": {
           "items": {
             "type": "array",
@@ -7236,10 +6598,7 @@
             "format": "int64"
           },
           "ended_at": {
-            "type": [
-              "string",
-              "null"
-            ],
+            "type": ["string", "null"],
             "format": "date-time"
           },
           "failed": {
@@ -7323,10 +6682,7 @@
             "description": "`manifestations.created_at`. RFC 3339 on the wire, which the\nfrontend `BookDetailSchema` requires."
           },
           "description": {
-            "type": [
-              "string",
-              "null"
-            ],
+            "type": ["string", "null"],
             "description": "Long-form description (`works.description`)."
           },
           "enrichment_status": {
@@ -7364,24 +6720,15 @@
             "description": "Ingestion lifecycle state."
           },
           "isbn_10": {
-            "type": [
-              "string",
-              "null"
-            ],
+            "type": ["string", "null"],
             "description": "`manifestations.isbn_10`."
           },
           "isbn_13": {
-            "type": [
-              "string",
-              "null"
-            ],
+            "type": ["string", "null"],
             "description": "`manifestations.isbn_13`."
           },
           "language": {
-            "type": [
-              "string",
-              "null"
-            ],
+            "type": ["string", "null"],
             "description": "BCP-47 language tag (`works.language`)."
           },
           "metadata_version_summary": {
@@ -7403,25 +6750,16 @@
             "description": "Mood names attached to the manifestation."
           },
           "pages": {
-            "type": [
-              "integer",
-              "null"
-            ],
+            "type": ["integer", "null"],
             "format": "int32",
             "description": "`manifestations.pages`, when known."
           },
           "pub_date": {
-            "type": [
-              "string",
-              "null"
-            ],
+            "type": ["string", "null"],
             "description": "`manifestations.pub_date` formatted as an ISO 8601 calendar date.\nSurfaced for the manual-edit dialog's clear-confirmation flow."
           },
           "publisher": {
-            "type": [
-              "string",
-              "null"
-            ],
+            "type": ["string", "null"],
             "description": "`manifestations.publisher` — canonical publisher string. Surfaced\non `BookDetail` so the manual-edit dialog can confirm clears\n(`EditMetadataDialog.canonicalEditableFields`)."
           },
           "series": {
@@ -7436,10 +6774,7 @@
             ]
           },
           "subtitle": {
-            "type": [
-              "string",
-              "null"
-            ],
+            "type": ["string", "null"],
             "description": "`works.subtitle`, when declared."
           },
           "tags": {
@@ -7472,9 +6807,7 @@
       "BookListResponse": {
         "type": "object",
         "description": "`GET /api/v1/books` response envelope. Carries the page rows plus\nthe opaque cursor for the following page; pagination is also\nsignalled via the RFC 8288 `Link` header on the response.\n\nPrivate to the route module — handler-internal wire shape.",
-        "required": [
-          "items"
-        ],
+        "required": ["items"],
         "properties": {
           "items": {
             "type": "array",
@@ -7483,10 +6816,7 @@
             }
           },
           "next_cursor": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           }
         }
       },
@@ -7580,10 +6910,7 @@
             "description": "Ingestion lifecycle state."
           },
           "isbn_13": {
-            "type": [
-              "string",
-              "null"
-            ],
+            "type": ["string", "null"],
             "description": "`manifestations.isbn_13`, when known."
           },
           "moods": {
@@ -7594,10 +6921,7 @@
             "description": "Mood names attached to the manifestation, sorted by name.\nBatch-loaded per page."
           },
           "pages": {
-            "type": [
-              "integer",
-              "null"
-            ],
+            "type": ["integer", "null"],
             "format": "int32",
             "description": "`manifestations.pages`, when known."
           },
@@ -7624,10 +6948,7 @@
             ]
           },
           "subtitle": {
-            "type": [
-              "string",
-              "null"
-            ],
+            "type": ["string", "null"],
             "description": "`works.subtitle`, when declared."
           },
           "tags": {
@@ -7681,10 +7002,7 @@
             "description": "Author/editor/translator names, each in stored position order."
           },
           "description": {
-            "type": [
-              "string",
-              "null"
-            ],
+            "type": ["string", "null"],
             "description": "Description; `null` when unset."
           },
           "genres": {
@@ -7695,24 +7013,15 @@
             "description": "Genre names, alphabetical; empty when none are set."
           },
           "isbn_10": {
-            "type": [
-              "string",
-              "null"
-            ],
+            "type": ["string", "null"],
             "description": "ISBN-10; `null` when unset."
           },
           "isbn_13": {
-            "type": [
-              "string",
-              "null"
-            ],
+            "type": ["string", "null"],
             "description": "ISBN-13; `null` when unset."
           },
           "language": {
-            "type": [
-              "string",
-              "null"
-            ],
+            "type": ["string", "null"],
             "description": "Language; `null` when unset."
           },
           "manifestation_identifiers": {
@@ -7734,32 +7043,20 @@
             "description": "Mood names, alphabetical; empty when none are set."
           },
           "pages": {
-            "type": [
-              "integer",
-              "null"
-            ],
+            "type": ["integer", "null"],
             "format": "int32",
             "description": "Page count; `null` when unset."
           },
           "pub_date": {
-            "type": [
-              "string",
-              "null"
-            ],
+            "type": ["string", "null"],
             "description": "Publication date (`YYYY-MM-DD`); `null` when unset."
           },
           "publisher": {
-            "type": [
-              "string",
-              "null"
-            ],
+            "type": ["string", "null"],
             "description": "Publisher; `null` when unset."
           },
           "subtitle": {
-            "type": [
-              "string",
-              "null"
-            ],
+            "type": ["string", "null"],
             "description": "Subtitle; `null` when unset."
           },
           "tags": {
@@ -7789,10 +7086,7 @@
       "ChangePasswordRequest": {
         "type": "object",
         "description": "Body for `POST /api/v1/account/password`.",
-        "required": [
-          "current_password",
-          "new_password"
-        ],
+        "required": ["current_password", "new_password"],
         "properties": {
           "current_password": {
             "type": "string",
@@ -7807,30 +7101,17 @@
       "CleanupMode": {
         "type": "string",
         "description": "Post-ingestion cleanup behaviour selector for the watcher's\n\"after a successful batch\" hook.\n\nWire format (JSON, DB `text` column): lowercase string, one of\n`\"all\"` | `\"ingested\"` | `\"none\"`.\n\nDeliberately NOT `#[non_exhaustive]`: the ingestion watcher matches it\nexhaustively, so adding a variant is a compile error at the match site\nrather than a silent fall-through, the same property the `Command` enum\nrelies on.",
-        "enum": [
-          "all",
-          "ingested",
-          "none"
-        ]
+        "enum": ["all", "ingested", "none"]
       },
       "ContentRating": {
         "type": "string",
         "description": "The audience-suitability classification of a manifestation's content.\n\nWire-format invariant: variants serialise to the `snake_case` forms\ndeclared in the `#[serde]` and `#[sqlx]` attributes. Unknown DB variants\nfail decode loudly at the boundary instead of coercing into a string,\nmatching [`crate::models::validation_status::ValidationStatus`].",
-        "enum": [
-          "everyone",
-          "teen",
-          "mature",
-          "adult",
-          "explicit"
-        ]
+        "enum": ["everyone", "teen", "mature", "adult", "explicit"]
       },
       "ContributorRef": {
         "type": "object",
         "description": "One non-author contributor surfaced on a book projection. Authors\nstay in the flat `authors` display array; this slot carries the other\n`work_authors` roles so per-role grid columns need no extra fetch.\nOrdered by role (enum declaration order), then contributor position.",
-        "required": [
-          "name",
-          "role"
-        ],
+        "required": ["name", "role"],
         "properties": {
           "name": {
             "type": "string",
@@ -7845,22 +7126,14 @@
       "ContributorRole": {
         "type": "string",
         "description": "How one person contributed to a work.\n\nWire-format invariant: variants serialise to the `snake_case` forms\ndeclared in the `#[serde]` and `#[sqlx]` attributes. Unknown DB variants\nfail decode loudly at the boundary instead of coercing into a string,\nmatching [`crate::models::validation_status::ValidationStatus`].\n\nVariant order mirrors the Postgres declaration order, which is also the\norder the enum compares in `ORDER BY` — contributor lists sorted by role\non the DB side surface in this same order on the wire.",
-        "enum": [
-          "author",
-          "editor",
-          "translator",
-          "narrator"
-        ]
+        "enum": ["author", "editor", "translator", "narrator"]
       },
       "ContributorsPatch": {
         "type": "object",
         "description": "Per-role contributor replace/clear, nested under `UpdateMetadataFields::contributors`.\n\nEach role independently follows RFC 7396 double-`Option` semantics:\nabsent = untouched, `null` (or an empty array) clears the role, a\nnon-empty array replaces it wholesale in the given order. `narrator` is\ndeliberately not accepted here (reserved, not yet operator-writable);\nany unrecognised key 422s via `deny_unknown_fields`.",
         "properties": {
           "author": {
-            "type": [
-              "array",
-              "null"
-            ],
+            "type": ["array", "null"],
             "items": {
               "type": "string"
             },
@@ -7868,10 +7141,7 @@
             "maxItems": 100
           },
           "editor": {
-            "type": [
-              "array",
-              "null"
-            ],
+            "type": ["array", "null"],
             "items": {
               "type": "string"
             },
@@ -7879,10 +7149,7 @@
             "maxItems": 100
           },
           "translator": {
-            "type": [
-              "array",
-              "null"
-            ],
+            "type": ["array", "null"],
             "items": {
               "type": "string"
             },
@@ -7895,9 +7162,7 @@
       "CreateShelfRequest": {
         "type": "object",
         "description": "Body for `POST /api/v1/shelves`.",
-        "required": [
-          "name"
-        ],
+        "required": ["name"],
         "properties": {
           "name": {
             "type": "string",
@@ -7908,15 +7173,10 @@
       "CreateTokenRequest": {
         "type": "object",
         "description": "Mass-assignment allow-list (codeguard #7): exactly `{name, scopes,\nexpires_in_days}`, nothing else settable at mint.",
-        "required": [
-          "name"
-        ],
+        "required": ["name"],
         "properties": {
           "expires_in_days": {
-            "type": [
-              "integer",
-              "null"
-            ],
+            "type": ["integer", "null"],
             "format": "int32",
             "description": "Token lifetime in days from mint: one of 30 / 60 / 90 / 365. Omitted\n(or explicit `null`) mints a token that never expires.",
             "example": 90,
@@ -7938,18 +7198,10 @@
       },
       "CreateTokenResponse": {
         "type": "object",
-        "required": [
-          "id",
-          "name",
-          "scopes",
-          "token"
-        ],
+        "required": ["id", "name", "scopes", "token"],
         "properties": {
           "expires_at": {
-            "type": [
-              "string",
-              "null"
-            ],
+            "type": ["string", "null"],
             "format": "date-time",
             "description": "`null` if the token never expires."
           },
@@ -7978,12 +7230,7 @@
       "CreateUserRequest": {
         "type": "object",
         "description": "Body for `POST /api/v1/users`.",
-        "required": [
-          "email",
-          "display_name",
-          "role",
-          "password"
-        ],
+        "required": ["email", "display_name", "role", "password"],
         "properties": {
           "display_name": {
             "type": "string",
@@ -8058,22 +7305,12 @@
       "EnrichmentStatus": {
         "type": "string",
         "description": "Lifecycle state of metadata enrichment for a single manifestation.\n\nWire-format invariant: variants serialise to the `snake_case` forms\ndeclared in the `#[serde]` and `#[sqlx]` attributes. Drift from\neither side surfaces as a decode error at the boundary, never as a\nsilently coerced unknown value.",
-        "enum": [
-          "pending",
-          "in_progress",
-          "complete",
-          "failed",
-          "skipped"
-        ]
+        "enum": ["pending", "in_progress", "complete", "failed", "skipped"]
       },
       "ExternalIdRef": {
         "type": "object",
         "description": "One external-source identifier surfaced on a book projection.\nRegistry rows for providers hidden via the `provider_visibility`\nsetting are filtered out before this DTO is built.",
-        "required": [
-          "level",
-          "scheme",
-          "external_id"
-        ],
+        "required": ["level", "scheme", "external_id"],
         "properties": {
           "external_id": {
             "type": "string",
@@ -8092,13 +7329,7 @@
       "ExternalRatingRef": {
         "type": "object",
         "description": "One provider's aggregate rating surfaced on a book projection.\nRatings are per-edition and per-source; each provider is\nauthoritative for its own scale, so no cross-source aggregate is\ncomputed. Hidden providers are filtered out before this DTO is built.",
-        "required": [
-          "source",
-          "rating",
-          "rating_scale",
-          "review_count",
-          "fetched_at"
-        ],
+        "required": ["source", "rating", "rating_scale", "review_count", "fetched_at"],
         "properties": {
           "fetched_at": {
             "type": "string",
@@ -8129,12 +7360,7 @@
       "FieldChange": {
         "type": "object",
         "description": "One proposed change to a single field from a single source.",
-        "required": [
-          "field_name",
-          "source_id",
-          "new_value",
-          "quorum"
-        ],
+        "required": ["field_name", "source_id", "new_value", "quorum"],
         "properties": {
           "field_name": {
             "type": "string",
@@ -8160,10 +7386,7 @@
         "description": "One field's outcome from `PATCH /api/v1/books/{id}/metadata`.\n\n`pub(crate)`: registered explicitly in `crate::openapi`'s `components`\nlist (see the comment there for why).",
         "properties": {
           "previous_version_id": {
-            "type": [
-              "string",
-              "null"
-            ],
+            "type": ["string", "null"],
             "format": "uuid",
             "description": "Version pointer that was canonical before this patch (null when the\nfield was previously unset, or when no pointer exists for the field\nkind)."
           },
@@ -8171,10 +7394,7 @@
             "description": "Canonical value as applied, after server normalization (null when the\nfield was cleared)."
           },
           "version_id": {
-            "type": [
-              "string",
-              "null"
-            ],
+            "type": ["string", "null"],
             "format": "uuid",
             "description": "Journal row now wired as canonical (null when the field was cleared\nto no version)."
           }
@@ -8183,9 +7403,7 @@
       "ForgotPasswordRequest": {
         "type": "object",
         "description": "Request body for `POST /auth/forgot-password`.",
-        "required": [
-          "email"
-        ],
+        "required": ["email"],
         "properties": {
           "email": {
             "type": "string",
@@ -8196,11 +7414,7 @@
       "FormatBucket": {
         "type": "object",
         "description": "One per-format storage bucket (`GROUP BY format`).",
-        "required": [
-          "format",
-          "count",
-          "bytes"
-        ],
+        "required": ["format", "count", "bytes"],
         "properties": {
           "bytes": {
             "type": "integer",
@@ -8218,45 +7432,27 @@
       "IdentifierLevel": {
         "type": "string",
         "description": "FRBR level an external identifier is attached to.\n\nA work-level id (e.g. an Open Library work `OL…W`) lives in\n`work_external_identifiers`; a manifestation/edition-level id (e.g. an\nOpen Library edition `OL…M`, or a Google Books volume) lives in\n`manifestation_external_identifiers`. The level is the middle segment of\nthe canonical field name `identifiers.<level>.<scheme>` and routes both the\njournal `field_name` and the target table.",
-        "enum": [
-          "work",
-          "manifestation"
-        ]
+        "enum": ["work", "manifestation"]
       },
       "IngestionStatus": {
         "type": "string",
         "description": "Lifecycle state of a single manifestation's ingestion pipeline run.\n\nWire-format invariant: variants serialise to the lowercase forms\ndeclared in the `#[serde]` and `#[sqlx]` attributes; unknown DB\nvariants fail decode loudly instead of coercing into a string.",
-        "enum": [
-          "pending",
-          "processing",
-          "complete",
-          "failed",
-          "skipped"
-        ]
+        "enum": ["pending", "processing", "complete", "failed", "skipped"]
       },
       "LibraryDensity": {
         "type": "string",
         "description": "Row height for the library table view.",
-        "enum": [
-          "comfortable",
-          "compact"
-        ]
+        "enum": ["comfortable", "compact"]
       },
       "LibraryView": {
         "type": "string",
         "description": "Which library presentation the user last chose.",
-        "enum": [
-          "grid",
-          "table"
-        ]
+        "enum": ["grid", "table"]
       },
       "LocalLoginRequest": {
         "type": "object",
         "description": "Request body for `POST /auth/local/login`. Explicit allow-list (no\nmass-assignment): only the two credential fields are accepted.",
-        "required": [
-          "email",
-          "password"
-        ],
+        "required": ["email", "password"],
         "properties": {
           "email": {
             "type": "string",
@@ -8271,10 +7467,7 @@
       "LockPayload": {
         "type": "object",
         "description": "Body for lock / unlock.",
-        "required": [
-          "field_name",
-          "entity_type"
-        ],
+        "required": ["field_name", "entity_type"],
         "properties": {
           "entity_type": {
             "type": "string",
@@ -8290,31 +7483,15 @@
       "ManifestationFormat": {
         "type": "string",
         "description": "Canonical file format of a manifestation.\n\nClosed set shared by the Postgres `manifestation_format` `ENUM`, the\n`REVERIE_FORMAT_PRIORITY` env-var parser, and download-path content\nnegotiation. Extending the set requires both a Rust variant and a\nmatching `ALTER TYPE … ADD VALUE` migration.",
-        "enum": [
-          "epub",
-          "pdf",
-          "mobi",
-          "azw3",
-          "cbz",
-          "cbr"
-        ]
+        "enum": ["epub", "pdf", "mobi", "azw3", "cbz", "cbr"]
       },
       "MeResponse": {
         "type": "object",
         "description": "Profile payload for `GET /auth/me`.",
-        "required": [
-          "id",
-          "display_name",
-          "role",
-          "is_child",
-          "theme_preference"
-        ],
+        "required": ["id", "display_name", "role", "is_child", "theme_preference"],
         "properties": {
           "csrf_token": {
-            "type": [
-              "string",
-              "null"
-            ],
+            "type": ["string", "null"],
             "description": "Session-bound CSRF synchronizer token to echo as `X-CSRF-Token` on\nunsafe verbs; `null` for sessions that never completed\n`/auth/callback` (e.g. Basic-auth OPDS callers)."
           },
           "display_name": {
@@ -8322,10 +7499,7 @@
             "description": "Human-readable display name."
           },
           "email": {
-            "type": [
-              "string",
-              "null"
-            ],
+            "type": ["string", "null"],
             "description": "Email address; `null` when none on file."
           },
           "id": {
@@ -8350,11 +7524,7 @@
       "MetadataContributors": {
         "type": "object",
         "description": "Contributor names by role, mirroring [`ContributorsPatch`]'s roles for\nthe matched-GET response.",
-        "required": [
-          "author",
-          "editor",
-          "translator"
-        ],
+        "required": ["author", "editor", "translator"],
         "properties": {
           "author": {
             "type": "array",
@@ -8382,13 +7552,7 @@
       "MetadataCoverage": {
         "type": "object",
         "description": "Metadata-coverage numerators (denominator is `total`). The frontend\nderives percentages so the wire stays integer-only.",
-        "required": [
-          "total",
-          "has_description",
-          "has_language",
-          "has_isbn_13",
-          "has_cover"
-        ],
+        "required": ["total", "has_description", "has_language", "has_isbn_13", "has_cover"],
         "properties": {
           "has_cover": {
             "type": "integer",
@@ -8516,10 +7680,7 @@
       "MetadataVersionSummary": {
         "type": "object",
         "description": "Counts surfaced on the book-detail Versions tab.",
-        "required": [
-          "pending",
-          "accepted"
-        ],
+        "required": ["pending", "accepted"],
         "properties": {
           "accepted": {
             "type": "integer",
@@ -8538,12 +7699,7 @@
       "PreferenceDefaults": {
         "type": "object",
         "description": "The installation defaults, echoed alongside the overrides.",
-        "required": [
-          "hidden_columns",
-          "density",
-          "view",
-          "sort_stack"
-        ],
+        "required": ["hidden_columns", "density", "view", "sort_stack"],
         "properties": {
           "density": {
             "$ref": "#/components/schemas/LibraryDensity",
@@ -8582,20 +7738,14 @@
             ]
           },
           "hidden_columns": {
-            "type": [
-              "array",
-              "null"
-            ],
+            "type": ["array", "null"],
             "items": {
               "type": "string"
             },
             "description": "Column keys hidden in the table view; `null` to inherit."
           },
           "sort_stack": {
-            "type": [
-              "string",
-              "null"
-            ],
+            "type": ["string", "null"],
             "description": "Default sort in the `?sort=` wire grammar; `null` to inherit."
           },
           "view": {
@@ -8619,9 +7769,7 @@
           },
           {
             "type": "object",
-            "required": [
-              "defaults"
-            ],
+            "required": ["defaults"],
             "properties": {
               "defaults": {
                 "$ref": "#/components/schemas/PreferenceDefaults",
@@ -8635,22 +7783,14 @@
       "ProblemDetails": {
         "type": "object",
         "description": "RFC 9457 `application/problem+json` error body — the single runtime DTO\nfor the error envelope. The `IntoResponse` impl on\n[`crate::error::AppError`] constructs it for every Problem-Details\nvariant, and operational probes (readiness) build it directly, so the\ndocumented component schema and the bytes on the wire come from the same\nstruct and cannot drift.",
-        "required": [
-          "type",
-          "title",
-          "status",
-          "detail"
-        ],
+        "required": ["type", "title", "status", "detail"],
         "properties": {
           "detail": {
             "type": "string",
             "description": "Human-readable explanation specific to this occurrence."
           },
           "instance": {
-            "type": [
-              "string",
-              "null"
-            ],
+            "type": ["string", "null"],
             "description": "URI reference identifying the specific request, when available.\nOmitted (RFC 9457 §3.1 permits this) outside an HTTP request."
           },
           "status": {
@@ -8678,9 +7818,7 @@
           },
           {
             "type": "object",
-            "required": [
-              "restart_required"
-            ],
+            "required": ["restart_required"],
             "properties": {
               "restart_required": {
                 "type": "boolean",
@@ -8696,49 +7834,31 @@
         "description": "`GET /api/v1/books/{id}/reading` response: the caller's full reading\nstate for one book. A missing `reading_state` row (never written) decodes\nto all-`None` fields; that all-null shape IS the \"unread\" domain state,\nnot an error.",
         "properties": {
           "finished_at": {
-            "type": [
-              "string",
-              "null"
-            ],
+            "type": ["string", "null"],
             "format": "date-time",
             "description": "`reading_state.finished_at`: stamped each time a patch sets `status`\nto [`ReadingStatus::Finished`]."
           },
           "last_read_at": {
-            "type": [
-              "string",
-              "null"
-            ],
+            "type": ["string", "null"],
             "format": "date-time",
             "description": "`reading_state.last_read_at`."
           },
           "notes": {
-            "type": [
-              "string",
-              "null"
-            ],
+            "type": ["string", "null"],
             "description": "`reading_state.notes`; free-text, caller-authored."
           },
           "progress_pct": {
-            "type": [
-              "number",
-              "null"
-            ],
+            "type": ["number", "null"],
             "format": "float",
             "description": "`reading_state.progress_pct`, 0-100."
           },
           "rating": {
-            "type": [
-              "integer",
-              "null"
-            ],
+            "type": ["integer", "null"],
             "format": "int32",
             "description": "`reading_state.rating`, 1-5; `None` means unrated."
           },
           "started_at": {
-            "type": [
-              "string",
-              "null"
-            ],
+            "type": ["string", "null"],
             "format": "date-time",
             "description": "`reading_state.started_at`: stamped when a patch first sets `status`\nto [`ReadingStatus::Reading`]; not re-stamped on later re-entries."
           },
@@ -8760,34 +7880,22 @@
         "description": "Reading-state slice embedded in each `GET /api/v1/books` list row.\nBatch-loaded alongside the page (see `routes::library::load_authors_for_works`\nfor the sibling batch-load pattern); `None` when the caller has no\n`reading_state` row for that book (unread).\n\nDeliberately excludes `notes`: it is capped at 10k characters per row,\nwhich at the maximum page size would dominate the response body many\ntimes over. Clients read notes through the single-book\n`GET /api/v1/books/{id}/reading` endpoint ([`ReadingState`]).",
         "properties": {
           "finished_at": {
-            "type": [
-              "string",
-              "null"
-            ],
+            "type": ["string", "null"],
             "format": "date-time",
             "description": "`reading_state.finished_at`; see [`ReadingState::finished_at`]."
           },
           "progress_pct": {
-            "type": [
-              "number",
-              "null"
-            ],
+            "type": ["number", "null"],
             "format": "float",
             "description": "`reading_state.progress_pct`, 0-100."
           },
           "rating": {
-            "type": [
-              "integer",
-              "null"
-            ],
+            "type": ["integer", "null"],
             "format": "int32",
             "description": "`reading_state.rating`, 1-5."
           },
           "started_at": {
-            "type": [
-              "string",
-              "null"
-            ],
+            "type": ["string", "null"],
             "format": "date-time",
             "description": "`reading_state.started_at`; see [`ReadingState::started_at`]."
           },
@@ -8807,22 +7915,12 @@
       "ReadingStatus": {
         "type": "string",
         "description": "A user's relationship to one book: where they are in reading it.\n\nWire-format invariant: variants serialise to the `snake_case` forms\ndeclared in the `#[serde]` and `#[sqlx]` attributes. Unknown DB variants\nfail decode loudly at the boundary instead of coercing into a string,\nmatching [`crate::models::validation_status::ValidationStatus`].",
-        "enum": [
-          "want_to_read",
-          "reading",
-          "on_hold",
-          "finished",
-          "abandoned"
-        ]
+        "enum": ["want_to_read", "reading", "on_hold", "finished", "abandoned"]
       },
       "RegisterRequest": {
         "type": "object",
         "description": "Request body for `POST /auth/register`. Explicit allow-list (no\nmass-assignment): a self-registrant cannot smuggle a role or child flag.",
-        "required": [
-          "email",
-          "display_name",
-          "password"
-        ],
+        "required": ["email", "display_name", "password"],
         "properties": {
           "display_name": {
             "type": "string",
@@ -8841,9 +7939,7 @@
       "RenameShelfRequest": {
         "type": "object",
         "description": "Body for `PATCH /api/v1/shelves/{id}`.",
-        "required": [
-          "name"
-        ],
+        "required": ["name"],
         "properties": {
           "name": {
             "type": "string",
@@ -8854,9 +7950,7 @@
       "ReorderItemsRequest": {
         "type": "object",
         "description": "Body for `PUT /api/v1/shelves/{id}/items` — full ordered manifestation list.",
-        "required": [
-          "items"
-        ],
+        "required": ["items"],
         "properties": {
           "items": {
             "type": "array",
@@ -8871,11 +7965,7 @@
       "ResetPasswordRequest": {
         "type": "object",
         "description": "Request body for `POST /auth/reset-password`.",
-        "required": [
-          "email",
-          "pin",
-          "new_password"
-        ],
+        "required": ["email", "pin", "new_password"],
         "properties": {
           "email": {
             "type": "string",
@@ -8894,19 +7984,14 @@
       "RevertPayload": {
         "type": "object",
         "description": "Body for revert.",
-        "required": [
-          "field_name"
-        ],
+        "required": ["field_name"],
         "properties": {
           "field_name": {
             "type": "string",
             "description": "Canonical field to revert (e.g. `title`)."
           },
           "version_id": {
-            "type": [
-              "string",
-              "null"
-            ],
+            "type": ["string", "null"],
             "format": "uuid",
             "description": "Version to restore; `null` clears the canonical pointer AND the\ncanonical column."
           }
@@ -8915,20 +8000,12 @@
       "Role": {
         "type": "string",
         "description": "Authorization role assigned to a [`crate::models::user::User`].\n\nDrives `auth::middleware::CurrentUser::require_admin` and\n`auth::middleware::CurrentUser::require_not_child`; renaming a variant\ncompile-errors at every consumer, eliminating the silent-lockout\nhazard.",
-        "enum": [
-          "admin",
-          "adult",
-          "child"
-        ]
+        "enum": ["admin", "adult", "child"]
       },
       "ScanResponse": {
         "type": "object",
         "description": "Per-outcome file counts for one synchronous scan pass.",
-        "required": [
-          "processed",
-          "failed",
-          "skipped"
-        ],
+        "required": ["processed", "failed", "skipped"],
         "properties": {
           "failed": {
             "type": "integer",
@@ -8953,21 +8030,12 @@
       "Scope": {
         "type": "string",
         "description": "Credential capability, one of the authorization axes alongside [`Role`]\n(identity gating) and ownership (resource axis).\n\nThe variants are declared in ascending capability order, so the derived\n[`Ord`] is the scope hierarchy: `Read < Write < Admin`. A floor check\ncompares against this order rather than testing set membership.",
-        "enum": [
-          "read",
-          "write",
-          "admin"
-        ]
+        "enum": ["read", "write", "admin"]
       },
       "SearchHit": {
         "type": "object",
         "description": "One result row of `GET /api/v1/search`. Carries the bare minimum the\ncommand-palette UI needs: a kind tag for grouping, identifiers for\nnavigation, a short display label, and an optional `ts_headline`\nsnippet with non-HTML ASCII STX (`\\u{0002}`) / ETX (`\\u{0003}`)\nmarkers so the React renderer can avoid `dangerouslySetInnerHTML`.",
-        "required": [
-          "kind",
-          "id",
-          "title",
-          "authors"
-        ],
+        "required": ["kind", "id", "title", "authors"],
         "properties": {
           "authors": {
             "type": "array",
@@ -8977,10 +8045,7 @@
             "description": "Author display names for `book` results."
           },
           "cover_url": {
-            "type": [
-              "string",
-              "null"
-            ],
+            "type": ["string", "null"],
             "description": "Cover thumbnail URL for `book` results — relative path under\n`/api/v1/books/{id}/cover/thumb`, session-cookie gated. `None`\nwhen the hit kind has no cover surface (future author/series\nvariants)."
           },
           "id": {
@@ -8993,10 +8058,7 @@
             "description": "Result kind. Currently always `\"book\"`; `\"author\"` and\n`\"series\"` ship in a follow-up that fans the hybrid CTE over\nthe existing `authors.name` / `series.name` trigram indexes."
           },
           "snippet": {
-            "type": [
-              "string",
-              "null"
-            ],
+            "type": ["string", "null"],
             "description": "`ts_headline` snippet from the work's title+description with\nASCII STX (`\\u{0002}`) / ETX (`\\u{0003}`) start/stop markers\naround matched terms. Control codepoints, not valid UTF-8 text,\nso they cannot collide with user typography. `None` when the\nhit was trigram-only (no tsquery match → headline would be the\nraw text without highlighting)."
           },
           "title": {
@@ -9004,10 +8066,7 @@
             "description": "Display label — work title for `book`."
           },
           "work_id": {
-            "type": [
-              "string",
-              "null"
-            ],
+            "type": ["string", "null"],
             "format": "uuid",
             "description": "Parent work id when `kind = \"book\"`, else `None`."
           }
@@ -9016,16 +8075,12 @@
       "SearchHitKind": {
         "type": "string",
         "description": "Tag identifying which entity a [`SearchHit`] points at. Serialised\nin `snake_case` to match the rest of the JSON API conventions.",
-        "enum": [
-          "book"
-        ]
+        "enum": ["book"]
       },
       "SearchResponse": {
         "type": "object",
         "description": "`GET /api/v1/search` envelope (11b). Wraps a flat result list — the\nfrontend groups by [`SearchHit::kind`] client-side. No cursor:\nsearch is bounded by `LIMIT` server-side; pagination is a follow-up\nif user-research warrants it.",
-        "required": [
-          "items"
-        ],
+        "required": ["items"],
         "properties": {
           "items": {
             "type": "array",
@@ -9039,12 +8094,7 @@
       "SeriesDetail": {
         "type": "object",
         "description": "`/api/v1/series/{id}` response. Carries the series identity plus an\nordered list of works; each work surfaces only the manifestations\nthe caller can see, so the frontend can render a completeness\nindicator (`own = works with len(manifestations) > 0`, `total =\nworks.len()`).",
-        "required": [
-          "id",
-          "name",
-          "sort_name",
-          "works"
-        ],
+        "required": ["id", "name", "sort_name", "works"],
         "properties": {
           "id": {
             "type": "string",
@@ -9071,10 +8121,7 @@
       "SeriesRef": {
         "type": "object",
         "description": "Series membership for a manifestation. Embedded into both\n[`BookListRow`] and [`BookDetail`]; `None` when the work isn't on\nany series.",
-        "required": [
-          "id",
-          "name"
-        ],
+        "required": ["id", "name"],
         "properties": {
           "id": {
             "type": "string",
@@ -9086,10 +8133,7 @@
             "description": "Series display name."
           },
           "position": {
-            "type": [
-              "number",
-              "null"
-            ],
+            "type": ["number", "null"],
             "format": "double",
             "description": "Position within the series (`series_works.position`), `None`\nwhen the membership row has a null position."
           }
@@ -9098,12 +8142,7 @@
       "SeriesWork": {
         "type": "object",
         "description": "One work within a series. Includes every manifestation of the work\nthe caller can see; an empty `manifestations` list means the user\ndoes not yet own a copy (\"gap\" in the series).",
-        "required": [
-          "id",
-          "title",
-          "authors",
-          "manifestations"
-        ],
+        "required": ["id", "title", "authors", "manifestations"],
         "properties": {
           "authors": {
             "type": "array",
@@ -9125,10 +8164,7 @@
             "description": "Manifestations of this work visible to the caller. Empty when\nthe user owns no copy."
           },
           "position": {
-            "type": [
-              "number",
-              "null"
-            ],
+            "type": ["number", "null"],
             "format": "double",
             "description": "`series_works.position`; `None` when the membership row has a\nnull position."
           },
@@ -9279,15 +8315,10 @@
           },
           {
             "type": "object",
-            "required": [
-              "restart_required_fields"
-            ],
+            "required": ["restart_required_fields"],
             "properties": {
               "last_successful_reload_at": {
-                "type": [
-                  "string",
-                  "null"
-                ],
+                "type": ["string", "null"],
                 "format": "date-time",
                 "description": "Timestamp of the last successful LISTEN/NOTIFY settings reload in\nthis process; `null` until the first reload."
               },
@@ -9306,11 +8337,7 @@
       "SetupRequest": {
         "type": "object",
         "description": "Request body for `POST /auth/setup`. Explicit allow-list (no mass-assignment).",
-        "required": [
-          "email",
-          "display_name",
-          "password"
-        ],
+        "required": ["email", "display_name", "password"],
         "properties": {
           "display_name": {
             "type": "string",
@@ -9329,11 +8356,7 @@
       "SetupStatusResponse": {
         "type": "object",
         "description": "Public first-run status for the SPA: whether setup is required and which\nproviders are usable.",
-        "required": [
-          "setup_required",
-          "local_auth_enabled",
-          "oidc_enabled"
-        ],
+        "required": ["setup_required", "local_auth_enabled", "oidc_enabled"],
         "properties": {
           "local_auth_enabled": {
             "type": "boolean",
@@ -9352,14 +8375,7 @@
       "Shelf": {
         "type": "object",
         "description": "One shelf in the shelves-list response, plus the read shape for\ncreate/rename round-trips.",
-        "required": [
-          "id",
-          "name",
-          "is_system",
-          "created_at",
-          "updated_at",
-          "item_count"
-        ],
+        "required": ["id", "name", "is_system", "created_at", "updated_at", "item_count"],
         "properties": {
           "created_at": {
             "type": "string",
@@ -9394,14 +8410,7 @@
       "ShelfDetailResponse": {
         "type": "object",
         "description": "`GET /api/v1/shelves/{id}` response envelope: shelf identity plus\none page of ordered items and the cursor for the next page.\n\nPrivate to the route module — handler-internal wire shape\n(pagination is a transport concern; the `models::shelf` DTOs stay\ntransport-free).",
-        "required": [
-          "id",
-          "name",
-          "is_system",
-          "created_at",
-          "updated_at",
-          "items"
-        ],
+        "required": ["id", "name", "is_system", "created_at", "updated_at", "items"],
         "properties": {
           "created_at": {
             "type": "string",
@@ -9425,10 +8434,7 @@
             "type": "string"
           },
           "next_cursor": {
-            "type": [
-              "string",
-              "null"
-            ],
+            "type": ["string", "null"],
             "description": "Opaque cursor for the next items page; `null` on the last page."
           },
           "updated_at": {
@@ -9441,11 +8447,7 @@
       "ShelfItem": {
         "type": "object",
         "description": "One row of the shelf-items list (`GET /api/v1/shelves/{id}`).\n\nCarries the position so the frontend can render in stored order\nand round-trip back as `PUT /api/v1/shelves/{id}/items` with the\nre-arranged list.",
-        "required": [
-          "manifestation_id",
-          "position",
-          "added_at"
-        ],
+        "required": ["manifestation_id", "position", "added_at"],
         "properties": {
           "added_at": {
             "type": "string",
@@ -9467,9 +8469,7 @@
       "ShelfListResponse": {
         "type": "object",
         "description": "`GET /api/v1/shelves` response envelope. Carries the page rows plus\nthe opaque cursor for the following page; pagination is also\nsignalled via the RFC 8288 `Link` header on the response.\n\nPrivate to the route module — handler-internal wire shape.",
-        "required": [
-          "items"
-        ],
+        "required": ["items"],
         "properties": {
           "items": {
             "type": "array",
@@ -9478,20 +8478,14 @@
             }
           },
           "next_cursor": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           }
         }
       },
       "SourceFailureSummary": {
         "type": "object",
         "description": "A brief summary of a source-level failure during a dry-run pass.",
-        "required": [
-          "source_id",
-          "error"
-        ],
+        "required": ["source_id", "error"],
         "properties": {
           "error": {
             "type": "string",
@@ -9565,10 +8559,7 @@
       "StatusCount": {
         "type": "object",
         "description": "One `{ status, count }` bucket in a breakdown array. `status` is the\ncanonical wire label of a [`ValidationStatus`] / [`EnrichmentStatus`]\nvariant, so the closed enum set is reflected on the wire even for zero\ncounts.",
-        "required": [
-          "status",
-          "count"
-        ],
+        "required": ["status", "count"],
         "properties": {
           "count": {
             "type": "integer",
@@ -9582,13 +8573,7 @@
       "StatusSummary": {
         "type": "object",
         "description": "Aggregate per-status manifestation counts for the enrichment queue.",
-        "required": [
-          "pending",
-          "in_progress",
-          "complete",
-          "failed",
-          "skipped"
-        ],
+        "required": ["pending", "in_progress", "complete", "failed", "skipped"],
         "properties": {
           "complete": {
             "type": "integer",
@@ -9620,9 +8605,7 @@
       "SuggestResponse": {
         "type": "object",
         "description": "`GET .../suggest` response envelope.",
-        "required": [
-          "suggestions"
-        ],
+        "required": ["suggestions"],
         "properties": {
           "suggestions": {
             "type": "array",
@@ -9635,15 +8618,10 @@
       "Suggestion": {
         "type": "object",
         "description": "One typeahead suggestion.",
-        "required": [
-          "value"
-        ],
+        "required": ["value"],
         "properties": {
           "id": {
-            "type": [
-              "string",
-              "null"
-            ],
+            "type": ["string", "null"],
             "format": "uuid",
             "description": "Row id in the backing vocabulary table. `None` for publisher\nsuggestions, which have no dedicated table of their own."
           },
@@ -9656,18 +8634,12 @@
       "ThemePreference": {
         "type": "string",
         "description": "Per-user theme selection mirrored across DB, JSON, and the FOUC theme cookie.\n\nThe variant strings declared here are authoritative across all three\nsurfaces; wire-format drift between them is a defect.",
-        "enum": [
-          "system",
-          "light",
-          "dark"
-        ]
+        "enum": ["system", "light", "dark"]
       },
       "ThemeResponse": {
         "type": "object",
         "description": "Echo payload for `PATCH /auth/me/theme`.",
-        "required": [
-          "theme_preference"
-        ],
+        "required": ["theme_preference"],
         "properties": {
           "theme_preference": {
             "$ref": "#/components/schemas/ThemePreference",
@@ -9678,12 +8650,7 @@
       "TokenListItem": {
         "type": "object",
         "description": "One active device token in the list view. The token plaintext and its\nstored hash are never part of this shape.",
-        "required": [
-          "id",
-          "name",
-          "scopes",
-          "created_at"
-        ],
+        "required": ["id", "name", "scopes", "created_at"],
         "properties": {
           "created_at": {
             "type": "string",
@@ -9691,10 +8658,7 @@
             "description": "Token creation timestamp."
           },
           "expires_at": {
-            "type": [
-              "string",
-              "null"
-            ],
+            "type": ["string", "null"],
             "format": "date-time",
             "description": "`null` if the token never expires."
           },
@@ -9704,10 +8668,7 @@
             "description": "Token row id."
           },
           "last_used_at": {
-            "type": [
-              "string",
-              "null"
-            ],
+            "type": ["string", "null"],
             "format": "date-time",
             "description": "Timestamp of the last successful auth with this token; `null` if\nthe token has never been used."
           },
@@ -9727,9 +8688,7 @@
       "UpdateChildStatusRequest": {
         "type": "object",
         "description": "Body for `PUT /api/v1/users/{id}/child-status`.",
-        "required": [
-          "is_child"
-        ],
+        "required": ["is_child"],
         "properties": {
           "is_child": {
             "type": "boolean",
@@ -9764,17 +8723,11 @@
             ]
           },
           "description": {
-            "type": [
-              "string",
-              "null"
-            ],
+            "type": ["string", "null"],
             "description": "New description. Absent = unchanged; `null` clears."
           },
           "genres": {
-            "type": [
-              "array",
-              "null"
-            ],
+            "type": ["array", "null"],
             "items": {
               "type": "string"
             },
@@ -9782,37 +8735,22 @@
             "maxItems": 50
           },
           "isbn_10": {
-            "type": [
-              "string",
-              "null"
-            ],
+            "type": ["string", "null"],
             "description": "New ISBN-10. Absent = unchanged; `null` clears."
           },
           "isbn_13": {
-            "type": [
-              "string",
-              "null"
-            ],
+            "type": ["string", "null"],
             "description": "New ISBN-13. Absent = unchanged; `null` clears."
           },
           "language": {
-            "type": [
-              "string",
-              "null"
-            ],
+            "type": ["string", "null"],
             "description": "New language. Absent = unchanged; `null` clears."
           },
           "manifestation_identifiers": {
-            "type": [
-              "object",
-              "null"
-            ],
+            "type": ["object", "null"],
             "description": "Manifestation-level external identifiers keyed by scheme (e.g.\n`{\"googlebooks\": \"zyTZAAAAYAAJ\"}`). Same per-entry set/clear semantics\nas `work_identifiers`.",
             "additionalProperties": {
-              "type": [
-                "string",
-                "null"
-              ]
+              "type": ["string", "null"]
             },
             "propertyNames": {
               "type": "string"
@@ -9820,10 +8758,7 @@
             "maxProperties": 64
           },
           "moods": {
-            "type": [
-              "array",
-              "null"
-            ],
+            "type": ["array", "null"],
             "items": {
               "type": "string"
             },
@@ -9831,40 +8766,25 @@
             "maxItems": 50
           },
           "pages": {
-            "type": [
-              "integer",
-              "null"
-            ],
+            "type": ["integer", "null"],
             "format": "int32",
             "description": "New page count. Absent = unchanged; `null` clears; must be positive.",
             "minimum": 1
           },
           "pub_date": {
-            "type": [
-              "string",
-              "null"
-            ],
+            "type": ["string", "null"],
             "description": "New publication date (`YYYY-MM-DD`). Absent = unchanged; `null`\nclears."
           },
           "publisher": {
-            "type": [
-              "string",
-              "null"
-            ],
+            "type": ["string", "null"],
             "description": "New publisher. Absent = unchanged; `null` clears."
           },
           "subtitle": {
-            "type": [
-              "string",
-              "null"
-            ],
+            "type": ["string", "null"],
             "description": "New subtitle. Absent = unchanged; `null` clears."
           },
           "tags": {
-            "type": [
-              "array",
-              "null"
-            ],
+            "type": ["array", "null"],
             "items": {
               "type": "string"
             },
@@ -9872,23 +8792,14 @@
             "maxItems": 50
           },
           "title": {
-            "type": [
-              "string",
-              "null"
-            ],
+            "type": ["string", "null"],
             "description": "New title. Absent = unchanged; `null` is rejected (canonical title\nis NOT NULL)."
           },
           "work_identifiers": {
-            "type": [
-              "object",
-              "null"
-            ],
+            "type": ["object", "null"],
             "description": "Work-level external identifiers keyed by scheme (e.g.\n`{\"openlibrary\": \"OL45804W\"}`). Each entry independently sets its\nscheme's single slot; a `null` entry clears it. Absent (or `null`)\nleaves all work-level identifiers unchanged. Handled separately from\nthe scalar fields — not part of [`Self::populated`].",
             "additionalProperties": {
-              "type": [
-                "string",
-                "null"
-              ]
+              "type": ["string", "null"]
             },
             "propertyNames": {
               "type": "string"
@@ -9900,9 +8811,7 @@
       "UpdateMetadataResponse": {
         "type": "object",
         "description": "Response body for `PATCH /api/v1/books/{id}/metadata`.",
-        "required": [
-          "fields"
-        ],
+        "required": ["fields"],
         "properties": {
           "fields": {
             "type": "object",
@@ -9933,20 +8842,14 @@
             ]
           },
           "hidden_columns": {
-            "type": [
-              "array",
-              "null"
-            ],
+            "type": ["array", "null"],
             "items": {
               "type": "string"
             },
             "description": "Column keys to hide. Absent = unchanged; `null` resets to the default."
           },
           "sort_stack": {
-            "type": [
-              "string",
-              "null"
-            ],
+            "type": ["string", "null"],
             "description": "Default sort in the `?sort=` wire grammar. Absent = unchanged; `null`\nresets to the default."
           },
           "view": {
@@ -9967,18 +8870,12 @@
         "description": "Body for `PATCH /api/v1/books/{id}/reading`. RFC 7396 JSON Merge Patch:\nan absent key leaves the field unchanged, an explicit `null` clears it.",
         "properties": {
           "notes": {
-            "type": [
-              "string",
-              "null"
-            ],
+            "type": ["string", "null"],
             "description": "New free-text notes, at most 10000 characters. Absent = unchanged;\n`null` clears.",
             "maxLength": 10000
           },
           "rating": {
-            "type": [
-              "integer",
-              "null"
-            ],
+            "type": ["integer", "null"],
             "format": "int32",
             "description": "New rating, 1-5. Absent = unchanged; `null` clears."
           },
@@ -9998,9 +8895,7 @@
       "UpdateRoleRequest": {
         "type": "object",
         "description": "Body for `PUT /api/v1/users/{id}/role`.",
-        "required": [
-          "role"
-        ],
+        "required": ["role"],
         "properties": {
           "role": {
             "$ref": "#/components/schemas/Role",
@@ -10024,119 +8919,74 @@
             ]
           },
           "cover_download_timeout_secs": {
-            "type": [
-              "integer",
-              "null"
-            ],
+            "type": ["integer", "null"],
             "format": "int32",
             "description": "Cover download timeout in seconds."
           },
           "cover_max_bytes": {
-            "type": [
-              "integer",
-              "null"
-            ],
+            "type": ["integer", "null"],
             "format": "int64",
             "description": "Maximum cover image size in bytes."
           },
           "cover_min_long_edge_px": {
-            "type": [
-              "integer",
-              "null"
-            ],
+            "type": ["integer", "null"],
             "format": "int32",
             "description": "Minimum cover long-edge resolution in pixels."
           },
           "cover_redirect_limit": {
-            "type": [
-              "integer",
-              "null"
-            ],
+            "type": ["integer", "null"],
             "format": "int32",
             "description": "Maximum HTTP redirects when fetching covers."
           },
           "enrichment_concurrency": {
-            "type": [
-              "integer",
-              "null"
-            ],
+            "type": ["integer", "null"],
             "format": "int32",
             "description": "Maximum concurrent enrichment workers (1–10)."
           },
           "enrichment_enabled": {
-            "type": [
-              "boolean",
-              "null"
-            ],
+            "type": ["boolean", "null"],
             "description": "Whether the enrichment pipeline is active."
           },
           "enrichment_fetch_budget_secs": {
-            "type": [
-              "integer",
-              "null"
-            ],
+            "type": ["integer", "null"],
             "format": "int32",
             "description": "Per-source HTTP fetch budget in seconds."
           },
           "enrichment_poll_idle_secs": {
-            "type": [
-              "integer",
-              "null"
-            ],
+            "type": ["integer", "null"],
             "format": "int32",
             "description": "Seconds the enrichment poller sleeps when the queue is empty."
           },
           "format_priority": {
-            "type": [
-              "array",
-              "null"
-            ],
+            "type": ["array", "null"],
             "items": {
               "$ref": "#/components/schemas/ManifestationFormat"
             },
             "description": "Ranked format preference for ingestion."
           },
           "googlebooks_base_url": {
-            "type": [
-              "string",
-              "null"
-            ],
+            "type": ["string", "null"],
             "description": "Google Books API base URL."
           },
           "hardcover_base_url": {
-            "type": [
-              "string",
-              "null"
-            ],
+            "type": ["string", "null"],
             "description": "Hardcover `GraphQL` API base URL."
           },
           "opds_enabled": {
-            "type": [
-              "boolean",
-              "null"
-            ],
+            "type": ["boolean", "null"],
             "description": "Whether the OPDS catalogue is mounted."
           },
           "opds_page_size": {
-            "type": [
-              "integer",
-              "null"
-            ],
+            "type": ["integer", "null"],
             "format": "int32",
             "description": "OPDS feed page size (1–500)."
           },
           "openlibrary_base_url": {
-            "type": [
-              "string",
-              "null"
-            ],
+            "type": ["string", "null"],
             "description": "`OpenLibrary` API base URL."
           },
           "provider_visibility": {
-            "type": [
-              "object",
-              "null"
-            ],
+            "type": ["object", "null"],
             "description": "Per-provider display visibility, replacing the stored map wholesale.\nValues must be booleans; keys are validated against the union of\n`identifier_schemes` and `rating_sources`.",
             "additionalProperties": {
               "type": "boolean"
@@ -10147,33 +8997,21 @@
             "maxProperties": 64
           },
           "writeback_concurrency": {
-            "type": [
-              "integer",
-              "null"
-            ],
+            "type": ["integer", "null"],
             "format": "int32",
             "description": "Maximum concurrent writeback workers (1–10)."
           },
           "writeback_enabled": {
-            "type": [
-              "boolean",
-              "null"
-            ],
+            "type": ["boolean", "null"],
             "description": "Whether the writeback worker is active."
           },
           "writeback_max_attempts": {
-            "type": [
-              "integer",
-              "null"
-            ],
+            "type": ["integer", "null"],
             "format": "int32",
             "description": "Maximum writeback retry attempts per job."
           },
           "writeback_poll_idle_secs": {
-            "type": [
-              "integer",
-              "null"
-            ],
+            "type": ["integer", "null"],
             "format": "int32",
             "description": "Seconds the writeback poller sleeps when the queue is empty."
           }
@@ -10183,9 +9021,7 @@
       "UpdateThemeRequest": {
         "type": "object",
         "description": "Body for `PATCH /auth/me/theme`.",
-        "required": [
-          "theme_preference"
-        ],
+        "required": ["theme_preference"],
         "properties": {
           "theme_preference": {
             "$ref": "#/components/schemas/ThemePreference",
@@ -10202,10 +9038,7 @@
             "description": "New display name. Absent = unchanged; explicit `null` is rejected\n(NOT NULL column)."
           },
           "email": {
-            "type": [
-              "string",
-              "null"
-            ],
+            "type": ["string", "null"],
             "description": "New email (RFC 5322 addr-spec). Absent = unchanged; explicit `null`\nclears the stored address."
           }
         }
@@ -10237,10 +9070,7 @@
             "description": "Human-readable display name."
           },
           "email": {
-            "type": [
-              "string",
-              "null"
-            ],
+            "type": ["string", "null"],
             "description": "Email address; `null` when the user has none on file."
           },
           "id": {
@@ -10266,20 +9096,12 @@
       "ValidationStatus": {
         "type": "string",
         "description": "Outcome of structural validation for a single manifestation.\n\nWire-format invariant: variants serialise to the lowercase forms declared\nin the `#[serde]` and `#[sqlx]` attributes. `clean`, `repaired`, and\n`degraded` are all stored-and-served outcomes on one quality tier — `clean`\nmeans *no issues found*, not *the only valid state*. Unknown DB variants\nfail decode loudly at the boundary instead of coercing into a string.\n\n`#[non_exhaustive]` is deliberately absent: `reverie_api` is a single\nlib+bin crate with no foreign downstream matching on this enum, and the\nloud-decode-failure design *wants* the compile error when a\n[`ValidationOutcome`](crate::services::epub::ValidationOutcome) variant is\nadded without a matching arm — `non_exhaustive` would suppress exactly that.",
-        "enum": [
-          "pending",
-          "clean",
-          "repaired",
-          "degraded",
-          "failed"
-        ]
+        "enum": ["pending", "clean", "repaired", "degraded", "failed"]
       },
       "VersionPayload": {
         "type": "object",
         "description": "Body for accept / reject: the targeted `metadata_versions` row.",
-        "required": [
-          "version_id"
-        ],
+        "required": ["version_id"],
         "properties": {
           "version_id": {
             "type": "string",
@@ -10291,12 +9113,7 @@
       "WorkDetail": {
         "type": "object",
         "description": "`/api/v1/works/{id}` response. Lists every manifestation the user\ncan see for a given work, grouped under the work-level prose.",
-        "required": [
-          "id",
-          "title",
-          "authors",
-          "manifestations"
-        ],
+        "required": ["id", "title", "authors", "manifestations"],
         "properties": {
           "authors": {
             "type": "array",
@@ -10306,10 +9123,7 @@
             "description": "Author display names ordered by `work_authors.position`."
           },
           "description": {
-            "type": [
-              "string",
-              "null"
-            ],
+            "type": ["string", "null"],
             "description": "Long-form description (`works.description`)."
           },
           "id": {
@@ -10318,10 +9132,7 @@
             "description": "`works.id`."
           },
           "language": {
-            "type": [
-              "string",
-              "null"
-            ],
+            "type": ["string", "null"],
             "description": "BCP-47 language tag (`works.language`)."
           },
           "manifestations": {
@@ -10343,10 +9154,7 @@
             ]
           },
           "subtitle": {
-            "type": [
-              "string",
-              "null"
-            ],
+            "type": ["string", "null"],
             "description": "`works.subtitle`, when declared."
           },
           "title": {
@@ -10390,24 +9198,15 @@
             "description": "Ingestion lifecycle state."
           },
           "isbn_10": {
-            "type": [
-              "string",
-              "null"
-            ],
+            "type": ["string", "null"],
             "description": "`manifestations.isbn_10`."
           },
           "isbn_13": {
-            "type": [
-              "string",
-              "null"
-            ],
+            "type": ["string", "null"],
             "description": "`manifestations.isbn_13`."
           },
           "pages": {
-            "type": [
-              "integer",
-              "null"
-            ],
+            "type": ["integer", "null"],
             "format": "int32",
             "description": "`manifestations.pages`, when known."
           },
