@@ -3,13 +3,15 @@
 .gitignore
 .vscode
 .idea
-# docs is excluded except its manifest: pnpm needs every project's
+# website is excluded except its manifest: pnpm needs every project's
 # package.json to resolve the workspace graph (the frontend-builder stage
-# installs only the frontend project's deps). `docs/*` rather than a bare
-# `docs` so the negation matches at the child level instead of relying on
-# the builder walking into an excluded parent directory.
-docs/*
-!docs/package.json
+# installs only the frontend project's deps). `website/*` rather than a bare
+# `website` so the negation matches at the child level instead of relying on
+# the builder walking into an excluded parent directory. docs holds prose
+# only and no manifest, so it is excluded whole.
+website/*
+!website/package.json
+docs
 target
 # Both forms are needed: a bare pattern is matched against the whole path, so
 # `node_modules` excludes only the root one and a developer's populated

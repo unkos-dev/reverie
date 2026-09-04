@@ -72,7 +72,7 @@ WORKDIR /build
 # drift from a pin it exists to satisfy.
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY frontend/package.json frontend/
-COPY docs/package.json docs/
+COPY website/package.json website/
 # Installed once here so both stages below inherit one runtime from this layer
 # rather than provisioning it twice.
 #
@@ -88,7 +88,7 @@ RUN pnpm fetch
 
 # Stage 2b: Build the frontend bundle.
 #
-# Workspace resolution needs every copied manifest; the filter excludes docs.
+# Workspace resolution needs every copied manifest; the filter excludes website.
 # `--ignore-scripts` is defence in depth after the workspace allowlist.
 FROM js-toolchain AS frontend-builder
 RUN pnpm install --offline --frozen-lockfile --filter frontend... --ignore-scripts
