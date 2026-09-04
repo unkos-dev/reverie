@@ -22,8 +22,6 @@ An Architecture Decision Record (ADR) captures an important architecture decisio
 ## ADRs
 
 - [Adopt tower-sessions-sqlx-store for Postgres-backed sessions](superseded/2026-05-08-tower-sessions-sqlx-store.md) (superseded by [First-party session layer on tower-sessions core](2026-06-04-first-party-session-layer.md), 2026-06-04)
-- [Decouple staging Docker image publication from semver release tags](superseded/2026-05-12-decouple-staging-image-from-semver-releases.md) (superseded by [Per-architecture native runners with manifest-list merge](2026-05-12-platform-matrix-via-native-runners.md), 2026-05-12)
-- [Per-architecture native runners with manifest-list merge for Docker publish](2026-05-12-platform-matrix-via-native-runners.md) (accepted, 2026-05-12)
 - [GHA build cache + cargo-chef Dockerfile layering for Docker publish](2026-05-13-image-build-cache.md) (accepted, 2026-05-13)
 - [Outbound HTTP clients in Reverie must send an explicit User-Agent](2026-05-18-outbound-http-user-agent.md) (accepted, 2026-05-18)
 - [Adopt `impeccable` as the frontend design anti-pattern detector](2026-05-21-impeccable-adoption.md) (accepted, 2026-05-21)

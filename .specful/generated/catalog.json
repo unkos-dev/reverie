@@ -29,6 +29,13 @@
       "title": "Tiered comment policy for an open-source codebase"
     },
     {
+      "id": "REV-ADR-0005",
+      "kind": "adr",
+      "path": "docs/adr/0005-per-architecture-native-runners-with-a-manifest-list-merge.md",
+      "status": "accepted",
+      "title": "Per-architecture native runners with a manifest-list merge"
+    },
+    {
       "id": "REV-DESIGN-0001",
       "kind": "design",
       "path": "docs/specs/library/design/0001-library-filter-and-sort-state.md",
