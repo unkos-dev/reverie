@@ -111,7 +111,9 @@ without a visible diff. Modules graduate in audience-criticality order, authenti
 each graduation lands its docstrings and its allow removal together; a module created after the ratchet starts
 authors its docstrings at creation rather than shipping a fresh allow. `cargo doc -- -D rustdoc::broken_intra_doc_links`
 runs in continuous integration independently of the docstring policy, closing broken cross-references in existing
-documentation.
+documentation. `clippy::missing_errors_doc`, allow-listed by the strict lint policy while the crate was binary-only,
+is re-enabled once the per-module backfill completes, so the `# Errors` section becomes machine-checked; the
+application-crate rationale for allowing it does not survive the library split.
 
 The initial documentation backfill is authored by short-lived subagents dispatched per module, reading this record
 and the project's agent instructions, each returning a per-module diff the maintainer reviews before it lands.
@@ -155,8 +157,9 @@ a lint gate; the tier definitions themselves, and the backend `#![deny(missing_d
 so every `pub` item reachable from the crate boundary requires a doc comment; continuous integration runs
 `cargo doc --locked --no-deps --workspace` with `RUSTDOCFLAGS: -D rustdoc::broken_intra_doc_links`
 (`.github/workflows/backend.yml`), and the same workflow's clippy step runs under `-D warnings`.
-`missing_errors_doc` and `missing_panics_doc` are allow-listed in `backend/Cargo.toml`'s `[lints.clippy]` table as
-application-crate exemptions unrelated to this policy. Tier 2 `// THREAT:` annotations and frontend Tier 1
+`missing_errors_doc` and `missing_panics_doc` are still `allow` in `backend/Cargo.toml`'s `[lints.clippy]` table,
+whose comment records the pending re-enable, so `# Errors` and `# Panics` presence is honoured by review until that
+lands. Tier 2 `// THREAT:` annotations and frontend Tier 1
 docstrings have no mechanical check: both are honoured by review.
 
 ## Pros and cons of the options
@@ -202,7 +205,7 @@ docstrings have no mechanical check: both are honoured by review.
 ## More information
 
 - [Strict lint policy: pedantic clippy and strict frontend lint](./0002-strict-lint-policy-pedantic-clippy-and-strict-frontend-lint.md):
-  the pedantic clippy allow-list this policy's `# Errors` and `# Panics` sections build on.
+  the pedantic clippy allow-list this policy narrows: `missing_errors_doc` is re-enabled after the backfill.
 - [Adopt oxlint, replacing the ESLint toolchain](../../adr/2026-06-27-adopt-oxlint-toolchain.md): the toolchain
   change that removed the frontend docstring lint.
 - `backend/AGENTS.md` carries the `// SAFETY:` convention Tier 2 references for unsafe code.
