@@ -28,7 +28,7 @@
 //     (malformed cookie, parse error, or matchMedia failure).
 //
 // Cross-references:
-//   - `adr/2026-05-08-tiered-comment-policy.md` § Tier 2 (threat-annotation
+//   - `docs/adr/0004-tiered-comment-policy-for-an-open-source-codebase.md` § Tier 2 (threat-annotation
 //     shape).
 //   - `adr/2026-05-22-frontend-docstring-tooling.md` § Carve-outs (this
 //     `.js` file is intentionally inside the Tier 2 lint scope; the file-

@@ -263,7 +263,7 @@ declarative structs, since it is coupled to the removed `get("KEY")` form.
   (conditional-required `DATABASE_URL_MIGRATION`),
   [`2026-06-08-standards-first-integrations.md`](2026-06-08-standards-first-integrations.md)
   (standards-first philosophy),
-  [`2026-05-22-backend-aux-crates.md`](2026-05-22-backend-aux-crates.md)
+  [Backend auxiliary crates: axum-extra, serde_with, and subtle](../docs/adr/0009-backend-auxiliary-crates-axum-extra-serde-with-and-subtle.md)
   (backend dependency-adoption precedent),
   [`2026-05-26-persisted-settings.md`](2026-05-26-persisted-settings.md)
   (distinct DB-backed runtime-settings surface).

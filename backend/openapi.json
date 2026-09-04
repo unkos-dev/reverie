@@ -9739,7 +9739,7 @@
       },
       "UpdateMetadataFields": {
         "type": "object",
-        "description": "Per-field sparse update body for `PATCH /api/v1/books/{id}/metadata`.\n\nEncodes RFC 7396 JSON Merge Patch semantics via\n`serde_with::rust::double_option` (per\n`adr/2026-05-22-backend-aux-crates.md`):\n* absent key → `None`         → leave field unchanged.\n* key = `null` → `Some(None)` → clear the canonical value.\n* key = value → `Some(Some(v))` → set the canonical value.\n\n`cover` is not yet operator-editable from this endpoint — cover\npromotion happens via a separate file-upload path.",
+        "description": "Per-field sparse update body for `PATCH /api/v1/books/{id}/metadata`.\n\nEncodes RFC 7396 JSON Merge Patch semantics via\n`serde_with::rust::double_option` (per\n`docs/adr/0009-backend-auxiliary-crates-axum-extra-serde-with-and-subtle.md`):\n* absent key → `None`         → leave field unchanged.\n* key = `null` → `Some(None)` → clear the canonical value.\n* key = value → `Some(Some(v))` → set the canonical value.\n\n`cover` is not yet operator-editable from this endpoint — cover\npromotion happens via a separate file-upload path.",
         "properties": {
           "content_rating": {
             "oneOf": [

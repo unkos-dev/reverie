@@ -30,7 +30,7 @@ candidates were considered:
 - **`tower-sessions-rusqlite-store` / `tower-sessions-redis-store`**,
   same family, different backends. Not relevant: Reverie's
   primary store is already Postgres (per
-  [`adr/2026-05-05-single-image-distribution-central-csp.md`](../2026-05-05-single-image-distribution-central-csp.md)
+  [Single-image distribution with central CSP enforcement](../../docs/adr/0003-single-image-distribution-with-central-csp-enforcement.md)
   and the wider stack), and adding Redis or sqlite as a session
   backend introduces a second persistence dependency for no win.
 
@@ -160,7 +160,7 @@ the contract:
   (`tower-sessions-redis-store`).** Rejected: adds a second
   persistence dependency to the deployment. Reverie targets
   single-image self-hosting (per the
-  [single-image distribution ADR](../2026-05-05-single-image-distribution-central-csp.md));
+  [single-image distribution ADR](../../docs/adr/0003-single-image-distribution-with-central-csp-enforcement.md));
   every additional service the operator has to run is friction
   against the deployment story.
 - **Embed the schema migration in the crate's own `migrate()`

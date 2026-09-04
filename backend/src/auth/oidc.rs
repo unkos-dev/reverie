@@ -30,7 +30,7 @@
 //! loop, presenting as an availability failure rather than a security
 //! one. The fixed UA also identifies the client to upstream IdP
 //! operators so misbehaviour traces to a known agent. See
-//! [`adr/2026-05-18-outbound-http-user-agent.md`](../../../../adr/2026-05-18-outbound-http-user-agent.md).
+//! [Outbound HTTP clients send an explicit User-Agent](../../../docs/adr/0007-outbound-http-clients-send-an-explicit-user-agent.md).
 
 use anyhow::{Context, Result};
 use openidconnect::core::{CoreClient, CoreProviderMetadata};

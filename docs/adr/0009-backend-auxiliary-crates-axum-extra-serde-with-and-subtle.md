@@ -132,7 +132,7 @@ Standing principle: default to standard-library and audited-crate idioms over ha
 Sibling ADR: [JSON API conventions](../../adr/2026-05-22-json-api-conventions.md) (the RFC 7396 Merge Patch decision
 and the CSRF synchroniser-token decision).
 
-Sibling ADR: [Frontend data layer dependencies](../../adr/2026-05-22-frontend-data-layer-deps.md) (the frontend
+Sibling ADR: [Frontend data layer dependencies](./0010-frontend-data-layer-dependencies-react-query-and-dnd-kit.md) (the frontend
 dependency adoptions for the same API conventions work).
 
 Dependency declarations: [`backend/Cargo.toml`](../../backend/Cargo.toml).

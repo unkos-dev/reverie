@@ -1352,7 +1352,7 @@ pub async fn fan_out_for_dry_run(
 mod tests {
     #![expect(
         clippy::disallowed_methods,
-        reason = "bare reqwest::Client::new() against wiremock on loopback is ADR-exempt (adr/2026-05-18-outbound-http-user-agent.md): wiremock does not score User-Agents and no WAF sits in the path"
+        reason = "bare reqwest::Client::new() against wiremock on loopback is ADR-exempt (docs/adr/0007-outbound-http-clients-send-an-explicit-user-agent.md): wiremock does not score User-Agents and no WAF sits in the path"
     )]
     use super::*;
     use crate::config::{CleanupMode, CoverConfig, EnrichmentConfig};

@@ -24,7 +24,7 @@ pagination, merge-patch, content negotiation) but left two things unrecorded:
 
 Both matter beyond the bundled UI. The frontend ships in the same image and is
 versioned lockstep with the backend
-([single-image distribution ADR](2026-05-05-single-image-distribution-central-csp.md)),
+([single-image distribution ADR](../docs/adr/0003-single-image-distribution-with-central-csp-enforcement.md)),
 so it never needs a version negotiation, but device tokens make _third-party_
 API access real (scripts, e-reader companions, automation), and those consumers
 need both a stable version contract and a spec to generate against. Pre-release,
@@ -180,7 +180,7 @@ that generated document.
 - [JSON API conventions ADR](2026-05-22-json-api-conventions.md): the shapes the
   OpenAPI document describes; this ADR adds the version prefix and the contract
   format without restating those shapes.
-- [Single-image distribution ADR](2026-05-05-single-image-distribution-central-csp.md):
+- [Single-image distribution ADR](../docs/adr/0003-single-image-distribution-with-central-csp-enforcement.md):
   why the bundled frontend is lockstep and the version mainly serves external
   clients.
 - The docs-as-done task: the generator,

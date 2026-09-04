@@ -14,7 +14,7 @@ license = "AGPL-3.0-or-later"
 description = "Reverie ebook library manager — API server"
 
 # Library + binary split (UNK-191 / Phase 0 of the tiered comment-policy
-# rollout — see adr/2026-05-08-tiered-comment-policy.md). The library
+# rollout — see docs/adr/0004-tiered-comment-policy-for-an-open-source-codebase.md). The library
 # carries every module so that `missing_docs` and the clippy pedantic
 # doc lints fire on externally-reachable items; the binary is a thin
 # entry that calls `reverie_api::run()` under `#[tokio::main]`.
@@ -140,7 +140,7 @@ pedantic = { level = "warn", priority = -1 }
 nursery = { level = "warn", priority = -1 }
 
 # Pedantic lints inappropriate for application crates (vs library crates).
-# See adr/2026-05-03-strict-lint-policy.md for rationale.
+# See docs/adr/0002-strict-lint-policy-pedantic-clippy-and-strict-frontend-lint.md for rationale.
 module_name_repetitions = "allow"
 missing_errors_doc = "allow"
 missing_panics_doc = "allow"

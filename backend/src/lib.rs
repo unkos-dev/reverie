@@ -5,7 +5,7 @@
 //! thin entry that calls [`run`] under a `#[tokio::main]` runtime; the split
 //! exists so that `missing_docs` and clippy pedantic doc lints fire on
 //! externally-reachable items (a binary-only crate has no external API and
-//! the lints are silent; see `adr/2026-05-08-tiered-comment-policy.md`).
+//! the lints are silent; see `docs/adr/0004-tiered-comment-policy-for-an-open-source-codebase.md`).
 //!
 //! Embedders mounting Reverie under their own server may use
 //! [`build_router`] directly with a fully-initialised [`state::AppState`].

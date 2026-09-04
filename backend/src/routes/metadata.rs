@@ -1614,7 +1614,7 @@ async fn apply_vocabulary_patch(
 ///
 /// Encodes RFC 7396 JSON Merge Patch semantics via
 /// `serde_with::rust::double_option` (per
-/// `adr/2026-05-22-backend-aux-crates.md`):
+/// `docs/adr/0009-backend-auxiliary-crates-axum-extra-serde-with-and-subtle.md`):
 /// * absent key → `None`         → leave field unchanged.
 /// * key = `null` → `Some(None)` → clear the canonical value.
 /// * key = value → `Some(Some(v))` → set the canonical value.

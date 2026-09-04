@@ -12,7 +12,7 @@
 //! # Tier 2 — security-critical
 //!
 //! This module is Tier 2 under the comment policy
-//! (`adr/2026-05-08-tiered-comment-policy.md`); `// THREAT:` annotations mark
+//! (`docs/adr/0004-tiered-comment-policy-for-an-open-source-codebase.md`); `// THREAT:` annotations mark
 //! the non-obvious mitigations. The candidate password is never logged.
 //!
 //! See `adr/2026-06-30-password-policy-hibp-zxcvbn.md`.
@@ -294,7 +294,7 @@ mod tests {
 
         #[expect(
             clippy::disallowed_methods,
-            reason = "bare Client::new() against wiremock on loopback is ADR-exempt (adr/2026-05-18-outbound-http-user-agent.md): wiremock does not score User-Agents and no WAF sits in the path"
+            reason = "bare Client::new() against wiremock on loopback is ADR-exempt (docs/adr/0007-outbound-http-clients-send-an-explicit-user-agent.md): wiremock does not score User-Agents and no WAF sits in the path"
         )]
         let client = reqwest::Client::new();
         assert!(check_breached(&client, "password", &server.uri()).await);
@@ -312,7 +312,7 @@ mod tests {
 
         #[expect(
             clippy::disallowed_methods,
-            reason = "bare Client::new() against wiremock on loopback is ADR-exempt (adr/2026-05-18-outbound-http-user-agent.md): wiremock does not score User-Agents and no WAF sits in the path"
+            reason = "bare Client::new() against wiremock on loopback is ADR-exempt (docs/adr/0007-outbound-http-clients-send-an-explicit-user-agent.md): wiremock does not score User-Agents and no WAF sits in the path"
         )]
         let client = reqwest::Client::new();
         assert!(!check_breached(&client, "password", &server.uri()).await);
@@ -332,7 +332,7 @@ mod tests {
 
         #[expect(
             clippy::disallowed_methods,
-            reason = "bare Client::new() against wiremock on loopback is ADR-exempt (adr/2026-05-18-outbound-http-user-agent.md): wiremock does not score User-Agents and no WAF sits in the path"
+            reason = "bare Client::new() against wiremock on loopback is ADR-exempt (docs/adr/0007-outbound-http-clients-send-an-explicit-user-agent.md): wiremock does not score User-Agents and no WAF sits in the path"
         )]
         let client = reqwest::Client::new();
         assert!(!check_breached(&client, "password", &server.uri()).await);
@@ -350,7 +350,7 @@ mod tests {
 
         #[expect(
             clippy::disallowed_methods,
-            reason = "bare Client::new() against wiremock on loopback is ADR-exempt (adr/2026-05-18-outbound-http-user-agent.md): wiremock does not score User-Agents and no WAF sits in the path"
+            reason = "bare Client::new() against wiremock on loopback is ADR-exempt (docs/adr/0007-outbound-http-clients-send-an-explicit-user-agent.md): wiremock does not score User-Agents and no WAF sits in the path"
         )]
         let client = reqwest::Client::new();
         assert!(!check_breached(&client, "a-passphrase-not-in-this-mock", &server.uri()).await);
@@ -360,7 +360,7 @@ mod tests {
     async fn check_breached_fails_open_when_unreachable() {
         #[expect(
             clippy::disallowed_methods,
-            reason = "bare Client::new() against a dead loopback port is ADR-exempt (adr/2026-05-18-outbound-http-user-agent.md): no WAF in the path"
+            reason = "bare Client::new() against a dead loopback port is ADR-exempt (docs/adr/0007-outbound-http-clients-send-an-explicit-user-agent.md): no WAF in the path"
         )]
         let client = reqwest::Client::new();
         // Reserved TEST-NET-1 address; the connection cannot succeed.
@@ -377,7 +377,7 @@ mod tests {
 
         #[expect(
             clippy::disallowed_methods,
-            reason = "bare Client::new() against wiremock on loopback is ADR-exempt (adr/2026-05-18-outbound-http-user-agent.md): wiremock does not score User-Agents and no WAF sits in the path"
+            reason = "bare Client::new() against wiremock on loopback is ADR-exempt (docs/adr/0007-outbound-http-clients-send-an-explicit-user-agent.md): wiremock does not score User-Agents and no WAF sits in the path"
         )]
         let client = reqwest::Client::new();
         assert!(!check_breached(&client, "password", &server.uri()).await);
@@ -468,7 +468,7 @@ mod tests {
 
     #[expect(
         clippy::disallowed_methods,
-        reason = "bare Client::new() in tests is ADR-exempt (adr/2026-05-18-outbound-http-user-agent.md)"
+        reason = "bare Client::new() in tests is ADR-exempt (docs/adr/0007-outbound-http-clients-send-an-explicit-user-agent.md)"
     )]
     fn dummy_client() -> reqwest::Client {
         reqwest::Client::new()

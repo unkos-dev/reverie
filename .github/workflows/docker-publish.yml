@@ -1,6 +1,6 @@
 name: Docker Publish
 
-# Two publication channels per adr/2026-05-12-platform-matrix-via-native-runners.md:
+# Two publication channels per docs/adr/0005-per-architecture-native-runners-with-a-manifest-list-merge.md:
 #   - `main`-branch push -> `:main` + `:sha-<7>`, linux/arm64 only (staging).
 #   - `v*` tag push      -> `:vX.Y.Z` + `:X.Y`, linux/amd64+arm64 (public release).
 # `prepare-matrix` emits the include list, `build` runs one job per arch on a

@@ -25,7 +25,7 @@
 // `parseAllowedHosts` (which rejects any non-host-token character before this
 // module sees them), so `buildDevCsp` assumes well-formed bare hostnames.
 // Dev-only — the production CSP (backend/src/security/csp.rs) is unaffected.
-// Cross-reference: adr/2026-05-08-tiered-comment-policy.md § Tier 2.
+// Cross-reference: docs/adr/0004-tiered-comment-policy-for-an-open-source-codebase.md § Tier 2.
 
 import { DEFAULT_LOOPBACK_HOSTS, parseAllowedHosts } from "./allowed-hosts";
 

@@ -1,11 +1,7 @@
 ---
 status: accepted
 date: 2026-06-27
-supersedes:
-  [
-    "superseded/2026-05-04-replace-eslint-plugin-react.md",
-    "superseded/2026-05-22-frontend-docstring-tooling.md",
-  ]
+supersedes: ["superseded/2026-05-22-frontend-docstring-tooling.md"]
 decision-makers: "John Unkovich"
 consulted: []
 informed: "Reverie contributors"
@@ -16,7 +12,7 @@ informed: "Reverie contributors"
 ## Context and Problem Statement
 
 The frontend lint stack ratified in
-[strict lint policy](2026-05-03-strict-lint-policy.md) ran on ESLint plus
+[strict lint policy](../docs/adr/0002-strict-lint-policy-pedantic-clippy-and-strict-frontend-lint.md) ran on ESLint plus
 typescript-eslint (`strictTypeChecked`), `eslint-plugin-react-hooks`,
 `eslint-plugin-react-refresh`, `@eslint-react`, and `eslint-plugin-jsdoc`. This
 record moves the JS/TS lint engine to oxlint, the Rust linter from the VoidZero
@@ -118,11 +114,11 @@ violation, and docstring-presence does not.
 ## More Information
 
 Supersedes
-[Replace eslint-plugin-react with @eslint-react](superseded/2026-05-04-replace-eslint-plugin-react.md)
+Replace eslint-plugin-react with @eslint-react (retired; history holds the record)
 and
 [Frontend docstring linting via eslint-plugin-jsdoc](superseded/2026-05-22-frontend-docstring-tooling.md).
-Amends [strict lint policy](2026-05-03-strict-lint-policy.md), whose frontend
-engine is now oxlint, and [tiered comment policy](2026-05-08-tiered-comment-policy.md),
+Amends [strict lint policy](../docs/adr/0002-strict-lint-policy-pedantic-clippy-and-strict-frontend-lint.md), whose frontend
+engine is now oxlint, and [tiered comment policy](../docs/adr/0004-tiered-comment-policy-for-an-open-source-codebase.md),
 whose frontend docstring floor is now review-level rather than lint-enforced.
 
 Formatting moves to oxfmt in a paired record,

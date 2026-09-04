@@ -39,7 +39,7 @@ const STANDARD_BASE64 = /^[A-Za-z0-9+/]+={0,2}$/;
  * encoding fails the build instead of producing a CSP that browsers ignore.
  *
  * Cross-references:
- *   - `adr/2026-05-08-tiered-comment-policy.md` § Tier 2 (threat-annotation
+ *   - `docs/adr/0004-tiered-comment-policy-for-an-open-source-codebase.md` § Tier 2 (threat-annotation
  *     shape).
  *   - `adr/2026-05-22-frontend-docstring-tooling.md` § Carve-outs (the `.js`
  *     scope inclusion is for this plugin's pinned source file).

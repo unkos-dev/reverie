@@ -237,5 +237,5 @@ Load-bearing invariants, enforced by unit tests in `covers::svg`:
   move with this change; the ~existing SVG-cover rows stay `degraded` until a
   bulk revalidation ships.
 - Sibling dependency-adoption ADR shape:
-  [`2026-05-22-backend-aux-crates.md`](2026-05-22-backend-aux-crates.md).
+  [Backend auxiliary crates: axum-extra, serde_with, and subtle](../docs/adr/0009-backend-auxiliary-crates-axum-extra-serde-with-and-subtle.md).
 - Tracker: the SVG cover rasterization task.

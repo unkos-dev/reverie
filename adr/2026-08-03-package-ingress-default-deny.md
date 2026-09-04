@@ -139,7 +139,7 @@ Applies the self-purging shape from
 to package ingress, and inherits its policy location from
 [2026-06-30-adopt-vite-plus-monorepo-toolchain.md](2026-06-30-adopt-vite-plus-monorepo-toolchain.md).
 Corrects the supply-chain consequence in
-[2026-05-21-impeccable-adoption.md](2026-05-21-impeccable-adoption.md), which
+[Adopt impeccable as the frontend design anti-pattern detector](../docs/adr/0008-adopt-impeccable-as-the-frontend-design-anti-pattern-detector.md), which
 named a `skipDownload` field no manifest carries.
 
 Revisit if npm gains per-workspace script policy, or if a dependency arrives
