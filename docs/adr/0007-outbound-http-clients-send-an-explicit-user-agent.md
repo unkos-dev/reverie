@@ -125,5 +125,3 @@ changes shape.
 Implementation sites: `backend/src/auth/oidc.rs` (the fixed clients), `backend/src/services/enrichment/http.rs` (the
 pre-existing conformant clients and the pattern source for the provider-courtesy User-Agent shape), and
 `backend/src/config/mod.rs::user_agent` (the operator-contact User-Agent composition used by the enrichment clients).
-
-Re-recorded from adr/2026-05-18-outbound-http-user-agent.md (decided 2026-05-18); history holds the original.

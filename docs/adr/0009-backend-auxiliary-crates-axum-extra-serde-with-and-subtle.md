@@ -136,5 +136,3 @@ Sibling ADR: [Frontend data layer dependencies](./0010-frontend-data-layer-depen
 dependency adoptions for the same API conventions work).
 
 Dependency declarations: [`backend/Cargo.toml`](../../backend/Cargo.toml).
-
-Re-recorded from adr/2026-05-22-backend-aux-crates.md (decided 2026-05-22); history holds the original.

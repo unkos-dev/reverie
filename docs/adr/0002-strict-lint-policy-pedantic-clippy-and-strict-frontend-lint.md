@@ -162,5 +162,3 @@ the backend is separately confirmed by `backend/deny.toml`.
 - The four pedantic lints allow-listed for application-crate reasons (`module_name_repetitions`,
   `missing_errors_doc`, `missing_panics_doc`, `must_use_candidate`) exist for library API hygiene; revisit the
   allow-list if Reverie ever publishes a library crate to crates.io.
-
-Re-recorded from adr/2026-05-03-strict-lint-policy.md (decided 2026-05-03); history holds the original.

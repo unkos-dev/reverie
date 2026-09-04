@@ -196,5 +196,3 @@ Open a superseding record if any of the following happen:
   as expected; the likely resolution is explicit cross-ref cache hydration on tag push.
 - Image signing or attestation changes the pipeline shape in a way that changes which layers benefit from cache
   reuse, which would call for revisiting the cooker layer's composition.
-
-Re-recorded from adr/2026-05-13-image-build-cache.md (decided 2026-05-13); history holds the original.

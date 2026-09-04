@@ -102,7 +102,7 @@ drift, and pays the cost for a feature that isn't run).
 - Positive: the three `bg-black` findings are visible in CI logs on every frontend pull request until the deferred
   fix lands, creating pressure to address them on the first modal, dialog, or sheet change.
 - Positive: the CI signal is independent of LLM availability, running on `ubuntu-latest` in under two seconds.
-- Positive: the install-script default-deny keeps the Chromium fetch out of a clean install, preserving install
+- Positive: the install-script default-deny keeps the Chromium fetch out of a clean install and preserves install
   time.
 - Negative: one more devDependency plus its transitive packages.
 - Negative: detector rules are upstream-controlled, so rule churn could surface false positives mid-development.
@@ -179,5 +179,3 @@ recurring cost, so no trial period applies. Open a superseding record if any of 
 - Related decision: [Package ingress default-deny](../../adr/2026-08-03-package-ingress-default-deny.md), which
   governs the install-script denial this record relies on.
 - Upstream: <https://github.com/pbakaus/impeccable> (Apache-2.0, forked from Anthropic's `frontend-design` skill).
-
-Re-recorded from adr/2026-05-21-impeccable-adoption.md (decided 2026-05-21); history holds the original.

@@ -195,5 +195,3 @@ Open a superseding record if any of the following happen:
 Code references: `.github/workflows/docker-publish.yml` is the workflow this decision changed;
 `release-please-config.json` is unchanged by this decision but drives the `v*` tag push this record's release leg
 consumes.
-
-Re-recorded from adr/2026-05-12-platform-matrix-via-native-runners.md (decided 2026-05-12); history holds the original.

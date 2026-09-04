@@ -77,27 +77,29 @@ internal code, while giving the audience that actually needs explicit documentat
 auditors, and `cargo doc` readers, an explicit floor on the surfaces they read.
 
 Tier 1, public API. Every `pub fn`, `pub struct`, `pub enum`, `pub trait`, and `pub const` exposed at a module
-boundary carries a `///` Rust doc comment, or JSDoc on a TypeScript export. Module tops carry `//!` in Rust, or a file-header docblock in
-TypeScript, stating purpose, invariants, and load-bearing constraints. Required content is the purpose in one
-sentence, the invariants a caller can rely on, the non-obvious WHY where one exists, an `# Errors` section on any
-`pub fn` returning `Result<…>`, a `# Panics` section on any `pub fn` that may panic, and a `# Safety` section on any
-`pub unsafe fn`, aligning with the `// SAFETY:` convention in `backend/AGENTS.md`. A docstring that only restates the
-signature, that clips or replaces an existing leading WHY-comment rather than sitting above it, or that repeats
-generic boilerplate, is worse than no docstring and is not acceptable under this tier.
+boundary carries a `///` Rust doc comment, or JSDoc on a TypeScript export. Module tops carry `//!` in Rust,
+or a file-header docblock in TypeScript, stating purpose, invariants, and load-bearing constraints. Required
+content is the purpose in one sentence, the invariants a caller can rely on, the non-obvious WHY where one
+exists, an `# Errors` section on any `pub fn` returning `Result<…>`, a `# Panics` section on any `pub fn`
+that may panic, and a `# Safety` section on any `pub unsafe fn`, aligning with the `// SAFETY:` convention in
+`backend/AGENTS.md`. A docstring that only restates the signature, that clips or replaces an existing leading
+WHY-comment rather than sitting above it, or that repeats generic boilerplate, is worse than no docstring and
+is not acceptable under this tier.
 
-Tier 2, security-critical code. Code under `backend/src/auth/`, `backend/src/security/`, and any function handling
-credentials, sessions, the OIDC
-flow, role assertions, row-level-security context, secret material, or response-header policy carries explicit
-threat-model annotations beyond the standard docstring: `// THREAT:` comments inline for non-obvious mitigations,
-stating the attack vector being closed, any pre-existing protection, and the invariant this code adds; a one-line
-threat statement near the top of the docstring on a security-boundary function; and a reference to the relevant
-decision record by relative path when the context motivating the code lives in one.
+Tier 2, security-critical code. Code under `backend/src/auth/`, `backend/src/security/`, and any function
+handling credentials, sessions, the OIDC flow, role assertions, row-level-security context, secret material,
+or response-header policy carries explicit threat-model annotations beyond the standard docstring: `// THREAT:`
+comments inline for non-obvious mitigations, stating the attack vector being closed, any pre-existing protection,
+and the invariant this code adds; a one-line threat statement near the top of the docstring on a security-boundary
+function; and a reference to the relevant decision record by relative path when the context motivating the code
+lives in one.
 
-Tier 3, internal code. Private functions, private structs, and private modules keep the original rule in full: no docstring is required,
-and a comment is added only when the WHY is non-obvious, a constraint is hidden, or the code would surprise a future
-reader. Tier 4, tests. Test functions, whichever runner they use, do not carry docstrings; the test name is the spec, and a
-docstring restating it is noise. `test_support/` modules carry module-top docs where a helper's purpose is
-non-obvious; the helpers themselves stay bare unless they encode a WHY a future reader would not infer.
+Tier 3, internal code. Private functions, private structs, and private modules keep the original rule in full:
+no docstring is required, and a comment is added only when the WHY is non-obvious, a constraint is hidden, or
+the code would surprise a future reader. Tier 4, tests. Test functions, whichever runner they use, do not carry
+docstrings; the test name is the spec, and a docstring restating it is noise. `test_support/` modules carry
+module-top docs where a helper's purpose is non-obvious; the helpers themselves stay bare unless they encode a
+WHY a future reader would not infer.
 
 Backend enforcement is a ratchet built on splitting the crate into a library plus a thin binary entry point:
 `missing_docs` and the clippy doc lints fire only on items reachable from outside the crate, and a bin-only crate
@@ -154,8 +156,8 @@ so every `pub` item reachable from the crate boundary requires a doc comment; co
 `cargo doc --locked --no-deps --workspace` with `RUSTDOCFLAGS: -D rustdoc::broken_intra_doc_links`
 (`.github/workflows/backend.yml`), and the same workflow's clippy step runs under `-D warnings`.
 `missing_errors_doc` and `missing_panics_doc` are allow-listed in `backend/Cargo.toml`'s `[lints.clippy]` table as
-application-crate exemptions unrelated to this policy. Tier 2 `// THREAT:` annotations and frontend Tier 1 docstrings have no mechanical check: both are
-honoured by review.
+application-crate exemptions unrelated to this policy. Tier 2 `// THREAT:` annotations and frontend Tier 1
+docstrings have no mechanical check: both are honoured by review.
 
 ## Pros and cons of the options
 
@@ -204,5 +206,3 @@ honoured by review.
 - [Adopt oxlint, replacing the ESLint toolchain](../../adr/2026-06-27-adopt-oxlint-toolchain.md): the toolchain
   change that removed the frontend docstring lint.
 - `backend/AGENTS.md` carries the `// SAFETY:` convention Tier 2 references for unsafe code.
-
-Re-recorded from adr/2026-05-08-tiered-comment-policy.md (decided 2026-05-08); history holds the original.

@@ -101,12 +101,12 @@ Concretely:
 
 ### Confirmation
 
-`backend/src/security/headers.rs` emits the CSP header from the loaded hashes and serves the SPA fallback response;
-`backend/src/security/dist_validation.rs` validates the `csp-hashes.json` sidecar and the frontend dist directory at
-backend startup and fails the process when either is missing or malformed; `frontend/vite-plugins/csp-hash.ts` emits
-that sidecar at build time, with its contract covered by `frontend/vite-plugins/__tests__/csp-hash.test.ts`. `Dockerfile`
-is the single multi-stage build that produces the one distributed image, and `.github/workflows/docker-publish.yml`
-publishes it.
+`backend/src/security/headers.rs` emits the CSP header from the loaded hashes and serves the SPA fallback
+response; `backend/src/security/dist_validation.rs` validates the `csp-hashes.json` sidecar and the
+frontend dist directory at backend startup and fails the process when either is missing or malformed;
+`frontend/vite-plugins/csp-hash.ts` emits that sidecar at build time, with its contract covered by
+`frontend/vite-plugins/__tests__/csp-hash.test.ts`. `Dockerfile` is the single multi-stage build that produces
+the one distributed image, and `.github/workflows/docker-publish.yml` publishes it.
 
 ## Pros and cons of the options
 
@@ -163,5 +163,3 @@ Open a superseding record if any of the following happen:
   without bumping the backend version.
 - A security model requiring per-service trust boundaries applies, since some compliance regimes mandate that the web
   tier and the app tier run as separate processes for least-privilege isolation.
-
-Re-recorded from adr/2026-05-05-single-image-distribution-central-csp.md (decided 2026-05-05); history holds the original.
