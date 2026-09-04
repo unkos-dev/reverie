@@ -22,6 +22,13 @@
       "title": "Single-image distribution with central CSP enforcement"
     },
     {
+      "id": "REV-ADR-0004",
+      "kind": "adr",
+      "path": "docs/adr/0004-tiered-comment-policy-for-an-open-source-codebase.md",
+      "status": "accepted",
+      "title": "Tiered comment policy for an open-source codebase"
+    },
+    {
       "id": "REV-DESIGN-0001",
       "kind": "design",
       "path": "docs/specs/library/design/0001-library-filter-and-sort-state.md",
