@@ -36,6 +36,13 @@
       "title": "Per-architecture native runners with a manifest-list merge"
     },
     {
+      "id": "REV-ADR-0006",
+      "kind": "adr",
+      "path": "docs/adr/0006-image-build-cache-and-cargo-chef-layering-for-docker-publish.md",
+      "status": "accepted",
+      "title": "Image build cache and cargo-chef layering for Docker publish"
+    },
+    {
       "id": "REV-DESIGN-0001",
       "kind": "design",
       "path": "docs/specs/library/design/0001-library-filter-and-sort-state.md",
