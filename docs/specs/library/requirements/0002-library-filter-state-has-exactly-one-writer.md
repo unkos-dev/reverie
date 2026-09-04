@@ -3,8 +3,6 @@ type: REQ
 profile-version: 1
 id: "REV-REQ-0002"
 title: "Library filter state has exactly one writer"
-governed-by:
-  - "REV-ADR-0001"
 ---
 
 # Library filter state has exactly one writer

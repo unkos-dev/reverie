@@ -3,8 +3,6 @@ type: REQ
 profile-version: 1
 id: "REV-REQ-0001"
 title: "Library sort resolves only from the per-user preference"
-governed-by:
-  - "REV-ADR-0001"
 ---
 
 # Library sort resolves only from the per-user preference
