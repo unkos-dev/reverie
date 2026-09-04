@@ -230,7 +230,7 @@ jobs:
         uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
         with:
           # renovate: datasource=github-releases depName=jdx/mise extractVersion=^v(?<version>.+)$
-          version: "2026.8.15"
+          version: "2026.8.16"
           install_args: trivy
           # THREAT: this job signs and publishes on the privileged tag-push
           # trigger, so a cache entry an earlier push could have poisoned
