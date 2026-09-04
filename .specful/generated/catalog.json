@@ -57,6 +57,13 @@
       "title": "Adopt impeccable as the frontend design anti-pattern detector"
     },
     {
+      "id": "REV-ADR-0009",
+      "kind": "adr",
+      "path": "docs/adr/0009-backend-auxiliary-crates-axum-extra-serde-with-and-subtle.md",
+      "status": "accepted",
+      "title": "Backend auxiliary crates: axum-extra, serde_with, and subtle"
+    },
+    {
       "id": "REV-DESIGN-0001",
       "kind": "design",
       "path": "docs/specs/library/design/0001-library-filter-and-sort-state.md",

@@ -25,7 +25,6 @@ An Architecture Decision Record (ADR) captures an important architecture decisio
 - [Frontend docstring linting via `eslint-plugin-jsdoc`](superseded/2026-05-22-frontend-docstring-tooling.md) (superseded by [Adopt oxlint, replacing the ESLint toolchain](2026-06-27-adopt-oxlint-toolchain.md), 2026-06-27)
 - [JSON API conventions for Reverie's browser-facing REST surface](2026-05-22-json-api-conventions.md) (accepted, 2026-05-22)
 - [Frontend data-layer dependencies for Step 11](2026-05-22-frontend-data-layer-deps.md) (accepted, 2026-05-22)
-- [Backend auxiliary crates for Step 11](2026-05-22-backend-aux-crates.md) (accepted, 2026-05-22)
 - [Persist operator-tunable settings to database with live reload](2026-05-26-persisted-settings.md) (accepted, 2026-05-26)
 - [Auto-migrate database on startup with all-or-nothing batch transactions](superseded/2026-05-26-auto-migration-on-startup.md) (superseded by [Database migration model: hybrid entrypoints, least-privilege role, all-or-nothing batch](2026-06-02-hybrid-migration-entrypoints-and-role.md), 2026-05-26)
 - [Reconcile `validation_status` vocabulary and introduce a typed `ValidationStatus` enum](2026-05-28-validation-status-vocabulary.md) (accepted, 2026-05-28)
