@@ -294,6 +294,13 @@
       "title": "Library filters in a drawer with removable chips"
     },
     {
+      "id": "REV-ADR-0042",
+      "kind": "adr",
+      "path": "docs/adr/0042-code-scanning-ingestion-policy-ingest-what-is-actionable.md",
+      "status": "accepted",
+      "title": "Code-scanning ingestion policy: ingest what is actionable"
+    },
+    {
       "id": "REV-DESIGN-0001",
       "kind": "design",
       "path": "docs/specs/library/design/0001-library-filter-and-sort-state.md",
