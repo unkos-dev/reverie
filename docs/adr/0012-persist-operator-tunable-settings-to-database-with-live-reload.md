@@ -20,7 +20,7 @@ the environment and restarting the process. This is acceptable for infrastructur
 that change at deploy time, but creates unnecessary friction for runtime-tunable knobs that operators adjust during
 normal library management.
 
-Reverie needs `GET`/`PUT /api/settings` endpoints so that the browser UI can display and mutate operator settings
+Reverie needs `GET`/`PUT /api/v1/settings` endpoints so that the browser UI can display and mutate operator settings
 without a process restart. How should Reverie persist, propagate, and resolve operator-tunable settings?
 
 Related: [JSON API conventions](./0011-json-api-conventions-for-the-browser-facing-rest-surface.md) (error envelope
