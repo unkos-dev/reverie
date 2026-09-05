@@ -80,8 +80,8 @@ the census resolves to; every editing surface is a caller of one or the other, n
   the library's other per-user display preferences. It resolves each group from up to three media (a same-session
   local write, the server response, the first-paint mirror), delays and merges writes into one PATCH, and exposes
   `sortLevels` (the one resolved stack every surface renders) and `setSortLevels` (the one sort intent handler).
-- `frontend/src/components/shell/FilterRail.tsx` is the primary filter- and sort-editing surface: one collapsible
-  section per filterable field plus a sort section, each dispatching to `useLibraryFilters`'s slice commits or to the
+- `frontend/src/components/shell/FilterRail.tsx`, rendered inside the library page's filter drawer, is the primary
+  filter- and sort-editing surface: one collapsible section per filterable field plus a sort section, each dispatching to `useLibraryFilters`'s slice commits or to the
   page's `onSortChange` prop. The chips row (`frontend/src/pages/library/FilterChips.tsx`) and the quick-search input
   are the two other editing surfaces; both dispatch through the same writer.
 - `frontend/src/pages/library/LibraryPage.tsx` composes the above: it resolves the sort stack via
