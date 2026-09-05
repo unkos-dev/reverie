@@ -127,6 +127,13 @@
       "title": "Durable job queue: Postgres-backed, SKIP LOCKED, crash-only"
     },
     {
+      "id": "REV-ADR-0019",
+      "kind": "adr",
+      "path": "docs/adr/0019-keyset-pagination-as-the-default-list-contract.md",
+      "status": "accepted",
+      "title": "Keyset pagination as the default list contract"
+    },
+    {
       "id": "REV-DESIGN-0001",
       "kind": "design",
       "path": "docs/specs/library/design/0001-library-filter-and-sort-state.md",
