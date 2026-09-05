@@ -71,6 +71,13 @@
       "title": "Frontend data-layer dependencies: React Query and dnd-kit"
     },
     {
+      "id": "REV-ADR-0011",
+      "kind": "adr",
+      "path": "docs/adr/0011-json-api-conventions-for-the-browser-facing-rest-surface.md",
+      "status": "accepted",
+      "title": "JSON API conventions for the browser-facing REST surface"
+    },
+    {
       "id": "REV-DESIGN-0001",
       "kind": "design",
       "path": "docs/specs/library/design/0001-library-filter-and-sort-state.md",
