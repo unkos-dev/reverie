@@ -40,4 +40,3 @@ that satisfies this Requirement.
 
 - [Single filter home in the library right rail](../../../../adr/2026-07-10-library-filter-home-right-rail.md): the
   decision that the filter rail is the primary editing surface.
-- Satisfied by [Library filter and sort state](../design/0001-library-filter-and-sort-state.md).

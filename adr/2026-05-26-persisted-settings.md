@@ -17,7 +17,7 @@ Step 11's Blueprint task 9 requires `GET/PUT /api/settings` endpoints so that th
 
 How should Reverie persist, propagate, and resolve operator-tunable settings?
 
-Related: [JSON API conventions](2026-05-22-json-api-conventions.md) (error envelope for validation failures), [backend aux crates](2026-05-22-backend-aux-crates.md).
+Related: [JSON API conventions](2026-05-22-json-api-conventions.md) (error envelope for validation failures), [backend aux crates](../docs/adr/0009-backend-auxiliary-crates-axum-extra-serde-with-and-subtle.md).
 
 ## Decision Drivers
 

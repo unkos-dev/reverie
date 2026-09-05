@@ -14,7 +14,7 @@
 //! # Tier 2 — security-critical
 //!
 //! All modules in this directory are Tier 2 under the comment policy
-//! (`adr/2026-05-08-tiered-comment-policy.md`). Threat annotations
+//! (`docs/adr/0004-tiered-comment-policy-for-an-open-source-codebase.md`). Threat annotations
 //! (`// THREAT:`) are present on any non-obvious mitigation.
 
 /// `BasicOnly` extractor: rejects session cookies, requires `Authorization: Basic`.

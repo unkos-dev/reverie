@@ -8,6 +8,69 @@
       "title": "Adopt Specful for requirements, designs, and decision records"
     },
     {
+      "id": "REV-ADR-0002",
+      "kind": "adr",
+      "path": "docs/adr/0002-strict-lint-policy-pedantic-clippy-and-strict-frontend-lint.md",
+      "status": "accepted",
+      "title": "Strict lint policy: pedantic clippy and strict frontend lint"
+    },
+    {
+      "id": "REV-ADR-0003",
+      "kind": "adr",
+      "path": "docs/adr/0003-single-image-distribution-with-central-csp-enforcement.md",
+      "status": "accepted",
+      "title": "Single-image distribution with central CSP enforcement"
+    },
+    {
+      "id": "REV-ADR-0004",
+      "kind": "adr",
+      "path": "docs/adr/0004-tiered-comment-policy-for-an-open-source-codebase.md",
+      "status": "accepted",
+      "title": "Tiered comment policy for an open-source codebase"
+    },
+    {
+      "id": "REV-ADR-0005",
+      "kind": "adr",
+      "path": "docs/adr/0005-per-architecture-native-runners-with-a-manifest-list-merge.md",
+      "status": "accepted",
+      "title": "Per-architecture native runners with a manifest-list merge"
+    },
+    {
+      "id": "REV-ADR-0006",
+      "kind": "adr",
+      "path": "docs/adr/0006-image-build-cache-and-cargo-chef-layering-for-docker-publish.md",
+      "status": "accepted",
+      "title": "Image build cache and cargo-chef layering for Docker publish"
+    },
+    {
+      "id": "REV-ADR-0007",
+      "kind": "adr",
+      "path": "docs/adr/0007-outbound-http-clients-send-an-explicit-user-agent.md",
+      "status": "accepted",
+      "title": "Outbound HTTP clients send an explicit User-Agent"
+    },
+    {
+      "id": "REV-ADR-0008",
+      "kind": "adr",
+      "path": "docs/adr/0008-adopt-impeccable-as-the-frontend-design-anti-pattern-detector.md",
+      "status": "accepted",
+      "title": "Adopt impeccable as the frontend design anti-pattern detector"
+    },
+    {
+      "id": "REV-ADR-0009",
+      "kind": "adr",
+      "path": "docs/adr/0009-backend-auxiliary-crates-axum-extra-serde-with-and-subtle.md",
+      "status": "accepted",
+      "title": "Backend auxiliary crates: axum-extra, serde_with, and subtle"
+    },
+    {
+      "id": "REV-ADR-0010",
+      "kind": "adr",
+      "path": "docs/adr/0010-frontend-data-layer-dependencies-react-query-and-dnd-kit.md",
+      "status": "accepted",
+      "title": "Frontend data-layer dependencies: React Query and dnd-kit"
+    },
+    {
       "id": "REV-DESIGN-0001",
       "kind": "design",
       "path": "docs/specs/library/design/0001-library-filter-and-sort-state.md",

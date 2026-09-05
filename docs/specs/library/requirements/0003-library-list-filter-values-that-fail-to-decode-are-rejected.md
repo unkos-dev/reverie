@@ -44,4 +44,3 @@ occurs.
 - A filter value that decodes successfully but violates a semantic bound (an over-cap value list, over-long text, an
   out-of-range rating, a negative page bound, or an unrecognised status token) is a distinct failure class, rejected
   with `422 Unprocessable Entity` rather than `400`; that class is not part of this obligation.
-- Satisfied by [Library filter and sort state](../design/0001-library-filter-and-sort-state.md).

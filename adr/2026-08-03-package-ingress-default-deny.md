@@ -138,9 +138,9 @@ Applies the self-purging shape from
 [2026-07-04-expect-over-allow-lint-suppressions.md](2026-07-04-expect-over-allow-lint-suppressions.md)
 to package ingress, and inherits its policy location from
 [2026-06-30-adopt-vite-plus-monorepo-toolchain.md](2026-06-30-adopt-vite-plus-monorepo-toolchain.md).
-Corrects the supply-chain consequence in
-[2026-05-21-impeccable-adoption.md](2026-05-21-impeccable-adoption.md), which
-named a `skipDownload` field no manifest carries.
+Governs the install-script denial
+[Adopt impeccable as the frontend design anti-pattern detector](../docs/adr/0008-adopt-impeccable-as-the-frontend-design-anti-pattern-detector.md)
+relies on.
 
 Revisit if npm gains per-workspace script policy, or if a dependency arrives
 that cannot work without its install script: a non-empty allowlist makes the

@@ -11,7 +11,7 @@ informed: "Reverie contributors"
 
 ## Context and Problem Statement
 
-The strict lint policy ([2026-05-03-strict-lint-policy.md](2026-05-03-strict-lint-policy.md))
+The strict lint policy ([Strict lint policy: pedantic clippy and strict frontend lint](../docs/adr/0002-strict-lint-policy-pedantic-clippy-and-strict-frontend-lint.md))
 denies whole lint classes and forces violations to be suppressed at the site.
 Those suppressions were written as `#[allow(...)]`, which is invisible to every
 tool once the suppressed lint stops firing: nothing reports a stale allow, so
@@ -93,7 +93,7 @@ Enforced by `allow_attributes = "deny"` and
 ## More Information
 
 Amends the enforcement mechanics of
-[2026-05-03-strict-lint-policy.md](2026-05-03-strict-lint-policy.md) without
+[Strict lint policy: pedantic clippy and strict frontend lint](../docs/adr/0002-strict-lint-policy-pedantic-clippy-and-strict-frontend-lint.md) without
 changing which lints are denied. Revisit if a future Rust release changes
 `#[expect]` semantics across `cfg` boundaries, which would allow retiring the
 `cfg_attr` escape hatch.

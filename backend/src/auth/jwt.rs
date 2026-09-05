@@ -139,7 +139,7 @@ const JWKS_REQUEST_TIMEOUT: Duration = Duration::from_secs(10);
 /// and `auth::oidc::http_client`: an empty `User-Agent` is matched by common
 /// WAF scanner blocklists (Cloudflare, AWS WAF), so every outbound client in
 /// this codebase is built through a sanctioned UA-setting constructor (see
-/// `adr/2026-05-18-outbound-http-user-agent.md`).
+/// `docs/adr/0007-outbound-http-clients-send-an-explicit-user-agent.md`).
 ///
 /// THREAT: the timeouts are availability defenses on the auth hot path.
 /// `jwks_client_rs`'s cache serves a previously cached key only after a
@@ -629,7 +629,7 @@ mod tests {
         assert!(validator.validate(&token).await.is_err());
     }
 
-    /// Invariant 3: a `jku`/`x5u` header pointing at an attacker-controlled
+    /// A `jku`/`x5u` header pointing at an attacker-controlled
     /// JWKS (served on a second wiremock, with its own distinct keypair)
     /// must never be followed. The attacker signs with their own key but
     /// reuses the real `kid`, so a validator that (incorrectly) followed

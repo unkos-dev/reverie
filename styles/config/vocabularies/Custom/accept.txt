@@ -459,6 +459,7 @@ sed
 Segoe
 semver
 serde
+serde_with
 serialises
 serialization
 serialized

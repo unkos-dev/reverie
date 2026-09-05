@@ -12,7 +12,7 @@ informed: "Reverie contributors"
 
 ## Context and Problem Statement
 
-`adr/2026-05-08-tiered-comment-policy.md` ratifies a tiered comment
+`docs/adr/0004-tiered-comment-policy-for-an-open-source-codebase.md` ratifies a tiered comment
 policy for Reverie's OSS-released codebase: Tier 1 (`pub` / `export`
 items at module boundaries) and Tier 2 (security-critical surfaces)
 carry explicit docstrings; Tier 3 (internal) and Tier 4 (tests +
@@ -38,7 +38,7 @@ flat-config registration of `typescript-eslint`'s `strictTypeChecked`
 preset, `@eslint-react`, `eslint-plugin-react-hooks`, and
 `eslint-plugin-react-refresh`. The chosen tool must coexist with
 that stack and pass through the `flat`-config registration pattern
-established in `adr/2026-05-04-replace-eslint-plugin-react.md`.
+established in "Replace eslint-plugin-react with @eslint-react" (retired; history holds the record).
 
 A second sub-decision rides along: **which rule set** to enable.
 TypeScript already encodes the WHAT (parameter types, return types,
@@ -172,7 +172,7 @@ rule; no native equivalent exists. A custom AST selector can
 enforce presence but cannot enforce shape (description sentence,
 empty-block detection). Maintenance burden falls on us; the
 existing project pattern from
-`adr/2026-05-04-replace-eslint-plugin-react.md` is to pick up
+"Replace eslint-plugin-react with @eslint-react" (retired; history holds the record) is to pick up
 well-maintained ecosystem plugins rather than hand-roll AST
 selectors when the plugin exists.
 
@@ -224,13 +224,13 @@ not a property reviewers happen to catch on the day.
 
 ## More Information
 
-- Parent: `adr/2026-05-08-tiered-comment-policy.md` (tier
+- Parent: `docs/adr/0004-tiered-comment-policy-for-an-open-source-codebase.md` (tier
   definitions, anti-patterns, threat-annotation shape).
 - Backend ratchet precedent: `backend/src/lib.rs:15`
   (`#![deny(missing_docs)]`), enabled under PRs #189–#194.
 - Flat-config registration precedent:
-  `adr/2026-05-04-replace-eslint-plugin-react.md`.
-- Strict-lint family: `adr/2026-05-03-strict-lint-policy.md`.
+  "Replace eslint-plugin-react with @eslint-react" (retired; history holds the record).
+- Strict-lint family: `docs/adr/0002-strict-lint-policy-pedantic-clippy-and-strict-frontend-lint.md`.
 - Implementation plan ingest:
   `.claude/PRPs/plans/unk-236-frontend-jsdoc.plan.md`.
 - Tracker: the frontend docstring tooling task

@@ -9,7 +9,7 @@
 //! # Tier 2 — security-critical
 //!
 //! All modules in this directory are Tier 2 under the comment policy
-//! (`adr/2026-05-08-tiered-comment-policy.md`). Threat annotations are
+//! (`docs/adr/0004-tiered-comment-policy-for-an-open-source-codebase.md`). Threat annotations are
 //! expressed inline (`// THREAT:`) and as one-line statements at the top
 //! of Tier 1 docstrings. The documented response-header policy lives in
 //! `docs/security/content-security-policy.md`; that document and these

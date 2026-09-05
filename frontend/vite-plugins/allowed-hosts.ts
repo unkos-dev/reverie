@@ -55,10 +55,10 @@ const HOST_TOKEN = /^[A-Za-z0-9.\-:[\]]+$/;
  * directive into the dev response header. Each entry is therefore validated
  * against a host-token character set (hostname / IPv4 / bracketed-IPv6 /
  * optional `:port` only) and a non-conforming value throws at config load rather
- * than reaching either consumer. Cross-reference: `adr/2026-05-08-tiered-comment-policy.md` § Tier 2.
+ * than reaching either consumer. Cross-reference: `docs/adr/0004-tiered-comment-policy-for-an-open-source-codebase.md` § Tier 2.
  *
  * Cross-references:
- *   - `adr/2026-05-08-tiered-comment-policy.md` § Tier 2.
+ *   - `docs/adr/0004-tiered-comment-policy-for-an-open-source-codebase.md` § Tier 2.
  *
  * @param envValue - Raw `REVERIE_DEV_HOSTS` value or undefined.
  * @returns Mutable array safe to hand to Vite's config (never aliased onto
