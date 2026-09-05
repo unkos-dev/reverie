@@ -141,7 +141,7 @@ nursery = { level = "warn", priority = -1 }
 
 # Pedantic lints inappropriate for application crates (vs library crates).
 # See docs/adr/0002-strict-lint-policy-pedantic-clippy-and-strict-frontend-lint.md for rationale;
-# docs/adr/0004-tiered-comment-policy-for-an-open-source-codebase.md re-enables the two doc lints after the backfill.
+# docs/adr/0004-tiered-comment-policy-for-an-open-source-codebase.md re-enables missing_errors_doc after the backfill.
 module_name_repetitions = "allow"
 missing_errors_doc = "allow"
 missing_panics_doc = "allow"

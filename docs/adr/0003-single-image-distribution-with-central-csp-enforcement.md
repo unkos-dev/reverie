@@ -92,7 +92,7 @@ Concretely:
   typical Rust-Axum "API server" archetype. Mitigated by keeping the static-serve module narrow
   (`backend/src/routes/spa.rs`) and the CSP module isolated (`backend/src/security/headers.rs`).
 - Negative: the build-time sidecar contract (`csp-hashes.json`) is an invariant the test suite must protect. If a
-  frontend refactor drops the plugin or changes its schema, the backend panics at startup. Mitigated by the tests in
+  frontend refactor drops the plugin or changes its schema, the backend fails startup with a non-zero exit. Mitigated by the tests in
   `frontend/vite-plugins/__tests__/csp-hash.test.ts` and by startup validation that fails fast and loud.
 - Positive: the active-dev iteration loop is unaffected by the image-distribution decision, since it runs Vite and
   `cargo watch` directly in the workspace; the image only matters for staging and production deploys.

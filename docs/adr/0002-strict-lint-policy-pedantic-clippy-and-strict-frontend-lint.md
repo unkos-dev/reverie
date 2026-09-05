@@ -151,4 +151,4 @@ the configuration itself.
   allow-list if Reverie ever publishes a library crate to crates.io.
 - [Tiered comment policy for an open-source codebase](./0004-tiered-comment-policy-for-an-open-source-codebase.md)
   narrows this allow-list: after the library split, `missing_errors_doc` is re-enabled once the per-module docstring
-  backfill completes, and `missing_panics_doc` stays allow-listed only until that lands.
+  backfill completes.

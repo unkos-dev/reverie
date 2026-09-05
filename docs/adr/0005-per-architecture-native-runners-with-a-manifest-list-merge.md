@@ -18,7 +18,7 @@ Reverie's Docker publish workflow built and published images from a single amd64
 record that decoupled the staging image from semver releases established two publication channels (a `main`-branch
 push emits `:main` and `:sha-<7>`; a `v*`-tag push emits `:vX.Y.Z` and `:X.Y`) and flagged multi-arch readiness as a
 later concern. Subsequent work added a trigger-driven platform matrix and `docker/setup-qemu-action`, so the amd64
-runner could produce arm64 layers via `binfmt_misc`. That put the arm64 image on `:main` and unblocked the homelab
+runner could produce arm64 layers via `binfmt_misc`. That put the arm64 image on `:main` and unblocked the arm64
 staging deploy, but left QEMU emulation as a permanent cost on every build.
 
 A post-merge run was still mid-build at the 30-minute mark on the single arm64-via-QEMU job, with Rust compilation
@@ -45,7 +45,7 @@ keeping the two-channel publication policy and the CI runtime the earlier record
 
 - Native runners per architecture, merged into a manifest list.
 - Native runner for the arm64 leg only, keep QEMU for tag-push amd64.
-- Self-hosted ARM runner on the homelab arm64 compute node.
+- Self-hosted ARM runner on the arm64 staging host.
 - Status quo: keep QEMU on every build.
 - Arm64-only on `v*` tags, the inverse of the chosen trigger split.
 - Full multi-arch build (amd64 and arm64) on both triggers.
@@ -60,7 +60,7 @@ The publish workflow builds each architecture on a native runner and merges a ma
 
 - A `prepare-matrix` job emits the build matrix as JSON based on `github.ref_type`: a tag push includes both
   `build (amd64)` on `ubuntu-latest` and `build (arm64)` on `ubuntu-24.04-arm`; a `main` push includes only the arm64
-  leg, whose sole consumer is the homelab arm64 staging host. A job-level `if:` cannot read the `matrix` context, so
+  leg, whose sole consumer is the arm64 staging host. A job-level `if:` cannot read the `matrix` context, so
   the per-trigger filter lives in the matrix shape rather than as a job gate.
 - Each `build` job uses `docker/build-push-action` with `push-by-digest=true` and `name-canonical=true`, sets
   `provenance: mode=max` and `sbom: true`, emits OCI labels via `docker/metadata-action` at build time (labels cannot
@@ -108,7 +108,7 @@ semver release. Only the build-execution shape changes.
 - Negative: leaves QEMU on the public release path, the worst place to absorb emulation cost; a half-measure that
   does not remove the dependency.
 
-### Self-hosted ARM runner on the homelab arm64 compute node
+### Self-hosted ARM runner on the arm64 staging host
 
 - Negative: self-hosted runners on a public repository are a documented security anti-pattern, since a fork can
   inject workflow code that runs on the self-hosted machine.
@@ -122,12 +122,12 @@ semver release. Only the build-execution shape changes.
 
 ### Arm64-only on `v*` tags, the inverse of the chosen trigger split
 
-- Negative: the homelab staging deploy consumes the `:main` arm64 image; making arm64 a release-only artefact
+- Negative: the arm64 staging deploy consumes the `:main` arm64 image; making arm64 a release-only artefact
   regresses staging.
 
 ### Full multi-arch build (amd64 and arm64) on both triggers
 
-- Negative: amd64 has no consumer today; the sole arm64 consumer is the homelab compute node, and the earlier
+- Negative: amd64 has no consumer today; the sole arm64 consumer is the staging host, and the earlier
   record's trigger split already decided amd64 is a release-only platform.
 
 ## More information
@@ -167,7 +167,7 @@ Open a superseding record if any of the following happen:
 - GitHub changes free-tier ARM runner pricing or availability. If `ubuntu-24.04-arm` becomes paid for public
   repositories, or capacity caps appear, the trade-off against self-hosted runners flips. Today the security cost of
   a self-hosted runner on a public repository dominates; if the hosted-runner cost rises enough, an ephemeral
-  self-hosted runner on the homelab arm64 node, with a fork-safe harness, may become defensible.
+  self-hosted runner on the arm64 staging host, with a fork-safe harness, may become defensible.
 - Sustained queue contention on free-tier ARM runners. There is no evidence of capacity issues today. If observed
   queue waits creep above the QEMU baseline this record replaced, the change is a net loss and warrants reversal or a
   self-hosted runner.

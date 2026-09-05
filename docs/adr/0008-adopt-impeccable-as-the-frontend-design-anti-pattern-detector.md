@@ -75,8 +75,9 @@ decision, to be made once the detector has earned its keep.
 hook runs a full scan whenever a staged path under `frontend/src/` has a `.ts`, `.tsx`, `.html`, or `.css`
 extension, through the same command the frontend CI job runs, so the local and CI checks agree. Both sides run advisory (the pre-commit hook with
 `|| true`, CI with `continue-on-error: true`) until the three deferred `bg-black` findings are addressed. Renovate
-tracks the package through the existing `config:recommended` extension; impeccable is past v1.0, so its bumps
-auto-merge under the stable-dependency rule rather than the pre-v1.0 manual-review rule.
+tracks the package through the existing `config:recommended` extension; impeccable is past v1.0, so its patch and
+minor bumps auto-merge under the stable-dependency rule rather than the pre-v1.0 manual-review rule; a major
+bump still waits for review.
 
 The install-script default-deny in `pnpm-workspace.yaml` denies puppeteer's install script, so the postinstall Chromium
 fetch never runs. impeccable's static path never invokes the puppeteer code path, which is reached only through the
