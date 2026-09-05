@@ -260,6 +260,13 @@
       "title": "Multi-column sort stack on the keyset list contract"
     },
     {
+      "id": "REV-ADR-0038",
+      "kind": "adr",
+      "path": "docs/adr/0038-typed-filter-grammar-on-list-endpoints.md",
+      "status": "accepted",
+      "title": "Typed filter grammar on list endpoints"
+    },
+    {
       "id": "REV-DESIGN-0001",
       "kind": "design",
       "path": "docs/specs/library/design/0001-library-filter-and-sort-state.md",
