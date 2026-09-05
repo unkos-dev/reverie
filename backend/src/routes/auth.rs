@@ -107,7 +107,7 @@ async fn oidc_login(
     // dedicated key so it can never shadow or be confused with the
     // long-lived app-level `csrf_token` (the synchronizer token)
     // that `/auth/callback` writes after a successful login. See
-    // docs/adr/0011-json-api-conventions-for-the-browser-facing-rest-surface.md §"CSRF defense".
+    // docs/adr/0011-json-api-conventions-for-the-browser-facing-rest-surface.md.
     session
         .insert("pkce_verifier", pkce_verifier.secret().clone())
         .await
@@ -245,8 +245,8 @@ async fn callback(
 
     // OWASP CSRF synchronizer token. This mints and exposes the token;
     // a separate validating middleware enforces it on mutating requests
-    // (see docs/adr/0011-json-api-conventions-for-the-browser-facing-rest-surface.md §"CSRF defense" and the
-    // order-of-operations note). 32 bytes from the OS CSPRNG, encoded
+    // (see docs/adr/0011-json-api-conventions-for-the-browser-facing-rest-surface.md).
+    // 32 bytes from the OS CSPRNG, encoded
     // as 43-char base64url-unpadded; mirrors `auth::token::generate_device_token`.
     //
     // THREAT: `SameSite=Lax` cookies alone don't cover top-level GET CSRF
@@ -1495,7 +1495,7 @@ mod tests {
         // validating middleware checks `X-CSRF-Token`; token issuance +
         // exposure ship here so the frontend can start reading it before
         // the middleware turns on. See
-        // docs/adr/0011-json-api-conventions-for-the-browser-facing-rest-surface.md §"CSRF defense".
+        // docs/adr/0011-json-api-conventions-for-the-browser-facing-rest-surface.md.
         let token = me_body
             .get("csrf_token")
             .and_then(|v| v.as_str())

@@ -69,7 +69,7 @@ zero-drift and gives third-party clients something to codegen against.
   the unit in which breaking _generations_ are expressed. This shifts the mount prefix the
   [JSON API conventions ADR](./0011-json-api-conventions-for-the-browser-facing-rest-surface.md) assumed
   (`/api/books` -> `/api/v1/books`) without changing any shape it fixed.
-- Operational and standard-protocol paths stay unversioned. `/health`, `/readiness`, the `/auth` flow, and the
+- Operational and standard-protocol paths stay unversioned. `/health`, `/health/ready`, the `/auth` flow, and the
   `/opds` feed are not part of the versioned data API: liveness and auth are operational, and OPDS is versioned by
   its own specification.
 - The API contract is an OpenAPI 3.1 document generated code-first from the handlers, as the single source of

@@ -272,7 +272,7 @@ handler picks it up at that point.
 - Negative: rejected because the browser UI uses cookie sessions for the same reason the existing `/auth/login` and
   `/auth/me` flows do (OIDC-driven login, no per-request token management on the client side). Hybrid stacks need
   browser-CSRF defence for the cookie surface and token-auth for the API client surface separately: Reverie ships
-  CSRF for browser cookies, and bearer tokens exist on a separate endpoint set (`/api/tokens` issues device tokens;
+  CSRF for browser cookies, and bearer tokens exist on a separate endpoint set (`/api/v1/tokens` issues device tokens;
   those endpoints sit behind `BasicOnly`/`Bearer` extractors that bypass the cookie session entirely and thus don't
   need CSRF, per `backend/src/auth/middleware.rs`).
 
