@@ -92,6 +92,13 @@
       "title": "A typed ValidationStatus enum reconciles the vocabulary"
     },
     {
+      "id": "REV-ADR-0014",
+      "kind": "adr",
+      "path": "docs/adr/0014-migration-model-hybrid-entrypoints-and-a-least-privilege-role.md",
+      "status": "accepted",
+      "title": "Migration model: hybrid entrypoints and a least-privilege role"
+    },
+    {
       "id": "REV-DESIGN-0001",
       "kind": "design",
       "path": "docs/specs/library/design/0001-library-filter-and-sort-state.md",
