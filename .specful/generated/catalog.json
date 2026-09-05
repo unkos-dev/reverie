@@ -218,6 +218,13 @@
       "title": "Adopt lefthook, replacing husky and lint-staged"
     },
     {
+      "id": "REV-ADR-0032",
+      "kind": "adr",
+      "path": "docs/adr/0032-adopt-oxfmt-replacing-prettier.md",
+      "status": "accepted",
+      "title": "Adopt oxfmt, replacing Prettier"
+    },
+    {
       "id": "REV-DESIGN-0001",
       "kind": "design",
       "path": "docs/specs/library/design/0001-library-filter-and-sort-state.md",
