@@ -20,5 +20,3 @@ An Architecture Decision Record (ADR) captures an important architecture decisio
 - If replaced later: create the replacement with `supersedes: ["superseded/<old>.md"]`; on the old ADR set `status: superseded` + `superseded-by: ["../<new>.md"]` and `git mv` it into `adr/superseded/`.
 
 ## ADRs
-
-- [Library sort is a per-user preference, resolved client-side, never URL state](2026-08-08-library-sort-per-user-preference.md) (accepted, 2026-08-08)

@@ -329,6 +329,13 @@
       "title": "chrono is the first-party datetime crate"
     },
     {
+      "id": "REV-ADR-0047",
+      "kind": "adr",
+      "path": "docs/adr/0047-library-sort-is-a-per-user-preference-never-url-state.md",
+      "status": "accepted",
+      "title": "Library sort is a per-user preference, never URL state"
+    },
+    {
       "id": "REV-DESIGN-0001",
       "kind": "design",
       "path": "docs/specs/library/design/0001-library-filter-and-sort-state.md",
