@@ -23,7 +23,6 @@ An Architecture Decision Record (ADR) captures an important architecture decisio
 
 - [Frontend docstring linting via `eslint-plugin-jsdoc`](superseded/2026-05-22-frontend-docstring-tooling.md) (superseded by [Adopt oxlint, replacing the ESLint toolchain](2026-06-27-adopt-oxlint-toolchain.md), 2026-06-27)
 - [Accessibility review process: automated axe gate + manual audit cadence](superseded/2026-06-05-accessibility-review-process.md) (superseded by [Accessibility gate and render-verification on the Playwright stack](2026-07-13-a11y-gate-on-playwright.md), 2026-07-13)
-- [Connection pooling: in-process sqlx PgPool as the sole pooling layer](2026-06-08-connection-pooling.md) (accepted, 2026-06-08)
 - [Durable, crash-safe state in Postgres via atomic transactions](2026-06-08-postgres-backed-crash-safe-state.md) (accepted, 2026-06-08)
 - [Scale stance: stateless application, operator-enabled HA, no first-party distributed infrastructure](2026-06-08-scale-stance-stateless-enable-not-own.md) (accepted, 2026-06-08)
 - [Standards-first integrations: expose open interfaces, bundle no adjacent services](2026-06-08-standards-first-integrations.md) (accepted, 2026-06-08)

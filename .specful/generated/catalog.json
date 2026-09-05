@@ -113,6 +113,13 @@
       "title": "API versioning by URL path with OpenAPI as the contract"
     },
     {
+      "id": "REV-ADR-0017",
+      "kind": "adr",
+      "path": "docs/adr/0017-in-process-sqlx-pgpool-as-the-sole-pooling-layer.md",
+      "status": "accepted",
+      "title": "In-process sqlx PgPool as the sole pooling layer"
+    },
+    {
       "id": "REV-DESIGN-0001",
       "kind": "design",
       "path": "docs/specs/library/design/0001-library-filter-and-sort-state.md",
