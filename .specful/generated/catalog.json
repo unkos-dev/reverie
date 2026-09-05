@@ -141,6 +141,13 @@
       "title": "Durable, crash-safe state in Postgres via atomic transactions"
     },
     {
+      "id": "REV-ADR-0021",
+      "kind": "adr",
+      "path": "docs/adr/0021-scale-stance-stateless-application-operator-enabled-ha.md",
+      "status": "accepted",
+      "title": "Scale stance: stateless application, operator-enabled HA"
+    },
+    {
       "id": "REV-DESIGN-0001",
       "kind": "design",
       "path": "docs/specs/library/design/0001-library-filter-and-sort-state.md",
