@@ -23,7 +23,7 @@
  * sibling's keys.
  *
  * Sort is the exception: it is a per-user preference with no URL form
- * (adr/2026-08-08-library-sort-per-user-preference.md), so the sort section
+ * (docs/adr/0047-library-sort-is-a-per-user-preference-never-url-state.md), so the sort section
  * renders and edits the resolved stack the page passes down, and its
  * gestures dispatch to the page's one sort intent handler. The table view's
  * header click / ctrl-click edits the same stack through the same handler.

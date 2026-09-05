@@ -471,7 +471,7 @@ export function hasActiveFilterState(state: FilterState): boolean {
  * Parse the URL search params into a {@link ListBooksParams}. Filter params
  * flow through the tolerant {@link parseFilterParams} codec. `sort` is
  * deliberately not read: the library's sort is a per-user preference with no
- * URL form (`adr/2026-08-08-library-sort-per-user-preference.md`), so a
+ * URL form (`docs/adr/0047-library-sort-is-a-per-user-preference-never-url-state.md`), so a
  * stale `?sort=` from an old bookmark is inert and the caller supplies any
  * sort override from the preference surface instead.
  */

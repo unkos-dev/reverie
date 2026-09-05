@@ -5,12 +5,12 @@ conditions. Each entry is a known-wrong-shape the project carries
 temporarily because of a specific constraint, with a recorded plan to
 remove it.
 
-`debt/` is sister to `adr/`, not a subset:
+`debt/` is sister to `docs/adr/`, not a subset:
 
-| Artefact | Purpose                                                        | Lifecycle                              |
-| -------- | -------------------------------------------------------------- | -------------------------------------- |
-| `adr/`   | Decisions ("we chose X over Y, here's why")                    | proposed → accepted → maybe superseded |
-| `debt/`  | Concessions ("we know this is wrong, accepting until Y lifts") | active → purged on resolution          |
+| Artefact    | Purpose                                                        | Lifecycle                              |
+| ----------- | -------------------------------------------------------------- | -------------------------------------- |
+| `docs/adr/` | Decisions ("we chose X over Y, here's why")                    | proposed → accepted → maybe superseded |
+| `debt/`     | Concessions ("we know this is wrong, accepting until Y lifts") | active → purged on resolution          |
 
 If you're recording a deliberate choice, write an ADR. If you're
 recording a constraint you intend to remove, write a debt entry.

@@ -478,7 +478,7 @@ worktree branch base="":
     # per-checkout fallback, so a stale one heals itself; the cost while this
     # worktree lives is that every other checkout runs its binary. Leaving
     # install scripts unrun in a fresh checkout also matches
-    # adr/2026-08-03-package-ingress-default-deny.md.
+    # docs/adr/0045-package-ingress-default-deny-controls-no-per-package-allowances.md.
     #
     # The install runs under the pnpm the destination declares, not the one this
     # checkout has on PATH, because a branch may pin a different version. The

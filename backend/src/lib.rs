@@ -83,7 +83,7 @@ pub fn build_router(state: AppState) -> Router {
 /// Production builds use `PostgresStore` via [`build_router`].
 #[expect(
     clippy::disallowed_types,
-    reason = "tower_sessions::Expiry::OnInactivity takes a time::Duration and accepts no chrono equivalent; see adr/2026-08-05-first-party-datetime-crate.md"
+    reason = "tower_sessions::Expiry::OnInactivity takes a time::Duration and accepts no chrono equivalent; see docs/adr/0046-chrono-is-the-first-party-datetime-crate.md"
 )]
 pub(crate) fn build_router_with_session_store<S>(state: AppState, session_store: S) -> Router
 where
@@ -1186,7 +1186,7 @@ mod tests {
     #[sqlx::test(migrations = "./migrations")]
     #[expect(
         clippy::disallowed_types,
-        reason = "tower_sessions::session::Record::expiry_date is a time::OffsetDateTime; see adr/2026-08-05-first-party-datetime-crate.md"
+        reason = "tower_sessions::session::Record::expiry_date is a time::OffsetDateTime; see docs/adr/0046-chrono-is-the-first-party-datetime-crate.md"
     )]
     async fn session_record_survives_store_restart(pool: sqlx::PgPool) {
         use std::collections::HashMap;
@@ -1236,7 +1236,7 @@ mod tests {
     #[sqlx::test(migrations = "./migrations")]
     #[expect(
         clippy::disallowed_types,
-        reason = "tower_sessions::session::Record::expiry_date is a time::OffsetDateTime; see adr/2026-08-05-first-party-datetime-crate.md"
+        reason = "tower_sessions::session::Record::expiry_date is a time::OffsetDateTime; see docs/adr/0046-chrono-is-the-first-party-datetime-crate.md"
     )]
     async fn expired_session_is_not_returned(pool: sqlx::PgPool) {
         use std::collections::HashMap;
@@ -1276,7 +1276,7 @@ mod tests {
     #[sqlx::test(migrations = "./migrations")]
     #[expect(
         clippy::disallowed_types,
-        reason = "tower_sessions::session::Record::expiry_date is a time::OffsetDateTime; see adr/2026-08-05-first-party-datetime-crate.md"
+        reason = "tower_sessions::session::Record::expiry_date is a time::OffsetDateTime; see docs/adr/0046-chrono-is-the-first-party-datetime-crate.md"
     )]
     async fn store_save_updates_existing_record(pool: sqlx::PgPool) {
         use std::collections::HashMap;
@@ -1320,7 +1320,7 @@ mod tests {
     #[sqlx::test(migrations = "./migrations")]
     #[expect(
         clippy::disallowed_types,
-        reason = "tower_sessions::session::Record::expiry_date is a time::OffsetDateTime; see adr/2026-08-05-first-party-datetime-crate.md"
+        reason = "tower_sessions::session::Record::expiry_date is a time::OffsetDateTime; see docs/adr/0046-chrono-is-the-first-party-datetime-crate.md"
     )]
     async fn store_delete_removes_record(pool: sqlx::PgPool) {
         use std::collections::HashMap;

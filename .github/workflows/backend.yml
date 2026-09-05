@@ -158,7 +158,7 @@ jobs:
           save-if: ${{ github.ref == 'refs/heads/main' }}
 
       # Content-addressed compile cache in R2, keyed per crate. See
-      # adr/2026-07-26-remote-build-cache-on-r2.md.
+      # docs/adr/0043-remote-rust-build-cache-on-object-storage.md.
       #
       # Write credentials are reserved for pushes to main; a PR gets object-read keys.
       #

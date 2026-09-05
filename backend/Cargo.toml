@@ -36,7 +36,7 @@ base64ct = { version = "1.8.3", features = ["std"] }
 # First-party datetime crate. `DateTime<Utc>` carries the UTC invariant in the
 # type parameter, and its serde default is RFC 3339 both directions, so the
 # published wire contract holds without a per-field adapter attribute.
-# See adr/2026-08-05-first-party-datetime-crate.md.
+# See docs/adr/0046-chrono-is-the-first-party-datetime-crate.md.
 chrono = { version = "0.4.44", features = ["serde"] }
 crc = "3.4.0"
 email_address = "0.2.9"

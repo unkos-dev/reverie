@@ -65,7 +65,7 @@ Timestamps serialise as RFC 3339 strings (for example `"2026-05-22T13:42:00.123Z
 Postgres normalising `timestamptz` to UTC. Values are `Z`-terminated, never a numeric offset. Sub-second digits are
 emitted only when non-zero, so consumers must accept variable fractional precision rather than a fixed width. Which
 datetime crate the backend uses, and therefore what makes a DTO field carry this shape, is a separate decision
-recorded in [chrono is the first-party datetime crate](../../adr/2026-08-05-first-party-datetime-crate.md); this
+recorded in [chrono is the first-party datetime crate](./0046-chrono-is-the-first-party-datetime-crate.md); this
 convention governs the wire format only. The RFC 3339 shape matches the existing OPDS Atom feed (Atom's `<updated>`
 and `<published>` use the same shape per RFC 4287 §3.3), so the two surfaces stay consistent for any operator who
 reads both.

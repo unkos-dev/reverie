@@ -24,7 +24,7 @@ loader a cache key that cannot match a reader with a stored override. Binding re
 the second source by construction. Sending the installation default explicitly would reintroduce the mismatch, because
 an inheriting reader's list-query key would then depend on server state the route loader cannot see. The decision and
 its drivers are recorded in
-[Library sort is a per-user preference, resolved client-side, never URL state](../../../../adr/2026-08-08-library-sort-per-user-preference.md).
+[Library sort is a per-user preference, resolved client-side, never URL state](../../../adr/0047-library-sort-is-a-per-user-preference-never-url-state.md).
 
 ## Acceptance criteria
 

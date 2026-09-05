@@ -60,5 +60,5 @@ every other action in the workflow.
 
 ## Related
 
-- `adr/2026-07-26-remote-build-cache-on-r2.md`
+- `docs/adr/0043-remote-rust-build-cache-on-object-storage.md`
 - `debt/2026-07-26-kache-shard-upload-step.md`

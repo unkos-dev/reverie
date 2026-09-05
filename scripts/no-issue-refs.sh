@@ -56,7 +56,7 @@ self_check() {
   grep -qE "$pattern" <<<'see UNK-123 for context' || return 1
   is_gated backend/src/main.rs || return 1
   is_gated frontend/src/App.tsx || return 1
-  is_gated adr/some-decision.md || return 1
+  is_gated docs/adr/some-decision.md || return 1
   ! is_gated AGENTS.md || return 1
   ! is_gated frontend/src/components/ui/button.tsx || return 1
 }

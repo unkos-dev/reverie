@@ -126,7 +126,7 @@ const LIBRARY_PARSERS = {
   q: parseAsString,
   cursor: parseAsString,
   // No `sort` key: the library's sort is a per-user preference with no URL
-  // form (adr/2026-08-08-library-sort-per-user-preference.md). A stale
+  // form (docs/adr/0047-library-sort-is-a-per-user-preference-never-url-state.md). A stale
   // `?sort=` from an old bookmark is inert, like the dead text params below.
   view: parseAsString,
   series: parseAsString,

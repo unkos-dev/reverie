@@ -59,9 +59,9 @@ deserialises from it without any field attribute, so the defect class that shipp
 rather than becoming better policed. `DateTime<Utc>` also encodes UTC in its type parameter, which turns the storage
 invariant into something the compiler checks.
 
-The decisive practical point is that the integration cost of this choice is zero. The database layer maps
-`DateTime<Utc>` to `timestamptz` natively, and the OpenAPI generator maps it to `string` / `date-time` natively. Both
-are first-party features of those crates, so nothing is wrapped, adapted, or hand-maintained.
+The integration cost of this choice is zero. The database layer maps `DateTime<Utc>` to `timestamptz` natively, and
+the OpenAPI generator maps it to `string` / `date-time` natively. Both are first-party features of those crates, so
+nothing is wrapped, adapted, or hand-maintained.
 
 `time` is not removed. Three third-party signatures accept its types and no others: the session layer's inactivity
 expiry, the cookie builder's `max_age`, and the session record whose expiry field the session store persists. Those

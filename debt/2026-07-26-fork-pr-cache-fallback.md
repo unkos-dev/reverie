@@ -65,4 +65,4 @@ Any of:
 
 ## Related
 
-- `adr/2026-07-26-remote-build-cache-on-r2.md`
+- `docs/adr/0043-remote-rust-build-cache-on-object-storage.md`

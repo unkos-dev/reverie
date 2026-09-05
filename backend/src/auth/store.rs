@@ -27,7 +27,7 @@
 
 #![expect(
     clippy::disallowed_types,
-    reason = "tower_sessions::session::Record::expiry_date is a time::OffsetDateTime, converted to DateTime<Utc> by expiry_to_timestamptz before it reaches sqlx; see adr/2026-08-05-first-party-datetime-crate.md"
+    reason = "tower_sessions::session::Record::expiry_date is a time::OffsetDateTime, converted to DateTime<Utc> by expiry_to_timestamptz before it reaches sqlx; see docs/adr/0046-chrono-is-the-first-party-datetime-crate.md"
 )]
 
 use async_trait::async_trait;
