@@ -305,6 +305,18 @@
       "title": "Library filter and sort state"
     },
     {
+      "governed-by": [
+        "REV-ADR-0040"
+      ],
+      "id": "REV-DESIGN-0002",
+      "kind": "design",
+      "path": "docs/specs/accessibility/design/0002-accessibility-gate-and-manual-audit.md",
+      "satisfies": [
+        "REV-REQ-0004"
+      ],
+      "title": "Accessibility gate and manual audit"
+    },
+    {
       "id": "REV-REQ-0001",
       "kind": "req",
       "path": "docs/specs/library/requirements/0001-library-sort-resolves-only-from-the-per-user-preference.md",
@@ -321,6 +333,15 @@
       "kind": "req",
       "path": "docs/specs/library/requirements/0003-library-list-filter-values-that-fail-to-decode-are-rejected.md",
       "title": "Library list filter values that fail to decode are rejected"
+    },
+    {
+      "governed-by": [
+        "REV-ADR-0040"
+      ],
+      "id": "REV-REQ-0004",
+      "kind": "req",
+      "path": "docs/specs/accessibility/requirements/0004-web-surfaces-meet-wcag-2-2-level-aa.md",
+      "title": "Web surfaces meet WCAG 2.2 Level AA"
     }
   ]
 }
