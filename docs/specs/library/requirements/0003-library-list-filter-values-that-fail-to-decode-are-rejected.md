@@ -3,6 +3,8 @@ type: REQ
 profile-version: 1
 id: "REV-REQ-0003"
 title: "Library list filter values that fail to decode are rejected"
+governed-by:
+  - "REV-ADR-0038"
 ---
 
 # Library list filter values that fail to decode are rejected
@@ -39,8 +41,8 @@ occurs.
 
 ## More information
 
-- [Typed filter grammar on list endpoints](../../../adr/0038-typed-filter-grammar-on-list-endpoints.md): the
-  suffix-operator grammar and closed column set this obligation guards the value side of.
+- This obligation guards the value side of the suffix-operator grammar and closed column set that the typed filter
+  grammar decision defines.
 - A filter value that decodes successfully but violates a semantic bound (an over-cap value list, over-long text, an
   out-of-range rating, a negative page bound, or an unrecognised status token) is a distinct failure class, rejected
   with `422 Unprocessable Entity` rather than `400`; that class is not part of this obligation.
