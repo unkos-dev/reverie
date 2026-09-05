@@ -45,4 +45,3 @@ its drivers are recorded in
 
 - [Multi-column sort stack on the keyset list contract](../../../../adr/2026-07-07-multi-column-sort-stack.md): the
   wire grammar and whitelist the resolved stack is expressed in.
-- Satisfied by [Library filter and sort state](../design/0001-library-filter-and-sort-state.md).

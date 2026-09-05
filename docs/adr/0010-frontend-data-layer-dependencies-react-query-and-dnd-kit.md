@@ -8,8 +8,6 @@ recorded-on: "2026-09-04"
 decided-on: "2026-05-22"
 decision-makers:
   - "John Unkovich"
-informed:
-  - "Reverie contributors"
 ---
 
 # Frontend data-layer dependencies: React Query and dnd-kit
@@ -90,14 +88,6 @@ keyboard support by default.
   state machines per page.
 - Negative: React Query has a learning curve for contributors coming from Redux or SWR. Mitigated by a query-key
   factory in `frontend/src/lib/query/keys.ts` that collapses key shape into one authoritative place.
-
-### Confirmation
-
-`@tanstack/react-query`, `@tanstack/react-query-devtools`, `@dnd-kit/sortable`, and `@dnd-kit/core` are pinned under
-`frontend/package.json`. `frontend/src/lib/query/client.test.ts` and `frontend/src/lib/query/devtools.test.tsx`
-exercise the query client and the gated devtools import; `frontend/src/pages/shelves/ShelfDetailPage.tsx` is the
-`DndContext`/`useSortable` consumer for shelf reordering. `just js::build` runs the frontend's `tsgo` typecheck,
-which fails if any of these imports breaks.
 
 ## Pros and cons of the options
 

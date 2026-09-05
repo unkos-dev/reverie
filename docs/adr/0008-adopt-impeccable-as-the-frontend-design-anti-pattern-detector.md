@@ -8,8 +8,6 @@ recorded-on: "2026-09-04"
 decided-on: "2026-05-21"
 decision-makers:
   - "John Unkovich"
-informed:
-  - "Reverie contributors"
 ---
 
 # Adopt impeccable as the frontend design anti-pattern detector
@@ -108,16 +106,6 @@ drift, and pays the cost for a feature that isn't run).
 - Negative: detector rules are upstream-controlled, so rule churn could surface false positives mid-development.
 - Negative: the LLM critique surface is opinionated and could conflict with the locked brand if invoked
   indiscriminately; mitigated by deferring the skill-side install to a separate decision.
-
-### Confirmation
-
-The pre-commit hook `impeccable` in `lefthook.yml` runs `vp run --filter frontend detect` (advisory, `|| true`)
-whenever a staged path under `frontend/src/` has a `.ts`, `.tsx`, `.html`, or `.css` extension. The frontend CI
-workflow
-(`.github/workflows/frontend.yml`) runs the same detector as the "Detect (impeccable, advisory)" step, with
-`continue-on-error: true`. `frontend/package.json` pins `impeccable` as a devDependency and defines the `detect`
-script (`impeccable detect src`) that both invocations reach through `just js::detect`. `pnpm-workspace.yaml`'s
-`allowBuilds.puppeteer: false` denies puppeteer's install script, keeping the Chromium fetch out of a clean install.
 
 ## Pros and cons of the options
 

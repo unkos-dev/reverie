@@ -8,8 +8,6 @@ recorded-on: "2026-09-04"
 decided-on: "2026-05-05"
 decision-makers:
   - "John Unkovich"
-informed:
-  - "Reverie contributors"
 ---
 
 # Single-image distribution with central CSP enforcement
@@ -98,15 +96,6 @@ Concretely:
   `frontend/vite-plugins/__tests__/csp-hash.test.ts` and by startup validation that fails fast and loud.
 - Positive: the active-dev iteration loop is unaffected by the image-distribution decision, since it runs Vite and
   `cargo watch` directly in the workspace; the image only matters for staging and production deploys.
-
-### Confirmation
-
-`backend/src/security/headers.rs` emits the CSP header from the loaded hashes and serves the SPA fallback
-response; `backend/src/security/dist_validation.rs` validates the `csp-hashes.json` sidecar and the
-frontend dist directory at backend startup and fails the process when either is missing or malformed;
-`frontend/vite-plugins/csp-hash.ts` emits that sidecar at build time, with its contract covered by
-`frontend/vite-plugins/__tests__/csp-hash.test.ts`. `Dockerfile` is the single multi-stage build that produces
-the one distributed image, and `.github/workflows/docker-publish.yml` publishes it.
 
 ## Pros and cons of the options
 

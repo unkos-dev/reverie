@@ -8,8 +8,6 @@ recorded-on: "2026-09-04"
 decided-on: "2026-05-08"
 decision-makers:
   - "John Unkovich"
-informed:
-  - "Reverie contributors"
 ---
 
 # Tiered comment policy for an open-source codebase
@@ -150,17 +148,6 @@ a lint gate; the tier definitions themselves, and the backend `#![deny(missing_d
   one with no docstring, so review has to catch docstring drift in changes that touch documented code.
 - Negative: frontend docstring presence lost its mechanical floor when `eslint-plugin-jsdoc` was removed with the
   ESLint toolchain; it is now a reviewed convention rather than a lint gate.
-
-### Confirmation
-
-`backend/src/lib.rs` carries `#![deny(missing_docs)]` at the crate root with no module-level exemptions remaining,
-so every `pub` item reachable from the crate boundary requires a doc comment; continuous integration runs
-`cargo doc --locked --no-deps --workspace` with `RUSTDOCFLAGS: -D rustdoc::broken_intra_doc_links`
-(`.github/workflows/backend.yml`), and the same workflow's clippy step runs under `-D warnings`.
-`missing_errors_doc` and `missing_panics_doc` are still `allow` in `backend/Cargo.toml`'s `[lints.clippy]` table,
-whose comment records the pending re-enable, so `# Errors` and `# Panics` presence is honoured by review until that
-lands. Tier 2 `// THREAT:` annotations and frontend Tier 1
-docstrings have no mechanical check: both are honoured by review.
 
 ## Pros and cons of the options
 

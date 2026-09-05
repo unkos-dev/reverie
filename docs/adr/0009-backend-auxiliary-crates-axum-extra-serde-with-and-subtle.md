@@ -8,8 +8,6 @@ recorded-on: "2026-09-04"
 decided-on: "2026-05-22"
 decision-makers:
   - "John Unkovich"
-informed:
-  - "Reverie contributors"
 ---
 
 # Backend auxiliary crates: axum-extra, serde_with, and subtle
@@ -83,16 +81,6 @@ existing precedent.
   features, such as `"macros"`, needs its own justification.
 - Negative: the `axum-extra` `"query"` feature pulls in `serde_qs` transitively, growing the lockfile by one
   indirect dependency.
-
-### Confirmation
-
-`backend/Cargo.toml` carries the `axum-extra` entry with `"query"` in its feature list, the `serde_with` dependency
-with `default-features = false` and `features = ["std"]`, and the `subtle` dependency. `axum_extra::extract::Query`
-is imported across the route handlers that decode query parameters, including `backend/src/routes/library/mod.rs`,
-`backend/src/routes/dashboard/mod.rs`, `backend/src/routes/suggest.rs`, and `backend/src/routes/auth.rs`.
-`serde_with::rust::double_option` annotates the Merge Patch request structs in `backend/src/routes/metadata.rs`,
-`backend/src/routes/reading.rs`, and `backend/src/routes/preferences/mod.rs`. `subtle::ConstantTimeEq` is used in
-`backend/src/auth/token.rs` (the device-token verifier) and `backend/src/security/csrf.rs` (the CSRF token check).
 
 ## Pros and cons of the options
 

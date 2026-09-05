@@ -7,8 +7,6 @@ status: "accepted"
 recorded-on: "2026-09-04"
 decision-makers:
   - "John Unkovich"
-informed:
-  - "Reverie contributors"
 ---
 
 # Adopt Specful for requirements, designs, and decision records
@@ -65,13 +63,6 @@ part of the adoption.
   it.
 - Negative: two lint configurations changed to accommodate the artifact shape: the formatter ignores the generated
   catalog, and markdownlint no longer counts a frontmatter title as a second top-level heading.
-
-### Confirmation
-
-`just infra::specful` runs `specful index --check` and `specful validate` and is a dependency of the `lint` aggregate,
-a pre-commit job gated on `docs/specs/**`, `docs/adr/**`, and `.specful/**`, and a step in the CI prose job. The
-agent instructions require new requirements, designs, and decision records to be created with `specful new` and the
-generated views to be committed with the change.
 
 ## Pros and cons of the options
 

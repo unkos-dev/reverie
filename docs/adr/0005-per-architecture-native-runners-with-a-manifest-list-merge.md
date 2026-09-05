@@ -8,8 +8,6 @@ recorded-on: "2026-09-04"
 decided-on: "2026-05-12"
 decision-makers:
   - "John Unkovich"
-informed:
-  - "Reverie contributors"
 ---
 
 # Per-architecture native runners with a manifest-list merge
@@ -96,19 +94,6 @@ semver release. Only the build-execution shape changes.
   runner-minutes on tag pushes stay close to the QEMU baseline, since the arm64 leg dominates either way.
 - Negative: the workflow depends on continued GitHub free-tier ARM64 runner availability; a pricing or capacity
   change would slow or break the build.
-
-### Confirmation
-
-`.github/workflows/docker-publish.yml` implements this decision: the `prepare-matrix` job emits `ubuntu-24.04-arm`
-as the arm64 leg's runner and `ubuntu-latest` for amd64, gated on `github.ref_type`; a `build` job runs once per
-matrix entry with `docker/build-push-action` pushing by digest; a `merge` job downloads the digests and runs
-`docker buildx imagetools create`. `docker/setup-qemu-action` does not appear anywhere in the workflow. The
-`docker/metadata-action` tag block in the `merge` job matches the two-channel policy (`type=semver` twice,
-`type=ref,event=branch`, `type=sha,prefix=sha-,enable=...`), though the sha-prefix condition today also requires
-`github.ref_name == 'main'`, narrower than the `github.ref_type != 'tag'` condition this record states. The
-`concurrency` group is keyed on `github.ref` as described, but the workflow no longer sets
-`cancel-in-progress: true`; the workflow's own comment now states that an in-flight publish is serialized and never
-cancelled, a later change than this decision.
 
 ## Pros and cons of the options
 

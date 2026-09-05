@@ -225,6 +225,3 @@ a whole, not by this Design.
 - [Single filter home in the library right rail](../../../../adr/2026-07-10-library-filter-home-right-rail.md)
 - [Library sort is a per-user preference, resolved client-side, never URL state](../../../../adr/2026-08-08-library-sort-per-user-preference.md)
 - [No unbounded queries: keyset pagination as the default list contract](../../../../adr/2026-06-08-keyset-pagination-list-contract.md)
-- Satisfies [Library sort resolves only from the per-user preference](../requirements/0001-library-sort-resolves-only-from-the-per-user-preference.md),
-  [Library filter state has exactly one writer](../requirements/0002-library-filter-state-has-exactly-one-writer.md),
-  and [Library list filter values that fail to decode are rejected](../requirements/0003-library-list-filter-values-that-fail-to-decode-are-rejected.md).

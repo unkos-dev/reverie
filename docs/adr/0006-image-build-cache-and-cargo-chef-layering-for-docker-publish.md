@@ -8,8 +8,6 @@ recorded-on: "2026-09-04"
 decided-on: "2026-05-13"
 decision-makers:
   - "John Unkovich"
-informed:
-  - "Reverie contributors"
 ---
 
 # Image build cache and cargo-chef layering for Docker publish
@@ -122,14 +120,6 @@ allow ad-hoc rebuilds and feature-branch verification of workflow changes that w
 - Negative: tag-push (`refs/tags/v*`) cache-hit behaviour was unverified at the time of the decision. GHA's
   base-ref fallback should apply to tag refs, but documented behaviour for tag refs is ambiguous, and both outcomes
   are functionally correct with only performance differing.
-
-### Confirmation
-
-The cargo-chef layering is in `Dockerfile`: the `chef` stage installs a pinned, locked `cargo-chef`, the `planner`
-stage emits `recipe.json`, the `cooker` stage runs `cargo chef cook` against that recipe, and the `backend-builder`
-stage builds the real binary on top. The GHA cache backend and the `workflow_dispatch` trigger are in
-`.github/workflows/docker-publish.yml`, whose `cache-from`/`cache-to` lines pass `type=gha` scoped by
-`buildcache-<arch>` with `mode=max` on `cache-to`, and whose `on:` block carries `workflow_dispatch`.
 
 ## Pros and cons of the options
 

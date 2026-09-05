@@ -8,8 +8,6 @@ recorded-on: "2026-09-04"
 decided-on: "2026-05-18"
 decision-makers:
   - "John Unkovich"
-informed:
-  - "Reverie contributors"
 ---
 
 # Outbound HTTP clients send an explicit User-Agent
@@ -88,14 +86,6 @@ top-of-file `//!` docs so a future reader meets it without first finding this re
 - Negative: the OIDC User-Agent carries no operator contact, because discovery happens before operator-contact
   configuration is available and threading it through costs more than the marginal benefit; operator contact appears
   only on the enrichment clients.
-
-### Confirmation
-
-`backend/clippy.toml` bans `reqwest::Client::new`, `reqwest::Client::builder`, and `reqwest::ClientBuilder::new` as
-disallowed methods, so every production client is built through one of the sanctioned constructors that set the
-header. `backend/src/auth/oidc.rs` carries the
-regression test `http_client_sends_reverie_user_agent`, which fails if the OIDC client's User-Agent is removed or
-changes shape.
 
 ## Pros and cons of the options
 

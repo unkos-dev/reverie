@@ -8,8 +8,6 @@ recorded-on: "2026-09-04"
 decided-on: "2026-05-03"
 decision-makers:
   - "John Unkovich"
-informed:
-  - "Reverie contributors"
 ---
 
 # Strict lint policy: pedantic clippy and strict frontend lint
@@ -95,17 +93,6 @@ the configuration itself.
   suppression. Accepted as a recurring but bounded cost.
 - Negative: the CI clippy step runs slower with pedantic and nursery enabled.
 
-### Confirmation
-
-Backend: `[lints.clippy]` in `backend/Cargo.toml` sets `pedantic` and `nursery` to `warn` and the project-specific
-rules (`unwrap_used`, `expect_used`, `let_underscore_must_use`, `print_stdout`, `print_stderr`, `dbg_macro`,
-`undocumented_unsafe_blocks`) to `deny`; `backend/clippy.toml` carries the `disallowed-methods` entries;
-`backend/src/lib.rs` carries the crate-root test exclusion `#![cfg_attr(test, allow(...))]`; CI runs
-`cargo clippy --workspace --all-targets --locked -- -D warnings` (`.github/workflows/backend.yml`, mirrored by
-`rust.just`). Frontend: the lint rules mapped from `frontend/CLAUDE.md` are configured in `vite.config.ts`'s `lint`
-block and enforced by `just js::oxlint`, which CI runs in `.github/workflows/frontend.yml`. Supply-chain policy for
-the backend is separately confirmed by `backend/deny.toml`.
-
 ## Pros and cons of the options
 
 ### Enable strict lint tiers on both stacks
@@ -162,3 +149,6 @@ the backend is separately confirmed by `backend/deny.toml`.
 - The four pedantic lints allow-listed for application-crate reasons (`module_name_repetitions`,
   `missing_errors_doc`, `missing_panics_doc`, `must_use_candidate`) exist for library API hygiene; revisit the
   allow-list if Reverie ever publishes a library crate to crates.io.
+- [Tiered comment policy for an open-source codebase](./0004-tiered-comment-policy-for-an-open-source-codebase.md)
+  narrows this allow-list: after the library split, `missing_errors_doc` is re-enabled once the per-module docstring
+  backfill completes, and `missing_panics_doc` stays allow-listed only until that lands.
