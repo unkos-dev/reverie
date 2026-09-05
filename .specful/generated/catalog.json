@@ -294,6 +294,48 @@
       "title": "Library filters in a drawer with removable chips"
     },
     {
+      "id": "REV-ADR-0042",
+      "kind": "adr",
+      "path": "docs/adr/0042-code-scanning-ingestion-policy-ingest-what-is-actionable.md",
+      "status": "accepted",
+      "title": "Code-scanning ingestion policy: ingest what is actionable"
+    },
+    {
+      "id": "REV-ADR-0043",
+      "kind": "adr",
+      "path": "docs/adr/0043-remote-rust-build-cache-on-object-storage.md",
+      "status": "accepted",
+      "title": "Remote Rust build cache on object storage"
+    },
+    {
+      "id": "REV-ADR-0044",
+      "kind": "adr",
+      "path": "docs/adr/0044-match-time-accent-folding-via-unaccent-expression-indexes.md",
+      "status": "accepted",
+      "title": "Match-time accent folding via unaccent expression indexes"
+    },
+    {
+      "id": "REV-ADR-0045",
+      "kind": "adr",
+      "path": "docs/adr/0045-package-ingress-default-deny-controls-no-per-package-allowances.md",
+      "status": "accepted",
+      "title": "Package ingress: default-deny controls, no per-package allowances"
+    },
+    {
+      "id": "REV-ADR-0046",
+      "kind": "adr",
+      "path": "docs/adr/0046-chrono-is-the-first-party-datetime-crate.md",
+      "status": "accepted",
+      "title": "chrono is the first-party datetime crate"
+    },
+    {
+      "id": "REV-ADR-0047",
+      "kind": "adr",
+      "path": "docs/adr/0047-library-sort-is-a-per-user-preference-never-url-state.md",
+      "status": "accepted",
+      "title": "Library sort is a per-user preference, never URL state"
+    },
+    {
       "id": "REV-DESIGN-0001",
       "kind": "design",
       "path": "docs/specs/library/design/0001-library-filter-and-sort-state.md",

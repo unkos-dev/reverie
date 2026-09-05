@@ -32,7 +32,7 @@
  * URL state with exactly one writer, and view's `?view=` param still wins
  * over the stored choice while present. Sort has no URL form at all: it is
  * a one-layer per-user preference, resolved here and sent explicitly on the
- * list request (see `adr/2026-08-08-library-sort-per-user-preference.md`
+ * list request (see `docs/adr/0047-library-sort-is-a-per-user-preference-never-url-state.md`
  * for why the two-layer URL-over-preference model was retired).
  */
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";

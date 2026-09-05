@@ -49,10 +49,10 @@ disallowed-methods = [
 ## An `#[expect]` that stops being necessary fails the build, so the
 ## carve-outs cannot rot the way a checked-in allowlist can. That property
 ## depends on `-D warnings`, which `rust.just`'s clippy recipe passes.
-## See adr/2026-08-05-first-party-datetime-crate.md.
+## See docs/adr/0046-chrono-is-the-first-party-datetime-crate.md.
 disallowed-types = [
-  { path = "time::OffsetDateTime", reason = "first-party code uses chrono::DateTime<Utc>; `time` is permitted only at the tower-sessions and cookie boundaries, which carry scoped #[expect]s; see adr/2026-08-05-first-party-datetime-crate.md" },
-  { path = "time::Duration", reason = "first-party code uses chrono::TimeDelta for datetime arithmetic and std::time::Duration for timers; `time::Duration` is permitted only at the tower-sessions and cookie boundaries; see adr/2026-08-05-first-party-datetime-crate.md" },
-  { path = "time::Date", reason = "first-party code uses chrono::NaiveDate for calendar dates; see adr/2026-08-05-first-party-datetime-crate.md" },
-  { path = "time::PrimitiveDateTime", reason = "first-party code uses chrono::NaiveDateTime, and chrono::DateTime<Utc> for instants; see adr/2026-08-05-first-party-datetime-crate.md" },
+  { path = "time::OffsetDateTime", reason = "first-party code uses chrono::DateTime<Utc>; `time` is permitted only at the tower-sessions and cookie boundaries, which carry scoped #[expect]s; see docs/adr/0046-chrono-is-the-first-party-datetime-crate.md" },
+  { path = "time::Duration", reason = "first-party code uses chrono::TimeDelta for datetime arithmetic and std::time::Duration for timers; `time::Duration` is permitted only at the tower-sessions and cookie boundaries; see docs/adr/0046-chrono-is-the-first-party-datetime-crate.md" },
+  { path = "time::Date", reason = "first-party code uses chrono::NaiveDate for calendar dates; see docs/adr/0046-chrono-is-the-first-party-datetime-crate.md" },
+  { path = "time::PrimitiveDateTime", reason = "first-party code uses chrono::NaiveDateTime, and chrono::DateTime<Utc> for instants; see docs/adr/0046-chrono-is-the-first-party-datetime-crate.md" },
 ]

@@ -222,5 +222,5 @@ a whole, not by this Design.
 - [Multi-column sort stack on the keyset list contract](../../../adr/0037-multi-column-sort-stack-on-the-keyset-list-contract.md)
 - [Typed filter grammar on list endpoints](../../../adr/0038-typed-filter-grammar-on-list-endpoints.md)
 - [Library filters in a drawer with removable chips](../../../adr/0041-library-filters-in-a-drawer-with-removable-chips.md)
-- [Library sort is a per-user preference, resolved client-side, never URL state](../../../../adr/2026-08-08-library-sort-per-user-preference.md)
+- [Library sort is a per-user preference, never URL state](../../../adr/0047-library-sort-is-a-per-user-preference-never-url-state.md)
 - [No unbounded queries: keyset pagination as the default list contract](../../../../docs/adr/0019-keyset-pagination-as-the-default-list-contract.md)

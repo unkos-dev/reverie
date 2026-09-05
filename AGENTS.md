@@ -61,7 +61,7 @@ These are absolute invariants for the Reverie repository.
 - **Docstring Syntax:** No external references (PRs, Linear IDs). Describe current behavior, not history.
 - **Private Artifacts:** Store design specifications, implementation plans, and evaluation records in ignored `/plans/`. Never reference private artifact paths from public source, documentation, commits, or pull requests.
 - **State-Writer Census:** Any plan touching shared mutable state (URL params, stores, caches) must enumerate every writer, including debounced and async ones. More than one writer forces an explicit ownership-model decision in the plan before implementation starts.
-- **ADRs:** Write an ADR for any new cross-stack pattern, major dependency, or architectural choice. Create it with `specful new adr --title <title>` under `docs/adr/`; never hand-allocate an identifier. Records under `adr/` predate that profile and stay there, authored to `adr/AGENTS.md`, until they are reviewed.
+- **ADRs:** Write an ADR for any new cross-stack pattern, major dependency, or architectural choice. Create it with `specful new adr --title <title>` under `docs/adr/`; never hand-allocate an identifier. Start at `.specful/generated/catalog.json` or `specful show <id>` to find the records already on file.
 - **Specifications:** Requirements (what the system must do) and Designs (how a subject currently works) live under `docs/specs/`, one directory per architectural scope. Start at `docs/specs/index.md`. Create an artifact with `specful new requirement|design --title <title> --scope <scope>`; never hand-allocate an identifier. Write current state only: no history, no transition narrative. After editing, run `specful index` then `specful validate`, and commit the regenerated views with the change. A Design records how a subject works; it is not a visual or interaction design artifact, which `<design_authority>` governs separately.
   </documentation_and_planning>
 
@@ -78,7 +78,7 @@ These are absolute invariants for the Reverie repository.
 - `docs/` — Repository documentation (deployment, design, security, schema)
 - `docs/specs/` — Requirements and Designs, navigated from `docs/specs/index.md`
 - `website/` — Starlight site
-- `adr/` — Architecture Decision Records
+- `docs/adr/` — Architecture Decision Records under the Specful profile
 
 Files that gate a change and are easy to miss:
 

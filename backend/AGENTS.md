@@ -61,7 +61,7 @@ These rules define the Rust, Axum, and sqlx architecture. Do not deviate.
 <tool_standards>
 
 - **Formatting & Linting:** You must respect `cargo fmt` and `cargo clippy`. Do not fight the formatter. Fix warnings, do not suppress them with `#[allow(...)]` unless heavily justified.
-- **Datetime Crate:** First-party code uses `chrono` (`DateTime<Utc>` for instants, `NaiveDate` for calendar dates). The `time` crate appears only where a third-party API requires its types; clippy's `disallowed-types` (`backend/clippy.toml`) enforces that, and each permitted site carries a scoped `#[expect]` naming the API that forces it. See `adr/2026-08-05-first-party-datetime-crate.md`.
+- **Datetime Crate:** First-party code uses `chrono` (`DateTime<Utc>` for instants, `NaiveDate` for calendar dates). The `time` crate appears only where a third-party API requires its types; clippy's `disallowed-types` (`backend/clippy.toml`) enforces that, and each permitted site carries a scoped `#[expect]` naming the API that forces it. See `docs/adr/0046-chrono-is-the-first-party-datetime-crate.md`.
 - **Logging:** Use `tracing` with structured fields. Never use `println!`.
 - **Artifact Regen:** Editing a config/ or API-surface doc-comment regenerates artifacts. Run `just rust::regen` and commit them in the same PR; drift tests gate CI.
   </tool_standards>

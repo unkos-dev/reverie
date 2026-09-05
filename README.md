@@ -61,8 +61,7 @@ These constraints are fixed:
 Guides and reference material live on the
 [documentation site](https://unkos-dev.github.io/reverie/). Requirements and
 designs live under [`docs/specs/`](docs/specs/). Architectural decisions are
-recorded in [`docs/adr/`](docs/adr/), with records predating that profile in
-[`adr/`](adr/).
+recorded in [`docs/adr/`](docs/adr/).
 
 ## Security
 

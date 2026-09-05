@@ -15,7 +15,7 @@ services:
     # Any image change can alter the unaccent dictionary the folded search
     # indexes were built under; this volume persists, so REINDEX the
     # immutable_unaccent indexes and recompute works.search_vector with the
-    # bump. See adr/2026-08-02-match-time-accent-folding.md.
+    # bump. See docs/adr/0044-match-time-accent-folding-via-unaccent-expression-indexes.md.
     image: postgres:18@sha256:06cad38a5d9f5d24b4d83d86def30795d5e4b757fedbf5281172b576dedcd941
     # Suffixed like the project so an alternate-env stack does not clash on
     # the global container namespace; the published host port and the socket

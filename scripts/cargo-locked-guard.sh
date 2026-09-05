@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Guard: every dependency-resolving cargo invocation on a build or gate path
 # passes --locked, so nothing can take a version the lockfile never recorded
-# (adr/2026-08-03-package-ingress-default-deny.md, the frozen-installs
+# (docs/adr/0045-package-ingress-default-deny-controls-no-per-package-allowances.md, the frozen-installs
 # control).
 #
 # Polarity: any `cargo <subcommand>` is a violation unless it carries
