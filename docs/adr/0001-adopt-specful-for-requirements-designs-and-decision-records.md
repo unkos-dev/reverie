@@ -46,9 +46,8 @@ loses its shape or its links, while the artifacts themselves stay Markdown with 
 search reads. The first corpus is one subsystem, the library filter and sort state, rather than a sweep of the codebase;
 a partially documented repository is a valid state under the convention.
 
-Records under `adr/` predate the Specful profile. They stay where they are and keep their shape until a separate review
-decides, record by record, whether each still earns its place; only new decisions use the profile. That review is not
-part of the adoption.
+Every decision record lives under `docs/adr/` in the profile. The records that predated it were reviewed one by one
+and re-recorded, or retired where they no longer earned their place; the previous `adr/` directory no longer exists.
 
 ### Consequences
 
@@ -57,7 +56,6 @@ part of the adoption.
 - Positive: the validator runs in pre-commit, in the infrastructure lint aggregate, and in the CI prose job, so a stale
   index or a broken link fails the change that caused it.
 - Positive: the exit cost is deleting `.specful/` and the generated views; the documents remain readable Markdown.
-- Negative: the repository carries two decision-record homes and two shapes until the review of the older records lands.
 - Negative: the tool is pre-1.0 and the repository is its first adopter, so profile changes arrive with release notes
   and conversion steps rather than being absorbed silently; the mise pin holds the version until the maintainer moves
   it.
@@ -71,8 +69,8 @@ part of the adoption.
 - Positive: identifiers, index, trace, and validation come from one pinned binary with attested releases.
 - Positive: the record model separates what must hold, how the system works, and why the choice was made, with a
   written boundary between an obligation and a decision.
-- Negative: the ADR profile is stricter than the MADR shape the existing records follow, so those records cannot enter
-  it without being rewritten.
+- Negative: the ADR profile is stricter than the MADR shape, so a record written to MADR has to be rewritten to enter
+  it.
 
 ### Hand-written convention
 
@@ -91,5 +89,4 @@ part of the adoption.
 
 The adoption page and the profiles are at <https://unkos-dev.github.io/specful/>. The first Design under the
 convention is [Library filter and sort state](../specs/library/design/0001-library-filter-and-sort-state.md). Revisit
-this record if the older decision records are migrated into the profile, at which point the two-homes consequence no
-longer applies, or if a profile change makes the existing corpus invalid without a documented conversion.
+this record if a profile change makes the existing corpus invalid without a documented conversion.
