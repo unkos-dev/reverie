@@ -99,6 +99,13 @@
       "title": "Migration model: hybrid entrypoints and a least-privilege role"
     },
     {
+      "id": "REV-ADR-0015",
+      "kind": "adr",
+      "path": "docs/adr/0015-first-party-session-layer-on-the-tower-sessions-core.md",
+      "status": "accepted",
+      "title": "First-party session layer on the tower-sessions core"
+    },
+    {
       "id": "REV-DESIGN-0001",
       "kind": "design",
       "path": "docs/specs/library/design/0001-library-filter-and-sort-state.md",
