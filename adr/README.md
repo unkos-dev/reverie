@@ -21,6 +21,5 @@ An Architecture Decision Record (ADR) captures an important architecture decisio
 
 ## ADRs
 
-- [Package ingress: default-deny controls, never per-package allowances](2026-08-03-package-ingress-default-deny.md) (accepted, 2026-08-03)
 - [chrono is the first-party datetime crate](2026-08-05-first-party-datetime-crate.md) (accepted, 2026-08-05)
 - [Library sort is a per-user preference, resolved client-side, never URL state](2026-08-08-library-sort-per-user-preference.md) (accepted, 2026-08-08)

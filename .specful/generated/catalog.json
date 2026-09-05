@@ -315,6 +315,13 @@
       "title": "Match-time accent folding via unaccent expression indexes"
     },
     {
+      "id": "REV-ADR-0045",
+      "kind": "adr",
+      "path": "docs/adr/0045-package-ingress-default-deny-controls-no-per-package-allowances.md",
+      "status": "accepted",
+      "title": "Package ingress: default-deny controls, no per-package allowances"
+    },
+    {
       "id": "REV-DESIGN-0001",
       "kind": "design",
       "path": "docs/specs/library/design/0001-library-filter-and-sort-state.md",
