@@ -246,6 +246,13 @@
       "title": "Lint suppressions self-purge: expect with a reason, never allow"
     },
     {
+      "id": "REV-ADR-0036",
+      "kind": "adr",
+      "path": "docs/adr/0036-library-data-grid-stack-two-way-bake-off-behind-a-local-adapter.md",
+      "status": "accepted",
+      "title": "Library data-grid stack: two-way bake-off behind a local adapter"
+    },
+    {
       "id": "REV-DESIGN-0001",
       "kind": "design",
       "path": "docs/specs/library/design/0001-library-filter-and-sort-state.md",

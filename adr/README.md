@@ -22,7 +22,6 @@ An Architecture Decision Record (ADR) captures an important architecture decisio
 ## ADRs
 
 - [Accessibility review process: automated axe gate + manual audit cadence](superseded/2026-06-05-accessibility-review-process.md) (superseded by [Accessibility gate and render-verification on the Playwright stack](2026-07-13-a11y-gate-on-playwright.md), 2026-07-13)
-- [Library data-grid stack: two-way bake-off behind a local adapter](2026-07-04-library-grid-stack-bakeoff.md) (accepted, 2026-07-04)
 - [Multi-column sort stack on the keyset list contract](2026-07-07-multi-column-sort-stack.md) (accepted, 2026-07-07)
 - [Typed filter grammar on list endpoints](2026-07-07-typed-filter-grammar-list-endpoints.md) (accepted, 2026-07-07)
 - [Single filter home in the library right rail](2026-07-10-library-filter-home-right-rail.md) (accepted, 2026-07-10)
