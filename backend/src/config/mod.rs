@@ -233,7 +233,7 @@ pub struct Config {
     pub oidc_redirect_uri: String,
     /// Whether local email+password authentication is enabled
     /// (`REVERIE_LOCAL_AUTH_ENABLED`, default `true`). Reverie is local-first out
-    /// of the box (ADR `2026-06-23-auth-identity-pluggable-providers`), so this
+    /// of the box (`docs/adr/0029-unified-identity-with-pluggable-authentication-providers.md`), so this
     /// defaults on. Setting it `false` without configuring OIDC is rejected at
     /// startup (Gate 4): at least one auth provider must remain usable or the
     /// instance locks everyone out.

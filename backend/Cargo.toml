@@ -123,7 +123,7 @@ uuid = { version = "1.23.4", features = ["v4", "serde"] }
 walkdir = "2.5.0"
 zip = "8.6.0"
 # Server-side password-strength estimator (NIST SP 800-63B strength floor,
-# adr/2026-06-30-password-policy-hibp-zxcvbn.md). Pure Rust, no network.
+# docs/adr/0034-password-policy-zxcvbn-floor-plus-a-fail-open-hibp-check.md). Pure Rust, no network.
 zxcvbn = "3"
 
 [dev-dependencies]

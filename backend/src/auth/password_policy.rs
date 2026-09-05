@@ -15,7 +15,7 @@
 //! (`docs/adr/0004-tiered-comment-policy-for-an-open-source-codebase.md`); `// THREAT:` annotations mark
 //! the non-obvious mitigations. The candidate password is never logged.
 //!
-//! See `adr/2026-06-30-password-policy-hibp-zxcvbn.md`.
+//! See `docs/adr/0034-password-policy-zxcvbn-floor-plus-a-fail-open-hibp-check.md`.
 
 use std::fmt::Write as _;
 

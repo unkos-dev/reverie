@@ -4,4 +4,5 @@
 
 ## Scopes
 
+- [accessibility](accessibility/index.md)
 - [library](library/index.md)

@@ -43,5 +43,5 @@ its drivers are recorded in
 
 ## More information
 
-- [Multi-column sort stack on the keyset list contract](../../../../adr/2026-07-07-multi-column-sort-stack.md): the
+- [Multi-column sort stack on the keyset list contract](../../../adr/0037-multi-column-sort-stack-on-the-keyset-list-contract.md): the
   wire grammar and whitelist the resolved stack is expressed in.

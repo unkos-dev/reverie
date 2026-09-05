@@ -49,7 +49,7 @@ otherwise no-hue-states philosophy and is reserved strictly for
 destructive / error semantics, **never decorative**. Per WCAG 1.4.1 color is
 never the sole signal: danger always pairs with an icon, weight, or text label.
 The rationale is recorded in the single-danger-hue ADR
-(`adr/2026-06-18-single-danger-hue-amends-no-hue-philosophy.md`).
+(`docs/adr/0027-a-single-danger-hue-amends-the-no-hue-states-policy.md`).
 
 ## Focus indicator (WCAG 1.4.11)
 

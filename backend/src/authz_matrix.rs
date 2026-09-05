@@ -1,6 +1,6 @@
 //! Authz matrix: deny-by-default scope declarations plus a per-operation
 //! enforcement grid over the scope hierarchy (`read` < `write` < `admin`).
-//! See `adr/2026-06-23-api-authorization-orthogonal-axes.md`.
+//! See `docs/adr/0028-api-authorization-orthogonal-scope-role-and-ownership-axes.md`.
 //!
 //! Each operation declares the least scope it needs. The grid asserts, per
 //! operation, that a credential at the required scope (or higher) passes and

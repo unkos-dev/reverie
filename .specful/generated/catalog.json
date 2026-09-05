@@ -183,6 +183,117 @@
       "title": "Radix-generated three-tier dual-theme color tokens"
     },
     {
+      "id": "REV-ADR-0027",
+      "kind": "adr",
+      "path": "docs/adr/0027-a-single-danger-hue-amends-the-no-hue-states-policy.md",
+      "status": "accepted",
+      "title": "A single danger hue amends the no-hue-states policy"
+    },
+    {
+      "id": "REV-ADR-0028",
+      "kind": "adr",
+      "path": "docs/adr/0028-api-authorization-orthogonal-scope-role-and-ownership-axes.md",
+      "status": "accepted",
+      "title": "API authorization: orthogonal scope, role, and ownership axes"
+    },
+    {
+      "id": "REV-ADR-0029",
+      "kind": "adr",
+      "path": "docs/adr/0029-unified-identity-with-pluggable-authentication-providers.md",
+      "status": "accepted",
+      "title": "Unified identity with pluggable authentication providers"
+    },
+    {
+      "id": "REV-ADR-0030",
+      "kind": "adr",
+      "path": "docs/adr/0030-adopt-oxlint-replacing-the-eslint-toolchain.md",
+      "status": "accepted",
+      "title": "Adopt oxlint, replacing the ESLint toolchain"
+    },
+    {
+      "id": "REV-ADR-0031",
+      "kind": "adr",
+      "path": "docs/adr/0031-adopt-lefthook-replacing-husky-and-lint-staged.md",
+      "status": "accepted",
+      "title": "Adopt lefthook, replacing husky and lint-staged"
+    },
+    {
+      "id": "REV-ADR-0032",
+      "kind": "adr",
+      "path": "docs/adr/0032-adopt-oxfmt-replacing-prettier.md",
+      "status": "accepted",
+      "title": "Adopt oxfmt, replacing Prettier"
+    },
+    {
+      "id": "REV-ADR-0033",
+      "kind": "adr",
+      "path": "docs/adr/0033-adopt-the-vite-vp-monorepo-toolchain.md",
+      "status": "accepted",
+      "title": "Adopt the Vite+ (vp) monorepo toolchain"
+    },
+    {
+      "id": "REV-ADR-0034",
+      "kind": "adr",
+      "path": "docs/adr/0034-password-policy-zxcvbn-floor-plus-a-fail-open-hibp-check.md",
+      "status": "accepted",
+      "title": "Password policy: zxcvbn floor plus a fail-open HIBP check"
+    },
+    {
+      "id": "REV-ADR-0035",
+      "kind": "adr",
+      "path": "docs/adr/0035-lint-suppressions-self-purge-expect-with-a-reason-never-allow.md",
+      "status": "accepted",
+      "title": "Lint suppressions self-purge: expect with a reason, never allow"
+    },
+    {
+      "id": "REV-ADR-0036",
+      "kind": "adr",
+      "path": "docs/adr/0036-library-data-grid-stack-two-way-bake-off-behind-a-local-adapter.md",
+      "status": "accepted",
+      "title": "Library data-grid stack: two-way bake-off behind a local adapter"
+    },
+    {
+      "id": "REV-ADR-0037",
+      "kind": "adr",
+      "path": "docs/adr/0037-multi-column-sort-stack-on-the-keyset-list-contract.md",
+      "status": "accepted",
+      "title": "Multi-column sort stack on the keyset list contract"
+    },
+    {
+      "id": "REV-ADR-0038",
+      "kind": "adr",
+      "path": "docs/adr/0038-typed-filter-grammar-on-list-endpoints.md",
+      "status": "accepted",
+      "title": "Typed filter grammar on list endpoints"
+    },
+    {
+      "id": "REV-ADR-0039",
+      "kind": "adr",
+      "path": "docs/adr/0039-single-filter-home-in-the-library-right-rail.md",
+      "status": "superseded",
+      "superseded-by": [
+        "REV-ADR-0041"
+      ],
+      "title": "Single filter home in the library right rail"
+    },
+    {
+      "id": "REV-ADR-0040",
+      "kind": "adr",
+      "path": "docs/adr/0040-accessibility-gate-and-render-verification-on-playwright.md",
+      "status": "accepted",
+      "title": "Accessibility gate and render verification on Playwright"
+    },
+    {
+      "id": "REV-ADR-0041",
+      "kind": "adr",
+      "path": "docs/adr/0041-library-filters-in-a-drawer-with-removable-chips.md",
+      "status": "accepted",
+      "supersedes": [
+        "REV-ADR-0039"
+      ],
+      "title": "Library filters in a drawer with removable chips"
+    },
+    {
       "id": "REV-DESIGN-0001",
       "kind": "design",
       "path": "docs/specs/library/design/0001-library-filter-and-sort-state.md",
@@ -192,6 +303,18 @@
         "REV-REQ-0003"
       ],
       "title": "Library filter and sort state"
+    },
+    {
+      "governed-by": [
+        "REV-ADR-0040"
+      ],
+      "id": "REV-DESIGN-0002",
+      "kind": "design",
+      "path": "docs/specs/accessibility/design/0002-accessibility-gate-and-manual-audit.md",
+      "satisfies": [
+        "REV-REQ-0004"
+      ],
+      "title": "Accessibility gate and manual audit"
     },
     {
       "id": "REV-REQ-0001",
@@ -210,6 +333,15 @@
       "kind": "req",
       "path": "docs/specs/library/requirements/0003-library-list-filter-values-that-fail-to-decode-are-rejected.md",
       "title": "Library list filter values that fail to decode are rejected"
+    },
+    {
+      "governed-by": [
+        "REV-ADR-0040"
+      ],
+      "id": "REV-REQ-0004",
+      "kind": "req",
+      "path": "docs/specs/accessibility/requirements/0004-web-surfaces-meet-wcag-2-2-level-aa.md",
+      "title": "Web surfaces meet WCAG 2.2 Level AA"
     }
   ]
 }

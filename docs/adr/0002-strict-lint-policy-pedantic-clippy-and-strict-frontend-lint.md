@@ -73,7 +73,7 @@ crate-root `#![cfg_attr(test, allow(...))]`, matching `backend/CLAUDE.md`'s "tes
 On the frontend, the same strict tier applies: type-aware strict linting, stable and unique list keys with no
 array-index keys, `import type` separated from value imports, no `enum`, and no inline style objects in JSX, each
 mapped from a `frontend/CLAUDE.md` rule to a lint rule. The frontend lint engine is oxlint (see
-[Adopt oxlint](../../adr/2026-06-27-adopt-oxlint-toolchain.md) for that engine decision).
+[Adopt oxlint](./0030-adopt-oxlint-replacing-the-eslint-toolchain.md) for that engine decision).
 
 Both stacks already gated CI on their respective lint commands; the strict tier needed no further CI change beyond
 the configuration itself.

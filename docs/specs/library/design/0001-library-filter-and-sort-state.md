@@ -80,8 +80,8 @@ the census resolves to; every editing surface is a caller of one or the other, n
   the library's other per-user display preferences. It resolves each group from up to three media (a same-session
   local write, the server response, the first-paint mirror), delays and merges writes into one PATCH, and exposes
   `sortLevels` (the one resolved stack every surface renders) and `setSortLevels` (the one sort intent handler).
-- `frontend/src/components/shell/FilterRail.tsx` is the primary filter- and sort-editing surface: one collapsible
-  section per filterable field plus a sort section, each dispatching to `useLibraryFilters`'s slice commits or to the
+- `frontend/src/components/shell/FilterRail.tsx`, rendered inside the library page's filter drawer, is the primary
+  filter- and sort-editing surface: one collapsible section per filterable field plus a sort section, each dispatching to `useLibraryFilters`'s slice commits or to the
   page's `onSortChange` prop. The chips row (`frontend/src/pages/library/FilterChips.tsx`) and the quick-search input
   are the two other editing surfaces; both dispatch through the same writer.
 - `frontend/src/pages/library/LibraryPage.tsx` composes the above: it resolves the sort stack via
@@ -114,8 +114,7 @@ the census resolves to; every editing surface is a caller of one or the other, n
 - **Filter URL params.** Live in the route's URL search string for the lifetime of that browser tab's navigation
   history within the app: they survive a page refresh and in-app navigation (because they are part of the URL), but do
   not survive into a fresh visit, because nothing mirrors them to any longer-lived store. Filters are not durable
-  across visits by design; see
-  [Single filter home in the library right rail](../../../../adr/2026-07-10-library-filter-home-right-rail.md).
+  across visits by design.
 - **`sort_stack` preference.** Persisted server-side on the `user_preferences` row (one row per account), reached
   through `/auth/me/preferences`. Its lifetime is the account's: it survives reload, re-login, and a change of device,
   and is written under last-write-wins semantics with no precondition header. A `null` value means "inherit the
@@ -220,8 +219,8 @@ a whole, not by this Design.
 
 ## More information
 
-- [Multi-column sort stack on the keyset list contract](../../../../adr/2026-07-07-multi-column-sort-stack.md)
-- [Typed filter grammar on list endpoints](../../../../adr/2026-07-07-typed-filter-grammar-list-endpoints.md)
-- [Single filter home in the library right rail](../../../../adr/2026-07-10-library-filter-home-right-rail.md)
+- [Multi-column sort stack on the keyset list contract](../../../adr/0037-multi-column-sort-stack-on-the-keyset-list-contract.md)
+- [Typed filter grammar on list endpoints](../../../adr/0038-typed-filter-grammar-on-list-endpoints.md)
+- [Library filters in a drawer with removable chips](../../../adr/0041-library-filters-in-a-drawer-with-removable-chips.md)
 - [Library sort is a per-user preference, resolved client-side, never URL state](../../../../adr/2026-08-08-library-sort-per-user-preference.md)
 - [No unbounded queries: keyset pagination as the default list contract](../../../../docs/adr/0019-keyset-pagination-as-the-default-list-contract.md)

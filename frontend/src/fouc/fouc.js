@@ -30,10 +30,10 @@
 // Cross-references:
 //   - `docs/adr/0004-tiered-comment-policy-for-an-open-source-codebase.md` § Tier 2 (threat-annotation
 //     shape).
-//   - `adr/2026-05-22-frontend-docstring-tooling.md` § Carve-outs (this
-//     `.js` file is intentionally inside the Tier 2 lint scope; the file-
-//     header is the documentation surface — the IIFE has no exports for
-//     `jsdoc/require-jsdoc` to attach to).
+//   - `docs/adr/0030-adopt-oxlint-replacing-the-eslint-toolchain.md` (docstring
+//     presence is no longer lint-gated; this file-header is the Tier 2
+//     documentation surface, since the IIFE exports nothing a docstring
+//     could attach to).
 //   - `frontend/vite-plugins/csp-hash.ts::cspHashPlugin` (the plugin that
 //     hashes this body).
 (function () {

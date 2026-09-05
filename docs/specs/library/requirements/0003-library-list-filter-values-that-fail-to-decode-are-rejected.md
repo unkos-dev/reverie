@@ -39,7 +39,7 @@ occurs.
 
 ## More information
 
-- [Typed filter grammar on list endpoints](../../../../adr/2026-07-07-typed-filter-grammar-list-endpoints.md): the
+- [Typed filter grammar on list endpoints](../../../adr/0038-typed-filter-grammar-on-list-endpoints.md): the
   suffix-operator grammar and closed column set this obligation guards the value side of.
 - A filter value that decodes successfully but violates a semantic bound (an over-cap value list, over-long text, an
   out-of-range rating, a negative page bound, or an unrecognised status token) is a distinct failure class, rejected

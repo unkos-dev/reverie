@@ -41,8 +41,9 @@ const STANDARD_BASE64 = /^[A-Za-z0-9+/]+={0,2}$/;
  * Cross-references:
  *   - `docs/adr/0004-tiered-comment-policy-for-an-open-source-codebase.md` § Tier 2 (threat-annotation
  *     shape).
- *   - `adr/2026-05-22-frontend-docstring-tooling.md` § Carve-outs (the `.js`
- *     scope inclusion is for this plugin's pinned source file).
+ *   - `docs/adr/0030-adopt-oxlint-replacing-the-eslint-toolchain.md` (docstring
+ *     presence is no longer lint-gated; this header documents the plugin and
+ *     its pinned `.js` source file).
  *   - `backend/src/security/csp.rs` (the consumer of `csp-hashes.json`).
  *
  * @returns Vite plugin that injects + hashes `src/fouc/fouc.js` into the
