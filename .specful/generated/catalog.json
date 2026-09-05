@@ -211,6 +211,13 @@
       "title": "Adopt oxlint, replacing the ESLint toolchain"
     },
     {
+      "id": "REV-ADR-0031",
+      "kind": "adr",
+      "path": "docs/adr/0031-adopt-lefthook-replacing-husky-and-lint-staged.md",
+      "status": "accepted",
+      "title": "Adopt lefthook, replacing husky and lint-staged"
+    },
+    {
       "id": "REV-DESIGN-0001",
       "kind": "design",
       "path": "docs/specs/library/design/0001-library-filter-and-sort-state.md",
