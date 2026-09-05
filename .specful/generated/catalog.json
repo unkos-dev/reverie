@@ -267,6 +267,33 @@
       "title": "Typed filter grammar on list endpoints"
     },
     {
+      "id": "REV-ADR-0039",
+      "kind": "adr",
+      "path": "docs/adr/0039-single-filter-home-in-the-library-right-rail.md",
+      "status": "superseded",
+      "superseded-by": [
+        "REV-ADR-0041"
+      ],
+      "title": "Single filter home in the library right rail"
+    },
+    {
+      "id": "REV-ADR-0040",
+      "kind": "adr",
+      "path": "docs/adr/0040-accessibility-gate-and-render-verification-on-playwright.md",
+      "status": "accepted",
+      "title": "Accessibility gate and render verification on Playwright"
+    },
+    {
+      "id": "REV-ADR-0041",
+      "kind": "adr",
+      "path": "docs/adr/0041-library-filters-in-a-drawer-with-removable-chips.md",
+      "status": "accepted",
+      "supersedes": [
+        "REV-ADR-0039"
+      ],
+      "title": "Library filters in a drawer with removable chips"
+    },
+    {
       "id": "REV-DESIGN-0001",
       "kind": "design",
       "path": "docs/specs/library/design/0001-library-filter-and-sort-state.md",

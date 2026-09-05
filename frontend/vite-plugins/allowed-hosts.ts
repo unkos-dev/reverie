@@ -18,8 +18,9 @@
  * iterating the allowlist, so removing entries from this array does not
  * tighten the runtime check.
  *
- * Cross-reference: `adr/2026-05-22-frontend-docstring-tooling.md` § Carve-outs
- * for why this file is in the Tier 2 lint scope.
+ * Cross-reference: `docs/adr/0030-adopt-oxlint-replacing-the-eslint-toolchain.md`
+ * (docstring presence is no longer lint-gated; this header is the file's Tier 2
+ * documentation surface).
  */
 export const DEFAULT_LOOPBACK_HOSTS: readonly string[] = ["localhost", "127.0.0.1", "[::1]"];
 
