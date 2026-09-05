@@ -301,6 +301,13 @@
       "title": "Code-scanning ingestion policy: ingest what is actionable"
     },
     {
+      "id": "REV-ADR-0043",
+      "kind": "adr",
+      "path": "docs/adr/0043-remote-rust-build-cache-on-object-storage.md",
+      "status": "accepted",
+      "title": "Remote Rust build cache on object storage"
+    },
+    {
       "id": "REV-DESIGN-0001",
       "kind": "design",
       "path": "docs/specs/library/design/0001-library-filter-and-sort-state.md",

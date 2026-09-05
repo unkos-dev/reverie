@@ -21,7 +21,6 @@ An Architecture Decision Record (ADR) captures an important architecture decisio
 
 ## ADRs
 
-- [Remote Rust build cache on object storage, alongside the tarball cache](2026-07-26-remote-build-cache-on-r2.md) (accepted, 2026-07-26)
 - [Match-time accent folding via unaccent expression indexes](2026-08-02-match-time-accent-folding.md) (accepted, 2026-08-02)
 - [Package ingress: default-deny controls, never per-package allowances](2026-08-03-package-ingress-default-deny.md) (accepted, 2026-08-03)
 - [chrono is the first-party datetime crate](2026-08-05-first-party-datetime-crate.md) (accepted, 2026-08-05)
