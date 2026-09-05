@@ -169,6 +169,13 @@
       "title": "Rasterize SVG-declared EPUB covers to PNG via resvg"
     },
     {
+      "id": "REV-ADR-0025",
+      "kind": "adr",
+      "path": "docs/adr/0025-cover-cache-headers-ingest-pre-warm-and-jpeg-thumbnails.md",
+      "status": "accepted",
+      "title": "Cover cache headers, ingest pre-warm, and JPEG thumbnails"
+    },
+    {
       "id": "REV-DESIGN-0001",
       "kind": "design",
       "path": "docs/specs/library/design/0001-library-filter-and-sort-state.md",
