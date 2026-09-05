@@ -225,6 +225,13 @@
       "title": "Adopt oxfmt, replacing Prettier"
     },
     {
+      "id": "REV-ADR-0033",
+      "kind": "adr",
+      "path": "docs/adr/0033-adopt-the-vite-vp-monorepo-toolchain.md",
+      "status": "accepted",
+      "title": "Adopt the Vite+ (vp) monorepo toolchain"
+    },
+    {
       "id": "REV-DESIGN-0001",
       "kind": "design",
       "path": "docs/specs/library/design/0001-library-filter-and-sort-state.md",
