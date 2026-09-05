@@ -22,8 +22,8 @@ the target.
 A self-hosted reading application has no vendor to fall back on for remediation: a reader who depends on sufficient
 colour contrast, keyboard operability, or screen-reader semantics is served by the surface Reverie ships or not served
 at all. Binding the obligation to the full WCAG 2.2 Level AA tag set, rather than to a subset chosen for convenience,
-is what keeps the target from narrowing quietly over time; the accessibility gate's own history records that the
-`wcag22aa` tag alone would pass trivially, since it selects only the rules new in 2.2 and excludes `color-contrast`.
+is what keeps the target from narrowing quietly over time; the `wcag22aa` tag alone would pass trivially, since it
+selects only the rules new in 2.2 and excludes `color-contrast`.
 The one carve-out exists because Reverie Gold is the brand's identifying accent colour, and confining it to focus
 rings, large calls to action, and recovery actions is what stops the exception from spreading to body text or
 incidental UI, where a contrast failure would harm ordinary reading and navigation rather than only a bounded set of

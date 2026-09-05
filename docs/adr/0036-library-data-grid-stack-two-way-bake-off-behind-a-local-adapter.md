@@ -106,7 +106,7 @@ that satisfies it.
   abstraction boundary before production code leans on it and keeps the loser removable as a binding, not a
   rewrite.
 - Negative: react-data-grid's beta line has shipped breaking changes between releases and has moved its React peer
-  requirement mid-line, raising upgrade risk over the grid's long lifetime.
+  requirement mid-line, which raises upgrade risk over the grid's long lifetime.
 - Neutral: the hard budgets were read from a browser harness by hand, not asserted in CI; per-frame timing is flaky
   by construction and belongs in a measured run, not a gate.
 
@@ -118,7 +118,7 @@ that satisfies it.
   directly onto the Reverie token set.
 - Positive: the footprint is small, easing the eventual production chunk.
 - Negative: the beta line has shipped breaking changes between releases and has moved its React peer requirement
-  mid-line, raising upgrade risk over the grid's long lifetime.
+  mid-line, which raises upgrade risk over the grid's long lifetime.
 
 ### AG Grid Community
 

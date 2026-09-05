@@ -48,11 +48,11 @@ reopen the door to a general state-colour palette?
 ## Decision outcome
 
 Chosen option: **One reserved danger hue**, because destructive and unrecoverable-error semantics need one bounded
-exception to the no-hue-states policy, and a single reserved hue keeps that exception from spreading. `--danger` resolves to a generated red scale
-(solid `#B91C1C` at step 9, with theme-tuned text and border steps), in both themes; `--fg-on-danger` is white on the
-solid (6.47:1). It appears as a fill, border, or icon, never as body text, and per WCAG 1.4.1 always pairs with an
-icon, weight, or text label, so colour alone never carries the meaning. The shadcn `destructive` alias routes to
-`--danger` (previously aliased to `--fg` under the no-hue policy).
+exception to the no-hue-states policy, and a single reserved hue keeps that exception from spreading. `--danger`
+resolves to a generated red scale (solid `#B91C1C` at step 9, with theme-tuned text and border steps), in both themes;
+`--fg-on-danger` is white on the solid (6.47:1). It appears as a fill, border, or icon, never as body text, and per
+WCAG 1.4.1 always pairs with an icon, weight, or text label, so colour alone never carries the meaning. The shadcn
+`destructive` alias routes to `--danger` (previously aliased to `--fg` under the no-hue policy).
 
 No other state hue is introduced: success, warning, and info remain hue-less and continue to speak through weight,
 opacity, motion, and the gold accent. Decorative and categorical tones live in the atmosphere layer, never as a
@@ -93,10 +93,10 @@ second accent or a state colour.
 
 ## More information
 
-The no-hue-states policy this amends is documented in the design philosophy reference
-([Design philosophy](../design/philosophy.md), "State without hue") and the colour token reference
-([Colour tokens](../design/color-tokens.md)). The `--danger` scale is one of the generated families established by the token
-architecture decision ([Radix-generated three-tier dual-theme colour tokens](./0026-radix-generated-three-tier-dual-theme-color-tokens.md)).
-The brand identity reference (`reverie-branding/identity.md`) carries the Reverie Danger anchor and its reservation
-rules. Revisit only if a second state hue is ever proposed, which would mean reopening the no-hue policy, not
-extending this exception.
+The no-hue-states policy this amends is documented in the design philosophy reference ([Design
+philosophy](../design/philosophy.md), "State without hue") and the colour token reference ([Colour
+tokens](../design/color-tokens.md)). The `--danger` scale is one of the generated families
+established by the token architecture decision ([Radix-generated three-tier dual-theme colour
+tokens](./0026-radix-generated-three-tier-dual-theme-color-tokens.md)). The brand identity reference
+(`reverie-branding/identity.md`) carries the Reverie Danger anchor and its reservation rules. Revisit only if a
+second state hue is ever proposed, which would mean reopening the no-hue policy, not extending this exception.

@@ -70,7 +70,7 @@ trigger; the view switcher changes which projection renders, never the underlyin
 - Positive: the filter drawer and the book-detail drawer reuse one overlay slot, so the redesign needed only one set
   of scrim, Escape, and focus-return handling rather than two.
 - Negative: because the filter drawer and the book-detail drawer share one overlay slot, opening one closes the
-  other; the two surfaces cannot be open at the same time.
+  other.
 
 ## Pros and cons of the options
 

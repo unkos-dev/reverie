@@ -14,11 +14,12 @@ decision-makers:
 
 ## Context and problem statement
 
-The frontend lint stack ratified in [strict lint policy](./0002-strict-lint-policy-pedantic-clippy-and-strict-frontend-lint.md)
-ran on ESLint plus typescript-eslint (`strictTypeChecked`), `eslint-plugin-react-hooks`, `eslint-plugin-react-refresh`,
-`@eslint-react`, and `eslint-plugin-jsdoc`. This decision moves the JS/TS lint engine to oxlint, the Rust linter from
-the VoidZero oxc project, as the first step toward a unified oxc toolchain (oxlint for linting, oxfmt for formatting,
-a shared runner later).
+The frontend lint stack ratified in [strict lint
+policy](./0002-strict-lint-policy-pedantic-clippy-and-strict-frontend-lint.md) ran on ESLint plus typescript-eslint
+(`strictTypeChecked`), `eslint-plugin-react-hooks`, `eslint-plugin-react-refresh`, `@eslint-react`, and
+`eslint-plugin-jsdoc`. This decision moves the JS/TS lint engine to oxlint, the Rust linter from the VoidZero
+oxc project, as the first step toward a unified oxc toolchain (oxlint for linting, oxfmt for formatting, a shared
+runner later).
 
 The strategic force: the oxc family is an order of magnitude faster (native Rust), converges lint and format on one
 engine, and is forward-aligned with TypeScript 7. Its type-aware linter, `oxlint-tsgolint`, is built on

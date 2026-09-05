@@ -226,10 +226,9 @@ and the password policy. Secrets accept a file-based variant in addition to envi
 
 ## More information
 
-- Extends the first-party session-layer decision
-  ([First-party session layer on the tower-sessions core](./0015-first-party-session-layer-on-the-tower-sessions-core.md)):
-  both providers reuse that layer's session login routine (`cycle_id` on login, `session_version` force-logout)
-  unchanged.
+- Extends the first-party session-layer decision ([First-party session layer on the tower-sessions
+  core](./0015-first-party-session-layer-on-the-tower-sessions-core.md)): both providers reuse that layer's session
+  login routine (`cycle_id` on login, `session_version` force-logout) unchanged.
 - API authorization (scopes, scoped tokens, and resource-server token validation) is decided separately in the
   [API authorization model ADR](./0028-api-authorization-orthogonal-scope-role-and-ownership-axes.md) and is out of
   scope here.

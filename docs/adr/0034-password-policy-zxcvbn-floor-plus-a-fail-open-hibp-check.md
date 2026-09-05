@@ -61,8 +61,8 @@ allowed on strength alone. Two dependencies are added: `zxcvbn` for scoring and 
 
 ### Consequences
 
-- Positive: weak and known-breached passwords are rejected on every path that sets a credential, matching current
-  NIST/OWASP guidance.
+- Positive: weak and known-breached passwords are rejected on every path that sets a credential, which matches
+  current NIST/OWASP guidance.
 - Positive: the instance keeps working with no internet and during an HIBP outage: account creation and password
   rotation never hard-fail on an external service.
 - Positive: k-anonymity means a full password or its full hash never leaves the instance, only a 5-character prefix.
@@ -93,8 +93,8 @@ allowed on strength alone. Two dependencies are added: `zxcvbn` for scoring and 
 ### zxcvbn floor plus HIBP, fail-closed
 
 - Positive: breach screening would be a hard guarantee whenever it ran.
-- Negative: an HIBP outage or an air-gapped instance could no longer create accounts or rotate passwords, breaking
-  the self-hosted posture for a best-effort signal.
+- Negative: an HIBP outage or an air-gapped instance could no longer create accounts or rotate passwords, which
+  breaks the self-hosted posture for a best-effort signal.
 
 ## More information
 

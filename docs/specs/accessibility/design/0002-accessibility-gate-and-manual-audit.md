@@ -62,8 +62,8 @@ net-new view, through the manual audit; a contributor running the gate locally b
 ## Data and state
 
 - `ALLOWLIST` in `allowlist.mjs` is the set of accepted exceptions the gate's verdict subtracts from axe's raw
-  violations before failing. It is currently empty: no surface today needs a documented exception, because the gold
-  design tokens the components use already clear the relevant contrast thresholds on their own. An entry, when one
+  violations before failing. It is currently empty: the gold design tokens the components use already clear the
+  relevant contrast thresholds on their own, so no surface needs a documented exception. An entry, when one
   exists, is `{ ruleId, htmlIncludesAll, rationale, issue }`: it matches a violation node by axe rule id and by every
   string in `htmlIncludesAll` being contained within the node's `html`, matching on rendered markup (`node.html`) rather
   than on background colour or CSS selector, because an incidental class or an identical background colour on a
@@ -86,7 +86,7 @@ For each target path in `parseTargets(process.env.A11Y_TARGETS)`, `a11y.spec.ts`
    fails regardless of the violation count.
 5. Filter the raw `violations` through `filterAllowed`, which drops any node matched by an `ALLOWLIST` entry and drops
    a violation entirely once none of its nodes remain.
-6. Attach the full raw result, including the filtered `remaining` list, as a `axe-results.json` test artifact before
+6. Attach the full raw result, including the filtered `remaining` list, as an `axe-results.json` test artifact before
    asserting, so a failing run always carries the rule id, impact, help text, and per-node HTML and contrast data.
 7. Assert the filtered `remaining` list is empty; a non-empty list fails the test.
 
@@ -97,7 +97,7 @@ For each target path in `parseTargets(process.env.A11Y_TARGETS)`, `a11y.spec.ts`
   directory (`frontend/test-results/`) as a workflow artifact on failure.
 - **A crashed browser or blank/wrong page.** The liveness checks in step 4 fail closed: an empty `violations` array
   from a page that never rendered is indistinguishable from a genuinely clean scan unless the test also confirms axe
-  actually ran (`testEngine` present), against the intended page (`urlMatches`), with a non-trivial rule set applied
+  ran (`testEngine` present), against the intended page (`urlMatches`), with a non-trivial rule set applied
   (`passes + inapplicable > 0`). Any of these failing fails the test even when `violations` is empty.
 - **`A11Y_TARGETS` resolving to zero targets.** `parseTargets` throws at spec-collection time rather than registering
   no tests, since a suite with no tests would otherwise pass without scanning anything.

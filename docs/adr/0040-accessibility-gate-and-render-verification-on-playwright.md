@@ -81,7 +81,7 @@ Concretely:
   bare results JSON.
 - Positive: the project converges on one browser-automation stack.
 - Positive: the allowlist/verdict layer is unaffected by the driver change; it stays first-party code (small, pure,
-  unit-tested), so only the driver changed.
+  unit-tested).
 - Negative: the gate covers one route. `/login` and `/setup` each call `fetchSetupStatus` in a mount-time query, so
   against the Vite-only server this gate boots they render an error branch rather than their real markup; scanning
   them needs a backend. Post-login views need that and a stored-session fixture. Both are added to the run targets
