@@ -183,6 +183,13 @@
       "title": "Radix-generated three-tier dual-theme color tokens"
     },
     {
+      "id": "REV-ADR-0027",
+      "kind": "adr",
+      "path": "docs/adr/0027-a-single-danger-hue-amends-the-no-hue-states-policy.md",
+      "status": "accepted",
+      "title": "A single danger hue amends the no-hue-states policy"
+    },
+    {
       "id": "REV-DESIGN-0001",
       "kind": "design",
       "path": "docs/specs/library/design/0001-library-filter-and-sort-state.md",
