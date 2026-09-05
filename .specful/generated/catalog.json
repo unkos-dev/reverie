@@ -197,6 +197,13 @@
       "title": "API authorization: orthogonal scope, role, and ownership axes"
     },
     {
+      "id": "REV-ADR-0029",
+      "kind": "adr",
+      "path": "docs/adr/0029-unified-identity-with-pluggable-authentication-providers.md",
+      "status": "accepted",
+      "title": "Unified identity with pluggable authentication providers"
+    },
+    {
       "id": "REV-DESIGN-0001",
       "kind": "design",
       "path": "docs/specs/library/design/0001-library-filter-and-sort-state.md",
