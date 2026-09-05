@@ -120,6 +120,13 @@
       "title": "In-process sqlx PgPool as the sole pooling layer"
     },
     {
+      "id": "REV-ADR-0018",
+      "kind": "adr",
+      "path": "docs/adr/0018-durable-job-queue-postgres-backed-skip-locked-crash-only.md",
+      "status": "accepted",
+      "title": "Durable job queue: Postgres-backed, SKIP LOCKED, crash-only"
+    },
+    {
       "id": "REV-DESIGN-0001",
       "kind": "design",
       "path": "docs/specs/library/design/0001-library-filter-and-sort-state.md",
