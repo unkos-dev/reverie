@@ -1,6 +1,6 @@
 //! Settings persistence, validation, and live-reload via LISTEN/NOTIFY.
 //!
-//! See ADR `adr/2026-05-26-persisted-settings.md`.
+//! See ADR `docs/adr/0012-persist-operator-tunable-settings-to-database-with-live-reload.md`.
 
 use std::sync::Arc;
 

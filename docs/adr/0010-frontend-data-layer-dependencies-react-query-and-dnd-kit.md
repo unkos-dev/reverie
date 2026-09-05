@@ -145,6 +145,6 @@ lists.
 ## More information
 
 This decision was recorded alongside the
-[JSON REST API conventions](../../adr/2026-05-22-json-api-conventions.md) decision and the
+[JSON REST API conventions](./0011-json-api-conventions-for-the-browser-facing-rest-surface.md) decision and the
 [backend auxiliary crates](./0009-backend-auxiliary-crates-axum-extra-serde-with-and-subtle.md) decision, for the
 same body of work.

@@ -22,7 +22,7 @@
 --   reverie_migrator  — dedicated least-privilege migration identity
 --                    (NOSUPERUSER NOCREATEROLE NOBYPASSRLS). Runs `reverie
 --                    migrate`; owns the schema objects it creates. See
---                    adr/2026-06-02-hybrid-migration-entrypoints-and-role.md.
+--                    docs/adr/0014-migration-model-hybrid-entrypoints-and-a-least-privilege-role.md.
 --   reverie_app       — web application service account. RLS enforced (user-scoped).
 --   reverie_ingestion — background pipeline service account. Has own permissive
 --                    RLS policy on manifestations. Scoped to pipeline tables.

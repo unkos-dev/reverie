@@ -297,7 +297,7 @@ only when the asserted email is verified.
 ## More Information
 
 - Extends the first-party session-layer decision
-  ([`2026-06-04-first-party-session-layer.md`](2026-06-04-first-party-session-layer.md)):
+  ([First-party session layer on the tower-sessions core](../docs/adr/0015-first-party-session-layer-on-the-tower-sessions-core.md)):
   both providers reuse that layer's session login routine (`cycle_id` on login,
   `session_version` force-logout) unchanged. This decision supersedes nothing.
 - API authorization (scopes, scoped tokens, and resource-server token validation)

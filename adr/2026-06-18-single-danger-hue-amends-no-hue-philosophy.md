@@ -115,7 +115,7 @@ The no-hue-states policy this amends is documented in the design philosophy
 reference (`docs/design/philosophy.md`, "State without hue") and
 the color token reference (`docs/design/color-tokens.md`). The
 `--danger` scale is one of the generated families established by the token
-architecture decision (`2026-06-18-radix-three-tier-dual-theme-tokens.md`). The
+architecture decision (`docs/adr/0026-radix-generated-three-tier-dual-theme-color-tokens.md`). The
 brand identity reference (`reverie-branding/identity.md`) carries the Reverie
 Danger anchor and its reservation rules. Revisit only if a second state hue is
 ever proposed, which would mean reopening the no-hue policy, not extending this

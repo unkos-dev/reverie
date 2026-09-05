@@ -1,7 +1,7 @@
 //! Response DTOs for `/api/v1/books`, `/api/v1/books/{id}`, `/api/v1/works/{id}`.
 //!
 //! Wire-format conventions follow the JSON-API conventions ADR
-//! (`adr/2026-05-22-json-api-conventions.md`): snake_case field names
+//! (`docs/adr/0011-json-api-conventions-for-the-browser-facing-rest-surface.md`): snake_case field names
 //! (no `serde(rename_all)`), `Option<T>` for nullable fields (no
 //! `skip_serializing_if`), RFC 3339 timestamps via the `time` crate
 //! default. Mirrors [`crate::models::user::User`] shape.

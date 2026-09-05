@@ -171,7 +171,7 @@ inherited descending default from each sort surface must reach the wire as
 - [Multi-column sort stack](2026-07-07-multi-column-sort-stack.md): the wire
   grammar, whitelist, and cursor contract this decision leaves untouched. Its
   "sort lives in the URL" driver is revised by this ADR; the rest stands.
-- [Persisted settings](2026-05-26-persisted-settings.md): the settings tier
+- [Persisted settings](../docs/adr/0012-persist-operator-tunable-settings-to-database-with-live-reload.md): the settings tier
   model behind the `user_preferences` row this decision writes to.
 - Revisit trigger: if named saved views land, they may want to apply a sort
   without changing the reader's standing preference; that distinction needs

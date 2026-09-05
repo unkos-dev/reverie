@@ -63,23 +63,23 @@
         "description": "Strict lint policy ratified for both stacks. Backend: clippy::pedantic + nursery + cargo-deny. Frontend: oxlint with type-aware (tsgolint) strict rules + native react rules. Style nits should already be machine-caught, so flag what slipped past. Amended by the oxlint-toolchain ADR pinned below."
       },
       {
-        "path": "adr/2026-05-22-json-api-conventions.md",
+        "path": "docs/adr/0011-json-api-conventions-for-the-browser-facing-rest-surface.md",
         "description": "Cross-cutting: JSON:API-style response envelope, error shape, and resource conventions every API route must follow."
       },
       {
-        "path": "adr/2026-05-28-validation-status-vocabulary.md",
+        "path": "docs/adr/0013-a-typed-validationstatus-enum-reconciles-the-vocabulary.md",
         "description": "Cross-cutting: canonical clean-vs-valid validation status vocabulary used across ingestion and metadata."
       },
       {
-        "path": "adr/2026-06-08-keyset-pagination-list-contract.md",
+        "path": "docs/adr/0019-keyset-pagination-as-the-default-list-contract.md",
         "description": "Cross-cutting: keyset (cursor) pagination is the list contract; offset pagination is a finding."
       },
       {
-        "path": "adr/2026-06-04-first-party-session-layer.md",
+        "path": "docs/adr/0015-first-party-session-layer-on-the-tower-sessions-core.md",
         "description": "Cross-cutting: first-party session layer (dropped axum-login/tower-sessions); session/cookie handling must follow this design."
       },
       {
-        "path": "adr/2026-06-08-standards-first-integrations.md",
+        "path": "docs/adr/0022-standards-first-integrations-over-bundled-adjacent-services.md",
         "description": "Cross-cutting: default to IETF/W3C/OWASP standards; deviation requires a conscious decision recorded in an ADR or debt entry."
       },
       {
@@ -91,7 +91,7 @@
         "description": "Cross-cutting (accepted): API authorization on orthogonal scope, role, and ownership axes enforced server-side. Resource-server token validation pins iss + aud and the alg from the JWK; scope/role/child/ownership checks live at the data layer, not in handler prose."
       },
       {
-        "path": "adr/2026-06-08-api-versioning-openapi.md",
+        "path": "docs/adr/0016-api-versioning-by-url-path-with-openapi-as-the-contract.md",
         "description": "Cross-cutting: the /api/v1 version prefix and the OpenAPI generation contract. The generated backend/openapi.json (ignored below) derives from utoipa annotations across backend/src/models/* aggregated in backend/src/lib.rs; an API-surface change must keep this contract and regenerate the spec."
       },
       {

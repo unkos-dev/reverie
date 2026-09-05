@@ -9,7 +9,7 @@
 //! (Atom XML feeds, e-readers) rely on to prompt for credentials; those
 //! clients ignore the JSON body.
 //!
-//! See `adr/2026-05-22-json-api-conventions.md` for the full
+//! See `docs/adr/0011-json-api-conventions-for-the-browser-facing-rest-surface.md` for the full
 //! convention and migration rationale.
 //!
 //! # Information disclosure

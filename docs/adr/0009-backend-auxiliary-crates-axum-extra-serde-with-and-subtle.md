@@ -117,7 +117,7 @@ existing precedent.
 
 Standing principle: default to standard-library and audited-crate idioms over hand-rolled primitives.
 
-Sibling ADR: [JSON API conventions](../../adr/2026-05-22-json-api-conventions.md) (the RFC 7396 Merge Patch decision
+Sibling ADR: [JSON API conventions](./0011-json-api-conventions-for-the-browser-facing-rest-surface.md) (the RFC 7396 Merge Patch decision
 and the CSRF synchroniser-token decision).
 
 Sibling ADR: [Frontend data layer dependencies](./0010-frontend-data-layer-dependencies-react-query-and-dnd-kit.md) (the frontend

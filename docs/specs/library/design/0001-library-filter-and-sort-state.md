@@ -224,4 +224,4 @@ a whole, not by this Design.
 - [Typed filter grammar on list endpoints](../../../../adr/2026-07-07-typed-filter-grammar-list-endpoints.md)
 - [Single filter home in the library right rail](../../../../adr/2026-07-10-library-filter-home-right-rail.md)
 - [Library sort is a per-user preference, resolved client-side, never URL state](../../../../adr/2026-08-08-library-sort-per-user-preference.md)
-- [No unbounded queries: keyset pagination as the default list contract](../../../../adr/2026-06-08-keyset-pagination-list-contract.md)
+- [No unbounded queries: keyset pagination as the default list contract](../../../../docs/adr/0019-keyset-pagination-as-the-default-list-contract.md)

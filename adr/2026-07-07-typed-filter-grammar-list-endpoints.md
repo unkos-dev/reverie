@@ -162,9 +162,9 @@ already shipped for the vocabulary filters (`tag_any`, `genre_none`).
 - [Multi-column sort stack on the keyset list contract](2026-07-07-multi-column-sort-stack.md):
   the companion sort decision on the same list; filtering and sorting share the
   cursor and the closed-column-set stance. Not superseded.
-- [No unbounded queries: keyset pagination as the default list contract](2026-06-08-keyset-pagination-list-contract.md):
+- [No unbounded queries: keyset pagination as the default list contract](../docs/adr/0019-keyset-pagination-as-the-default-list-contract.md):
   the keyset list contract this filtering rides on. Not superseded.
-- [JSON API conventions for Reverie's browser-facing REST surface](2026-05-22-json-api-conventions.md):
+- [JSON API conventions for Reverie's browser-facing REST surface](../docs/adr/0011-json-api-conventions-for-the-browser-facing-rest-surface.md):
   the opaque-cursor mechanism and query-shape conventions this reuses. Not
   superseded.
 - Revisit trigger: the flat suffix grammar is AND-only and tops out around the

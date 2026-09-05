@@ -1,7 +1,7 @@
 //! Response DTOs for `/api/v1/shelves*`.
 //!
 //! Wire-format conventions follow the JSON-API conventions ADR
-//! (`adr/2026-05-22-json-api-conventions.md`): snake_case field names,
+//! (`docs/adr/0011-json-api-conventions-for-the-browser-facing-rest-surface.md`): snake_case field names,
 //! `Option<T>` for nullable, RFC 3339 timestamps.
 //!
 //! # `ETag` + If-Match contract

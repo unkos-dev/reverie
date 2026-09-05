@@ -11,7 +11,7 @@ informed: "Reverie contributors"
 
 ## Context and Problem Statement
 
-The [keyset pagination list contract](2026-06-08-keyset-pagination-list-contract.md)
+The [keyset pagination list contract](../docs/adr/0019-keyset-pagination-as-the-default-list-contract.md)
 made keyset the default for every growing list and recorded the price: each sort
 axis must encode its sort key in the cursor with a stable tiebreaker, or
 pagination silently drops or duplicates rows at a page boundary. Under that
@@ -137,10 +137,10 @@ boundary, and a cursor replayed under a changed sort returns 422.
 
 ## More Information
 
-- [Keyset pagination list contract](2026-06-08-keyset-pagination-list-contract.md):
+- [Keyset pagination list contract](../docs/adr/0019-keyset-pagination-as-the-default-list-contract.md):
   the contract this extends; it priced in "each sort axis is real work", and this
   ADR is the multi-axis instance of that price. Not superseded.
-- [JSON API conventions](2026-05-22-json-api-conventions.md): the opaque-cursor
+- [JSON API conventions](../docs/adr/0011-json-api-conventions-for-the-browser-facing-rest-surface.md): the opaque-cursor
   mechanism and JSON:API stance this reuses. Not superseded.
 - Revisit trigger: if resource naming standardises on an explicit field-selection
   grammar across the API, reconcile this sort syntax with it in a new ADR. If a

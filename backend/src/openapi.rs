@@ -1,5 +1,5 @@
 //! OpenAPI 3.1 contract for the Reverie HTTP API (docs-as-done;
-//! `adr/2026-06-08-api-versioning-openapi.md`).
+//! `docs/adr/0016-api-versioning-by-url-path-with-openapi-as-the-contract.md`).
 //!
 //! The spec is generated code-first from the handlers: [`ApiDoc`] supplies the
 //! document metadata and shared component schemas, and each documented module
@@ -76,7 +76,7 @@ const API_VERSION: &str = "0.1.0";
 /// skips: `owasp-no-http-basic` on `opds_basic`, and `owasp-jwt-best-practices`
 /// on the Bearer schemes. Both are registered in `.vacuum.yaml`.
 ///
-/// See `adr/2026-06-08-api-versioning-openapi.md`.
+/// See `docs/adr/0016-api-versioning-by-url-path-with-openapi-as-the-contract.md`.
 struct SecurityAddon;
 
 impl Modify for SecurityAddon {

@@ -71,6 +71,118 @@
       "title": "Frontend data-layer dependencies: React Query and dnd-kit"
     },
     {
+      "id": "REV-ADR-0011",
+      "kind": "adr",
+      "path": "docs/adr/0011-json-api-conventions-for-the-browser-facing-rest-surface.md",
+      "status": "accepted",
+      "title": "JSON API conventions for the browser-facing REST surface"
+    },
+    {
+      "id": "REV-ADR-0012",
+      "kind": "adr",
+      "path": "docs/adr/0012-persist-operator-tunable-settings-to-database-with-live-reload.md",
+      "status": "accepted",
+      "title": "Persist operator-tunable settings to database with live reload"
+    },
+    {
+      "id": "REV-ADR-0013",
+      "kind": "adr",
+      "path": "docs/adr/0013-a-typed-validationstatus-enum-reconciles-the-vocabulary.md",
+      "status": "accepted",
+      "title": "A typed ValidationStatus enum reconciles the vocabulary"
+    },
+    {
+      "id": "REV-ADR-0014",
+      "kind": "adr",
+      "path": "docs/adr/0014-migration-model-hybrid-entrypoints-and-a-least-privilege-role.md",
+      "status": "accepted",
+      "title": "Migration model: hybrid entrypoints and a least-privilege role"
+    },
+    {
+      "id": "REV-ADR-0015",
+      "kind": "adr",
+      "path": "docs/adr/0015-first-party-session-layer-on-the-tower-sessions-core.md",
+      "status": "accepted",
+      "title": "First-party session layer on the tower-sessions core"
+    },
+    {
+      "id": "REV-ADR-0016",
+      "kind": "adr",
+      "path": "docs/adr/0016-api-versioning-by-url-path-with-openapi-as-the-contract.md",
+      "status": "accepted",
+      "title": "API versioning by URL path with OpenAPI as the contract"
+    },
+    {
+      "id": "REV-ADR-0017",
+      "kind": "adr",
+      "path": "docs/adr/0017-in-process-sqlx-pgpool-as-the-sole-pooling-layer.md",
+      "status": "accepted",
+      "title": "In-process sqlx PgPool as the sole pooling layer"
+    },
+    {
+      "id": "REV-ADR-0018",
+      "kind": "adr",
+      "path": "docs/adr/0018-durable-job-queue-postgres-backed-skip-locked-crash-only.md",
+      "status": "accepted",
+      "title": "Durable job queue: Postgres-backed, SKIP LOCKED, crash-only"
+    },
+    {
+      "id": "REV-ADR-0019",
+      "kind": "adr",
+      "path": "docs/adr/0019-keyset-pagination-as-the-default-list-contract.md",
+      "status": "accepted",
+      "title": "Keyset pagination as the default list contract"
+    },
+    {
+      "id": "REV-ADR-0020",
+      "kind": "adr",
+      "path": "docs/adr/0020-durable-crash-safe-state-in-postgres-via-atomic-transactions.md",
+      "status": "accepted",
+      "title": "Durable, crash-safe state in Postgres via atomic transactions"
+    },
+    {
+      "id": "REV-ADR-0021",
+      "kind": "adr",
+      "path": "docs/adr/0021-scale-stance-stateless-application-operator-enabled-ha.md",
+      "status": "accepted",
+      "title": "Scale stance: stateless application, operator-enabled HA"
+    },
+    {
+      "id": "REV-ADR-0022",
+      "kind": "adr",
+      "path": "docs/adr/0022-standards-first-integrations-over-bundled-adjacent-services.md",
+      "status": "accepted",
+      "title": "Standards-first integrations over bundled adjacent services"
+    },
+    {
+      "id": "REV-ADR-0023",
+      "kind": "adr",
+      "path": "docs/adr/0023-declarative-configuration-stack-figment-validator-schemars.md",
+      "status": "accepted",
+      "title": "Declarative configuration stack: figment, validator, schemars"
+    },
+    {
+      "id": "REV-ADR-0024",
+      "kind": "adr",
+      "path": "docs/adr/0024-rasterize-svg-declared-epub-covers-to-png-via-resvg.md",
+      "status": "accepted",
+      "title": "Rasterize SVG-declared EPUB covers to PNG via resvg"
+    },
+    {
+      "id": "REV-ADR-0025",
+      "kind": "adr",
+      "path": "docs/adr/0025-cover-cache-headers-ingest-pre-warm-and-jpeg-thumbnails.md",
+      "status": "accepted",
+      "title": "Cover cache headers, ingest pre-warm, and JPEG thumbnails"
+    },
+    {
+      "id": "REV-ADR-0026",
+      "kind": "adr",
+      "path": "docs/adr/0026-radix-generated-three-tier-dual-theme-color-tokens.md",
+      "status": "accepted",
+      "title": "Radix-generated three-tier dual-theme color tokens"
+    },
+    {
       "id": "REV-DESIGN-0001",
       "kind": "design",
       "path": "docs/specs/library/design/0001-library-filter-and-sort-state.md",

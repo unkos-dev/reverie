@@ -18,7 +18,7 @@ export const IF_MATCH_REQUIRED_SLUG = "if-match-required";
  * Typed error class for failed API requests.
  *
  * Parses RFC 9457 Problem Details responses (`application/problem+json`)
- * emitted by the backend per `adr/2026-05-22-json-api-conventions.md`.
+ * emitted by the backend per `docs/adr/0011-json-api-conventions-for-the-browser-facing-rest-surface.md`.
  * Every non-2xx response from `apiFetch` lands here, regardless of
  * envelope shape — if the body is not a Problem Details document the
  * `type` is `null` and `title`/`detail` fall back to `response.statusText`

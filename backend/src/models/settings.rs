@@ -1,6 +1,6 @@
 //! Persisted operator-tunable settings (single-row `settings` table).
 //!
-//! See ADR `adr/2026-05-26-persisted-settings.md` for storage shape,
+//! See ADR `docs/adr/0012-persist-operator-tunable-settings-to-database-with-live-reload.md` for storage shape,
 //! precedence, and reload decisions.
 
 use chrono::{DateTime, Utc};
