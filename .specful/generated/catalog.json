@@ -190,6 +190,13 @@
       "title": "A single danger hue amends the no-hue-states policy"
     },
     {
+      "id": "REV-ADR-0028",
+      "kind": "adr",
+      "path": "docs/adr/0028-api-authorization-orthogonal-scope-role-and-ownership-axes.md",
+      "status": "accepted",
+      "title": "API authorization: orthogonal scope, role, and ownership axes"
+    },
+    {
       "id": "REV-DESIGN-0001",
       "kind": "design",
       "path": "docs/specs/library/design/0001-library-filter-and-sort-state.md",

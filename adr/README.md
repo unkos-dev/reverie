@@ -24,7 +24,6 @@ An Architecture Decision Record (ADR) captures an important architecture decisio
 - [Frontend docstring linting via `eslint-plugin-jsdoc`](superseded/2026-05-22-frontend-docstring-tooling.md) (superseded by [Adopt oxlint, replacing the ESLint toolchain](2026-06-27-adopt-oxlint-toolchain.md), 2026-06-27)
 - [Accessibility review process: automated axe gate + manual audit cadence](superseded/2026-06-05-accessibility-review-process.md) (superseded by [Accessibility gate and render-verification on the Playwright stack](2026-07-13-a11y-gate-on-playwright.md), 2026-07-13)
 - [Authentication and identity model: unified identity with pluggable providers](2026-06-23-auth-identity-pluggable-providers.md) (accepted, 2026-06-23)
-- [API authorization model: orthogonal scope, role, and ownership axes enforced server-side](2026-06-23-api-authorization-orthogonal-axes.md) (accepted, 2026-06-23)
 - [Adopt oxlint, replacing the ESLint toolchain](2026-06-27-adopt-oxlint-toolchain.md) (accepted, 2026-06-27)
 - [Adopt oxfmt, replacing Prettier](2026-06-28-adopt-oxfmt-formatter.md) (accepted, 2026-06-28)
 - [Adopt lefthook, replacing husky and lint-staged](2026-06-28-adopt-lefthook-git-hooks.md) (accepted, 2026-06-28)
