@@ -162,6 +162,13 @@
       "title": "Declarative configuration stack: figment, validator, schemars"
     },
     {
+      "id": "REV-ADR-0024",
+      "kind": "adr",
+      "path": "docs/adr/0024-rasterize-svg-declared-epub-covers-to-png-via-resvg.md",
+      "status": "accepted",
+      "title": "Rasterize SVG-declared EPUB covers to PNG via resvg"
+    },
+    {
       "id": "REV-DESIGN-0001",
       "kind": "design",
       "path": "docs/specs/library/design/0001-library-filter-and-sort-state.md",
