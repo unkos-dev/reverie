@@ -22,7 +22,6 @@ An Architecture Decision Record (ADR) captures an important architecture decisio
 ## ADRs
 
 - [Accessibility review process: automated axe gate + manual audit cadence](superseded/2026-06-05-accessibility-review-process.md) (superseded by [Accessibility gate and render-verification on the Playwright stack](2026-07-13-a11y-gate-on-playwright.md), 2026-07-13)
-- [Adopt oxlint, replacing the ESLint toolchain](2026-06-27-adopt-oxlint-toolchain.md) (accepted, 2026-06-27)
 - [Adopt oxfmt, replacing Prettier](2026-06-28-adopt-oxfmt-formatter.md) (accepted, 2026-06-28)
 - [Adopt lefthook, replacing husky and lint-staged](2026-06-28-adopt-lefthook-git-hooks.md) (accepted, 2026-06-28)
 - [Adopt the Vite+ (vp) monorepo toolchain](2026-06-30-adopt-vite-plus-monorepo-toolchain.md) (accepted, 2026-06-30)

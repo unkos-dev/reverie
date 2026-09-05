@@ -204,6 +204,13 @@
       "title": "Unified identity with pluggable authentication providers"
     },
     {
+      "id": "REV-ADR-0030",
+      "kind": "adr",
+      "path": "docs/adr/0030-adopt-oxlint-replacing-the-eslint-toolchain.md",
+      "status": "accepted",
+      "title": "Adopt oxlint, replacing the ESLint toolchain"
+    },
+    {
       "id": "REV-DESIGN-0001",
       "kind": "design",
       "path": "docs/specs/library/design/0001-library-filter-and-sort-state.md",
