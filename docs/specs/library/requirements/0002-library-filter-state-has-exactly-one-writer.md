@@ -38,5 +38,5 @@ that satisfies this Requirement.
 
 ## More information
 
-- [Single filter home in the library right rail](../../../adr/0039-single-filter-home-in-the-library-right-rail.md): the
-  decision that the filter rail is the primary editing surface.
+- [Library filters in a drawer with removable chips](../../../adr/0041-library-filters-in-a-drawer-with-removable-chips.md):
+  the decision that the filter drawer is the editing surface.

@@ -108,8 +108,8 @@
   --color-muted-foreground: var(--fg-muted);
   --color-input: var(--border);
   --color-ring: var(--accent);
-  /* Destructive now routes to the real danger hue (spec §4/§5; ADR
-     2026-06-18-single-danger-hue-amends-no-hue-philosophy). Previously
+  /* Destructive now routes to the real danger hue (spec §4/§5;
+     docs/adr/0027-a-single-danger-hue-amends-the-no-hue-states-policy.md). Previously
      aliased to --fg under the no-hue policy. */
   --color-destructive: var(--danger);
   --color-destructive-foreground: var(--fg-on-danger);

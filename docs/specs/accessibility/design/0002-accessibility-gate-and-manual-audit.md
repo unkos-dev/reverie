@@ -12,13 +12,13 @@ governed-by:
 # Accessibility gate and manual audit
 
 This Design covers how Reverie checks its web surfaces against the WCAG 2.2 Level AA obligation: the automated
-Playwright and axe-core gate, the allowlist that expresses the one accepted exception and any technical exemption, and
+Playwright and axe-core gate, the allowlist that would express an accepted exception or a technical exemption, and
 the manual audit that covers what the automated gate cannot.
 
 ## Purpose and boundaries
 
 This subject owns verifying WCAG 2.2 Level AA conformance for Reverie's web surfaces: the automated scan that runs on
-every UI-touching pull request, the allowlist that filters an accepted exception out of the scan's verdict, and the
+every UI-touching pull request, the allowlist that would filter an accepted exception out of the scan's verdict, and the
 recurring manual audit. It does not own the design tokens, component markup, or colour system that make a surface
 conformant in the first place; those live in `frontend/DESIGN.md` and the component implementations themselves. It
 does not own the WCAG 2.2 standard's own rule definitions, which `@axe-core/playwright` evaluates against.
@@ -103,10 +103,10 @@ For each target path in `parseTargets(process.env.A11Y_TARGETS)`, `a11y.spec.ts`
   no tests, since a suite with no tests would otherwise pass without scanning anything.
 - **An off-origin or malformed target.** `parseTargets` throws when an entry does not start with a single `/`, since
   `page.goto` would otherwise leave the configured base URL and scan an unrelated origin.
-- **A design change that widens the gap the carve-out covers.** A colour or role change that pushes a previously
-  conformant surface into a contrast failure is caught by the gate the same as any other regression: the failure is
-  not allowlisted unless it meets every condition of the one accepted carve-out, so the change fails the gate and
-  needs either a design fix or a reviewer-approved allowlist entry with its own rationale.
+- **A design change that introduces a contrast failure.** A colour or role change that pushes a previously
+  conformant surface into a contrast failure is caught by the gate the same as any other regression: nothing is
+  allowlisted, so the change fails the gate and needs a design fix; an allowlist entry instead would need the
+  Requirement rewritten first.
 
 ## Security and operations
 

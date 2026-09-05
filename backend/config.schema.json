@@ -91,7 +91,7 @@
       "default": "/data/library"
     },
     "local_auth_enabled": {
-      "description": "Whether local email+password authentication is enabled\n(`REVERIE_LOCAL_AUTH_ENABLED`, default `true`). Reverie is local-first out\nof the box (ADR `2026-06-23-auth-identity-pluggable-providers`), so this\ndefaults on. Setting it `false` without configuring OIDC is rejected at\nstartup (Gate 4): at least one auth provider must remain usable or the\ninstance locks everyone out.",
+      "description": "Whether local email+password authentication is enabled\n(`REVERIE_LOCAL_AUTH_ENABLED`, default `true`). Reverie is local-first out\nof the box (`docs/adr/0029-unified-identity-with-pluggable-authentication-providers.md`), so this\ndefaults on. Setting it `false` without configuring OIDC is rejected at\nstartup (Gate 4): at least one auth provider must remain usable or the\ninstance locks everyone out.",
       "type": "boolean",
       "default": true
     },
