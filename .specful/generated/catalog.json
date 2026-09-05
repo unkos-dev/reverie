@@ -85,6 +85,13 @@
       "title": "Persist operator-tunable settings to database with live reload"
     },
     {
+      "id": "REV-ADR-0013",
+      "kind": "adr",
+      "path": "docs/adr/0013-a-typed-validationstatus-enum-reconciles-the-vocabulary.md",
+      "status": "accepted",
+      "title": "A typed ValidationStatus enum reconciles the vocabulary"
+    },
+    {
       "id": "REV-DESIGN-0001",
       "kind": "design",
       "path": "docs/specs/library/design/0001-library-filter-and-sort-state.md",
