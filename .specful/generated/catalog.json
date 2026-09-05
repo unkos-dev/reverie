@@ -322,6 +322,13 @@
       "title": "Package ingress: default-deny controls, no per-package allowances"
     },
     {
+      "id": "REV-ADR-0046",
+      "kind": "adr",
+      "path": "docs/adr/0046-chrono-is-the-first-party-datetime-crate.md",
+      "status": "accepted",
+      "title": "chrono is the first-party datetime crate"
+    },
+    {
       "id": "REV-DESIGN-0001",
       "kind": "design",
       "path": "docs/specs/library/design/0001-library-filter-and-sort-state.md",
