@@ -106,6 +106,13 @@
       "title": "First-party session layer on the tower-sessions core"
     },
     {
+      "id": "REV-ADR-0016",
+      "kind": "adr",
+      "path": "docs/adr/0016-api-versioning-by-url-path-with-openapi-as-the-contract.md",
+      "status": "accepted",
+      "title": "API versioning by URL path with OpenAPI as the contract"
+    },
+    {
       "id": "REV-DESIGN-0001",
       "kind": "design",
       "path": "docs/specs/library/design/0001-library-filter-and-sort-state.md",
