@@ -22,7 +22,6 @@ An Architecture Decision Record (ADR) captures an important architecture decisio
 ## ADRs
 
 - [Accessibility review process: automated axe gate + manual audit cadence](superseded/2026-06-05-accessibility-review-process.md) (superseded by [Accessibility gate and render-verification on the Playwright stack](2026-07-13-a11y-gate-on-playwright.md), 2026-07-13)
-- [Lint suppressions must be self-purging: #[expect] with a reason, never #[allow]](2026-07-04-expect-over-allow-lint-suppressions.md) (accepted, 2026-07-04)
 - [Library data-grid stack: two-way bake-off behind a local adapter](2026-07-04-library-grid-stack-bakeoff.md) (accepted, 2026-07-04)
 - [Multi-column sort stack on the keyset list contract](2026-07-07-multi-column-sort-stack.md) (accepted, 2026-07-07)
 - [Typed filter grammar on list endpoints](2026-07-07-typed-filter-grammar-list-endpoints.md) (accepted, 2026-07-07)

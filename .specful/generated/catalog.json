@@ -239,6 +239,13 @@
       "title": "Password policy: zxcvbn floor plus a fail-open HIBP check"
     },
     {
+      "id": "REV-ADR-0035",
+      "kind": "adr",
+      "path": "docs/adr/0035-lint-suppressions-self-purge-expect-with-a-reason-never-allow.md",
+      "status": "accepted",
+      "title": "Lint suppressions self-purge: expect with a reason, never allow"
+    },
+    {
       "id": "REV-DESIGN-0001",
       "kind": "design",
       "path": "docs/specs/library/design/0001-library-filter-and-sort-state.md",
