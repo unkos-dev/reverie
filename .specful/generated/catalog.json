@@ -155,6 +155,13 @@
       "title": "Standards-first integrations over bundled adjacent services"
     },
     {
+      "id": "REV-ADR-0023",
+      "kind": "adr",
+      "path": "docs/adr/0023-declarative-configuration-stack-figment-validator-schemars.md",
+      "status": "accepted",
+      "title": "Declarative configuration stack: figment, validator, schemars"
+    },
+    {
       "id": "REV-DESIGN-0001",
       "kind": "design",
       "path": "docs/specs/library/design/0001-library-filter-and-sort-state.md",
