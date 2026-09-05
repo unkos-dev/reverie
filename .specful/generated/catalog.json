@@ -134,6 +134,13 @@
       "title": "Keyset pagination as the default list contract"
     },
     {
+      "id": "REV-ADR-0020",
+      "kind": "adr",
+      "path": "docs/adr/0020-durable-crash-safe-state-in-postgres-via-atomic-transactions.md",
+      "status": "accepted",
+      "title": "Durable, crash-safe state in Postgres via atomic transactions"
+    },
+    {
       "id": "REV-DESIGN-0001",
       "kind": "design",
       "path": "docs/specs/library/design/0001-library-filter-and-sort-state.md",
