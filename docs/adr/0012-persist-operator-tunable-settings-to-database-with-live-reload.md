@@ -69,7 +69,7 @@ types at the database level. One `SELECT *` loads everything into a `sqlx::FromR
 small migration (`ALTER TABLE ADD COLUMN ... DEFAULT ...`) that runs automatically on startup, matching the
 strongly-typed-everywhere philosophy.
 
-Key-value table rejected because type validation would live entirely in application code, it does not leverage sqlx
+Key-value table rejected because type validation would live entirely in application code, it does not use sqlx
 compile-time checks, it tempts schemaless drift, and it is not idiomatic for this codebase.
 
 ### Precedence: DB beats env (UI-first)

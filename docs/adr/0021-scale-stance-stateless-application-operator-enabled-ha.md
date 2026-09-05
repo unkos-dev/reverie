@@ -94,7 +94,7 @@ guardrails keep scale-out from being precluded; they are not first-party HA.
   (statelessness) Reverie wants anyway.
 - Positive: it keeps the maintained surface small.
 - Neutral: it pushes HA assembly onto the operator.
-- Negative: it offers no built-in availability story out of the box.
+- Negative: it has no built-in availability story out of the box.
 
 ### First-party high availability
 

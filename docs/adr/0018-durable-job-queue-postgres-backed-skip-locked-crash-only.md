@@ -54,7 +54,7 @@ need wall-clock lease or visibility timeouts to do it?
 ## Decision outcome
 
 Chosen option: **Restart-bounded reclaim**, because within a single instance a restart proves every `in_progress` row
-is an orphan, giving exact reclaim with no lease to tune, while reusing the already-crash-safe Postgres store instead
+is an orphan, so reclaim is exact with no lease to tune, and it reuses the already-crash-safe Postgres store instead
 of adding new infrastructure.
 
 An instance is one app process (the deployment unit); a worker is one of the N concurrent job-running tasks inside it
@@ -72,7 +72,7 @@ count.
 - Live-worker job death is closed by point fixes, not a lease. A worker task that dies while the instance stays alive
   (panic or hang) is the one case startup-revert misses, and in a pool it is the common individual failure, not
   whole-process death. Hangs are bounded by per-job timeouts, which is already a project-wide invariant (enrichment
-  has a fetch budget), turning a hang into a caught error that completes the job's bookkeeping. A task panic re-pends
+  has a fetch budget), so a hang becomes a caught error that completes the job's bookkeeping. A task panic re-pends
   the row via a guard on the spawned task. Both are required, not optional, for this option to be complete.
 - Handlers are idempotent. Because reclaim re-runs a job that may have partially executed, every handler must be safe
   to run again. File-mutating jobs (writeback: OPF rewrite, cover embed, path rename) are not transactional with
@@ -105,10 +105,9 @@ is a non-trivial build that waits for the topology that justifies it.
 - Positive: it holds the same defer-multi-instance posture as the pooling ADR, keeping the data layer's stance
   consistent.
 - Negative: restart-bounded reclaim does not recover a job whose worker died while the process stayed alive; that
-  case is only covered if the per-job timeout and the panic guard are in place, so they are mandatory, not
-  nice-to-have.
-- Negative: multi-instance support carries an additive migration later (lease columns, reaper, heartbeat); deferred,
-  not free.
+  case is only covered if the per-job timeout and the panic guard are in place, so they are mandatory.
+- Negative: multi-instance support carries an additive migration later (lease columns, reaper, heartbeat); deferring
+  it does not remove that cost.
 - Neutral: idempotency is a hard per-handler obligation, and file-mutating handlers must prove re-run safety rather
   than assert it.
 
@@ -130,7 +129,7 @@ is a non-trivial build that waits for the topology that justifies it.
 
 ### Dedicated external message broker
 
-- Positive: purpose-built brokers offer high throughput and rich delivery semantics.
+- Positive: purpose-built brokers have high throughput and rich delivery semantics.
 - Negative: it adds a stateful component and a single point of failure, duplicating durability Postgres already
   provides, for a job cadence that does not need broker-grade throughput.
 

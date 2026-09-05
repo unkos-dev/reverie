@@ -71,7 +71,7 @@ fleet may front Postgres with a pooler externally. Reverie does not ship or depe
 
 ### In-process `sqlx::PgPool`, no separate pooling tier
 
-- Positive: ratifies what already ships, zero new surface.
+- Positive: ratifies what already ships and adds no new surface.
 - Positive: session-mode connections preserve `LISTEN`/`NOTIFY`, advisory locks, and prepared statements.
 - Neutral: pool sizing becomes the one knob to get right per host.
 - Negative: offers no built-in answer for a multi-instance operator, deferred to the scale-stance ADR by design.

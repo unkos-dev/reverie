@@ -104,7 +104,7 @@ sorts, which carry an id tiebreaker and, for author, a NULL-bucket sub-tag so no
 
 ### Offset / page-number pagination
 
-- Positive: it offers trivial random access (`?page=N`) and a familiar UI.
+- Positive: it has trivial random access (`?page=N`) and a familiar UI.
 - Negative: it degrades at scale and shifts page boundaries under the asynchronous enrichment writes, displaying
   duplicates and skipping rows, the correctness failure the JSON API conventions ADR already rejected it for.
 
