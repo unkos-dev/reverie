@@ -148,6 +148,13 @@
       "title": "Scale stance: stateless application, operator-enabled HA"
     },
     {
+      "id": "REV-ADR-0022",
+      "kind": "adr",
+      "path": "docs/adr/0022-standards-first-integrations-over-bundled-adjacent-services.md",
+      "status": "accepted",
+      "title": "Standards-first integrations over bundled adjacent services"
+    },
+    {
       "id": "REV-DESIGN-0001",
       "kind": "design",
       "path": "docs/specs/library/design/0001-library-filter-and-sort-state.md",
