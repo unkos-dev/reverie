@@ -93,7 +93,7 @@ fleet may front Postgres with a pooler externally. Reverie does not ship or depe
 ## More information
 
 - Pairs with the
-  [scale-stance ADR](../../adr/2026-06-08-scale-stance-stateless-enable-not-own.md), which owns the multi-instance
+  [scale-stance ADR](./0021-scale-stance-stateless-application-operator-enabled-ha.md), which owns the multi-instance
   pool-sizing question this one defers.
 - [Migration model ADR](./0014-migration-model-hybrid-entrypoints-and-a-least-privilege-role.md): the single-instance
   contract and the `reverie_app` / `reverie_ingestion` / `reverie_readonly` role split the per-role pools follow.

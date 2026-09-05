@@ -7,7 +7,7 @@
  * session is the primary defense; this module owns the client side of
  * that defense (the `csrf_required` tower middleware owns the server
  * side; `apiFetch` owns header injection on mutating verbs). See
- * `adr/2026-05-22-json-api-conventions.md` §"CSRF defense".
+ * `docs/adr/0011-json-api-conventions-for-the-browser-facing-rest-surface.md` §"CSRF defense".
  *
  * The token lives in module-level state, a single source of truth for
  * every request in the SPA. Hydration paths: `apiFetch` refreshes the

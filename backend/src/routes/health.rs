@@ -1,7 +1,7 @@
 //! Liveness (`GET /health`) and readiness (`GET /health/ready`) probes.
 //!
 //! These are operational endpoints, deliberately unversioned and unauthenticated
-//! (`adr/2026-06-08-api-versioning-openapi.md` exempts `/health` from `/api/v1`).
+//! (`docs/adr/0016-api-versioning-by-url-path-with-openapi-as-the-contract.md` exempts `/health` from `/api/v1`).
 //! They are the docs-as-done OpenAPI pilot: the `#[utoipa::path]` annotations
 //! below are compile-checked by the `routes!` macro in `router`, so a handler
 //! cannot be served without being documented.

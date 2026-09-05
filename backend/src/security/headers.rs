@@ -191,7 +191,7 @@ pub async fn composite_fallback(State(state): State<AppState>, req: Request<Body
 /// contract and API CSP. A drift into the SPA fallback would serve
 /// `index.html` with HTML CSP on an `/api/v1/*` URL, downgrading the
 /// response-class differentiation that motivates having two CSP
-/// policies. See `adr/2026-05-22-json-api-conventions.md` for the
+/// policies. See `docs/adr/0011-json-api-conventions-for-the-browser-facing-rest-surface.md` for the
 /// fallback contract.
 ///
 /// Delegates body construction to [`crate::error::AppError::NotFound`]

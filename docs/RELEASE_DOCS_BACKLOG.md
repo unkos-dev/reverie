@@ -12,7 +12,7 @@ pages when their surface lands.
 
 ### `validation_status` operator semantics
 
-**Source:** [`adr/2026-05-28-validation-status-vocabulary.md`](./adr/2026-05-28-validation-status-vocabulary.md) (the validation status vocabulary task)
+**Source:** [A typed ValidationStatus enum reconciles the vocabulary](./adr/0013-a-typed-validationstatus-enum-reconciles-the-vocabulary.md) (the validation status vocabulary task)
 
 The `validation_status` enum is `pending | clean | repaired | degraded`.
 The distinction is not self-evident to an operator reading the value:
@@ -94,7 +94,7 @@ the admin user-management UI lands.
 
 ### `/api/v1` URL versioning and the breaking move from `/api/*`
 
-**Source:** [`adr/2026-06-08-api-versioning-openapi.md`](./adr/2026-06-08-api-versioning-openapi.md) (the API versioning and OpenAPI contract task)
+**Source:** [API versioning by URL path with OpenAPI as the contract](./adr/0016-api-versioning-by-url-path-with-openapi-as-the-contract.md) (the API versioning and OpenAPI contract task)
 
 The JSON data API is served under `/api/v1/*`; `/health`, `/auth`, and
 `/opds` are deliberately unversioned (operational / standard-protocol
@@ -112,7 +112,7 @@ reference covers the full route set.
 
 ### Shelves list/detail pagination envelopes
 
-**Source:** [`adr/2026-06-08-keyset-pagination-list-contract.md`](./adr/2026-06-08-keyset-pagination-list-contract.md) (the list contract compliance task, PR #465)
+**Source:** [Keyset pagination as the default list contract](./adr/0019-keyset-pagination-as-the-default-list-contract.md) (the list contract compliance task, PR #465)
 
 Pre-release breaking wire change to capture in the eventual `/api/v1`
 migration guide: `GET /api/v1/shelves` moved from a bare JSON array to a

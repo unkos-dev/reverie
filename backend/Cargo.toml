@@ -103,7 +103,7 @@ tower-http = { version = "0.7.0", features = ["cors", "fs", "trace"] }
 # tower-sessions core is the maintained session-lifecycle primitive (kept);
 # the abandoned axum-login + tower-sessions-sqlx-store wrappers were replaced
 # with first-party code (auth::store, auth::session, auth::middleware).
-# ADR: adr/2026-06-04-first-party-session-layer.md (UNK-101).
+# ADR: docs/adr/0015-first-party-session-layer-on-the-tower-sessions-core.md (UNK-101).
 tower-sessions = "0.15"
 tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
@@ -113,7 +113,7 @@ validator = { version = "0.21.0", features = ["derive"] }
 schemars = { version = "1.2.1", features = ["url2"] }
 percent-encoding = "2.3.2"
 # OpenAPI 3.1 contract generated code-first from the handlers (docs-as-done,
-# UNK-370; adr/2026-06-08-api-versioning-openapi.md). The `chrono`/`uuid`
+# UNK-370; docs/adr/0016-api-versioning-by-url-path-with-openapi-as-the-contract.md). The `chrono`/`uuid`
 # features map those types into the schema as `string`/`date-time` and
 # `string`/`uuid`. utoipa-axum's `OpenApiRouter` makes a handler routed without
 # `#[utoipa::path]` a compile error.

@@ -21,10 +21,10 @@ orphaned `in_progress` rows to `pending` at startup, but enrichment reverts only
 of enrichment strands its `in_progress` rows with nothing to reclaim them. No decision is on record for how a crashed
 job is reclaimed.
 
-The [crash-safe state ADR](../../adr/2026-06-08-postgres-backed-crash-safe-state.md) makes committed state survive an
+The [crash-safe state ADR](./0020-durable-crash-safe-state-in-postgres-via-atomic-transactions.md) makes committed state survive an
 instant kill and explicitly defers the crash-safety of in-flight work to here. Reverie is single-instance and
 durable-not-distributed
-([scale-stance ADR](../../adr/2026-06-08-scale-stance-stateless-enable-not-own.md)), so the requirement is durable,
+([scale-stance ADR](./0021-scale-stance-stateless-application-operator-enabled-ha.md)), so the requirement is durable,
 safe reclaim, not distribution. The open question: how is a crashed job reclaimed, and does the default deployment
 need wall-clock lease or visibility timeouts to do it?
 
@@ -63,7 +63,7 @@ count.
 
 - Jobs are Postgres rows claimed with `FOR UPDATE SKIP LOCKED`, so concurrent workers never grab the same job. This is
   the concurrency-safe primitive the
-  [scale-stance ADR](../../adr/2026-06-08-scale-stance-stateless-enable-not-own.md) names as a "don't preclude scale"
+  [scale-stance ADR](./0021-scale-stance-stateless-application-operator-enabled-ha.md) names as a "don't preclude scale"
   guardrail. Mutual exclusion of one `in_progress` row per work-unit is enforced by a partial unique index.
 - Crash recovery is restart-bounded. At instance startup, once per process boot, before the worker pool begins
   claiming, orphaned `in_progress` rows are reverted to `pending` and re-claimed. Because every worker lives inside
@@ -88,7 +88,7 @@ count.
 
 Deferred: lease or visibility-timeout reclaim is the multi-instance lift, not part of the default. The moment an
 operator runs multiple instances (enabled, not owned, by the
-[scale-stance ADR](../../adr/2026-06-08-scale-stance-stateless-enable-not-own.md); no leader election means each
+[scale-stance ADR](./0021-scale-stance-stateless-application-operator-enabled-ha.md); no leader election means each
 instance runs its own worker pool), restart-bounded reclaim becomes unsafe: one instance booting would re-pend a
 peer's still-running job. That topology, and only that topology, needs wall-clock leases plus heartbeat renewal to
 avoid double-running long jobs. Adopting it now would buy nothing for the single-instance default and would add a
@@ -145,11 +145,11 @@ is a non-trivial build that waits for the topology that justifies it.
 while `backend/src/services/enrichment/queue.rs` calls it only on shutdown, so an enrichment row orphaned by a hard
 crash stays `in_progress` until the next graceful shutdown.
 
-Sibling ADR: [crash-safe state](../../adr/2026-06-08-postgres-backed-crash-safe-state.md), committed-state
+Sibling ADR: [crash-safe state](./0020-durable-crash-safe-state-in-postgres-via-atomic-transactions.md), committed-state
 durability; this ADR is its in-flight-work complement, and the boundary it notes (transactions do not cover
 filesystem writes) is why file-mutating handlers must prove re-run safety.
 
-Sibling ADR: [scale stance](../../adr/2026-06-08-scale-stance-stateless-enable-not-own.md), durable-not-distributed
+Sibling ADR: [scale stance](./0021-scale-stance-stateless-application-operator-enabled-ha.md), durable-not-distributed
 posture and the `SKIP LOCKED` concurrency guardrail; multi-instance is the trigger for the deferred lease.
 
 Sibling ADR: [pooling](./0017-in-process-sqlx-pgpool-as-the-sole-pooling-layer.md), the same

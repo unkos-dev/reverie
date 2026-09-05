@@ -65,7 +65,7 @@ custom crash-recovery code for committed state: a crash is a safe event.
 The crash-safety of in-flight background work, a job killed mid-execution, is out of scope here and is owned by the
 [durable job queue ADR](./0018-durable-job-queue-postgres-backed-skip-locked-crash-only.md) (leases, visibility
 timeouts, idempotency). Statelessness as a horizontal-scaling enabler is owned by the
-[scale-stance ADR](../../adr/2026-06-08-scale-stance-stateless-enable-not-own.md). This decision covers only the
+[scale-stance ADR](./0021-scale-stance-stateless-application-operator-enabled-ha.md). This decision covers only the
 durability and atomicity of persisted state.
 
 This guarantee rests on Postgres running with `fsync` enabled, which is the default. An operator who disables
@@ -115,7 +115,7 @@ Postgres table).
 
 [Durable job queue ADR](./0018-durable-job-queue-postgres-backed-skip-locked-crash-only.md) owns the crash-safety of
 in-flight work, the complement to this decision's committed-state durability.
-[Scale-stance ADR](../../adr/2026-06-08-scale-stance-stateless-enable-not-own.md) owns statelessness as a scaling
+[Scale-stance ADR](./0021-scale-stance-stateless-application-operator-enabled-ha.md) owns statelessness as a scaling
 enabler; this decision owns it as a durability property.
 
 Revisit trigger: if a future feature has a genuine need for authoritative in-memory or non-Postgres durable state,

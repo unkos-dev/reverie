@@ -99,7 +99,7 @@ struct UserResponse {
 }
 
 /// Defensive bound on the users list (the justified
-/// single-page exception of `adr/2026-06-08-keyset-pagination-list-contract.md`). A household/self-hosted instance's user
+/// single-page exception of `docs/adr/0019-keyset-pagination-as-the-default-list-contract.md`). A household/self-hosted instance's user
 /// table has a genuinely small natural ceiling — a multi-hundred-user
 /// deployment is outside Reverie's design scope — so a hard `LIMIT`
 /// beats paginating an endpoint whose realistic cardinality is single

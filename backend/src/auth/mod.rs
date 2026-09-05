@@ -4,7 +4,7 @@
 //! first-party Postgres session store ([`store`]) and session login/logout
 //! helpers ([`session`]) on the maintained `tower-sessions` core (replacing the
 //! abandoned `axum-login` + `tower-sessions-sqlx-store` wrappers — ADR
-//! `2026-06-04-first-party-session-layer.md`), OIDC provider discovery and
+//! `docs/adr/0015-first-party-session-layer-on-the-tower-sessions-core.md`), OIDC provider discovery and
 //! client construction ([`oidc`]), role-assertion helpers
 //! ([`middleware::CurrentUser`]), the credential-capability axis
 //! ([`scope::Scope`]), device-token generation and constant-time

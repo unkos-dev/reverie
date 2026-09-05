@@ -1,7 +1,7 @@
 //! First-party session login / logout helpers on [`tower_sessions::Session`].
 //!
 //! Replaces the abandoned `axum-login` crate's `AuthSession::login`/`logout`
-//! (ADR `2026-06-04-first-party-session-layer.md`). Per-request user
+//! (ADR `docs/adr/0015-first-party-session-layer-on-the-tower-sessions-core.md`). Per-request user
 //! rehydration lives in [`crate::auth::middleware::CurrentUser`].
 //!
 //! # Tier 2 — security-critical

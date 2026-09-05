@@ -47,7 +47,7 @@
 //!   and "succeeds" with a blank pixmap. We reject all-transparent renders so
 //!   the existing `<img onError>` spine fallback is preserved.
 //!
-//! See ADR `2026-06-13-svg-cover-rasterization.md`.
+//! See ADR `docs/adr/0024-rasterize-svg-declared-epub-covers-to-png-via-resvg.md`.
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};

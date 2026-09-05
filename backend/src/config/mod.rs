@@ -1,7 +1,7 @@
 //! Environment-driven configuration loaded once at startup.
 //!
 //! Loading is a declarative figment pipeline (figment + serde + validator +
-//! schemars; `adr/2026-06-09-declarative-config-stack.md`): the custom
+//! schemars; `docs/adr/0023-declarative-configuration-stack-figment-validator-schemars.md`): the custom
 //! [`EnvProvider`] maps env-var names to dotted struct paths, `serde`
 //! deserializes into the config structs (per-field defaults from the
 //! `Default` impls), [`Config::from_figment`] applies the post-deserialize
@@ -509,7 +509,7 @@ impl Config {
     ///    unconditionally. When `auto_migrate` is off the field is forced
     ///    back to `None` so the long-lived server never carries the migrator
     ///    credential; when on, an absent/blank DSN is a `MissingVar`. See
-    ///    `adr/2026-06-02-hybrid-migration-entrypoints-and-role.md`.
+    ///    `docs/adr/0014-migration-model-hybrid-entrypoints-and-a-least-privilege-role.md`.
     /// 2. **Ingestion-DSN fallback**: a blank `ingestion_database_url` clones
     ///    `database_url` (role-scoped DSN, defaults to the app DSN).
     /// 3. **Required-field check**: a blank required field (`DATABASE_URL`,

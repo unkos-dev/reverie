@@ -2,7 +2,7 @@
 //! for `tower-sessions`.
 //!
 //! Replaces the abandoned `tower-sessions-sqlx-store` crate (ADR
-//! `2026-06-04-first-party-session-layer.md`). Targets the **unchanged**
+//! `docs/adr/0015-first-party-session-layer-on-the-tower-sessions-core.md`). Targets the **unchanged**
 //! `tower_sessions.session` table (`id text`, `data bytea`, `expiry_date
 //! timestamptz`) — schema, grants, RLS-exemption, and the `expiry_date` index
 //! are carried forward from the superseded sqlx-store ADR. The reaper lives in

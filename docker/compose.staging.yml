@@ -25,7 +25,7 @@
 #            REVERIE_PORT, REVERIE_OPERATOR_CONTACT, REVERIE_LOG_LEVEL,
 #            OIDC config. Carries NO schema-management credential by design —
 #            in the shipped topology the long-lived app holds zero DDL creds
-#            (see adr/2026-06-02-hybrid-migration-entrypoints-and-role.md).
+#            (see docs/adr/0014-migration-model-hybrid-entrypoints-and-a-least-privilege-role.md).
 #            Spec: docker/staging.env.runtime.example.
 #
 #   `.env.migrate` — injected only into the one-shot `reverie-migrate`
@@ -92,7 +92,7 @@ services:
   # upgrade path stays one command: `docker compose pull && up -d` runs this
   # to completion, then starts the app. All-or-nothing batch semantics mean a
   # failed migration leaves the DB untouched — recovery is "pin the old tag,
-  # restart" (adr/2026-06-02-hybrid-migration-entrypoints-and-role.md).
+  # restart" (docs/adr/0014-migration-model-hybrid-entrypoints-and-a-least-privilege-role.md).
   reverie-migrate:
     image: ghcr.io/unkos-dev/reverie:${REVERIE_VERSION:?required}
     # Appends to the image's exec-form ENTRYPOINT (`["reverie-api"]`, see

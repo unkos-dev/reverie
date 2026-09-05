@@ -219,7 +219,7 @@ applied; do not revert, manually insert the tracking row").
 Related ADR: [Persist operator-tunable settings to database with live
 reload](./0012-persist-operator-tunable-settings-to-database-with-live-reload.md).
 
-Related ADR: [tower-sessions sqlx store](../../adr/superseded/2026-05-08-tower-sessions-sqlx-store.md).
+Related ADR: Adopt tower-sessions-sqlx-store for Postgres-backed sessions (retired; history holds the record).
 
 Bare `docker run` operators either run the image with the `migrate` argument (wait for exit, then run the server)
 or set `REVERIE_AUTO_MIGRATE=true`. The shipped compose handles this automatically.

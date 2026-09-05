@@ -23,7 +23,7 @@
 //! arm is now `Clean => Clean`, not `Clean => "valid"`). `quarantined` is
 //! deliberately absent — a quarantined file is deleted, so no manifestation
 //! row is ever written. See
-//! `adr/2026-05-28-validation-status-vocabulary.md`.
+//! `docs/adr/0013-a-typed-validationstatus-enum-reconciles-the-vocabulary.md`.
 //!
 //! Wire formats:
 //! - Postgres: `validation_status` ENUM type.

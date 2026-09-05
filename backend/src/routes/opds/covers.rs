@@ -43,7 +43,7 @@ const COVER_VARY: &str = "Authorization, Cookie";
 /// RLS-scoped images, not credentials, and `codeguard-0-http-headers.md`
 /// reserves `no-store` for sensitive data. Cross-user cache replay is handled
 /// by [`COVER_VARY`], not by suppressing caching. See
-/// `adr/2026-06-14-cover-cache-headers-and-thumbnail-encoding.md`.
+/// `docs/adr/0025-cover-cache-headers-ingest-pre-warm-and-jpeg-thumbnails.md`.
 fn cover_cache_control() -> String {
     format!("private, max-age={COVER_MAX_AGE_SECS}")
 }

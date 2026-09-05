@@ -76,4 +76,4 @@ second concentric ring.
   ramps, a reviewed change, never an ad-hoc hex.
 
 The dual-theme three-tier architecture is recorded in the
-token-architecture ADR (`adr/2026-06-18-radix-three-tier-dual-theme-tokens.md`).
+token-architecture ADR (`docs/adr/0026-radix-generated-three-tier-dual-theme-color-tokens.md`).

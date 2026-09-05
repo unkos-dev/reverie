@@ -14,7 +14,7 @@ informed: "Reverie contributors"
 Reverie's API has no first-class authorization representation. Role
 requirements are expressed only as documented `403` responses in handler
 prose, not as a contract artifact. The generated OpenAPI document
-([API versioning and OpenAPI ADR](2026-06-08-api-versioning-openapi.md)) describes
+([API versioning and OpenAPI ADR](../docs/adr/0016-api-versioning-by-url-path-with-openapi-as-the-contract.md)) describes
 shapes and status codes but carries no model of what capability a credential
 must hold to reach an endpoint. A third-party client reading the spec cannot
 tell that `POST /api/v1/tokens` needs administrative capability except by
@@ -172,8 +172,8 @@ administrative surface is described in the spec rather than discovered through a
 runtime `403`. This replaces the interim representation in which the
 administrative surface existed only as documented `403` responses. The shapes
 and version prefix fixed by the
-[JSON API conventions ADR](2026-05-22-json-api-conventions.md) and the
-[API versioning and OpenAPI ADR](2026-06-08-api-versioning-openapi.md) are
+[JSON API conventions ADR](../docs/adr/0011-json-api-conventions-for-the-browser-facing-rest-surface.md) and the
+[API versioning and OpenAPI ADR](../docs/adr/0016-api-versioning-by-url-path-with-openapi-as-the-contract.md) are
 unchanged; this ADR adds the authorization model that contract now carries.
 
 ### Consequences
@@ -283,7 +283,7 @@ the role axis in practice, not only in this decision's prose.
 - Bad, because it is unmaintained since 2024 and pins axum 0.7 against the
   project's axum 0.8: adopting it blocks the build or forces a framework
   downgrade, the same abandoned-wrapper-on-the-auth-path trap the
-  [first-party session layer ADR](2026-06-04-first-party-session-layer.md)
+  [first-party session layer ADR](../docs/adr/0015-first-party-session-layer-on-the-tower-sessions-core.md)
   refused.
 
 ### R3: hand-rolled JWKS fetch and verification
@@ -299,17 +299,17 @@ the role axis in practice, not only in this decision's prose.
   model in which the administrative surface was expressed only as documented
   `403` responses. That practice was not recorded as a discrete ADR, so there is
   no file to move into `superseded/`; the
-  [API versioning and OpenAPI ADR](2026-06-08-api-versioning-openapi.md)
+  [API versioning and OpenAPI ADR](../docs/adr/0016-api-versioning-by-url-path-with-openapi-as-the-contract.md)
   established OpenAPI as the contract but did not model authorization, and this
   ADR supplies that model. The
-  [JSON API conventions ADR](2026-05-22-json-api-conventions.md) scoped its CSRF
+  [JSON API conventions ADR](../docs/adr/0011-json-api-conventions-for-the-browser-facing-rest-surface.md) scoped its CSRF
   synchronizer-token defence to browser cookie-authed operations. Header-
   authenticated callers (HTTP Basic, Bearer) sit outside that defence by the
   nature of the synchronizer pattern, since a browser does not auto-attach an
   Authorization header the way it auto-sends a cookie; this ADR adds the scope
   model those header-authenticated credentials carry.
 - Extends, and does not replace, the
-  [first-party session layer ADR](2026-06-04-first-party-session-layer.md):
+  [first-party session layer ADR](../docs/adr/0015-first-party-session-layer-on-the-tower-sessions-core.md):
   sessions established there derive their scope from the user's role under this
   model.
 - The companion

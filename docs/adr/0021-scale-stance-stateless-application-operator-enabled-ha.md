@@ -34,7 +34,7 @@ distributed-systems runtime, and its audience self-hosts. Where is the line betw
 - The HA-wanting operator already runs a load balancer and a highly available Postgres; Reverie re-implementing them
   adds no value.
 - The same "enable, don't own" philosophy already governs integrations
-  ([standards-first integrations ADR](../../adr/2026-06-08-standards-first-integrations.md)) and connection pooling
+  ([standards-first integrations ADR](./0022-standards-first-integrations-over-bundled-adjacent-services.md)) and connection pooling
   ([pooling ADR](./0017-in-process-sqlx-pgpool-as-the-sole-pooling-layer.md)).
 
 ## Considered options
@@ -117,7 +117,7 @@ guardrails keep scale-out from being precluded; they are not first-party HA.
   multi-instance connection-budget sizing (instance count multiplied by pool size) is owned here, on the scale axis.
 - [Durable job queue ADR](./0018-durable-job-queue-postgres-backed-skip-locked-crash-only.md): durable-not-distributed
   worker design.
-- [Standards-first integrations ADR](../../adr/2026-06-08-standards-first-integrations.md): the same "enable, don't
+- [Standards-first integrations ADR](./0022-standards-first-integrations-over-bundled-adjacent-services.md): the same "enable, don't
   own" philosophy on the integrations axis.
 - Revisit trigger: if first-party HA ever becomes a goal (for example a hosted Reverie offering), this stance gets a
   superseding record; it is not amended by exception.
