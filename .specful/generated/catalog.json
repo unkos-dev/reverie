@@ -176,6 +176,13 @@
       "title": "Cover cache headers, ingest pre-warm, and JPEG thumbnails"
     },
     {
+      "id": "REV-ADR-0026",
+      "kind": "adr",
+      "path": "docs/adr/0026-radix-generated-three-tier-dual-theme-color-tokens.md",
+      "status": "accepted",
+      "title": "Radix-generated three-tier dual-theme color tokens"
+    },
+    {
       "id": "REV-DESIGN-0001",
       "kind": "design",
       "path": "docs/specs/library/design/0001-library-filter-and-sort-state.md",
