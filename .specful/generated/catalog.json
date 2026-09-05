@@ -78,6 +78,13 @@
       "title": "JSON API conventions for the browser-facing REST surface"
     },
     {
+      "id": "REV-ADR-0012",
+      "kind": "adr",
+      "path": "docs/adr/0012-persist-operator-tunable-settings-to-database-with-live-reload.md",
+      "status": "accepted",
+      "title": "Persist operator-tunable settings to database with live reload"
+    },
+    {
       "id": "REV-DESIGN-0001",
       "kind": "design",
       "path": "docs/specs/library/design/0001-library-filter-and-sort-state.md",
