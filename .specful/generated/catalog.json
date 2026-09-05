@@ -308,6 +308,13 @@
       "title": "Remote Rust build cache on object storage"
     },
     {
+      "id": "REV-ADR-0044",
+      "kind": "adr",
+      "path": "docs/adr/0044-match-time-accent-folding-via-unaccent-expression-indexes.md",
+      "status": "accepted",
+      "title": "Match-time accent folding via unaccent expression indexes"
+    },
+    {
       "id": "REV-DESIGN-0001",
       "kind": "design",
       "path": "docs/specs/library/design/0001-library-filter-and-sort-state.md",
