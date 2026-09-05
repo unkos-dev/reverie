@@ -253,6 +253,13 @@
       "title": "Library data-grid stack: two-way bake-off behind a local adapter"
     },
     {
+      "id": "REV-ADR-0037",
+      "kind": "adr",
+      "path": "docs/adr/0037-multi-column-sort-stack-on-the-keyset-list-contract.md",
+      "status": "accepted",
+      "title": "Multi-column sort stack on the keyset list contract"
+    },
+    {
       "id": "REV-DESIGN-0001",
       "kind": "design",
       "path": "docs/specs/library/design/0001-library-filter-and-sort-state.md",
