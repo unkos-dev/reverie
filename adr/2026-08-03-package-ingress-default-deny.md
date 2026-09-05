@@ -73,7 +73,7 @@ the toolchain rather than at review.
 3. **No install-time code execution.** `allowBuilds` records a decision per
    package, and `strictDepBuilds` fails the install on anything undecided. The
    policy sits in `pnpm-workspace.yaml` because
-   [2026-06-30-adopt-vite-plus-monorepo-toolchain.md](2026-06-30-adopt-vite-plus-monorepo-toolchain.md)
+   [Adopt the Vite+ (vp) monorepo toolchain](../docs/adr/0033-adopt-the-vite-vp-monorepo-toolchain.md)
    put one lockfile and one workspace declaration at the root.
 4. **New versions wait.** Renovate holds an update for `minimumReleaseAge`,
    currently 3 days. A compromised release is usually yanked soon after
@@ -84,7 +84,7 @@ the toolchain rather than at review.
    image.
 
 Entries take the shape the tooling can police, following
-[2026-07-04-expect-over-allow-lint-suppressions.md](2026-07-04-expect-over-allow-lint-suppressions.md):
+[Lint suppressions self-purge: expect with a reason, never allow](../docs/adr/0035-lint-suppressions-self-purge-expect-with-a-reason-never-allow.md):
 a version-pinned allow entry is the `#[allow]` of package policy, documenting
 intent while rotting silently. `allowBuilds` keys its entries by package name,
 so a decision cannot quietly stop matching when a version range moves.
@@ -135,9 +135,9 @@ resolving.
 ## More Information
 
 Applies the self-purging shape from
-[2026-07-04-expect-over-allow-lint-suppressions.md](2026-07-04-expect-over-allow-lint-suppressions.md)
+[Lint suppressions self-purge: expect with a reason, never allow](../docs/adr/0035-lint-suppressions-self-purge-expect-with-a-reason-never-allow.md)
 to package ingress, and inherits its policy location from
-[2026-06-30-adopt-vite-plus-monorepo-toolchain.md](2026-06-30-adopt-vite-plus-monorepo-toolchain.md).
+[Adopt the Vite+ (vp) monorepo toolchain](../docs/adr/0033-adopt-the-vite-vp-monorepo-toolchain.md).
 Governs the install-script denial
 [Adopt impeccable as the frontend design anti-pattern detector](../docs/adr/0008-adopt-impeccable-as-the-frontend-design-anti-pattern-detector.md)
 relies on.

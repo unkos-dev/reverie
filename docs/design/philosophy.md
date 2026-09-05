@@ -56,7 +56,7 @@ exception, **danger** (below)). This is a load-bearing brand invariant:
 destructive and unrecoverable-error semantics, never decorative, and always
 paired with an icon, weight, or text label (WCAG 1.4.1). The rationale is
 recorded in the single-danger-hue decision
-(`adr/2026-06-18-single-danger-hue-amends-no-hue-philosophy.md`); see also
+(`docs/adr/0027-a-single-danger-hue-amends-the-no-hue-states-policy.md`); see also
 [Color Tokens](./color-tokens.md). The canonical token set still
 deliberately excludes `--color-success`, `--color-warning`, `--color-info`,
 and `--color-neutral`. Adding any further hue-coded state token requires a

@@ -102,7 +102,7 @@ parallel-capable configuration, and it removes the Node-only staged-file layer t
 
 This record pairs with the oxlint record
 ([Adopt oxlint, replacing the ESLint toolchain](./0030-adopt-oxlint-replacing-the-eslint-toolchain.md)) and the oxfmt
-record ([Adopt oxfmt formatter](../../adr/2026-06-28-adopt-oxfmt-formatter.md)), which moved linting and formatting
+record ([Adopt oxfmt formatter](./0032-adopt-oxfmt-replacing-prettier.md)), which moved linting and formatting
 to the oxc toolchain; it moves the hook runner those passes execute under. The pre-commit commands invoke the tools
 and scripts
 directly against the staged-file list rather than the whole-tree task recipes, so a commit scans only its staged

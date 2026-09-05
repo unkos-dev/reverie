@@ -115,7 +115,7 @@ the census resolves to; every editing surface is a caller of one or the other, n
   history within the app: they survive a page refresh and in-app navigation (because they are part of the URL), but do
   not survive into a fresh visit, because nothing mirrors them to any longer-lived store. Filters are not durable
   across visits by design; see
-  [Single filter home in the library right rail](../../../../adr/2026-07-10-library-filter-home-right-rail.md).
+  [Single filter home in the library right rail](../../../adr/0039-single-filter-home-in-the-library-right-rail.md).
 - **`sort_stack` preference.** Persisted server-side on the `user_preferences` row (one row per account), reached
   through `/auth/me/preferences`. Its lifetime is the account's: it survives reload, re-login, and a change of device,
   and is written under last-write-wins semantics with no precondition header. A `null` value means "inherit the
@@ -220,8 +220,8 @@ a whole, not by this Design.
 
 ## More information
 
-- [Multi-column sort stack on the keyset list contract](../../../../adr/2026-07-07-multi-column-sort-stack.md)
-- [Typed filter grammar on list endpoints](../../../../adr/2026-07-07-typed-filter-grammar-list-endpoints.md)
-- [Single filter home in the library right rail](../../../../adr/2026-07-10-library-filter-home-right-rail.md)
+- [Multi-column sort stack on the keyset list contract](../../../adr/0037-multi-column-sort-stack-on-the-keyset-list-contract.md)
+- [Typed filter grammar on list endpoints](../../../adr/0038-typed-filter-grammar-on-list-endpoints.md)
+- [Single filter home in the library right rail](../../../adr/0039-single-filter-home-in-the-library-right-rail.md)
 - [Library sort is a per-user preference, resolved client-side, never URL state](../../../../adr/2026-08-08-library-sort-per-user-preference.md)
 - [No unbounded queries: keyset pagination as the default list contract](../../../../docs/adr/0019-keyset-pagination-as-the-default-list-contract.md)

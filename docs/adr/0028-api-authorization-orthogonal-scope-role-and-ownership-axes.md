@@ -214,7 +214,7 @@ Extends, and does not replace,
 [first-party session layer](./0015-first-party-session-layer-on-the-tower-sessions-core.md): sessions established
 there derive their scope from the user's role under this model.
 
-The companion [authentication and identity](../../adr/2026-06-23-auth-identity-pluggable-providers.md) decision
+The companion [authentication and identity](./0029-unified-identity-with-pluggable-authentication-providers.md) decision
 covers providers, sessions, bootstrap, recovery, and account linking, including the resource-server issuer,
 audience, and scope-mapping configuration this decision's validation path consumes. The two decisions share the
 in-process identity that all transports resolve to.

@@ -161,7 +161,7 @@ fi
 
 # 6. node_modules present at the workspace root, and not stale against the
 # committed lockfile. pnpm's layout is isolated rather than hoisted
-# (adr/2026-06-30-adopt-vite-plus-monorepo-toolchain.md), so each project also
+# (docs/adr/0033-adopt-the-vite-vp-monorepo-toolchain.md), so each project also
 # has its own node_modules linking into the root virtual store. Only the root
 # is checked: every install writes it, and no per-project tree can exist
 # without it.

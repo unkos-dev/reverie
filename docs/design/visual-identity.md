@@ -87,7 +87,7 @@ primary actions, focus rings, and recovery actions.
 `--neutral` are deliberately absent, and adding one requires a
 brand-aligned decision rather than a convenience commit. `--danger` is
 the single bounded exception, recorded in
-`adr/2026-06-18-single-danger-hue-amends-no-hue-philosophy.md`. Per WCAG
+`docs/adr/0027-a-single-danger-hue-amends-the-no-hue-states-policy.md`. Per WCAG
 1.4.1 it never carries meaning alone: it always pairs with an icon,
 weight, or text label. See
 [Philosophy § State without hue](./philosophy.md#state-without-hue)

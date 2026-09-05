@@ -133,7 +133,7 @@ already follow this pattern, with no `skip_serializing_if` on a nullable field a
 
 `/api/v1/books` and every list endpoint paginates with cursors, not offsets. Cursors are opaque base64url payloads
 carrying the sort key(s) plus a tiebreaker; see the multi-column sort stack ADR
-(../../adr/2026-07-07-multi-column-sort-stack.md) for the current cursor shape. Pagination model is not
+(./0037-multi-column-sort-stack-on-the-keyset-list-contract.md) for the current cursor shape. Pagination model is not
 IETF-specified; modern consensus across GitHub, Stripe, Slack, and Twitter v2 is cursor-based for one reason: cursors
 are stable under concurrent inserts. Reverie's enrichment pipeline writes asynchronously to `manifestations`, so
 offset pagination would shift the page boundary mid-scroll. Cursors are also O(log N) per page at scale; offsets

@@ -193,6 +193,6 @@ a lint gate; the tier definitions themselves, and the backend `#![deny(missing_d
 
 - [Strict lint policy: pedantic clippy and strict frontend lint](./0002-strict-lint-policy-pedantic-clippy-and-strict-frontend-lint.md):
   the pedantic clippy allow-list this policy narrows: `missing_errors_doc` is re-enabled after the backfill.
-- [Adopt oxlint, replacing the ESLint toolchain](../../adr/2026-06-27-adopt-oxlint-toolchain.md): the toolchain
+- [Adopt oxlint, replacing the ESLint toolchain](./0030-adopt-oxlint-replacing-the-eslint-toolchain.md): the toolchain
   change that removed the frontend docstring lint.
 - `backend/AGENTS.md` carries the `// SAFETY:` convention Tier 2 references for unsafe code.

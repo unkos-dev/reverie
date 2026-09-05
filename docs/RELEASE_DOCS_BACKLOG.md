@@ -63,7 +63,7 @@ behaviour when the admin user-management surface lands.
 ### First-user auto-promotion retired; bootstrap model
 
 **Source:** `backend/src/models/user.rs` (`upsert_from_oidc`),
-[`adr/2026-06-23-auth-identity-pluggable-providers.md`](./adr/2026-06-23-auth-identity-pluggable-providers.md)
+[Unified identity with pluggable authentication providers](adr/0029-unified-identity-with-pluggable-authentication-providers.md)
 
 The first OIDC login no longer becomes an administrator. A fresh instance
 has no admin until one is granted through a bootstrap path that ships in a

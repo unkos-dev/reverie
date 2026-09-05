@@ -97,7 +97,7 @@ This decision amends [strict lint policy](./0002-strict-lint-policy-pedantic-cli
 frontend engine is now oxlint, and [tiered comment policy](./0004-tiered-comment-policy-for-an-open-source-codebase.md),
 whose frontend docstring floor is now review-level rather than lint-enforced.
 
-Formatting moved to oxfmt in a paired decision, [adopt oxfmt](../../adr/2026-06-28-adopt-oxfmt-formatter.md). Further
+Formatting moved to oxfmt in a paired decision, [adopt oxfmt](./0032-adopt-oxfmt-replacing-prettier.md). Further
 follow-ups: enabling the React Compiler transform, the migration to the native TypeScript compiler with
 `oxlint-tsgolint` version-pairing, and a rule-by-rule review of the frontend authoring standards against current
 practice.

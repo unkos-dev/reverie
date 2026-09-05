@@ -38,5 +38,5 @@ that satisfies this Requirement.
 
 ## More information
 
-- [Single filter home in the library right rail](../../../../adr/2026-07-10-library-filter-home-right-rail.md): the
+- [Single filter home in the library right rail](../../../adr/0039-single-filter-home-in-the-library-right-rail.md): the
   decision that the filter rail is the primary editing surface.

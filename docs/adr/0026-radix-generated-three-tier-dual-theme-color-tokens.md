@@ -107,7 +107,7 @@ role-pair contrasts meet their AA floor.
 ## More information
 
 Pairs with the single-danger-hue decision
-([single-danger-hue-amends-no-hue-philosophy](../../adr/2026-06-18-single-danger-hue-amends-no-hue-philosophy.md)),
+([A single danger hue amends the no-hue-states policy](./0027-a-single-danger-hue-amends-the-no-hue-states-policy.md)),
 which governs the `--danger` family this architecture carries. The brand color anchors and the generated palette are
 documented in the brand identity reference (`reverie-branding/identity.md`). Reading-surface color tokens and
 cover-spine textures are intentionally out of scope here and reserved to their own surfaces. Revisit if Radix's

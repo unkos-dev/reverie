@@ -83,11 +83,11 @@
         "description": "Cross-cutting: default to IETF/W3C/OWASP standards; deviation requires a conscious decision recorded in an ADR or debt entry."
       },
       {
-        "path": "adr/2026-06-23-auth-identity-pluggable-providers.md",
+        "path": "docs/adr/0029-unified-identity-with-pluggable-authentication-providers.md",
         "description": "Cross-cutting (accepted): one canonical users identity with pluggable providers. user_identities keyed on (issuer, subject); local_credentials holds password hashes; users.oidc_subject is vestigial/nullable. OIDC first-user auto-promotion is retired (first login is non-admin; admin only via bootstrap). Single first-admin path, shared session-establishment, and verified-email linking are load-bearing invariants."
       },
       {
-        "path": "adr/2026-06-23-api-authorization-orthogonal-axes.md",
+        "path": "docs/adr/0028-api-authorization-orthogonal-scope-role-and-ownership-axes.md",
         "description": "Cross-cutting (accepted): API authorization on orthogonal scope, role, and ownership axes enforced server-side. Resource-server token validation pins iss + aud and the alg from the JWK; scope/role/child/ownership checks live at the data layer, not in handler prose."
       },
       {
@@ -95,31 +95,31 @@
         "description": "Cross-cutting: the /api/v1 version prefix and the OpenAPI generation contract. The generated backend/openapi.json (ignored below) derives from utoipa annotations across backend/src/models/* aggregated in backend/src/lib.rs; an API-surface change must keep this contract and regenerate the spec."
       },
       {
-        "path": "adr/2026-07-13-a11y-gate-on-playwright.md",
+        "path": "docs/adr/0040-accessibility-gate-and-render-verification-on-playwright.md",
         "description": "Accessibility gate and render-verification on the Playwright stack, plus the WCAG 2.2 Level AA target for the frontend. Treat a11y findings on interactive UI (semantics, ARIA, focus, keyboard) as load-bearing, not nice-to-have."
       },
       {
-        "path": "adr/2026-06-27-adopt-oxlint-toolchain.md",
+        "path": "docs/adr/0030-adopt-oxlint-replacing-the-eslint-toolchain.md",
         "description": "Amends the strict-lint ADR: ESLint is fully removed; oxlint (native rules plus oxlint-tsgolint type-aware) is the lint engine. Docstring presence and the inline-JSX-style ban are no longer machine-gated, so the reviewer must catch them; the object-literal as-cast ban is still machine-enforced."
       },
       {
-        "path": "adr/2026-06-30-adopt-vite-plus-monorepo-toolchain.md",
+        "path": "docs/adr/0033-adopt-the-vite-vp-monorepo-toolchain.md",
         "description": "Structural: single pnpm workspace (frontend, website) declared in pnpm-workspace.yaml and driven by Vite+ (vp), with one root pnpm-lock.yaml and tsgo as the sole typechecker. pnpm's layout is isolated, so a per-project node_modules is correct and expected; a per-project lockfile, a second package manager, or a tsc invocation in scripts or CI is a finding."
       },
       {
-        "path": "adr/2026-06-30-password-policy-hibp-zxcvbn.md",
+        "path": "docs/adr/0034-password-policy-zxcvbn-floor-plus-a-fail-open-hibp-check.md",
         "description": "Cross-cutting security (accepted): every credential-setting path routes through the single enforce seam in backend/src/auth/password_policy.rs. Invariants: length floor and DoS length cap checked before scoring or hashing, zxcvbn strength floor fed with email/display-name context words, fail-open HIBP k-anonymity check (only a 5-char SHA-1 prefix leaves the instance). A password-touching diff that bypasses the seam is a finding."
       },
       {
-        "path": "adr/2026-07-04-expect-over-allow-lint-suppressions.md",
+        "path": "docs/adr/0035-lint-suppressions-self-purge-expect-with-a-reason-never-allow.md",
         "description": "Rust lint suppressions use #[expect(..., reason = \"...\")], never #[allow(...)]; the only sanctioned allow form is #[cfg_attr(test, allow(..., reason = \"...\"))]. Machine-enforced via allow_attributes lints in backend/Cargo.toml, so flag what slipped past (e.g. suppressions smuggled in via macros or build scripts)."
       },
       {
-        "path": "adr/2026-07-07-multi-column-sort-stack.md",
+        "path": "docs/adr/0037-multi-column-sort-stack-on-the-keyset-list-contract.md",
         "description": "Cross-cutting list contract, extends keyset pagination: JSON:API ?sort=col,-col over a closed server-side column whitelist; a column joins the whitelist only with both ordering indexes; nullable columns order NULLS LAST in both directions; sort stack capped at 3; the versioned opaque cursor rejects replay under a changed sort."
       },
       {
-        "path": "adr/2026-07-07-typed-filter-grammar-list-endpoints.md",
+        "path": "docs/adr/0038-typed-filter-grammar-on-list-endpoints.md",
         "description": "Cross-cutting list contract, companion to the sort ADR: flat suffix filter grammar (_gte, _contains, _any, _none, ...) over a closed typed column set, AND-only, every value parameter-bound so injection is unrepresentable; the cursor carries a filter fingerprint and rejects replay under changed filters. New list-endpoint filters must use this grammar, not ad-hoc params."
       },
       {

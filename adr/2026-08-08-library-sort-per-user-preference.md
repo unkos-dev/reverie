@@ -12,7 +12,7 @@ informed: "Reverie contributors"
 ## Context and Problem Statement
 
 The library's sort stack originally lived in the URL (`?sort=`), a placement
-the [multi-column sort stack ADR](2026-07-07-multi-column-sort-stack.md)
+the [multi-column sort stack ADR](../docs/adr/0037-multi-column-sort-stack-on-the-keyset-list-contract.md)
 carried as a decision driver: a URL sort is bookmarkable and shareable. When
 per-user display preferences moved to the server (`user_preferences`,
 `/auth/me/preferences`), sort persistence was first designed as a second
@@ -168,7 +168,7 @@ inherited descending default from each sort surface must reach the wire as
 
 ## More Information
 
-- [Multi-column sort stack](2026-07-07-multi-column-sort-stack.md): the wire
+- [Multi-column sort stack](../docs/adr/0037-multi-column-sort-stack-on-the-keyset-list-contract.md): the wire
   grammar, whitelist, and cursor contract this decision leaves untouched. Its
   "sort lives in the URL" driver is revised by this ADR; the rest stands.
 - [Persisted settings](../docs/adr/0012-persist-operator-tunable-settings-to-database-with-live-reload.md): the settings tier
