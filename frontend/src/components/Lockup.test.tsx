@@ -1,6 +1,8 @@
 import { describe, it, expect } from "vite-plus/test";
 import { render, screen } from "@testing-library/react";
 import { Lockup } from "./Lockup";
+import slotFaviconSvg from "../../public/brand/glyph/slot-favicon.svg?raw";
+import slotSvg from "../../public/brand/glyph/slot.svg?raw";
 
 describe("Lockup", () => {
   it("renders the wordmark text", () => {
@@ -14,29 +16,44 @@ describe("Lockup", () => {
     expect(lockup).toBeInTheDocument();
   });
 
-  it("hides the inline glyph SVG from assistive tech (the parent has the label)", () => {
+  it("hides the canonical glyph asset from assistive tech (the parent has the label)", () => {
     const { container } = render(<Lockup />);
-    const glyph = container.querySelector("svg");
+    const glyph = container.querySelector("img");
     expect(glyph).not.toBeNull();
     expect(glyph).toHaveAttribute("aria-hidden", "true");
   });
 
-  it("renders the locked Slot construction inside the inline glyph", () => {
+  it("uses the canonical standard Slot asset", () => {
     const { container } = render(<Lockup />);
-    const glyph = container.querySelector("svg");
-    expect(glyph).toHaveAttribute("viewBox", "0 0 32 32");
-    const rects = glyph?.querySelectorAll("rect");
-    expect(rects?.length).toBe(2);
-    expect(rects?.[0]).toHaveAttribute("x", "4");
-    expect(rects?.[0]).toHaveAttribute("y", "4");
-    expect(rects?.[0]).toHaveAttribute("width", "24");
-    expect(rects?.[0]).toHaveAttribute("height", "24");
-    expect(rects?.[0]).toHaveAttribute("fill", "#C9A961");
-    expect(rects?.[1]).toHaveAttribute("x", "8");
-    expect(rects?.[1]).toHaveAttribute("y", "17");
-    expect(rects?.[1]).toHaveAttribute("width", "16");
-    expect(rects?.[1]).toHaveAttribute("height", "2");
-    expect(rects?.[1]).toHaveAttribute("fill", "#0E0D0A");
+    expect(container.querySelector("img")).toHaveAttribute("src", "/brand/glyph/slot.svg");
+  });
+
+  it("uses the canonical thick-slot asset when the glyph renders below 24px", () => {
+    const { container } = render(<Lockup size={13} />);
+    expect(container.querySelector("img")).toHaveAttribute("src", "/brand/glyph/slot-favicon.svg");
+  });
+
+  it("switches variant on the rendered glyph size, not the wordmark size", () => {
+    const thick = render(<Lockup size={17} />);
+    expect(thick.container.querySelector("img")).toHaveAttribute(
+      "src",
+      "/brand/glyph/slot-favicon.svg",
+    );
+
+    const standard = render(<Lockup size={18} />);
+    expect(standard.container.querySelector("img")).toHaveAttribute("src", "/brand/glyph/slot.svg");
+  });
+
+  // The component names its assets as absolute request paths, which nothing
+  // else validates: Vite copies the public directory verbatim without
+  // checking that anything referencing it resolves. Importing the files here
+  // fails the suite at transform time if either one moves or is renamed.
+  it("ships knockout artwork for both glyph sources", () => {
+    for (const svg of [slotSvg, slotFaviconSvg]) {
+      expect(svg).toContain('fill-rule="evenodd"');
+      expect(svg).toContain('fill="#C9A961"');
+      expect(svg).not.toContain("<rect");
+    }
   });
 
   it("uses cream wordmark on dark theme (default)", () => {
@@ -51,11 +68,17 @@ describe("Lockup", () => {
     expect(word).toHaveStyle({ color: "rgb(14, 13, 10)" }); // #0E0D0A
   });
 
-  it("scales glyph to 0.95 × size", () => {
+  it("sizes the glyph and wordmark gap from the wordmark type size", () => {
     const { container } = render(<Lockup size={40} />);
-    const glyph = container.querySelector("svg");
-    expect(glyph).toHaveAttribute("width", "38"); // 40 * 0.95
-    expect(glyph).toHaveAttribute("height", "38");
+    expect(container.firstElementChild).toHaveStyle({ fontSize: "40px", gap: "0.48em" });
+    expect(container.querySelector("img")).toHaveAttribute(
+      "style",
+      expect.stringContaining("width: 1.4em"),
+    );
+    expect(container.querySelector("img")).toHaveAttribute(
+      "style",
+      expect.stringContaining("height: 1.4em"),
+    );
   });
 
   it("forwards className to the lockup element", () => {
