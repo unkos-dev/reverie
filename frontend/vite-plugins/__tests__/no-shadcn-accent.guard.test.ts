@@ -2,7 +2,7 @@ import { describe, expect, it } from "vite-plus/test";
 import { readFileSync, readdirSync } from "node:fs";
 import { join, resolve } from "node:path";
 
-// UNK-114 issue 4 regression guard. Brand `--color-accent` (Reverie Gold) is
+// Brand `--color-accent` (Reverie Gold) is
 // the signature for primary affordances and must never appear as a shadcn
 // primitive's hover/focus treatment — the dropped `--color-accent-foreground`
 // alias means stock shadcn primitives that ship with `focus:bg-accent
@@ -40,10 +40,7 @@ describe("shadcn primitives must not use brand bg-accent for hover/focus", () =>
         /data-open:text-accent-foreground(?![\w-])/,
       ];
       for (const pat of forbidden) {
-        expect(
-          src,
-          `${file} matched ${String(pat)} — rewrite to bg-hover/text-fg per UNK-114 issue 4`,
-        ).not.toMatch(pat);
+        expect(src, `${file} matched ${String(pat)}, rewrite to bg-hover/text-fg`).not.toMatch(pat);
       }
     },
   );

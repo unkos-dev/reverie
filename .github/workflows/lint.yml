@@ -88,9 +88,10 @@ jobs:
       - name: cargo --locked guard
         run: just infra::cargo-locked-guard
 
-      # This filter only decides whether a PR touches gated-scope file types at all;
-      # PRs outside that scope skip the guard step entirely.
-      - name: Detect changed source and docs
+      # Both guards scope themselves over every tracked file type, so this filter
+      # only supplies the changed-file list; each script applies its own
+      # exclusions.
+      - name: Detect changed files
         uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4
         id: source-changed
         with:
@@ -99,9 +100,7 @@ jobs:
           list-files: json
           filters: |
             source:
-              - 'backend/src/**/*.rs'
-              - 'frontend/src/**/*.{ts,tsx,js,jsx,css}'
-              - '**/*.{md,mdx}'
+              - '**'
 
       # The file list reaches the shell via env, never inline `${{ }}`, and is
       # NUL-delimited so a filename containing a newline can't split and bypass

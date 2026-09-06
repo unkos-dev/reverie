@@ -1,4 +1,4 @@
-# yamllint configuration (UNK-327).
+# yamllint configuration.
 #
 # Scoped to the rules that catch genuine YAML mistakes — syntax errors,
 # duplicate keys, trailing whitespace, tab indentation — while disabling the

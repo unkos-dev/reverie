@@ -1,4 +1,4 @@
-# UNK-379 raw-route allowlist
+# raw-route allowlist
 #
 # Canonical registry of raw axum `.route(...)` registrations exempted from
 # the OpenApiRouter + `routes!(...)` requirement. CI greps for `.route(` in

@@ -130,7 +130,7 @@ describe("cspHashPlugin", () => {
 
   // The HTML parser terminates an inline <script> at `</script` followed by
   // any of: whitespace (\s), `/`, or `>`. The guard must catch all four
-  // termination signatures, not just `</script>`. UNK-114 issue 5.
+  // termination signatures, not just `</script>`.
   it.each([
     ["space", "var x = '</script ';"],
     ["tab", "var x = '</script\t';"],

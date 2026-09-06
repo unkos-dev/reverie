@@ -13,23 +13,23 @@ allow-expect-in-tests = true
 ## default valid-ident list rather than replacing it.
 doc-valid-idents = ["OpenAPI", ".."]
 
-## UNK-378: escalation path of `docs/adr/0007-outbound-http-clients-send-an-explicit-user-agent.md`
-## ("if this happens twice, escalate to Option C — compile-time lint").
+## Escalation path lives in `docs/adr/0007-outbound-http-clients-send-an-explicit-user-agent.md`
+## ("if this happens twice, escalate to Option C: compile-time lint").
 ## reqwest sends NO User-Agent header by default, and common WAFs
 ## (Cloudflare's default scanner blocklist among them) drop empty-UA
-## requests with 403 before they reach the origin — UNK-255 was a
-## startup-time OIDC discovery failure from exactly this. Every
-## production outbound client must therefore be built through one of the
-## sanctioned UA-setting constructors, which carry scoped `#[expect]`s:
+## requests with 403 before they reach the origin: a startup-time OIDC
+## discovery failure happened from exactly this. Every production
+## outbound client must therefore be built through one of the sanctioned
+## UA-setting constructors, which carry scoped `#[expect]`s:
 ##   - `api_client` / `cover_client` (src/services/enrichment/http.rs)
 ##   - `http_client` (src/auth/oidc.rs)
 ##   - `jwks_http_client` (src/auth/jwt.rs)
 ## Test-only wiremock clients on loopback are ADR-exempt; their test
 ## modules carry their own scoped expects.
 disallowed-methods = [
-  { path = "reqwest::Client::new", reason = "no default User-Agent — WAFs 403 empty-UA requests (UNK-255); build clients via api_client()/cover_client() (enrichment), the OIDC http_client(), or jwks_http_client() (auth::jwt); see docs/adr/0007-outbound-http-clients-send-an-explicit-user-agent.md" },
-  { path = "reqwest::Client::builder", reason = "no default User-Agent — WAFs 403 empty-UA requests (UNK-255); build clients via api_client()/cover_client() (enrichment), the OIDC http_client(), or jwks_http_client() (auth::jwt); see docs/adr/0007-outbound-http-clients-send-an-explicit-user-agent.md" },
-  { path = "reqwest::ClientBuilder::new", reason = "no default User-Agent — WAFs 403 empty-UA requests (UNK-255); build clients via api_client()/cover_client() (enrichment), the OIDC http_client(), or jwks_http_client() (auth::jwt); see docs/adr/0007-outbound-http-clients-send-an-explicit-user-agent.md" },
+  { path = "reqwest::Client::new", reason = "no default User-Agent: WAFs 403 empty-UA requests; build clients via api_client()/cover_client() (enrichment), the OIDC http_client(), or jwks_http_client() (auth::jwt); see docs/adr/0007-outbound-http-clients-send-an-explicit-user-agent.md" },
+  { path = "reqwest::Client::builder", reason = "no default User-Agent: WAFs 403 empty-UA requests; build clients via api_client()/cover_client() (enrichment), the OIDC http_client(), or jwks_http_client() (auth::jwt); see docs/adr/0007-outbound-http-clients-send-an-explicit-user-agent.md" },
+  { path = "reqwest::ClientBuilder::new", reason = "no default User-Agent: WAFs 403 empty-UA requests; build clients via api_client()/cover_client() (enrichment), the OIDC http_client(), or jwks_http_client() (auth::jwt); see docs/adr/0007-outbound-http-clients-send-an-explicit-user-agent.md" },
 ]
 
 ## First-party code uses chrono. The `time` crate stays in the tree only

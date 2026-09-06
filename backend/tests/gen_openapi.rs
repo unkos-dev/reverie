@@ -1,4 +1,4 @@
-//! Drift gate for the generated OpenAPI spec (docs-as-done, UNK-370).
+//! Drift gate for the generated OpenAPI spec.
 //!
 //! The committed `backend/openapi.json` must equal what the handlers produce;
 //! changing a documented response without regenerating fails here — the same

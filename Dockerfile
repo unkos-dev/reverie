@@ -4,7 +4,7 @@
 # Version pin prevents recipe.json schema drift between planner emit and cooker
 # consume. Bump in lockstep across both stages (they inherit from this base).
 #
-# UNK-253: Debian codename pinned explicitly (-trixie) and MUST match the
+# Debian codename pinned explicitly (-trixie) and MUST match the
 # runtime stage codename below. Unpinned `rust:1-slim` follows upstream's
 # default codename, which silently flipped bookworm → trixie and broke ARM64
 # `:main` images with `GLIBC_2.38 not found` against a bookworm runner. Both
@@ -48,8 +48,8 @@ RUN cargo auditable build --release --locked
 # below branch from it and run concurrently instead of one waiting on the other.
 #
 # The base is pnpm's own published image, per https://pnpm.io/docker. It is
-# Debian trixie — the same codename as the runtime stage, which UNK-253 below
-# requires — and it carries the pnpm standalone binary, a CA store and
+# Debian trixie, the same codename the runtime stage below must match, and it
+# carries the pnpm standalone binary, a CA store and
 # libatomic.so.1. That replaces a GPG-verified mise installer, two apt packages
 # and a bootstrap that existed only to obtain pnpm.
 #
@@ -124,9 +124,9 @@ RUN node /usr/local/lib/verify-frontend-sbom.mjs /sbom-tree /build/frontend.cdx.
     && cat /build/sbom-verify.txt
 
 # Stage 3: Runtime
-# UNK-253: codename MUST match the builder stage above. See note on `chef`.
+# Codename MUST match the builder stage above. See note on `chef`.
 FROM debian:trixie-slim@sha256:020c0d20b9880058cbe785a9db107156c3c75c2ac944a6aa7ab59f2add76a7bd AS runtime
-# UNK-165: curl is the HTTP client used by the HEALTHCHECK below; readiness
+# curl is the HTTP client used by the HEALTHCHECK below; readiness
 # probe needs a working HTTP client baked in so docker / compose / Incus can
 # detect when the server is up and the schema check has passed before
 # flipping traffic.
@@ -159,7 +159,7 @@ COPY --from=frontend-sbom /build/frontend.cdx.json /usr/share/reverie/sbom/front
 # failure is a workflow step with access to neither. Reading it back off each
 # published digest is what closes that gap.
 COPY --from=frontend-sbom /build/sbom-verify.txt /usr/share/reverie/sbom/verify.txt
-# UNK-106: the backend serves /assets/* and falls back to index.html for SPA
+# The backend serves /assets/* and falls back to index.html for SPA
 # routes when this env var is set. Validation at startup panics the process
 # if the dir or its csp-hashes.json sidecar is missing.
 ENV REVERIE_FRONTEND_DIST_PATH=/srv/frontend
@@ -167,7 +167,7 @@ ENV REVERIE_FRONTEND_DIST_PATH=/srv/frontend
 USER 10001
 EXPOSE 3000
 
-# UNK-165: probe the readiness endpoint (DB-dependent) so the container is
+# Probe the readiness endpoint (DB-dependent) so the container is
 # only reported healthy once the startup schema check passes and the pool is
 # live. The default entrypoint verifies the schema (it does not migrate); run
 # `reverie migrate` first, or set REVERIE_AUTO_MIGRATE=true (then the

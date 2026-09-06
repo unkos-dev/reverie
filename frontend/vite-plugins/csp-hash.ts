@@ -10,7 +10,7 @@ const SIDECAR_FILENAME = "csp-hashes.json";
 const STANDARD_BASE64 = /^[A-Za-z0-9+/]+={0,2}$/;
 
 /**
- * Custom Vite plugin (UNK-106) that turns `src/fouc/fouc.js` into a CSP-hashed
+ * Custom Vite plugin that turns `src/fouc/fouc.js` into a CSP-hashed
  * inline `<script>` in `index.html` and, on `vite build` only, emits the
  * matching sha256 in `dist/csp-hashes.json` for the backend CSP middleware to
  * consume at startup.
@@ -30,9 +30,9 @@ const STANDARD_BASE64 = /^[A-Za-z0-9+/]+={0,2}$/;
  *      terminates an inline `<script>` at `</script` + whitespace/`/`/`>`;
  *      a literal in source would escape the script element and execute as
  *      page-level HTML. The regex `/<\/script[\s/>]/i` matches the parser's
- *      terminator definition. UNK-114 issue 5 broadened the original
- *      `/<\/script>/i` after a comment-embedded literal in fouc.js silently
- *      terminated the script under D3.13 — the broader regex is load-bearing.
+ *      terminator definition. The original `/<\/script>/i` was broadened
+ *      after a comment-embedded literal in fouc.js silently terminated the
+ *      script; the broader regex is load-bearing.
  *
  * The emitted base64 is checked against the RFC 4648 §4 standard alphabet
  * (CSP L3 rejects base64url) so a future Node version that switches digest
@@ -69,9 +69,9 @@ export function cspHashPlugin(): Plugin {
         // <script> at `</script` followed by ASCII whitespace (\s — space,
         // tab, newline, etc.), `/`, or `>`. A trailing `>` is NOT required.
         // Content that matches escapes the script element and renders as
-        // HTML. UNK-114 issue 5 broadened this from `/<\/script>/i` after a
-        // `</script` literal in a comment terminated fouc.js silently in
-        // D3.13. `</script` followed by a name character (e.g. `</scripty`)
+        // HTML. This regex was broadened from `/<\/script>/i` after a
+        // `</script` literal in a comment silently terminated fouc.js.
+        // `</script` followed by a name character (e.g. `</scripty`)
         // is not a terminator — the regex requires the parser-recognised
         // suffix to keep the guard from false-positiving.
         if (/<\/script[\s/>]/i.test(fouc)) {

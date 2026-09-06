@@ -7,11 +7,16 @@
 # there — so the fix is to rewrite it in codebase terms or delete it, not just
 # strip the id.
 #
-# Scope: source under backend/src + frontend/src, plus all Markdown (ADR,
-# debt, docs, README, ...). Excluded — references are legitimate here:
+# Scope: every tracked file. Anything that can carry a comment or a string
+# (TOML, JSON, YAML, shell, SQL, Dockerfiles, the justfiles, Markdown) is in;
+# binaries are skipped by grep. Excluded — references are legitimate or
+# immovable here:
 #   - agent-process instructions (CLAUDE.md / AGENTS.md / GEMINI.md, any dir),
 #   - vendored UI primitives (frontend/src/components/ui),
-#   - the archival .claude tree.
+#   - the archival .claude tree,
+#   - issue-form templates, whose placeholders show the identifier format,
+#   - applied migrations, whose checksums sqlx has recorded,
+#   - the two reference guards, whose self-checks carry the patterns.
 # Gitignored files (caches, build output, /plans, node_modules) are never
 # reached: the file set comes from `git ls-files`, which only ever lists
 # tracked paths.
@@ -33,17 +38,14 @@ pattern='UNK-[0-9]+'
 # matching across '/', so a single '*' spans nested directories.
 is_gated() {
   case "$1" in
-    # Exclusions first — issue references are allowed in these.
     frontend/src/components/ui/*) return 1 ;;
     .claude/*) return 1 ;;
     CLAUDE.md | AGENTS.md | GEMINI.md | */CLAUDE.md | */AGENTS.md | */GEMINI.md) return 1 ;;
+    .github/ISSUE_TEMPLATE/*) return 1 ;;
+    backend/migrations/*) return 1 ;;
+    scripts/no-issue-refs.sh | scripts/no-plan-refs.sh) return 1 ;;
   esac
-  case "$1" in
-    backend/src/*.rs) return 0 ;;
-    frontend/src/*.ts | frontend/src/*.tsx | frontend/src/*.js | frontend/src/*.jsx | frontend/src/*.css) return 0 ;;
-    *.md | *.mdx) return 0 ;;
-  esac
-  return 1
+  return 0
 }
 
 # Positive control, run on every invocation. The census below is whole-tree, so
@@ -57,8 +59,14 @@ self_check() {
   is_gated backend/src/main.rs || return 1
   is_gated frontend/src/App.tsx || return 1
   is_gated docs/adr/some-decision.md || return 1
+  is_gated backend/Cargo.toml || return 1
+  is_gated Dockerfile || return 1
+  is_gated greptile.json || return 1
   ! is_gated AGENTS.md || return 1
   ! is_gated frontend/src/components/ui/button.tsx || return 1
+  ! is_gated .github/ISSUE_TEMPLATE/bug_report.yml || return 1
+  ! is_gated backend/migrations/20260101000000_x.up.sql || return 1
+  ! is_gated scripts/no-issue-refs.sh || return 1
 }
 if ! self_check; then
   echo "no-issue-refs: self-check failed; the scope rules or the pattern no longer match their own documented examples, so a clean result would mean nothing" >&2
@@ -85,9 +93,9 @@ if [ "${#files[@]}" -eq 0 ]; then
 fi
 
 # grep exit 1 = no matches (clean); exit >1 = a real error (e.g. an unreadable
-# file) that must not read as "clean".
+# file) that must not read as "clean". -I skips binary files (images, fonts).
 rc=0
-matches=$(grep -nE "$pattern" -- "${files[@]}") || rc=$?
+matches=$(grep -nIE "$pattern" -- "${files[@]}") || rc=$?
 if [ "$rc" -gt 1 ]; then
   exit "$rc"
 fi
