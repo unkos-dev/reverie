@@ -336,6 +336,10 @@
       "title": "Library sort is a per-user preference, never URL state"
     },
     {
+      "governed-by": [
+        "REV-ADR-0041",
+        "REV-ADR-0047"
+      ],
       "id": "REV-DESIGN-0001",
       "kind": "design",
       "path": "docs/specs/library/design/0001-library-filter-and-sort-state.md",
@@ -359,6 +363,9 @@
       "title": "Accessibility gate and manual audit"
     },
     {
+      "governed-by": [
+        "REV-ADR-0047"
+      ],
       "id": "REV-REQ-0001",
       "kind": "req",
       "path": "docs/specs/library/requirements/0001-library-sort-resolves-only-from-the-per-user-preference.md",
@@ -371,6 +378,9 @@
       "title": "Library filter state has exactly one writer"
     },
     {
+      "governed-by": [
+        "REV-ADR-0038"
+      ],
       "id": "REV-REQ-0003",
       "kind": "req",
       "path": "docs/specs/library/requirements/0003-library-list-filter-values-that-fail-to-decode-are-rejected.md",
