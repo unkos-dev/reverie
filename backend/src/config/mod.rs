@@ -1672,7 +1672,10 @@ mod tests {
 
     #[test]
     fn from_env_rejects_operator_contact_that_is_not_a_header_value() {
-        let vars = with_overrides(&[("REVERIE_OPERATOR_CONTACT", "ops@example.com\r\nX-Injected: 1")]);
+        let vars = with_overrides(&[(
+            "REVERIE_OPERATOR_CONTACT",
+            "ops@example.com\r\nX-Injected: 1",
+        )]);
         let err = cfg_from_owned(&vars).unwrap_err();
         assert!(
             err.to_string().contains("REVERIE_OPERATOR_CONTACT"),
