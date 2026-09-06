@@ -71,10 +71,16 @@ pub struct SecurityConfig {
 impl SecurityConfig {
     /// HSTS response-header value. `None` when `behind_https=false` — the
     /// middleware must not emit HSTS on plaintext HTTP or the browser would
-    /// refuse to talk to the host on its next TLS-less request. The composed
-    /// string is static ASCII; `from_str` panics on the impossible case so
-    /// any future composition bug surfaces loudly instead of silently
-    /// dropping the header.
+    /// refuse to talk to the host on its next TLS-less request.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the composed HSTS string is not a valid HTTP header value.
+    /// The string is static ASCII built from a fixed literal plus the two
+    /// fixed directives, so this is an unreachable programming-invariant
+    /// violation, not a runtime condition; the panic exists so a future
+    /// composition bug surfaces loudly instead of silently dropping the
+    /// header.
     pub fn hsts_header_value(&self) -> Option<axum::http::HeaderValue> {
         if !self.behind_https {
             return None;
@@ -94,8 +100,16 @@ impl SecurityConfig {
     /// `Reporting-Endpoints: csp-endpoint="<url>"`. `None` when
     /// `csp_report_endpoint` is unset. The URL was validated at deserialize
     /// time by `de_csp_endpoint` (no `"` `;` CR or LF; valid `url::Url`); `as_str()`
-    /// returns the canonical percent-encoded form. `from_str` panics on the
-    /// impossible case rather than silently dropping the header.
+    /// returns the canonical percent-encoded form.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the composed `Reporting-Endpoints` string is not a valid
+    /// HTTP header value. The disallowed bytes are already rejected by
+    /// `de_csp_endpoint` at deserialize time, so this is an unreachable
+    /// programming-invariant violation, not a runtime condition; the panic
+    /// exists so a future validation gap surfaces loudly instead of silently
+    /// dropping the header.
     pub fn reporting_endpoints_header_value(&self) -> Option<axum::http::HeaderValue> {
         let url = self.csp_report_endpoint.as_ref()?;
         let v = format!("csp-endpoint=\"{}\"", url.as_str());

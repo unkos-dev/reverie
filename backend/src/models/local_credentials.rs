@@ -58,7 +58,9 @@ pub async fn find_by_user_id(
     .await
 }
 
-/// Insert or replace a user's local password credential. Used by first-run
+/// Insert or replace a user's local password credential.
+///
+/// Used by first-run
 /// setup, the headless env seed, and password reset. The argument is an Argon2id
 /// PHC string (see [`crate::auth::password`]); this layer never sees a clear
 /// password. On replace, the `trg_local_credentials_updated_at` trigger bumps

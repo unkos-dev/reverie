@@ -57,8 +57,10 @@ impl<S: Send + Sync> FromRequestParts<S> for PeerAddr {
 /// Per-IP login limiter. Keyed on the resolved client [`IpAddr`].
 pub type LoginLimiter = DefaultKeyedRateLimiter<IpAddr>;
 
-/// Build a per-IP login limiter admitting `per_min` attempts per minute per key
-/// (burst equal to the rate). `per_min` is [`NonZeroU32`] so a zero quota (which
+/// Build a per-IP login limiter admitting `per_min` attempts per minute per
+/// key.
+///
+/// Burst equals the rate. `per_min` is [`NonZeroU32`] so a zero quota (which
 /// would lock everyone out) is unrepresentable; config validation enforces the
 /// non-zero invariant at the boundary.
 pub fn build_login_limiter(per_min: NonZeroU32) -> Arc<LoginLimiter> {

@@ -1,7 +1,8 @@
-//! On-disk cover cache. Content-addressed by `current_file_hash` prefix so a
-//! Step 8 writeback (which rewrites `current_file_hash`) naturally evicts
-//! stale entries — the next read computes a different key and the old file
-//! becomes an orphan for Step 11 to sweep.
+//! On-disk cover cache, content-addressed by `current_file_hash` prefix.
+//!
+//! A writeback (which rewrites `current_file_hash`) naturally evicts stale
+//! entries: the next read computes a different key and the old file becomes
+//! an orphan for the cache sweep.
 
 use std::path::{Path, PathBuf};
 
@@ -53,6 +54,11 @@ impl CoverCache {
 
     /// Atomic write: tempfile in the cache dir, then rename. Last-writer-wins
     /// on identical content is benign.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`CoverError::Io`] if creating the cache directory, creating
+    /// or writing the temporary file, or renaming it into place fails.
     pub fn write_atomic(&self, dest: &Path, bytes: &[u8]) -> Result<(), CoverError> {
         use std::io::Write;
         self.ensure_dir()?;

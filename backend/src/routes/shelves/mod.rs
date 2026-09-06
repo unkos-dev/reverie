@@ -53,7 +53,9 @@ mod tests;
 
 /// Build the `/api/v1/shelves*` router as an [`OpenApiRouter`] so each
 /// handler's `#[utoipa::path]` contributes to the generated spec (a missing
-/// annotation fails to compile). Merged into `crate::openapi::pilot_router`
+/// annotation fails to compile).
+///
+/// Merged into `crate::openapi::pilot_router`
 /// and split into its runtime and spec halves there.
 pub fn router() -> OpenApiRouter<AppState> {
     OpenApiRouter::new()
@@ -524,11 +526,11 @@ struct ShelfDetailResponse {
     next_cursor: Option<String>,
 }
 
-/// `GET /api/v1/shelves/{id}` — shelf identity plus ordered items,
-/// keyset-paginated over `(position, added_at, manifestation_id)` — every
-/// list is bounded by construction. The ETag/If-Match contract is
-/// unaffected by item paging:
-/// the entity-tag carries the shelf's `updated_at` regardless of which
+/// Shelf identity plus one keyset-paginated page of its items.
+///
+/// Items page over `(position, added_at, manifestation_id)`, so every list is
+/// bounded by construction. The ETag/If-Match contract is unaffected by item
+/// paging: the entity-tag carries the shelf's `updated_at` regardless of which
 /// items page is requested.
 ///
 /// # Errors

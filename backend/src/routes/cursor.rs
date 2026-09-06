@@ -50,8 +50,9 @@ use uuid::Uuid;
 
 use crate::routes::sort_spec::{SortSpec, SortValueKind};
 
-/// One typed boundary value inside a [`SortCursor`], externally
-/// tagged in the JSON payload so a forged cursor cannot smuggle a
+/// One typed boundary value inside a [`SortCursor`].
+///
+/// Externally tagged in the JSON payload so a forged cursor cannot smuggle a
 /// value of the wrong SQL type past the spec check in
 /// [`SortCursor::parse_for`].
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

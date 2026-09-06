@@ -17,7 +17,6 @@
 //! (`docs/adr/0004-tiered-comment-policy-for-an-open-source-codebase.md`). Threat annotations
 //! (`// THREAT:`) are present on any non-obvious mitigation.
 
-/// `BasicOnly` extractor: rejects session cookies, requires `Authorization: Basic`.
 pub mod basic_only;
 
 /// Resource-server JWT (RFC 9068 access token) validation for API callers.
@@ -41,7 +40,6 @@ pub mod rate_limit;
 /// Forgot-password recovery: PIN generation + operator-readable host file.
 pub mod recovery;
 
-/// `Scope`: credential capability (`read`/`write`/`admin`), orthogonal to role.
 pub mod scope;
 
 /// Session login / logout helpers on `tower_sessions::Session`.

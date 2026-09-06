@@ -82,8 +82,8 @@
         "tags": [
           "suggest"
         ],
-        "summary": "`GET /api/v1/authors?id=<uuid>&id=<uuid>`: resolve author ids to their\ndisplay names so a filter chip restored from a bookmarked URL can label\nitself (the list payload carries author names, not ids, and a none-of\nfilter hides the author's rows entirely).",
-        "description": "The `id` filter is required and capped, keeping this route bounded by\nconstruction: it is the seed of a future paginated authors collection,\nbut until that lands a bare `GET /api/v1/authors` is a 422, not a\nlist-all. Ids are RLS-scoped through the same in-use join as\n`authors/suggest` and restricted to the `author` role, so the chip label\nresolves the same author set the `?author=` filter matches; an id the\ncaller cannot see (or one that is not an author) is silently omitted\nrather than 404'd, and unknown ids drop out the same way.\n\n# Errors\n- [`AppError::MalformedQuery`] when an `id` value is not a UUID.\n- [`AppError::Validation`] when `id` is absent/empty or over\n  [`MAX_RESOLVE_IDS`] values.\n- [`AppError::Internal`] on database errors.",
+        "summary": "Resolve author ids to display names so a restored filter chip can label itself.",
+        "description": "The list payload carries author names, not ids, and a none-of filter hides\nthe author's rows entirely, so a chip restored from a bookmarked URL has\nnothing else to label itself with.\n\nThe `id` filter is required and capped, keeping this route bounded by\nconstruction: it is the seed of a future paginated authors collection,\nbut until that lands a bare `GET /api/v1/authors` is a 422, not a\nlist-all. Ids are RLS-scoped through the same in-use join as\n`authors/suggest` and restricted to the `author` role, so the chip label\nresolves the same author set the `?author=` filter matches; an id the\ncaller cannot see (or one that is not an author) is silently omitted\nrather than 404'd, and unknown ids drop out the same way.\n\n# Errors\n- [`AppError::MalformedQuery`] when an `id` value is not a UUID.\n- [`AppError::Validation`] when `id` is absent/empty or over\n  [`MAX_RESOLVE_IDS`] values.\n- [`AppError::Internal`] on database errors.",
         "operationId": "authors_by_id",
         "parameters": [
           {
@@ -171,8 +171,8 @@
         "tags": [
           "suggest"
         ],
-        "summary": "`GET /api/v1/authors/suggest`: author names in use on a visible\nmanifestation, ranked prefix-first then by similarity. Scoped to the\n`author` role (see [`query_authors`]), matching the `?author=` filter it\nfeeds.",
-        "description": "# Errors\nSame as [`suggest_genres`].",
+        "summary": "Author names in use on a visible manifestation, ranked prefix-first then by similarity.",
+        "description": "Scoped to the `author` role (see [`query_authors`]), matching the\n`?author=` filter it feeds.\n\n# Errors\nSame as [`suggest_genres`].",
         "operationId": "suggest_authors",
         "parameters": [
           {
@@ -935,8 +935,8 @@
         "tags": [
           "metadata"
         ],
-        "summary": "`GET /api/v1/books/{id}/metadata` — the editable metadata span for one\nmanifestation: the matched-pair read for [`update_book_metadata`], same\nURI and id key, so a read-modify-write flow targets one resource.",
-        "description": "# Errors\n- [`AppError::Forbidden`] when the caller is a child account.\n- [`AppError::NotFound`] when the manifestation is missing or hidden by\n  RLS for the current user (existence-not-leaked).\n- [`AppError::Internal`] on database errors.",
+        "summary": "The editable metadata span for one manifestation.",
+        "description": "This is the matched-pair read for [`update_book_metadata`]: same URI and\nid key, so a read-modify-write flow targets one resource.\n\n# Errors\n- [`AppError::Forbidden`] when the caller is a child account.\n- [`AppError::NotFound`] when the manifestation is missing or hidden by\n  RLS for the current user (existence-not-leaked).\n- [`AppError::Internal`] on database errors.",
         "operationId": "get_book_metadata",
         "parameters": [
           {
@@ -2610,8 +2610,8 @@
         "tags": [
           "suggest"
         ],
-        "summary": "`GET /api/v1/publishers/suggest`: distinct publisher values in use on a\nvisible manifestation, ranked prefix-first then by similarity. Every\nreturned [`Suggestion`] carries `id: None` (publishers have no dedicated\nvocabulary table; see [`query_publishers`]).",
-        "description": "# Errors\nSame as [`suggest_genres`].",
+        "summary": "Distinct publisher values in use on a visible manifestation, ranked prefix-first then by similarity.",
+        "description": "Every returned [`Suggestion`] carries `id: None` (publishers have no\ndedicated vocabulary table; see [`query_publishers`]).\n\n# Errors\nSame as [`suggest_genres`].",
         "operationId": "suggest_publishers",
         "parameters": [
           {
@@ -3291,8 +3291,8 @@
         "tags": [
           "shelves"
         ],
-        "summary": "`GET /api/v1/shelves/{id}` — shelf identity plus ordered items,\nkeyset-paginated over `(position, added_at, manifestation_id)` — every\nlist is bounded by construction. The ETag/If-Match contract is\nunaffected by item paging:\nthe entity-tag carries the shelf's `updated_at` regardless of which\nitems page is requested.",
-        "description": "# Errors\n- [`AppError::NotFound`] when missing or not owned by caller.\n- [`AppError::Validation`] when the cursor is malformed.\n- [`AppError::Internal`] on database errors.",
+        "summary": "Shelf identity plus one keyset-paginated page of its items.",
+        "description": "Items page over `(position, added_at, manifestation_id)`, so every list is\nbounded by construction. The ETag/If-Match contract is unaffected by item\npaging: the entity-tag carries the shelf's `updated_at` regardless of which\nitems page is requested.\n\n# Errors\n- [`AppError::NotFound`] when missing or not owned by caller.\n- [`AppError::Validation`] when the cursor is malformed.\n- [`AppError::Internal`] on database errors.",
         "operationId": "get_shelf_with_items",
         "parameters": [
           {
@@ -4305,8 +4305,8 @@
         "tags": [
           "users"
         ],
-        "summary": "`POST /api/v1/users` — create an account with an admin-typed initial\npassword (admin only). This is the create-and-invite path: there is no\nseparate invite mechanism, no email, and no forced first-login change. The\nadmin relays the password out-of-band; the user may self-service change it.",
-        "description": "# Errors\n- [`AppError::Forbidden`] when the caller is not an admin or is a child.\n- [`AppError::Validation`] (422) on an invalid email or a password that\n  fails the policy (too short/long, too weak, or breached).\n- [`AppError::EmailConflict`] (409) when the email is already in use.\n- [`AppError::Internal`] on database errors.",
+        "summary": "Create an account with an admin-typed initial password (admin only).",
+        "description": "This is the create-and-invite path: there is no invite email and no forced\nfirst-login change. The admin relays the password out-of-band; the user may\nself-service change it afterward.\n\n# Errors\n- [`AppError::Forbidden`] when the caller is not an admin or is a child.\n- [`AppError::Validation`] (422) on an invalid email or a password that\n  fails the policy (too short/long, too weak, or breached).\n- [`AppError::EmailConflict`] (409) when the email is already in use.\n- [`AppError::Internal`] on database errors.",
         "operationId": "create_user",
         "requestBody": {
           "content": {
@@ -4506,8 +4506,8 @@
         "tags": [
           "users"
         ],
-        "summary": "`PUT /api/v1/users/{id}/account-status` — soft-disable or re-enable an\naccount (admin only). Disabling stamps `disabled_at`, bumps the target's\n`session_version` (killing live sessions at once), and locks them out of\nevery auth path; re-enabling clears it.",
-        "description": "Last-enabled-admin protection (TOCTOU-safe): when disabling an admin, all\nenabled admin rows are locked `FOR UPDATE` (same `ORDER BY id` order as\n[`update_role`]) and the request is rejected if it would leave zero enabled\nadmins. An admin cannot disable their own account.\n\n# Errors\n- [`AppError::Forbidden`] when the caller is not an admin or is a child.\n- [`AppError::Validation`] (422) on a self-disable attempt or when disabling\n  the last enabled admin.\n- [`AppError::NotFound`] when the target does not exist.\n- [`AppError::Internal`] on database errors.",
+        "summary": "Soft-disable or re-enable an account (admin only).",
+        "description": "Disabling stamps `disabled_at`, bumps the target's `session_version`\n(killing live sessions at once), and locks them out of every auth path;\nre-enabling clears it.\n\nLast-enabled-admin protection (TOCTOU-safe): when disabling an admin, all\nenabled admin rows are locked `FOR UPDATE` (same `ORDER BY id` order as\n[`update_role`]) and the request is rejected if it would leave zero enabled\nadmins. An admin cannot disable their own account.\n\n# Errors\n- [`AppError::Forbidden`] when the caller is not an admin or is a child.\n- [`AppError::Validation`] (422) on a self-disable attempt or when disabling\n  the last enabled admin.\n- [`AppError::NotFound`] when the target does not exist.\n- [`AppError::Internal`] on database errors.",
         "operationId": "update_account_status",
         "parameters": [
           {
@@ -4718,8 +4718,8 @@
         "tags": [
           "users"
         ],
-        "summary": "`POST /api/v1/users/{id}/password-reset` — an admin sets a new password for\na target account (admin only). Consistent with create: the admin types the\npassword and hands it off; no PIN, no email. Bumps the target's\n`session_version` so their existing sessions are invalidated. Works for an\nOIDC-only account too (the local credential is upserted).",
-        "description": "# Errors\n- [`AppError::Forbidden`] when the caller is not an admin or is a child.\n- [`AppError::Validation`] (422) when the password fails the policy.\n- [`AppError::NotFound`] when the target does not exist.\n- [`AppError::Internal`] on database errors.",
+        "summary": "Set a new password for a target account (admin only).",
+        "description": "Consistent with create: the admin types the password and hands it off; no\nPIN, no email. Bumps the target's `session_version` so their existing\nsessions are invalidated. Works for an OIDC-only account too (the local\ncredential is upserted).\n\n# Errors\n- [`AppError::Forbidden`] when the caller is not an admin or is a child.\n- [`AppError::Validation`] (422) when the password fails the policy.\n- [`AppError::NotFound`] when the target does not exist.\n- [`AppError::Internal`] on database errors.",
         "operationId": "admin_reset_password",
         "parameters": [
           {
@@ -5753,6 +5753,7 @@
           "health"
         ],
         "summary": "Readiness probe: pings the application pool with `SELECT 1` and returns\n`503` with an RFC 9457 body while the database is unreachable so\norchestrators withhold traffic.",
+        "description": "# Errors\n\nReturns a 503 [`ProblemDetails`] if the `SELECT 1` liveness query against\nthe application pool fails.",
         "operationId": "ready",
         "responses": {
           "200": {
@@ -5933,8 +5934,8 @@
         "tags": [
           "opds"
         ],
-        "summary": "`GET /opds/books/{id}/file` — streamed EPUB download. The response\ncarries an RFC 6266 `Content-Disposition: attachment` header whose\nfilename is derived from the work title (ASCII fallback plus RFC 5987\nUTF-8 form).",
-        "description": "# Errors\n- [`AppError::NotFound`] when the manifestation is missing, RLS-hidden,\n  or its file is gone from disk.\n- [`AppError::Forbidden`] when the on-disk path escapes the configured\n  library root (canonicalisation guard).\n- [`AppError::Internal`] on database or file IO errors.",
+        "summary": "Streamed EPUB download.",
+        "description": "The response carries an RFC 6266 `Content-Disposition: attachment` header\nwhose filename is derived from the work title (ASCII fallback plus RFC 5987\nUTF-8 form).\n\n# Errors\n- [`AppError::NotFound`] when the manifestation is missing, RLS-hidden,\n  or its file is gone from disk.\n- [`AppError::Forbidden`] when the on-disk path escapes the configured\n  library root (canonicalisation guard).\n- [`AppError::Internal`] on database or file IO errors.",
         "operationId": "download_epub",
         "parameters": [
           {
@@ -7492,7 +7493,7 @@
       },
       "BookListRow": {
         "type": "object",
-        "description": "One row of a paginated book list. Assembled by hand from the\ndynamic `QueryBuilder` row in `routes/library::list`, then enriched\nwith the batch-loaded multi-value slots and serialised straight to\nJSON.",
+        "description": "One row of a paginated book list.\n\nAssembled by hand from the\ndynamic `QueryBuilder` row in `routes/library::list`, then enriched\nwith the batch-loaded multi-value slots and serialised straight to\nJSON.",
         "required": [
           "id",
           "work_id",
@@ -7826,7 +7827,7 @@
       },
       "ContributorRef": {
         "type": "object",
-        "description": "One non-author contributor surfaced on a book projection. Authors\nstay in the flat `authors` display array; this slot carries the other\n`work_authors` roles so per-role grid columns need no extra fetch.\nOrdered by role (enum declaration order), then contributor position.",
+        "description": "One non-author contributor surfaced on a book projection.\n\nAuthors\nstay in the flat `authors` display array; this slot carries the other\n`work_authors` roles so per-role grid columns need no extra fetch.\nOrdered by role (enum declaration order), then contributor position.",
         "required": [
           "name",
           "role"
@@ -8091,7 +8092,7 @@
       },
       "ExternalRatingRef": {
         "type": "object",
-        "description": "One provider's aggregate rating surfaced on a book projection.\nRatings are per-edition and per-source; each provider is\nauthoritative for its own scale, so no cross-source aggregate is\ncomputed. Hidden providers are filtered out before this DTO is built.",
+        "description": "One provider's aggregate rating surfaced on a book projection.\n\nRatings are per-edition and per-source; each provider is\nauthoritative for its own scale, so no cross-source aggregate is\ncomputed. Hidden providers are filtered out before this DTO is built.",
         "required": [
           "source",
           "rating",
@@ -8465,7 +8466,7 @@
       },
       "MetadataVersionRow": {
         "type": "object",
-        "description": "One pending draft row surfaced on the Versions tab. Serialised as\nJSON in the `metadata_versions` array of `GET /api/v1/books/{id}`;\nthe row shape is decoded from the `metadata_versions` table\n(migration `20260412150003_series_and_metadata`) with the canonical\ncolumns plus a stringified enum.",
+        "description": "One pending draft row surfaced on the Versions tab.\n\nSerialised as\nJSON in the `metadata_versions` array of `GET /api/v1/books/{id}`;\nthe row shape is decoded from the `metadata_versions` table\n(migration `20260412150003_series_and_metadata`) with the canonical\ncolumns plus a stringified enum.",
         "required": [
           "id",
           "field_name",
@@ -8568,7 +8569,7 @@
       },
       "PreferenceOverrides": {
         "type": "object",
-        "description": "The caller's overrides. A `None` group inherits the matching constant\nabove; the client is told which is which rather than being handed a\nresolved value, because per-group reset and any future \"has this user\ncustomised anything?\" question both need the distinction.",
+        "description": "The caller's overrides.\n\nA `None` group inherits the matching constant\nabove; the client is told which is which rather than being handed a\nresolved value, because per-group reset and any future \"has this user\ncustomised anything?\" question both need the distinction.",
         "properties": {
           "density": {
             "oneOf": [
@@ -8634,7 +8635,7 @@
       },
       "ProblemDetails": {
         "type": "object",
-        "description": "RFC 9457 `application/problem+json` error body — the single runtime DTO\nfor the error envelope. The `IntoResponse` impl on\n[`crate::error::AppError`] constructs it for every Problem-Details\nvariant, and operational probes (readiness) build it directly, so the\ndocumented component schema and the bytes on the wire come from the same\nstruct and cannot drift.",
+        "description": "RFC 9457 `application/problem+json` error body — the single runtime DTO\nfor the error envelope.\n\nThe `IntoResponse` impl on\n[`crate::error::AppError`] constructs it for every Problem-Details\nvariant, and operational probes (readiness) build it directly, so the\ndocumented component schema and the bytes on the wire come from the same\nstruct and cannot drift.",
         "required": [
           "type",
           "title",
@@ -8693,7 +8694,7 @@
       },
       "ReadingState": {
         "type": "object",
-        "description": "`GET /api/v1/books/{id}/reading` response: the caller's full reading\nstate for one book. A missing `reading_state` row (never written) decodes\nto all-`None` fields; that all-null shape IS the \"unread\" domain state,\nnot an error.",
+        "description": "`GET /api/v1/books/{id}/reading` response: the caller's full reading\nstate for one book.\n\nA missing `reading_state` row (never written) decodes\nto all-`None` fields; that all-null shape IS the \"unread\" domain state,\nnot an error.",
         "properties": {
           "finished_at": {
             "type": [
@@ -8757,7 +8758,7 @@
       },
       "ReadingStateSummary": {
         "type": "object",
-        "description": "Reading-state slice embedded in each `GET /api/v1/books` list row.\nBatch-loaded alongside the page (see `routes::library::load_authors_for_works`\nfor the sibling batch-load pattern); `None` when the caller has no\n`reading_state` row for that book (unread).\n\nDeliberately excludes `notes`: it is capped at 10k characters per row,\nwhich at the maximum page size would dominate the response body many\ntimes over. Clients read notes through the single-book\n`GET /api/v1/books/{id}/reading` endpoint ([`ReadingState`]).",
+        "description": "Reading-state slice embedded in each `GET /api/v1/books` list row.\n\nBatch-loaded alongside the page (see `routes::library::load_authors_for_works`\nfor the sibling batch-load pattern); `None` when the caller has no\n`reading_state` row for that book (unread).\n\nDeliberately excludes `notes`: it is capped at 10k characters per row,\nwhich at the maximum page size would dominate the response body many\ntimes over. Clients read notes through the single-book\n`GET /api/v1/books/{id}/reading` endpoint ([`ReadingState`]).",
         "properties": {
           "finished_at": {
             "type": [
@@ -8961,7 +8962,7 @@
       },
       "SearchHit": {
         "type": "object",
-        "description": "One result row of `GET /api/v1/search`. Carries the bare minimum the\ncommand-palette UI needs: a kind tag for grouping, identifiers for\nnavigation, a short display label, and an optional `ts_headline`\nsnippet with non-HTML ASCII STX (`\\u{0002}`) / ETX (`\\u{0003}`)\nmarkers so the React renderer can avoid `dangerouslySetInnerHTML`.",
+        "description": "One result row of `GET /api/v1/search`.\n\nCarries the bare minimum the\ncommand-palette UI needs: a kind tag for grouping, identifiers for\nnavigation, a short display label, and an optional `ts_headline`\nsnippet with non-HTML ASCII STX (`\\u{0002}`) / ETX (`\\u{0003}`)\nmarkers so the React renderer can avoid `dangerouslySetInnerHTML`.",
         "required": [
           "kind",
           "id",
@@ -9022,7 +9023,7 @@
       },
       "SearchResponse": {
         "type": "object",
-        "description": "`GET /api/v1/search` envelope (11b). Wraps a flat result list — the\nfrontend groups by [`SearchHit::kind`] client-side. No cursor:\nsearch is bounded by `LIMIT` server-side; pagination is a follow-up\nif user-research warrants it.",
+        "description": "`GET /api/v1/search` envelope (11b).\n\nWraps a flat result list — the\nfrontend groups by [`SearchHit::kind`] client-side. No cursor:\nsearch is bounded by `LIMIT` server-side; pagination is a follow-up\nif user-research warrants it.",
         "required": [
           "items"
         ],
@@ -9038,7 +9039,7 @@
       },
       "SeriesDetail": {
         "type": "object",
-        "description": "`/api/v1/series/{id}` response. Carries the series identity plus an\nordered list of works; each work surfaces only the manifestations\nthe caller can see, so the frontend can render a completeness\nindicator (`own = works with len(manifestations) > 0`, `total =\nworks.len()`).",
+        "description": "`/api/v1/series/{id}` response.\n\nCarries the series identity plus an\nordered list of works; each work surfaces only the manifestations\nthe caller can see, so the frontend can render a completeness\nindicator (`own = works with len(manifestations) > 0`, `total =\nworks.len()`).",
         "required": [
           "id",
           "name",

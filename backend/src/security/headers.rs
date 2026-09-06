@@ -242,6 +242,7 @@ async fn spa_fallback_response(state: &AppState) -> Response {
 }
 
 /// `Router::method_not_allowed_fallback` handler for the API-like router.
+///
 /// Substitutes problem details for axum's bare 405. Must not set its own
 /// `Allow` header: axum appends the registered methods for the matched
 /// path after this fallback returns, unless one is already present.

@@ -28,7 +28,9 @@ mod tests;
 
 /// Build the `/api/v1/series/{id}` router as an [`OpenApiRouter`] so the
 /// handler's `#[utoipa::path]` contributes to the generated spec (a missing
-/// annotation fails to compile). Merged into `crate::openapi::pilot_router` and
+/// annotation fails to compile).
+///
+/// Merged into `crate::openapi::pilot_router` and
 /// split into its runtime and spec halves there.
 pub fn router() -> OpenApiRouter<AppState> {
     OpenApiRouter::new().routes(routes!(detail))

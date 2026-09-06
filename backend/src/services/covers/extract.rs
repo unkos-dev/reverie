@@ -12,13 +12,21 @@ use super::error::CoverError;
 use super::svg;
 use crate::services::epub::{container_layer, cover_layer, is_safe_path, opf_layer, zip_layer};
 
-/// Read the EPUB at `epub_path`, locate the cover (EPUB 3
-/// `properties="cover-image"`, falling back to the EPUB 2 `<meta
-/// name="cover" content="ID"/>` declaration, falling back last to the legacy
-/// id heuristic), and return its raw bytes + detected `ImageFormat`.
-/// `SVG`-declared covers are rasterized to `PNG` at this boundary. Returns
-/// [`CoverError::NoCover`] when no cover is declared or the declared file is
-/// missing.
+/// Read the EPUB at `epub_path` and return its cover's raw bytes and detected
+/// `ImageFormat`.
+///
+/// Locates the cover via EPUB 3 `properties="cover-image"`, falling back to
+/// the EPUB 2 `<meta name="cover" content="ID"/>` declaration, falling back
+/// last to the legacy id heuristic. `SVG`-declared covers are rasterized to
+/// `PNG` at this boundary. Returns [`CoverError::NoCover`] when no cover is
+/// declared or the declared file is missing.
+///
+/// # Errors
+///
+/// Returns [`CoverError::Zip`] or [`CoverError::Io`] if the archive cannot be
+/// opened, [`CoverError::NoCover`] if no cover is declared, the declared OPF
+/// or cover entry is missing, or [`CoverError::Decode`] if the cover bytes
+/// are neither a decodable raster format nor `SVG`.
 pub fn extract_cover_bytes(epub_path: &Path) -> Result<(Vec<u8>, ImageFormat), CoverError> {
     // zip_layer::validate emits issues into a Vec rather than returning them;
     // we need the ZipHandle but don't care about its advisory issues here

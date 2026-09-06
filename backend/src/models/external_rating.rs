@@ -55,6 +55,12 @@ impl RatingObservation {
     /// constraint names). A `NaN` rating is rejected without a dedicated
     /// `is_nan` check: every comparison against `NaN` is `false`, so it
     /// fails the range predicate naturally.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`InvalidRatingObservation`] when `rating_scale` is not positive,
+    /// `rating` falls outside `[0, rating_scale]` (including `NaN`), or
+    /// `review_count` is negative.
     pub fn new(
         rating: f32,
         rating_scale: f32,
@@ -92,7 +98,9 @@ impl RatingObservation {
 }
 
 /// A rating-capable record reported values the `manifestation_external_ratings`
-/// CHECK constraints would reject. Carries the rejected values so a caller
+/// CHECK constraints would reject.
+///
+/// Carries the rejected values so a caller
 /// can log or report them without re-deriving which predicate failed.
 #[derive(Debug, Clone, Copy, PartialEq, thiserror::Error)]
 #[error(
@@ -108,9 +116,16 @@ pub struct InvalidRatingObservation {
 }
 
 /// Upsert a rating for a `(manifestation_id, source)` pair, refreshing the
-/// score/scale/count and stamping `fetched_at = now()`. Idempotent: a re-run
+/// score/scale/count and stamping `fetched_at = now()`.
+///
+/// Idempotent: a re-run
 /// with the same score updates the one row in place (no duplicate). Two
 /// manifestations (editions) with the same source keep independent rows.
+///
+/// # Errors
+///
+/// Returns [`sqlx::Error`] from the underlying `INSERT … ON CONFLICT`, including
+/// a foreign-key violation when `source` is not a rating-capable source.
 pub async fn upsert_rating(
     executor: impl sqlx::PgExecutor<'_>,
     manifestation_id: Uuid,
@@ -138,9 +153,14 @@ pub async fn upsert_rating(
 }
 
 /// Remove the cached rating for a `(manifestation_id, source)` pair.
+///
 /// Used when a rating-capable provider record is re-fetched and no longer
 /// reports a rating, so the cache reflects the provider's removal instead
 /// of serving the old score indefinitely. Returns whether a row existed.
+///
+/// # Errors
+///
+/// Returns [`sqlx::Error`] from the underlying `DELETE`.
 pub async fn delete_rating(
     executor: impl sqlx::PgExecutor<'_>,
     manifestation_id: Uuid,

@@ -22,7 +22,9 @@ use crate::state::AppState;
 
 /// Build the device-token management router as an [`OpenApiRouter`] so each
 /// handler's `#[utoipa::path]` contributes to the generated spec (a missing
-/// annotation fails to compile). Merged into `crate::openapi::pilot_router`
+/// annotation fails to compile).
+///
+/// Merged into `crate::openapi::pilot_router`
 /// and split into its runtime and spec halves there.
 pub fn router() -> OpenApiRouter<AppState> {
     OpenApiRouter::new()

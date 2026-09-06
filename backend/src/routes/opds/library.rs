@@ -1,6 +1,8 @@
 //! `/opds/library/*` and shared scope-parameterised handlers for the
 //! `new`, `authors`, `authors/:id`, `series`, `series/:id`, `search`
-//! subcatalogs. `/opds/shelves/:id/*` delegates to these same handlers via
+//! subcatalogs.
+//!
+//! `/opds/shelves/:id/*` delegates to these same handlers via
 //! [`super::shelves::router`] with [`Scope::Shelf`].
 
 use std::collections::HashMap;

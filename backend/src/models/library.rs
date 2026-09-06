@@ -47,7 +47,9 @@ pub struct SeriesRef {
     pub position: Option<f64>,
 }
 
-/// One non-author contributor surfaced on a book projection. Authors
+/// One non-author contributor surfaced on a book projection.
+///
+/// Authors
 /// stay in the flat `authors` display array; this slot carries the other
 /// `work_authors` roles so per-role grid columns need no extra fetch.
 /// Ordered by role (enum declaration order), then contributor position.
@@ -77,6 +79,7 @@ pub struct ExternalIdRef {
 }
 
 /// One provider's aggregate rating surfaced on a book projection.
+///
 /// Ratings are per-edition and per-source; each provider is
 /// authoritative for its own scale, so no cross-source aggregate is
 /// computed. Hidden providers are filtered out before this DTO is built.
@@ -95,7 +98,9 @@ pub struct ExternalRatingRef {
     pub fetched_at: DateTime<Utc>,
 }
 
-/// One row of a paginated book list. Assembled by hand from the
+/// One row of a paginated book list.
+///
+/// Assembled by hand from the
 /// dynamic `QueryBuilder` row in `routes/library::list`, then enriched
 /// with the batch-loaded multi-value slots and serialised straight to
 /// JSON.
@@ -246,7 +251,9 @@ pub struct BookDetail {
     pub updated_at: DateTime<Utc>,
 }
 
-/// One pending draft row surfaced on the Versions tab. Serialised as
+/// One pending draft row surfaced on the Versions tab.
+///
+/// Serialised as
 /// JSON in the `metadata_versions` array of `GET /api/v1/books/{id}`;
 /// the row shape is decoded from the `metadata_versions` table
 /// (migration `20260412150003_series_and_metadata`) with the canonical
@@ -313,7 +320,9 @@ pub struct WorkDetail {
     pub manifestations: Vec<WorkManifestation>,
 }
 
-/// `GET /api/v1/search` envelope (11b). Wraps a flat result list — the
+/// `GET /api/v1/search` envelope (11b).
+///
+/// Wraps a flat result list — the
 /// frontend groups by [`SearchHit::kind`] client-side. No cursor:
 /// search is bounded by `LIMIT` server-side; pagination is a follow-up
 /// if user-research warrants it.
@@ -324,7 +333,9 @@ pub struct SearchResponse {
     pub items: Vec<SearchHit>,
 }
 
-/// One result row of `GET /api/v1/search`. Carries the bare minimum the
+/// One result row of `GET /api/v1/search`.
+///
+/// Carries the bare minimum the
 /// command-palette UI needs: a kind tag for grouping, identifiers for
 /// navigation, a short display label, and an optional `ts_headline`
 /// snippet with non-HTML ASCII STX (`\u{0002}`) / ETX (`\u{0003}`)

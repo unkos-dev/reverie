@@ -48,7 +48,9 @@ pub async fn load(pool: &PgPool) -> Result<Settings, sqlx::Error> {
 }
 
 /// Install `candidate` into the cache slot only when its `revision` is newer
-/// than the resident one. Every cache writer (the PUT handler's immediate
+/// than the resident one.
+///
+/// Every cache writer (the PUT handler's immediate
 /// swap, the NOTIFY reload, and the fallback poll) goes through this guard,
 /// so the resident snapshot is a monotonic replica of the DB row: a writer
 /// that read an older row version can never overwrite a newer one,
@@ -76,9 +78,10 @@ pub enum ProviderKeyError {
     Db(#[from] sqlx::Error),
 }
 
-/// Validate that every `provider_visibility` key names a known provider:
-/// a member of the `identifier_schemes` and `rating_sources` union. The
-/// vocabulary lives in reference tables (readable by every role), so the
+/// Validate that every `provider_visibility` key names a known provider: a
+/// member of the `identifier_schemes` and `rating_sources` union.
+///
+/// The vocabulary lives in reference tables (readable by every role), so the
 /// closed set the projections filter on is DB-defined, not hardcoded.
 ///
 /// # Errors

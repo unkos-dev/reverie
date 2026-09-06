@@ -1,5 +1,6 @@
-//! `/api/v1/{genres,moods,tags,authors,series,publishers}/suggest` typeahead
-//! endpoints: prefix-then-similarity lookup over the metadata vocabularies,
+//! `/api/v1/{genres,moods,tags,authors,series,publishers}/suggest` typeahead endpoints.
+//!
+//! Each is a prefix-then-similarity lookup over the metadata vocabularies,
 //! scoped to values already in use on a manifestation the caller can see.
 //!
 //! # Invariants
@@ -650,10 +651,10 @@ async fn suggest_tags(
     Ok(Json(SuggestResponse { suggestions }))
 }
 
-/// `GET /api/v1/authors/suggest`: author names in use on a visible
-/// manifestation, ranked prefix-first then by similarity. Scoped to the
-/// `author` role (see [`query_authors`]), matching the `?author=` filter it
-/// feeds.
+/// Author names in use on a visible manifestation, ranked prefix-first then by similarity.
+///
+/// Scoped to the `author` role (see [`query_authors`]), matching the
+/// `?author=` filter it feeds.
 ///
 /// # Errors
 /// Same as [`suggest_genres`].
@@ -689,10 +690,11 @@ async fn suggest_authors(
     Ok(Json(SuggestResponse { suggestions }))
 }
 
-/// `GET /api/v1/authors?id=<uuid>&id=<uuid>`: resolve author ids to their
-/// display names so a filter chip restored from a bookmarked URL can label
-/// itself (the list payload carries author names, not ids, and a none-of
-/// filter hides the author's rows entirely).
+/// Resolve author ids to display names so a restored filter chip can label itself.
+///
+/// The list payload carries author names, not ids, and a none-of filter hides
+/// the author's rows entirely, so a chip restored from a bookmarked URL has
+/// nothing else to label itself with.
 ///
 /// The `id` filter is required and capped, keeping this route bounded by
 /// construction: it is the seed of a future paginated authors collection,
@@ -803,10 +805,10 @@ async fn suggest_series(
     Ok(Json(SuggestResponse { suggestions }))
 }
 
-/// `GET /api/v1/publishers/suggest`: distinct publisher values in use on a
-/// visible manifestation, ranked prefix-first then by similarity. Every
-/// returned [`Suggestion`] carries `id: None` (publishers have no dedicated
-/// vocabulary table; see [`query_publishers`]).
+/// Distinct publisher values in use on a visible manifestation, ranked prefix-first then by similarity.
+///
+/// Every returned [`Suggestion`] carries `id: None` (publishers have no
+/// dedicated vocabulary table; see [`query_publishers`]).
 ///
 /// # Errors
 /// Same as [`suggest_genres`].

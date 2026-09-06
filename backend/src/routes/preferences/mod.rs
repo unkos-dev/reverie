@@ -37,7 +37,9 @@ mod tests;
 
 /// Build the `/auth/me/preferences` router as an [`OpenApiRouter`] so each
 /// handler's `#[utoipa::path]` contributes to the generated spec (a missing
-/// annotation fails to compile). Merged into `crate::openapi::pilot_router`.
+/// annotation fails to compile).
+///
+/// Merged into `crate::openapi::pilot_router`.
 pub fn router() -> OpenApiRouter<AppState> {
     OpenApiRouter::new().routes(routes!(get_preferences, patch_preferences))
 }

@@ -146,9 +146,9 @@ the configuration itself.
   <https://github.com/tokio-rs/tokio/blob/master/tokio/Cargo.toml>
 - Related: `backend/CLAUDE.md` "Conventions" and "Rust Code Rules"; `frontend/CLAUDE.md` "TypeScript" and "Hooks"
   sections.
-- The four pedantic lints allow-listed for application-crate reasons (`module_name_repetitions`,
-  `missing_errors_doc`, `missing_panics_doc`, `must_use_candidate`) exist for library API hygiene; revisit the
-  allow-list if Reverie ever publishes a library crate to crates.io.
+- The allow-list now holds `must_use_candidate` and `implicit_hasher`, both library API hygiene lints the crate does
+  not yet satisfy, and `large_stack_arrays`, which fires inside a derive expansion that no per-item `#[expect]` can
+  reach. `module_name_repetitions` left clippy's pedantic group upstream and needs no entry.
 - [Tiered comment policy for an open-source codebase](./0004-tiered-comment-policy-for-an-open-source-codebase.md)
-  narrows this allow-list: after the library split, `missing_errors_doc` is re-enabled once the per-module docstring
-  backfill completes.
+  narrowed this allow-list: after the library split and the docstring backfill, `missing_errors_doc`,
+  `missing_panics_doc`, and `too_long_first_doc_paragraph` are enforced.

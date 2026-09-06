@@ -1,8 +1,9 @@
 //! Cover serving errors. Maps to HTTP status at the handler boundary:
 //! `NoCover` → 404, everything else → 500.
 
-/// All failure modes that can arise when serving a cover image. The handler
-/// maps `NoCover` → 404 and every other variant → 500; variants carry
+/// All failure modes that can arise when serving a cover image.
+///
+/// The handler maps `NoCover` → 404 and every other variant → 500; variants carry
 /// enough context for structured log fields without leaking internals to the
 /// client.
 #[derive(Debug, thiserror::Error)]

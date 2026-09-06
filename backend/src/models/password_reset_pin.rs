@@ -69,7 +69,9 @@ impl std::fmt::Debug for PasswordResetPin {
     }
 }
 
-/// Delete any unconsumed PIN rows for a user so at most one stays live. Call
+/// Delete any unconsumed PIN rows for a user so at most one stays live.
+///
+/// Call
 /// before [`insert`] on each new forgot-password request: a re-request
 /// invalidates the prior PIN (codeguard #2: at most one active PIN per user).
 ///
@@ -236,7 +238,9 @@ impl IssuanceLock {
 }
 
 /// Atomically supersede a user's prior active PINs and persist a fresh one,
-/// reporting whether this call won the single active slot. The
+/// reporting whether this call won the single active slot.
+///
+/// The
 /// [`supersede_active`] delete and the [`insert`] share one transaction, so a
 /// failure between them cannot leave the user with no active PIN (codeguard #2:
 /// at most one active PIN per user). Hash the PIN before calling so the

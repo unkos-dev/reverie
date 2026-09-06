@@ -295,10 +295,18 @@ impl Resolve for SsrfResolver {
 ///
 /// `user_agent` is forwarded on every request.  Upstream providers
 /// (e.g. `OpenLibrary`) grant identified clients a higher rate-limit tier.
+///
+/// # Panics
+///
+/// Panics if `user_agent` is not a valid header value or the TLS backend
+/// fails to initialise. Production callers pass [`crate::config::Config::user_agent`],
+/// which configuration loading rejects unless it is a valid header value;
+/// rustls is a pure-Rust backend and should not fail in any normally
+/// configured environment.
 pub fn api_client(user_agent: &str) -> reqwest::Client {
     #[expect(
         clippy::expect_used,
-        reason = "reqwest::Client::build() only fails if TLS backend init fails; rustls is a pure-Rust backend and should not fail in any normally configured environment"
+        reason = "reqwest::Client::build() fails only for a user agent that is not a valid header value, which config load rejects before production callers reach here, or for TLS backend init; rustls is a pure-Rust backend and should not fail in any normally configured environment"
     )]
     #[expect(
         clippy::disallowed_methods,
@@ -326,8 +334,10 @@ pub fn api_client(user_agent: &str) -> reqwest::Client {
 ///
 /// # Panics
 ///
-/// Panics if the underlying TLS stack cannot be initialised — this should
-/// never happen in a normally configured environment.
+/// Panics if `user_agent` is not a valid header value or the TLS stack fails
+/// to initialise. Production callers pass [`crate::config::Config::user_agent`],
+/// which configuration loading rejects unless it is a valid header value; TLS
+/// initialisation should never fail in a normally configured environment.
 pub fn cover_client(redirect_limit: usize, timeout_secs: u64, user_agent: &str) -> reqwest::Client {
     let policy = redirect::Policy::custom(move |attempt| {
         if attempt.previous().len() >= redirect_limit {
@@ -341,7 +351,7 @@ pub fn cover_client(redirect_limit: usize, timeout_secs: u64, user_agent: &str) 
 
     #[expect(
         clippy::expect_used,
-        reason = "reqwest::Client::build() only fails if TLS backend init fails; rustls is a pure-Rust backend and should not fail in any normally configured environment"
+        reason = "reqwest::Client::build() fails only for a user agent that is not a valid header value, which config load rejects before production callers reach here, or for TLS backend init; rustls is a pure-Rust backend and should not fail in any normally configured environment"
     )]
     #[expect(
         clippy::disallowed_methods,

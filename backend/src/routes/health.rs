@@ -15,7 +15,9 @@ use crate::state::AppState;
 
 /// Build the `/health{,/ready}` router as an [`OpenApiRouter`] so each handler's
 /// `#[utoipa::path]` contributes to the generated spec and a missing annotation
-/// fails compilation. The caller splits this into a runtime router and the spec
+/// fails compilation.
+///
+/// The caller splits this into a runtime router and the spec
 /// (see [`crate::openapi`]).
 pub fn router() -> OpenApiRouter<AppState> {
     // Distinct paths get distinct `.routes()` calls; `routes!(a, b)` is for
@@ -42,6 +44,11 @@ pub async fn health() -> &'static str {
 /// Readiness probe: pings the application pool with `SELECT 1` and returns
 /// `503` with an RFC 9457 body while the database is unreachable so
 /// orchestrators withhold traffic.
+///
+/// # Errors
+///
+/// Returns a 503 [`ProblemDetails`] if the `SELECT 1` liveness query against
+/// the application pool fails.
 #[utoipa::path(
     get,
     path = "/health/ready",

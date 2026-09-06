@@ -106,7 +106,9 @@ pub fn checked_isbn10(raw: &str) -> Option<String> {
 }
 
 /// Validate `raw` as an `ISBN-13` and return its normalised form (digits only,
-/// hyphens/spaces/prefixes stripped). `None` when the length or check digit is
+/// hyphens/spaces/prefixes stripped).
+///
+/// `None` when the length or check digit is
 /// invalid. See [`checked_isbn10`] for the normalisation rationale.
 pub fn checked_isbn13(raw: &str) -> Option<String> {
     let normalised = normalise(raw);

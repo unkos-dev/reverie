@@ -16,7 +16,9 @@ use serde::Serialize;
 use crate::models::reading_status::ReadingStatus;
 
 /// `GET /api/v1/books/{id}/reading` response: the caller's full reading
-/// state for one book. A missing `reading_state` row (never written) decodes
+/// state for one book.
+///
+/// A missing `reading_state` row (never written) decodes
 /// to all-`None` fields; that all-null shape IS the "unread" domain state,
 /// not an error.
 #[derive(Debug, Clone, Serialize, utoipa::ToSchema)]
@@ -42,6 +44,7 @@ pub struct ReadingState {
 }
 
 /// Reading-state slice embedded in each `GET /api/v1/books` list row.
+///
 /// Batch-loaded alongside the page (see `routes::library::load_authors_for_works`
 /// for the sibling batch-load pattern); `None` when the caller has no
 /// `reading_state` row for that book (unread).

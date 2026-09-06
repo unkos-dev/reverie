@@ -177,7 +177,9 @@ fn rule_for(scheme: &str) -> Option<&'static SchemeRule> {
 }
 
 /// Check that `scheme` names a known identifier scheme valid at `level`,
-/// without validating a value. The clear path uses this so an unknown scheme
+/// without validating a value.
+///
+/// The clear path uses this so an unknown scheme
 /// or a wrong-level address is rejected identically to the set path.
 ///
 /// # Errors
@@ -200,7 +202,9 @@ pub fn validate_scheme_level(level: IdentifierLevel, scheme: &str) -> Result<(),
 }
 
 /// Split a canonical `identifiers.<level>.<scheme>` field name into its
-/// level and scheme, rejecting a malformed shape, an unknown level segment,
+/// level and scheme.
+///
+/// Rejects a malformed shape, an unknown level segment,
 /// or a scheme unknown at that level. Shared by the manual PATCH dispatch
 /// and the enrichment apply path so both address the registry identically.
 ///

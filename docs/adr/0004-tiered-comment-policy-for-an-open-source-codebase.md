@@ -192,7 +192,11 @@ a lint gate; the tier definitions themselves, and the backend `#![deny(missing_d
 ## More information
 
 - [Strict lint policy: pedantic clippy and strict frontend lint](./0002-strict-lint-policy-pedantic-clippy-and-strict-frontend-lint.md):
-  the pedantic clippy allow-list this policy narrows: `missing_errors_doc` is re-enabled after the backfill.
+  the pedantic clippy allow-list this policy narrows: `missing_errors_doc`, `missing_panics_doc`, and
+  `too_long_first_doc_paragraph` are enforced now that the backfill is complete.
 - [Adopt oxlint, replacing the ESLint toolchain](./0030-adopt-oxlint-replacing-the-eslint-toolchain.md): the toolchain
   change that removed the frontend docstring lint.
+- Enforcement reach: `missing_panics_doc` sees a function's own body, so the `# Panics` obligation applies to a
+  panic the function itself raises; a panic reached through a function it calls belongs to that function's
+  section.
 - `backend/AGENTS.md` carries the `// SAFETY:` convention Tier 2 references for unsafe code.
