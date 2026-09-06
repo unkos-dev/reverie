@@ -267,7 +267,7 @@
           "library"
         ],
         "summary": "List books",
-        "description": "Returns one page of the manifestations visible to the caller, filterable and sortable via query parameters. Fails with `400` when a filter or sort parameter is malformed, and `422` when the cursor is invalid or a filter exceeds its allowed value count.",
+        "description": "Returns one page of the manifestations visible to the caller, filterable and sortable via query parameters. Fails with 400 when a filter or sort parameter is malformed, and 422 when the cursor is invalid or a filter exceeds its allowed value count.",
         "operationId": "list",
         "parameters": [
           {
@@ -716,7 +716,7 @@
           "library"
         ],
         "summary": "Get a book's detail",
-        "description": "Returns detail for one manifestation, including work-level prose and a metadata-version summary. A manifestation hidden from the caller is reported as `404` rather than leaking its existence.",
+        "description": "Returns detail for one manifestation, including work-level prose and a metadata-version summary. A manifestation hidden from the caller is reported as 404 rather than leaking its existence.",
         "operationId": "book_detail",
         "parameters": [
           {
@@ -936,7 +936,7 @@
           "metadata"
         ],
         "summary": "Get a book's editable metadata",
-        "description": "Returns the editable metadata span for one manifestation, matching what the corresponding PATCH accepts. Available to adult accounts only. Fails with `404` when the manifestation is missing or hidden from the caller.",
+        "description": "Returns the editable metadata span for one manifestation, matching what the corresponding PATCH accepts. Available to adult accounts only. Fails with 404 when the manifestation is missing or hidden from the caller.",
         "operationId": "get_book_metadata",
         "parameters": [
           {
@@ -1028,7 +1028,7 @@
           "metadata"
         ],
         "summary": "Update a book's metadata",
-        "description": "Applies a manual operator edit to a manifestation's metadata; each touched field is recorded as a new metadata version. Requires an `If-Match` header; fails with `428` when it is absent and `412` when it does not match. Available to adult accounts only. Fails with `400` when `If-Match` is malformed or refused by policy, `422` when the body has no populated fields or a value fails parsing, and `404` when the manifestation is missing or hidden.",
+        "description": "Applies a manual operator edit to a manifestation's metadata; each touched field is recorded as a new metadata version. Requires an `If-Match` header; fails with 428 when it is absent and 412 when it does not match. Available to adult accounts only. Fails with 400 when `If-Match` is malformed or refused by policy, 422 when the body has no populated fields or a value fails parsing, and 404 when the manifestation is missing or hidden.",
         "operationId": "update_book_metadata",
         "parameters": [
           {
@@ -1190,7 +1190,7 @@
           "reading"
         ],
         "summary": "Get reading state",
-        "description": "Returns the caller's reading state for one book; all-null fields mean the book is unread. Fails with `404` when the manifestation is missing or hidden from the caller.",
+        "description": "Returns the caller's reading state for one book; all-null fields mean the book is unread. Fails with 404 when the manifestation is missing or hidden from the caller.",
         "operationId": "get_reading",
         "parameters": [
           {
@@ -1272,7 +1272,7 @@
           "reading"
         ],
         "summary": "Update reading state",
-        "description": "Applies a partial update to the caller's reading state for one book, such as status, rating, or notes. Requires an `If-Match` header; fails with `428` when it is absent and `412` when it does not match the caller's current entity-tag. Fails with `400` when `If-Match` is malformed or refused by policy, `422` when the body has no populated fields or a value is out of range, and `404` when the manifestation is missing or hidden.",
+        "description": "Applies a partial update to the caller's reading state for one book, such as status, rating, or notes. Requires an `If-Match` header; fails with 428 when it is absent and 412 when it does not match the caller's current entity-tag. Fails with 400 when `If-Match` is malformed or refused by policy, 422 when the body has no populated fields or a value is out of range, and 404 when the manifestation is missing or hidden.",
         "operationId": "patch_reading",
         "parameters": [
           {
@@ -1962,7 +1962,7 @@
           "metadata"
         ],
         "summary": "List a manifestation's metadata versions",
-        "description": "Returns the metadata review queue for one manifestation, newest first; the list is empty when the manifestation is missing or hidden from the caller. Available to adult accounts only, returning `403` for a child account.",
+        "description": "Returns the metadata review queue for one manifestation, newest first; the list is empty when the manifestation is missing or hidden from the caller. Available to adult accounts only, returning 403 for a child account.",
         "operationId": "get_manifestation_metadata",
         "parameters": [
           {
@@ -2041,7 +2041,7 @@
           "metadata"
         ],
         "summary": "Accept a metadata version",
-        "description": "Promotes a pending metadata version to canonical for a manifestation; accepting an ISBN change may trigger a re-match against other works. Available to adult accounts only. Fails with `404` when the version does not belong to the manifestation or is hidden from the caller, and `422` when the stored value fails parsing.",
+        "description": "Promotes a pending metadata version to canonical for a manifestation; accepting an ISBN change may trigger a re-match against other works. Available to adult accounts only. Fails with 404 when the version does not belong to the manifestation or is hidden from the caller, and 422 when the stored value fails parsing.",
         "operationId": "accept_manifestation",
         "parameters": [
           {
@@ -2140,7 +2140,7 @@
           "metadata"
         ],
         "summary": "Lock a metadata field",
-        "description": "Locks a metadata field against future automated enrichment writes; locking an already-locked field is a no-op. Available to adult accounts only. Fails with `422` when `entity_type` is not `work` or `manifestation`.",
+        "description": "Locks a metadata field against future automated enrichment writes; locking an already-locked field is a no-op. Available to adult accounts only. Fails with 422 when `entity_type` is not `work` or `manifestation`.",
         "operationId": "lock_field",
         "parameters": [
           {
@@ -2229,7 +2229,7 @@
           "metadata"
         ],
         "summary": "Reject a metadata version",
-        "description": "Marks a pending metadata version as rejected. Available to adult accounts only. Fails with `404` when the version does not belong to the manifestation or is hidden from the caller.",
+        "description": "Marks a pending metadata version as rejected. Available to adult accounts only. Fails with 404 when the version does not belong to the manifestation or is hidden from the caller.",
         "operationId": "reject_manifestation",
         "parameters": [
           {
@@ -2318,7 +2318,7 @@
           "metadata"
         ],
         "summary": "Revert a metadata field",
-        "description": "Restores a prior metadata version as canonical for a field, or clears the field entirely when no version is given. Available to adult accounts only. Fails with `404` when the manifestation or version is missing or hidden from the caller, and `422` when the field cannot be cleared or the stored value fails parsing.",
+        "description": "Restores a prior metadata version as canonical for a field, or clears the field entirely when no version is given. Available to adult accounts only. Fails with 404 when the manifestation or version is missing or hidden from the caller, and 422 when the field cannot be cleared or the stored value fails parsing.",
         "operationId": "revert_manifestation",
         "parameters": [
           {
@@ -2417,7 +2417,7 @@
           "metadata"
         ],
         "summary": "Unlock a metadata field",
-        "description": "Removes a lock on a metadata field, allowing future automated enrichment writes to resume. Available to adult accounts only. Fails with `404` when no matching lock exists, and `422` when `entity_type` is not `work` or `manifestation`.",
+        "description": "Removes a lock on a metadata field, allowing future automated enrichment writes to resume. Available to adult accounts only. Fails with 404 when no matching lock exists, and 422 when `entity_type` is not `work` or `manifestation`.",
         "operationId": "unlock_field",
         "parameters": [
           {
@@ -2706,7 +2706,7 @@
           "library"
         ],
         "summary": "Search the library",
-        "description": "Returns the top hybrid-ranked manifestations matching a free-text query, with highlighted snippets. Fails with `400` on a malformed query parameter and `422` when the query is missing, empty, or exceeds the length limit.",
+        "description": "Returns the top hybrid-ranked manifestations matching a free-text query, with highlighted snippets. Fails with 400 on a malformed query parameter and 422 when the query is missing, empty, or exceeds the length limit.",
         "operationId": "search",
         "parameters": [
           {
@@ -3109,7 +3109,7 @@
           "shelves"
         ],
         "summary": "List shelves",
-        "description": "Returns one page of the caller's own shelves, ordered with system shelves first then by name. Fails with `400` on a malformed query parameter, `422` on a malformed cursor, and `401` when unauthenticated.",
+        "description": "Returns one page of the caller's own shelves, ordered with system shelves first then by name. Fails with 400 on a malformed query parameter, 422 on a malformed cursor, and 401 when unauthenticated.",
         "operationId": "list_shelves",
         "parameters": [
           {
@@ -3200,7 +3200,7 @@
           "shelves"
         ],
         "summary": "Create a shelf",
-        "description": "Creates a new shelf for the caller. Available to adult accounts only, returning `403` for a child account; fails with `422` when the name is missing or empty.",
+        "description": "Creates a new shelf for the caller. Available to adult accounts only, returning 403 for a child account; fails with 422 when the name is missing or empty.",
         "operationId": "create_shelf",
         "requestBody": {
           "content": {
@@ -3292,7 +3292,7 @@
           "shelves"
         ],
         "summary": "Get a shelf with its items",
-        "description": "Returns a shelf's identity plus one page of its items in position order. Restricted to shelves the caller owns; fails with `404` when the shelf does not exist or belongs to another user. Fails with `400` on a malformed query parameter and `422` on a malformed cursor.",
+        "description": "Returns a shelf's identity plus one page of its items in position order. Restricted to shelves the caller owns; fails with 404 when the shelf does not exist or belongs to another user. Fails with 400 on a malformed query parameter and 422 on a malformed cursor.",
         "operationId": "get_shelf_with_items",
         "parameters": [
           {
@@ -3409,7 +3409,7 @@
           "shelves"
         ],
         "summary": "Delete a shelf",
-        "description": "Deletes a shelf owned by the caller. Available to adult accounts only, returning `403` for a child account; system shelves cannot be deleted and return `409`. Fails with `404` when the shelf does not exist or belongs to another user.",
+        "description": "Deletes a shelf owned by the caller. Available to adult accounts only, returning 403 for a child account; system shelves cannot be deleted and return 409. Fails with 404 when the shelf does not exist or belongs to another user.",
         "operationId": "delete_shelf",
         "parameters": [
           {
@@ -3496,7 +3496,7 @@
           "shelves"
         ],
         "summary": "Rename a shelf",
-        "description": "Renames a shelf owned by the caller. Available to adult accounts only, returning `403` for a child account; system shelves cannot be renamed and return `409`. Fails with `404` when the shelf does not exist or belongs to another user, and `422` when the name is missing or empty.",
+        "description": "Renames a shelf owned by the caller. Available to adult accounts only, returning 403 for a child account; system shelves cannot be renamed and return 409. Fails with 404 when the shelf does not exist or belongs to another user, and 422 when the name is missing or empty.",
         "operationId": "rename_shelf",
         "parameters": [
           {
@@ -3620,7 +3620,7 @@
           "shelves"
         ],
         "summary": "Reorder shelf items",
-        "description": "Rewrites the full ordering of items on the caller's shelf. Requires an `If-Match` header carrying the shelf's current entity-tag; fails with `428` when it is absent and `412` when it does not match. Fails with `404` when the shelf does not exist or belongs to another user, and `422` when the supplied list does not exactly match the shelf's current items.",
+        "description": "Rewrites the full ordering of items on the caller's shelf. Requires an `If-Match` header carrying the shelf's current entity-tag; fails with 428 when it is absent and 412 when it does not match. Fails with 404 when the shelf does not exist or belongs to another user, and 422 when the supplied list does not exactly match the shelf's current items.",
         "operationId": "reorder_shelf_items",
         "parameters": [
           {
@@ -3744,7 +3744,7 @@
           "shelves"
         ],
         "summary": "Add an item to a shelf",
-        "description": "Appends a manifestation to the end of the caller's shelf; adding one already on the shelf is a no-op. Fails with `404` when the shelf does not exist, belongs to another user, or the manifestation is not visible to the caller, and `422` when the body is missing or malformed.",
+        "description": "Appends a manifestation to the end of the caller's shelf; adding one already on the shelf is a no-op. Fails with 404 when the shelf does not exist, belongs to another user, or the manifestation is not visible to the caller, and 422 when the body is missing or malformed.",
         "operationId": "add_shelf_item",
         "parameters": [
           {
@@ -3841,7 +3841,7 @@
           "shelves"
         ],
         "summary": "Remove an item from a shelf",
-        "description": "Removes a manifestation from the caller's shelf. Fails with `404` when the shelf does not exist, belongs to another user, or the manifestation is not on the shelf.",
+        "description": "Removes a manifestation from the caller's shelf. Fails with 404 when the shelf does not exist, belongs to another user, or the manifestation is not on the shelf.",
         "operationId": "remove_shelf_item",
         "parameters": [
           {
@@ -4924,7 +4924,7 @@
           "library"
         ],
         "summary": "Get a work's detail",
-        "description": "Returns work-level prose plus every manifestation of that work visible to the caller. Fails with `404` when the work is missing or every manifestation is hidden from the caller.",
+        "description": "Returns work-level prose plus every manifestation of that work visible to the caller. Fails with 404 when the work is missing or every manifestation is hidden from the caller.",
         "operationId": "work_detail",
         "parameters": [
           {
@@ -5000,7 +5000,7 @@
           "metadata"
         ],
         "summary": "List a work's metadata versions",
-        "description": "Returns the metadata review queue across every manifestation of a work, newest first; the list is empty when the work is missing or hidden from the caller. Available to adult accounts only, returning `403` for a child account.",
+        "description": "Returns the metadata review queue across every manifestation of a work, newest first; the list is empty when the work is missing or hidden from the caller. Available to adult accounts only, returning 403 for a child account.",
         "operationId": "get_work_metadata",
         "parameters": [
           {
