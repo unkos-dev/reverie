@@ -337,8 +337,6 @@
     },
     {
       "governed-by": [
-        "REV-ADR-0037",
-        "REV-ADR-0038",
         "REV-ADR-0041",
         "REV-ADR-0047"
       ],

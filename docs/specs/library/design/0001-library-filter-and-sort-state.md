@@ -8,8 +8,6 @@ satisfies:
   - "REV-REQ-0002"
   - "REV-REQ-0003"
 governed-by:
-  - "REV-ADR-0037"
-  - "REV-ADR-0038"
   - "REV-ADR-0041"
   - "REV-ADR-0047"
 ---
@@ -224,4 +222,6 @@ a whole, not by this Design.
 
 ## More information
 
+- [Multi-column sort stack on the keyset list contract](../../../adr/0037-multi-column-sort-stack-on-the-keyset-list-contract.md)
+- [Typed filter grammar on list endpoints](../../../adr/0038-typed-filter-grammar-on-list-endpoints.md)
 - [No unbounded queries: keyset pagination as the default list contract](../../../../docs/adr/0019-keyset-pagination-as-the-default-list-contract.md)
