@@ -8,13 +8,15 @@
 # so such a label is a dangling pointer: the fix is to keep the substantive
 # prose and strip the label, or rewrite it in codebase terms.
 #
-# Scope: source under backend/src + frontend/src only. Excluded — these terms
-# are legitimate there:
+# Scope: every tracked file that can carry a comment or a string (source,
+# TOML, JSON, YAML, shell, SQL, Dockerfiles, the justfiles); binaries are
+# skipped by grep. Excluded — these terms are legitimate there:
 #   - Markdown (ADRs, /plans, debt, docs, README) describe process and may cite
 #     plan steps,
 #   - agent-process instructions (CLAUDE.md / AGENTS.md / GEMINI.md, any dir),
 #   - vendored UI primitives (frontend/src/components/ui),
-#   - the archival .claude tree.
+#   - the archival .claude tree,
+#   - the two reference guards, whose self-checks carry the patterns.
 #
 # Callers (lefthook staged files; CI changed files) pass a broad candidate
 # list; this script applies the in-scope policy. Commit messages and PR bodies
@@ -25,10 +27,12 @@ set -euo pipefail
 
 # Parenthetical phase tags `(S2)` in any letter case; singular or plural
 # `decision N` / `invariant N` numbering; `plans/` path references into the
-# gitignored planning tree. Capitalised or all-caps `Phase N` rollout labels
-# are matched separately; lowercase `phase N` is left alone so a genuine
-# runtime-phase description does not trip the guard.
-pattern='\(S[0-9]+\)|\b(decisions?|invariants?) [0-9]+\b|\bplans/'
+# gitignored planning tree (a path into it, so the bare `/plans/` line in
+# .gitignore that names the directory itself does not match). Capitalised or
+# all-caps `Phase N` rollout labels are matched separately; lowercase
+# `phase N` is left alone so a genuine runtime-phase description does not
+# trip the guard.
+pattern='\(S[0-9]+\)|\b(decisions?|invariants?) [0-9]+\b|\bplans/[^[:space:]]'
 phase_pattern='\b(Phase|PHASE) [0-9]+\b'
 
 # Decide whether a path is gated by this guard. `case` globs treat '*' as
@@ -38,12 +42,10 @@ is_gated() {
     frontend/src/components/ui/*) return 1 ;;
     .claude/*) return 1 ;;
     CLAUDE.md | AGENTS.md | GEMINI.md | */CLAUDE.md | */AGENTS.md | */GEMINI.md) return 1 ;;
+    *.md | *.mdx) return 1 ;;
+    scripts/no-issue-refs.sh | scripts/no-plan-refs.sh) return 1 ;;
   esac
-  case "$1" in
-    backend/src/*.rs) return 0 ;;
-    frontend/src/*.ts | frontend/src/*.tsx | frontend/src/*.js | frontend/src/*.jsx | frontend/src/*.css) return 0 ;;
-  esac
-  return 1
+  return 0
 }
 
 # Positive control, run on every invocation. An empty file list is legitimate
@@ -60,13 +62,25 @@ self_check() {
   grep -qiE "$pattern" <<<'decision 10' || return 1
   grep -qiE "$pattern" <<<'invariant 2' || return 1
   grep -qiE "$pattern" <<<'plans/x.md' || return 1
+  # The bare directory name, as .gitignore writes it, is deliberately left
+  # alone; assert that it still is.
+  grep -qiE "$pattern" <<<'/plans/' && return 1
   grep -qE "$phase_pattern" <<<'Phase 2 enforces the check' || return 1
   # Lowercase `phase 2` is deliberately left alone; assert that it still is.
   grep -qE "$phase_pattern" <<<'phase 2 of the request lifecycle' && return 1
+  # The C locale keeps a line with a stray non-UTF-8 byte matchable, and -I
+  # still skips NUL-bearing (binary) input; both are probed because a quiet
+  # skip is the one failure this guard must never have.
+  printf '(S2) \xff\n' | LC_ALL=C grep -qiIE "$pattern" || return 1
+  printf '(S2)\0\n' | LC_ALL=C grep -qiIE "$pattern" && return 1
   is_gated backend/src/main.rs || return 1
   is_gated frontend/src/App.tsx || return 1
+  is_gated backend/Cargo.toml || return 1
+  is_gated Dockerfile || return 1
   ! is_gated AGENTS.md || return 1
+  ! is_gated docs/adr/some-decision.md || return 1
   ! is_gated frontend/src/components/ui/button.tsx || return 1
+  ! is_gated scripts/no-plan-refs.sh || return 1
 }
 if ! self_check; then
   echo "no-plan-refs: self-check failed; the scope rules or the patterns no longer match their own documented examples, so a clean result would mean nothing" >&2
@@ -88,15 +102,16 @@ if [ "${#files[@]}" -eq 0 ]; then
 fi
 
 # grep exit 1 = no matches (clean); exit >1 = a real error (e.g. an unreadable
-# file) that must not read as "clean".
+# file) that must not read as "clean". -I skips binary files (images, fonts);
+# LC_ALL=C keeps a line with a stray non-UTF-8 byte from counting as binary too.
 rc=0
-matches=$(grep -niE "$pattern" -- "${files[@]}") || rc=$?
+matches=$(LC_ALL=C grep -niIE "$pattern" -- "${files[@]}") || rc=$?
 if [ "$rc" -gt 1 ]; then
   exit "$rc"
 fi
 
 phase_rc=0
-phase_matches=$(grep -nE "$phase_pattern" -- "${files[@]}") || phase_rc=$?
+phase_matches=$(LC_ALL=C grep -nIE "$phase_pattern" -- "${files[@]}") || phase_rc=$?
 if [ "$phase_rc" -gt 1 ]; then
   exit "$phase_rc"
 fi

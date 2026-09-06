@@ -1,4 +1,4 @@
-# UNK-167 sqlx runtime-query allowlist
+# sqlx runtime-query allowlist
 #
 # This file is the canonical registry of `sqlx::query(...)` /
 # `sqlx::query_as(...)` / `sqlx::query_scalar(...)` invocations exempted

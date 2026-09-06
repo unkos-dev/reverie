@@ -31,7 +31,7 @@ docs-only, or other non-UI changes. -->
 - [ ] Keyboard navigation reaches every interactive element.
 - [ ] Focus is visible on every interactive element (gold 3 px ring per DESIGN.md).
 - [ ] Non-text UI controls meet 1.4.11 (3:1) against the adjacent surface.
-- [ ] Body text meets 1.4.3 (4.5:1) — except the documented gold-on-Parchment carve-out (large CTAs only).
+- [ ] Body text meets 1.4.3 (4.5:1).
 - [ ] Motion respects `prefers-reduced-motion`.
 - [ ] Any new colour is already a design token (no arbitrary hex).
 - [ ] Reverie Alarm appears only in one of its two carve-out contexts.
