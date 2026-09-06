@@ -48,6 +48,8 @@ pub fn router() -> OpenApiRouter<AppState> {
     get,
     path = "/api/v1/series/{id}",
     operation_id = "series_detail",
+    summary = "Get a series",
+    description = "Returns the series identity plus its works in order, each with the manifestations visible to the caller. Returns 401 when unauthenticated and 404 when the series does not exist, has no linked works, or none of its works has a manifestation visible to the caller.",
     tag = "series",
     params(("id" = Uuid, Path, description = "Series id")),
     security(("session_cookie" = ["read"]), ("device_token_bearer" = ["read"]), ("oidc_jwt_bearer" = ["read"]), ("opds_basic" = ["read"])),

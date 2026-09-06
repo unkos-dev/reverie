@@ -120,6 +120,8 @@ struct StatsResponse {
 #[utoipa::path(
     get,
     path = "/api/v1/dashboard/stats",
+    summary = "Get library-wide health metrics",
+    description = "Returns aggregate library statistics: manifestation and work counts, storage usage by format, validation and enrichment status breakdowns, and metadata coverage. Admin only. Returns 401 when unauthenticated and 403 when the caller is not an admin.",
     tag = "dashboard",
     security(("session_cookie" = ["admin"]), ("device_token_bearer" = ["admin"]), ("oidc_jwt_bearer" = ["admin"]), ("opds_basic" = ["admin"])),
     responses(
@@ -307,6 +309,8 @@ struct ActivityResponse {
 #[utoipa::path(
     get,
     path = "/api/v1/dashboard/activity",
+    summary = "List recent ingestion batches",
+    description = "Returns the most recent ingestion batches, newest first, with per-batch outcome counts. Clamped to 1 to 100 batches (default 20). Admin only. Returns 400 for a malformed `limit`, 401 when unauthenticated, and 403 when the caller is not an admin.",
     tag = "dashboard",
     params(ActivityParams),
     security(("session_cookie" = ["admin"]), ("device_token_bearer" = ["admin"]), ("oidc_jwt_bearer" = ["admin"]), ("opds_basic" = ["admin"])),

@@ -110,6 +110,8 @@ pub fn api_router() -> OpenApiRouter<AppState> {
 #[utoipa::path(
     get,
     path = "/opds/books/{id}/cover",
+    summary = "Get a book's cover",
+    description = "Streams the full-size cover image for a manifestation as `image/jpeg` or `image/png`, with a strong `ETag` and a day-long `Cache-Control`. Requires HTTP Basic authentication (401), returns 304 when `If-None-Match` matches the current `ETag`, and 404 when the manifestation is missing, hidden from the caller, or has no cover.",
     tag = "opds",
     security(("opds_basic" = [])),
     params(("id" = Uuid, Path, description = "Manifestation id")),
@@ -143,6 +145,8 @@ async fn opds_cover(
 #[utoipa::path(
     get,
     path = "/opds/books/{id}/cover/thumb",
+    summary = "Get a book's cover thumbnail",
+    description = "Streams the thumbnail cover image for a manifestation as `image/jpeg`, with a strong `ETag` and a day-long `Cache-Control`. Requires HTTP Basic authentication (401), returns 304 when `If-None-Match` matches the current `ETag`, and 404 when the manifestation is missing, hidden from the caller, or has no cover.",
     tag = "opds",
     security(("opds_basic" = [])),
     params(("id" = Uuid, Path, description = "Manifestation id")),
@@ -176,6 +180,8 @@ async fn opds_cover_thumb(
 #[utoipa::path(
     get,
     path = "/api/v1/books/{id}/cover",
+    summary = "Get a book's cover",
+    description = "Streams the full-size cover image for a manifestation as `image/jpeg` or `image/png`, with a strong `ETag` and a day-long `Cache-Control`, for the web UI. Requires authentication (401) via session cookie, device token or OIDC bearer token, returns 304 when `If-None-Match` matches the current `ETag`, and 404 when the manifestation is missing, hidden from the caller, or has no cover.",
     tag = "library",
     security(("session_cookie" = ["read"]), ("device_token_bearer" = ["read"]), ("oidc_jwt_bearer" = ["read"]), ("opds_basic" = ["read"])),
     params(("id" = Uuid, Path, description = "Manifestation id")),
@@ -209,6 +215,8 @@ async fn api_cover(
 #[utoipa::path(
     get,
     path = "/api/v1/books/{id}/cover/thumb",
+    summary = "Get a book's cover thumbnail",
+    description = "Streams the thumbnail cover image for a manifestation as `image/jpeg`, with a strong `ETag` and a day-long `Cache-Control`, for the web UI. Requires authentication (401) via session cookie, device token or OIDC bearer token, returns 304 when `If-None-Match` matches the current `ETag`, and 404 when the manifestation is missing, hidden from the caller, or has no cover.",
     tag = "library",
     security(("session_cookie" = ["read"]), ("device_token_bearer" = ["read"]), ("oidc_jwt_bearer" = ["read"]), ("opds_basic" = ["read"])),
     params(("id" = Uuid, Path, description = "Manifestation id")),

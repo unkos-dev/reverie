@@ -74,6 +74,8 @@ pub struct CallbackParams {
 #[utoipa::path(
     get,
     path = "/auth/oidc/login",
+    summary = "Start OIDC login",
+    description = "Redirects to the configured OIDC provider to begin the authorization-code flow. No authentication is required to call it. Returns 404 if OIDC is not configured on this instance.",
     tag = "auth",
     security(()),
     responses(
@@ -135,6 +137,8 @@ async fn oidc_login(
 #[utoipa::path(
     get,
     path = "/auth/callback",
+    summary = "Complete OIDC login",
+    description = "Completes the OIDC authorization-code flow, establishes a session, and redirects to the app. No authentication is required to call it. Returns 400 for a malformed `code` or `state` query parameter and 401 if the anti-forgery state does not match or the ID token fails validation.",
     tag = "auth",
     security(()),
     params(CallbackParams),
@@ -306,6 +310,8 @@ struct LocalLoginRequest {
 #[utoipa::path(
     post,
     path = "/auth/local/login",
+    summary = "Sign in with email and password",
+    description = "Authenticates with `email` and `password` and establishes a session. No authentication is required to call it. Returns 404 if local authentication is disabled, 422 for invalid credentials, and 429 when too many attempts have been made.",
     tag = "auth",
     security(()),
     request_body = LocalLoginRequest,
@@ -449,6 +455,8 @@ struct SetupStatusResponse {
 #[utoipa::path(
     get,
     path = "/auth/setup/status",
+    summary = "Get setup status",
+    description = "Returns whether initial setup is required and which sign-in providers are enabled, for the sign-in page to decide what to show. No authentication is required to call it.",
     tag = "auth",
     security(()),
     responses((status = 200, description = "Setup and provider state", body = SetupStatusResponse))
@@ -502,6 +510,8 @@ struct SetupRequest {
 #[utoipa::path(
     post,
     path = "/auth/setup",
+    summary = "Create the first administrator",
+    description = "Creates the first administrator account during initial setup and does not sign the caller in. No authentication is required to call it. Returns 409 if an administrator already exists, 422 for an invalid email or a password that is too short, and 429 when too many requests have been made.",
     tag = "auth",
     security(()),
     request_body = SetupRequest,
@@ -585,6 +595,8 @@ struct RegisterRequest {
 #[utoipa::path(
     post,
     path = "/auth/register",
+    summary = "Register a new account",
+    description = "Creates a new account with the `adult` role and does not sign the caller in. No authentication is required to call it. Returns 404 if self-registration or local authentication is disabled, 409 if the email is already in use, 422 for an invalid email or a password that fails the password policy, and 429 when too many requests have been made.",
     tag = "auth",
     security(()),
     request_body = RegisterRequest,
@@ -684,6 +696,8 @@ struct ForgotPasswordRequest {
 #[utoipa::path(
     post,
     path = "/auth/forgot-password",
+    summary = "Start password recovery",
+    description = "Starts PIN-based password recovery for the given email and always returns the same generic response so it cannot be used to determine whether an account exists. No authentication is required to call it. Returns 404 if local authentication is disabled and 429 when too many requests have been made.",
     tag = "auth",
     security(()),
     request_body = ForgotPasswordRequest,
@@ -786,6 +800,8 @@ struct ResetPasswordRequest {
 #[utoipa::path(
     post,
     path = "/auth/reset-password",
+    summary = "Reset password with a PIN",
+    description = "Completes password recovery using the PIN issued by `/auth/forgot-password` and does not sign the caller in. No authentication is required to call it. Returns 404 if local authentication is disabled, 422 for an invalid or expired PIN, unknown email, or a new password that fails the password policy, and 429 when too many requests have been made.",
     tag = "auth",
     security(()),
     request_body = ResetPasswordRequest,
@@ -903,6 +919,8 @@ async fn reset_password(
 #[utoipa::path(
     post,
     path = "/auth/logout",
+    summary = "Sign out",
+    description = "Destroys the caller's session, if any; calling it without a session is a no-op. No authentication is required to call it, but a session-authenticated caller must send a valid `X-CSRF-Token` header. Returns 428 if that header is missing and 403 if it does not match the session's token.",
     tag = "auth",
     security(()),
     responses(
@@ -947,6 +965,8 @@ struct MeResponse {
 #[utoipa::path(
     get,
     path = "/auth/me",
+    summary = "Get the current profile",
+    description = "Returns the authenticated caller's profile, including the `csrf_token` to echo back as `X-CSRF-Token` on unsafe requests (`null` for sessions authenticated with OPDS Basic auth). Returns 401 if authentication is missing.",
     tag = "auth",
     responses(
         (status = 200, description = "Caller profile; `csrf_token` is the synchronizer token for unsafe verbs (null for Basic-auth sessions)", body = MeResponse),
@@ -1014,6 +1034,8 @@ struct ThemeResponse {
 #[utoipa::path(
     patch,
     path = "/auth/me/theme",
+    summary = "Set the theme preference",
+    description = "Persists the caller's theme preference and refreshes the `reverie_theme` cookie. Returns 401 if authentication is missing and 422 for an unknown `theme_preference` value.",
     tag = "auth",
     request_body = UpdateThemeRequest,
     responses(

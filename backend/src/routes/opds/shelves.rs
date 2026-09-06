@@ -69,6 +69,8 @@ async fn assert_shelf_owned(
 #[utoipa::path(
     get,
     path = "/opds/shelves/{shelf_id}",
+    summary = "Get a shelf's navigation feed",
+    description = "Returns an OPDS navigation feed linking a shelf's New, Authors and Series subcatalogues. Requires HTTP Basic authentication (401) and returns 404 if the shelf does not exist or is not owned by the caller.",
     tag = "opds",
     security(("opds_basic" = [])),
     params(("shelf_id" = Uuid, Path, description = "Shelf id")),
@@ -101,6 +103,8 @@ async fn shelf_root(
 #[utoipa::path(
     get,
     path = "/opds/shelves/{shelf_id}/new",
+    summary = "List a shelf's newest books",
+    description = "Returns an OPDS acquisition feed of the shelf's most recently added books, newest first, cursor-paginated via `cursor`. Requires HTTP Basic authentication (401), returns 404 for a shelf the caller does not own, 400 for a malformed query parameter and 422 for an invalid cursor.",
     tag = "opds",
     security(("opds_basic" = [])),
     params(("shelf_id" = Uuid, Path, description = "Shelf id"), PageParams),
@@ -145,6 +149,8 @@ async fn shelf_new(
 #[utoipa::path(
     get,
     path = "/opds/shelves/{shelf_id}/authors",
+    summary = "List authors on a shelf",
+    description = "Returns an OPDS navigation feed of authors with at least one book on the shelf, cursor-paginated via `cursor`. Requires HTTP Basic authentication (401), returns 404 for a shelf the caller does not own, 400 for a malformed query parameter and 422 for an invalid cursor.",
     tag = "opds",
     security(("opds_basic" = [])),
     params(("shelf_id" = Uuid, Path, description = "Shelf id"), PageParams),
@@ -189,6 +195,8 @@ async fn shelf_authors(
 #[utoipa::path(
     get,
     path = "/opds/shelves/{shelf_id}/authors/{author_id}",
+    summary = "List an author's books on a shelf",
+    description = "Returns an OPDS acquisition feed of one author's books on the shelf, cursor-paginated via `cursor` (empty if the author is unknown). Requires HTTP Basic authentication (401), returns 404 for a shelf the caller does not own, 400 for a malformed query parameter and 422 for an invalid cursor.",
     tag = "opds",
     security(("opds_basic" = [])),
     params(
@@ -238,6 +246,8 @@ async fn shelf_author_books(
 #[utoipa::path(
     get,
     path = "/opds/shelves/{shelf_id}/series",
+    summary = "List series on a shelf",
+    description = "Returns an OPDS navigation feed of series with at least one book on the shelf, cursor-paginated via `cursor`. Requires HTTP Basic authentication (401), returns 404 for a shelf the caller does not own, 400 for a malformed query parameter and 422 for an invalid cursor.",
     tag = "opds",
     security(("opds_basic" = [])),
     params(("shelf_id" = Uuid, Path, description = "Shelf id"), PageParams),
@@ -282,6 +292,8 @@ async fn shelf_series(
 #[utoipa::path(
     get,
     path = "/opds/shelves/{shelf_id}/series/{series_id}",
+    summary = "List a series' books on a shelf",
+    description = "Returns an OPDS acquisition feed of one series' books on the shelf, in series order (empty if the series is unknown). Requires HTTP Basic authentication (401), returns 404 for a shelf the caller does not own, 400 for a malformed query parameter and 422 for an invalid cursor.",
     tag = "opds",
     security(("opds_basic" = [])),
     params(
@@ -330,6 +342,8 @@ async fn shelf_series_books(
 #[utoipa::path(
     get,
     path = "/opds/shelves/{shelf_id}/search",
+    summary = "Search a shelf",
+    description = "Returns an OPDS acquisition feed of full-text search results scoped to the shelf, using the `q` query parameter; an empty or whitespace-only `q` yields an empty feed. Requires HTTP Basic authentication (401), returns 404 for a shelf the caller does not own and 400 for a malformed query parameter.",
     tag = "opds",
     security(("opds_basic" = [])),
     params(("shelf_id" = Uuid, Path, description = "Shelf id"), SearchParams),

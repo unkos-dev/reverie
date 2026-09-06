@@ -63,6 +63,8 @@ pub fn router() -> OpenApiRouter<AppState> {
 #[utoipa::path(
     post,
     path = "/api/v1/manifestations/{id}/enrichment/trigger",
+    summary = "Trigger an enrichment re-run",
+    description = "Re-queues the manifestation for a fresh enrichment pass. An idle manifestation is reset to pending immediately; one with an active run is re-queued once that run completes. Not available to child accounts. Returns 401 when unauthenticated, 403 for a child account, and 404 when the manifestation is missing or not visible to the caller.",
     tag = "enrichment",
     security(("session_cookie" = ["write"]), ("device_token_bearer" = ["write"]), ("oidc_jwt_bearer" = ["write"]), ("opds_basic" = ["write"])),
     params(("id" = Uuid, Path, description = "Manifestation id")),
@@ -127,6 +129,8 @@ async fn trigger(
 #[utoipa::path(
     post,
     path = "/api/v1/manifestations/{id}/enrichment/dry-run",
+    summary = "Preview an enrichment run",
+    description = "Runs the enrichment pipeline synchronously against the manifestation without saving any change, and returns the diff it would make. Per-source failures are listed in the response rather than failing the request. Not available to child accounts. Returns 401 when unauthenticated, 403 for a child account, and 404 when the manifestation is missing or not visible to the caller.",
     tag = "enrichment",
     security(("session_cookie" = ["read"]), ("device_token_bearer" = ["read"]), ("oidc_jwt_bearer" = ["read"]), ("opds_basic" = ["read"])),
     params(("id" = Uuid, Path, description = "Manifestation id")),
@@ -191,6 +195,8 @@ struct StatusSummary {
 #[utoipa::path(
     get,
     path = "/api/v1/enrichment/status",
+    summary = "Get enrichment queue status",
+    description = "Returns the count of manifestations visible to the caller in each enrichment state: pending, in progress, complete, failed, and skipped. Not available to child accounts. Returns 401 when unauthenticated and 403 for a child account.",
     tag = "enrichment",
     security(("session_cookie" = ["read"]), ("device_token_bearer" = ["read"]), ("oidc_jwt_bearer" = ["read"]), ("opds_basic" = ["read"])),
     responses(

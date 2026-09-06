@@ -149,6 +149,8 @@ struct ShelfListResponse {
 #[utoipa::path(
     get,
     path = "/api/v1/shelves",
+    summary = "List shelves",
+    description = "Returns one page of the caller's own shelves, ordered with system shelves first then by name. Fails with 400 on a malformed query parameter, 422 on a malformed cursor, and 401 when unauthenticated.",
     tag = "shelves",
     params(ShelfListParams),
     security(("session_cookie" = ["read"]), ("device_token_bearer" = ["read"]), ("oidc_jwt_bearer" = ["read"]), ("opds_basic" = ["read"])),
@@ -267,6 +269,8 @@ struct CreateShelfRequest {
 #[utoipa::path(
     post,
     path = "/api/v1/shelves",
+    summary = "Create a shelf",
+    description = "Creates a new shelf for the caller. Available to adult accounts only, returning 403 for a child account; fails with 422 when the name is missing or empty.",
     tag = "shelves",
     request_body = CreateShelfRequest,
     security(("session_cookie" = ["write"]), ("device_token_bearer" = ["write"]), ("oidc_jwt_bearer" = ["write"]), ("opds_basic" = ["write"])),
@@ -344,6 +348,8 @@ struct RenameShelfRequest {
 #[utoipa::path(
     patch,
     path = "/api/v1/shelves/{id}",
+    summary = "Rename a shelf",
+    description = "Renames a shelf owned by the caller. Available to adult accounts only, returning 403 for a child account; system shelves cannot be renamed and return 409. Fails with 404 when the shelf does not exist or belongs to another user, and 422 when the name is missing or empty.",
     tag = "shelves",
     params(("id" = Uuid, Path, description = "Shelf id")),
     request_body = RenameShelfRequest,
@@ -442,6 +448,8 @@ async fn rename_shelf(
 #[utoipa::path(
     delete,
     path = "/api/v1/shelves/{id}",
+    summary = "Delete a shelf",
+    description = "Deletes a shelf owned by the caller. Available to adult accounts only, returning 403 for a child account; system shelves cannot be deleted and return 409. Fails with 404 when the shelf does not exist or belongs to another user.",
     tag = "shelves",
     params(("id" = Uuid, Path, description = "Shelf id")),
     security(("session_cookie" = ["write"]), ("device_token_bearer" = ["write"]), ("oidc_jwt_bearer" = ["write"]), ("opds_basic" = ["write"])),
@@ -540,6 +548,8 @@ struct ShelfDetailResponse {
 #[utoipa::path(
     get,
     path = "/api/v1/shelves/{id}",
+    summary = "Get a shelf with its items",
+    description = "Returns a shelf's identity plus one page of its items in position order. Restricted to shelves the caller owns; fails with 404 when the shelf does not exist or belongs to another user. Fails with 400 on a malformed query parameter and 422 on a malformed cursor.",
     tag = "shelves",
     params(("id" = Uuid, Path, description = "Shelf id"), ShelfItemsParams),
     security(("session_cookie" = ["read"]), ("device_token_bearer" = ["read"]), ("oidc_jwt_bearer" = ["read"]), ("opds_basic" = ["read"])),
@@ -686,6 +696,8 @@ struct AddItemRequest {
 #[utoipa::path(
     post,
     path = "/api/v1/shelves/{id}/items",
+    summary = "Add an item to a shelf",
+    description = "Appends a manifestation to the end of the caller's shelf; adding one already on the shelf is a no-op. Fails with 404 when the shelf does not exist, belongs to another user, or the manifestation is not visible to the caller, and 422 when the body is missing or malformed.",
     tag = "shelves",
     params(("id" = Uuid, Path, description = "Shelf id")),
     request_body = AddItemRequest,
@@ -792,6 +804,8 @@ async fn add_shelf_item(
 #[utoipa::path(
     delete,
     path = "/api/v1/shelves/{id}/items/{manifestation_id}",
+    summary = "Remove an item from a shelf",
+    description = "Removes a manifestation from the caller's shelf. Fails with 404 when the shelf does not exist, belongs to another user, or the manifestation is not on the shelf.",
     tag = "shelves",
     params(
         ("id" = Uuid, Path, description = "Shelf id"),
@@ -879,6 +893,8 @@ struct ReorderItemsRequest {
 #[utoipa::path(
     put,
     path = "/api/v1/shelves/{id}/items",
+    summary = "Reorder shelf items",
+    description = "Rewrites the full ordering of items on the caller's shelf. Requires an `If-Match` header carrying the shelf's current entity-tag; fails with 428 when it is absent and 412 when it does not match. Fails with 404 when the shelf does not exist or belongs to another user, and 422 when the supplied list does not exactly match the shelf's current items.",
     tag = "shelves",
     params(
         ("id" = Uuid, Path, description = "Shelf id"),

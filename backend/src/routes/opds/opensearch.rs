@@ -48,6 +48,8 @@ pub fn router() -> OpenApiRouter<AppState> {
 #[utoipa::path(
     get,
     path = "/opds/library/opensearch.xml",
+    summary = "Get the library search descriptor",
+    description = "Returns an OpenSearch descriptor whose search template targets the library-wide search feed. Requires HTTP Basic authentication (401).",
     tag = "opds",
     security(("opds_basic" = [])),
     responses(
@@ -80,6 +82,8 @@ async fn library_opensearch(
 #[utoipa::path(
     get,
     path = "/opds/shelves/{shelf_id}/opensearch.xml",
+    summary = "Get a shelf's search descriptor",
+    description = "Returns an OpenSearch descriptor whose search template is scoped to the shelf. Requires HTTP Basic authentication (401) and returns 404 if the shelf does not exist or is not owned by the caller.",
     tag = "opds",
     security(("opds_basic" = [])),
     params(("shelf_id" = Uuid, Path, description = "Shelf id")),

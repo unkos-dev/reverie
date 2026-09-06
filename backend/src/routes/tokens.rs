@@ -103,6 +103,8 @@ struct TokenListItem {
 #[utoipa::path(
     post,
     path = "/api/v1/tokens",
+    summary = "Create a device token",
+    description = "Issues a device token for the caller and returns its Bearer credential exactly once; only its hash is persisted afterwards. Returns 401 if authentication is missing, 403 if a requested scope exceeds the caller's role, and 422 for an invalid `name`, an empty scope set, an invalid `expires_in_days`, or if the caller already has 10 active tokens.",
     tag = "tokens",
     request_body = CreateTokenRequest,
     security(("session_cookie" = ["write"]), ("device_token_bearer" = ["write"]), ("oidc_jwt_bearer" = ["write"]), ("opds_basic" = ["write"])),
@@ -199,6 +201,8 @@ async fn create_token(
 #[utoipa::path(
     get,
     path = "/api/v1/tokens",
+    summary = "List device tokens",
+    description = "Returns the caller's active device tokens, without the plaintext credential or its stored hash. Returns 401 if authentication is missing.",
     tag = "tokens",
     security(("session_cookie" = ["read"]), ("device_token_bearer" = ["read"]), ("oidc_jwt_bearer" = ["read"]), ("opds_basic" = ["read"])),
     responses(
@@ -238,6 +242,8 @@ async fn list_tokens(
 #[utoipa::path(
     delete,
     path = "/api/v1/tokens/{id}",
+    summary = "Revoke a device token",
+    description = "Revokes one of the caller's device tokens by id. Returns 401 if authentication is missing, 403 if the caller's credential lacks the write scope, and 404 if the token does not exist, belongs to another user, or is already revoked.",
     tag = "tokens",
     params(("id" = Uuid, Path, description = "Token row id")),
     security(("session_cookie" = ["write"]), ("device_token_bearer" = ["write"]), ("oidc_jwt_bearer" = ["write"]), ("opds_basic" = ["write"])),
