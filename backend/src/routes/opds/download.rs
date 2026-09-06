@@ -45,6 +45,8 @@ pub fn router() -> OpenApiRouter<AppState> {
 #[utoipa::path(
     get,
     path = "/opds/books/{id}/file",
+    summary = "Download an EPUB",
+    description = "Streams the EPUB file for a manifestation, with a `Content-Disposition: attachment` header carrying a title-derived filename. Requires HTTP Basic authentication (401), returns 403 if the file's on-disk path escapes the configured library root, and 404 when the manifestation is missing, hidden from the caller, or its file is absent from disk.",
     tag = "opds",
     security(("opds_basic" = [])),
     params(("id" = Uuid, Path, description = "Manifestation id")),

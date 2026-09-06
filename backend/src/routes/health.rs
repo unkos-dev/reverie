@@ -31,6 +31,8 @@ pub fn router() -> OpenApiRouter<AppState> {
 #[utoipa::path(
     get,
     path = "/health",
+    summary = "Check liveness",
+    description = "Returns 200 with a plain-text body as soon as the process is serving requests. Unauthenticated and outside `/api/v1` by design.",
     tag = "health",
     // Explicitly public: opt out of the document-level session_cookie default
     // (operational probe, ADR-exempt and unauthenticated by design).
@@ -52,6 +54,8 @@ pub async fn health() -> &'static str {
 #[utoipa::path(
     get,
     path = "/health/ready",
+    summary = "Check readiness",
+    description = "Pings the application database and returns 200 with a plain-text body when it is reachable, or 503 when it is not, so orchestrators can withhold traffic. Unauthenticated and outside `/api/v1` by design.",
     tag = "health",
     // Explicitly public: opt out of the document-level session_cookie default
     // (operational probe, ADR-exempt and unauthenticated by design).

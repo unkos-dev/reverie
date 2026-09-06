@@ -49,6 +49,8 @@ pub(super) fn atom_response(body: Vec<u8>, content_type: &str) -> Response {
 #[utoipa::path(
     get,
     path = "/opds",
+    summary = "Get the OPDS catalog root",
+    description = "Returns an OPDS navigation feed linking the library catalogue and every shelf owned by the caller. Requires HTTP Basic authentication (401).",
     tag = "opds",
     security(("opds_basic" = [])),
     responses(

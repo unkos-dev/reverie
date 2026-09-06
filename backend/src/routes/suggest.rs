@@ -548,6 +548,8 @@ async fn query_publishers(
 #[utoipa::path(
     get,
     path = "/api/v1/genres/suggest",
+    summary = "List genre suggestions",
+    description = "Returns genre names attached to a manifestation the caller can see, ranked by prefix match against `q` and then by similarity. Scoped to the caller's own visible library. Returns 400 for a malformed `limit`, 401 when unauthenticated, and 422 when `q` is empty or longer than 100 characters.",
     tag = "suggest",
     params(SuggestParams),
     security(("session_cookie" = ["read"]), ("device_token_bearer" = ["read"]), ("oidc_jwt_bearer" = ["read"]), ("opds_basic" = ["read"])),
@@ -585,6 +587,8 @@ async fn suggest_genres(
 #[utoipa::path(
     get,
     path = "/api/v1/moods/suggest",
+    summary = "List mood suggestions",
+    description = "Returns mood names attached to a manifestation the caller can see, ranked by prefix match against `q` and then by similarity. Scoped to the caller's own visible library. Returns 400 for a malformed `limit`, 401 when unauthenticated, and 422 when `q` is empty or longer than 100 characters.",
     tag = "suggest",
     params(SuggestParams),
     security(("session_cookie" = ["read"]), ("device_token_bearer" = ["read"]), ("oidc_jwt_bearer" = ["read"]), ("opds_basic" = ["read"])),
@@ -622,6 +626,8 @@ async fn suggest_moods(
 #[utoipa::path(
     get,
     path = "/api/v1/tags/suggest",
+    summary = "List tag suggestions",
+    description = "Returns tag names attached to a manifestation the caller can see, ranked by prefix match against `q` and then by similarity. Scoped to the caller's own visible library. Returns 400 for a malformed `limit`, 401 when unauthenticated, and 422 when `q` is empty or longer than 100 characters.",
     tag = "suggest",
     params(SuggestParams),
     security(("session_cookie" = ["read"]), ("device_token_bearer" = ["read"]), ("oidc_jwt_bearer" = ["read"]), ("opds_basic" = ["read"])),
@@ -661,6 +667,8 @@ async fn suggest_tags(
 #[utoipa::path(
     get,
     path = "/api/v1/authors/suggest",
+    summary = "List author suggestions",
+    description = "Returns author names credited on a manifestation the caller can see, ranked by prefix match against `q` and then by similarity. Only the `author` credit role is matched, not editors, translators, or narrators. Scoped to the caller's own visible library. Returns 400 for a malformed `limit`, 401 when unauthenticated, and 422 when `q` is empty or longer than 100 characters.",
     tag = "suggest",
     params(SuggestParams),
     security(("session_cookie" = ["read"]), ("device_token_bearer" = ["read"]), ("oidc_jwt_bearer" = ["read"]), ("opds_basic" = ["read"])),
@@ -713,6 +721,8 @@ async fn suggest_authors(
 #[utoipa::path(
     get,
     path = "/api/v1/authors",
+    summary = "Resolve author ids to names",
+    description = "Resolves the given `id` values to author display names, for labelling a restored filter chip. Ids are scoped to the caller's own visible library and to the `author` credit role; an id the caller cannot see, or one that is not an author, is silently omitted rather than reported as missing. Requires at least one `id` and rejects more than 60. Returns 400 for a malformed `id`, 401 when unauthenticated, and 422 when `id` is missing or over the limit.",
     tag = "suggest",
     params(AuthorsByIdParams),
     security(("session_cookie" = ["read"]), ("device_token_bearer" = ["read"]), ("oidc_jwt_bearer" = ["read"]), ("opds_basic" = ["read"])),
@@ -776,6 +786,8 @@ async fn authors_by_id(
 #[utoipa::path(
     get,
     path = "/api/v1/series/suggest",
+    summary = "List series suggestions",
+    description = "Returns series names attached to a manifestation the caller can see, ranked by prefix match against `q` and then by similarity. Scoped to the caller's own visible library. Returns 400 for a malformed `limit`, 401 when unauthenticated, and 422 when `q` is empty or longer than 100 characters.",
     tag = "suggest",
     params(SuggestParams),
     security(("session_cookie" = ["read"]), ("device_token_bearer" = ["read"]), ("oidc_jwt_bearer" = ["read"]), ("opds_basic" = ["read"])),
@@ -815,6 +827,8 @@ async fn suggest_series(
 #[utoipa::path(
     get,
     path = "/api/v1/publishers/suggest",
+    summary = "List publisher suggestions",
+    description = "Returns distinct publisher values recorded on a manifestation the caller can see, ranked by prefix match against `q` and then by similarity. Scoped to the caller's own visible library. Returns 400 for a malformed `limit`, 401 when unauthenticated, and 422 when `q` is empty or longer than 100 characters.",
     tag = "suggest",
     params(SuggestParams),
     security(("session_cookie" = ["read"]), ("device_token_bearer" = ["read"]), ("oidc_jwt_bearer" = ["read"]), ("opds_basic" = ["read"])),

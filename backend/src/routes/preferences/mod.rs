@@ -77,6 +77,8 @@ impl PreferencesResponse {
 #[utoipa::path(
     get,
     path = "/auth/me/preferences",
+    summary = "Get the caller's library preferences",
+    description = "Returns the caller's overrides for hidden columns, row density, view, and default sort, alongside the installation defaults; a `null` group means the default applies. An account with no stored row reads as all-null overrides. Returns 401 when unauthenticated.",
     tag = "auth",
     security(("session_cookie" = ["read"]), ("device_token_bearer" = ["read"]), ("oidc_jwt_bearer" = ["read"]), ("opds_basic" = ["read"])),
     responses(
@@ -187,6 +189,8 @@ impl UpdatePreferencesRequest {
 #[utoipa::path(
     patch,
     path = "/auth/me/preferences",
+    summary = "Update the caller's library preferences",
+    description = "Applies a JSON Merge Patch to the caller's hidden columns, row density, view, and default sort: an absent group is left unchanged and an explicit `null` resets it to the installation default. At least one group is required. Returns 401 when unauthenticated and 422 for an empty body, an unknown density or view, or an out-of-range sort stack or column key.",
     tag = "auth",
     security(("session_cookie" = ["write"]), ("device_token_bearer" = ["write"]), ("oidc_jwt_bearer" = ["write"]), ("opds_basic" = ["write"])),
     request_body(content = UpdatePreferencesRequest, description = "RFC 7396 JSON Merge Patch: absent groups are unchanged, `null` resets a group to the installation default"),

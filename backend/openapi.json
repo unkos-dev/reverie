@@ -15,8 +15,8 @@
         "tags": [
           "users"
         ],
-        "summary": "`POST /api/v1/account/password` — the authenticated caller changes their own\npassword.",
-        "description": "THREAT (IDOR): the target is ALWAYS the session user. The\nendpoint accepts no id from the path or body, so it cannot be turned against\nanother account. It verifies the current password, enforces the policy on the\nnew one, writes it, and bumps `session_version`, which forces re-auth of every\nsession including the caller's own.\n\n# Errors\n- [`AppError::Unauthorized`] when unauthenticated.\n- [`AppError::Validation`] (422) when the current password is wrong, the new\n  password fails the policy, or the account has no local credential (it signs\n  in through an identity provider).\n- [`AppError::Internal`] on database errors.",
+        "summary": "Change your own password",
+        "description": "Verifies the caller's current password and sets a new one, invalidating all of the caller's sessions including the one making this request. Returns 401 if authentication is missing and 422 if the current password is wrong, the new password fails the password policy, or the account has no local credential.",
         "operationId": "change_own_password",
         "requestBody": {
           "content": {
@@ -82,8 +82,8 @@
         "tags": [
           "suggest"
         ],
-        "summary": "Resolve author ids to display names so a restored filter chip can label itself.",
-        "description": "The list payload carries author names, not ids, and a none-of filter hides\nthe author's rows entirely, so a chip restored from a bookmarked URL has\nnothing else to label itself with.\n\nThe `id` filter is required and capped, keeping this route bounded by\nconstruction: it is the seed of a future paginated authors collection,\nbut until that lands a bare `GET /api/v1/authors` is a 422, not a\nlist-all. Ids are RLS-scoped through the same in-use join as\n`authors/suggest` and restricted to the `author` role, so the chip label\nresolves the same author set the `?author=` filter matches; an id the\ncaller cannot see (or one that is not an author) is silently omitted\nrather than 404'd, and unknown ids drop out the same way.\n\n# Errors\n- [`AppError::MalformedQuery`] when an `id` value is not a UUID.\n- [`AppError::Validation`] when `id` is absent/empty or over\n  [`MAX_RESOLVE_IDS`] values.\n- [`AppError::Internal`] on database errors.",
+        "summary": "Resolve author ids to names",
+        "description": "Resolves the given `id` values to author display names, for labelling a restored filter chip. Ids are scoped to the caller's own visible library and to the `author` credit role; an id the caller cannot see, or one that is not an author, is silently omitted rather than reported as missing. Requires at least one `id` and rejects more than 60. Returns 400 for a malformed `id`, 401 when unauthenticated, and 422 when `id` is missing or over the limit.",
         "operationId": "authors_by_id",
         "parameters": [
           {
@@ -171,8 +171,8 @@
         "tags": [
           "suggest"
         ],
-        "summary": "Author names in use on a visible manifestation, ranked prefix-first then by similarity.",
-        "description": "Scoped to the `author` role (see [`query_authors`]), matching the\n`?author=` filter it feeds.\n\n# Errors\nSame as [`suggest_genres`].",
+        "summary": "List author suggestions",
+        "description": "Returns author names credited on a manifestation the caller can see, ranked by prefix match against `q` and then by similarity. Only the `author` credit role is matched, not editors, translators, or narrators. Scoped to the caller's own visible library. Returns 400 for a malformed `limit`, 401 when unauthenticated, and 422 when `q` is empty or longer than 100 characters.",
         "operationId": "suggest_authors",
         "parameters": [
           {
@@ -266,8 +266,8 @@
         "tags": [
           "library"
         ],
-        "summary": "List the manifestations visible to the current user, paginated\nvia an opaque cursor and ordered per the requested sort stack.",
-        "description": "# Errors\n- [`AppError::MalformedQuery`] when a filter param fails to\n  deserialize (a malformed UUID in `?author=`/`?series=`/`?shelf=`,\n  via the `From<QueryRejection>` impl), or when `?sort=` names an\n  unwhitelisted field, repeats a column, or exceeds\n  [`crate::routes::sort_spec::MAX_SORT_LEVELS`] levels.\n- [`AppError::Validation`] when the cursor is malformed, its\n  embedded sort spec mismatches the requested stack, or any\n  vocabulary filter param carries more than [`MAX_TAG_FILTERS`]\n  values.\n- [`AppError::Internal`] on database errors.",
+        "summary": "List books",
+        "description": "Returns one page of the manifestations visible to the caller, filterable and sortable via query parameters. Fails with `400` when a filter or sort parameter is malformed, and `422` when the cursor is invalid or a filter exceeds its allowed value count.",
         "operationId": "list",
         "parameters": [
           {
@@ -715,8 +715,8 @@
         "tags": [
           "library"
         ],
-        "summary": "`GET /api/v1/books/{id}` — single-manifestation detail with the\nwork-level prose, tags, and a metadata-version summary used by the\nbook-detail Versions tab.",
-        "description": "RLS hides manifestations the current user cannot see; the handler\nreports those as 404 rather than 403 so existence is not leaked.\n\n# Errors\n- [`AppError::NotFound`] when the manifestation is missing or\n  RLS-hidden.\n- [`AppError::Internal`] on database errors.",
+        "summary": "Get a book's detail",
+        "description": "Returns detail for one manifestation, including work-level prose and a metadata-version summary. A manifestation hidden from the caller is reported as `404` rather than leaking its existence.",
         "operationId": "book_detail",
         "parameters": [
           {
@@ -791,8 +791,8 @@
         "tags": [
           "library"
         ],
-        "summary": "`GET /api/v1/books/{id}/cover` — full-size cover for the web UI.",
-        "description": "# Errors\nSee [`opds_cover`].",
+        "summary": "Get a book's cover",
+        "description": "Streams the full-size cover image for a manifestation as `image/jpeg` or `image/png`, with a strong `ETag` and a day-long `Cache-Control`, for the web UI. Requires authentication (401) via session cookie, device token or OIDC bearer token, returns 304 when `If-None-Match` matches the current `ETag`, and 404 when the manifestation is missing, hidden from the caller, or has no cover.",
         "operationId": "api_cover",
         "parameters": [
           {
@@ -863,8 +863,8 @@
         "tags": [
           "library"
         ],
-        "summary": "`GET /api/v1/books/{id}/cover/thumb` — thumbnail cover for the web UI.",
-        "description": "# Errors\nSee [`opds_cover`].",
+        "summary": "Get a book's cover thumbnail",
+        "description": "Streams the thumbnail cover image for a manifestation as `image/jpeg`, with a strong `ETag` and a day-long `Cache-Control`, for the web UI. Requires authentication (401) via session cookie, device token or OIDC bearer token, returns 304 when `If-None-Match` matches the current `ETag`, and 404 when the manifestation is missing, hidden from the caller, or has no cover.",
         "operationId": "api_cover_thumb",
         "parameters": [
           {
@@ -935,8 +935,8 @@
         "tags": [
           "metadata"
         ],
-        "summary": "The editable metadata span for one manifestation.",
-        "description": "This is the matched-pair read for [`update_book_metadata`]: same URI and\nid key, so a read-modify-write flow targets one resource.\n\n# Errors\n- [`AppError::Forbidden`] when the caller is a child account.\n- [`AppError::NotFound`] when the manifestation is missing or hidden by\n  RLS for the current user (existence-not-leaked).\n- [`AppError::Internal`] on database errors.",
+        "summary": "Get a book's editable metadata",
+        "description": "Returns the editable metadata span for one manifestation, matching what the corresponding PATCH accepts. Available to adult accounts only. Fails with `404` when the manifestation is missing or hidden from the caller.",
         "operationId": "get_book_metadata",
         "parameters": [
           {
@@ -1027,8 +1027,8 @@
         "tags": [
           "metadata"
         ],
-        "summary": "`PATCH /api/v1/books/{id}/metadata` — manual operator edit.",
-        "description": "Bare RFC 7396 JSON Merge Patch body (no envelope): absent keys are\nunchanged, `null` clears (except `title`). Accepts both\n`application/json` and `application/merge-patch+json`: axum's `Json`\nextractor already treats any `+json`-suffixed content type as JSON.\n\nFor each touched field the handler inserts a `metadata_versions` row\nwith `source = 'manual'` and then either promotes that row to canonical\nvia [`apply_version`] (when a value is supplied) or clears the\ncanonical column via [`clear_field`] (when the value is `null`). The\npending AI/OPF drafts on the same field stay `status = 'pending'`, so the\noperator can revert to one of them later. The response carries the\napplied (normalized) value plus the new and previous version pointers\nper field, so a caller can offer undo without a follow-up read.\n\n# Errors\n- [`AppError::Validation`] when the body has no populated fields,\n  when an ISBN/date value fails parsing, when a vocabulary list\n  (`genres`/`moods`/`tags`) contains an empty, duplicate, or\n  over-length term, or when the operator tries to clear `title`\n  (canonical title is `NOT NULL` on `works`). Reached only once\n  `If-Match` has matched, so a stale tag yields 412 rather than a\n  body error.\n- [`AppError::MalformedHeader`] when `If-Match` violates the RFC 9110\n  §8.8.3 entity-tag grammar, or carries a form this API refuses by\n  policy: the `*` wildcard, an entity-tag list, a weak validator, or\n  more than one instance of the field.\n- [`AppError::NotFound`] when the manifestation is missing or hidden\n  by RLS for the current user (existence-not-leaked).\n- [`AppError::Forbidden`] when the caller is a child account.\n- [`AppError::IfMatchRequired`] (428) when `If-Match` is absent.\n- [`AppError::IfMatchMismatch`] (412) when `If-Match` does not match the\n  manifestation's current metadata `ETag`; the response carries the\n  current `ETag` so the caller can resync in one round trip.\n- [`AppError::Internal`] on database errors.",
+        "summary": "Update a book's metadata",
+        "description": "Applies a manual operator edit to a manifestation's metadata; each touched field is recorded as a new metadata version. Requires an `If-Match` header; fails with `428` when it is absent and `412` when it does not match. Available to adult accounts only. Fails with `400` when `If-Match` is malformed or refused by policy, `422` when the body has no populated fields or a value fails parsing, and `404` when the manifestation is missing or hidden.",
         "operationId": "update_book_metadata",
         "parameters": [
           {
@@ -1189,8 +1189,8 @@
         "tags": [
           "reading"
         ],
-        "summary": "`GET /api/v1/books/{id}/reading`: the caller's reading state for one\nbook.",
-        "description": "# Errors\n- [`AppError::NotFound`] when the manifestation is missing or hidden by\n  RLS for the current user (existence-not-leaked).\n- [`AppError::Internal`] on database errors.",
+        "summary": "Get reading state",
+        "description": "Returns the caller's reading state for one book; all-null fields mean the book is unread. Fails with `404` when the manifestation is missing or hidden from the caller.",
         "operationId": "get_reading",
         "parameters": [
           {
@@ -1271,8 +1271,8 @@
         "tags": [
           "reading"
         ],
-        "summary": "`PATCH /api/v1/books/{id}/reading`: upsert the caller's reading state.",
-        "description": "Transition stamps fire only when the patch itself carries a non-null\n`status` (no before/after diff, so repeating the current status\nre-applies its stamp; a patch without `status` never touches stamps):\n- patched `status = reading` → `started_at := COALESCE(started_at, now())`\n- patched `status = finished` → `finished_at := now()`,\n  `progress_pct := 100`, `last_read_at := now()`\n- any other patched `status`, an explicit `null` clear, or a patch\n  without `status` → no stamps; `progress_pct` / `started_at` /\n  `finished_at` / `last_read_at` carry over unchanged\n\n# Errors\n- [`AppError::Validation`] when the body has no populated fields,\n  `rating` is outside `1..=5`, or `notes` exceeds 10000 characters.\n  Reached only once `If-Match` has matched, so a stale tag yields 412\n  rather than a body error.\n- [`AppError::MalformedHeader`] when `If-Match` violates the RFC 9110\n  §8.8.3 entity-tag grammar, or carries a form this API refuses by\n  policy: the `*` wildcard, an entity-tag list, a weak validator, or\n  more than one instance of the field.\n- [`AppError::NotFound`] when the manifestation is missing or hidden by\n  RLS for the current user (existence-not-leaked).\n- [`AppError::IfMatchRequired`] (428) when `If-Match` is absent.\n- [`AppError::IfMatchMismatch`] (412) when `If-Match` does not match the\n  caller's current reading-state `ETag`; the response carries the\n  current `ETag` so the caller can resync in one round trip.\n- [`AppError::Internal`] on database errors.",
+        "summary": "Update reading state",
+        "description": "Applies a partial update to the caller's reading state for one book, such as status, rating, or notes. Requires an `If-Match` header; fails with `428` when it is absent and `412` when it does not match the caller's current entity-tag. Fails with `400` when `If-Match` is malformed or refused by policy, `422` when the body has no populated fields or a value is out of range, and `404` when the manifestation is missing or hidden.",
         "operationId": "patch_reading",
         "parameters": [
           {
@@ -1423,8 +1423,8 @@
         "tags": [
           "dashboard"
         ],
-        "summary": "`GET /api/v1/dashboard/activity?limit=N` — most-recent ingestion batches,\nnewest first (admin only).",
-        "description": "Groups `ingestion_jobs` by `batch_id` into per-batch outcome counts.\n`acquire_with_rls` is used for pattern consistency but is not load-bearing\nhere — `ingestion_jobs` has no RLS.\n\n# Errors\n- [`AppError::Forbidden`] when the caller is not an admin.\n- [`AppError::Internal`] on database errors.",
+        "summary": "List recent ingestion batches",
+        "description": "Returns the most recent ingestion batches, newest first, with per-batch outcome counts. Clamped to 1 to 100 batches (default 20). Admin only. Returns 400 for a malformed `limit`, 401 when unauthenticated, and 403 when the caller is not an admin.",
         "operationId": "activity",
         "parameters": [
           {
@@ -1509,8 +1509,8 @@
         "tags": [
           "dashboard"
         ],
-        "summary": "`GET /api/v1/dashboard/stats` — library-wide aggregate health metrics\n(admin only).",
-        "description": "Computes the manifestation-side metrics in a single conditional-aggregate\nscan joined to `works` (query A), plus one per-format `GROUP BY` (query\nB). Validation/enrichment breakdowns are reassembled in Rust from the\nfixed `FILTER` columns so the closed enum sets render deterministically.\n\n# Errors\n- [`AppError::Forbidden`] when the caller is not an admin.\n- [`AppError::Internal`] on database errors.",
+        "summary": "Get library-wide health metrics",
+        "description": "Returns aggregate library statistics: manifestation and work counts, storage usage by format, validation and enrichment status breakdowns, and metadata coverage. Admin only. Returns 401 when unauthenticated and 403 when the caller is not an admin.",
         "operationId": "stats",
         "responses": {
           "200": {
@@ -1573,8 +1573,8 @@
         "tags": [
           "enrichment"
         ],
-        "summary": "`GET /api/v1/enrichment/status` — aggregate queue counters over the\nmanifestations visible to the caller.",
-        "description": "# Errors\n- [`AppError::Forbidden`] when the caller is a child account.\n- [`AppError::Internal`] on database errors.",
+        "summary": "Get enrichment queue status",
+        "description": "Returns the count of manifestations visible to the caller in each enrichment state: pending, in progress, complete, failed, and skipped. Not available to child accounts. Returns 401 when unauthenticated and 403 for a child account.",
         "operationId": "status",
         "responses": {
           "200": {
@@ -1637,8 +1637,8 @@
         "tags": [
           "suggest"
         ],
-        "summary": "`GET /api/v1/genres/suggest`: genre names in use on a visible\nmanifestation, ranked prefix-first then by similarity.",
-        "description": "Read-scope gated exactly like `GET /api/v1/books` (the least-privilege\nfloor); every other suggest handler below shares the same shape.\n\n# Errors\n- [`AppError::MalformedQuery`] when `?limit=` fails to parse as an\n  integer; HTTP 400 via the `From<QueryRejection>` impl.\n- [`AppError::Validation`] when `q` is empty after trimming or exceeds\n  [`MAX_Q_CHARS`] characters.\n- [`AppError::Internal`] on database errors.",
+        "summary": "List genre suggestions",
+        "description": "Returns genre names attached to a manifestation the caller can see, ranked by prefix match against `q` and then by similarity. Scoped to the caller's own visible library. Returns 400 for a malformed `limit`, 401 when unauthenticated, and 422 when `q` is empty or longer than 100 characters.",
         "operationId": "suggest_genres",
         "parameters": [
           {
@@ -1732,8 +1732,8 @@
         "tags": [
           "ingestion"
         ],
-        "summary": "`POST /api/v1/ingestion/scan` — synchronously scan the ingestion\ndirectory (admin only).",
-        "description": "# Errors\n- [`AppError::Forbidden`] when the caller is not an admin.\n- [`AppError::Internal`] when the scan fails at the service layer.",
+        "summary": "Scan the ingestion directory",
+        "description": "Synchronously scans the ingestion directory and returns per-outcome file counts: processed, failed, and skipped. Admin only. Returns 401 when unauthenticated and 403 when the caller is not an admin.",
         "operationId": "scan",
         "responses": {
           "200": {
@@ -1796,8 +1796,8 @@
         "tags": [
           "enrichment"
         ],
-        "summary": "`POST /api/v1/manifestations/{id}/enrichment/dry-run` — synchronous\npreview of what an enrichment pass would change. No side effects\nbeyond the source cache.",
-        "description": "# Errors\n- [`AppError::Forbidden`] when the caller is a child account.\n- [`AppError::NotFound`] when the manifestation is missing or\n  RLS-hidden (existence-not-leaked).\n- [`AppError::Internal`] on database errors or fan-out infrastructure\n  failure.",
+        "summary": "Preview an enrichment run",
+        "description": "Runs the enrichment pipeline synchronously against the manifestation without saving any change, and returns the diff it would make. Per-source failures are listed in the response rather than failing the request. Not available to child accounts. Returns 401 when unauthenticated, 403 for a child account, and 404 when the manifestation is missing or not visible to the caller.",
         "operationId": "dry_run",
         "parameters": [
           {
@@ -1882,8 +1882,8 @@
         "tags": [
           "enrichment"
         ],
-        "summary": "`POST /api/v1/manifestations/{id}/enrichment/trigger` — re-queue the\nmanifestation for a fresh enrichment pass.",
-        "description": "An `in_progress` row is not flipped to `pending`: the active worker\nstill owns the claim, and releasing it would let a second worker run\nthe same manifestation concurrently. The trigger sets\n`enrichment_rerun_requested` instead, and the worker's completion\nbookkeeping converts the flag into a fresh eligible row. All CASE arms\nread the pre-update row state, so the status test is consistent across\nevery column.\n\n# Errors\n- [`AppError::Forbidden`] when the caller is a child account.\n- [`AppError::NotFound`] when the manifestation is missing or\n  RLS-hidden (existence-not-leaked).\n- [`AppError::Internal`] on database errors.",
+        "summary": "Trigger an enrichment re-run",
+        "description": "Re-queues the manifestation for a fresh enrichment pass. An idle manifestation is reset to pending immediately; one with an active run is re-queued once that run completes. Not available to child accounts. Returns 401 when unauthenticated, 403 for a child account, and 404 when the manifestation is missing or not visible to the caller.",
         "operationId": "trigger",
         "parameters": [
           {
@@ -1961,8 +1961,8 @@
         "tags": [
           "metadata"
         ],
-        "summary": "`GET /api/v1/manifestations/{id}/metadata` — review queue for one\nmanifestation, newest first.",
-        "description": "# Errors\n- [`AppError::Forbidden`] when the caller is a child account.\n- [`AppError::Internal`] on database errors.",
+        "summary": "List a manifestation's metadata versions",
+        "description": "Returns the metadata review queue for one manifestation, newest first; the list is empty when the manifestation is missing or hidden from the caller. Available to adult accounts only, returning `403` for a child account.",
         "operationId": "get_manifestation_metadata",
         "parameters": [
           {
@@ -2040,8 +2040,8 @@
         "tags": [
           "metadata"
         ],
-        "summary": "`POST /api/v1/manifestations/{id}/metadata/accept` — promote a pending\nmetadata version to canonical.",
-        "description": "# Errors\n- [`AppError::Forbidden`] when the caller is a child account.\n- [`AppError::NotFound`] when the version row does not belong to the\n  manifestation or is RLS-hidden.\n- [`AppError::Validation`] when the stored value fails field parsing.\n- [`AppError::Internal`] on database errors.",
+        "summary": "Accept a metadata version",
+        "description": "Promotes a pending metadata version to canonical for a manifestation; accepting an ISBN change may trigger a re-match against other works. Available to adult accounts only. Fails with `404` when the version does not belong to the manifestation or is hidden from the caller, and `422` when the stored value fails parsing.",
         "operationId": "accept_manifestation",
         "parameters": [
           {
@@ -2139,8 +2139,8 @@
         "tags": [
           "metadata"
         ],
-        "summary": "`POST /api/v1/manifestations/{id}/metadata/lock` — lock a field\nagainst future enrichment writes.",
-        "description": "# Errors\n- [`AppError::Forbidden`] when the caller is a child account.\n- [`AppError::Validation`] when `entity_type` is not `work` /\n  `manifestation`.\n- [`AppError::Internal`] on database errors.",
+        "summary": "Lock a metadata field",
+        "description": "Locks a metadata field against future automated enrichment writes; locking an already-locked field is a no-op. Available to adult accounts only. Fails with `422` when `entity_type` is not `work` or `manifestation`.",
         "operationId": "lock_field",
         "parameters": [
           {
@@ -2228,8 +2228,8 @@
         "tags": [
           "metadata"
         ],
-        "summary": "`POST /api/v1/manifestations/{id}/metadata/reject` — mark a pending\nmetadata version as rejected.",
-        "description": "# Errors\n- [`AppError::Forbidden`] when the caller is a child account.\n- [`AppError::NotFound`] when the version row does not belong to the\n  manifestation or is RLS-hidden.\n- [`AppError::Internal`] on database errors.",
+        "summary": "Reject a metadata version",
+        "description": "Marks a pending metadata version as rejected. Available to adult accounts only. Fails with `404` when the version does not belong to the manifestation or is hidden from the caller.",
         "operationId": "reject_manifestation",
         "parameters": [
           {
@@ -2317,8 +2317,8 @@
         "tags": [
           "metadata"
         ],
-        "summary": "`POST /api/v1/manifestations/{id}/metadata/revert` — restore a prior\nversion as canonical, or clear the field entirely.",
-        "description": "# Errors\n- [`AppError::Forbidden`] when the caller is a child account.\n- [`AppError::NotFound`] when the manifestation or version is missing\n  or RLS-hidden.\n- [`AppError::Validation`] when clearing a non-clearable field (e.g.\n  `title`) or the stored value fails parsing.\n- [`AppError::Internal`] on database errors.",
+        "summary": "Revert a metadata field",
+        "description": "Restores a prior metadata version as canonical for a field, or clears the field entirely when no version is given. Available to adult accounts only. Fails with `404` when the manifestation or version is missing or hidden from the caller, and `422` when the field cannot be cleared or the stored value fails parsing.",
         "operationId": "revert_manifestation",
         "parameters": [
           {
@@ -2416,8 +2416,8 @@
         "tags": [
           "metadata"
         ],
-        "summary": "`POST /api/v1/manifestations/{id}/metadata/unlock` — remove a field\nlock.",
-        "description": "# Errors\n- [`AppError::Forbidden`] when the caller is a child account.\n- [`AppError::NotFound`] when no matching lock exists.\n- [`AppError::Validation`] when `entity_type` is not `work` /\n  `manifestation`.\n- [`AppError::Internal`] on database errors.",
+        "summary": "Unlock a metadata field",
+        "description": "Removes a lock on a metadata field, allowing future automated enrichment writes to resume. Available to adult accounts only. Fails with `404` when no matching lock exists, and `422` when `entity_type` is not `work` or `manifestation`.",
         "operationId": "unlock_field",
         "parameters": [
           {
@@ -2515,8 +2515,8 @@
         "tags": [
           "suggest"
         ],
-        "summary": "`GET /api/v1/moods/suggest`: mood names in use on a visible\nmanifestation, ranked prefix-first then by similarity.",
-        "description": "# Errors\nSame as [`suggest_genres`].",
+        "summary": "List mood suggestions",
+        "description": "Returns mood names attached to a manifestation the caller can see, ranked by prefix match against `q` and then by similarity. Scoped to the caller's own visible library. Returns 400 for a malformed `limit`, 401 when unauthenticated, and 422 when `q` is empty or longer than 100 characters.",
         "operationId": "suggest_moods",
         "parameters": [
           {
@@ -2610,8 +2610,8 @@
         "tags": [
           "suggest"
         ],
-        "summary": "Distinct publisher values in use on a visible manifestation, ranked prefix-first then by similarity.",
-        "description": "Every returned [`Suggestion`] carries `id: None` (publishers have no\ndedicated vocabulary table; see [`query_publishers`]).\n\n# Errors\nSame as [`suggest_genres`].",
+        "summary": "List publisher suggestions",
+        "description": "Returns distinct publisher values recorded on a manifestation the caller can see, ranked by prefix match against `q` and then by similarity. Scoped to the caller's own visible library. Returns 400 for a malformed `limit`, 401 when unauthenticated, and 422 when `q` is empty or longer than 100 characters.",
         "operationId": "suggest_publishers",
         "parameters": [
           {
@@ -2705,8 +2705,8 @@
         "tags": [
           "library"
         ],
-        "summary": "`GET /api/v1/search` — return the top hybrid-ranked manifestations\nmatching `q`, snippet-highlighted via `ts_headline`.",
-        "description": "# Errors\n- [`AppError::Validation`] when `q` is missing, empty, or longer\n  than [`MAX_Q_LEN`] characters.\n- [`AppError::Internal`] on database errors.",
+        "summary": "Search the library",
+        "description": "Returns the top hybrid-ranked manifestations matching a free-text query, with highlighted snippets. Fails with `400` on a malformed query parameter and `422` when the query is missing, empty, or exceeds the length limit.",
         "operationId": "search",
         "parameters": [
           {
@@ -2790,8 +2790,8 @@
         "tags": [
           "suggest"
         ],
-        "summary": "`GET /api/v1/series/suggest`: series names in use on a visible\nmanifestation, ranked prefix-first then by similarity.",
-        "description": "# Errors\nSame as [`suggest_genres`].",
+        "summary": "List series suggestions",
+        "description": "Returns series names attached to a manifestation the caller can see, ranked by prefix match against `q` and then by similarity. Scoped to the caller's own visible library. Returns 400 for a malformed `limit`, 401 when unauthenticated, and 422 when `q` is empty or longer than 100 characters.",
         "operationId": "suggest_series",
         "parameters": [
           {
@@ -2885,8 +2885,8 @@
         "tags": [
           "series"
         ],
-        "summary": "`GET /api/v1/series/{id}` — series + ordered works with visible\nmanifestations per work.",
-        "description": "# Errors\n- [`AppError::NotFound`] when the series row is missing, the series\n  has no linked works, or every work in the series has zero visible\n  manifestations under the caller's RLS context (existence-not-leaked).\n- [`AppError::Internal`] on database errors.",
+        "summary": "Get a series",
+        "description": "Returns the series identity plus its works in order, each with the manifestations visible to the caller. Returns 401 when unauthenticated and 404 when the series does not exist, has no linked works, or none of its works has a manifestation visible to the caller.",
         "operationId": "series_detail",
         "parameters": [
           {
@@ -2961,8 +2961,8 @@
         "tags": [
           "settings"
         ],
-        "summary": "`GET /api/v1/settings` — return current persisted settings (admin only).",
-        "description": "Reads directly from the database so the response always reflects\nthe latest persisted state (admin endpoint, single-row read,\ncalled infrequently). Workers use the `RwLock` cache for zero-DB\nper-request reads.\n\nAlso includes `last_successful_reload_at` from the background\nLISTEN/NOTIFY task so operators can verify the live-reload\nmechanism is healthy.\n\n# Errors\n- [`AppError::Forbidden`] when the caller is not an admin.\n- [`AppError::Internal`] on database errors.",
+        "summary": "Get settings",
+        "description": "Returns the currently persisted application settings, including the fields that only take effect after a process restart and the timestamp of the last successful live-reload. Admin only. Returns 401 when unauthenticated and 403 when the caller is not an admin.",
         "operationId": "get_settings",
         "responses": {
           "200": {
@@ -3023,8 +3023,8 @@
         "tags": [
           "settings"
         ],
-        "summary": "`PUT /api/v1/settings` — partial update of settings (admin only).",
-        "description": "Accepts RFC 7396 JSON Merge Patch: absent fields are unchanged.\nValidates field values before persisting. Updates the local\n`RwLock` cache immediately (no NOTIFY round-trip for same-process\nreads). The DB trigger also fires `NOTIFY settings_changed` to\npropagate changes to other connected processes.\n\n# Errors\n- [`AppError::Forbidden`] when the caller is not an admin.\n- [`AppError::Validation`] when the body is empty or contains\n  invalid field values.\n- [`AppError::Internal`] on database errors.",
+        "summary": "Update settings",
+        "description": "Applies a JSON Merge Patch to the application settings: fields absent from the body are left unchanged, and at least one field is required. Returns the updated settings and whether the change needs a process restart to take effect. Admin only. Returns 401 when unauthenticated, 403 when the caller is not an admin, and 422 for an empty patch, a malformed body, or invalid field values.",
         "operationId": "put_settings",
         "requestBody": {
           "description": "RFC 7396 JSON Merge Patch: absent fields are unchanged; at least one field is required",
@@ -3108,8 +3108,8 @@
         "tags": [
           "shelves"
         ],
-        "summary": "`GET /api/v1/shelves` — list the caller's shelves, keyset-paginated\nover `(is_system DESC, name ASC, id ASC)` — every list is bounded by\nconstruction.",
-        "description": "# Errors\n- [`AppError::Validation`] when the cursor is malformed.\n- [`AppError::Internal`] on database errors.",
+        "summary": "List shelves",
+        "description": "Returns one page of the caller's own shelves, ordered with system shelves first then by name. Fails with `400` on a malformed query parameter, `422` on a malformed cursor, and `401` when unauthenticated.",
         "operationId": "list_shelves",
         "parameters": [
           {
@@ -3199,8 +3199,8 @@
         "tags": [
           "shelves"
         ],
-        "summary": "`POST /api/v1/shelves` — create a new (non-system) shelf for the\ncaller.",
-        "description": "# Errors\n- [`AppError::Forbidden`] when the caller is a child account.\n- [`AppError::Validation`] when the body is missing or `name` is\n  empty / whitespace-only.\n- [`AppError::Internal`] on database errors.",
+        "summary": "Create a shelf",
+        "description": "Creates a new shelf for the caller. Available to adult accounts only, returning `403` for a child account; fails with `422` when the name is missing or empty.",
         "operationId": "create_shelf",
         "requestBody": {
           "content": {
@@ -3291,8 +3291,8 @@
         "tags": [
           "shelves"
         ],
-        "summary": "Shelf identity plus one keyset-paginated page of its items.",
-        "description": "Items page over `(position, added_at, manifestation_id)`, so every list is\nbounded by construction. The ETag/If-Match contract is unaffected by item\npaging: the entity-tag carries the shelf's `updated_at` regardless of which\nitems page is requested.\n\n# Errors\n- [`AppError::NotFound`] when missing or not owned by caller.\n- [`AppError::Validation`] when the cursor is malformed.\n- [`AppError::Internal`] on database errors.",
+        "summary": "Get a shelf with its items",
+        "description": "Returns a shelf's identity plus one page of its items in position order. Restricted to shelves the caller owns; fails with `404` when the shelf does not exist or belongs to another user. Fails with `400` on a malformed query parameter and `422` on a malformed cursor.",
         "operationId": "get_shelf_with_items",
         "parameters": [
           {
@@ -3408,8 +3408,8 @@
         "tags": [
           "shelves"
         ],
-        "summary": "`DELETE /api/v1/shelves/{id}` — delete a non-system shelf.",
-        "description": "# Errors\n- [`AppError::Forbidden`] when the caller is a child account.\n- [`AppError::NotFound`] when the shelf is missing / not owned by\n  the caller.\n- [`AppError::SystemShelfImmutable`] when `is_system = TRUE`.\n- [`AppError::Internal`] on database errors.",
+        "summary": "Delete a shelf",
+        "description": "Deletes a shelf owned by the caller. Available to adult accounts only, returning `403` for a child account; system shelves cannot be deleted and return `409`. Fails with `404` when the shelf does not exist or belongs to another user.",
         "operationId": "delete_shelf",
         "parameters": [
           {
@@ -3495,8 +3495,8 @@
         "tags": [
           "shelves"
         ],
-        "summary": "`PATCH /api/v1/shelves/{id}` — rename a non-system shelf owned by\nthe caller.",
-        "description": "# Errors\n- [`AppError::Forbidden`] when the caller is a child account.\n- [`AppError::NotFound`] when the shelf does not exist or belongs\n  to another user (existence-not-leaked).\n- [`AppError::SystemShelfImmutable`] (409) when the target shelf\n  has `is_system = TRUE`.\n- [`AppError::Validation`] when `name` is missing or\n  whitespace-only.\n- [`AppError::Internal`] on database errors.",
+        "summary": "Rename a shelf",
+        "description": "Renames a shelf owned by the caller. Available to adult accounts only, returning `403` for a child account; system shelves cannot be renamed and return `409`. Fails with `404` when the shelf does not exist or belongs to another user, and `422` when the name is missing or empty.",
         "operationId": "rename_shelf",
         "parameters": [
           {
@@ -3619,8 +3619,8 @@
         "tags": [
           "shelves"
         ],
-        "summary": "`PUT /api/v1/shelves/{id}/items` — transactionally rewrite\n`shelf_items.position` based on the supplied order.",
-        "description": "Optimistic-concurrency: requires `If-Match: \"<updated_at>\"`\nheader matching the shelf's current `updated_at`; otherwise 412.\n\n# Errors\n- [`AppError::IfMatchRequired`] (428) when the header is absent.\n- [`AppError::Validation`] when the header is malformed or the\n  posted items list contains UUIDs that are not currently on the\n  shelf.\n- [`AppError::NotFound`] when the shelf is missing / not owned.\n- [`AppError::IfMatchMismatch`] (412) when the `ETag` does not match.\n- [`AppError::Internal`] on database errors.",
+        "summary": "Reorder shelf items",
+        "description": "Rewrites the full ordering of items on the caller's shelf. Requires an `If-Match` header carrying the shelf's current entity-tag; fails with `428` when it is absent and `412` when it does not match. Fails with `404` when the shelf does not exist or belongs to another user, and `422` when the supplied list does not exactly match the shelf's current items.",
         "operationId": "reorder_shelf_items",
         "parameters": [
           {
@@ -3743,8 +3743,8 @@
         "tags": [
           "shelves"
         ],
-        "summary": "`POST /api/v1/shelves/{id}/items` — append a manifestation at\n`max(position) + 1`. Bumps the shelf's `updated_at` (`ETag`).",
-        "description": "# Errors\n- [`AppError::Validation`] when the request body is missing,\n  malformed, or lacks the `manifestation_id` field.\n- [`AppError::NotFound`] when the shelf is missing / not owned, OR\n  when the manifestation is not visible to the caller (verified\n  via an RLS-scoped existence probe to prevent shelf-existence\n  probing of arbitrary manifestation ids).\n- [`AppError::Internal`] on database errors.",
+        "summary": "Add an item to a shelf",
+        "description": "Appends a manifestation to the end of the caller's shelf; adding one already on the shelf is a no-op. Fails with `404` when the shelf does not exist, belongs to another user, or the manifestation is not visible to the caller, and `422` when the body is missing or malformed.",
         "operationId": "add_shelf_item",
         "parameters": [
           {
@@ -3840,8 +3840,8 @@
         "tags": [
           "shelves"
         ],
-        "summary": "`DELETE /api/v1/shelves/{id}/items/{manifestation_id}` — remove a\nshelf item. Bumps the shelf's `updated_at` (`ETag`).",
-        "description": "# Errors\n- [`AppError::NotFound`] when the shelf is missing / not owned by\n  the caller, OR when the item is not on the shelf (the second\n  case prevents silent `ETag` drift from a no-op delete: bumping\n  `updated_at` on zero `rows_affected` would invalidate a\n  correctly-held client `If-Match` for the next reorder).\n- [`AppError::Internal`] on database errors.",
+        "summary": "Remove an item from a shelf",
+        "description": "Removes a manifestation from the caller's shelf. Fails with `404` when the shelf does not exist, belongs to another user, or the manifestation is not on the shelf.",
         "operationId": "remove_shelf_item",
         "parameters": [
           {
@@ -3927,8 +3927,8 @@
         "tags": [
           "suggest"
         ],
-        "summary": "`GET /api/v1/tags/suggest`: tag names in use on a visible\nmanifestation, ranked prefix-first then by similarity.",
-        "description": "# Errors\nSame as [`suggest_genres`].",
+        "summary": "List tag suggestions",
+        "description": "Returns tag names attached to a manifestation the caller can see, ranked by prefix match against `q` and then by similarity. Scoped to the caller's own visible library. Returns 400 for a malformed `limit`, 401 when unauthenticated, and 422 when `q` is empty or longer than 100 characters.",
         "operationId": "suggest_tags",
         "parameters": [
           {
@@ -4022,8 +4022,8 @@
         "tags": [
           "tokens"
         ],
-        "summary": "`GET /api/v1/tokens` — list the caller's active (non-revoked) tokens.",
-        "description": "# Errors\n- [`AppError::Internal`] on database errors.",
+        "summary": "List device tokens",
+        "description": "Returns the caller's active device tokens, without the plaintext credential or its stored hash. Returns 401 if authentication is missing.",
         "operationId": "list_tokens",
         "responses": {
           "200": {
@@ -4077,8 +4077,8 @@
         "tags": [
           "tokens"
         ],
-        "summary": "`POST /api/v1/tokens` — issue a new device token for the caller.",
-        "description": "# Errors\n- [`AppError::Validation`] when the trimmed name is empty or longer than\n  255 characters, the scope set is empty, `expires_in_days` is not one of\n  30/60/90/365, or the caller already has 10 active tokens.\n- [`AppError::Forbidden`] when a requested scope exceeds the caller's\n  role ceiling (e.g. a non-admin requesting `admin`).\n- [`AppError::Internal`] on database errors.",
+        "summary": "Create a device token",
+        "description": "Issues a device token for the caller and returns its Bearer credential exactly once; only its hash is persisted afterwards. Returns 401 if authentication is missing, 403 if a requested scope exceeds the caller's role, and 422 for an invalid `name`, an empty scope set, an invalid `expires_in_days`, or if the caller already has 10 active tokens.",
         "operationId": "create_token",
         "requestBody": {
           "content": {
@@ -4161,8 +4161,8 @@
         "tags": [
           "tokens"
         ],
-        "summary": "`DELETE /api/v1/tokens/{id}` — revoke one of the caller's tokens.",
-        "description": "# Errors\n- [`AppError::NotFound`] when the id does not exist, belongs to another\n  user, or is already revoked (ownership is not leaked).\n- [`AppError::Internal`] on database errors.",
+        "summary": "Revoke a device token",
+        "description": "Revokes one of the caller's device tokens by id. Returns 401 if authentication is missing, 403 if the caller's credential lacks the write scope, and 404 if the token does not exist, belongs to another user, or is already revoked.",
         "operationId": "revoke_token",
         "parameters": [
           {
@@ -4240,8 +4240,8 @@
         "tags": [
           "users"
         ],
-        "summary": "`GET /api/v1/users` — list all users (admin only).",
-        "description": "# Errors\n- [`AppError::Forbidden`] when the caller is not an admin.\n- [`AppError::Internal`] on database errors.",
+        "summary": "List users",
+        "description": "Returns every user, oldest first, capped at 500 rows. Admin only. Returns 401 if authentication is missing and 403 if the caller is not an admin.",
         "operationId": "list_users",
         "responses": {
           "200": {
@@ -4305,8 +4305,8 @@
         "tags": [
           "users"
         ],
-        "summary": "Create an account with an admin-typed initial password (admin only).",
-        "description": "This is the create-and-invite path: there is no invite email and no forced\nfirst-login change. The admin relays the password out-of-band; the user may\nself-service change it afterward.\n\n# Errors\n- [`AppError::Forbidden`] when the caller is not an admin or is a child.\n- [`AppError::Validation`] (422) on an invalid email or a password that\n  fails the policy (too short/long, too weak, or breached).\n- [`AppError::EmailConflict`] (409) when the email is already in use.\n- [`AppError::Internal`] on database errors.",
+        "summary": "Create a user",
+        "description": "Creates an account with an administrator-typed initial password, for the administrator to relay out of band. Admin only. Returns 401 if authentication is missing, 403 if the caller is not an admin or is a child, 409 if the email is already in use, and 422 for an invalid email or a password rejected by the password policy.",
         "operationId": "create_user",
         "requestBody": {
           "content": {
@@ -4399,8 +4399,8 @@
         "tags": [
           "users"
         ],
-        "summary": "`PATCH /api/v1/users/{id}` — update `display_name` / `email` (admin only).",
-        "description": "Does not bump `session_version`: neither `email` nor `display_name` gates\naccess (login identity is the OIDC `sub`, not email; see module-level\nsession-invalidation policy).\n\n# Errors\n- [`AppError::Forbidden`] when the caller is not an admin.\n- [`AppError::NotFound`] when the target user does not exist.\n- [`AppError::Validation`] when `display_name` is null or empty, when\n  `email` is not a valid RFC 5322 addr-spec (display-name and domain-literal\n  forms are rejected), or when `email` is already in use by another user.\n- [`AppError::Internal`] on database errors.",
+        "summary": "Update a user's name or email",
+        "description": "Updates the target user's `display_name` and `email` using JSON Merge Patch: an absent field is unchanged, and an explicit `null` clears `email` but is rejected for `display_name`. Neither field invalidates the target's sessions. Admin only. Returns 401 if authentication is missing, 403 if the caller is not an admin, 404 if the target does not exist, and 422 for a null or empty `display_name`, an invalid `email`, or an `email` already in use.",
         "operationId": "update_user",
         "parameters": [
           {
@@ -4506,8 +4506,8 @@
         "tags": [
           "users"
         ],
-        "summary": "Soft-disable or re-enable an account (admin only).",
-        "description": "Disabling stamps `disabled_at`, bumps the target's `session_version`\n(killing live sessions at once), and locks them out of every auth path;\nre-enabling clears it.\n\nLast-enabled-admin protection (TOCTOU-safe): when disabling an admin, all\nenabled admin rows are locked `FOR UPDATE` (same `ORDER BY id` order as\n[`update_role`]) and the request is rejected if it would leave zero enabled\nadmins. An admin cannot disable their own account.\n\n# Errors\n- [`AppError::Forbidden`] when the caller is not an admin or is a child.\n- [`AppError::Validation`] (422) on a self-disable attempt or when disabling\n  the last enabled admin.\n- [`AppError::NotFound`] when the target does not exist.\n- [`AppError::Internal`] on database errors.",
+        "summary": "Enable or disable an account",
+        "description": "Soft-disables or re-enables the target account. Disabling invalidates the target's active sessions; an administrator cannot disable their own account. Admin only. Returns 401 if authentication is missing, 403 if the caller is not an admin or is a child, 404 if the target does not exist, and 422 for a self-disable attempt or if disabling would leave zero enabled administrators.",
         "operationId": "update_account_status",
         "parameters": [
           {
@@ -4612,8 +4612,8 @@
         "tags": [
           "users"
         ],
-        "summary": "`PUT /api/v1/users/{id}/child-status` — toggle child status (admin only).",
-        "description": "When `is_child` is set to `true`, `role` is simultaneously set to\n`'child'` in the same transaction to satisfy `chk_child_role_sync`.\nWhen `is_child` is set to `false`, `role` is reverted to `'adult'` only\nif the current role is `'child'`; other roles (e.g. `'admin'`) are left\nunchanged to prevent privilege escalation through the child-status toggle.\n\nBumps `session_version` — child/adult visibility rules differ under\nRLS, so existing sessions must re-evaluate.\n\n# Errors\n- [`AppError::Forbidden`] when the caller is not an admin.\n- [`AppError::NotFound`] when the target user does not exist.\n- [`AppError::Validation`] with detail \"would leave zero admins\"\n  when marking an admin as child would remove the last admin.\n- [`AppError::Internal`] on database errors.",
+        "summary": "Change a user's child status",
+        "description": "Toggles whether child content-visibility rules apply to the target user and invalidates their active sessions. Enabling child status also sets the role to `child`; disabling it reverts `child` to `adult` and leaves other roles unchanged. Admin only. Returns 401 if authentication is missing, 403 if the caller is not an admin, 404 if the target does not exist, and 422 if marking the last administrator as a child would leave zero administrators, or the request body is invalid.",
         "operationId": "update_child_status",
         "parameters": [
           {
@@ -4718,8 +4718,8 @@
         "tags": [
           "users"
         ],
-        "summary": "Set a new password for a target account (admin only).",
-        "description": "Consistent with create: the admin types the password and hands it off; no\nPIN, no email. Bumps the target's `session_version` so their existing\nsessions are invalidated. Works for an OIDC-only account too (the local\ncredential is upserted).\n\n# Errors\n- [`AppError::Forbidden`] when the caller is not an admin or is a child.\n- [`AppError::Validation`] (422) when the password fails the policy.\n- [`AppError::NotFound`] when the target does not exist.\n- [`AppError::Internal`] on database errors.",
+        "summary": "Reset a user's password",
+        "description": "Sets a new password for the target account, for the administrator to relay out of band, and invalidates the target's active sessions. Admin only. Returns 401 if authentication is missing, 403 if the caller is not an admin or is a child, 404 if the target does not exist, and 422 if the password fails the password policy.",
         "operationId": "admin_reset_password",
         "parameters": [
           {
@@ -4817,8 +4817,8 @@
         "tags": [
           "users"
         ],
-        "summary": "`PUT /api/v1/users/{id}/role` — change a user's role (admin only).",
-        "description": "Last-admin protection: acquires `FOR UPDATE` on all admin rows\nbefore the demotion check to prevent TOCTOU races.\n\nBumps `session_version` for the target user in the same transaction\nso their active sessions are invalidated.\n\n# Errors\n- [`AppError::Forbidden`] when the caller is not an admin.\n- [`AppError::NotFound`] when the target user does not exist.\n- [`AppError::Validation`] with detail \"would leave zero admins\"\n  when the demotion would remove the last admin.\n- [`AppError::Validation`] with message \"cannot set role to child without\n  enabling child status first\" when `role = child` on an `is_child = false`\n  user, or \"cannot change role from child without disabling child status\n  first\" when setting a non-child role on an `is_child = true` user.\n- [`AppError::Internal`] on database errors.",
+        "summary": "Change a user's role",
+        "description": "Sets the target user's role and invalidates their active sessions. Admin only. Returns 401 if authentication is missing, 403 if the caller is not an admin, 404 if the target does not exist, and 422 if the change would leave zero administrators, conflicts with the target's child status, or the request body is invalid.",
         "operationId": "update_role",
         "parameters": [
           {
@@ -4923,8 +4923,8 @@
         "tags": [
           "library"
         ],
-        "summary": "`GET /api/v1/works/{id}` — work-level prose with every manifestation\nof that work the current user can see.",
-        "description": "`works` carries no RLS policy on its own; RLS lives on\n`manifestations`. The handler fetches the manifestations first\nunder the RLS transaction and treats an empty result as 404 — the\nsame row set drives both visibility gating and the response body,\nso an interleaved shelf-revoke or manifestation-delete between\nstatements (`PostgreSQL` `READ COMMITTED` per-statement snapshots)\ncannot leave the existence-not-leaked invariant in an \"EXISTS=true,\nrows=[]\" half-state. Without this, the handler could return 200\nwith `manifestations: []`, leaking the existence of the work row.\n\n# Errors\n- [`AppError::NotFound`] when the work is missing or every\n  manifestation is RLS-hidden (or the work row was deleted between\n  the manifestations fetch and the work fetch).\n- [`AppError::Internal`] on database errors.",
+        "summary": "Get a work's detail",
+        "description": "Returns work-level prose plus every manifestation of that work visible to the caller. Fails with `404` when the work is missing or every manifestation is hidden from the caller.",
         "operationId": "work_detail",
         "parameters": [
           {
@@ -4999,8 +4999,8 @@
         "tags": [
           "metadata"
         ],
-        "summary": "`GET /api/v1/works/{id}/metadata` — review queue across every\nmanifestation of a work, newest first.",
-        "description": "# Errors\n- [`AppError::Forbidden`] when the caller is a child account.\n- [`AppError::Internal`] on database errors.",
+        "summary": "List a work's metadata versions",
+        "description": "Returns the metadata review queue across every manifestation of a work, newest first; the list is empty when the work is missing or hidden from the caller. Available to adult accounts only, returning `403` for a child account.",
         "operationId": "get_work_metadata",
         "parameters": [
           {
@@ -5078,8 +5078,8 @@
         "tags": [
           "auth"
         ],
-        "summary": "`GET /auth/callback` — OIDC redirect target: validate state, exchange\nthe code, establish the session, and issue the CSRF synchronizer token.",
-        "description": "# Errors\n- [`AppError::Unauthorized`] when the anti-forgery state is missing or\n  mismatched, or the ID token fails validation.\n- [`AppError::Internal`] on token-exchange or session-storage failure.",
+        "summary": "Complete OIDC login",
+        "description": "Completes the OIDC authorization-code flow, establishes a session, and redirects to the app. No authentication is required to call it. Returns 400 for a malformed `code` or `state` query parameter and 401 if the anti-forgery state does not match or the ID token fails validation.",
         "operationId": "callback",
         "parameters": [
           {
@@ -5136,8 +5136,8 @@
         "tags": [
           "auth"
         ],
-        "summary": "`POST /auth/forgot-password`: start email-less PIN recovery.",
-        "description": "THREAT (codeguard #2): always returns a generic 200; the response never\nreveals whether the email exists. When it does, a fresh CSPRNG PIN is\ngenerated, prior active PINs for the user are superseded (at most one active\nPIN), the Argon2id hash row is persisted FIRST, then the clear PIN is written\nto a per-user operator-readable file (mode 0600). Both writes happen under one\nper-user issuance lock, so the published file always describes the single\nactive row even when another process issues concurrently. A failed file write\nleaves an unconsumed-but-unusable row that simply expires; it is never a\ncleartext PIN with no consuming row. On an unknown email, equivalent Argon2 work is spent so\ntiming does not leak existence (a small DB/file residual is\naccepted).\n\n# Errors\n- [`AppError::NotFound`] when local authentication is disabled.\n- [`AppError::RateLimited`] (429) when the per-source limit is exceeded.\n- [`AppError::Internal`] on hashing or database failure.",
+        "summary": "Start password recovery",
+        "description": "Starts PIN-based password recovery for the given email and always returns the same generic response so it cannot be used to determine whether an account exists. No authentication is required to call it. Returns 404 if local authentication is disabled and 429 when too many requests have been made.",
         "operationId": "forgot_password",
         "requestBody": {
           "content": {
@@ -5184,8 +5184,8 @@
         "tags": [
           "auth"
         ],
-        "summary": "`POST /auth/local/login`: email + password sign-in, establishing the same\nsession contract as the OIDC callback.",
-        "description": "THREAT (enumeration): unknown email and wrong password return the identical\ngeneric 422, and both spend equivalent Argon2 work, so neither\nthe response nor the timing distinguishes a non-existent account.\n\n# Errors\n- [`AppError::NotFound`] when local authentication is disabled.\n- [`AppError::RateLimited`] (429) when the per-source limit is exceeded, or a\n  failed attempt arrives during an active per-account backoff.\n- [`AppError::Validation`] (422) on bad credentials (generic; no enumeration).\n- [`AppError::Internal`] on session-store or database failure.",
+        "summary": "Sign in with email and password",
+        "description": "Authenticates with `email` and `password` and establishes a session. No authentication is required to call it. Returns 404 if local authentication is disabled, 422 for invalid credentials, and 429 when too many attempts have been made.",
         "operationId": "local_login",
         "requestBody": {
           "content": {
@@ -5242,8 +5242,8 @@
         "tags": [
           "auth"
         ],
-        "summary": "`POST /auth/logout` — destroy the current session (idempotent).",
-        "description": "Public per the OpenAPI security scheme (no session is required to call\nit), but a session-authenticated caller is still a mutating request under\n[`crate::security::csrf::csrf_required`], which runs ahead of this\nhandler and enforces the synchronizer token.\n\n# Errors\n- [`AppError::CsrfMissing`] (428) when a session-authenticated caller\n  sends no `X-CSRF-Token` header.\n- [`AppError::CsrfMismatch`] (403) when the header does not match the\n  session-stored token.\n- [`AppError::Internal`] when the session store read (CSRF check) or\n  session deletion fails.",
+        "summary": "Sign out",
+        "description": "Destroys the caller's session, if any; calling it without a session is a no-op. No authentication is required to call it, but a session-authenticated caller must send a valid `X-CSRF-Token` header. Returns 428 if that header is missing and 403 if it does not match the session's token.",
         "operationId": "logout",
         "responses": {
           "204": {
@@ -5280,8 +5280,8 @@
         "tags": [
           "auth"
         ],
-        "summary": "`GET /auth/me` — the authenticated caller's profile + CSRF token.",
-        "description": "# Errors\n- [`AppError::Unauthorized`] when the session user no longer exists.\n- [`AppError::Internal`] on database or session-store errors.",
+        "summary": "Get the current profile",
+        "description": "Returns the authenticated caller's profile, including the `csrf_token` to echo back as `X-CSRF-Token` on unsafe requests (`null` for sessions authenticated with OPDS Basic auth). Returns 401 if authentication is missing.",
         "operationId": "me",
         "responses": {
           "200": {
@@ -5312,8 +5312,8 @@
         "tags": [
           "auth"
         ],
-        "summary": "`GET /auth/me/preferences`: the caller's display preferences.",
-        "description": "An account with no row reads as all-null overrides. The read is\ndeliberately non-materialising: rows appear on first write, so \"has this\nuser customised anything?\" stays answerable.\n\n# Errors\n- [`AppError::Internal`] on database errors.",
+        "summary": "Get the caller's library preferences",
+        "description": "Returns the caller's overrides for hidden columns, row density, view, and default sort, alongside the installation defaults; a `null` group means the default applies. An account with no stored row reads as all-null overrides. Returns 401 when unauthenticated.",
         "operationId": "get_preferences",
         "responses": {
           "200": {
@@ -5364,8 +5364,8 @@
         "tags": [
           "auth"
         ],
-        "summary": "`PATCH /auth/me/preferences`: merge a partial update into the caller's\npreferences, creating the row on first write.",
-        "description": "Last write wins, with no precondition header. A preferences row is\nwritten by exactly one person, so the only possible conflict is between\ntwo of that person's own tabs, where the later click is the intended\noutcome. Two tabs can therefore drift until one of them reloads; nothing\nis silently corrupted, and no partial merge is ever persisted, because\nthe whole patch is applied in one statement.\n\n# Errors\n- [`AppError::Validation`] when the body names no group, carries an\n  unknown density or view, submits a `sort_stack` outside the whitelisted\n  grammar, or submits column keys that are too many or out of shape.\n- [`AppError::Internal`] on database errors.",
+        "summary": "Update the caller's library preferences",
+        "description": "Applies a JSON Merge Patch to the caller's hidden columns, row density, view, and default sort: an absent group is left unchanged and an explicit `null` resets it to the installation default. At least one group is required. Returns 401 when unauthenticated and 422 for an empty body, an unknown density or view, or an out-of-range sort stack or column key.",
         "operationId": "patch_preferences",
         "requestBody": {
           "description": "RFC 7396 JSON Merge Patch: absent groups are unchanged, `null` resets a group to the installation default",
@@ -5439,8 +5439,8 @@
         "tags": [
           "auth"
         ],
-        "summary": "`PATCH /auth/me/theme` — persist the caller's theme preference and\nrefresh the FOUC theme cookie.",
-        "description": "# Errors\n- [`AppError::Internal`] on database errors.",
+        "summary": "Set the theme preference",
+        "description": "Persists the caller's theme preference and refreshes the `reverie_theme` cookie. Returns 401 if authentication is missing and 422 for an unknown `theme_preference` value.",
         "operationId": "update_theme",
         "requestBody": {
           "content": {
@@ -5491,8 +5491,8 @@
         "tags": [
           "auth"
         ],
-        "summary": "`GET /auth/oidc/login`: start the OIDC authorization-code + PKCE flow.",
-        "description": "Renamed from `/auth/login` so the user-facing login page (a SPA route served\nat `/login`) does not collide with this auth-protocol endpoint; `/auth/*` is\nthe auth API namespace. The OIDC callback path deliberately stays\n`/auth/callback` (NOT `/auth/oidc/callback`) so operators need not reconfigure\n`OIDC_REDIRECT_URI` at their `IdP`.\n\n# Errors\n- [`AppError::NotFound`] when OIDC is not configured.\n- [`AppError::Internal`] when session storage fails.",
+        "summary": "Start OIDC login",
+        "description": "Redirects to the configured OIDC provider to begin the authorization-code flow. No authentication is required to call it. Returns 404 if OIDC is not configured on this instance.",
         "operationId": "oidc_login",
         "responses": {
           "307": {
@@ -5519,8 +5519,8 @@
         "tags": [
           "auth"
         ],
-        "summary": "`POST /auth/register`: config-gated self-service registration.",
-        "description": "Gated on `self_registration_enabled` (404 when off) AND `local_auth_enabled`.\nUnauthenticated and repeatable, and each call fires an Argon2 hash plus an\noutbound HIBP request, so the per-source rate limit is enforced BEFORE any\npolicy/hash/breach work, as in `forgot_password`/`reset_password`. `setup`\ntakes the same limit for the pre-bootstrap window, where its 409 fast-reject\ndoes not yet apply.\n\nTHREAT (privilege escalation): a self-registered account is\nalways an `adult`, never an admin or child. The DTO carries no role, and\n`create_local` is called with [`Role::Adult`]; admin and child accounts are\nminted only by an existing administrator. No session is established (parity\nwith setup/reset: the session contract lives only at `/auth/local/login`).\n\n# Errors\n- [`AppError::NotFound`] when self-registration or local auth is disabled.\n- [`AppError::RateLimited`] (429) when the per-source limit is exceeded.\n- [`AppError::Validation`] (422) on a malformed email or a policy failure.\n- [`AppError::EmailConflict`] (409) when the email is already in use.\n- [`AppError::Internal`] on hashing or database failure.",
+        "summary": "Register a new account",
+        "description": "Creates a new account with the `adult` role and does not sign the caller in. No authentication is required to call it. Returns 404 if self-registration or local authentication is disabled, 409 if the email is already in use, 422 for an invalid email or a password that fails the password policy, and 429 when too many requests have been made.",
         "operationId": "register",
         "requestBody": {
           "content": {
@@ -5587,8 +5587,8 @@
         "tags": [
           "auth"
         ],
-        "summary": "`POST /auth/reset-password`: complete recovery with a PIN.",
-        "description": "THREAT (codeguard #2): the PIN is single-use (race-safe consume), short-lived,\nand verified constant-time via Argon2. Any failure (unknown email, no active\nPIN, wrong PIN, expired, too-short password) returns one generic 422, so the\nresponse never distinguishes which part failed; the no-PIN path spends\nequivalent work. Reset does NOT establish a session (no auto-login). Consuming\nthe PIN, writing the new credential, and bumping `session_version` (which\ninvalidates every session predating the reset) run in one transaction, so a\npartial apply cannot leave the account locked out or a stale session live.\nThe PIN file is removed after the transaction commits.\n\n# Errors\n- [`AppError::NotFound`] when local authentication is disabled.\n- [`AppError::RateLimited`] (429) when the per-source limit is exceeded.\n- [`AppError::Validation`] (422) generic failure.\n- [`AppError::Internal`] on hashing or database failure.",
+        "summary": "Reset password with a PIN",
+        "description": "Completes password recovery using the PIN issued by `/auth/forgot-password` and does not sign the caller in. No authentication is required to call it. Returns 404 if local authentication is disabled, 422 for an invalid or expired PIN, unknown email, or a new password that fails the password policy, and 429 when too many requests have been made.",
         "operationId": "reset_password",
         "requestBody": {
           "content": {
@@ -5645,8 +5645,8 @@
         "tags": [
           "auth"
         ],
-        "summary": "`POST /auth/setup`: first-run bootstrap: mint the first administrator.",
-        "description": "THREAT: bootstrap is the ONLY first-admin path. The race\nguarantee is the DB `instance_bootstrap` singleton insert inside\n[`user::create_first_admin`], NOT this `admin_exists` pre-check (which is only\na cheap fast-reject; a `SELECT EXISTS ... INSERT` does not serialize under\nREAD COMMITTED). A second concurrent setup loses the marker-row race and maps\nto 409. Setup does NOT auto-login (parity with recovery; the session contract\nlives only at `/auth/local/login`).\n\nRate-limited per source like the repeatable pre-auth handlers, despite\nsucceeding only once. The 409 fast-reject bounds this endpoint only after an\nadministrator exists; before that, every call reaches the Argon2 hash, so an\nun-bootstrapped instance would otherwise grind on demand for anyone who can\nreach it. The limit is enforced first, ahead of the `admin_exists` query.\n\n# Errors\n- [`AppError::RateLimited`] (429) when the per-source limit is exceeded.\n- [`AppError::SetupAlreadyComplete`] (409) when an administrator already\n  exists (fast-reject or the marker-row race).\n- [`AppError::Validation`] (422) on a malformed email or too-short password.\n- [`AppError::Internal`] on hashing or database failure.",
+        "summary": "Create the first administrator",
+        "description": "Creates the first administrator account during initial setup and does not sign the caller in. No authentication is required to call it. Returns 409 if an administrator already exists, 422 for an invalid email or a password that is too short, and 429 when too many requests have been made.",
         "operationId": "setup",
         "requestBody": {
           "content": {
@@ -5703,8 +5703,8 @@
         "tags": [
           "auth"
         ],
-        "summary": "`GET /auth/setup/status`: public provider/bootstrap state for the SPA.",
-        "description": "# Errors\n- [`AppError::Internal`] on database failure.",
+        "summary": "Get setup status",
+        "description": "Returns whether initial setup is required and which sign-in providers are enabled, for the sign-in page to decide what to show. No authentication is required to call it.",
         "operationId": "setup_status",
         "responses": {
           "200": {
@@ -5728,7 +5728,8 @@
         "tags": [
           "health"
         ],
-        "summary": "Liveness probe: returns `200 ok` as soon as the process is serving.",
+        "summary": "Check liveness",
+        "description": "Returns 200 with a plain-text body as soon as the process is serving requests. Unauthenticated and outside `/api/v1` by design.",
         "operationId": "health",
         "responses": {
           "200": {
@@ -5752,8 +5753,8 @@
         "tags": [
           "health"
         ],
-        "summary": "Readiness probe: pings the application pool with `SELECT 1` and returns\n`503` with an RFC 9457 body while the database is unreachable so\norchestrators withhold traffic.",
-        "description": "# Errors\n\nReturns a 503 [`ProblemDetails`] if the `SELECT 1` liveness query against\nthe application pool fails.",
+        "summary": "Check readiness",
+        "description": "Pings the application database and returns 200 with a plain-text body when it is reachable, or 503 when it is not, so orchestrators can withhold traffic. Unauthenticated and outside `/api/v1` by design.",
         "operationId": "ready",
         "responses": {
           "200": {
@@ -5787,8 +5788,8 @@
         "tags": [
           "opds"
         ],
-        "summary": "`GET /opds` — catalog root: navigation feed linking `/opds/library`\nand every shelf owned by the authenticated user.",
-        "description": "# Errors\n- [`AppError::Internal`] on database errors or unconfigured base URL.",
+        "summary": "Get the OPDS catalog root",
+        "description": "Returns an OPDS navigation feed linking the library catalogue and every shelf owned by the caller. Requires HTTP Basic authentication (401).",
         "operationId": "opds_root",
         "responses": {
           "200": {
@@ -5824,8 +5825,8 @@
         "tags": [
           "opds"
         ],
-        "summary": "`GET /opds/books/{id}/cover` — full-size cover, Basic auth.",
-        "description": "# Errors\n- [`AppError::NotFound`] when the manifestation is missing, RLS-hidden,\n  or has no cover.\n- [`AppError::Internal`] on cover-generation or file IO errors.",
+        "summary": "Get a book's cover",
+        "description": "Streams the full-size cover image for a manifestation as `image/jpeg` or `image/png`, with a strong `ETag` and a day-long `Cache-Control`. Requires HTTP Basic authentication (401), returns 304 when `If-None-Match` matches the current `ETag`, and 404 when the manifestation is missing, hidden from the caller, or has no cover.",
         "operationId": "opds_cover",
         "parameters": [
           {
@@ -5879,8 +5880,8 @@
         "tags": [
           "opds"
         ],
-        "summary": "`GET /opds/books/{id}/cover/thumb` — thumbnail cover, Basic auth.",
-        "description": "# Errors\nSee [`opds_cover`].",
+        "summary": "Get a book's cover thumbnail",
+        "description": "Streams the thumbnail cover image for a manifestation as `image/jpeg`, with a strong `ETag` and a day-long `Cache-Control`. Requires HTTP Basic authentication (401), returns 304 when `If-None-Match` matches the current `ETag`, and 404 when the manifestation is missing, hidden from the caller, or has no cover.",
         "operationId": "opds_cover_thumb",
         "parameters": [
           {
@@ -5934,8 +5935,8 @@
         "tags": [
           "opds"
         ],
-        "summary": "Streamed EPUB download.",
-        "description": "The response carries an RFC 6266 `Content-Disposition: attachment` header\nwhose filename is derived from the work title (ASCII fallback plus RFC 5987\nUTF-8 form).\n\n# Errors\n- [`AppError::NotFound`] when the manifestation is missing, RLS-hidden,\n  or its file is gone from disk.\n- [`AppError::Forbidden`] when the on-disk path escapes the configured\n  library root (canonicalisation guard).\n- [`AppError::Internal`] on database or file IO errors.",
+        "summary": "Download an EPUB",
+        "description": "Streams the EPUB file for a manifestation, with a `Content-Disposition: attachment` header carrying a title-derived filename. Requires HTTP Basic authentication (401), returns 403 if the file's on-disk path escapes the configured library root, and 404 when the manifestation is missing, hidden from the caller, or its file is absent from disk.",
         "operationId": "download_epub",
         "parameters": [
           {
@@ -5999,8 +6000,8 @@
         "tags": [
           "opds"
         ],
-        "summary": "`GET /opds/library` — library subcatalog navigation root.",
-        "description": "# Errors\n- [`AppError::Internal`] when the OPDS base URL is unconfigured.",
+        "summary": "Get the library navigation feed",
+        "description": "Returns an OPDS navigation feed linking the New, Authors and Series subcatalogues for the caller's whole library. Requires HTTP Basic authentication (401).",
         "operationId": "library_root",
         "responses": {
           "200": {
@@ -6036,8 +6037,8 @@
         "tags": [
           "opds"
         ],
-        "summary": "`GET /opds/library/authors` — author index, cursor-paginated.",
-        "description": "# Errors\n- [`AppError::Validation`] on a malformed cursor.\n- [`AppError::Internal`] on database errors or unconfigured base URL.",
+        "summary": "List authors",
+        "description": "Returns an OPDS navigation feed of authors with at least one visible book, cursor-paginated via `cursor`. Requires HTTP Basic authentication (401) and returns 400 for a malformed query parameter or 422 for an invalid cursor.",
         "operationId": "library_authors",
         "parameters": [
           {
@@ -6104,8 +6105,8 @@
         "tags": [
           "opds"
         ],
-        "summary": "`GET /opds/library/authors/{id}` — one author's books,\ncursor-paginated.",
-        "description": "# Errors\n- [`AppError::Validation`] on a malformed cursor.\n- [`AppError::Internal`] on database errors or unconfigured base URL.",
+        "summary": "List an author's books",
+        "description": "Returns an OPDS acquisition feed of one author's visible books, cursor-paginated via `cursor` (empty if the author is unknown). Requires HTTP Basic authentication (401) and returns 400 for a malformed query parameter or 422 for an invalid cursor.",
         "operationId": "library_author_books",
         "parameters": [
           {
@@ -6182,8 +6183,8 @@
         "tags": [
           "opds"
         ],
-        "summary": "`GET /opds/library/new` — newest books, cursor-paginated.",
-        "description": "# Errors\n- [`AppError::Validation`] on a malformed cursor.\n- [`AppError::Internal`] on database errors or unconfigured base URL.",
+        "summary": "List the newest books",
+        "description": "Returns an OPDS acquisition feed of the newest visible books, newest first, cursor-paginated via `cursor`. Requires HTTP Basic authentication (401) and returns 400 for a malformed query parameter or 422 for an invalid cursor.",
         "operationId": "library_new",
         "parameters": [
           {
@@ -6250,8 +6251,8 @@
         "tags": [
           "opds"
         ],
-        "summary": "`GET /opds/library/opensearch.xml` — `OpenSearch` descriptor whose\nsearch template targets the library-wide `/opds/library/search`.",
-        "description": "# Errors\n- [`AppError::Internal`] when the OPDS base URL is unconfigured.",
+        "summary": "Get the library search descriptor",
+        "description": "Returns an OpenSearch descriptor whose search template targets the library-wide search feed. Requires HTTP Basic authentication (401).",
         "operationId": "library_opensearch",
         "responses": {
           "200": {
@@ -6287,8 +6288,8 @@
         "tags": [
           "opds"
         ],
-        "summary": "`GET /opds/library/search` — full-text search over visible books.",
-        "description": "# Errors\n- [`AppError::Internal`] on database errors or unconfigured base URL.",
+        "summary": "Search the library",
+        "description": "Returns an OPDS acquisition feed of full-text search results over visible books, using the `q` query parameter; an empty or whitespace-only `q` yields an empty feed. Requires HTTP Basic authentication (401) and returns 400 for a malformed query parameter.",
         "operationId": "library_search",
         "parameters": [
           {
@@ -6345,8 +6346,8 @@
         "tags": [
           "opds"
         ],
-        "summary": "`GET /opds/library/series` — series index, cursor-paginated.",
-        "description": "# Errors\n- [`AppError::Validation`] on a malformed cursor.\n- [`AppError::Internal`] on database errors or unconfigured base URL.",
+        "summary": "List series",
+        "description": "Returns an OPDS navigation feed of series with at least one visible book, cursor-paginated via `cursor`. Requires HTTP Basic authentication (401) and returns 400 for a malformed query parameter or 422 for an invalid cursor.",
         "operationId": "library_series",
         "parameters": [
           {
@@ -6413,8 +6414,8 @@
         "tags": [
           "opds"
         ],
-        "summary": "`GET /opds/library/series/{id}` — one series' books, in series order,\ncursor-paginated.",
-        "description": "# Errors\n- [`AppError::Validation`] on a malformed cursor.\n- [`AppError::Internal`] on database errors or unconfigured base URL.",
+        "summary": "List a series' books",
+        "description": "Returns an OPDS acquisition feed of one series' visible books, in series order (empty if the series is unknown). Requires HTTP Basic authentication (401) and returns 400 for a malformed query parameter or 422 for an invalid cursor.",
         "operationId": "library_series_books",
         "parameters": [
           {
@@ -6491,8 +6492,8 @@
         "tags": [
           "opds"
         ],
-        "summary": "`GET /opds/shelves/{shelf_id}` — shelf subcatalog navigation root.",
-        "description": "# Errors\n- [`AppError::NotFound`] when the shelf is missing or not owned by the\n  caller (existence not leaked).\n- [`AppError::Internal`] on database errors or unconfigured base URL.",
+        "summary": "Get a shelf's navigation feed",
+        "description": "Returns an OPDS navigation feed linking a shelf's New, Authors and Series subcatalogues. Requires HTTP Basic authentication (401) and returns 404 if the shelf does not exist or is not owned by the caller.",
         "operationId": "shelf_root",
         "parameters": [
           {
@@ -6550,8 +6551,8 @@
         "tags": [
           "opds"
         ],
-        "summary": "`GET /opds/shelves/{shelf_id}/authors` — the shelf's author index,\ncursor-paginated.",
-        "description": "# Errors\n- [`AppError::NotFound`] when the shelf is missing or not owned by the\n  caller (existence not leaked).\n- [`AppError::Validation`] on a malformed cursor.\n- [`AppError::Internal`] on database errors or unconfigured base URL.",
+        "summary": "List authors on a shelf",
+        "description": "Returns an OPDS navigation feed of authors with at least one book on the shelf, cursor-paginated via `cursor`. Requires HTTP Basic authentication (401), returns 404 for a shelf the caller does not own, 400 for a malformed query parameter and 422 for an invalid cursor.",
         "operationId": "shelf_authors",
         "parameters": [
           {
@@ -6638,8 +6639,8 @@
         "tags": [
           "opds"
         ],
-        "summary": "`GET /opds/shelves/{shelf_id}/authors/{author_id}` — one author's books\non the shelf, cursor-paginated.",
-        "description": "# Errors\n- [`AppError::NotFound`] when the shelf is missing or not owned by the\n  caller (existence not leaked).\n- [`AppError::Validation`] on a malformed cursor.\n- [`AppError::Internal`] on database errors or unconfigured base URL.",
+        "summary": "List an author's books on a shelf",
+        "description": "Returns an OPDS acquisition feed of one author's books on the shelf, cursor-paginated via `cursor` (empty if the author is unknown). Requires HTTP Basic authentication (401), returns 404 for a shelf the caller does not own, 400 for a malformed query parameter and 422 for an invalid cursor.",
         "operationId": "shelf_author_books",
         "parameters": [
           {
@@ -6736,8 +6737,8 @@
         "tags": [
           "opds"
         ],
-        "summary": "`GET /opds/shelves/{shelf_id}/new` — the shelf's newest books,\ncursor-paginated.",
-        "description": "# Errors\n- [`AppError::NotFound`] when the shelf is missing or not owned by the\n  caller (existence not leaked).\n- [`AppError::Validation`] on a malformed cursor.\n- [`AppError::Internal`] on database errors or unconfigured base URL.",
+        "summary": "List a shelf's newest books",
+        "description": "Returns an OPDS acquisition feed of the shelf's most recently added books, newest first, cursor-paginated via `cursor`. Requires HTTP Basic authentication (401), returns 404 for a shelf the caller does not own, 400 for a malformed query parameter and 422 for an invalid cursor.",
         "operationId": "shelf_new",
         "parameters": [
           {
@@ -6824,8 +6825,8 @@
         "tags": [
           "opds"
         ],
-        "summary": "`GET /opds/shelves/{shelf_id}/opensearch.xml` — `OpenSearch` descriptor\nwhose search template is scoped to the shelf.",
-        "description": "# Errors\n- [`AppError::NotFound`] when the shelf is missing or not owned by the\n  caller (existence not leaked).\n- [`AppError::Internal`] on database errors or unconfigured base URL.",
+        "summary": "Get a shelf's search descriptor",
+        "description": "Returns an OpenSearch descriptor whose search template is scoped to the shelf. Requires HTTP Basic authentication (401) and returns 404 if the shelf does not exist or is not owned by the caller.",
         "operationId": "shelf_opensearch",
         "parameters": [
           {
@@ -6883,8 +6884,8 @@
         "tags": [
           "opds"
         ],
-        "summary": "`GET /opds/shelves/{shelf_id}/search` — full-text search over the\nshelf's books.",
-        "description": "# Errors\n- [`AppError::NotFound`] when the shelf is missing or not owned by the\n  caller (existence not leaked).\n- [`AppError::Internal`] on database errors or unconfigured base URL.",
+        "summary": "Search a shelf",
+        "description": "Returns an OPDS acquisition feed of full-text search results scoped to the shelf, using the `q` query parameter; an empty or whitespace-only `q` yields an empty feed. Requires HTTP Basic authentication (401), returns 404 for a shelf the caller does not own and 400 for a malformed query parameter.",
         "operationId": "shelf_search",
         "parameters": [
           {
@@ -6961,8 +6962,8 @@
         "tags": [
           "opds"
         ],
-        "summary": "`GET /opds/shelves/{shelf_id}/series` — the shelf's series index,\ncursor-paginated.",
-        "description": "# Errors\n- [`AppError::NotFound`] when the shelf is missing or not owned by the\n  caller (existence not leaked).\n- [`AppError::Validation`] on a malformed cursor.\n- [`AppError::Internal`] on database errors or unconfigured base URL.",
+        "summary": "List series on a shelf",
+        "description": "Returns an OPDS navigation feed of series with at least one book on the shelf, cursor-paginated via `cursor`. Requires HTTP Basic authentication (401), returns 404 for a shelf the caller does not own, 400 for a malformed query parameter and 422 for an invalid cursor.",
         "operationId": "shelf_series",
         "parameters": [
           {
@@ -7049,8 +7050,8 @@
         "tags": [
           "opds"
         ],
-        "summary": "`GET /opds/shelves/{shelf_id}/series/{series_id}` — one series' books\non the shelf, in series order, cursor-paginated.",
-        "description": "# Errors\n- [`AppError::NotFound`] when the shelf is missing or not owned by the\n  caller (existence not leaked).\n- [`AppError::Validation`] on a malformed cursor.\n- [`AppError::Internal`] on database errors or unconfigured base URL.",
+        "summary": "List a series' books on a shelf",
+        "description": "Returns an OPDS acquisition feed of one series' books on the shelf, in series order (empty if the series is unknown). Requires HTTP Basic authentication (401), returns 404 for a shelf the caller does not own, 400 for a malformed query parameter and 422 for an invalid cursor.",
         "operationId": "shelf_series_books",
         "parameters": [
           {

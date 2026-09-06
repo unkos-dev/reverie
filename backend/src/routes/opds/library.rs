@@ -62,6 +62,8 @@ pub fn router() -> OpenApiRouter<AppState> {
 #[utoipa::path(
     get,
     path = "/opds/library",
+    summary = "Get the library navigation feed",
+    description = "Returns an OPDS navigation feed linking the New, Authors and Series subcatalogues for the caller's whole library. Requires HTTP Basic authentication (401).",
     tag = "opds",
     security(("opds_basic" = [])),
     responses(
@@ -124,6 +126,8 @@ pub struct PageParams {
 #[utoipa::path(
     get,
     path = "/opds/library/new",
+    summary = "List the newest books",
+    description = "Returns an OPDS acquisition feed of the newest visible books, newest first, cursor-paginated via `cursor`. Requires HTTP Basic authentication (401) and returns 400 for a malformed query parameter or 422 for an invalid cursor.",
     tag = "opds",
     security(("opds_basic" = [])),
     params(PageParams),
@@ -161,6 +165,8 @@ async fn library_new(
 #[utoipa::path(
     get,
     path = "/opds/library/authors",
+    summary = "List authors",
+    description = "Returns an OPDS navigation feed of authors with at least one visible book, cursor-paginated via `cursor`. Requires HTTP Basic authentication (401) and returns 400 for a malformed query parameter or 422 for an invalid cursor.",
     tag = "opds",
     security(("opds_basic" = [])),
     params(PageParams),
@@ -199,6 +205,8 @@ async fn library_authors(
 #[utoipa::path(
     get,
     path = "/opds/library/authors/{id}",
+    summary = "List an author's books",
+    description = "Returns an OPDS acquisition feed of one author's visible books, cursor-paginated via `cursor` (empty if the author is unknown). Requires HTTP Basic authentication (401) and returns 400 for a malformed query parameter or 422 for an invalid cursor.",
     tag = "opds",
     security(("opds_basic" = [])),
     params(("id" = Uuid, Path, description = "Author id"), PageParams),
@@ -238,6 +246,8 @@ async fn library_author_books(
 #[utoipa::path(
     get,
     path = "/opds/library/series",
+    summary = "List series",
+    description = "Returns an OPDS navigation feed of series with at least one visible book, cursor-paginated via `cursor`. Requires HTTP Basic authentication (401) and returns 400 for a malformed query parameter or 422 for an invalid cursor.",
     tag = "opds",
     security(("opds_basic" = [])),
     params(PageParams),
@@ -276,6 +286,8 @@ async fn library_series(
 #[utoipa::path(
     get,
     path = "/opds/library/series/{id}",
+    summary = "List a series' books",
+    description = "Returns an OPDS acquisition feed of one series' visible books, in series order (empty if the series is unknown). Requires HTTP Basic authentication (401) and returns 400 for a malformed query parameter or 422 for an invalid cursor.",
     tag = "opds",
     security(("opds_basic" = [])),
     params(("id" = Uuid, Path, description = "Series id"), PageParams),
@@ -324,6 +336,8 @@ pub struct SearchParams {
 #[utoipa::path(
     get,
     path = "/opds/library/search",
+    summary = "Search the library",
+    description = "Returns an OPDS acquisition feed of full-text search results over visible books, using the `q` query parameter; an empty or whitespace-only `q` yields an empty feed. Requires HTTP Basic authentication (401) and returns 400 for a malformed query parameter.",
     tag = "opds",
     security(("opds_basic" = [])),
     params(SearchParams),

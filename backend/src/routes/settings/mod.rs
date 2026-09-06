@@ -65,6 +65,8 @@ struct SettingsResponse {
 #[utoipa::path(
     get,
     path = "/api/v1/settings",
+    summary = "Get settings",
+    description = "Returns the currently persisted application settings, including the fields that only take effect after a process restart and the timestamp of the last successful live-reload. Admin only. Returns 401 when unauthenticated and 403 when the caller is not an admin.",
     tag = "settings",
     security(("session_cookie" = ["admin"]), ("device_token_bearer" = ["admin"]), ("oidc_jwt_bearer" = ["admin"]), ("opds_basic" = ["admin"])),
     responses(
@@ -117,6 +119,8 @@ struct PutSettingsResponse {
 #[utoipa::path(
     put,
     path = "/api/v1/settings",
+    summary = "Update settings",
+    description = "Applies a JSON Merge Patch to the application settings: fields absent from the body are left unchanged, and at least one field is required. Returns the updated settings and whether the change needs a process restart to take effect. Admin only. Returns 401 when unauthenticated, 403 when the caller is not an admin, and 422 for an empty patch, a malformed body, or invalid field values.",
     tag = "settings",
     request_body(content = UpdateSettings, description = "RFC 7396 JSON Merge Patch: absent fields are unchanged; at least one field is required"),
     security(("session_cookie" = ["admin"]), ("device_token_bearer" = ["admin"]), ("oidc_jwt_bearer" = ["admin"]), ("opds_basic" = ["admin"])),

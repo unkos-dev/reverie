@@ -116,6 +116,8 @@ const MAX_LISTED_USERS: i64 = 500;
 #[utoipa::path(
     get,
     path = "/api/v1/users",
+    summary = "List users",
+    description = "Returns every user, oldest first, capped at 500 rows. Admin only. Returns 401 if authentication is missing and 403 if the caller is not an admin.",
     tag = "users",
     security(("session_cookie" = ["admin"]), ("device_token_bearer" = ["admin"]), ("oidc_jwt_bearer" = ["admin"]), ("opds_basic" = ["admin"])),
     responses(
@@ -181,6 +183,8 @@ struct UpdateRoleRequest {
 #[utoipa::path(
     put,
     path = "/api/v1/users/{id}/role",
+    summary = "Change a user's role",
+    description = "Sets the target user's role and invalidates their active sessions. Admin only. Returns 401 if authentication is missing, 403 if the caller is not an admin, 404 if the target does not exist, and 422 if the change would leave zero administrators, conflicts with the target's child status, or the request body is invalid.",
     tag = "users",
     security(("session_cookie" = ["admin"]), ("device_token_bearer" = ["admin"]), ("oidc_jwt_bearer" = ["admin"]), ("opds_basic" = ["admin"])),
     params(("id" = Uuid, Path, description = "Target user id")),
@@ -304,6 +308,8 @@ struct UpdateChildStatusRequest {
 #[utoipa::path(
     put,
     path = "/api/v1/users/{id}/child-status",
+    summary = "Change a user's child status",
+    description = "Toggles whether child content-visibility rules apply to the target user and invalidates their active sessions. Enabling child status also sets the role to `child`; disabling it reverts `child` to `adult` and leaves other roles unchanged. Admin only. Returns 401 if authentication is missing, 403 if the caller is not an admin, 404 if the target does not exist, and 422 if marking the last administrator as a child would leave zero administrators, or the request body is invalid.",
     tag = "users",
     security(("session_cookie" = ["admin"]), ("device_token_bearer" = ["admin"]), ("oidc_jwt_bearer" = ["admin"]), ("opds_basic" = ["admin"])),
     params(("id" = Uuid, Path, description = "Target user id")),
@@ -427,6 +433,8 @@ struct CreateUserRequest {
 #[utoipa::path(
     post,
     path = "/api/v1/users",
+    summary = "Create a user",
+    description = "Creates an account with an administrator-typed initial password, for the administrator to relay out of band. Admin only. Returns 401 if authentication is missing, 403 if the caller is not an admin or is a child, 409 if the email is already in use, and 422 for an invalid email or a password rejected by the password policy.",
     tag = "users",
     security(("session_cookie" = ["admin"]), ("device_token_bearer" = ["admin"]), ("oidc_jwt_bearer" = ["admin"]), ("opds_basic" = ["admin"])),
     request_body = CreateUserRequest,
@@ -508,6 +516,8 @@ struct AccountStatusRequest {
 #[utoipa::path(
     put,
     path = "/api/v1/users/{id}/account-status",
+    summary = "Enable or disable an account",
+    description = "Soft-disables or re-enables the target account. Disabling invalidates the target's active sessions; an administrator cannot disable their own account. Admin only. Returns 401 if authentication is missing, 403 if the caller is not an admin or is a child, 404 if the target does not exist, and 422 for a self-disable attempt or if disabling would leave zero enabled administrators.",
     tag = "users",
     security(("session_cookie" = ["admin"]), ("device_token_bearer" = ["admin"]), ("oidc_jwt_bearer" = ["admin"]), ("opds_basic" = ["admin"])),
     params(("id" = Uuid, Path, description = "Target user id")),
@@ -634,6 +644,8 @@ struct AdminPasswordResetRequest {
 #[utoipa::path(
     post,
     path = "/api/v1/users/{id}/password-reset",
+    summary = "Reset a user's password",
+    description = "Sets a new password for the target account, for the administrator to relay out of band, and invalidates the target's active sessions. Admin only. Returns 401 if authentication is missing, 403 if the caller is not an admin or is a child, 404 if the target does not exist, and 422 if the password fails the password policy.",
     tag = "users",
     security(("session_cookie" = ["admin"]), ("device_token_bearer" = ["admin"]), ("oidc_jwt_bearer" = ["admin"]), ("opds_basic" = ["admin"])),
     params(("id" = Uuid, Path, description = "Target user id")),
@@ -727,6 +739,8 @@ struct ChangePasswordRequest {
 #[utoipa::path(
     post,
     path = "/api/v1/account/password",
+    summary = "Change your own password",
+    description = "Verifies the caller's current password and sets a new one, invalidating all of the caller's sessions including the one making this request. Returns 401 if authentication is missing and 422 if the current password is wrong, the new password fails the password policy, or the account has no local credential.",
     tag = "users",
     security(("session_cookie" = ["write"]), ("device_token_bearer" = ["write"]), ("oidc_jwt_bearer" = ["write"]), ("opds_basic" = ["write"])),
     request_body = ChangePasswordRequest,
@@ -891,6 +905,8 @@ fn validate_patch_email(raw: &str, admin_id: Uuid, target_user_id: Uuid) -> Resu
 #[utoipa::path(
     patch,
     path = "/api/v1/users/{id}",
+    summary = "Update a user's name or email",
+    description = "Updates the target user's `display_name` and `email` using JSON Merge Patch: an absent field is unchanged, and an explicit `null` clears `email` but is rejected for `display_name`. Neither field invalidates the target's sessions. Admin only. Returns 401 if authentication is missing, 403 if the caller is not an admin, 404 if the target does not exist, and 422 for a null or empty `display_name`, an invalid `email`, or an `email` already in use.",
     tag = "users",
     security(("session_cookie" = ["admin"]), ("device_token_bearer" = ["admin"]), ("oidc_jwt_bearer" = ["admin"]), ("opds_basic" = ["admin"])),
     params(("id" = Uuid, Path, description = "Target user id")),
