@@ -110,6 +110,8 @@ pub fn api_router() -> OpenApiRouter<AppState> {
 #[utoipa::path(
     get,
     path = "/opds/books/{id}/cover",
+    summary = "Get a book's cover for OPDS",
+    description = "Streams the full-size cover image for a manifestation as `image/jpeg` or `image/png`, with a strong `ETag` and a day-long `Cache-Control`. Requires HTTP Basic authentication.",
     tag = "opds",
     security(("opds_basic" = [])),
     params(("id" = Uuid, Path, description = "Manifestation id")),
@@ -143,6 +145,8 @@ async fn opds_cover(
 #[utoipa::path(
     get,
     path = "/opds/books/{id}/cover/thumb",
+    summary = "Get a book's cover thumbnail for OPDS",
+    description = "Streams the thumbnail cover image for a manifestation as `image/jpeg`, with a strong `ETag` and a day-long `Cache-Control`. Requires HTTP Basic authentication.",
     tag = "opds",
     security(("opds_basic" = [])),
     params(("id" = Uuid, Path, description = "Manifestation id")),
@@ -176,11 +180,13 @@ async fn opds_cover_thumb(
 #[utoipa::path(
     get,
     path = "/api/v1/books/{id}/cover",
+    summary = "Get a book's cover",
+    description = "Streams the full-size cover image for a manifestation as `image/jpeg`, `image/png`, or `image/webp`, with a strong `ETag` and a day-long `Cache-Control`, for the web UI. Requires a session cookie, HTTP Basic authentication, a device token, or an OIDC bearer token.",
     tag = "library",
     security(("session_cookie" = ["read"]), ("device_token_bearer" = ["read"]), ("oidc_jwt_bearer" = ["read"]), ("opds_basic" = ["read"])),
     params(("id" = Uuid, Path, description = "Manifestation id")),
     responses(
-        (status = 200, description = "Cover image stream (`image/jpeg` / `image/png`); Cache-Control: private, max-age=86400; carries a strong ETag"),
+        (status = 200, description = "Cover image stream (`image/jpeg` / `image/png` / `image/webp`); Cache-Control: private, max-age=86400; carries a strong ETag"),
         (status = 304, description = "Not Modified — the request's If-None-Match matched the cover ETag"),
         (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails),
         (status = 404, description = "Manifestation missing, RLS-hidden, or coverless", body = crate::openapi::ProblemDetails)
@@ -209,6 +215,8 @@ async fn api_cover(
 #[utoipa::path(
     get,
     path = "/api/v1/books/{id}/cover/thumb",
+    summary = "Get a book's cover thumbnail",
+    description = "Streams the thumbnail cover image for a manifestation as `image/jpeg`, with a strong `ETag` and a day-long `Cache-Control`, for the web UI. Requires a session cookie, HTTP Basic authentication, a device token, or an OIDC bearer token.",
     tag = "library",
     security(("session_cookie" = ["read"]), ("device_token_bearer" = ["read"]), ("oidc_jwt_bearer" = ["read"]), ("opds_basic" = ["read"])),
     params(("id" = Uuid, Path, description = "Manifestation id")),

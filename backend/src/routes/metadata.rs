@@ -94,6 +94,8 @@ struct MetadataRow {
 #[utoipa::path(
     get,
     path = "/api/v1/manifestations/{id}/metadata",
+    summary = "List a manifestation's metadata versions",
+    description = "Returns the metadata review queue for one manifestation, newest first; the list is empty when the manifestation is missing or hidden from the caller. Available to adult accounts only.",
     tag = "metadata",
     security(("session_cookie" = ["read"]), ("device_token_bearer" = ["read"]), ("oidc_jwt_bearer" = ["read"]), ("opds_basic" = ["read"])),
     params(("id" = Uuid, Path, description = "Manifestation id")),
@@ -125,6 +127,8 @@ async fn get_manifestation_metadata(
 #[utoipa::path(
     get,
     path = "/api/v1/works/{id}/metadata",
+    summary = "List a work's metadata versions",
+    description = "Returns the metadata review queue across every manifestation of a work, newest first; the list is empty when the work is missing or hidden from the caller. Available to adult accounts only.",
     tag = "metadata",
     security(("session_cookie" = ["read"]), ("device_token_bearer" = ["read"]), ("oidc_jwt_bearer" = ["read"]), ("opds_basic" = ["read"])),
     params(("id" = Uuid, Path, description = "Work id")),
@@ -252,6 +256,8 @@ struct LockPayload {
 #[utoipa::path(
     post,
     path = "/api/v1/manifestations/{id}/metadata/accept",
+    summary = "Accept a metadata version",
+    description = "Promotes a pending metadata version to canonical for a manifestation; accepting an ISBN change may trigger a re-match against other works. Available to adult accounts only. Returns 422 if the stored value fails field parsing.",
     tag = "metadata",
     security(("session_cookie" = ["write"]), ("device_token_bearer" = ["write"]), ("oidc_jwt_bearer" = ["write"]), ("opds_basic" = ["write"])),
     params(("id" = Uuid, Path, description = "Manifestation id")),
@@ -335,6 +341,8 @@ async fn accept_manifestation(
 #[utoipa::path(
     post,
     path = "/api/v1/manifestations/{id}/metadata/reject",
+    summary = "Reject a metadata version",
+    description = "Marks a pending metadata version as rejected. Available to adult accounts only.",
     tag = "metadata",
     security(("session_cookie" = ["write"]), ("device_token_bearer" = ["write"]), ("oidc_jwt_bearer" = ["write"]), ("opds_basic" = ["write"])),
     params(("id" = Uuid, Path, description = "Manifestation id")),
@@ -394,6 +402,8 @@ async fn reject_manifestation(
 #[utoipa::path(
     post,
     path = "/api/v1/manifestations/{id}/metadata/revert",
+    summary = "Revert a metadata field",
+    description = "Restores a prior metadata version as canonical for a field, or clears the field entirely when no version is given. Available to adult accounts only. Returns 422 if the field cannot be cleared or the stored value fails parsing.",
     tag = "metadata",
     security(("session_cookie" = ["write"]), ("device_token_bearer" = ["write"]), ("oidc_jwt_bearer" = ["write"]), ("opds_basic" = ["write"])),
     params(("id" = Uuid, Path, description = "Manifestation id")),
@@ -488,6 +498,8 @@ async fn revert_manifestation(
 #[utoipa::path(
     post,
     path = "/api/v1/manifestations/{id}/metadata/lock",
+    summary = "Lock a metadata field",
+    description = "Locks a metadata field against future automated enrichment writes; locking an already-locked field is a no-op. Available to adult accounts only.",
     tag = "metadata",
     security(("session_cookie" = ["write"]), ("device_token_bearer" = ["write"]), ("oidc_jwt_bearer" = ["write"]), ("opds_basic" = ["write"])),
     params(("id" = Uuid, Path, description = "Manifestation id")),
@@ -532,6 +544,8 @@ async fn lock_field(
 #[utoipa::path(
     post,
     path = "/api/v1/manifestations/{id}/metadata/unlock",
+    summary = "Unlock a metadata field",
+    description = "Removes a lock on a metadata field, allowing future automated enrichment writes to resume. Available to adult accounts only.",
     tag = "metadata",
     security(("session_cookie" = ["write"]), ("device_token_bearer" = ["write"]), ("oidc_jwt_bearer" = ["write"]), ("opds_basic" = ["write"])),
     params(("id" = Uuid, Path, description = "Manifestation id")),
@@ -2042,6 +2056,8 @@ async fn load_book_metadata(
 #[utoipa::path(
     get,
     path = "/api/v1/books/{id}/metadata",
+    summary = "Get a book's editable metadata",
+    description = "Returns the editable metadata span for one manifestation, matching what the corresponding PATCH accepts. Available to adult accounts only.",
     tag = "metadata",
     security(("session_cookie" = ["read"]), ("device_token_bearer" = ["read"]), ("oidc_jwt_bearer" = ["read"]), ("opds_basic" = ["read"])),
     params(("id" = Uuid, Path, description = "Manifestation id")),
@@ -2192,6 +2208,8 @@ async fn load_manifestation_identifiers(
 #[utoipa::path(
     patch,
     path = "/api/v1/books/{id}/metadata",
+    summary = "Update a book's metadata",
+    description = "Applies a manual operator edit to a manifestation's metadata; each touched field is recorded as a new metadata version. Requires an `If-Match` header; fails with 428 when it is absent, 412 when it does not match, and 400 when it is malformed or refused by policy. Available to adult accounts only.",
     tag = "metadata",
     security(("session_cookie" = ["write"]), ("device_token_bearer" = ["write"]), ("oidc_jwt_bearer" = ["write"]), ("opds_basic" = ["write"])),
     params(

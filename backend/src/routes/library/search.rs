@@ -119,6 +119,8 @@ pub(super) struct SearchParams {
 #[utoipa::path(
     get,
     path = "/api/v1/search",
+    summary = "Search the library",
+    description = "Returns the top hybrid-ranked manifestations matching a free-text query, with highlighted snippets.",
     tag = "library",
     params(SearchParams),
     security(("session_cookie" = ["read"]), ("device_token_bearer" = ["read"]), ("oidc_jwt_bearer" = ["read"]), ("opds_basic" = ["read"])),

@@ -125,6 +125,8 @@ impl ReadingStateRow {
 #[utoipa::path(
     get,
     path = "/api/v1/books/{id}/reading",
+    summary = "Get reading state",
+    description = "Returns the caller's reading state for one book; all-null fields mean the book is unread.",
     tag = "reading",
     security(("session_cookie" = ["read"]), ("device_token_bearer" = ["read"]), ("oidc_jwt_bearer" = ["read"]), ("opds_basic" = ["read"])),
     params(("id" = Uuid, Path, description = "Manifestation id")),
@@ -275,6 +277,8 @@ fn apply_patch(existing: ReadingStateRow, req: &UpdateReadingRequest) -> Reading
 #[utoipa::path(
     patch,
     path = "/api/v1/books/{id}/reading",
+    summary = "Update reading state",
+    description = "Applies a partial update to the caller's reading state for one book, such as status, rating, or notes. Requires an `If-Match` header; fails with 428 when it is absent, 412 when it does not match the caller's current entity-tag, and 400 when it is malformed or refused by policy.",
     tag = "reading",
     security(("session_cookie" = ["write"]), ("device_token_bearer" = ["write"]), ("oidc_jwt_bearer" = ["write"]), ("opds_basic" = ["write"])),
     params(
