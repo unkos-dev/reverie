@@ -130,6 +130,12 @@ impl FeedBuilder {
     /// and `self` / `start` links. Acquisition feeds get the acquisition
     /// Content-Type profile on their self link; navigation feeds the
     /// navigation profile.
+    ///
+    /// # Panics
+    ///
+    /// Panics if a write to the underlying `quick-xml` writer fails, which
+    /// does not happen: the writer backs onto a `Vec<u8>` and has no I/O to
+    /// fail.
     pub fn new(
         base_url: &Url,
         self_path: &str,
@@ -211,6 +217,12 @@ impl FeedBuilder {
     /// Add a navigation-feed entry pointing at a subsection (`rel="subsection"`
     /// when `rel_subsection`, else no rel — used for shelf entries on the root
     /// feed where the spec allows an omitted rel).
+    ///
+    /// # Panics
+    ///
+    /// Panics if a write to the underlying `quick-xml` writer fails, which
+    /// does not happen: the writer backs onto a `Vec<u8>` and has no I/O to
+    /// fail.
     pub fn add_navigation_entry(
         &mut self,
         id: &str,
@@ -251,6 +263,12 @@ impl FeedBuilder {
     /// summary, categories, and the three OPDS rel links (acquisition /
     /// image / thumbnail). Every text field passes through
     /// [`super::xml::sanitise_xml_text`] before reaching `quick-xml`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if a write to the underlying `quick-xml` writer fails, which
+    /// does not happen: the writer backs onto a `Vec<u8>` and has no I/O to
+    /// fail.
     pub fn add_acquisition_entry(&mut self, entry: &AcquisitionEntry) {
         self.writer
             .write_event(Event::Start(BytesStart::new("entry")))
@@ -373,6 +391,11 @@ impl FeedBuilder {
     }
 
     /// Close the `<feed>` element and return the serialised XML bytes.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the write closing the `<feed>` element fails, which does
+    /// not happen: the writer backs onto a `Vec<u8>` and has no I/O to fail.
     pub fn finish(mut self) -> Vec<u8> {
         self.writer
             .write_event(Event::End(BytesEnd::new("feed")))

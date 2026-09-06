@@ -64,13 +64,17 @@ pub const DEFAULT_VIEW: LibraryView = LibraryView::Grid;
 /// Installation default hidden-column set: nothing hidden.
 pub const DEFAULT_HIDDEN_COLUMNS: &[&str] = &[];
 
-/// Installation default sort, in the `?sort=` wire grammar. Kept equal to
+/// Installation default sort, in the `?sort=` wire grammar.
+///
+/// Kept equal to
 /// [`SortSpec::default`] by `default_sort_stack_matches_the_sort_parser`, so
 /// a user who has never chosen a sort gets exactly what the list endpoint
 /// would have applied anyway.
 pub const DEFAULT_SORT_STACK: &str = "-created_at";
 
-/// Upper bound on how many column keys one account may store. The catalog
+/// Upper bound on how many column keys one account may store.
+///
+/// The catalog
 /// currently offers eight hideable columns; the cap exists so the column is
 /// not an unbounded write target, not to constrain the catalog. Mirrored by
 /// the `user_preferences_hidden_columns_bounded` CHECK.
@@ -79,7 +83,9 @@ pub const MAX_HIDDEN_COLUMNS: usize = 64;
 /// Longest single column key accepted.
 pub const MAX_COLUMN_KEY_CHARS: usize = 64;
 
-/// The caller's overrides. A `None` group inherits the matching constant
+/// The caller's overrides.
+///
+/// A `None` group inherits the matching constant
 /// above; the client is told which is which rather than being handed a
 /// resolved value, because per-group reset and any future "has this user
 /// customised anything?" question both need the distinction.

@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "Config",
-  "description": "Resolved process-wide configuration. Fields reflect the settled view of\nthe environment after defaults, parsing, and validation; subsystem\nconfigs (OPDS, enrichment, cover, writeback, security) are nested as\nowned values so callers do not pass the entire `Config` into helpers\nthat only need one slice.",
+  "description": "Resolved process-wide configuration.\n\nFields reflect the settled view of\nthe environment after defaults, parsing, and validation; subsystem\nconfigs (OPDS, enrichment, cover, writeback, security) are nested as\nowned values so callers do not pass the entire `Config` into helpers\nthat only need one slice.",
   "type": "object",
   "properties": {
     "auto_migrate": {

@@ -95,7 +95,9 @@ const RESOURCE_SERVER_FIELDS: &[(&str, RequiredFieldAccessor)] = &[
     }),
 ];
 
-/// Resolved process-wide configuration. Fields reflect the settled view of
+/// Resolved process-wide configuration.
+///
+/// Fields reflect the settled view of
 /// the environment after defaults, parsing, and validation; subsystem
 /// configs (OPDS, enrichment, cover, writeback, security) are nested as
 /// owned values so callers do not pass the entire `Config` into helpers

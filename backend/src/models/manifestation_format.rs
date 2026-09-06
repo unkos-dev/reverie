@@ -79,7 +79,9 @@ impl fmt::Display for ManifestationFormat {
 }
 
 /// Error returned by [`ManifestationFormat`]'s [`std::str::FromStr`] impl
-/// when the input does not match a known wire string. The wrapped value
+/// when the input does not match a known wire string.
+///
+/// The wrapped value
 /// is the offending input, surfaced through the [`std::error::Error`]
 /// `Display` for user-facing diagnostics.
 #[derive(Debug, thiserror::Error)]

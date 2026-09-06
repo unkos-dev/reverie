@@ -77,6 +77,7 @@ impl LookupKey {
 }
 
 /// Whether identifiers on `scheme` can be resolved by an API adapter.
+///
 /// Only these schemes ever become [`LookupKey::ExternalId`] fetch keys;
 /// every other scheme (`goodreads`, `asin`, `calibre`, ...) is stored and
 /// displayed but never fetched.
@@ -84,6 +85,8 @@ pub fn is_fetchable_scheme(scheme: &str) -> bool {
     matches!(scheme, "openlibrary" | "googlebooks" | "hardcover")
 }
 
+/// Payload types of a [`RatingSignal`], re-exported from the module that defines the table they mirror.
+///
 /// Ratings deliberately travel outside the [`SourceResult`] stream: a
 /// `SourceResult` becomes one `metadata_versions` journal row by contract,
 /// and ratings are a refreshable direct-write cache that is never journaled,

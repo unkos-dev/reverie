@@ -1,4 +1,4 @@
-//! Shared hash-based ETag mechanics for optimistic-concurrency endpoints.
+//! Shared hash-based `ETag` mechanics for optimistic-concurrency endpoints.
 //!
 //! Distinct from [`crate::routes::shelves`], whose entity-tag is the shelf's
 //! `updated_at` and whose `If-Match` parsing is its own. Endpoints in this
@@ -37,6 +37,11 @@ const ETAG_HASH_BYTES: usize = 16;
 /// least every field the paired PATCH endpoint can modify, never the raw
 /// `updated_at` column. Serialises via `serde_json`, SHA-256s the bytes,
 /// truncates to `ETAG_HASH_BYTES`, and base64url-encodes without padding.
+///
+/// # Errors
+///
+/// Returns `AppError::Internal` if `state` fails to serialise to JSON, or if
+/// the encoded digest is not valid header-value bytes.
 pub fn hash_etag<T: Serialize>(state: &T) -> Result<HeaderValue, AppError> {
     let json = serde_json::to_vec(state).map_err(|e| AppError::Internal(e.into()))?;
     let digest = Sha256::digest(&json);
@@ -166,6 +171,14 @@ fn parse_strong_entity_tag(raw: &[u8]) -> Result<StrongEntityTag, AppError> {
 ///   validator (`W/"..."`) (RFC 9110 §13.1.2 requires strong comparison for
 ///   `If-Match`), a list of entity-tags, the `*` wildcard, or the header
 ///   sent as more than one instance.
+///
+/// # Errors
+///
+/// Returns `AppError::MalformedHeader` for any of the `Err` cases listed
+/// above: more than one `If-Match` instance, or (via
+/// [`parse_strong_entity_tag`]) a header value that fails the RFC 9110
+/// `entity-tag` grammar, carries a weak prefix, or encodes an entity-tag
+/// list or the `*` wildcard.
 pub fn parse_if_match(headers: &HeaderMap) -> Result<Option<StrongEntityTag>, AppError> {
     if headers.get_all(IF_MATCH).iter().count() > 1 {
         return Err(AppError::MalformedHeader(

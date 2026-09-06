@@ -200,6 +200,14 @@ pub async fn check_breached(client: &reqwest::Client, password: &str, base_url: 
 ///
 /// `user_inputs` are forwarded to zxcvbn so a password containing the user's own
 /// email or name scores lower. The breach check runs only when enabled.
+///
+/// # Errors
+///
+/// Returns [`PolicyError::TooLong`] or [`PolicyError::TooShort`] when the
+/// password length is outside `policy`'s bounds, [`PolicyError::TooWeak`]
+/// when its zxcvbn score is below `policy.min_zxcvbn_score`, and
+/// [`PolicyError::Breached`] when `policy.breach_check_enabled` is set and
+/// the password is found in the breach corpus.
 pub async fn enforce(
     password: &str,
     user_inputs: &[&str],
@@ -237,10 +245,17 @@ pub async fn enforce(
     Ok(())
 }
 
-/// Convenience for request handlers: build the [`PasswordPolicy`] and the breach
-/// client from `config`, then [`enforce`]. The breach client carries the SSRF
+/// Convenience for request handlers: build the [`PasswordPolicy`] and the
+/// breach client from `config`, then [`enforce`].
+///
+/// The breach client carries the SSRF
 /// resolver (via [`crate::services::enrichment::http::api_client`]) so the
 /// operator-overridable HIBP URL cannot be aimed at an internal address.
+///
+/// # Errors
+///
+/// Returns the same [`PolicyError`] variants as [`enforce`]; this function
+/// adds no failure modes of its own.
 pub async fn enforce_from_config(
     config: &Config,
     password: &str,

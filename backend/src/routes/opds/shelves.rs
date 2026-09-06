@@ -1,4 +1,6 @@
-//! `/opds/shelves/:shelf_id/*` handlers. Delegates to the shared
+//! `/opds/shelves/:shelf_id/*` handlers.
+//!
+//! Delegates to the shared
 //! [`super::library`] emit_* helpers with [`Scope::Shelf`]. Every shelf route
 //! verifies ownership under `acquire_with_rls` and returns 404 for foreign
 //! shelves to avoid leaking shelf existence.

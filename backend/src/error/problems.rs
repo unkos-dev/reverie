@@ -55,20 +55,26 @@ pub const IF_MATCH_REQUIRED: &str = "if-match-required";
 pub const IF_MATCH_MISMATCH: &str = "if-match-mismatch";
 
 /// Caller attempted to mutate a system-managed shelf (`is_system =
-/// TRUE`). System shelves are append-only from the operator side —
+/// TRUE`).
+///
+/// System shelves are append-only from the operator side —
 /// users can add or remove items, but the shelf row itself cannot be
 /// renamed or deleted. HTTP 409 Conflict.
 pub const SYSTEM_SHELF_IMMUTABLE: &str = "system-shelf-immutable";
 
 /// A query-string parameter failed to deserialize (e.g. a malformed
-/// UUID in `?author=`, `?series=`, `?shelf=`). Distinct from
+/// UUID in `?author=`, `?series=`, `?shelf=`).
+///
+/// Distinct from
 /// [`VALIDATION`] (422, business-rule/value rejection): this is a
 /// syntactic decode failure at the extractor boundary, so it maps to
 /// HTTP 400 Bad Request.
 pub const MALFORMED_QUERY: &str = "malformed-query";
 
 /// A request header failed its grammar or usage contract (e.g. a
-/// malformed, weak, or list-form `If-Match` entity-tag). RFC 9110 scopes
+/// malformed, weak, or list-form `If-Match` entity-tag).
+///
+/// RFC 9110 scopes
 /// 422 to request content, so a rejected header value is a syntactic
 /// decode failure, not a business-rule rejection, and maps to HTTP 400
 /// Bad Request like [`MALFORMED_QUERY`] rather than [`VALIDATION`].

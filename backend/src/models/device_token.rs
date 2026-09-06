@@ -11,7 +11,9 @@ use uuid::Uuid;
 
 use crate::auth::scope::Scope;
 
-/// A single device-token row. The `token_hash` field is `#[serde(skip)]`
+/// A single device-token row.
+///
+/// The `token_hash` field is `#[serde(skip)]`
 /// so JSON responses never leak the stored hash; verification uses
 /// [`crate::auth::token::verify_device_token`] with the hash kept inside
 /// this struct.
@@ -242,7 +244,9 @@ pub async fn create_with_limit(
 }
 
 /// Update `last_used_at`, debounced SQL-side to at most one UPDATE per token
-/// per 5 minutes. The WHERE predicate turns every call into a no-op when a
+/// per 5 minutes.
+///
+/// The WHERE predicate turns every call into a no-op when a
 /// previous update landed within the window; single source of truth, atomic
 /// under concurrent requests, no Rust-side policy to unit-test.
 ///

@@ -42,7 +42,9 @@ use super::error::WritebackError;
 use super::opf_rewrite::{self, Target};
 use super::path_rename;
 
-/// Terminal outcome of a single `run_once` call.  Three arms, one per
+/// Terminal outcome of a single `run_once` call.
+///
+/// Three arms, one per
 /// terminal DB transition the queue performs — illegal combinations
 /// (success without a hash, skipped with an error, etc.) are structurally
 /// unrepresentable.

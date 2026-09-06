@@ -124,6 +124,7 @@ pub async fn create_stub(conn: &mut PgConnection) -> Result<Uuid, sqlx::Error> {
 /// Upgrade a stub work (from `create_stub`) to the real thing:
 /// set `title/sort_title/description/language` + canonical pointers,
 /// create authors + `work_authors` rows with `source_version_id` wired.
+///
 /// Also creates the series row if present.
 ///
 /// # Errors
@@ -209,9 +210,16 @@ pub async fn upgrade_stub(
 }
 
 /// Convenience wrapper: opens its own transaction, runs the full
-/// match-or-create flow without draft wiring. Retained for call sites that
+/// match-or-create flow without draft wiring.
+///
+/// Retained for call sites that
 /// don't participate in the ingest-invariant flow (primarily the existing
 /// tests).
+///
+/// # Errors
+///
+/// Returns [`sqlx::Error`] if the transaction cannot begin or commit, or from
+/// any of [`match_existing`], [`create_stub`], or [`upgrade_stub`].
 #[cfg(test)]
 pub async fn find_or_create(
     pool: &PgPool,

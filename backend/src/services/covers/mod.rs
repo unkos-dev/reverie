@@ -1,7 +1,8 @@
-//! Cover serving service. Content-addressed on-disk cache keyed on
-//! `(manifestation_id, current_file_hash[..16], size)`. Cache miss extracts
-//! the EPUB's embedded cover (Step 5 detection semantics), resizes with
-//! Lanczos3, and atomically writes the result.
+//! Cover serving service backed by a content-addressed on-disk cache.
+//!
+//! The cache is keyed on `(manifestation_id, current_file_hash[..16], size)`.
+//! A miss extracts the EPUB's embedded cover, resizes with Lanczos3, and
+//! atomically writes the result.
 //!
 //! **Sidecar covers at `manifestations.cover_path` are NOT served here.**
 //! That path is the enrichment preview sidecar (Step 7) — a distinct
@@ -13,7 +14,6 @@
 pub mod cache;
 /// Error type for all cover-serving failure classes.
 pub mod error;
-/// Synchronous `EPUB` cover extraction; mirrors Step 5 detection semantics.
 pub mod extract;
 /// `Lanczos3` resize logic and the `CoverSize` size-tier enum.
 pub mod resize;
@@ -57,7 +57,9 @@ const fn ext_for_format(fmt: image::ImageFormat) -> &'static str {
 }
 
 /// A resolved cover: the on-disk cache path plus the strong `ETag` validator
-/// the handler emits. The validator is content-addressed by the EPUB file-hash
+/// the handler emits.
+///
+/// The validator is content-addressed by the EPUB file-hash
 /// prefix and size tier, so a Step 8 writeback (new `current_file_hash`)
 /// produces a new validator and the browser revalidates to the fresh cover.
 pub struct CoverArtifact {
@@ -130,6 +132,16 @@ fn generate_into_cache(
 /// Return a cached cover for `(manifestation_id, size)`, populating the cache
 /// on miss. RLS denies unauthorised users → returns [`CoverError::NoCover`] so
 /// the handler emits 404 without leaking existence.
+///
+/// # Errors
+///
+/// Returns [`CoverError::Db`] if the RLS-scoped transaction cannot be
+/// acquired or the manifestation lookup fails, [`CoverError::NoCover`] if the
+/// manifestation row is not visible under RLS, [`CoverError::Io`] if the
+/// cache directory cannot be created or the generated cover cannot be
+/// written, and any [`CoverError`] variant [`generate_into_cache`] can
+/// produce (`NoCover`, `UnsupportedFormat`, `Decode`) on a cache miss, or
+/// [`CoverError::Decode`] if the blocking generation task panics.
 pub async fn get_or_create(
     state: &AppState,
     manifestation_id: Uuid,
@@ -211,7 +223,9 @@ async fn warm_one(
 
 /// Fire-and-forget: warm the **thumbnail** cover for a freshly-ingested
 /// manifestation so the first library-grid request is a warm ~20 ms hit
-/// instead of a cold rasterize. Concurrency is bounded by `WARM_LIMIT`;
+/// instead of a cold rasterize.
+///
+/// Concurrency is bounded by `WARM_LIMIT`;
 /// best-effort — a coverless EPUB or any failure is logged, never surfaced
 /// (warming must not affect ingest success). Full-size covers stay lazy (the
 /// reader view loads one cover at a time).

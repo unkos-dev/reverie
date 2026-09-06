@@ -15,7 +15,9 @@ use crate::error::AppError;
 use crate::state::AppState;
 
 /// Wraps a [`CurrentUser`] that was authenticated via `Authorization: Basic`
-/// only. Session cookies are ignored and a missing or invalid Basic header
+/// only.
+///
+/// Session cookies are ignored and a missing or invalid Basic header
 /// returns [`AppError::BasicAuthRequired`], which emits the RFC 7617
 /// challenge.
 #[derive(Debug, Clone)]

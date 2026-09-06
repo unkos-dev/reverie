@@ -47,7 +47,9 @@ mod tests;
 
 /// Build the `/api/v1/users*` router as an [`OpenApiRouter`] so each
 /// handler's `#[utoipa::path]` contributes to the generated spec (a missing
-/// annotation fails to compile). Merged into `crate::openapi::pilot_router`
+/// annotation fails to compile).
+///
+/// Merged into `crate::openapi::pilot_router`
 /// and split into its runtime and spec halves there.
 pub fn router() -> OpenApiRouter<AppState> {
     OpenApiRouter::new()
@@ -410,10 +412,11 @@ struct CreateUserRequest {
     password: String,
 }
 
-/// `POST /api/v1/users` — create an account with an admin-typed initial
-/// password (admin only). This is the create-and-invite path: there is no
-/// separate invite mechanism, no email, and no forced first-login change. The
-/// admin relays the password out-of-band; the user may self-service change it.
+/// Create an account with an admin-typed initial password (admin only).
+///
+/// This is the create-and-invite path: there is no invite email and no forced
+/// first-login change. The admin relays the password out-of-band; the user may
+/// self-service change it afterward.
 ///
 /// # Errors
 /// - [`AppError::Forbidden`] when the caller is not an admin or is a child.
@@ -485,10 +488,11 @@ struct AccountStatusRequest {
     disabled: bool,
 }
 
-/// `PUT /api/v1/users/{id}/account-status` — soft-disable or re-enable an
-/// account (admin only). Disabling stamps `disabled_at`, bumps the target's
-/// `session_version` (killing live sessions at once), and locks them out of
-/// every auth path; re-enabling clears it.
+/// Soft-disable or re-enable an account (admin only).
+///
+/// Disabling stamps `disabled_at`, bumps the target's `session_version`
+/// (killing live sessions at once), and locks them out of every auth path;
+/// re-enabling clears it.
 ///
 /// Last-enabled-admin protection (TOCTOU-safe): when disabling an admin, all
 /// enabled admin rows are locked `FOR UPDATE` (same `ORDER BY id` order as
@@ -615,11 +619,12 @@ struct AdminPasswordResetRequest {
     new_password: String,
 }
 
-/// `POST /api/v1/users/{id}/password-reset` — an admin sets a new password for
-/// a target account (admin only). Consistent with create: the admin types the
-/// password and hands it off; no PIN, no email. Bumps the target's
-/// `session_version` so their existing sessions are invalidated. Works for an
-/// OIDC-only account too (the local credential is upserted).
+/// Set a new password for a target account (admin only).
+///
+/// Consistent with create: the admin types the password and hands it off; no
+/// PIN, no email. Bumps the target's `session_version` so their existing
+/// sessions are invalidated. Works for an OIDC-only account too (the local
+/// credential is upserted).
 ///
 /// # Errors
 /// - [`AppError::Forbidden`] when the caller is not an admin or is a child.

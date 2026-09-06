@@ -155,7 +155,9 @@ pub const ENV_MAP: &[(&str, &str)] = &[
 ];
 
 /// Custom [`figment::Provider`] feeding the config pipeline from environment
-/// variables. Maps each known env-var name to its dotted field path via
+/// variables.
+///
+/// Maps each known env-var name to its dotted field path via
 /// `ENV_MAP`, parses values into typed figment `Value`s, and drops empties
 /// (empty-as-unset). Unmapped vars (`PATH`, `HOME`, …) are ignored.
 ///

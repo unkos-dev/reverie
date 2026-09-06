@@ -139,21 +139,9 @@ unsafe_code = "deny"
 pedantic = { level = "warn", priority = -1 }
 nursery = { level = "warn", priority = -1 }
 
-# Pedantic lints inappropriate for application crates (vs library crates).
-# See docs/adr/0002-strict-lint-policy-pedantic-clippy-and-strict-frontend-lint.md for rationale;
-# docs/adr/0004-tiered-comment-policy-for-an-open-source-codebase.md re-enables missing_errors_doc after the backfill.
-module_name_repetitions = "allow"
-missing_errors_doc = "allow"
-missing_panics_doc = "allow"
+# Pedantic lints for library API hygiene that the crate does not yet satisfy;
+# see docs/adr/0002-strict-lint-policy-pedantic-clippy-and-strict-frontend-lint.md.
 must_use_candidate = "allow"
-
-# Pedantic lints that newly fire after the lib/bin split (UNK-191 / Phase
-# 0 of the tiered comment-policy rollout). Pre-split, every module pub
-# item was crate-internal and these lints were silent. Post-split they
-# surface 28 pre-existing instances. Allowed during Phases 0–3; Phase 4
-# of the rollout (after the per-module docstring backfill) addresses
-# them alongside re-enabling missing_errors_doc. Tracked in UNK-190.
-too_long_first_doc_paragraph = "allow"
 implicit_hasher = "allow"
 
 # nursery lint that fires inside the `utoipa::IntoParams` derive for query

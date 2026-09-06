@@ -137,7 +137,9 @@ impl Modify for SecurityAddon {
 }
 
 /// Top-level OpenAPI document: metadata, shared schemas, security model, and
-/// tags. Paths are contributed by each module's [`OpenApiRouter`] and merged in
+/// tags.
+///
+/// Paths are contributed by each module's [`OpenApiRouter`] and merged in
 /// `pilot_router`. The document-level `security` is the deny-by-default
 /// requirement (see `SecurityAddon`); operational probes opt out per-operation.
 #[derive(OpenApi)]
@@ -177,7 +179,9 @@ impl Modify for SecurityAddon {
 pub struct ApiDoc;
 
 /// RFC 9457 `application/problem+json` error body — the single runtime DTO
-/// for the error envelope. The `IntoResponse` impl on
+/// for the error envelope.
+///
+/// The `IntoResponse` impl on
 /// [`crate::error::AppError`] constructs it for every Problem-Details
 /// variant, and operational probes (readiness) build it directly, so the
 /// documented component schema and the bytes on the wire come from the same
@@ -256,7 +260,9 @@ fn pilot_router() -> OpenApiRouter<AppState> {
 }
 
 /// Runtime router for the OpenAPI-documented modules, ready to merge into the
-/// main router. Discards the spec half (see [`spec_json`]). Does NOT include
+/// main router.
+///
+/// Discards the spec half (see [`spec_json`]). Does NOT include
 /// the OPDS feed routes — `crate::build_router` mounts those separately,
 /// gated on `opds.enabled`.
 pub fn router() -> axum::Router<AppState> {

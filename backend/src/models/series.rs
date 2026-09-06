@@ -19,7 +19,9 @@ use uuid::Uuid;
 
 use crate::models::library::WorkManifestation;
 
-/// `/api/v1/series/{id}` response. Carries the series identity plus an
+/// `/api/v1/series/{id}` response.
+///
+/// Carries the series identity plus an
 /// ordered list of works; each work surfaces only the manifestations
 /// the caller can see, so the frontend can render a completeness
 /// indicator (`own = works with len(manifestations) > 0`, `total =

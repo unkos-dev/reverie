@@ -22,7 +22,6 @@ pub mod csp;
 /// CSRF synchronizer-token validating middleware.
 pub mod csrf;
 
-/// Frontend dist + CSP-hash sidecar validation. Called once at startup.
 pub mod dist_validation;
 
 /// Response-header middleware + composite fallback handler.

@@ -51,10 +51,11 @@ fn pin_staging_path(dir: &Path, user_id: Uuid) -> PathBuf {
     dir.join(format!("{user_id}.pin.staged"))
 }
 
-/// Write the clear PIN, target email, and expiry to `<dir>/<user_id>.pin` with
-/// mode 0600, creating `dir` (mode 0700) if absent and replacing any prior file
-/// for the user. Permissions are enforced after open so an existing file/dir
-/// with looser perms is corrected.
+/// Write the clear PIN, target email, and expiry to `<dir>/<user_id>.pin`.
+///
+/// Written with mode 0600, creating `dir` (mode 0700) if absent and replacing
+/// any prior file for the user. Permissions are enforced after open so an
+/// existing file/dir with looser perms is corrected.
 ///
 /// THREAT (partial read of a PIN file): the content is written to a staging file
 /// in the same directory and renamed into place, so an operator reading the file

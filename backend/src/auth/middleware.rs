@@ -247,7 +247,9 @@ async fn resolve_device_token(
 }
 
 /// Verify an `Authorization: Basic <b64({prefix}{token_id}:{secret})>`
-/// header. Shared by [`CurrentUser`] (cookie-or-Basic-or-Bearer) and
+/// header.
+///
+/// Shared by [`CurrentUser`] (cookie-or-Basic-or-Bearer) and
 /// [`crate::auth::basic_only::BasicOnly`] (Basic-only, for OPDS clients that
 /// only speak Basic).
 ///
@@ -287,7 +289,9 @@ pub async fn verify_basic(
 }
 
 /// Verify an `Authorization: Bearer` header, dispatching on the credential's
-/// prefix. A `{prefix}{token_id}.{secret}` value (see [`token::TOKEN_PREFIX`])
+/// prefix.
+///
+/// A `{prefix}{token_id}.{secret}` value (see [`token::TOKEN_PREFIX`])
 /// is a device token and resolves through [`resolve_device_token`], shared
 /// with [`verify_basic`]. Anything else is handed to [`resolve_jwt`] as an
 /// RFC 9068 resource-server access token.

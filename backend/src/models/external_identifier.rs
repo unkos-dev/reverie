@@ -87,6 +87,11 @@ pub struct ManifestationExternalIdentifier {
 /// Upsert a work-level identifier, replacing any existing value for the
 /// `(work_id, scheme)` slot in place (one value per (entity, scheme)). Both the
 /// manual PATCH path and enrichment reuse this.
+///
+/// # Errors
+///
+/// Returns [`sqlx::Error`] from the underlying `INSERT … ON CONFLICT`, including
+/// a foreign-key violation when `scheme` is not a registered identifier scheme.
 pub async fn upsert_work_identifier(
     executor: impl sqlx::PgExecutor<'_>,
     work_id: Uuid,
@@ -113,6 +118,11 @@ pub async fn upsert_work_identifier(
 
 /// Upsert a manifestation-level identifier, replacing any existing value for
 /// the `(manifestation_id, scheme)` slot in place (one value per (entity, scheme)).
+///
+/// # Errors
+///
+/// Returns [`sqlx::Error`] from the underlying `INSERT … ON CONFLICT`, including
+/// a foreign-key violation when `scheme` is not a registered identifier scheme.
 pub async fn upsert_manifestation_identifier(
     executor: impl sqlx::PgExecutor<'_>,
     manifestation_id: Uuid,
@@ -140,6 +150,10 @@ pub async fn upsert_manifestation_identifier(
 /// Fetch the current work-level `external_id` for a `(work_id, scheme)` slot,
 /// if any. Used to load registry state into the enrichment snapshot and to
 /// resolve the current value on a manual clear.
+///
+/// # Errors
+///
+/// Returns [`sqlx::Error`] from the underlying `SELECT`.
 pub async fn get_work_identifier(
     executor: impl sqlx::PgExecutor<'_>,
     work_id: Uuid,
@@ -157,6 +171,10 @@ pub async fn get_work_identifier(
 
 /// Fetch the current manifestation-level `external_id` for a
 /// `(manifestation_id, scheme)` slot, if any.
+///
+/// # Errors
+///
+/// Returns [`sqlx::Error`] from the underlying `SELECT`.
 pub async fn get_manifestation_identifier(
     executor: impl sqlx::PgExecutor<'_>,
     manifestation_id: Uuid,
@@ -173,6 +191,10 @@ pub async fn get_manifestation_identifier(
 }
 
 /// Delete a work-level identifier slot. Returns whether a row was removed.
+///
+/// # Errors
+///
+/// Returns [`sqlx::Error`] from the underlying `DELETE`.
 pub async fn delete_work_identifier(
     executor: impl sqlx::PgExecutor<'_>,
     work_id: Uuid,
@@ -190,6 +212,10 @@ pub async fn delete_work_identifier(
 
 /// Delete a manifestation-level identifier slot. Returns whether a row was
 /// removed.
+///
+/// # Errors
+///
+/// Returns [`sqlx::Error`] from the underlying `DELETE`.
 pub async fn delete_manifestation_identifier(
     executor: impl sqlx::PgExecutor<'_>,
     manifestation_id: Uuid,

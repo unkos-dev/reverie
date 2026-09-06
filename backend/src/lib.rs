@@ -649,7 +649,9 @@ pub fn parse_command(args: &[String]) -> anyhow::Result<Command> {
 }
 
 /// Emit the [`config::Config`] JSON Schema to stdout — the
-/// `print-config-schema` subcommand. The output is the committed
+/// `print-config-schema` subcommand.
+///
+/// The output is the committed
 /// `backend/config.schema.json` artifact (CI drift-checks a fresh emit against
 /// it), and the source the configuration reference renders from.
 ///
@@ -682,7 +684,9 @@ pub fn print_config_schema() -> anyhow::Result<()> {
 }
 
 /// Render the config JSON Schema exactly as [`print_config_schema`] emits it
-/// (pretty-printed, trailing newline included). The single rendering seam
+/// (pretty-printed, trailing newline included).
+///
+/// The single rendering seam
 /// shared by the CLI subcommand and the `gen_config_schema` drift test, so
 /// the committed `config.schema.json` is compared against the same bytes the
 /// binary would print.
@@ -712,7 +716,9 @@ fn resolve_migration_dsn(var: Option<String>) -> anyhow::Result<String> {
         .ok_or_else(|| anyhow::anyhow!("DATABASE_URL_MIGRATION is required for `reverie migrate`"))
 }
 
-/// Apply pending database migrations, then exit. This is the `reverie
+/// Apply pending database migrations, then exit.
+///
+/// This is the `reverie
 /// migrate` subcommand entrypoint — the shipped default for schema
 /// management, run out-of-band so the long-lived server process never
 /// carries the migration credential.
@@ -845,7 +851,9 @@ pub async fn run_bootstrap() -> anyhow::Result<()> {
 }
 
 /// `reverie reset-password <email>`: issue a recovery PIN for an account to a
-/// per-user operator file (mode 0600), then exit. The operator relays the PIN to
+/// per-user operator file (mode 0600), then exit.
+///
+/// The operator relays the PIN to
 /// the user, who completes the reset at `/auth/reset-password`.
 ///
 /// # Errors

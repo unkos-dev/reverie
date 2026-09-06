@@ -130,7 +130,9 @@ pub async fn admin_exists(pool: &PgPool) -> Result<bool, sqlx::Error> {
 }
 
 /// Fetch a user by email, compared case-insensitively on `lower(email)` (the
-/// `idx_users_email_lower` key). Returns `Ok(None)` if no row matches. Returns
+/// `idx_users_email_lower` key).
+///
+/// Returns `Ok(None)` if no row matches. Returns
 /// the row whether or not a local credential exists for it; the caller decides
 /// whether a credential is required.
 ///
@@ -443,6 +445,7 @@ pub(crate) fn is_addr_spec(e: &str) -> bool {
 
 /// Insert or update a user from verified OIDC claims, resolving identity
 /// through [`crate::models::user_identities`] keyed on `(issuer, subject)`.
+///
 /// Does NOT promote: a fresh instance's first login is a non-administrator
 /// (the first administrator is granted only through bootstrap). Identity
 /// resolution and the two-table create run in a single transaction so

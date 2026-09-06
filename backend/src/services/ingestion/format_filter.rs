@@ -44,12 +44,8 @@ pub fn select_by_priority(files: &[PathBuf], priority: &[ManifestationFormat]) -
             let Ok(fmt) = ext.parse::<ManifestationFormat>() else {
                 continue;
             };
-            #[expect(
-                clippy::unwrap_used,
-                reason = "the `best.is_none()` short-circuit in `&&` guarantees best is Some before .unwrap() is reached"
-            )]
             if let Some(pos) = priority.iter().position(|p| *p == fmt)
-                && (best.is_none() || pos < best.unwrap().0)
+                && best.is_none_or(|b| pos < b.0)
             {
                 best = Some((pos, candidate));
             }

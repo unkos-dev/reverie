@@ -43,8 +43,10 @@ const MAX_ACTIVITY_LIMIT: i64 = 100;
 
 /// Build the `/api/v1/dashboard/*` router (admin-only) as an [`OpenApiRouter`]
 /// so each handler's `#[utoipa::path]` contributes to the generated spec (a
-/// missing annotation fails to compile). Merged into `crate::openapi::pilot_router`
-/// and split into its runtime and spec halves there.
+/// missing annotation fails to compile).
+///
+/// Merged into `crate::openapi::pilot_router` and split into its runtime
+/// and spec halves there.
 pub fn router() -> OpenApiRouter<AppState> {
     OpenApiRouter::new()
         .routes(routes!(stats))

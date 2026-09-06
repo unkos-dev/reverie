@@ -2029,9 +2029,10 @@ async fn load_book_metadata(
     }))
 }
 
-/// `GET /api/v1/books/{id}/metadata` — the editable metadata span for one
-/// manifestation: the matched-pair read for [`update_book_metadata`], same
-/// URI and id key, so a read-modify-write flow targets one resource.
+/// The editable metadata span for one manifestation.
+///
+/// This is the matched-pair read for [`update_book_metadata`]: same URI and
+/// id key, so a read-modify-write flow targets one resource.
 ///
 /// # Errors
 /// - [`AppError::Forbidden`] when the caller is a child account.

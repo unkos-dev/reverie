@@ -5,8 +5,6 @@
 //! conditional) consumed by `crate::build_router_with_session_store`
 //! to assemble the application router.
 
-/// Authentication endpoints (OIDC login / callback / logout, session
-/// `/auth/me` + theme update).
 pub mod auth;
 /// Sort-aware base64url pagination cursor (shared across `/api/v1/*`
 /// list endpoints).
@@ -15,9 +13,6 @@ pub mod cursor;
 pub mod dashboard;
 /// Manifestation enrichment trigger / dry-run / status endpoints.
 pub mod enrichment;
-/// Shared hash-based `ETag` / `If-Match` mechanics for the metadata and
-/// reading endpoints (`crate::routes::shelves` keeps its own timestamp
-/// scheme, out of scope here).
 pub mod etag;
 /// Liveness + readiness probes.
 pub mod health;
@@ -43,7 +38,6 @@ pub mod shelves;
 pub mod sort_spec;
 /// Single-page-app asset-serving router (`/assets/*` mount).
 pub mod spa;
-/// Typeahead suggest endpoints for metadata vocabularies (`/api/v1/{genres,moods,tags,authors,series,publishers}/suggest`).
 pub mod suggest;
 /// Per-user device-token issue / list / revoke endpoints.
 pub mod tokens;

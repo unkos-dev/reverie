@@ -1,4 +1,6 @@
-//! URL-based scope for OPDS feeds. A device paired at `/opds/library/*` sees
+//! URL-based scope for OPDS feeds.
+//!
+//! A device paired at `/opds/library/*` sees
 //! the whole library (further filtered by RLS for child accounts); a device
 //! paired at `/opds/shelves/{id}/*` sees only that shelf. Scope is determined
 //! entirely by the feed URL — there is no per-token or per-user preference.
@@ -25,7 +27,9 @@ pub enum Scope {
 }
 
 /// Push the scope predicate onto an existing [`QueryBuilder`] using the given
-/// manifestations alias. For [`Scope::Library`] pushes nothing (caller is
+/// manifestations alias.
+///
+/// For [`Scope::Library`] pushes nothing (caller is
 /// responsible for any surrounding boolean glue — check `is_library` first if
 /// the scope is optional).
 ///
@@ -46,7 +50,9 @@ pub fn push_scope(qb: &mut QueryBuilder<Postgres>, scope: &Scope, manifestation_
 
 /// Push an `EXISTS (SELECT 1 FROM manifestations m WHERE m.work_id =
 /// {parent_alias}.work_id … )` fragment to use on navigation feeds keyed on a
-/// parent table (works, authors, series). When scope is a shelf, the
+/// parent table (works, authors, series).
+///
+/// When scope is a shelf, the
 /// `manifestations` row must also be in that shelf.
 pub fn push_visible_manifestation(
     qb: &mut QueryBuilder<Postgres>,

@@ -44,10 +44,11 @@ impl CoverSize {
     }
 }
 
-/// Decode `bytes` as `fmt`, resize to the long-edge cap of `size` using the
-/// `Lanczos3` filter if the image exceeds the cap, then encode for the tier:
-/// `Thumb` → JPEG, `Full` → the input format. Images already within the cap
-/// are encoded without resizing. Returns the encoded bytes and the
+/// Decode `bytes` as `fmt` and re-encode for the tier, resizing with
+/// `Lanczos3` if the image exceeds `size`'s long-edge cap.
+///
+/// Encodes `Thumb` → JPEG, `Full` → the input format. Images already within
+/// the cap are encoded without resizing. Returns the encoded bytes and the
 /// `ImageFormat` they were encoded in (the caller derives the cache-file
 /// extension and `Content-Type` from it).
 ///

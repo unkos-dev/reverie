@@ -62,10 +62,10 @@ mod search;
 #[cfg(test)]
 mod tests;
 
-/// Build the `/api/v1/books*`, `/api/v1/works/{id}`, and `/api/v1/search`
-/// router as an [`OpenApiRouter`] so each handler's `#[utoipa::path]`
-/// contributes to the generated spec (a missing annotation fails to compile).
-/// Merged into `crate::openapi::pilot_router` and split into its runtime and
+/// Build the `/api/v1/books*`, `/api/v1/works/{id}`, and `/api/v1/search` router.
+///
+/// It is an [`OpenApiRouter`] so each handler's `#[utoipa::path]` contributes
+/// to the generated spec (a missing annotation fails to compile). Merged into `crate::openapi::pilot_router` and split into its runtime and
 /// spec halves there. `search` is contributed by its own submodule router so
 /// the `routes!` macro resolves the handler in the module that defines it.
 pub fn router() -> OpenApiRouter<AppState> {

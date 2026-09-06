@@ -1,4 +1,6 @@
-//! Cover image handlers, dual-mounted. `/opds/books/:id/cover{,/thumb}` sits
+//! Cover image handlers, dual-mounted.
+//!
+//! `/opds/books/:id/cover{,/thumb}` sits
 //! under `BasicOnly` so OPDS clients' Basic credentials stay within the
 //! RFC 7617 paired protection space. `/api/v1/books/:id/cover{,/thumb}` sits
 //! under `CurrentUser` (cookie-or-Basic) for the web UI. Handler body is

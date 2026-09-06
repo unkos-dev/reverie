@@ -789,7 +789,9 @@ pub async fn fan_out_with_fallback(
     all
 }
 
-/// Parallel lookup bounded by a wall-clock budget.  A slow provider cannot
+/// Parallel lookup bounded by a wall-clock budget.
+///
+/// A slow provider cannot
 /// starve the others: when the budget expires, every provider that has
 /// already returned keeps its result; the rest are emitted as
 /// `SourceError::Timeout` so [`finish`](super::queue) can mark the row

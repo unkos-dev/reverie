@@ -35,8 +35,9 @@ use serde::Deserialize;
 
 use crate::config::Config;
 
-/// Claims read from a validated RFC 9068 access token. Presence of
-/// `exp`/`iss`/`aud`/`sub` is forced by `Validation::required_spec_claims`
+/// Claims read from a validated RFC 9068 access token.
+///
+/// Presence of `exp`/`iss`/`aud`/`sub` is forced by `Validation::required_spec_claims`
 /// before this struct is ever populated; `iss`/`sub` are re-read here for
 /// identity resolution. `scope` (RFC 8693 §4.2) is a single space-delimited
 /// string on the wire, not a JSON array.
@@ -71,7 +72,9 @@ where
     Ok(Some(raw.split_whitespace().map(String::from).collect()))
 }
 
-/// Opaque validation failure. Every rejection reason collapses to the same
+/// Opaque validation failure.
+///
+/// Every rejection reason collapses to the same
 /// caller-visible outcome (`AppError::InvalidCredential`, RFC 6750 §3.1
 /// `error="invalid_token"`); the specific failure mode is captured only in
 /// the `tracing::warn!` emitted at the point of rejection; never in the
@@ -182,8 +185,9 @@ fn decoding_key_from_jwk(jwk: &JsonWebKey) -> jsonwebtoken::errors::Result<Decod
     }
 }
 
-/// Validated, JWKS-backed access-token validator built once at startup from
-/// [`Config`]'s resource-server fields ([`init_jwt_validator`]). `None` on
+/// Validated, JWKS-backed access-token validator built once at startup.
+///
+/// Built from [`Config`]'s resource-server fields ([`init_jwt_validator`]). `None` on
 /// [`crate::state::AppState`] when resource-server JWT validation is not
 /// configured.
 pub struct JwtValidator {
@@ -290,7 +294,9 @@ impl JwtValidator {
 }
 
 /// Build a [`JwtValidator`] from resource-server config, called once at
-/// startup (beside [`crate::auth::oidc::init_oidc_client`]) when
+/// startup.
+///
+/// Called beside [`crate::auth::oidc::init_oidc_client`] when
 /// [`Config::resource_server_configured`] is `true`. The JWKS URL is the
 /// explicit `resource_server_jwks_url` override when set, otherwise it is
 /// derived via OIDC discovery against `resource_server_issuer`, the same

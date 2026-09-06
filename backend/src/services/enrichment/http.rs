@@ -295,6 +295,12 @@ impl Resolve for SsrfResolver {
 ///
 /// `user_agent` is forwarded on every request.  Upstream providers
 /// (e.g. `OpenLibrary`) grant identified clients a higher rate-limit tier.
+///
+/// # Panics
+///
+/// Panics if `reqwest::Client::builder().build()` fails, which only happens
+/// if the TLS backend fails to initialise; rustls is a pure-Rust backend and
+/// should not fail in any normally configured environment.
 pub fn api_client(user_agent: &str) -> reqwest::Client {
     #[expect(
         clippy::expect_used,

@@ -30,9 +30,10 @@ pub fn router() -> OpenApiRouter<AppState> {
     OpenApiRouter::new().routes(routes!(download_epub))
 }
 
-/// `GET /opds/books/{id}/file` — streamed EPUB download. The response
-/// carries an RFC 6266 `Content-Disposition: attachment` header whose
-/// filename is derived from the work title (ASCII fallback plus RFC 5987
+/// Streamed EPUB download.
+///
+/// The response carries an RFC 6266 `Content-Disposition: attachment` header
+/// whose filename is derived from the work title (ASCII fallback plus RFC 5987
 /// UTF-8 form).
 ///
 /// # Errors

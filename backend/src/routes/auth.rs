@@ -27,11 +27,12 @@ use crate::models::theme_preference::ThemePreference;
 use crate::models::user;
 use crate::state::AppState;
 
-/// Build the `/auth/*` router (login / callback / logout / me / theme) as
-/// an [`OpenApiRouter`] so each handler's `#[utoipa::path]` contributes to
-/// the generated spec (a missing annotation fails to compile). Merged into
-/// `crate::openapi::pilot_router` and split into its runtime and spec
-/// halves there.
+/// Build the `/auth/*` router (login / callback / logout / me / theme).
+///
+/// It is an [`OpenApiRouter`] so each handler's `#[utoipa::path]` contributes
+/// to the generated spec (a missing annotation fails to compile). Merged into
+/// `crate::openapi::pilot_router` and split into its runtime and spec halves
+/// there.
 pub fn router() -> OpenApiRouter<AppState> {
     OpenApiRouter::new()
         .routes(routes!(oidc_login))
