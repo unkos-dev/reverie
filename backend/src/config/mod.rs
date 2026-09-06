@@ -592,6 +592,18 @@ impl Config {
             }
         }
 
+        // Gate 6: the operator contact is embedded verbatim in the outbound
+        // `User-Agent`, and reqwest refuses to build a client whose UA is not
+        // a valid header value. Rejecting it here turns a per-request panic in
+        // the UA-setting constructors into a startup error.
+        if axum::http::HeaderValue::from_str(&cfg.user_agent()).is_err() {
+            return Err(ConfigError::Invalid {
+                var: "REVERIE_OPERATOR_CONTACT".into(),
+                reason: "must be a valid HTTP header value (visible ASCII, no control characters)"
+                    .into(),
+            });
+        }
+
         // Declarative validation (range + cross-field). Aggregated.
         cfg.validate().map_err(|e| map_validation_errors(&e))?;
 
@@ -1656,6 +1668,16 @@ mod tests {
         ]);
         let config = cfg_from_owned(&vars).expect("resource-server config loads");
         assert!(config.resource_server_require_at_jwt);
+    }
+
+    #[test]
+    fn from_env_rejects_operator_contact_that_is_not_a_header_value() {
+        let vars = with_overrides(&[("REVERIE_OPERATOR_CONTACT", "ops@example.com\r\nX-Injected: 1")]);
+        let err = cfg_from_owned(&vars).unwrap_err();
+        assert!(
+            err.to_string().contains("REVERIE_OPERATOR_CONTACT"),
+            "expected var name in error: {err}"
+        );
     }
 
     #[test]
