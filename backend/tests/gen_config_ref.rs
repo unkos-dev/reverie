@@ -1,4 +1,4 @@
-//! Drift gate for the generated configuration reference (docs-as-done, UNK-370).
+//! Drift gate for the generated configuration reference.
 //!
 //! The committed `configuration.mdx` must equal what the schema renderer
 //! produces; editing a config field's doc/default/range without regenerating
