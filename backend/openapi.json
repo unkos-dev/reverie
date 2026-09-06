@@ -16,7 +16,7 @@
           "users"
         ],
         "summary": "Change your own password",
-        "description": "Verifies the caller's current password and sets a new one, invalidating all of the caller's sessions including the one making this request. Returns 401 if authentication is missing and 422 if the current password is wrong, the new password fails the password policy, or the account has no local credential.",
+        "description": "Verifies the caller's current password and sets a new one, invalidating all of the caller's sessions including the one making this request. Returns 422 if the current password is wrong or the account has no local credential.",
         "operationId": "change_own_password",
         "requestBody": {
           "content": {
@@ -83,7 +83,7 @@
           "suggest"
         ],
         "summary": "Resolve author ids to names",
-        "description": "Resolves the given `id` values to author display names, for labelling a restored filter chip. Ids are scoped to the caller's own visible library and to the `author` credit role; an id the caller cannot see, or one that is not an author, is silently omitted rather than reported as missing. Requires at least one `id` and rejects more than 60. Returns 400 for a malformed `id`, 401 when unauthenticated, and 422 when `id` is missing or over the limit.",
+        "description": "Resolves the given `id` values to author display names, for labelling a restored filter chip. Ids are scoped to the caller's own visible library and to the `author` credit role; an id the caller cannot see, or one that is not an author, is silently omitted rather than reported as missing. Requires at least one `id` and rejects more than 60.",
         "operationId": "authors_by_id",
         "parameters": [
           {
@@ -172,7 +172,7 @@
           "suggest"
         ],
         "summary": "List author suggestions",
-        "description": "Returns author names credited on a manifestation the caller can see, ranked by prefix match against `q` and then by similarity. Only the `author` credit role is matched, not editors, translators, or narrators. Scoped to the caller's own visible library. Returns 400 for a malformed `limit`, 401 when unauthenticated, and 422 when `q` is empty or longer than 100 characters.",
+        "description": "Returns author names credited on a manifestation the caller can see, ranked by prefix match against `q` and then by similarity. Only the `author` credit role is matched, not editors, translators, or narrators. Scoped to the caller's own visible library.",
         "operationId": "suggest_authors",
         "parameters": [
           {
@@ -267,7 +267,7 @@
           "library"
         ],
         "summary": "List books",
-        "description": "Returns one page of the manifestations visible to the caller, filterable and sortable via query parameters. Fails with 400 when a filter or sort parameter is malformed, and 422 when the cursor is invalid or a filter exceeds its allowed value count.",
+        "description": "Returns one page of the manifestations visible to the caller, filterable and sortable via query parameters.",
         "operationId": "list",
         "parameters": [
           {
@@ -792,7 +792,7 @@
           "library"
         ],
         "summary": "Get a book's cover",
-        "description": "Streams the full-size cover image for a manifestation as `image/jpeg` or `image/png`, with a strong `ETag` and a day-long `Cache-Control`, for the web UI. Requires authentication (401) via session cookie, device token or OIDC bearer token, returns 304 when `If-None-Match` matches the current `ETag`, and 404 when the manifestation is missing, hidden from the caller, or has no cover.",
+        "description": "Streams the full-size cover image for a manifestation as `image/jpeg`, `image/png`, or `image/webp`, with a strong `ETag` and a day-long `Cache-Control`, for the web UI. Requires a session cookie, HTTP Basic authentication, a device token, or an OIDC bearer token.",
         "operationId": "api_cover",
         "parameters": [
           {
@@ -808,7 +808,7 @@
         ],
         "responses": {
           "200": {
-            "description": "Cover image stream (`image/jpeg` / `image/png`); Cache-Control: private, max-age=86400; carries a strong ETag"
+            "description": "Cover image stream (`image/jpeg` / `image/png` / `image/webp`); Cache-Control: private, max-age=86400; carries a strong ETag"
           },
           "304": {
             "description": "Not Modified — the request's If-None-Match matched the cover ETag"
@@ -864,7 +864,7 @@
           "library"
         ],
         "summary": "Get a book's cover thumbnail",
-        "description": "Streams the thumbnail cover image for a manifestation as `image/jpeg`, with a strong `ETag` and a day-long `Cache-Control`, for the web UI. Requires authentication (401) via session cookie, device token or OIDC bearer token, returns 304 when `If-None-Match` matches the current `ETag`, and 404 when the manifestation is missing, hidden from the caller, or has no cover.",
+        "description": "Streams the thumbnail cover image for a manifestation as `image/jpeg`, with a strong `ETag` and a day-long `Cache-Control`, for the web UI. Requires a session cookie, HTTP Basic authentication, a device token, or an OIDC bearer token.",
         "operationId": "api_cover_thumb",
         "parameters": [
           {
@@ -936,7 +936,7 @@
           "metadata"
         ],
         "summary": "Get a book's editable metadata",
-        "description": "Returns the editable metadata span for one manifestation, matching what the corresponding PATCH accepts. Available to adult accounts only. Fails with 404 when the manifestation is missing or hidden from the caller.",
+        "description": "Returns the editable metadata span for one manifestation, matching what the corresponding PATCH accepts. Available to adult accounts only.",
         "operationId": "get_book_metadata",
         "parameters": [
           {
@@ -1028,7 +1028,7 @@
           "metadata"
         ],
         "summary": "Update a book's metadata",
-        "description": "Applies a manual operator edit to a manifestation's metadata; each touched field is recorded as a new metadata version. Requires an `If-Match` header; fails with 428 when it is absent and 412 when it does not match. Available to adult accounts only. Fails with 400 when `If-Match` is malformed or refused by policy, 422 when the body has no populated fields or a value fails parsing, and 404 when the manifestation is missing or hidden.",
+        "description": "Applies a manual operator edit to a manifestation's metadata; each touched field is recorded as a new metadata version. Requires an `If-Match` header; fails with 428 when it is absent, 412 when it does not match, and 400 when it is malformed or refused by policy. Available to adult accounts only.",
         "operationId": "update_book_metadata",
         "parameters": [
           {
@@ -1190,7 +1190,7 @@
           "reading"
         ],
         "summary": "Get reading state",
-        "description": "Returns the caller's reading state for one book; all-null fields mean the book is unread. Fails with 404 when the manifestation is missing or hidden from the caller.",
+        "description": "Returns the caller's reading state for one book; all-null fields mean the book is unread.",
         "operationId": "get_reading",
         "parameters": [
           {
@@ -1272,7 +1272,7 @@
           "reading"
         ],
         "summary": "Update reading state",
-        "description": "Applies a partial update to the caller's reading state for one book, such as status, rating, or notes. Requires an `If-Match` header; fails with 428 when it is absent and 412 when it does not match the caller's current entity-tag. Fails with 400 when `If-Match` is malformed or refused by policy, 422 when the body has no populated fields or a value is out of range, and 404 when the manifestation is missing or hidden.",
+        "description": "Applies a partial update to the caller's reading state for one book, such as status, rating, or notes. Requires an `If-Match` header; fails with 428 when it is absent, 412 when it does not match the caller's current entity-tag, and 400 when it is malformed or refused by policy.",
         "operationId": "patch_reading",
         "parameters": [
           {
@@ -1424,7 +1424,7 @@
           "dashboard"
         ],
         "summary": "List recent ingestion batches",
-        "description": "Returns the most recent ingestion batches, newest first, with per-batch outcome counts. Clamped to 1 to 100 batches (default 20). Admin only. Returns 400 for a malformed `limit`, 401 when unauthenticated, and 403 when the caller is not an admin.",
+        "description": "Returns the most recent ingestion batches, newest first, with per-batch outcome counts. Clamped to 1 to 100 batches (default 20). Admin only.",
         "operationId": "activity",
         "parameters": [
           {
@@ -1510,7 +1510,7 @@
           "dashboard"
         ],
         "summary": "Get library-wide health metrics",
-        "description": "Returns aggregate library statistics: manifestation and work counts, storage usage by format, validation and enrichment status breakdowns, and metadata coverage. Admin only. Returns 401 when unauthenticated and 403 when the caller is not an admin.",
+        "description": "Returns aggregate library statistics: manifestation and work counts, storage usage by format, validation and enrichment status breakdowns, and metadata coverage. Admin only.",
         "operationId": "stats",
         "responses": {
           "200": {
@@ -1574,7 +1574,7 @@
           "enrichment"
         ],
         "summary": "Get enrichment queue status",
-        "description": "Returns the count of manifestations visible to the caller in each enrichment state: pending, in progress, complete, failed, and skipped. Not available to child accounts. Returns 401 when unauthenticated and 403 for a child account.",
+        "description": "Returns the count of manifestations visible to the caller in each enrichment state: pending, in progress, complete, failed, and skipped. Not available to child accounts.",
         "operationId": "status",
         "responses": {
           "200": {
@@ -1638,7 +1638,7 @@
           "suggest"
         ],
         "summary": "List genre suggestions",
-        "description": "Returns genre names attached to a manifestation the caller can see, ranked by prefix match against `q` and then by similarity. Scoped to the caller's own visible library. Returns 400 for a malformed `limit`, 401 when unauthenticated, and 422 when `q` is empty or longer than 100 characters.",
+        "description": "Returns genre names attached to a manifestation the caller can see, ranked by prefix match against `q` and then by similarity. Scoped to the caller's own visible library.",
         "operationId": "suggest_genres",
         "parameters": [
           {
@@ -1733,7 +1733,7 @@
           "ingestion"
         ],
         "summary": "Scan the ingestion directory",
-        "description": "Synchronously scans the ingestion directory and returns per-outcome file counts: processed, failed, and skipped. Admin only. Returns 401 when unauthenticated and 403 when the caller is not an admin.",
+        "description": "Synchronously scans the ingestion directory and returns per-outcome file counts: processed, failed, and skipped. Admin only.",
         "operationId": "scan",
         "responses": {
           "200": {
@@ -1797,7 +1797,7 @@
           "enrichment"
         ],
         "summary": "Preview an enrichment run",
-        "description": "Runs the enrichment pipeline synchronously against the manifestation without saving any change, and returns the diff it would make. Per-source failures are listed in the response rather than failing the request. Not available to child accounts. Returns 401 when unauthenticated, 403 for a child account, and 404 when the manifestation is missing or not visible to the caller.",
+        "description": "Runs the enrichment pipeline synchronously against the manifestation without saving any change, and returns the diff it would make. Per-source failures are listed in the response rather than failing the request. Not available to child accounts.",
         "operationId": "dry_run",
         "parameters": [
           {
@@ -1883,7 +1883,7 @@
           "enrichment"
         ],
         "summary": "Trigger an enrichment re-run",
-        "description": "Re-queues the manifestation for a fresh enrichment pass. An idle manifestation is reset to pending immediately; one with an active run is re-queued once that run completes. Not available to child accounts. Returns 401 when unauthenticated, 403 for a child account, and 404 when the manifestation is missing or not visible to the caller.",
+        "description": "Re-queues the manifestation for a fresh enrichment pass. An idle manifestation is reset to pending immediately; one with an active run is re-queued once that run completes. Not available to child accounts.",
         "operationId": "trigger",
         "parameters": [
           {
@@ -1962,7 +1962,7 @@
           "metadata"
         ],
         "summary": "List a manifestation's metadata versions",
-        "description": "Returns the metadata review queue for one manifestation, newest first; the list is empty when the manifestation is missing or hidden from the caller. Available to adult accounts only, returning 403 for a child account.",
+        "description": "Returns the metadata review queue for one manifestation, newest first; the list is empty when the manifestation is missing or hidden from the caller. Available to adult accounts only.",
         "operationId": "get_manifestation_metadata",
         "parameters": [
           {
@@ -2041,7 +2041,7 @@
           "metadata"
         ],
         "summary": "Accept a metadata version",
-        "description": "Promotes a pending metadata version to canonical for a manifestation; accepting an ISBN change may trigger a re-match against other works. Available to adult accounts only. Fails with 404 when the version does not belong to the manifestation or is hidden from the caller, and 422 when the stored value fails parsing.",
+        "description": "Promotes a pending metadata version to canonical for a manifestation; accepting an ISBN change may trigger a re-match against other works. Available to adult accounts only. Returns 422 if the stored value fails field parsing.",
         "operationId": "accept_manifestation",
         "parameters": [
           {
@@ -2140,7 +2140,7 @@
           "metadata"
         ],
         "summary": "Lock a metadata field",
-        "description": "Locks a metadata field against future automated enrichment writes; locking an already-locked field is a no-op. Available to adult accounts only. Fails with 422 when `entity_type` is not `work` or `manifestation`.",
+        "description": "Locks a metadata field against future automated enrichment writes; locking an already-locked field is a no-op. Available to adult accounts only.",
         "operationId": "lock_field",
         "parameters": [
           {
@@ -2229,7 +2229,7 @@
           "metadata"
         ],
         "summary": "Reject a metadata version",
-        "description": "Marks a pending metadata version as rejected. Available to adult accounts only. Fails with 404 when the version does not belong to the manifestation or is hidden from the caller.",
+        "description": "Marks a pending metadata version as rejected. Available to adult accounts only.",
         "operationId": "reject_manifestation",
         "parameters": [
           {
@@ -2318,7 +2318,7 @@
           "metadata"
         ],
         "summary": "Revert a metadata field",
-        "description": "Restores a prior metadata version as canonical for a field, or clears the field entirely when no version is given. Available to adult accounts only. Fails with 404 when the manifestation or version is missing or hidden from the caller, and 422 when the field cannot be cleared or the stored value fails parsing.",
+        "description": "Restores a prior metadata version as canonical for a field, or clears the field entirely when no version is given. Available to adult accounts only. Returns 422 if the field cannot be cleared or the stored value fails parsing.",
         "operationId": "revert_manifestation",
         "parameters": [
           {
@@ -2417,7 +2417,7 @@
           "metadata"
         ],
         "summary": "Unlock a metadata field",
-        "description": "Removes a lock on a metadata field, allowing future automated enrichment writes to resume. Available to adult accounts only. Fails with 404 when no matching lock exists, and 422 when `entity_type` is not `work` or `manifestation`.",
+        "description": "Removes a lock on a metadata field, allowing future automated enrichment writes to resume. Available to adult accounts only.",
         "operationId": "unlock_field",
         "parameters": [
           {
@@ -2516,7 +2516,7 @@
           "suggest"
         ],
         "summary": "List mood suggestions",
-        "description": "Returns mood names attached to a manifestation the caller can see, ranked by prefix match against `q` and then by similarity. Scoped to the caller's own visible library. Returns 400 for a malformed `limit`, 401 when unauthenticated, and 422 when `q` is empty or longer than 100 characters.",
+        "description": "Returns mood names attached to a manifestation the caller can see, ranked by prefix match against `q` and then by similarity. Scoped to the caller's own visible library.",
         "operationId": "suggest_moods",
         "parameters": [
           {
@@ -2611,7 +2611,7 @@
           "suggest"
         ],
         "summary": "List publisher suggestions",
-        "description": "Returns distinct publisher values recorded on a manifestation the caller can see, ranked by prefix match against `q` and then by similarity. Scoped to the caller's own visible library. Returns 400 for a malformed `limit`, 401 when unauthenticated, and 422 when `q` is empty or longer than 100 characters.",
+        "description": "Returns distinct publisher values recorded on a manifestation the caller can see, ranked by prefix match against `q` and then by similarity. Scoped to the caller's own visible library.",
         "operationId": "suggest_publishers",
         "parameters": [
           {
@@ -2706,7 +2706,7 @@
           "library"
         ],
         "summary": "Search the library",
-        "description": "Returns the top hybrid-ranked manifestations matching a free-text query, with highlighted snippets. Fails with 400 on a malformed query parameter and 422 when the query is missing, empty, or exceeds the length limit.",
+        "description": "Returns the top hybrid-ranked manifestations matching a free-text query, with highlighted snippets.",
         "operationId": "search",
         "parameters": [
           {
@@ -2791,7 +2791,7 @@
           "suggest"
         ],
         "summary": "List series suggestions",
-        "description": "Returns series names attached to a manifestation the caller can see, ranked by prefix match against `q` and then by similarity. Scoped to the caller's own visible library. Returns 400 for a malformed `limit`, 401 when unauthenticated, and 422 when `q` is empty or longer than 100 characters.",
+        "description": "Returns series names attached to a manifestation the caller can see, ranked by prefix match against `q` and then by similarity. Scoped to the caller's own visible library.",
         "operationId": "suggest_series",
         "parameters": [
           {
@@ -2886,7 +2886,7 @@
           "series"
         ],
         "summary": "Get a series",
-        "description": "Returns the series identity plus its works in order, each with the manifestations visible to the caller. Returns 401 when unauthenticated and 404 when the series does not exist, has no linked works, or none of its works has a manifestation visible to the caller.",
+        "description": "Returns the series identity plus its works in order, each with the manifestations visible to the caller.",
         "operationId": "series_detail",
         "parameters": [
           {
@@ -2962,7 +2962,7 @@
           "settings"
         ],
         "summary": "Get settings",
-        "description": "Returns the currently persisted application settings, including the fields that only take effect after a process restart and the timestamp of the last successful live-reload. Admin only. Returns 401 when unauthenticated and 403 when the caller is not an admin.",
+        "description": "Returns the currently persisted application settings, including the fields that only take effect after a process restart and the timestamp of the last successful live-reload. Admin only.",
         "operationId": "get_settings",
         "responses": {
           "200": {
@@ -3024,7 +3024,7 @@
           "settings"
         ],
         "summary": "Update settings",
-        "description": "Applies a JSON Merge Patch to the application settings: fields absent from the body are left unchanged, and at least one field is required. Returns the updated settings and whether the change needs a process restart to take effect. Admin only. Returns 401 when unauthenticated, 403 when the caller is not an admin, and 422 for an empty patch, a malformed body, or invalid field values.",
+        "description": "Applies a JSON Merge Patch to the application settings: fields absent from the body are left unchanged, and at least one field is required. Returns the updated settings and whether the change needs a process restart to take effect. Admin only.",
         "operationId": "put_settings",
         "requestBody": {
           "description": "RFC 7396 JSON Merge Patch: absent fields are unchanged; at least one field is required",
@@ -3109,7 +3109,7 @@
           "shelves"
         ],
         "summary": "List shelves",
-        "description": "Returns one page of the caller's own shelves, ordered with system shelves first then by name. Fails with 400 on a malformed query parameter, 422 on a malformed cursor, and 401 when unauthenticated.",
+        "description": "Returns one page of the caller's own shelves, ordered with system shelves first then by name.",
         "operationId": "list_shelves",
         "parameters": [
           {
@@ -3200,7 +3200,7 @@
           "shelves"
         ],
         "summary": "Create a shelf",
-        "description": "Creates a new shelf for the caller. Available to adult accounts only, returning 403 for a child account; fails with 422 when the name is missing or empty.",
+        "description": "Creates a new shelf for the caller. Available to adult accounts only.",
         "operationId": "create_shelf",
         "requestBody": {
           "content": {
@@ -3292,7 +3292,7 @@
           "shelves"
         ],
         "summary": "Get a shelf with its items",
-        "description": "Returns a shelf's identity plus one page of its items in position order. Restricted to shelves the caller owns; fails with 404 when the shelf does not exist or belongs to another user. Fails with 400 on a malformed query parameter and 422 on a malformed cursor.",
+        "description": "Returns a shelf's identity plus one page of its items in position order. Restricted to shelves the caller owns.",
         "operationId": "get_shelf_with_items",
         "parameters": [
           {
@@ -3409,7 +3409,7 @@
           "shelves"
         ],
         "summary": "Delete a shelf",
-        "description": "Deletes a shelf owned by the caller. Available to adult accounts only, returning 403 for a child account; system shelves cannot be deleted and return 409. Fails with 404 when the shelf does not exist or belongs to another user.",
+        "description": "Deletes a shelf owned by the caller. Available to adult accounts only. System shelves cannot be deleted and return 409.",
         "operationId": "delete_shelf",
         "parameters": [
           {
@@ -3496,7 +3496,7 @@
           "shelves"
         ],
         "summary": "Rename a shelf",
-        "description": "Renames a shelf owned by the caller. Available to adult accounts only, returning 403 for a child account; system shelves cannot be renamed and return 409. Fails with 404 when the shelf does not exist or belongs to another user, and 422 when the name is missing or empty.",
+        "description": "Renames a shelf owned by the caller. Available to adult accounts only. System shelves cannot be renamed and return 409.",
         "operationId": "rename_shelf",
         "parameters": [
           {
@@ -3620,7 +3620,7 @@
           "shelves"
         ],
         "summary": "Reorder shelf items",
-        "description": "Rewrites the full ordering of items on the caller's shelf. Requires an `If-Match` header carrying the shelf's current entity-tag; fails with 428 when it is absent and 412 when it does not match. Fails with 404 when the shelf does not exist or belongs to another user, and 422 when the supplied list does not exactly match the shelf's current items.",
+        "description": "Rewrites the full ordering of items on the caller's shelf. Requires an `If-Match` header carrying the shelf's current entity-tag; fails with 428 when it is absent and 412 when it does not match. Returns 422 if the supplied list does not exactly match the shelf's current items.",
         "operationId": "reorder_shelf_items",
         "parameters": [
           {
@@ -3744,7 +3744,7 @@
           "shelves"
         ],
         "summary": "Add an item to a shelf",
-        "description": "Appends a manifestation to the end of the caller's shelf; adding one already on the shelf is a no-op. Fails with 404 when the shelf does not exist, belongs to another user, or the manifestation is not visible to the caller, and 422 when the body is missing or malformed.",
+        "description": "Appends a manifestation to the end of the caller's shelf; adding one already on the shelf is a no-op. Returns 404 if the manifestation is not visible to the caller.",
         "operationId": "add_shelf_item",
         "parameters": [
           {
@@ -3841,7 +3841,7 @@
           "shelves"
         ],
         "summary": "Remove an item from a shelf",
-        "description": "Removes a manifestation from the caller's shelf. Fails with 404 when the shelf does not exist, belongs to another user, or the manifestation is not on the shelf.",
+        "description": "Removes a manifestation from the caller's shelf. Returns 404 if the manifestation is not currently on the shelf.",
         "operationId": "remove_shelf_item",
         "parameters": [
           {
@@ -3928,7 +3928,7 @@
           "suggest"
         ],
         "summary": "List tag suggestions",
-        "description": "Returns tag names attached to a manifestation the caller can see, ranked by prefix match against `q` and then by similarity. Scoped to the caller's own visible library. Returns 400 for a malformed `limit`, 401 when unauthenticated, and 422 when `q` is empty or longer than 100 characters.",
+        "description": "Returns tag names attached to a manifestation the caller can see, ranked by prefix match against `q` and then by similarity. Scoped to the caller's own visible library.",
         "operationId": "suggest_tags",
         "parameters": [
           {
@@ -4023,7 +4023,7 @@
           "tokens"
         ],
         "summary": "List device tokens",
-        "description": "Returns the caller's active device tokens, without the plaintext credential or its stored hash. Returns 401 if authentication is missing.",
+        "description": "Returns the caller's active device tokens, without the plaintext credential or its stored hash.",
         "operationId": "list_tokens",
         "responses": {
           "200": {
@@ -4078,7 +4078,7 @@
           "tokens"
         ],
         "summary": "Create a device token",
-        "description": "Issues a device token for the caller and returns its Bearer credential exactly once; only its hash is persisted afterwards. Returns 401 if authentication is missing, 403 if a requested scope exceeds the caller's role, and 422 for an invalid `name`, an empty scope set, an invalid `expires_in_days`, or if the caller already has 10 active tokens.",
+        "description": "Issues a device token for the caller and returns its Bearer credential exactly once; only its hash is persisted afterwards. Returns 403 if a requested scope exceeds the caller's role and 422 if the caller already has 10 active tokens.",
         "operationId": "create_token",
         "requestBody": {
           "content": {
@@ -4162,7 +4162,7 @@
           "tokens"
         ],
         "summary": "Revoke a device token",
-        "description": "Revokes one of the caller's device tokens by id. Returns 401 if authentication is missing, 403 if the caller's credential lacks the write scope, and 404 if the token does not exist, belongs to another user, or is already revoked.",
+        "description": "Revokes one of the caller's device tokens by id. Returns 404 if the token does not exist, belongs to another user, or is already revoked (ownership is not leaked).",
         "operationId": "revoke_token",
         "parameters": [
           {
@@ -4241,7 +4241,7 @@
           "users"
         ],
         "summary": "List users",
-        "description": "Returns every user, oldest first, capped at 500 rows. Admin only. Returns 401 if authentication is missing and 403 if the caller is not an admin.",
+        "description": "Returns every user, oldest first, capped at 500 rows. Admin only.",
         "operationId": "list_users",
         "responses": {
           "200": {
@@ -4306,7 +4306,7 @@
           "users"
         ],
         "summary": "Create a user",
-        "description": "Creates an account with an administrator-typed initial password, for the administrator to relay out of band. Admin only. Returns 401 if authentication is missing, 403 if the caller is not an admin or is a child, 409 if the email is already in use, and 422 for an invalid email or a password rejected by the password policy.",
+        "description": "Creates an account with an administrator-typed initial password, for the administrator to relay out of band. Admin only; the caller must not be a child. Returns 409 if the email is already in use.",
         "operationId": "create_user",
         "requestBody": {
           "content": {
@@ -4400,7 +4400,7 @@
           "users"
         ],
         "summary": "Update a user's name or email",
-        "description": "Updates the target user's `display_name` and `email` using JSON Merge Patch: an absent field is unchanged, and an explicit `null` clears `email` but is rejected for `display_name`. Neither field invalidates the target's sessions. Admin only. Returns 401 if authentication is missing, 403 if the caller is not an admin, 404 if the target does not exist, and 422 for a null or empty `display_name`, an invalid `email`, or an `email` already in use.",
+        "description": "Updates the target user's `display_name` and `email` using JSON Merge Patch: an absent field is unchanged, and an explicit `null` clears `email` but is rejected for `display_name`. Neither field invalidates the target's sessions. Admin only. Returns 422 for an empty `display_name` or an `email` already in use.",
         "operationId": "update_user",
         "parameters": [
           {
@@ -4507,7 +4507,7 @@
           "users"
         ],
         "summary": "Enable or disable an account",
-        "description": "Soft-disables or re-enables the target account. Disabling invalidates the target's active sessions; an administrator cannot disable their own account. Admin only. Returns 401 if authentication is missing, 403 if the caller is not an admin or is a child, 404 if the target does not exist, and 422 for a self-disable attempt or if disabling would leave zero enabled administrators.",
+        "description": "Soft-disables or re-enables the target account. Disabling invalidates the target's active sessions; an administrator cannot disable their own account. Admin only; the caller must not be a child. Returns 422 if disabling would leave zero enabled administrators.",
         "operationId": "update_account_status",
         "parameters": [
           {
@@ -4613,7 +4613,7 @@
           "users"
         ],
         "summary": "Change a user's child status",
-        "description": "Toggles whether child content-visibility rules apply to the target user and invalidates their active sessions. Enabling child status also sets the role to `child`; disabling it reverts `child` to `adult` and leaves other roles unchanged. Admin only. Returns 401 if authentication is missing, 403 if the caller is not an admin, 404 if the target does not exist, and 422 if marking the last administrator as a child would leave zero administrators, or the request body is invalid.",
+        "description": "Toggles whether child content-visibility rules apply to the target user and invalidates their active sessions. Enabling child status also sets the role to `child`; disabling it reverts `child` to `adult` and leaves other roles unchanged. Admin only. Returns 422 if marking the last administrator as a child would leave zero administrators.",
         "operationId": "update_child_status",
         "parameters": [
           {
@@ -4719,7 +4719,7 @@
           "users"
         ],
         "summary": "Reset a user's password",
-        "description": "Sets a new password for the target account, for the administrator to relay out of band, and invalidates the target's active sessions. Admin only. Returns 401 if authentication is missing, 403 if the caller is not an admin or is a child, 404 if the target does not exist, and 422 if the password fails the password policy.",
+        "description": "Sets a new password for the target account, for the administrator to relay out of band, and invalidates the target's active sessions. Admin only; the caller must not be a child.",
         "operationId": "admin_reset_password",
         "parameters": [
           {
@@ -4818,7 +4818,7 @@
           "users"
         ],
         "summary": "Change a user's role",
-        "description": "Sets the target user's role and invalidates their active sessions. Admin only. Returns 401 if authentication is missing, 403 if the caller is not an admin, 404 if the target does not exist, and 422 if the change would leave zero administrators, conflicts with the target's child status, or the request body is invalid.",
+        "description": "Sets the target user's role and invalidates their active sessions. Admin only. Returns 422 if the change would leave zero administrators or conflicts with the target's child status.",
         "operationId": "update_role",
         "parameters": [
           {
@@ -5000,7 +5000,7 @@
           "metadata"
         ],
         "summary": "List a work's metadata versions",
-        "description": "Returns the metadata review queue across every manifestation of a work, newest first; the list is empty when the work is missing or hidden from the caller. Available to adult accounts only, returning 403 for a child account.",
+        "description": "Returns the metadata review queue across every manifestation of a work, newest first; the list is empty when the work is missing or hidden from the caller. Available to adult accounts only.",
         "operationId": "get_work_metadata",
         "parameters": [
           {
@@ -5079,7 +5079,7 @@
           "auth"
         ],
         "summary": "Complete OIDC login",
-        "description": "Completes the OIDC authorization-code flow, establishes a session, and redirects to the app. No authentication is required to call it. Returns 400 for a malformed `code` or `state` query parameter and 401 if the anti-forgery state does not match or the ID token fails validation.",
+        "description": "Completes the OIDC authorization-code flow, establishes a session, and redirects to the app. No authentication is required to call it. Returns 401 if the anti-forgery state does not match or the ID token fails validation.",
         "operationId": "callback",
         "parameters": [
           {
@@ -5281,7 +5281,7 @@
           "auth"
         ],
         "summary": "Get the current profile",
-        "description": "Returns the authenticated caller's profile, including the `csrf_token` to echo back as `X-CSRF-Token` on unsafe requests (`null` for sessions authenticated with OPDS Basic auth). Returns 401 if authentication is missing.",
+        "description": "Returns the authenticated caller's profile, including the `csrf_token` to echo back as `X-CSRF-Token` on unsafe requests (`null` for sessions authenticated with OPDS Basic auth).",
         "operationId": "me",
         "responses": {
           "200": {
@@ -5313,7 +5313,7 @@
           "auth"
         ],
         "summary": "Get the caller's library preferences",
-        "description": "Returns the caller's overrides for hidden columns, row density, view, and default sort, alongside the installation defaults; a `null` group means the default applies. An account with no stored row reads as all-null overrides. Returns 401 when unauthenticated.",
+        "description": "Returns the caller's overrides for hidden columns, row density, view, and default sort, alongside the installation defaults; a `null` group means the default applies. An account with no stored row reads as all-null overrides.",
         "operationId": "get_preferences",
         "responses": {
           "200": {
@@ -5365,7 +5365,7 @@
           "auth"
         ],
         "summary": "Update the caller's library preferences",
-        "description": "Applies a JSON Merge Patch to the caller's hidden columns, row density, view, and default sort: an absent group is left unchanged and an explicit `null` resets it to the installation default. At least one group is required. Returns 401 when unauthenticated and 422 for an empty body, an unknown density or view, or an out-of-range sort stack or column key.",
+        "description": "Applies a JSON Merge Patch to the caller's hidden columns, row density, view, and default sort: an absent group is left unchanged and an explicit `null` resets it to the installation default. At least one group is required.",
         "operationId": "patch_preferences",
         "requestBody": {
           "description": "RFC 7396 JSON Merge Patch: absent groups are unchanged, `null` resets a group to the installation default",
@@ -5440,7 +5440,7 @@
           "auth"
         ],
         "summary": "Set the theme preference",
-        "description": "Persists the caller's theme preference and refreshes the `reverie_theme` cookie. Returns 401 if authentication is missing and 422 for an unknown `theme_preference` value.",
+        "description": "Persists the caller's theme preference and refreshes the `reverie_theme` cookie.",
         "operationId": "update_theme",
         "requestBody": {
           "content": {
@@ -5520,7 +5520,7 @@
           "auth"
         ],
         "summary": "Register a new account",
-        "description": "Creates a new account with the `adult` role and does not sign the caller in. No authentication is required to call it. Returns 404 if self-registration or local authentication is disabled, 409 if the email is already in use, 422 for an invalid email or a password that fails the password policy, and 429 when too many requests have been made.",
+        "description": "Creates a new account with the `adult` role and does not sign the caller in. No authentication is required to call it. Returns 404 if self-registration or local authentication is disabled, 409 if the email is already in use, and 429 when too many requests have been made.",
         "operationId": "register",
         "requestBody": {
           "content": {
@@ -5646,7 +5646,7 @@
           "auth"
         ],
         "summary": "Create the first administrator",
-        "description": "Creates the first administrator account during initial setup and does not sign the caller in. No authentication is required to call it. Returns 409 if an administrator already exists, 422 for an invalid email or a password that is too short, and 429 when too many requests have been made.",
+        "description": "Creates the first administrator account during initial setup and does not sign the caller in. No authentication is required to call it. Returns 409 if an administrator already exists and 429 when too many requests have been made.",
         "operationId": "setup",
         "requestBody": {
           "content": {
@@ -5789,7 +5789,7 @@
           "opds"
         ],
         "summary": "Get the OPDS catalog root",
-        "description": "Returns an OPDS navigation feed linking the library catalogue and every shelf owned by the caller. Requires HTTP Basic authentication (401).",
+        "description": "Returns an OPDS navigation feed linking the library catalogue and every shelf owned by the caller. Requires HTTP Basic authentication.",
         "operationId": "opds_root",
         "responses": {
           "200": {
@@ -5825,8 +5825,8 @@
         "tags": [
           "opds"
         ],
-        "summary": "Get a book's cover",
-        "description": "Streams the full-size cover image for a manifestation as `image/jpeg` or `image/png`, with a strong `ETag` and a day-long `Cache-Control`. Requires HTTP Basic authentication (401), returns 304 when `If-None-Match` matches the current `ETag`, and 404 when the manifestation is missing, hidden from the caller, or has no cover.",
+        "summary": "Get a book's cover for OPDS",
+        "description": "Streams the full-size cover image for a manifestation as `image/jpeg` or `image/png`, with a strong `ETag` and a day-long `Cache-Control`. Requires HTTP Basic authentication.",
         "operationId": "opds_cover",
         "parameters": [
           {
@@ -5880,8 +5880,8 @@
         "tags": [
           "opds"
         ],
-        "summary": "Get a book's cover thumbnail",
-        "description": "Streams the thumbnail cover image for a manifestation as `image/jpeg`, with a strong `ETag` and a day-long `Cache-Control`. Requires HTTP Basic authentication (401), returns 304 when `If-None-Match` matches the current `ETag`, and 404 when the manifestation is missing, hidden from the caller, or has no cover.",
+        "summary": "Get a book's cover thumbnail for OPDS",
+        "description": "Streams the thumbnail cover image for a manifestation as `image/jpeg`, with a strong `ETag` and a day-long `Cache-Control`. Requires HTTP Basic authentication.",
         "operationId": "opds_cover_thumb",
         "parameters": [
           {
@@ -5936,7 +5936,7 @@
           "opds"
         ],
         "summary": "Download an EPUB",
-        "description": "Streams the EPUB file for a manifestation, with a `Content-Disposition: attachment` header carrying a title-derived filename. Requires HTTP Basic authentication (401), returns 403 if the file's on-disk path escapes the configured library root, and 404 when the manifestation is missing, hidden from the caller, or its file is absent from disk.",
+        "description": "Streams the EPUB file for a manifestation, with a `Content-Disposition: attachment` header carrying a title-derived filename. Requires HTTP Basic authentication. Returns 403 if the file's on-disk path escapes the configured library root.",
         "operationId": "download_epub",
         "parameters": [
           {
@@ -6001,7 +6001,7 @@
           "opds"
         ],
         "summary": "Get the library navigation feed",
-        "description": "Returns an OPDS navigation feed linking the New, Authors and Series subcatalogues for the caller's whole library. Requires HTTP Basic authentication (401).",
+        "description": "Returns an OPDS navigation feed linking the New, Authors and Series subcatalogues for the caller's whole library. Requires HTTP Basic authentication.",
         "operationId": "library_root",
         "responses": {
           "200": {
@@ -6038,7 +6038,7 @@
           "opds"
         ],
         "summary": "List authors",
-        "description": "Returns an OPDS navigation feed of authors with at least one visible book, cursor-paginated via `cursor`. Requires HTTP Basic authentication (401) and returns 400 for a malformed query parameter or 422 for an invalid cursor.",
+        "description": "Returns an OPDS navigation feed of authors with at least one visible book, cursor-paginated via `cursor`. Requires HTTP Basic authentication.",
         "operationId": "library_authors",
         "parameters": [
           {
@@ -6106,7 +6106,7 @@
           "opds"
         ],
         "summary": "List an author's books",
-        "description": "Returns an OPDS acquisition feed of one author's visible books, cursor-paginated via `cursor` (empty if the author is unknown). Requires HTTP Basic authentication (401) and returns 400 for a malformed query parameter or 422 for an invalid cursor.",
+        "description": "Returns an OPDS acquisition feed of one author's visible books, cursor-paginated via `cursor` (empty if the author is unknown). Requires HTTP Basic authentication.",
         "operationId": "library_author_books",
         "parameters": [
           {
@@ -6184,7 +6184,7 @@
           "opds"
         ],
         "summary": "List the newest books",
-        "description": "Returns an OPDS acquisition feed of the newest visible books, newest first, cursor-paginated via `cursor`. Requires HTTP Basic authentication (401) and returns 400 for a malformed query parameter or 422 for an invalid cursor.",
+        "description": "Returns an OPDS acquisition feed of the newest visible books, newest first, cursor-paginated via `cursor`. Requires HTTP Basic authentication.",
         "operationId": "library_new",
         "parameters": [
           {
@@ -6252,7 +6252,7 @@
           "opds"
         ],
         "summary": "Get the library search descriptor",
-        "description": "Returns an OpenSearch descriptor whose search template targets the library-wide search feed. Requires HTTP Basic authentication (401).",
+        "description": "Returns an OpenSearch descriptor whose search template targets the library-wide search feed. Requires HTTP Basic authentication.",
         "operationId": "library_opensearch",
         "responses": {
           "200": {
@@ -6288,8 +6288,8 @@
         "tags": [
           "opds"
         ],
-        "summary": "Search the library",
-        "description": "Returns an OPDS acquisition feed of full-text search results over visible books, using the `q` query parameter; an empty or whitespace-only `q` yields an empty feed. Requires HTTP Basic authentication (401) and returns 400 for a malformed query parameter.",
+        "summary": "Search the OPDS catalogue",
+        "description": "Returns an OPDS acquisition feed of full-text search results over visible books, using the `q` query parameter; an empty or whitespace-only `q` yields an empty feed. Requires HTTP Basic authentication.",
         "operationId": "library_search",
         "parameters": [
           {
@@ -6347,7 +6347,7 @@
           "opds"
         ],
         "summary": "List series",
-        "description": "Returns an OPDS navigation feed of series with at least one visible book, cursor-paginated via `cursor`. Requires HTTP Basic authentication (401) and returns 400 for a malformed query parameter or 422 for an invalid cursor.",
+        "description": "Returns an OPDS navigation feed of series with at least one visible book, cursor-paginated via `cursor`. Requires HTTP Basic authentication.",
         "operationId": "library_series",
         "parameters": [
           {
@@ -6415,7 +6415,7 @@
           "opds"
         ],
         "summary": "List a series' books",
-        "description": "Returns an OPDS acquisition feed of one series' visible books, in series order (empty if the series is unknown). Requires HTTP Basic authentication (401) and returns 400 for a malformed query parameter or 422 for an invalid cursor.",
+        "description": "Returns an OPDS acquisition feed of one series' visible books, in series order (empty if the series is unknown). Requires HTTP Basic authentication.",
         "operationId": "library_series_books",
         "parameters": [
           {
@@ -6493,7 +6493,7 @@
           "opds"
         ],
         "summary": "Get a shelf's navigation feed",
-        "description": "Returns an OPDS navigation feed linking a shelf's New, Authors and Series subcatalogues. Requires HTTP Basic authentication (401) and returns 404 if the shelf does not exist or is not owned by the caller.",
+        "description": "Returns an OPDS navigation feed linking a shelf's New, Authors and Series subcatalogues. Requires HTTP Basic authentication.",
         "operationId": "shelf_root",
         "parameters": [
           {
@@ -6552,7 +6552,7 @@
           "opds"
         ],
         "summary": "List authors on a shelf",
-        "description": "Returns an OPDS navigation feed of authors with at least one book on the shelf, cursor-paginated via `cursor`. Requires HTTP Basic authentication (401), returns 404 for a shelf the caller does not own, 400 for a malformed query parameter and 422 for an invalid cursor.",
+        "description": "Returns an OPDS navigation feed of authors with at least one book on the shelf, cursor-paginated via `cursor`. Requires HTTP Basic authentication.",
         "operationId": "shelf_authors",
         "parameters": [
           {
@@ -6640,7 +6640,7 @@
           "opds"
         ],
         "summary": "List an author's books on a shelf",
-        "description": "Returns an OPDS acquisition feed of one author's books on the shelf, cursor-paginated via `cursor` (empty if the author is unknown). Requires HTTP Basic authentication (401), returns 404 for a shelf the caller does not own, 400 for a malformed query parameter and 422 for an invalid cursor.",
+        "description": "Returns an OPDS acquisition feed of one author's books on the shelf, cursor-paginated via `cursor` (empty if the author is unknown). Requires HTTP Basic authentication.",
         "operationId": "shelf_author_books",
         "parameters": [
           {
@@ -6738,7 +6738,7 @@
           "opds"
         ],
         "summary": "List a shelf's newest books",
-        "description": "Returns an OPDS acquisition feed of the shelf's most recently added books, newest first, cursor-paginated via `cursor`. Requires HTTP Basic authentication (401), returns 404 for a shelf the caller does not own, 400 for a malformed query parameter and 422 for an invalid cursor.",
+        "description": "Returns an OPDS acquisition feed of the shelf's most recently added books, newest first, cursor-paginated via `cursor`. Requires HTTP Basic authentication.",
         "operationId": "shelf_new",
         "parameters": [
           {
@@ -6826,7 +6826,7 @@
           "opds"
         ],
         "summary": "Get a shelf's search descriptor",
-        "description": "Returns an OpenSearch descriptor whose search template is scoped to the shelf. Requires HTTP Basic authentication (401) and returns 404 if the shelf does not exist or is not owned by the caller.",
+        "description": "Returns an OpenSearch descriptor whose search template is scoped to the shelf. Requires HTTP Basic authentication.",
         "operationId": "shelf_opensearch",
         "parameters": [
           {
@@ -6885,7 +6885,7 @@
           "opds"
         ],
         "summary": "Search a shelf",
-        "description": "Returns an OPDS acquisition feed of full-text search results scoped to the shelf, using the `q` query parameter; an empty or whitespace-only `q` yields an empty feed. Requires HTTP Basic authentication (401), returns 404 for a shelf the caller does not own and 400 for a malformed query parameter.",
+        "description": "Returns an OPDS acquisition feed of full-text search results scoped to the shelf, using the `q` query parameter; an empty or whitespace-only `q` yields an empty feed. Requires HTTP Basic authentication.",
         "operationId": "shelf_search",
         "parameters": [
           {
@@ -6963,7 +6963,7 @@
           "opds"
         ],
         "summary": "List series on a shelf",
-        "description": "Returns an OPDS navigation feed of series with at least one book on the shelf, cursor-paginated via `cursor`. Requires HTTP Basic authentication (401), returns 404 for a shelf the caller does not own, 400 for a malformed query parameter and 422 for an invalid cursor.",
+        "description": "Returns an OPDS navigation feed of series with at least one book on the shelf, cursor-paginated via `cursor`. Requires HTTP Basic authentication.",
         "operationId": "shelf_series",
         "parameters": [
           {
@@ -7051,7 +7051,7 @@
           "opds"
         ],
         "summary": "List a series' books on a shelf",
-        "description": "Returns an OPDS acquisition feed of one series' books on the shelf, in series order (empty if the series is unknown). Requires HTTP Basic authentication (401), returns 404 for a shelf the caller does not own, 400 for a malformed query parameter and 422 for an invalid cursor.",
+        "description": "Returns an OPDS acquisition feed of one series' books on the shelf, in series order (empty if the series is unknown). Requires HTTP Basic authentication.",
         "operationId": "shelf_series_books",
         "parameters": [
           {

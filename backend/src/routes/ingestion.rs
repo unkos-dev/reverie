@@ -48,7 +48,7 @@ struct ScanResponse {
     post,
     path = "/api/v1/ingestion/scan",
     summary = "Scan the ingestion directory",
-    description = "Synchronously scans the ingestion directory and returns per-outcome file counts: processed, failed, and skipped. Admin only. Returns 401 when unauthenticated and 403 when the caller is not an admin.",
+    description = "Synchronously scans the ingestion directory and returns per-outcome file counts: processed, failed, and skipped. Admin only.",
     tag = "ingestion",
     security(("session_cookie" = ["admin"]), ("device_token_bearer" = ["admin"]), ("oidc_jwt_bearer" = ["admin"]), ("opds_basic" = ["admin"])),
     responses(

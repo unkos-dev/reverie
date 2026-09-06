@@ -281,7 +281,7 @@ struct BookListResponse {
     get,
     path = "/api/v1/books",
     summary = "List books",
-    description = "Returns one page of the manifestations visible to the caller, filterable and sortable via query parameters. Fails with 400 when a filter or sort parameter is malformed, and 422 when the cursor is invalid or a filter exceeds its allowed value count.",
+    description = "Returns one page of the manifestations visible to the caller, filterable and sortable via query parameters.",
     tag = "library",
     params(ListParams),
     security(("session_cookie" = ["read"]), ("device_token_bearer" = ["read"]), ("oidc_jwt_bearer" = ["read"]), ("opds_basic" = ["read"])),
