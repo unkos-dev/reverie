@@ -68,6 +68,11 @@ self_check() {
   grep -qE "$phase_pattern" <<<'Phase 2 enforces the check' || return 1
   # Lowercase `phase 2` is deliberately left alone; assert that it still is.
   grep -qE "$phase_pattern" <<<'phase 2 of the request lifecycle' && return 1
+  # The C locale keeps a line with a stray non-UTF-8 byte matchable, and -I
+  # still skips NUL-bearing (binary) input; both are probed because a quiet
+  # skip is the one failure this guard must never have.
+  printf '(S2) \xff\n' | LC_ALL=C grep -qiIE "$pattern" || return 1
+  printf '(S2)\0\n' | LC_ALL=C grep -qiIE "$pattern" && return 1
   is_gated backend/src/main.rs || return 1
   is_gated frontend/src/App.tsx || return 1
   is_gated backend/Cargo.toml || return 1

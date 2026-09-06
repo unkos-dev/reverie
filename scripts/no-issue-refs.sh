@@ -57,6 +57,11 @@ is_gated() {
 # path every real caller takes.
 self_check() {
   grep -qE "$pattern" <<<'see UNK-123 for context' || return 1
+  # The C locale keeps a line with a stray non-UTF-8 byte matchable, and -I
+  # still skips NUL-bearing (binary) input; both are probed because a quiet
+  # skip is the one failure this guard must never have.
+  printf 'see UNK-123 \xff\n' | LC_ALL=C grep -qIE "$pattern" || return 1
+  printf 'see UNK-123\0\n' | LC_ALL=C grep -qIE "$pattern" && return 1
   is_gated backend/src/main.rs || return 1
   is_gated frontend/src/App.tsx || return 1
   is_gated docs/adr/some-decision.md || return 1
