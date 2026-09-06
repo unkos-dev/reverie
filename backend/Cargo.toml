@@ -150,8 +150,7 @@ must_use_candidate = "allow"
 # Pedantic lints that only became reachable with the lib/bin split above:
 # every module pub item is now externally visible, so they surface
 # pre-existing instances across the crate rather than new defects. Held at
-# allow alongside the two doc lints above; the comment-policy record owns
-# whether any of the four return.
+# allow with no owning record.
 too_long_first_doc_paragraph = "allow"
 implicit_hasher = "allow"
 

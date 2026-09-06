@@ -97,15 +97,16 @@ if [ "${#files[@]}" -eq 0 ]; then
 fi
 
 # grep exit 1 = no matches (clean); exit >1 = a real error (e.g. an unreadable
-# file) that must not read as "clean". -I skips binary files (images, fonts).
+# file) that must not read as "clean". -I skips binary files (images, fonts);
+# LC_ALL=C keeps a line with a stray non-UTF-8 byte from counting as binary too.
 rc=0
-matches=$(grep -niIE "$pattern" -- "${files[@]}") || rc=$?
+matches=$(LC_ALL=C grep -niIE "$pattern" -- "${files[@]}") || rc=$?
 if [ "$rc" -gt 1 ]; then
   exit "$rc"
 fi
 
 phase_rc=0
-phase_matches=$(grep -nIE "$phase_pattern" -- "${files[@]}") || phase_rc=$?
+phase_matches=$(LC_ALL=C grep -nIE "$phase_pattern" -- "${files[@]}") || phase_rc=$?
 if [ "$phase_rc" -gt 1 ]; then
   exit "$phase_rc"
 fi

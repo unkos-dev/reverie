@@ -13,8 +13,9 @@ allow-expect-in-tests = true
 ## default valid-ident list rather than replacing it.
 doc-valid-idents = ["OpenAPI", ".."]
 
-## Escalation path lives in `docs/adr/0007-outbound-http-clients-send-an-explicit-user-agent.md`
-## ("if this happens twice, escalate to Option C: compile-time lint").
+## These entries are the compile-time escalation that
+## `docs/adr/0007-outbound-http-clients-send-an-explicit-user-agent.md` reserved
+## for a second lapse; that lapse happened, so they now back the convention.
 ## reqwest sends NO User-Agent header by default, and common WAFs
 ## (Cloudflare's default scanner blocklist among them) drop empty-UA
 ## requests with 403 before they reach the origin: a startup-time OIDC

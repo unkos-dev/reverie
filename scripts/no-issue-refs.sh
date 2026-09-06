@@ -93,9 +93,10 @@ if [ "${#files[@]}" -eq 0 ]; then
 fi
 
 # grep exit 1 = no matches (clean); exit >1 = a real error (e.g. an unreadable
-# file) that must not read as "clean". -I skips binary files (images, fonts).
+# file) that must not read as "clean". -I skips binary files (images, fonts);
+# LC_ALL=C keeps a line with a stray non-UTF-8 byte from counting as binary too.
 rc=0
-matches=$(grep -nIE "$pattern" -- "${files[@]}") || rc=$?
+matches=$(LC_ALL=C grep -nIE "$pattern" -- "${files[@]}") || rc=$?
 if [ "$rc" -gt 1 ]; then
   exit "$rc"
 fi
