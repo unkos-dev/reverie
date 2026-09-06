@@ -7,7 +7,9 @@ import { resolve } from "node:path";
 // verbatim, and every semantic token in index.css resolves to a real primitive
 // (no dangling var()). Guards frontend/src/styles/themes/*.css against
 // regeneration / hand-edit drift.
-// Contract: docs/design/color-tokens.md.
+// Contract: docs/design/color-tokens.md for the role floors and the danger
+// anchor; docs/design/visual-identity.md for the gold and ink anchors. The
+// 7:1 body-text floor is this guard's own AAA target; no design doc pins it.
 //
 // Lives under `vite-plugins/__tests__/` (not co-located with the CSS) for the
 // same reason as no-shadcn-accent.guard.test.ts: it reads files from disk, so it
@@ -89,7 +91,7 @@ function parseBlock(css: string, selectorMarker: string): Record<string, string>
 const light = parseBlock(primitivesCss, ":root,");
 const dark = parseBlock(primitivesCss, '[data-theme="dark"]');
 
-// role pairs from spec §6 (AA-normal text 4.5; body ideal 7)
+// role pairs: AA normal text at 4.5:1; body text held to 7:1 (AAA) by this guard
 const pairs: ReadonlyArray<[label: string, fg: string, bg: string, min: number]> = [
   ["body sand-12 on canvas", "sand-12", "bg", 7],
   ["muted sand-11 on canvas", "sand-11", "bg", 4.5],
@@ -99,7 +101,7 @@ const pairs: ReadonlyArray<[label: string, fg: string, bg: string, min: number]>
   ["white on danger-9 button", "danger-contrast", "danger-9", 4.5],
 ];
 
-describe("primitive role-pair contrast (spec §6)", () => {
+describe("primitive role-pair contrast floors", () => {
   for (const theme of [
     { name: "dark", m: dark },
     { name: "light", m: light },
@@ -125,7 +127,7 @@ describe("brand anchors land verbatim", () => {
     expect(dark["danger-9"].toLowerCase()).toBe("#b91c1c");
     expect(light["danger-9"].toLowerCase()).toBe("#b91c1c");
   });
-  it("gold-contrast is ink, not white, in both themes (spec §4a)", () => {
+  it("gold-contrast is ink, not white, in both themes", () => {
     expect(dark["gold-contrast"].toLowerCase()).toBe("#0e0d0a");
     expect(light["gold-contrast"].toLowerCase()).toBe("#0e0d0a");
   });
@@ -159,7 +161,7 @@ describe("danger + destructive wiring", () => {
   });
 });
 
-describe("focus indicator WCAG 1.4.11 contract (spec §5b)", () => {
+describe("focus indicator WCAG 1.4.11 contract", () => {
   // One 2px gold-11 ring, no halo: --accent-text (gold-11) carries the >=3:1
   // non-text boundary against the page on its own, so the sand-12 box-shadow
   // that padded gold-9's failing 2.80:1 is gone. These guard the numeric claim
@@ -235,7 +237,7 @@ const resolvedPairs: ReadonlyArray<[label: string, fg: string, bg: string, min: 
   ["--fg-on-danger on --danger", "fg-on-danger", "danger", 4.5],
 ];
 
-describe("semantic roles resolve to AA-adequate primitives (spec §6)", () => {
+describe("semantic roles resolve to AA-adequate primitives", () => {
   for (const theme of [
     { name: "dark", m: dark },
     { name: "light", m: light },
