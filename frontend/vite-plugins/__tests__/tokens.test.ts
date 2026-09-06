@@ -3,11 +3,11 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
 // Editorial design-system token-contract guard. Verifies the generated Radix
-// primitives meet the spec §6 role-pair contrast floors, the brand anchors land
+// primitives meet the role-pair contrast floors, the brand anchors land
 // verbatim, and every semantic token in index.css resolves to a real primitive
 // (no dangling var()). Guards frontend/src/styles/themes/*.css against
 // regeneration / hand-edit drift.
-// Spec: plans/2026-06-18-editorial-design-system-tokens-design.md §4/§6.
+// Contract: docs/design/color-tokens.md.
 //
 // Lives under `vite-plugins/__tests__/` (not co-located with the CSS) for the
 // same reason as no-shadcn-accent.guard.test.ts: it reads files from disk, so it
