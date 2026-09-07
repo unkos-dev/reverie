@@ -19,6 +19,7 @@ pub struct InversionResult {
 
 /// Check if a title looks like "Lastname, Firstname" (a swapped author name).
 /// Returns Some if inversion is detected with a matching author that looks like a title.
+#[must_use]
 pub fn detect_inversion(title: &str, authors: &[String]) -> Option<InversionResult> {
     let (before_comma, after_comma) = title.split_once(',')?;
     let before = before_comma.trim();

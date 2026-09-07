@@ -19,6 +19,7 @@ pub struct CoverCache {
 
 impl CoverCache {
     /// Create a `CoverCache` rooted at `root`. Does not touch the filesystem.
+    #[must_use]
     pub const fn new(root: PathBuf) -> Self {
         Self { root }
     }
@@ -36,6 +37,7 @@ impl CoverCache {
 
     /// Build a content-addressed path:
     /// `{root}/{manifestation_id}-{hash16}-{size}.{ext}`.
+    #[must_use]
     pub fn cached_path(
         &self,
         manifestation_id: Uuid,

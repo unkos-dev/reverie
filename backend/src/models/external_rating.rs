@@ -82,16 +82,19 @@ impl RatingObservation {
     }
 
     /// The provider's score on its own scale.
+    #[must_use]
     pub const fn rating(&self) -> f32 {
         self.rating
     }
 
     /// The provider's maximum score (e.g. 5).
+    #[must_use]
     pub const fn rating_scale(&self) -> f32 {
         self.rating_scale
     }
 
     /// Number of reviews backing the score; 0 when unreported.
+    #[must_use]
     pub const fn review_count(&self) -> i32 {
         self.review_count
     }

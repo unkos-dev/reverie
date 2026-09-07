@@ -42,6 +42,7 @@ pub struct PolicyInputRow {
 /// Return the default [`FieldPolicy`] for a field name.
 ///
 /// Unknown fields default to [`FieldPolicy::Propose`] (conservative).
+#[must_use]
 pub fn default_policy(field: &str) -> FieldPolicy {
     match field {
         "title" | "sort_title" | "language" | "isbn_10" | "isbn_13" | "publisher" | "pub_date"
@@ -73,6 +74,7 @@ pub fn default_policy(field: &str) -> FieldPolicy {
 ///    - `AutoFill` + canonical already set → [`Decision::Stage`].
 ///    - Propose → [`Decision::Stage`].
 ///    - Lock → [`Decision::NoOp`] (unreachable here, handled in step 1).
+#[must_use]
 pub fn decide(
     field: &str,
     canonical_is_empty: bool,

@@ -45,6 +45,7 @@ impl ContentRating {
     /// `"Everyone"`, which does not match the Postgres / JSON form). Use
     /// this for log lines and error messages so the three surfaces stay
     /// consistent.
+    #[must_use]
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::Everyone => "everyone",

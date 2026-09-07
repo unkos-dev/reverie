@@ -24,12 +24,14 @@
 /// ensuring no markup survives into stored metadata values or the rendered
 /// UI. Entity decoding is not performed here: the input is assumed to
 /// already be decoded character data (see module docs).
+#[must_use]
 pub fn sanitise(input: &str) -> String {
     let stripped = strip_html(input);
     normalise_whitespace(&stripped)
 }
 
 /// Strip HTML tags from a string. Simple state machine approach.
+#[must_use]
 pub fn strip_html(input: &str) -> String {
     let mut result = String::with_capacity(input.len());
     let mut in_tag = false;
@@ -52,6 +54,7 @@ pub fn strip_html(input: &str) -> String {
 }
 
 /// Normalise whitespace: collapse runs of whitespace to single space, trim.
+#[must_use]
 pub fn normalise_whitespace(input: &str) -> String {
     let mut result = String::with_capacity(input.len());
     let mut prev_ws = false;

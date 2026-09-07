@@ -213,6 +213,7 @@ pub struct ValidationReport {
 /// - `\` (Windows-style separator that unzippers may interpret as `/`)
 /// - Leading `/` (absolute path)
 /// - Leading `%2F` / `%2f` (percent-encoded leading slash)
+#[must_use]
 pub fn is_safe_path(path: &str) -> bool {
     let upper = path.to_ascii_uppercase();
     !path.contains("..")

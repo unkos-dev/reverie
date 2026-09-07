@@ -134,6 +134,7 @@ impl CanonicalState {
     ///
     /// Both `None` and `Some("")` are treated as empty so that stub titles
     /// (inserted as `""` by `work::create_stub`) do not block auto-fill.
+    #[must_use]
     pub fn is_empty_for(&self, field: &str) -> bool {
         fn blank(v: Option<&str>) -> bool {
             v.unwrap_or("").is_empty()
