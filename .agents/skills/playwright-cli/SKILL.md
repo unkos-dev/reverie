@@ -1,7 +1,6 @@
 ---
 name: playwright-cli
 description: Use Playwright CLI to inspect, automate, and capture rendered web pages while developing or verifying Reverie. This is interactive browser tooling, not a replacement for the Playwright Test accessibility gate.
-allowed-tools: Bash(vp:*) Bash(just:*)
 ---
 
 # Browser Automation with playwright-cli

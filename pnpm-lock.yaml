@@ -30,7 +30,7 @@ importers:
         specifier: ^21.1.0
         version: 21.2.2
       '@playwright/cli':
-        specifier: ^0.1.19
+        specifier: 0.1.19
         version: 0.1.19
       lefthook:
         specifier: 2.1.12
