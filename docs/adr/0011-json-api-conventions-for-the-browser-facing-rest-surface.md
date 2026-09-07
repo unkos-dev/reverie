@@ -83,11 +83,11 @@ unchanged) with the following body shape:
 }
 ```
 
-`type` is a stable URI per error variant (`not-found`, `unauthorized`, `forbidden`, `validation`, `malformed-header`,
-`csrf-missing`, `csrf-mismatch`, `if-match-required`, `if-match-mismatch`, `system-shelf-immutable`, `internal`). Per
-RFC 9457 §3.1 the URI identifies the problem type and does not need to dereference at first; Reverie registers
-concrete URIs as the deployment story matures, and `reverie.example` is a placeholder host until that decision lands.
-`title` and `status` mirror the HTTP status reason phrase and numeric code. `detail` is the caller-visible message.
+`type` is a stable URI per error variant, assembled from the slugs in `backend/src/error/problems.rs`. Per RFC 9457
+§3.1.1 the URI identifies the problem type and does not need to dereference at first; Reverie registers concrete URIs
+as the deployment story matures, and `reverie.example` is a placeholder host until that decision lands. As RFC 9457
+§3.1.3 specifies, `title` is the short human-readable summary for that problem type. It stays stable when one problem
+type can carry more than one HTTP status. `status` mirrors the HTTP status code. `detail` is the caller-visible message.
 `instance` is the request path (RFC 9457 §3.1 makes this optional but recommended; Reverie always includes it for
 debuggability). The `Content-Type` is `application/problem+json`, not `application/json`, which signals to RFC
 9457-aware clients that the body is a Problem Details document and not a domain object with an `error` field: this
