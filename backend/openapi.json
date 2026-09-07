@@ -51,16 +51,6 @@
                 }
               }
             }
-          },
-          "default": {
-            "description": "Failures raised by a handler or its extractors are Problem Details documents",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
           }
         },
         "security": [
@@ -143,16 +133,6 @@
           },
           "422": {
             "description": "Missing id filter or too many ids",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
-          },
-          "default": {
-            "description": "Failures raised by a handler or its extractors are Problem Details documents",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -248,16 +228,6 @@
           },
           "422": {
             "description": "Empty or over-length q",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
-          },
-          "default": {
-            "description": "Failures raised by a handler or its extractors are Problem Details documents",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -714,16 +684,6 @@
                 }
               }
             }
-          },
-          "default": {
-            "description": "Failures raised by a handler or its extractors are Problem Details documents",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
           }
         },
         "security": [
@@ -793,16 +753,6 @@
           },
           "404": {
             "description": "Not found or RLS-hidden",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
-          },
-          "default": {
-            "description": "Failures raised by a handler or its extractors are Problem Details documents",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -882,16 +832,6 @@
                 }
               }
             }
-          },
-          "default": {
-            "description": "Failures raised by a handler or its extractors are Problem Details documents",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
           }
         },
         "security": [
@@ -957,16 +897,6 @@
           },
           "404": {
             "description": "Manifestation missing, RLS-hidden, or coverless",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
-          },
-          "default": {
-            "description": "Failures raised by a handler or its extractors are Problem Details documents",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -1061,16 +991,6 @@
           },
           "404": {
             "description": "Manifestation missing or RLS-hidden (existence-not-leaked)",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
-          },
-          "default": {
-            "description": "Failures raised by a handler or its extractors are Problem Details documents",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -1238,16 +1158,6 @@
                 }
               }
             }
-          },
-          "default": {
-            "description": "Failures raised by a handler or its extractors are Problem Details documents",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
           }
         },
         "security": [
@@ -1325,16 +1235,6 @@
           },
           "404": {
             "description": "Manifestation missing or RLS-hidden (existence-not-leaked)",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
-          },
-          "default": {
-            "description": "Failures raised by a handler or its extractors are Problem Details documents",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -1492,16 +1392,6 @@
                 }
               }
             }
-          },
-          "default": {
-            "description": "Failures raised by a handler or its extractors are Problem Details documents",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
           }
         },
         "security": [
@@ -1588,16 +1478,6 @@
                 }
               }
             }
-          },
-          "default": {
-            "description": "Failures raised by a handler or its extractors are Problem Details documents",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
           }
         },
         "security": [
@@ -1662,16 +1542,6 @@
                 }
               }
             }
-          },
-          "default": {
-            "description": "Failures raised by a handler or its extractors are Problem Details documents",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
           }
         },
         "security": [
@@ -1729,16 +1599,6 @@
           },
           "403": {
             "description": "Caller is a child account",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
-          },
-          "default": {
-            "description": "Failures raised by a handler or its extractors are Problem Details documents",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -1841,16 +1701,6 @@
                 }
               }
             }
-          },
-          "default": {
-            "description": "Failures raised by a handler or its extractors are Problem Details documents",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
           }
         },
         "security": [
@@ -1908,16 +1758,6 @@
           },
           "403": {
             "description": "Caller is not an admin",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
-          },
-          "default": {
-            "description": "Failures raised by a handler or its extractors are Problem Details documents",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -2011,16 +1851,6 @@
                 }
               }
             }
-          },
-          "default": {
-            "description": "Failures raised by a handler or its extractors are Problem Details documents",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
           }
         },
         "security": [
@@ -2100,16 +1930,6 @@
                 }
               }
             }
-          },
-          "default": {
-            "description": "Failures raised by a handler or its extractors are Problem Details documents",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
           }
         },
         "security": [
@@ -2182,16 +2002,6 @@
           },
           "403": {
             "description": "Caller is a child account",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
-          },
-          "default": {
-            "description": "Failures raised by a handler or its extractors are Problem Details documents",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -2298,16 +2108,6 @@
                 }
               }
             }
-          },
-          "default": {
-            "description": "Failures raised by a handler or its extractors are Problem Details documents",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
           }
         },
         "security": [
@@ -2397,16 +2197,6 @@
                 }
               }
             }
-          },
-          "default": {
-            "description": "Failures raised by a handler or its extractors are Problem Details documents",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
           }
         },
         "security": [
@@ -2489,16 +2279,6 @@
           },
           "404": {
             "description": "Version not found for this manifestation, or RLS-hidden",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
-          },
-          "default": {
-            "description": "Failures raised by a handler or its extractors are Problem Details documents",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -2605,16 +2385,6 @@
                 }
               }
             }
-          },
-          "default": {
-            "description": "Failures raised by a handler or its extractors are Problem Details documents",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
           }
         },
         "security": [
@@ -2707,16 +2477,6 @@
           },
           "422": {
             "description": "Unknown entity_type",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
-          },
-          "default": {
-            "description": "Failures raised by a handler or its extractors are Problem Details documents",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -2819,16 +2579,6 @@
                 }
               }
             }
-          },
-          "default": {
-            "description": "Failures raised by a handler or its extractors are Problem Details documents",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
           }
         },
         "security": [
@@ -2924,16 +2674,6 @@
                 }
               }
             }
-          },
-          "default": {
-            "description": "Failures raised by a handler or its extractors are Problem Details documents",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
           }
         },
         "security": [
@@ -3012,16 +2752,6 @@
           },
           "422": {
             "description": "Empty, missing, or over-length query",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
-          },
-          "default": {
-            "description": "Failures raised by a handler or its extractors are Problem Details documents",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -3124,16 +2854,6 @@
                 }
               }
             }
-          },
-          "default": {
-            "description": "Failures raised by a handler or its extractors are Problem Details documents",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
           }
         },
         "security": [
@@ -3210,16 +2930,6 @@
                 }
               }
             }
-          },
-          "default": {
-            "description": "Failures raised by a handler or its extractors are Problem Details documents",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
           }
         },
         "security": [
@@ -3277,16 +2987,6 @@
           },
           "403": {
             "description": "Caller is not an admin",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
-          },
-          "default": {
-            "description": "Failures raised by a handler or its extractors are Problem Details documents",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -3370,16 +3070,6 @@
           },
           "422": {
             "description": "Empty patch or invalid field values",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
-          },
-          "default": {
-            "description": "Failures raised by a handler or its extractors are Problem Details documents",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -3480,16 +3170,6 @@
                 }
               }
             }
-          },
-          "default": {
-            "description": "Failures raised by a handler or its extractors are Problem Details documents",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
           }
         },
         "security": [
@@ -3573,16 +3253,6 @@
           },
           "422": {
             "description": "Empty name",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
-          },
-          "default": {
-            "description": "Failures raised by a handler or its extractors are Problem Details documents",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -3709,16 +3379,6 @@
                 }
               }
             }
-          },
-          "default": {
-            "description": "Failures raised by a handler or its extractors are Problem Details documents",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
           }
         },
         "security": [
@@ -3799,16 +3459,6 @@
           },
           "409": {
             "description": "System shelves cannot be deleted",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
-          },
-          "default": {
-            "description": "Failures raised by a handler or its extractors are Problem Details documents",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -3931,16 +3581,6 @@
           },
           "422": {
             "description": "Empty name",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
-          },
-          "default": {
-            "description": "Failures raised by a handler or its extractors are Problem Details documents",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -4074,16 +3714,6 @@
                 }
               }
             }
-          },
-          "default": {
-            "description": "Failures raised by a handler or its extractors are Problem Details documents",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
           }
         },
         "security": [
@@ -4162,16 +3792,6 @@
           },
           "404": {
             "description": "Shelf missing / not owned, or manifestation not visible to the caller",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
-          },
-          "default": {
-            "description": "Failures raised by a handler or its extractors are Problem Details documents",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -4259,16 +3879,6 @@
           },
           "404": {
             "description": "Shelf missing / not owned, or item not on the shelf",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
-          },
-          "default": {
-            "description": "Failures raised by a handler or its extractors are Problem Details documents",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -4371,16 +3981,6 @@
                 }
               }
             }
-          },
-          "default": {
-            "description": "Failures raised by a handler or its extractors are Problem Details documents",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
           }
         },
         "security": [
@@ -4431,16 +4031,6 @@
           },
           "401": {
             "description": "Authentication required",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
-          },
-          "default": {
-            "description": "Failures raised by a handler or its extractors are Problem Details documents",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -4530,16 +4120,6 @@
                 }
               }
             }
-          },
-          "default": {
-            "description": "Failures raised by a handler or its extractors are Problem Details documents",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
           }
         },
         "security": [
@@ -4619,16 +4199,6 @@
                 }
               }
             }
-          },
-          "default": {
-            "description": "Failures raised by a handler or its extractors are Problem Details documents",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
           }
         },
         "security": [
@@ -4689,16 +4259,6 @@
           },
           "403": {
             "description": "Caller is not an admin",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
-          },
-          "default": {
-            "description": "Failures raised by a handler or its extractors are Problem Details documents",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -4791,16 +4351,6 @@
           },
           "422": {
             "description": "Invalid email, or password rejected by the policy",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
-          },
-          "default": {
-            "description": "Failures raised by a handler or its extractors are Problem Details documents",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -4915,16 +4465,6 @@
                 }
               }
             }
-          },
-          "default": {
-            "description": "Failures raised by a handler or its extractors are Problem Details documents",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
           }
         },
         "security": [
@@ -5024,16 +4564,6 @@
           },
           "422": {
             "description": "Cannot disable your own account, or disabling would leave zero enabled admins",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
-          },
-          "default": {
-            "description": "Failures raised by a handler or its extractors are Problem Details documents",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -5147,16 +4677,6 @@
                 }
               }
             }
-          },
-          "default": {
-            "description": "Failures raised by a handler or its extractors are Problem Details documents",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
           }
         },
         "security": [
@@ -5249,16 +4769,6 @@
           },
           "422": {
             "description": "Password rejected by the policy",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
-          },
-          "default": {
-            "description": "Failures raised by a handler or its extractors are Problem Details documents",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -5372,16 +4882,6 @@
                 }
               }
             }
-          },
-          "default": {
-            "description": "Failures raised by a handler or its extractors are Problem Details documents",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
           }
         },
         "security": [
@@ -5451,16 +4951,6 @@
           },
           "404": {
             "description": "Not found or RLS-hidden",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
-          },
-          "default": {
-            "description": "Failures raised by a handler or its extractors are Problem Details documents",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -5547,16 +5037,6 @@
                 }
               }
             }
-          },
-          "default": {
-            "description": "Failures raised by a handler or its extractors are Problem Details documents",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
           }
         },
         "security": [
@@ -5634,16 +5114,6 @@
                 }
               }
             }
-          },
-          "default": {
-            "description": "Failures raised by a handler or its extractors are Problem Details documents",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
           }
         },
         "security": [
@@ -5685,16 +5155,6 @@
           },
           "429": {
             "description": "Too many requests",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
-          },
-          "default": {
-            "description": "Failures raised by a handler or its extractors are Problem Details documents",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -5760,16 +5220,6 @@
                 }
               }
             }
-          },
-          "default": {
-            "description": "Failures raised by a handler or its extractors are Problem Details documents",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
           }
         },
         "security": [
@@ -5801,16 +5251,6 @@
           },
           "428": {
             "description": "X-CSRF-Token header required for a session-authenticated caller",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
-          },
-          "default": {
-            "description": "Failures raised by a handler or its extractors are Problem Details documents",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -5853,16 +5293,6 @@
                 }
               }
             }
-          },
-          "default": {
-            "description": "Failures raised by a handler or its extractors are Problem Details documents",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
           }
         }
       }
@@ -5888,16 +5318,6 @@
           },
           "401": {
             "description": "Authentication required",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
-          },
-          "default": {
-            "description": "Failures raised by a handler or its extractors are Problem Details documents",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -5971,16 +5391,6 @@
           },
           "422": {
             "description": "Unknown density or view, or an out-of-range sort",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
-          },
-          "default": {
-            "description": "Failures raised by a handler or its extractors are Problem Details documents",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -6062,16 +5472,6 @@
                 }
               }
             }
-          },
-          "default": {
-            "description": "Failures raised by a handler or its extractors are Problem Details documents",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
           }
         }
       }
@@ -6090,16 +5490,6 @@
           },
           "404": {
             "description": "OIDC is not configured on this instance",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
-          },
-          "default": {
-            "description": "Failures raised by a handler or its extractors are Problem Details documents",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -6175,16 +5565,6 @@
                 }
               }
             }
-          },
-          "default": {
-            "description": "Failures raised by a handler or its extractors are Problem Details documents",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
           }
         },
         "security": [
@@ -6236,16 +5616,6 @@
           },
           "429": {
             "description": "Too many requests",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
-          },
-          "default": {
-            "description": "Failures raised by a handler or its extractors are Problem Details documents",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -6311,16 +5681,6 @@
                 }
               }
             }
-          },
-          "default": {
-            "description": "Failures raised by a handler or its extractors are Problem Details documents",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
           }
         },
         "security": [
@@ -6346,16 +5706,6 @@
                 }
               }
             }
-          },
-          "default": {
-            "description": "Failures raised by a handler or its extractors are Problem Details documents",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
           }
         },
         "security": [
@@ -6378,16 +5728,6 @@
               "text/plain": {
                 "schema": {
                   "type": "string"
-                }
-              }
-            }
-          },
-          "default": {
-            "description": "Failures raised by a handler or its extractors are Problem Details documents",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
                 }
               }
             }
@@ -6426,16 +5766,6 @@
                 }
               }
             }
-          },
-          "default": {
-            "description": "Failures raised by a handler or its extractors are Problem Details documents",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
           }
         },
         "security": [
@@ -6464,16 +5794,6 @@
           },
           "401": {
             "description": "Basic authentication required (WWW-Authenticate: Basic)",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
-          },
-          "default": {
-            "description": "Failures raised by a handler or its extractors are Problem Details documents",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -6536,16 +5856,6 @@
                 }
               }
             }
-          },
-          "default": {
-            "description": "Failures raised by a handler or its extractors are Problem Details documents",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
           }
         },
         "security": [
@@ -6594,16 +5904,6 @@
           },
           "404": {
             "description": "Manifestation missing, RLS-hidden, or coverless",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
-          },
-          "default": {
-            "description": "Failures raised by a handler or its extractors are Problem Details documents",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -6676,16 +5976,6 @@
                 }
               }
             }
-          },
-          "default": {
-            "description": "Failures raised by a handler or its extractors are Problem Details documents",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
           }
         },
         "security": [
@@ -6716,16 +6006,6 @@
           },
           "401": {
             "description": "Basic authentication required (WWW-Authenticate: Basic)",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
-          },
-          "default": {
-            "description": "Failures raised by a handler or its extractors are Problem Details documents",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -6794,16 +6074,6 @@
           },
           "422": {
             "description": "Malformed cursor",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
-          },
-          "default": {
-            "description": "Failures raised by a handler or its extractors are Problem Details documents",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -6889,16 +6159,6 @@
                 }
               }
             }
-          },
-          "default": {
-            "description": "Failures raised by a handler or its extractors are Problem Details documents",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
           }
         },
         "security": [
@@ -6967,16 +6227,6 @@
                 }
               }
             }
-          },
-          "default": {
-            "description": "Failures raised by a handler or its extractors are Problem Details documents",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
           }
         },
         "security": [
@@ -7007,16 +6257,6 @@
           },
           "401": {
             "description": "Basic authentication required (WWW-Authenticate: Basic)",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
-          },
-          "default": {
-            "description": "Failures raised by a handler or its extractors are Problem Details documents",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -7075,16 +6315,6 @@
           },
           "401": {
             "description": "Basic authentication required (WWW-Authenticate: Basic)",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
-          },
-          "default": {
-            "description": "Failures raised by a handler or its extractors are Problem Details documents",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -7153,16 +6383,6 @@
           },
           "422": {
             "description": "Malformed cursor",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
-          },
-          "default": {
-            "description": "Failures raised by a handler or its extractors are Problem Details documents",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -7248,16 +6468,6 @@
                 }
               }
             }
-          },
-          "default": {
-            "description": "Failures raised by a handler or its extractors are Problem Details documents",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
           }
         },
         "security": [
@@ -7310,16 +6520,6 @@
           },
           "404": {
             "description": "Shelf missing or not owned by the caller",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
-          },
-          "default": {
-            "description": "Failures raised by a handler or its extractors are Problem Details documents",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -7408,16 +6608,6 @@
           },
           "422": {
             "description": "Malformed cursor",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
-          },
-          "default": {
-            "description": "Failures raised by a handler or its extractors are Problem Details documents",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -7523,16 +6713,6 @@
                 }
               }
             }
-          },
-          "default": {
-            "description": "Failures raised by a handler or its extractors are Problem Details documents",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
           }
         },
         "security": [
@@ -7621,16 +6801,6 @@
                 }
               }
             }
-          },
-          "default": {
-            "description": "Failures raised by a handler or its extractors are Problem Details documents",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
           }
         },
         "security": [
@@ -7683,16 +6853,6 @@
           },
           "404": {
             "description": "Shelf missing or not owned by the caller",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
-          },
-          "default": {
-            "description": "Failures raised by a handler or its extractors are Problem Details documents",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -7771,16 +6931,6 @@
           },
           "404": {
             "description": "Shelf missing or not owned by the caller",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
-          },
-          "default": {
-            "description": "Failures raised by a handler or its extractors are Problem Details documents",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -7869,16 +7019,6 @@
           },
           "422": {
             "description": "Malformed cursor",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
-          },
-          "default": {
-            "description": "Failures raised by a handler or its extractors are Problem Details documents",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -7977,16 +7117,6 @@
           },
           "422": {
             "description": "Malformed cursor",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
-          },
-          "default": {
-            "description": "Failures raised by a handler or its extractors are Problem Details documents",
             "content": {
               "application/problem+json": {
                 "schema": {

@@ -56,7 +56,6 @@ pub fn router() -> OpenApiRouter<AppState> {
         (status = 401, description = "Basic authentication required (WWW-Authenticate: Basic)", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 403, description = "File path escapes the library root", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 404, description = "Manifestation missing, RLS-hidden, or file absent on disk", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
-        (status = "default", description = "Failures raised by a handler or its extractors are Problem Details documents", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
     )
 )]
 async fn download_epub(

@@ -121,7 +121,6 @@ pub fn api_router() -> OpenApiRouter<AppState> {
         (status = 304, description = "Not Modified — the request's If-None-Match matched the cover ETag"),
         (status = 401, description = "Basic authentication required (WWW-Authenticate: Basic)", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 404, description = "Manifestation missing, RLS-hidden, or coverless", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
-        (status = "default", description = "Failures raised by a handler or its extractors are Problem Details documents", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
     )
 )]
 async fn opds_cover(
@@ -157,7 +156,6 @@ async fn opds_cover(
         (status = 304, description = "Not Modified — the request's If-None-Match matched the cover ETag"),
         (status = 401, description = "Basic authentication required (WWW-Authenticate: Basic)", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 404, description = "Manifestation missing, RLS-hidden, or coverless", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
-        (status = "default", description = "Failures raised by a handler or its extractors are Problem Details documents", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
     )
 )]
 async fn opds_cover_thumb(
@@ -193,7 +191,6 @@ async fn opds_cover_thumb(
         (status = 304, description = "Not Modified — the request's If-None-Match matched the cover ETag"),
         (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 404, description = "Manifestation missing, RLS-hidden, or coverless", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
-        (status = "default", description = "Failures raised by a handler or its extractors are Problem Details documents", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
     )
 )]
 async fn api_cover(
@@ -229,7 +226,6 @@ async fn api_cover(
         (status = 304, description = "Not Modified — the request's If-None-Match matched the cover ETag"),
         (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 404, description = "Manifestation missing, RLS-hidden, or coverless", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
-        (status = "default", description = "Failures raised by a handler or its extractors are Problem Details documents", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
     )
 )]
 async fn api_cover_thumb(

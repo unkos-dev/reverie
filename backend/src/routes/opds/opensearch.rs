@@ -56,7 +56,6 @@ pub fn router() -> OpenApiRouter<AppState> {
     responses(
         (status = 200, description = "OpenSearch descriptor with the library-scoped search URL template", content_type = "application/opensearchdescription+xml", body = String),
         (status = 401, description = "Basic authentication required (WWW-Authenticate: Basic)", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
-        (status = "default", description = "Failures raised by a handler or its extractors are Problem Details documents", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
     )
 )]
 async fn library_opensearch(
@@ -93,7 +92,6 @@ async fn library_opensearch(
         (status = 200, description = "OpenSearch descriptor with the shelf-scoped search URL template", content_type = "application/opensearchdescription+xml", body = String),
         (status = 401, description = "Basic authentication required (WWW-Authenticate: Basic)", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 404, description = "Shelf missing or not owned by the caller", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
-        (status = "default", description = "Failures raised by a handler or its extractors are Problem Details documents", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
     )
 )]
 async fn shelf_opensearch(

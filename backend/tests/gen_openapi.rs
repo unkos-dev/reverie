@@ -48,6 +48,53 @@ fn openapi_spec_matches_committed_artifact() {
 }
 
 #[test]
+fn problem_details_responses_use_problem_json() {
+    let rendered = reverie_api::openapi::spec_json().expect("serialize OpenAPI spec");
+    let doc: serde_json::Value = serde_json::from_str(&rendered).expect("valid JSON");
+    let paths = doc["paths"].as_object().expect("paths object");
+    let mut examined = 0;
+
+    for (path, path_item) in paths {
+        let operations = path_item.as_object().expect("path item object");
+        for (method, operation) in operations {
+            let Some(responses) = operation
+                .get("responses")
+                .and_then(serde_json::Value::as_object)
+            else {
+                continue;
+            };
+
+            for (status, response) in responses {
+                let Some(content) = response
+                    .get("content")
+                    .and_then(serde_json::Value::as_object)
+                else {
+                    continue;
+                };
+                let references_problem_details = content.values().any(|media| {
+                    media
+                        .pointer("/schema/$ref")
+                        .and_then(serde_json::Value::as_str)
+                        == Some("#/components/schemas/ProblemDetails")
+                });
+                if !references_problem_details {
+                    continue;
+                }
+
+                examined += 1;
+                let media_types: Vec<_> = content.keys().collect();
+                assert!(
+                    content.len() == 1 && content.contains_key("application/problem+json"),
+                    "{method} {path} response {status} references ProblemDetails under {media_types:?}"
+                );
+            }
+        }
+    }
+
+    assert!(examined > 0, "no ProblemDetails responses were examined");
+}
+
+#[test]
 fn spec_is_openapi_31_with_pilot_paths() {
     let rendered = reverie_api::openapi::spec_json().expect("serialize OpenAPI spec");
     let doc: serde_json::Value = serde_json::from_str(&rendered).expect("valid JSON");
