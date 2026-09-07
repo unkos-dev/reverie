@@ -37,10 +37,12 @@ fn assert_problem(response: &axum_test::TestResponse, status: u16, slug: &str) {
     assert_eq!(response.status_code(), status);
     assert_eq!(response.content_type(), "application/problem+json");
     let body: serde_json::Value = response.json();
-    let typ = body["type"].as_str().unwrap_or_default();
+    let typ = body["type"]
+        .as_str()
+        .unwrap_or_else(|| panic!("RFC 9457 type field missing or not a string: {body}"));
     assert!(
         typ.ends_with(&format!("/{slug}")),
-        "expected type ending in /{slug}, got {body}"
+        "expected type ending in /{slug}, got {typ}"
     );
 }
 
