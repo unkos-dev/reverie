@@ -32,12 +32,16 @@ Thumbs.db
 # Docker
 docker-compose.override.yml
 
-# Private harness state. Not project-shared. Each entry is one agent harness's
-# install location for the same personal tooling; the repository depends on
-# none of them. The lone reference to an agent skill, frontend's advisory
-# `detect` hook, calls a globally installed binary, not a vendored copy here.
-.claude
-.agents
+# Private harness state, except for the shared Playwright CLI skill below.
+# Frontend's advisory `detect` hook still calls its globally installed skill.
+.claude/*
+!.claude/skills/
+.claude/skills/*
+!.claude/skills/playwright-cli
+.agents/*
+!.agents/skills/
+.agents/skills/*
+!.agents/skills/playwright-cli/
 .codex
 .github/hooks
 .github/skills
@@ -58,6 +62,8 @@ backend/tests/fixtures/library/
 
 # Playwright MCP scratch (snapshots, console logs) + agent screenshot scratch
 .playwright-mcp/
+.playwright/
+.playwright-cli/
 d2-*.png
 
 # Personal agent-workflow tooling — kept local, not project-shared
