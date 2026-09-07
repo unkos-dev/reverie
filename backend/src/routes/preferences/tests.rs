@@ -255,17 +255,35 @@ async fn preferences_survive_a_fresh_read(pool: PgPool) {
 
 #[sqlx::test(migrations = "./migrations")]
 async fn patch_rejects_unknown_density(pool: PgPool) {
-    assert_patch_rejected(&pool, "bad-density", json!({"density": "roomy"})).await;
+    assert_patch_rejected(
+        &pool,
+        "bad-density",
+        json!({"density": "roomy"}),
+        problems::INVALID_REQUEST_BODY,
+    )
+    .await;
 }
 
 #[sqlx::test(migrations = "./migrations")]
 async fn patch_rejects_unknown_view(pool: PgPool) {
-    assert_patch_rejected(&pool, "bad-view", json!({"view": "list"})).await;
+    assert_patch_rejected(
+        &pool,
+        "bad-view",
+        json!({"view": "list"}),
+        problems::INVALID_REQUEST_BODY,
+    )
+    .await;
 }
 
 #[sqlx::test(migrations = "./migrations")]
 async fn patch_rejects_unknown_sort_field(pool: PgPool) {
-    assert_patch_rejected(&pool, "bad-sort", json!({"sort_stack": "shoe_size"})).await;
+    assert_patch_rejected(
+        &pool,
+        "bad-sort",
+        json!({"sort_stack": "shoe_size"}),
+        problems::VALIDATION,
+    )
+    .await;
 }
 
 #[sqlx::test(migrations = "./migrations")]
@@ -274,13 +292,20 @@ async fn patch_rejects_sort_stack_over_the_level_cap(pool: PgPool) {
         &pool,
         "deep-sort",
         json!({"sort_stack": "title,author,pages,-created_at"}),
+        problems::VALIDATION,
     )
     .await;
 }
 
 #[sqlx::test(migrations = "./migrations")]
 async fn patch_rejects_empty_sort_stack(pool: PgPool) {
-    assert_patch_rejected(&pool, "empty-sort", json!({"sort_stack": ""})).await;
+    assert_patch_rejected(
+        &pool,
+        "empty-sort",
+        json!({"sort_stack": ""}),
+        problems::VALIDATION,
+    )
+    .await;
 }
 
 #[sqlx::test(migrations = "./migrations")]
@@ -289,6 +314,7 @@ async fn patch_rejects_malformed_column_key(pool: PgPool) {
         &pool,
         "bad-key",
         json!({"hidden_columns": ["pages", "DROP TABLE"]}),
+        problems::VALIDATION,
     )
     .await;
 }
@@ -296,15 +322,21 @@ async fn patch_rejects_malformed_column_key(pool: PgPool) {
 #[sqlx::test(migrations = "./migrations")]
 async fn patch_rejects_oversized_hidden_columns(pool: PgPool) {
     let keys: Vec<String> = (0..65).map(|i| format!("col_{i}")).collect();
-    assert_patch_rejected(&pool, "many-keys", json!({"hidden_columns": keys})).await;
+    assert_patch_rejected(
+        &pool,
+        "many-keys",
+        json!({"hidden_columns": keys}),
+        problems::VALIDATION,
+    )
+    .await;
 }
 
 #[sqlx::test(migrations = "./migrations")]
 async fn patch_rejects_a_body_with_no_groups(pool: PgPool) {
-    assert_patch_rejected(&pool, "empty-body", json!({})).await;
+    assert_patch_rejected(&pool, "empty-body", json!({}), problems::VALIDATION).await;
 }
 
-async fn assert_patch_rejected(pool: &PgPool, name: &str, body: serde_json::Value) {
+async fn assert_patch_rejected(pool: &PgPool, name: &str, body: serde_json::Value, problem: &str) {
     let app_pool = test_support::db::app_pool_for(pool).await;
     let ingestion_pool = test_support::db::ingestion_pool_for(pool).await;
     let (user_id, basic) = test_support::db::create_adult_and_basic_auth(&app_pool, name).await;
@@ -315,7 +347,7 @@ async fn assert_patch_rejected(pool: &PgPool, name: &str, body: serde_json::Valu
         .add_header(auth(&basic).0, auth(&basic).1)
         .json(&body)
         .await;
-    test_support::assert_problem(&r, problems::VALIDATION, StatusCode::UNPROCESSABLE_ENTITY);
+    test_support::assert_problem(&r, problem, StatusCode::UNPROCESSABLE_ENTITY);
 
     let rows = sqlx::query_scalar!(
         r#"SELECT count(*) AS "count!" FROM user_preferences WHERE user_id = $1"#,

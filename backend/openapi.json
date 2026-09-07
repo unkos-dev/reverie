@@ -3069,7 +3069,7 @@
             }
           },
           "422": {
-            "description": "Empty patch, malformed body, or invalid field values",
+            "description": "Empty patch or invalid field values",
             "content": {
               "application/json": {
                 "schema": {
@@ -3252,7 +3252,7 @@
             }
           },
           "422": {
-            "description": "Missing body or empty name",
+            "description": "Empty name",
             "content": {
               "application/json": {
                 "schema": {
@@ -3580,7 +3580,7 @@
             }
           },
           "422": {
-            "description": "Missing body or empty name",
+            "description": "Empty name",
             "content": {
               "application/json": {
                 "schema": {
@@ -3792,16 +3792,6 @@
           },
           "404": {
             "description": "Shelf missing / not owned, or manifestation not visible to the caller",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Missing or malformed body",
             "content": {
               "application/json": {
                 "schema": {
@@ -5400,7 +5390,7 @@
             }
           },
           "422": {
-            "description": "Empty body, unknown density or view, or an out-of-range sort stack or column key",
+            "description": "Unknown density or view, or an out-of-range sort",
             "content": {
               "application/json": {
                 "schema": {

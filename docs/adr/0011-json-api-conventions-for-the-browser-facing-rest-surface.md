@@ -83,11 +83,11 @@ unchanged) with the following body shape:
 }
 ```
 
-`type` is a stable URI per error variant (`not-found`, `unauthorized`, `forbidden`, `validation`, `malformed-header`,
-`csrf-missing`, `csrf-mismatch`, `if-match-required`, `if-match-mismatch`, `system-shelf-immutable`, `internal`). Per
-RFC 9457 §3.1 the URI identifies the problem type and does not need to dereference at first; Reverie registers
-concrete URIs as the deployment story matures, and `reverie.example` is a placeholder host until that decision lands.
-`title` and `status` mirror the HTTP status reason phrase and numeric code. `detail` is the caller-visible message.
+`type` is a stable URI per error variant, assembled from the slugs in `backend/src/error/problems.rs`. Per RFC 9457
+§3.1.1 the URI identifies the problem type and does not need to dereference at first; Reverie registers concrete URIs
+as the deployment story matures, and `reverie.example` is a placeholder host until that decision lands. As RFC 9457
+§3.1.3 specifies, `title` is the short human-readable summary for that problem type. It stays stable when one problem
+type can carry more than one HTTP status. `status` mirrors the HTTP status code. `detail` is the caller-visible message.
 `instance` is the request path (RFC 9457 §3.1 makes this optional but recommended; Reverie always includes it for
 debuggability). The `Content-Type` is `application/problem+json`, not `application/json`, which signals to RFC
 9457-aware clients that the body is a Problem Details document and not a domain object with an `error` field: this
@@ -101,30 +101,34 @@ calling `AppError::Validation(...).into_response()` directly), in which case `in
 which RFC 9457 §3.1 permits.
 
 Status codes are assigned by failure class, per the definitions in RFC 9110 §15.5. §15.5.1 (400 Bad Request) covers a
-request the server cannot or will not process due to a client error in the request's own grammar, and two failure
-classes map here. Syntax failures at the decode boundary (extractors, query/path deserialisation: the request cannot
-be parsed into the shape the handler expects) are mapped by `AppError::MalformedQuery`. Header failures are mapped by
-`AppError::MalformedHeader` with problem type `malformed-header`: this covers both malformed header field syntax and
-a syntactically valid header form the API refuses by policy (an `If-Match` wildcard, an entity-tag list, or a
-repeated header instance), the latter under §15.5.1's broader "cannot or will not process the request due to a client
-error" clause rather than a grammar violation as such. RFC 9110 defines "content" as the message body, so 422
-Unprocessable Content (RFC 9110 §15.5.21) stays scoped to the body: requests whose content parses correctly but whose
-instructions violate the documented contract (unknown or invalid field values, business-rule rejections) are 422,
-mapped by `AppError::Validation`. Semantic codes are reserved for well-formed requests that fail against current
-server state rather than against their own shape: 404 for existence (including the deliberate 404-over-403 ownership
-convention below), 405 Method Not Allowed (RFC 9110 §15.5.6) when the target resource exists but does not support the
-request's method, emitted as problem details with the `Allow` header intact, 409 for conflict, 412 Precondition
-Failed when a precondition evaluates false (RFC 9110 §13.1), and 428 Precondition Required when a required
-precondition is missing entirely (RFC 6585 §3). Any new error path is checked against two tests before it picks a
-status code. The recovery-guidance test: a status code whose standard recovery action cannot succeed for that input
-is the wrong code. The motivating shape is an `If-Match` header that is syntactically malformed (not a well-formed
-entity-tag): a 412's implied recovery (refresh the tag and retry) can never succeed against a grammar error, since no
-refreshed tag will ever parse, so that failure belongs in 400, because the defect is in the request's own grammar,
-not its instructions. The closed-domain test: input or stored data that is valid within its own domain (a database
-enum variant, a schema-legal document) must never surface as 500, because internal errors are reserved for genuine
-invariant violations, not for values the domain already accepts as legitimate members. The deliberate, documented
-exceptions to these tests stand: the schema-drift decode boundary in the library module intentionally fails loudly,
-and the existence-hiding 404s below are a security choice, not drift.
+request the server cannot or will not process due to a client error in the request's own grammar, and the failure
+classes at the decode boundary map here by the part of the request that failed. A query parameter that will not
+deserialise is `AppError::MalformedQuery` (`malformed-query`). A path parameter that will not deserialise is
+`AppError::MalformedPath` (`malformed-path`). A JSON body the extractor refuses is `AppError::InvalidRequestBody`
+(`invalid-request-body`), which keeps the status of the rejection class rather than flattening to one code: 400 when the
+bytes are not valid JSON, 413 when the body exceeds the limit, 415 when the content type is missing or not JSON, and 422
+when the body parses but its fields or types do not match. Header failures are mapped by `AppError::MalformedHeader`
+with problem type `malformed-header`: this covers both malformed header field syntax and a syntactically valid header
+form the API refuses by policy (an `If-Match` wildcard, an entity-tag list, or a repeated header instance), the latter
+under §15.5.1's broader "cannot or will not process the request due to a client error" clause rather than a grammar
+violation as such. RFC 9110 defines "content" as the message body, so 422 Unprocessable Content (RFC 9110 §15.5.21)
+stays scoped to the body, and it carries two cases. A body that parsed but did not fit the target type is
+`invalid-request-body`, decided before the handler runs. A body that parsed cleanly and then failed the handler's own
+rules (unknown or invalid field values, business-rule rejections) is `AppError::Validation` (`validation`), decided
+after extraction. Semantic codes are reserved for well-formed requests that fail against current server state rather
+than against their own shape: 404 for existence (including the deliberate 404-over-403 ownership convention below), 405
+Method Not Allowed (RFC 9110 §15.5.6) when the target resource exists but does not support the request's method, emitted
+as problem details with the `Allow` header intact, 409 for conflict, 412 Precondition Failed when a precondition
+evaluates false (RFC 9110 §13.1), and 428 Precondition Required when a required precondition is missing entirely (RFC
+6585 §3). Any new error path is checked against two tests before it picks a status code. The recovery-guidance test: a
+status code whose standard recovery action cannot succeed for that input is the wrong code. The motivating shape is an
+`If-Match` header that is syntactically malformed (not a well-formed entity-tag): a 412's implied recovery (refresh the
+tag and retry) can never succeed against a grammar error, since no refreshed tag will ever parse, so that failure
+belongs in 400, because the defect is in the request's own grammar, not its instructions. The closed-domain test: input
+or stored data that is valid within its own domain (a database enum variant, a schema-legal document) must never surface
+as 500, because internal errors are reserved for genuine invariant violations, not for values the domain already accepts
+as legitimate members. The deliberate, documented exceptions to these tests stand: the schema-drift decode boundary in
+the library module intentionally fails loudly, and the existence-hiding 404s below are a security choice, not drift.
 
 Nullable fields serialise as `null`, never omitted. TypeScript consumers read `field: T | null` (always present,
 sometimes null), not `field?: T` (sometimes absent, sometimes the value). The distinction matters: `field?: T`
@@ -286,11 +290,16 @@ handler picks it up at that point.
 
 ## More information
 
-The RFC 9457 envelope governs every error on the JSON API surface (`/api/v1/*`), including query-parameter
-rejections: handlers extract `Result<Query<T>, QueryRejection>` (`axum_extra`) and `?`-propagate, so a malformed
-query returns `application/problem+json` (`type` `.../malformed-query`, HTTP 400), never axum's plaintext 400. OPDS
-query handlers, out of scope per the content-negotiation convention above, return the same `problem+json` on a
-malformed query via their existing `Result<_, AppError>` path, not by this decision.
+The RFC 9457 envelope governs every error a handler or its extractors raise on the JSON API surface (`/api/v1/*`), so a
+request that fails before the handler body runs still answers in `application/problem+json` rather than axum's
+plaintext. Query parameters go through `Result<Query<T>, QueryRejection>` (`axum_extra`) and `?`-propagate (`type`
+`.../malformed-query`, HTTP 400). Path parameters go through the crate's `ApiPath` wrapper (`type` `.../malformed-path`,
+HTTP 400). JSON bodies go through `ApiJson`, which keeps the status axum assigns the rejection class (`type`
+`.../invalid-request-body`; HTTP 400 for invalid JSON, 413 for an oversized body, 415 for a missing or wrong content
+type, 422 for a body whose fields or types do not match). A response replaced above the handler stack falls outside this
+decision: the session layer answers a failed session save with an empty 500 of its own. OPDS query handlers, out of
+scope per the content-negotiation convention above, return the same `problem+json` on a malformed query via their
+existing `Result<_, AppError>` path, not by this decision.
 
 IETF specs cited: RFC 9457 (Problem Details, formerly RFC 7807), RFC 8288 (Web Linking / Link header), RFC 7396
 (JSON Merge Patch), RFC 9110 §12 (content negotiation), RFC 9110 §13.1 (`If-Match`), RFC 3339 (date format), RFC

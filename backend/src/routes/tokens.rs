@@ -5,7 +5,7 @@
 //! `DELETE` operate on the row id; the plaintext cannot be recovered.
 
 use axum::Json;
-use axum::extract::{Path, State};
+use axum::extract::State;
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
 use chrono::{DateTime, Utc};
@@ -17,6 +17,7 @@ use crate::auth::middleware::CurrentUser;
 use crate::auth::scope::Scope;
 use crate::auth::token::{self, generate_device_token};
 use crate::error::AppError;
+use crate::extract::{ApiJson, ApiPath};
 use crate::models::device_token;
 use crate::state::AppState;
 
@@ -118,7 +119,7 @@ struct TokenListItem {
 async fn create_token(
     current_user: CurrentUser,
     State(state): State<AppState>,
-    Json(body): Json<CreateTokenRequest>,
+    ApiJson(body): ApiJson<CreateTokenRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     current_user.require_scope(Scope::Write)?;
 
@@ -257,7 +258,7 @@ async fn list_tokens(
 async fn revoke_token(
     current_user: CurrentUser,
     State(state): State<AppState>,
-    Path(id): Path<Uuid>,
+    ApiPath(id): ApiPath<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
     current_user.require_scope(Scope::Write)?;
 

@@ -16,7 +16,6 @@
 //! choices about the caller's own screen, not shared-library curation.
 
 use axum::extract::State;
-use axum::extract::rejection::JsonRejection;
 use axum::response::IntoResponse;
 use serde::Deserialize;
 use utoipa_axum::router::OpenApiRouter;
@@ -26,6 +25,7 @@ use crate::auth::middleware::CurrentUser;
 use crate::auth::scope::Scope;
 use crate::db;
 use crate::error::AppError;
+use crate::extract::ApiJson;
 use crate::models::user_preferences::{
     LibraryDensity, LibraryView, PreferenceDefaults, PreferenceOverrides, validate_hidden_columns,
     validate_sort_stack,
@@ -197,16 +197,15 @@ impl UpdatePreferencesRequest {
     responses(
         (status = 200, description = "Preferences after the merge, in the same shape as the read", body = PreferencesResponse),
         (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails),
-        (status = 422, description = "Empty body, unknown density or view, or an out-of-range sort stack or column key", body = crate::openapi::ProblemDetails)
+        (status = 422, description = "Unknown density or view, or an out-of-range sort", body = crate::openapi::ProblemDetails)
     )
 )]
 async fn patch_preferences(
     current_user: CurrentUser,
     State(state): State<AppState>,
-    body: Result<axum::Json<UpdatePreferencesRequest>, JsonRejection>,
+    ApiJson(req): ApiJson<UpdatePreferencesRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     current_user.require_scope(Scope::Write)?;
-    let axum::Json(req) = body.map_err(|e| AppError::Validation(e.body_text()))?;
 
     if !req.names_a_group() {
         return Err(AppError::Validation("no fields".into()));

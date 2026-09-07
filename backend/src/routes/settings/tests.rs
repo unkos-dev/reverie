@@ -1,6 +1,7 @@
 use axum::http::StatusCode;
 use sqlx::PgPool;
 
+use crate::error::problems;
 use crate::test_support;
 
 fn server(app_pool: &PgPool, ingestion_pool: &PgPool) -> axum_test::TestServer {
@@ -167,13 +168,10 @@ async fn put_settings_invalid_format_priority_returns_422(pool: PgPool) {
         .add_header(axum::http::header::AUTHORIZATION, admin_basic)
         .json(&serde_json::json!({"format_priority": ["epub", "banana"]}))
         .await;
-    assert_eq!(r.status_code(), StatusCode::UNPROCESSABLE_ENTITY);
-
-    let body: serde_json::Value = r.json();
-    let detail = body["detail"].as_str().unwrap_or_default();
-    assert!(
-        detail.contains("banana"),
-        "expected detail mentioning 'banana', got {detail}"
+    test_support::assert_problem(
+        &r,
+        problems::INVALID_REQUEST_BODY,
+        StatusCode::UNPROCESSABLE_ENTITY,
     );
 }
 
