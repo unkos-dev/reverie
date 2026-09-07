@@ -37,7 +37,9 @@ pub fn router() -> OpenApiRouter<AppState> {
     // Explicitly public: opt out of the document-level session_cookie default
     // (operational probe, ADR-exempt and unauthenticated by design).
     security(()),
-    responses((status = 200, description = "Process is live", body = String, content_type = "text/plain"))
+    responses(
+        (status = 200, description = "Process is live", body = String, content_type = "text/plain"),
+    )
 )]
 pub async fn health() -> &'static str {
     "ok"
@@ -62,7 +64,7 @@ pub async fn health() -> &'static str {
     security(()),
     responses(
         (status = 200, description = "Ready — database reachable", body = String, content_type = "text/plain"),
-        (status = 503, description = "Database unreachable", body = ProblemDetails)
+        (status = 503, description = "Database unreachable", body = ProblemDetails, content_type = "application/problem+json"),
     )
 )]
 pub async fn ready(State(state): State<AppState>) -> Result<&'static str, ProblemDetails> {

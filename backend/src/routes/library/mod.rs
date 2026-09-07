@@ -289,9 +289,9 @@ struct BookListResponse {
     responses(
         (status = 200, description = "Paginated list of visible books", body = BookListResponse,
             headers(("Link" = String, description = "RFC 8288 next-page link; emitted with rel=\"next\" when more rows remain"))),
-        (status = 400, description = "Malformed query parameter", body = crate::openapi::ProblemDetails),
-        (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails),
-        (status = 422, description = "Invalid cursor or too many filter values", body = crate::openapi::ProblemDetails)
+        (status = 400, description = "Malformed query parameter", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
+        (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
+        (status = 422, description = "Invalid cursor or too many filter values", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
     )
 )]
 async fn list(
@@ -1052,8 +1052,8 @@ fn merge_external_ids(
     security(("session_cookie" = ["read"]), ("device_token_bearer" = ["read"]), ("oidc_jwt_bearer" = ["read"]), ("opds_basic" = ["read"])),
     responses(
         (status = 200, description = "Book detail", body = BookDetail),
-        (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails),
-        (status = 404, description = "Not found or RLS-hidden", body = crate::openapi::ProblemDetails)
+        (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
+        (status = 404, description = "Not found or RLS-hidden", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
     )
 )]
 async fn detail(
@@ -1556,8 +1556,8 @@ fn accepted_pointer_count(row: &DetailRow) -> u32 {
     security(("session_cookie" = ["read"]), ("device_token_bearer" = ["read"]), ("oidc_jwt_bearer" = ["read"]), ("opds_basic" = ["read"])),
     responses(
         (status = 200, description = "Work detail with visible manifestations", body = WorkDetail),
-        (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails),
-        (status = 404, description = "Not found or RLS-hidden", body = crate::openapi::ProblemDetails)
+        (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
+        (status = 404, description = "Not found or RLS-hidden", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
     )
 )]
 async fn work_detail(

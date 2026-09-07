@@ -53,9 +53,9 @@ pub fn router() -> OpenApiRouter<AppState> {
     params(("id" = Uuid, Path, description = "Manifestation id")),
     responses(
         (status = 200, description = "EPUB byte stream; Content-Disposition: attachment with a title-derived filename", content_type = "application/epub+zip"),
-        (status = 401, description = "Basic authentication required (WWW-Authenticate: Basic)", body = crate::openapi::ProblemDetails),
-        (status = 403, description = "File path escapes the library root", body = crate::openapi::ProblemDetails),
-        (status = 404, description = "Manifestation missing, RLS-hidden, or file absent on disk", body = crate::openapi::ProblemDetails)
+        (status = 401, description = "Basic authentication required (WWW-Authenticate: Basic)", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
+        (status = 403, description = "File path escapes the library root", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
+        (status = 404, description = "Manifestation missing, RLS-hidden, or file absent on disk", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
     )
 )]
 async fn download_epub(
