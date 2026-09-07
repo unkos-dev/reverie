@@ -12,8 +12,8 @@
 //!   [`crate::models::work::rematch_on_isbn_change`] immediately.
 //!
 //! This orchestrator does not download covers; sources that report cover
-//! URLs surface them as `cover_url` observations, and the fetch belongs to
-//! the cover download worker.
+//! URLs surface them as `cover_url` observations, and nothing fetches them
+//! yet.
 
 use std::sync::Arc;
 use std::time::Duration;

@@ -8,7 +8,7 @@
 //! Memory-instinct: when the new cover's format differs from the existing
 //! cover's media-type, we write the new binary under a fresh entry name
 //! and rewrite the manifest; the old entry stays in the archive as orphan
-//! bytes — accepted MVP trade-off (a health sweep can repack to drop orphans).
+//! bytes, an accepted trade-off: nothing repacks the archive to drop them.
 
 use std::collections::HashMap;
 use std::io::Cursor;
@@ -52,8 +52,8 @@ pub struct CoverPlan {
 ///    rewrite needed.
 /// 2. Existing cover, different `MIME` type — new `ZIP` entry under a fresh
 ///    name (`images/cover-image-writeback.<ext>`) plus `OPF` manifest rewrite.
-///    The old entry becomes an orphan (accepted MVP trade-off; a health sweep
-///    repacks to drop orphans).
+///    The old entry becomes an orphan (an accepted trade-off; nothing repacks
+///    the archive to drop it).
 /// 3. No cover present — new `ZIP` entry plus `OPF` manifest insertion.  For
 ///    `EPUB2`, a `<meta name="cover">` element is also inserted.
 ///

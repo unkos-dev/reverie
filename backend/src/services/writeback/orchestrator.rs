@@ -313,10 +313,9 @@ pub async fn run_once(
     //
     // If this UPDATE fails the on-disk rewrite + rename already committed,
     // so `file_path` is correct but `current_file_hash` stays at the
-    // pre-writeback value until the next successful retry.  The
-    // library-health sweep will surface the divergence, but we log the
-    // specifics at `error!` so an operator doesn't have to wait for the
-    // sweep to notice.
+    // pre-writeback value until the next successful retry.  Nothing else
+    // reconciles the divergence, so the specifics are logged at `error!`
+    // for the operator.
     //
     // Also refresh has_embedded_cover from the post-writeback validation
     // already computed above: the fresh value is the truth for the file as
@@ -351,15 +350,15 @@ pub async fn run_once(
             final_path = %final_path.display(),
             attempted_hash = %new_hash,
             "writeback: current_file_hash UPDATE failed after successful on-disk commit \
-             — on-disk file diverges from DB hash until the health sweep or retry reconciles"
+             on-disk file diverges from DB hash until a retry reconciles"
         );
         return Err(WritebackError::Db(e));
     }
 
     // Move cover sidecar from _covers/pending/ → _covers/accepted/ on
-    // success.  Best-effort: a failed move does not fail the writeback —
-    // the health sweep surfaces orphans in pending/.  Log failures at warn!
-    // so operators can observe stuck sidecars before the sweep lands.
+    // success.  Best-effort: a failed move does not fail the writeback, and
+    // nothing later moves the orphan out of pending/, so failures are logged
+    // at warn! as the operator's signal.
     if reason == "cover"
         && let Some(pending) = snap.cover_path.as_deref()
         && let Err(e) = move_cover_sidecar(pending)
@@ -368,7 +367,7 @@ pub async fn run_once(
             error = %e,
             %manifestation_id,
             pending_path = pending,
-            "writeback: cover sidecar move failed (non-fatal; the health sweep will reconcile)"
+            "writeback: cover sidecar move failed (non-fatal; the sidecar stays in pending/)"
         );
     }
 
@@ -385,9 +384,9 @@ pub async fn run_once(
 /// while the DB still points at the original hash.
 ///
 /// Returns `WritebackError` only when the rollback itself fails
-/// (disk-full, permissions).  A failed rollback is genuinely fatal —
-/// the queue will mark the job failed and the health sweep will flag the
-/// divergence on its next pass.
+/// (disk-full, permissions).  A failed rollback is genuinely fatal: the
+/// queue marks the job failed and the divergence stays until an operator
+/// acts on the logged error.
 fn finalise_post_writeback(
     pre_outcome: &ValidationOutcome,
     post_result: &Result<ValidationReport, crate::services::epub::EpubError>,
@@ -1536,11 +1535,11 @@ mod tests {
 
     // ── Rollback + post-validation decision tests ───────────────────────
     //
-    // These exercise the S1 (atomic rollback) and S2 (rollback on
-    // validator Err, not just regression) invariants.  Live-regression
-    // end-to-end fixtures are covered by the manual-smoke
-    // checklist — the simple in-test fixtures don't reliably trigger
-    // `ValidationOutcome::Quarantined` under `validate_and_repair`.
+    // These exercise the atomic-rollback invariant and rollback on a
+    // validator Err, not just on regression.  A live regression that ends
+    // in `ValidationOutcome::Quarantined` under `validate_and_repair` has no
+    // automated coverage: the simple in-test fixtures don't reliably trigger
+    // it, so that outcome is exercised by hand.
 
     fn scratch_with_bytes(bytes: &[u8]) -> (tempfile::TempDir, std::path::PathBuf) {
         let dir = tempfile::tempdir().unwrap();
