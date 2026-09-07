@@ -1838,8 +1838,7 @@ async fn detail_endpoint_malformed_uuid_returns_400(pool: PgPool) {
         .get("/api/v1/books/not-a-uuid")
         .add_header(AUTHORIZATION, basic)
         .await;
-    // axum 0.8 default `Path<Uuid>` rejection: 400 plain-text body.
-    assert_eq!(response.status_code(), StatusCode::BAD_REQUEST);
+    test_support::assert_problem(&response, problems::MALFORMED_PATH, StatusCode::BAD_REQUEST);
 }
 
 // ---------------------------------------------------------------------------
@@ -2018,8 +2017,7 @@ async fn work_endpoint_malformed_uuid_returns_400(pool: PgPool) {
         .get("/api/v1/works/not-a-uuid")
         .add_header(AUTHORIZATION, basic)
         .await;
-    // axum 0.8 default `Path<Uuid>` rejection: 400 plain-text body.
-    assert_eq!(response.status_code(), StatusCode::BAD_REQUEST);
+    test_support::assert_problem(&response, problems::MALFORMED_PATH, StatusCode::BAD_REQUEST);
 }
 
 #[sqlx::test(migrations = "./migrations")]

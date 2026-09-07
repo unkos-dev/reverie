@@ -28,7 +28,7 @@
 //! transaction so add/remove also bump the ETag — without that, a
 //! follow-up reorder PUT would 412 spuriously.
 
-use axum::extract::{OriginalUri, Path, State};
+use axum::extract::{OriginalUri, State};
 use axum::http::header::{ETAG, IF_MATCH, LINK};
 use axum::http::{HeaderMap, HeaderValue, StatusCode};
 use axum::response::IntoResponse;
@@ -43,6 +43,7 @@ use uuid::Uuid;
 use crate::auth::middleware::CurrentUser;
 use crate::auth::scope::Scope;
 use crate::error::AppError;
+use crate::extract::{ApiJson, ApiPath};
 use crate::models::shelf::{Shelf, ShelfItem};
 use crate::routes::cursor::{ShelfCursor, ShelfItemCursor};
 use crate::routes::library::{build_next_url, split_page};
@@ -279,17 +280,16 @@ struct CreateShelfRequest {
          headers(("ETag" = String, description = "Entity-tag carrying the shelf's updated_at (RFC 3339, quoted per RFC 9110)"))),
         (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails),
         (status = 403, description = "Caller is a child account", body = crate::openapi::ProblemDetails),
-        (status = 422, description = "Missing body or empty name", body = crate::openapi::ProblemDetails)
+        (status = 422, description = "Empty name", body = crate::openapi::ProblemDetails)
     )
 )]
 async fn create_shelf(
     current_user: CurrentUser,
     State(state): State<AppState>,
-    body: Result<axum::Json<CreateShelfRequest>, axum::extract::rejection::JsonRejection>,
+    ApiJson(req): ApiJson<CreateShelfRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     current_user.require_scope(Scope::Write)?;
     current_user.require_not_child()?;
-    let axum::Json(req) = body.map_err(|e| AppError::Validation(e.body_text()))?;
     let name = req.name.trim();
     if name.is_empty() {
         return Err(AppError::Validation("shelf name must not be empty".into()));
@@ -361,18 +361,17 @@ struct RenameShelfRequest {
         (status = 403, description = "Caller is a child account", body = crate::openapi::ProblemDetails),
         (status = 404, description = "Shelf missing or owned by another user (existence-not-leaked)", body = crate::openapi::ProblemDetails),
         (status = 409, description = "System shelves cannot be renamed", body = crate::openapi::ProblemDetails),
-        (status = 422, description = "Missing body or empty name", body = crate::openapi::ProblemDetails)
+        (status = 422, description = "Empty name", body = crate::openapi::ProblemDetails)
     )
 )]
 async fn rename_shelf(
     current_user: CurrentUser,
     State(state): State<AppState>,
-    Path(id): Path<Uuid>,
-    body: Result<axum::Json<RenameShelfRequest>, axum::extract::rejection::JsonRejection>,
+    ApiPath(id): ApiPath<Uuid>,
+    ApiJson(req): ApiJson<RenameShelfRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     current_user.require_scope(Scope::Write)?;
     current_user.require_not_child()?;
-    let axum::Json(req) = body.map_err(|e| AppError::Validation(e.body_text()))?;
     let name = req.name.trim();
     if name.is_empty() {
         return Err(AppError::Validation("shelf name must not be empty".into()));
@@ -464,7 +463,7 @@ async fn rename_shelf(
 async fn delete_shelf(
     current_user: CurrentUser,
     State(state): State<AppState>,
-    Path(id): Path<Uuid>,
+    ApiPath(id): ApiPath<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
     current_user.require_scope(Scope::Write)?;
     current_user.require_not_child()?;
@@ -568,7 +567,7 @@ struct ShelfDetailResponse {
 async fn get_shelf_with_items(
     current_user: CurrentUser,
     State(state): State<AppState>,
-    Path(id): Path<Uuid>,
+    ApiPath(id): ApiPath<Uuid>,
     params: Result<Query<ShelfItemsParams>, QueryRejection>,
     OriginalUri(uri): OriginalUri,
 ) -> Result<impl IntoResponse, AppError> {
@@ -706,18 +705,16 @@ struct AddItemRequest {
         (status = 204, description = "Item appended at the end (no-op if already on the shelf); shelf ETag bumped",
          headers(("ETag" = String, description = "Entity-tag carrying the shelf's new updated_at (RFC 3339, quoted per RFC 9110)"))),
         (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails),
-        (status = 404, description = "Shelf missing / not owned, or manifestation not visible to the caller", body = crate::openapi::ProblemDetails),
-        (status = 422, description = "Missing or malformed body", body = crate::openapi::ProblemDetails)
+        (status = 404, description = "Shelf missing / not owned, or manifestation not visible to the caller", body = crate::openapi::ProblemDetails)
     )
 )]
 async fn add_shelf_item(
     current_user: CurrentUser,
     State(state): State<AppState>,
-    Path(id): Path<Uuid>,
-    body: Result<axum::Json<AddItemRequest>, axum::extract::rejection::JsonRejection>,
+    ApiPath(id): ApiPath<Uuid>,
+    ApiJson(req): ApiJson<AddItemRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     current_user.require_scope(Scope::Write)?;
-    let axum::Json(req) = body.map_err(|e| AppError::Validation(e.body_text()))?;
 
     // RLS-scoped probe: confirm the caller can see the target
     // manifestation. Without this an attacker could brute-force the
@@ -822,7 +819,7 @@ async fn add_shelf_item(
 async fn remove_shelf_item(
     current_user: CurrentUser,
     State(state): State<AppState>,
-    Path((shelf_id, manifestation_id)): Path<(Uuid, Uuid)>,
+    ApiPath((shelf_id, manifestation_id)): ApiPath<(Uuid, Uuid)>,
 ) -> Result<impl IntoResponse, AppError> {
     current_user.require_scope(Scope::Write)?;
     let mut tx = state
@@ -915,13 +912,12 @@ struct ReorderItemsRequest {
 async fn reorder_shelf_items(
     current_user: CurrentUser,
     State(state): State<AppState>,
-    Path(id): Path<Uuid>,
+    ApiPath(id): ApiPath<Uuid>,
     headers_in: HeaderMap,
-    body: Result<axum::Json<ReorderItemsRequest>, axum::extract::rejection::JsonRejection>,
+    ApiJson(req): ApiJson<ReorderItemsRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     current_user.require_scope(Scope::Write)?;
     let if_match = parse_if_match(&headers_in)?.ok_or(AppError::IfMatchRequired)?;
-    let axum::Json(req) = body.map_err(|e| AppError::Validation(e.body_text()))?;
 
     let mut tx = state
         .pool

@@ -80,6 +80,22 @@ pub const MALFORMED_QUERY: &str = "malformed-query";
 /// Bad Request like [`MALFORMED_QUERY`] rather than [`VALIDATION`].
 pub const MALFORMED_HEADER: &str = "malformed-header";
 
+/// A path parameter failed to deserialize (e.g. a malformed UUID in
+/// `/books/{id}`).
+///
+/// A syntactic decode failure at the extractor boundary, so it maps to
+/// HTTP 400 Bad Request like [`MALFORMED_QUERY`] rather than
+/// [`VALIDATION`].
+pub const MALFORMED_PATH: &str = "malformed-path";
+
+/// The JSON request body was rejected before the handler ran: not valid
+/// JSON, not matching the expected fields or types, not sent as
+/// `application/json`, or not readable within the body limit.
+///
+/// The HTTP status follows the rejection class (400, 422, 415, or 413),
+/// so one slug covers every way the body can fail to arrive.
+pub const INVALID_REQUEST_BODY: &str = "invalid-request-body";
+
 /// Per-source login rate limit exceeded
 /// ([`crate::error::AppError::RateLimited`]). HTTP 429.
 pub const RATE_LIMITED: &str = "rate-limited";
