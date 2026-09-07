@@ -119,6 +119,7 @@ pub struct PreferenceDefaults {
 impl PreferenceDefaults {
     /// The installation defaults as served. Const so the values cannot be
     /// assembled differently anywhere else.
+    #[must_use]
     pub const fn installation() -> Self {
         Self {
             hidden_columns: DEFAULT_HIDDEN_COLUMNS,

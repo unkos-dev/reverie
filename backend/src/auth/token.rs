@@ -56,6 +56,7 @@ fn sha256_hex(input: &[u8]) -> String {
 ///
 /// Returns `(plaintext_token, sha256_hex_hash)`. The plaintext is 43
 /// characters of base64url; the hash is 64 lowercase hex characters.
+#[must_use]
 pub fn generate_device_token() -> (String, String) {
     let mut bytes = [0u8; 32];
     rand::fill(&mut bytes);
@@ -77,6 +78,7 @@ pub fn generate_device_token() -> (String, String) {
 /// Note: this function is called inside a full-iteration loop in
 /// [`crate::auth::middleware::verify_basic`] to close a secondary timing
 /// side-channel on token position within the user's token list.
+#[must_use]
 pub fn verify_device_token(plaintext: &str, hash: &str) -> bool {
     let computed = sha256_hex(plaintext.as_bytes());
     computed.as_bytes().ct_eq(hash.as_bytes()).into()

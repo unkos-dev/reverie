@@ -34,6 +34,7 @@ pub enum SortColumn {
 
 impl SortColumn {
     /// The `?sort=` field name this column answers to.
+    #[must_use]
     pub const fn wire_name(self) -> &'static str {
         match self {
             Self::Title => "title",
@@ -46,6 +47,7 @@ impl SortColumn {
     /// Resolve a wire field name against the whitelist. Case-sensitive:
     /// only the exact lowercase names returned by [`Self::wire_name`]
     /// match.
+    #[must_use]
     pub fn from_wire(value: &str) -> Option<Self> {
         match value {
             "title" => Some(Self::Title),
@@ -58,6 +60,7 @@ impl SortColumn {
 
     /// The SQL expression this column orders and filters by. A fixed
     /// `&'static str` - never built from client input.
+    #[must_use]
     pub const fn sql_expr(self) -> &'static str {
         match self {
             Self::Title => "w.sort_title",
@@ -69,6 +72,7 @@ impl SortColumn {
 
     /// Whether this column's SQL expression can be `NULL`, requiring the
     /// cascade predicate's null-bucket branch and a `NULLS LAST` ORDER BY.
+    #[must_use]
     pub const fn nullable(self) -> bool {
         matches!(self, Self::Author | Self::Pages)
     }
@@ -76,6 +80,7 @@ impl SortColumn {
     /// The row alias this column is selected under in the list query,
     /// used to read the boundary value back off a result row when
     /// minting the next page's cursor.
+    #[must_use]
     pub const fn select_alias(self) -> &'static str {
         match self {
             Self::Title => "sort_title",
@@ -89,6 +94,7 @@ impl SortColumn {
     /// this column must carry the matching [`SortValueKind`]; the sole
     /// consumer is the cursor decode/encode type check, kept exhaustive
     /// here so adding a column forces its kind to be declared.
+    #[must_use]
     pub const fn value_kind(self) -> SortValueKind {
         match self {
             Self::Title | Self::Author => SortValueKind::Text,
@@ -121,6 +127,7 @@ pub enum SortDirection {
 
 impl SortDirection {
     /// The `ORDER BY` keyword for this direction.
+    #[must_use]
     pub const fn sql(self) -> &'static str {
         match self {
             Self::Asc => "ASC",
@@ -130,6 +137,7 @@ impl SortDirection {
 
     /// The comparison operator a keyset "advance past the boundary"
     /// predicate uses under this direction.
+    #[must_use]
     pub const fn comparison_op(self) -> char {
         match self {
             Self::Asc => '>',
@@ -207,6 +215,7 @@ impl SortSpec {
     }
 
     /// The stack's levels, in priority order.
+    #[must_use]
     pub fn levels(&self) -> &[SortLevel] {
         &self.levels
     }
@@ -214,6 +223,7 @@ impl SortSpec {
     /// Render this spec back to its JSON:API wire string, e.g.
     /// `"author,-created_at"`. Used to echo `?sort=` in `next_cursor`
     /// links and as the cursor's spec tag.
+    #[must_use]
     pub fn canonical(&self) -> String {
         self.levels
             .iter()

@@ -197,6 +197,7 @@ pub struct EnvProvider {
 
 impl EnvProvider {
     /// Collect all current process environment variables.
+    #[must_use]
     pub fn from_process_env() -> Self {
         Self {
             pairs: std::env::vars().collect(),
@@ -206,6 +207,7 @@ impl EnvProvider {
     /// Build from an explicit slice of `(key, value)` string pairs.
     /// Used in tests as an in-memory seam (no process-env mutation, no
     /// `figment::Jail` — parallel-safe, GOTCHA-TESTSEAM).
+    #[must_use]
     pub fn from_pairs(pairs: &[(&str, &str)]) -> Self {
         Self {
             pairs: pairs

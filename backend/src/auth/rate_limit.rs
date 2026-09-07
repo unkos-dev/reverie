@@ -63,6 +63,7 @@ pub type LoginLimiter = DefaultKeyedRateLimiter<IpAddr>;
 /// Burst equals the rate. `per_min` is [`NonZeroU32`] so a zero quota (which
 /// would lock everyone out) is unrepresentable; config validation enforces the
 /// non-zero invariant at the boundary.
+#[must_use]
 pub fn build_login_limiter(per_min: NonZeroU32) -> Arc<LoginLimiter> {
     Arc::new(RateLimiter::keyed(Quota::per_minute(per_min)))
 }

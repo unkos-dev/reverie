@@ -32,6 +32,7 @@ use crate::models::password_reset_pin::{IssuanceLock, RotateOutcome, rotate};
 /// Generate a 10-digit numeric recovery PIN from the OS CSPRNG. Numeric for
 /// operator-to-user transcription; brute force is bounded by per-source rate
 /// limiting, single use, and a short expiry.
+#[must_use]
 pub fn generate_pin() -> String {
     let mut bytes = [0u8; 8];
     rand::fill(&mut bytes);

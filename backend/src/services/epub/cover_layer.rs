@@ -135,6 +135,7 @@ fn validate_svg(
 /// Exported so `services::covers::extract` can mirror Step 5 detection
 /// semantics exactly — any divergence between the validation pass and the
 /// OPDS cover serve would be a silent correctness hazard.
+#[must_use]
 pub fn find_cover_href(opf: &OpfData) -> Option<String> {
     if let Some(href) = &opf.cover_href {
         return Some(href.clone());

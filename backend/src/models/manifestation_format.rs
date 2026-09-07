@@ -60,6 +60,7 @@ impl ManifestationFormat {
     /// Wire string for the JSON value, env config, and file-extension
     /// matching. Matches the `#[serde(rename_all)]` and
     /// `#[sqlx(rename_all)]` mappings.
+    #[must_use]
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::Epub => "epub",

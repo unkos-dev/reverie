@@ -53,6 +53,7 @@
 /// step rejects an empty sidecar before this builder runs. Each element must
 /// be pre-formatted as `sha256-...` / `sha384-...` / `sha512-...` with
 /// standard (RFC 4648 §4) base64 — dist validation enforces the shape.
+#[must_use]
 pub fn build_html_csp(script_src_hashes: &[String], report_endpoint: Option<&url::Url>) -> String {
     let mut script_src = String::from("script-src 'self'");
     for h in script_src_hashes {
@@ -93,6 +94,7 @@ pub fn build_html_csp(script_src_hashes: &[String], report_endpoint: Option<&url
 /// the laxer HTML policy onto API responses, broadening the implicit attack
 /// surface to data-only endpoints. Route-class differentiation prevents
 /// that.
+#[must_use]
 pub fn build_api_csp(report_endpoint: Option<&url::Url>) -> String {
     let mut out = String::from("default-src 'none'; frame-ancestors 'none'; base-uri 'none'");
     append_reporting(&mut out, report_endpoint);

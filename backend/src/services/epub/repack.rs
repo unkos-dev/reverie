@@ -10,6 +10,7 @@
 //! `NamedTempFile` onto the destination path.
 
 use std::collections::HashMap;
+use std::hash::BuildHasher;
 use std::io::{Read, Write};
 use std::path::Path;
 
@@ -49,12 +50,12 @@ pub(super) const MIMETYPE_CONTENT: &[u8] = b"application/epub+zip";
 /// cannot be created in `dest_dir`. Returns [`EpubError::Zip`] if
 /// `ZipArchive::new` fails to parse the source archive or if `ZipWriter`
 /// encounters an error while writing an entry.
-pub fn with_modifications(
+pub fn with_modifications<S: BuildHasher>(
     src_path: &Path,
     dest_dir: &Path,
     opf_path: Option<&str>,
     opf_replacement: Option<&[u8]>,
-    binary_replacements: &HashMap<String, Vec<u8>>,
+    binary_replacements: &HashMap<String, Vec<u8>, S>,
     additions: &[(String, Vec<u8>, FileOptions<ExtendedFileOptions>)],
 ) -> Result<NamedTempFile, EpubError> {
     let bytes = std::fs::read(src_path)?;

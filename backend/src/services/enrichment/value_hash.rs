@@ -20,6 +20,7 @@ use sha2::{Digest, Sha256};
 /// * list-field item order (creators, subjects, genres, moods, tags),
 /// * publisher leading/trailing whitespace,
 /// * `pub_date` alternate ISO representations.
+#[must_use]
 pub fn value_hash(field_name: &str, value: &Value) -> Vec<u8> {
     let normalised = normalise(field_name, value);
     let canonical = canonical_json(&normalised);
