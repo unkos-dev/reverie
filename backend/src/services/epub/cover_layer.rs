@@ -132,7 +132,7 @@ fn validate_svg(
 /// heuristic. Falls back last to the legacy id heuristic (`id="cover-image"`,
 /// `id="cover"`, …) for EPUBs that predate both.
 ///
-/// Exported so `services::covers::extract` can mirror Step 5 detection
+/// Exported so `services::covers::extract` can mirror this detection
 /// semantics exactly — any divergence between the validation pass and the
 /// OPDS cover serve would be a silent correctness hazard.
 pub fn find_cover_href(opf: &OpfData) -> Option<String> {

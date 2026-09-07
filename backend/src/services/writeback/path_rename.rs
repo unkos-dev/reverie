@@ -54,7 +54,7 @@ pub fn commit(temp: NamedTempFile, dest: &Path) -> Result<(), WritebackError> {
 /// directory-inode flush can revert the rename.
 ///
 /// Best-effort: a failure here only means durability isn't guaranteed;
-/// the rename itself has already committed and Step 11's health sweep
+/// the rename itself has already committed and the health sweep
 /// will reconcile any post-crash divergence.  Logging the failure is
 /// the operator's signal to investigate the underlying FS health.
 fn fsync_parent_dir(path: &Path) {

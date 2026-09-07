@@ -1,4 +1,5 @@
-//! Extract cover bytes from an EPUB on disk. Mirrors Step 5 detection
+//! Extract cover bytes from an EPUB on disk. Mirrors
+//! [`crate::services::epub::cover_layer::find_cover_href`]'s detection
 //! semantics exactly — any divergence would cause enrichment + OPDS to
 //! disagree on whether a cover exists.
 //!

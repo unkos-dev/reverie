@@ -54,7 +54,7 @@ pub struct ExtractedMetadata {
     pub subjects: Vec<String>,
     /// Series name and position parsed from Calibre-style `OPF` series metadata.
     pub series: Option<SeriesInfo>,
-    /// Consumed by the enrichment confidence scorer (Step 7 task 14).
+    /// Consumed by the enrichment confidence scorer.
     pub inversion: Option<inversion::InversionResult>,
     /// Confidence score 0.0-1.0 based on field completeness.
     pub confidence: f32,

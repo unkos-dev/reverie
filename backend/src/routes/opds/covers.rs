@@ -23,8 +23,8 @@ use crate::services::covers::{CoverError, CoverSize, get_or_create};
 use crate::state::AppState;
 
 /// `max-age` for cover responses. Covers are content-addressed on disk and
-/// carry a strong `ETag`, so a day of client caching is safe: a Step 8
-/// writeback changes the `ETag`, and the browser revalidates (304 when
+/// carry a strong `ETag`, so a day of client caching is safe: a writeback
+/// changes the `ETag`, and the browser revalidates (304 when
 /// unchanged) once `max-age` lapses.
 const COVER_MAX_AGE_SECS: u32 = 86_400;
 

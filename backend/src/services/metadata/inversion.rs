@@ -4,7 +4,7 @@
 //! an author field looks like a book title. Advisory only — results are stored
 //! as draft metadata, never auto-applied.
 
-/// Fields consumed by the enrichment confidence scorer (Step 7 task 14).
+/// Fields consumed by the enrichment confidence scorer.
 ///
 /// Advisory signal only — the result is stored as a draft metadata row and
 /// never auto-applied. A human review step (or future policy rule) decides
