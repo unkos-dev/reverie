@@ -30,7 +30,7 @@ path = "src/main.rs"
 anyhow = "1.0.103"
 argon2 = "0.6.0"
 async-trait = "0.1.89"
-axum = "0.8.9"
+axum = { version = "0.8.9", features = ["macros"] }
 axum-extra = { version = "0.12.6", features = ["cookie", "query"] }
 base64ct = { version = "1.8.3", features = ["std"] }
 # First-party datetime crate. `DateTime<Utc>` carries the UTC invariant in the
@@ -138,11 +138,6 @@ unsafe_code = "deny"
 [lints.clippy]
 pedantic = { level = "warn", priority = -1 }
 nursery = { level = "warn", priority = -1 }
-
-# Pedantic lints for library API hygiene that the crate does not yet satisfy;
-# see docs/adr/0002-strict-lint-policy-pedantic-clippy-and-strict-frontend-lint.md.
-must_use_candidate = "allow"
-implicit_hasher = "allow"
 
 # nursery lint that fires inside the `utoipa::IntoParams` derive for query
 # param structs with many fields (the books-list filter grammar): the derive

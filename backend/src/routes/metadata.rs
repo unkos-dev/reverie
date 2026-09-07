@@ -6,7 +6,7 @@
 
 use std::collections::BTreeMap;
 
-use axum::extract::{Path, State};
+use axum::extract::State;
 use axum::http::header::ETAG;
 use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
@@ -21,6 +21,7 @@ use crate::auth::middleware::CurrentUser;
 use crate::auth::scope::Scope;
 use crate::db;
 use crate::error::AppError;
+use crate::extract::{ApiJson, ApiPath};
 use crate::models::content_rating::ContentRating;
 use crate::models::external_identifier::{
     IdentifierLevel, delete_manifestation_identifier, delete_work_identifier,
@@ -109,7 +110,7 @@ struct MetadataRow {
 async fn get_manifestation_metadata(
     current_user: CurrentUser,
     State(state): State<AppState>,
-    Path(id): Path<Uuid>,
+    ApiPath(id): ApiPath<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
     current_user.require_not_child()?;
     let mut tx = db::acquire_with_rls(&state.pool, current_user.user_id)
@@ -143,7 +144,7 @@ async fn get_manifestation_metadata(
 async fn get_work_metadata(
     current_user: CurrentUser,
     State(state): State<AppState>,
-    Path(work_id): Path<Uuid>,
+    ApiPath(work_id): ApiPath<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
     current_user.require_not_child()?;
 
@@ -276,8 +277,8 @@ struct LockPayload {
 async fn accept_manifestation(
     current_user: CurrentUser,
     State(state): State<AppState>,
-    Path(manifestation_id): Path<Uuid>,
-    axum::Json(payload): axum::Json<VersionPayload>,
+    ApiPath(manifestation_id): ApiPath<Uuid>,
+    ApiJson(payload): ApiJson<VersionPayload>,
 ) -> Result<impl IntoResponse, AppError> {
     current_user.require_scope(Scope::Write)?;
     current_user.require_not_child()?;
@@ -361,8 +362,8 @@ async fn accept_manifestation(
 async fn reject_manifestation(
     current_user: CurrentUser,
     State(state): State<AppState>,
-    Path(manifestation_id): Path<Uuid>,
-    axum::Json(payload): axum::Json<VersionPayload>,
+    ApiPath(manifestation_id): ApiPath<Uuid>,
+    ApiJson(payload): ApiJson<VersionPayload>,
 ) -> Result<impl IntoResponse, AppError> {
     current_user.require_scope(Scope::Write)?;
     current_user.require_not_child()?;
@@ -424,8 +425,8 @@ async fn reject_manifestation(
 async fn revert_manifestation(
     current_user: CurrentUser,
     State(state): State<AppState>,
-    Path(manifestation_id): Path<Uuid>,
-    axum::Json(payload): axum::Json<RevertPayload>,
+    ApiPath(manifestation_id): ApiPath<Uuid>,
+    ApiJson(payload): ApiJson<RevertPayload>,
 ) -> Result<impl IntoResponse, AppError> {
     current_user.require_scope(Scope::Write)?;
     current_user.require_not_child()?;
@@ -520,8 +521,8 @@ async fn revert_manifestation(
 async fn lock_field(
     current_user: CurrentUser,
     State(state): State<AppState>,
-    Path(manifestation_id): Path<Uuid>,
-    axum::Json(payload): axum::Json<LockPayload>,
+    ApiPath(manifestation_id): ApiPath<Uuid>,
+    ApiJson(payload): ApiJson<LockPayload>,
 ) -> Result<impl IntoResponse, AppError> {
     current_user.require_scope(Scope::Write)?;
     current_user.require_not_child()?;
@@ -568,8 +569,8 @@ async fn lock_field(
 async fn unlock_field(
     current_user: CurrentUser,
     State(state): State<AppState>,
-    Path(manifestation_id): Path<Uuid>,
-    axum::Json(payload): axum::Json<LockPayload>,
+    ApiPath(manifestation_id): ApiPath<Uuid>,
+    ApiJson(payload): ApiJson<LockPayload>,
 ) -> Result<impl IntoResponse, AppError> {
     current_user.require_scope(Scope::Write)?;
     current_user.require_not_child()?;
@@ -2080,7 +2081,7 @@ async fn load_book_metadata(
 async fn get_book_metadata(
     current_user: CurrentUser,
     State(state): State<AppState>,
-    Path(manifestation_id): Path<Uuid>,
+    ApiPath(manifestation_id): ApiPath<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
     current_user.require_not_child()?;
 
@@ -2246,14 +2247,13 @@ async fn load_manifestation_identifiers(
 async fn update_book_metadata(
     current_user: CurrentUser,
     State(state): State<AppState>,
-    Path(manifestation_id): Path<Uuid>,
+    ApiPath(manifestation_id): ApiPath<Uuid>,
     headers_in: HeaderMap,
-    body: Result<axum::Json<UpdateMetadataFields>, axum::extract::rejection::JsonRejection>,
+    ApiJson(mut req_fields): ApiJson<UpdateMetadataFields>,
 ) -> Result<Response, AppError> {
     current_user.require_scope(Scope::Write)?;
     current_user.require_not_child()?;
     let if_match = parse_if_match(&headers_in)?.ok_or(AppError::IfMatchRequired)?;
-    let axum::Json(mut req_fields) = body.map_err(|e| AppError::Validation(e.body_text()))?;
     // Extract contributors BEFORE populated() consumes the struct — it is
     // handled separately from the other (scalar) fields.
     let contributors = req_fields.contributors.take();

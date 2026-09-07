@@ -429,6 +429,7 @@ pub enum CleanupMode {
 
 impl CleanupMode {
     /// Lowercase wire string matching the `#[serde(rename_all)]` mapping.
+    #[must_use]
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::All => "all",

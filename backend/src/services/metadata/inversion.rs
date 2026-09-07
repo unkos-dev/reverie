@@ -4,7 +4,7 @@
 //! an author field looks like a book title. Advisory only — results are stored
 //! as draft metadata, never auto-applied.
 
-/// Fields consumed by the enrichment confidence scorer (Step 7 task 14).
+/// Fields consumed by the enrichment confidence scorer.
 ///
 /// Advisory signal only — the result is stored as a draft metadata row and
 /// never auto-applied. A human review step (or future policy rule) decides
@@ -19,6 +19,7 @@ pub struct InversionResult {
 
 /// Check if a title looks like "Lastname, Firstname" (a swapped author name).
 /// Returns Some if inversion is detected with a matching author that looks like a title.
+#[must_use]
 pub fn detect_inversion(title: &str, authors: &[String]) -> Option<InversionResult> {
     let (before_comma, after_comma) = title.split_once(',')?;
     let before = before_comma.trim();

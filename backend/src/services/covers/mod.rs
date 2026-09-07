@@ -5,9 +5,9 @@
 //! atomically writes the result.
 //!
 //! **Sidecar covers at `manifestations.cover_path` are NOT served here.**
-//! That path is the enrichment preview sidecar (Step 7) — a distinct
+//! That path is the enrichment preview sidecar, a distinct
 //! artefact from the EPUB-embedded cover. Showing enrichment previews in
-//! OPDS is an orthogonal decision out of scope for Step 9 per BLUEPRINT.
+//! OPDS is an orthogonal decision, out of scope here.
 
 /// On-disk content-addressed cover cache; handles atomic writes and path
 /// derivation.
@@ -60,7 +60,7 @@ const fn ext_for_format(fmt: image::ImageFormat) -> &'static str {
 /// the handler emits.
 ///
 /// The validator is content-addressed by the EPUB file-hash
-/// prefix and size tier, so a Step 8 writeback (new `current_file_hash`)
+/// prefix and size tier, so a writeback (new `current_file_hash`)
 /// produces a new validator and the browser revalidates to the fresh cover.
 pub struct CoverArtifact {
     /// Absolute path to the cached cover file.

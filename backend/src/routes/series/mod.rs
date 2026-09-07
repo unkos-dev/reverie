@@ -8,7 +8,7 @@
 //! short-circuits to 404 to avoid leaking series existence to child
 //! accounts or across adult isolation boundaries.
 
-use axum::extract::{Path, State};
+use axum::extract::State;
 use std::collections::HashMap;
 use utoipa_axum::router::OpenApiRouter;
 use utoipa_axum::routes;
@@ -17,6 +17,7 @@ use uuid::Uuid;
 use crate::auth::middleware::CurrentUser;
 use crate::db;
 use crate::error::AppError;
+use crate::extract::ApiPath;
 use crate::models::library::WorkManifestation;
 use crate::models::series::{SeriesDetail, SeriesWork};
 use crate::models::validation_status::ValidationStatus;
@@ -63,7 +64,7 @@ pub fn router() -> OpenApiRouter<AppState> {
 async fn detail(
     current_user: CurrentUser,
     State(state): State<AppState>,
-    Path(id): Path<Uuid>,
+    ApiPath(id): ApiPath<Uuid>,
 ) -> Result<axum::Json<SeriesDetail>, AppError> {
     let mut tx = db::acquire_with_rls(&state.pool, current_user.user_id)
         .await

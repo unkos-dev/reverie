@@ -26,7 +26,7 @@
 //!   cursor minted for one sort cannot be replayed against another
 //!   (see [`crate::routes::cursor::SortCursor::parse_for`]).
 
-use axum::extract::{OriginalUri, Path, State};
+use axum::extract::{OriginalUri, State};
 use axum::http::{HeaderMap, HeaderValue, header::LINK};
 use axum::response::IntoResponse;
 use axum_extra::extract::{Query, QueryRejection};
@@ -40,6 +40,7 @@ use uuid::Uuid;
 use crate::auth::middleware::CurrentUser;
 use crate::db;
 use crate::error::AppError;
+use crate::extract::ApiPath;
 use crate::models::content_rating::ContentRating;
 use crate::models::contributor_role::ContributorRole;
 use crate::models::enrichment_status::EnrichmentStatus;
@@ -1060,7 +1061,7 @@ fn merge_external_ids(
 async fn detail(
     current_user: CurrentUser,
     State(state): State<AppState>,
-    Path(id): Path<Uuid>,
+    ApiPath(id): ApiPath<Uuid>,
 ) -> Result<axum::Json<BookDetail>, AppError> {
     let mut tx = db::acquire_with_rls(&state.pool, current_user.user_id)
         .await
@@ -1565,7 +1566,7 @@ fn accepted_pointer_count(row: &DetailRow) -> u32 {
 async fn work_detail(
     current_user: CurrentUser,
     State(state): State<AppState>,
-    Path(id): Path<Uuid>,
+    ApiPath(id): ApiPath<Uuid>,
 ) -> Result<axum::Json<WorkDetail>, AppError> {
     let mut tx = db::acquire_with_rls(&state.pool, current_user.user_id)
         .await

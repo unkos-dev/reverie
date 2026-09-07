@@ -7,7 +7,7 @@
 //! shared; the two mounts differ only in extractor wrapping.
 
 use axum::body::Body;
-use axum::extract::{Path, State};
+use axum::extract::State;
 use axum::http::{HeaderMap, HeaderValue, StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use tokio::fs::File;
@@ -19,12 +19,13 @@ use uuid::Uuid;
 use crate::auth::basic_only::BasicOnly;
 use crate::auth::middleware::CurrentUser;
 use crate::error::AppError;
+use crate::extract::ApiPath;
 use crate::services::covers::{CoverError, CoverSize, get_or_create};
 use crate::state::AppState;
 
 /// `max-age` for cover responses. Covers are content-addressed on disk and
-/// carry a strong `ETag`, so a day of client caching is safe: a Step 8
-/// writeback changes the `ETag`, and the browser revalidates (304 when
+/// carry a strong `ETag`, so a day of client caching is safe: a writeback
+/// changes the `ETag`, and the browser revalidates (304 when
 /// unchanged) once `max-age` lapses.
 const COVER_MAX_AGE_SECS: u32 = 86_400;
 
@@ -126,7 +127,7 @@ pub fn api_router() -> OpenApiRouter<AppState> {
 async fn opds_cover(
     BasicOnly(user): BasicOnly,
     State(state): State<AppState>,
-    Path(id): Path<Uuid>,
+    ApiPath(id): ApiPath<Uuid>,
     headers: HeaderMap,
 ) -> Result<Response, AppError> {
     serve_cover(
@@ -162,7 +163,7 @@ async fn opds_cover(
 async fn opds_cover_thumb(
     BasicOnly(user): BasicOnly,
     State(state): State<AppState>,
-    Path(id): Path<Uuid>,
+    ApiPath(id): ApiPath<Uuid>,
     headers: HeaderMap,
 ) -> Result<Response, AppError> {
     serve_cover(
@@ -198,7 +199,7 @@ async fn opds_cover_thumb(
 async fn api_cover(
     user: CurrentUser,
     State(state): State<AppState>,
-    Path(id): Path<Uuid>,
+    ApiPath(id): ApiPath<Uuid>,
     headers: HeaderMap,
 ) -> Result<Response, AppError> {
     serve_cover(
@@ -234,7 +235,7 @@ async fn api_cover(
 async fn api_cover_thumb(
     user: CurrentUser,
     State(state): State<AppState>,
-    Path(id): Path<Uuid>,
+    ApiPath(id): ApiPath<Uuid>,
     headers: HeaderMap,
 ) -> Result<Response, AppError> {
     serve_cover(

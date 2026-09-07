@@ -1,6 +1,6 @@
 //! Write extracted OPF metadata fields as `metadata_versions` journal rows.
 //!
-//! After Step 7 the journal is keyed on `value_hash`: repeated observations of
+//! The journal is keyed on `value_hash`: repeated observations of
 //! the same logical value bump `observation_count` and `last_seen_at` via the
 //! `(manifestation_id, source, field_name, value_hash)` unique constraint.
 //!

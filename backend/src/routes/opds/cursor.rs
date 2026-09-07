@@ -62,6 +62,7 @@ impl Cursor {
     /// The timestamp is written with the same RFC 3339 spelling serde
     /// gives a `DateTime<Utc>` on the wire, so a cursor timestamp and a
     /// feed-entry timestamp for the same instant are byte-identical.
+    #[must_use]
     pub fn encode(&self) -> String {
         let ts = self.created_at.to_rfc3339_opts(SecondsFormat::AutoSi, true);
         let payload = format!("{ts}|{}", self.id.as_hyphenated());
@@ -105,6 +106,7 @@ pub struct NameCursor {
 impl NameCursor {
     /// Encode as a base64url `n|<sort_name>|<uuid>` string suitable
     /// for a feed `?cursor=` query parameter.
+    #[must_use]
     pub fn encode(&self) -> String {
         let payload = format!("n|{}|{}", self.sort_name, self.id.as_hyphenated());
         Base64UrlUnpadded::encode_string(payload.as_bytes())

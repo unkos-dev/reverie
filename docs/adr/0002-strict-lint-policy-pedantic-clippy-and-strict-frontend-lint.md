@@ -146,9 +146,10 @@ the configuration itself.
   <https://github.com/tokio-rs/tokio/blob/master/tokio/Cargo.toml>
 - Related: `backend/CLAUDE.md` "Conventions" and "Rust Code Rules"; `frontend/CLAUDE.md` "TypeScript" and "Hooks"
   sections.
-- The allow-list now holds `must_use_candidate` and `implicit_hasher`, both library API hygiene lints the crate does
-  not yet satisfy, and `large_stack_arrays`, which fires inside a derive expansion that no per-item `#[expect]` can
-  reach. `module_name_repetitions` left clippy's pedantic group upstream and needs no entry.
+- The allow-list now holds only `large_stack_arrays`, which fires inside a derive expansion that no per-item
+  `#[expect]` can reach. `must_use_candidate` and `implicit_hasher` are enforced, with one scoped `#[expect]` on the
+  constant-time dummy password verify, whose result is discarded by design. `module_name_repetitions` left clippy's
+  pedantic group upstream and needs no entry.
 - [Tiered comment policy for an open-source codebase](./0004-tiered-comment-policy-for-an-open-source-codebase.md)
   narrowed this allow-list: after the library split and the docstring backfill, `missing_errors_doc`,
   `missing_panics_doc`, and `too_long_first_doc_paragraph` are enforced.

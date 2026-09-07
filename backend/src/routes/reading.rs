@@ -8,7 +8,7 @@
 //! confines every read/write to rows the caller owns and to manifestations
 //! visible under the caller's adult/child policy.
 
-use axum::extract::{Path, State};
+use axum::extract::State;
 use axum::http::HeaderMap;
 use axum::http::header::ETAG;
 use axum::response::{IntoResponse, Response};
@@ -22,6 +22,7 @@ use crate::auth::middleware::CurrentUser;
 use crate::auth::scope::Scope;
 use crate::db;
 use crate::error::AppError;
+use crate::extract::{ApiJson, ApiPath};
 use crate::models::reading_state::ReadingState;
 use crate::models::reading_status::ReadingStatus;
 use crate::routes::etag::{hash_etag, if_match_mismatch, parse_if_match};
@@ -141,7 +142,7 @@ impl ReadingStateRow {
 async fn get_reading(
     current_user: CurrentUser,
     State(state): State<AppState>,
-    Path(manifestation_id): Path<Uuid>,
+    ApiPath(manifestation_id): ApiPath<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
     current_user.require_scope(Scope::Read)?;
 
@@ -303,13 +304,12 @@ fn apply_patch(existing: ReadingStateRow, req: &UpdateReadingRequest) -> Reading
 async fn patch_reading(
     current_user: CurrentUser,
     State(state): State<AppState>,
-    Path(manifestation_id): Path<Uuid>,
+    ApiPath(manifestation_id): ApiPath<Uuid>,
     headers_in: HeaderMap,
-    body: Result<axum::Json<UpdateReadingRequest>, axum::extract::rejection::JsonRejection>,
+    ApiJson(req): ApiJson<UpdateReadingRequest>,
 ) -> Result<Response, AppError> {
     current_user.require_scope(Scope::Write)?;
     let if_match = parse_if_match(&headers_in)?.ok_or(AppError::IfMatchRequired)?;
-    let axum::Json(req) = body.map_err(|e| AppError::Validation(e.body_text()))?;
 
     let mut tx = db::acquire_with_rls(&state.pool, current_user.user_id)
         .await

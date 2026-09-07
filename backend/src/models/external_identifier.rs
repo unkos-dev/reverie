@@ -33,6 +33,7 @@ pub enum IdentifierLevel {
 
 impl IdentifierLevel {
     /// The wire/field-name segment (`"work"` or `"manifestation"`).
+    #[must_use]
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::Work => "work",
@@ -41,6 +42,7 @@ impl IdentifierLevel {
     }
 
     /// Parse the level segment of a canonical identifier field name.
+    #[must_use]
     pub fn from_segment(segment: &str) -> Option<Self> {
         match segment {
             "work" => Some(Self::Work),
@@ -53,6 +55,7 @@ impl IdentifierLevel {
     /// level and scheme. This is the `field_name` written to
     /// `metadata_versions`, the key `policy::decide` dispatches on, and the
     /// addressing key in the PATCH payload.
+    #[must_use]
     pub fn canonical_field(self, scheme: &str) -> String {
         format!("identifiers.{}.{scheme}", self.as_str())
     }

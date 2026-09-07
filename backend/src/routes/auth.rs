@@ -23,6 +23,7 @@ use crate::auth::middleware::CurrentUser;
 use crate::auth::oidc;
 use crate::auth::theme_cookie::set_theme_cookie;
 use crate::error::AppError;
+use crate::extract::ApiJson;
 use crate::models::theme_preference::ThemePreference;
 use crate::models::user;
 use crate::state::AppState;
@@ -331,7 +332,7 @@ async fn local_login(
     jar: CookieJar,
     headers: HeaderMap,
     peer: crate::auth::rate_limit::PeerAddr,
-    Json(body): Json<LocalLoginRequest>,
+    ApiJson(body): ApiJson<LocalLoginRequest>,
 ) -> Result<(CookieJar, StatusCode), AppError> {
     if !state.config.local_auth_enabled {
         return Err(AppError::NotFound);
@@ -533,7 +534,7 @@ async fn setup(
     State(state): State<AppState>,
     headers: HeaderMap,
     peer: crate::auth::rate_limit::PeerAddr,
-    Json(body): Json<SetupRequest>,
+    ApiJson(body): ApiJson<SetupRequest>,
 ) -> Result<StatusCode, AppError> {
     enforce_source_rate_limit(&state, &headers, &peer)?;
 
@@ -620,7 +621,7 @@ async fn register(
     State(state): State<AppState>,
     headers: HeaderMap,
     peer: crate::auth::rate_limit::PeerAddr,
-    Json(body): Json<RegisterRequest>,
+    ApiJson(body): ApiJson<RegisterRequest>,
 ) -> Result<StatusCode, AppError> {
     if !state.config.self_registration_enabled || !state.config.local_auth_enabled {
         return Err(AppError::NotFound);
@@ -720,7 +721,7 @@ async fn forgot_password(
     State(state): State<AppState>,
     headers: HeaderMap,
     peer: crate::auth::rate_limit::PeerAddr,
-    Json(body): Json<ForgotPasswordRequest>,
+    ApiJson(body): ApiJson<ForgotPasswordRequest>,
 ) -> Result<StatusCode, AppError> {
     if !state.config.local_auth_enabled {
         return Err(AppError::NotFound);
@@ -826,7 +827,7 @@ async fn reset_password(
     State(state): State<AppState>,
     headers: HeaderMap,
     peer: crate::auth::rate_limit::PeerAddr,
-    Json(body): Json<ResetPasswordRequest>,
+    ApiJson(body): ApiJson<ResetPasswordRequest>,
 ) -> Result<StatusCode, AppError> {
     if !state.config.local_auth_enabled {
         return Err(AppError::NotFound);
@@ -1033,11 +1034,8 @@ struct ThemeResponse {
     theme_preference: ThemePreference,
 }
 
-// 422 contract: invalid `theme_preference` values are rejected by axum 0.8's
-// default `Json` extractor (`JsonRejection::JsonDataError` → 422), so serde
-// is the wire-boundary validation gate. If a future axum upgrade changes
-// the default rejection status, the `patch_theme_rejects_invalid_value`
-// test in this module will fail and surface the regression.
+// Serde is the wire-boundary gate: an invalid theme_preference is a 422 from
+// the JSON extractor, which the patch_theme_rejects_invalid_value test pins.
 /// `PATCH /auth/me/theme` — persist the caller's theme preference and
 /// refresh the FOUC theme cookie.
 ///
@@ -1061,7 +1059,7 @@ async fn update_theme(
     current_user: CurrentUser,
     State(state): State<AppState>,
     jar: CookieJar,
-    Json(body): Json<UpdateThemeRequest>,
+    ApiJson(body): ApiJson<UpdateThemeRequest>,
 ) -> Result<(CookieJar, Json<ThemeResponse>), AppError> {
     sqlx::query!(
         "UPDATE users SET theme_preference = $1, updated_at = now() WHERE id = $2",

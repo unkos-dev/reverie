@@ -53,6 +53,7 @@ impl LookupKey {
     /// Cache-key form used by `cache`. Every variant is type-prefixed so a
     /// fallback attempt can never cache its result under another key form's
     /// entry (`isbn:` keys come pre-prefixed from `lookup_key::isbn_key`).
+    #[must_use]
     pub fn cache_key(&self) -> String {
         match self {
             Self::Isbn(k) => k.clone(),
@@ -67,6 +68,7 @@ impl LookupKey {
     ///
     /// The returned value corresponds to the `match_type` column written by
     /// adapters into `SourceResult` and consumed by `confidence::match_modifier`.
+    #[must_use]
     pub const fn match_type_for(&self) -> &'static str {
         match self {
             Self::Isbn(_) => "isbn",
@@ -81,6 +83,7 @@ impl LookupKey {
 /// Only these schemes ever become [`LookupKey::ExternalId`] fetch keys;
 /// every other scheme (`goodreads`, `asin`, `calibre`, ...) is stored and
 /// displayed but never fetched.
+#[must_use]
 pub fn is_fetchable_scheme(scheme: &str) -> bool {
     matches!(scheme, "openlibrary" | "googlebooks" | "hardcover")
 }
@@ -137,6 +140,7 @@ pub struct LookupOutcome {
 impl LookupOutcome {
     /// Build an outcome carrying only field observations, from a path that
     /// says nothing about ratings.
+    #[must_use]
     pub const fn from_fields(fields: Vec<SourceResult>) -> Self {
         Self {
             fields,
@@ -152,6 +156,7 @@ impl LookupOutcome {
     ///
     /// [`Reported`]: RatingSignal::Reported
     /// [`Unusable`]: RatingSignal::Unusable
+    #[must_use]
     pub const fn is_empty(&self) -> bool {
         if !self.fields.is_empty() {
             return false;

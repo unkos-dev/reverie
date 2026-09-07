@@ -6,7 +6,7 @@
 //!   of what the pipeline would change.
 //! * `GET  /api/v1/enrichment/status` — aggregate queue counters.
 
-use axum::extract::{Path, State};
+use axum::extract::State;
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
 use serde::Serialize;
@@ -18,6 +18,7 @@ use crate::auth::middleware::CurrentUser;
 use crate::auth::scope::Scope;
 use crate::db;
 use crate::error::AppError;
+use crate::extract::ApiPath;
 use crate::models::enrichment_status::EnrichmentStatus;
 use crate::services;
 use crate::state::AppState;
@@ -79,7 +80,7 @@ pub fn router() -> OpenApiRouter<AppState> {
 async fn trigger(
     current_user: CurrentUser,
     State(state): State<AppState>,
-    Path(id): Path<Uuid>,
+    ApiPath(id): ApiPath<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
     current_user.require_scope(Scope::Write)?;
     current_user.require_not_child()?;
@@ -146,7 +147,7 @@ async fn trigger(
 async fn dry_run(
     current_user: CurrentUser,
     State(state): State<AppState>,
-    Path(id): Path<Uuid>,
+    ApiPath(id): ApiPath<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
     current_user.require_not_child()?;
 

@@ -152,6 +152,27 @@ pub enum AppError {
     /// `#[error]` Display is not used on the wire).
     #[error("{0}")]
     MalformedHeader(String),
+    /// A path parameter failed to deserialize at the extractor boundary
+    /// (e.g. a malformed UUID in `/books/{id}`). RFC 9457 `type`
+    /// [`problems::MALFORMED_PATH`]. HTTP 400 Bad Request. The sole
+    /// production constructor is the [`From`] impl for
+    /// [`axum::extract::rejection::PathRejection`], which emits a fixed
+    /// sentence rather than axum's text, so the `detail` never carries
+    /// decoder internals or the caller's bytes.
+    #[error("{0}")]
+    MalformedPath(String),
+    /// The JSON request body was rejected at the extractor boundary. RFC
+    /// 9457 `type` [`problems::INVALID_REQUEST_BODY`]. The status is the
+    /// one axum assigns to the rejection class (400 invalid JSON, 422
+    /// wrong shape, 415 wrong content type, 413 too large), and `detail`
+    /// is a fixed sentence per class.
+    #[error("{detail}")]
+    InvalidRequestBody {
+        /// The status axum assigns to the rejection class.
+        status: StatusCode,
+        /// Fixed, class-level sentence emitted as the `detail` field.
+        detail: String,
+    },
     /// Per-source login rate limit exceeded (governor, per client IP). RFC 9457
     /// `type` [`problems::RATE_LIMITED`]. HTTP 429 Too Many Requests. Raised by
     /// the login / recovery handlers; the per-account backoff is separate.
@@ -284,6 +305,18 @@ impl IntoResponse for AppError {
                 "Bad Request",
                 msg,
             ),
+            Self::MalformedPath(msg) => (
+                StatusCode::BAD_REQUEST,
+                problems::MALFORMED_PATH,
+                "Malformed Path Parameter",
+                msg,
+            ),
+            Self::InvalidRequestBody { status, detail } => (
+                status,
+                problems::INVALID_REQUEST_BODY,
+                "Invalid Request Body",
+                detail,
+            ),
             Self::RateLimited => (
                 StatusCode::TOO_MANY_REQUESTS,
                 problems::RATE_LIMITED,
@@ -349,6 +382,51 @@ impl IntoResponse for AppError {
 impl From<axum_extra::extract::QueryRejection> for AppError {
     fn from(rejection: axum_extra::extract::QueryRejection) -> Self {
         Self::MalformedQuery(format!("malformed query parameter: {rejection}"))
+    }
+}
+
+/// Route a `Path` rejection through the envelope. A value that fails to
+/// parse is the caller's error (400); every other kind is a routing or
+/// extractor-ordering bug on the server side.
+impl From<axum::extract::rejection::PathRejection> for AppError {
+    fn from(rejection: axum::extract::rejection::PathRejection) -> Self {
+        use axum::extract::rejection::PathRejection;
+        match rejection {
+            PathRejection::FailedToDeserializePathParams(inner)
+                if inner.status() == StatusCode::BAD_REQUEST =>
+            {
+                Self::MalformedPath("a path parameter has the wrong shape".to_owned())
+            }
+            other => Self::Internal(anyhow::anyhow!(other)),
+        }
+    }
+}
+
+/// Route a `Json` rejection through the envelope, keeping the status axum
+/// assigns to each class. The `detail` is a fixed sentence per class and
+/// never axum's own text, which can embed decoder internals.
+impl From<axum::extract::rejection::JsonRejection> for AppError {
+    fn from(rejection: axum::extract::rejection::JsonRejection) -> Self {
+        use axum::extract::rejection::JsonRejection;
+        let (status, detail) = match rejection {
+            JsonRejection::JsonDataError(_) => (
+                StatusCode::UNPROCESSABLE_ENTITY,
+                "the request body does not match the expected fields or types",
+            ),
+            JsonRejection::JsonSyntaxError(_) => (
+                StatusCode::BAD_REQUEST,
+                "the request body is not valid JSON",
+            ),
+            JsonRejection::MissingJsonContentType(_) => (
+                StatusCode::UNSUPPORTED_MEDIA_TYPE,
+                "the request body must be sent as application/json",
+            ),
+            other => (other.status(), "the request body could not be read"),
+        };
+        Self::InvalidRequestBody {
+            status,
+            detail: detail.to_owned(),
+        }
     }
 }
 
@@ -492,6 +570,173 @@ mod tests {
         assert_eq!(
             json["detail"].as_str().unwrap(),
             "If-Match header must be ASCII"
+        );
+    }
+
+    #[tokio::test]
+    async fn malformed_path_returns_400_with_message_in_detail() {
+        let (status, ct, json) = parse_problem(AppError::MalformedPath(
+            "a path parameter has the wrong shape".into(),
+        ))
+        .await;
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+        assert!(
+            ct.contains("application/problem+json"),
+            "wrong content-type: {ct}"
+        );
+        assert_problem_shape(
+            &json,
+            problems::MALFORMED_PATH,
+            400,
+            "Malformed Path Parameter",
+        );
+        assert_eq!(
+            json["detail"].as_str().unwrap(),
+            "a path parameter has the wrong shape"
+        );
+    }
+
+    #[tokio::test]
+    async fn path_rejection_other_kind_maps_to_internal() {
+        use axum::extract::{FromRequestParts, Path};
+
+        let request = axum::http::Request::builder().uri("/x").body(()).unwrap();
+        let (mut parts, ()) = request.into_parts();
+        let rejection = Path::<uuid::Uuid>::from_request_parts(&mut parts, &())
+            .await
+            .unwrap_err();
+
+        let (status, ct, json) = parse_problem(AppError::from(rejection)).await;
+        assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
+        assert!(
+            ct.contains("application/problem+json"),
+            "wrong content-type: {ct}"
+        );
+        assert_problem_shape(&json, problems::INTERNAL, 500, "Internal Server Error");
+    }
+
+    #[derive(Debug, serde::Deserialize)]
+    struct Probe {
+        #[expect(
+            dead_code,
+            reason = "field exists only to give serde something to reject"
+        )]
+        name: String,
+    }
+
+    fn json_request(
+        content_type: Option<&str>,
+        body: impl Into<axum::body::Body>,
+    ) -> axum::http::Request<axum::body::Body> {
+        let mut builder = axum::http::Request::builder().method("POST").uri("/");
+        if let Some(content_type) = content_type {
+            builder = builder.header(header::CONTENT_TYPE, content_type);
+        }
+        builder.body(body.into()).unwrap()
+    }
+
+    #[tokio::test]
+    async fn json_data_error_maps_to_422_invalid_request_body() {
+        let request = json_request(Some("application/json"), r#"{"name": 5}"#);
+        let rejection =
+            <axum::Json<Probe> as axum::extract::FromRequest<()>>::from_request(request, &())
+                .await
+                .unwrap_err();
+
+        let (status, ct, json) = parse_problem(AppError::from(rejection)).await;
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+        assert!(
+            ct.contains("application/problem+json"),
+            "wrong content-type: {ct}"
+        );
+        assert_problem_shape(
+            &json,
+            problems::INVALID_REQUEST_BODY,
+            422,
+            "Invalid Request Body",
+        );
+        assert_eq!(
+            json["detail"].as_str().unwrap(),
+            "the request body does not match the expected fields or types"
+        );
+    }
+
+    #[tokio::test]
+    async fn json_syntax_error_maps_to_400_invalid_request_body() {
+        let request = json_request(Some("application/json"), "{");
+        let rejection =
+            <axum::Json<Probe> as axum::extract::FromRequest<()>>::from_request(request, &())
+                .await
+                .unwrap_err();
+
+        let (status, ct, json) = parse_problem(AppError::from(rejection)).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+        assert!(
+            ct.contains("application/problem+json"),
+            "wrong content-type: {ct}"
+        );
+        assert_problem_shape(
+            &json,
+            problems::INVALID_REQUEST_BODY,
+            400,
+            "Invalid Request Body",
+        );
+        assert_eq!(
+            json["detail"].as_str().unwrap(),
+            "the request body is not valid JSON"
+        );
+    }
+
+    #[tokio::test]
+    async fn missing_json_content_type_maps_to_415_invalid_request_body() {
+        let request = json_request(None, r#"{"name": "x"}"#);
+        let rejection =
+            <axum::Json<Probe> as axum::extract::FromRequest<()>>::from_request(request, &())
+                .await
+                .unwrap_err();
+
+        let (status, ct, json) = parse_problem(AppError::from(rejection)).await;
+        assert_eq!(status, StatusCode::UNSUPPORTED_MEDIA_TYPE);
+        assert!(
+            ct.contains("application/problem+json"),
+            "wrong content-type: {ct}"
+        );
+        assert_problem_shape(
+            &json,
+            problems::INVALID_REQUEST_BODY,
+            415,
+            "Invalid Request Body",
+        );
+        assert_eq!(
+            json["detail"].as_str().unwrap(),
+            "the request body must be sent as application/json"
+        );
+    }
+
+    #[tokio::test]
+    async fn oversized_json_body_maps_to_413_invalid_request_body() {
+        let oversized = " ".repeat(3 * 1024 * 1024);
+        let request = json_request(Some("application/json"), oversized);
+        let rejection =
+            <axum::Json<Probe> as axum::extract::FromRequest<()>>::from_request(request, &())
+                .await
+                .unwrap_err();
+
+        let (status, ct, json) = parse_problem(AppError::from(rejection)).await;
+        assert_eq!(status, StatusCode::PAYLOAD_TOO_LARGE);
+        assert!(
+            ct.contains("application/problem+json"),
+            "wrong content-type: {ct}"
+        );
+        assert_problem_shape(
+            &json,
+            problems::INVALID_REQUEST_BODY,
+            413,
+            "Invalid Request Body",
+        );
+        assert_eq!(
+            json["detail"].as_str().unwrap(),
+            "the request body could not be read"
         );
     }
 

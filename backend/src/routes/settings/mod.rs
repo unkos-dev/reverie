@@ -7,7 +7,6 @@
 //! propagate to the running process via LISTEN/NOTIFY + RwLock.
 
 use axum::extract::State;
-use axum::extract::rejection::JsonRejection;
 use axum::response::IntoResponse;
 use chrono::{DateTime, Utc};
 use utoipa_axum::router::OpenApiRouter;
@@ -16,6 +15,7 @@ use utoipa_axum::routes;
 use crate::auth::middleware::CurrentUser;
 use crate::auth::scope::Scope;
 use crate::error::AppError;
+use crate::extract::ApiJson;
 use crate::models::settings::{
     Settings, UpdateSettings, has_restart_required_field, restart_required_fields, validate_update,
 };
@@ -129,18 +129,17 @@ struct PutSettingsResponse {
         (status = 200, description = "Updated settings. `restart_required` is true when a changed field only takes effect after restart. Admin only.", body = PutSettingsResponse),
         (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails),
         (status = 403, description = "Caller is not an admin", body = crate::openapi::ProblemDetails),
-        (status = 422, description = "Empty patch, malformed body, or invalid field values", body = crate::openapi::ProblemDetails),
+        (status = 422, description = "Empty patch or invalid field values", body = crate::openapi::ProblemDetails),
         (status = "default", description = "Any other failure is a Problem Details document", body = crate::openapi::ProblemDetails),
     )
 )]
 async fn put_settings(
     current_user: CurrentUser,
     State(state): State<AppState>,
-    body: Result<axum::Json<UpdateSettings>, JsonRejection>,
+    ApiJson(req): ApiJson<UpdateSettings>,
 ) -> Result<impl IntoResponse, AppError> {
     current_user.require_scope(Scope::Admin)?;
     current_user.require_admin()?;
-    let axum::Json(req) = body.map_err(|e| AppError::Validation(e.body_text()))?;
 
     if req.is_empty() {
         return Err(AppError::Validation(

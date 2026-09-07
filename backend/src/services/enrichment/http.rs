@@ -86,6 +86,7 @@ impl std::error::Error for HopError {}
 ///
 /// IPv4-mapped IPv6 addresses (`::ffff:x.x.x.x`) are unwrapped to their inner
 /// IPv4 address and re-checked against the IPv4 rules above.
+#[must_use]
 pub fn ip_is_denied(ip: IpAddr) -> bool {
     match ip {
         IpAddr::V4(v4) => {
@@ -303,6 +304,7 @@ impl Resolve for SsrfResolver {
 /// which configuration loading rejects unless it is a valid header value;
 /// rustls is a pure-Rust backend and should not fail in any normally
 /// configured environment.
+#[must_use]
 pub fn api_client(user_agent: &str) -> reqwest::Client {
     #[expect(
         clippy::expect_used,
@@ -338,6 +340,7 @@ pub fn api_client(user_agent: &str) -> reqwest::Client {
 /// to initialise. Production callers pass [`crate::config::Config::user_agent`],
 /// which configuration loading rejects unless it is a valid header value; TLS
 /// initialisation should never fail in a normally configured environment.
+#[must_use]
 pub fn cover_client(redirect_limit: usize, timeout_secs: u64, user_agent: &str) -> reqwest::Client {
     let policy = redirect::Policy::custom(move |attempt| {
         if attempt.previous().len() >= redirect_limit {

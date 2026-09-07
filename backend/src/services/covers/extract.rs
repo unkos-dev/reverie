@@ -1,6 +1,9 @@
-//! Extract cover bytes from an EPUB on disk. Mirrors Step 5 detection
-//! semantics exactly — any divergence would cause enrichment + OPDS to
-//! disagree on whether a cover exists.
+//! Extract cover bytes from an EPUB on disk.
+//!
+//! Mirrors the detection semantics of
+//! [`crate::services::epub::cover_layer::find_cover_href`] exactly: any
+//! divergence would make enrichment and OPDS disagree on whether a cover
+//! exists.
 //!
 //! Synchronous. Call from `tokio::task::spawn_blocking`.
 

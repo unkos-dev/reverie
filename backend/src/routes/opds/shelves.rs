@@ -5,7 +5,7 @@
 //! verifies ownership under `acquire_with_rls` and returns 404 for foreign
 //! shelves to avoid leaking shelf existence.
 
-use axum::extract::{Path, State};
+use axum::extract::State;
 use axum::response::Response;
 use axum_extra::extract::{Query, QueryRejection};
 use utoipa_axum::router::OpenApiRouter;
@@ -15,6 +15,7 @@ use uuid::Uuid;
 use crate::auth::basic_only::BasicOnly;
 use crate::db;
 use crate::error::AppError;
+use crate::extract::ApiPath;
 use crate::state::AppState;
 
 use super::feed::FeedKind;
@@ -84,7 +85,7 @@ async fn assert_shelf_owned(
 async fn shelf_root(
     BasicOnly(user): BasicOnly,
     State(state): State<AppState>,
-    Path(shelf_id): Path<Uuid>,
+    ApiPath(shelf_id): ApiPath<Uuid>,
 ) -> Result<Response, AppError> {
     let base = base_url(&state)?.clone();
     let name = assert_shelf_owned(&state, user.user_id, shelf_id).await?;
@@ -121,7 +122,7 @@ async fn shelf_root(
 async fn shelf_new(
     BasicOnly(user): BasicOnly,
     State(state): State<AppState>,
-    Path(shelf_id): Path<Uuid>,
+    ApiPath(shelf_id): ApiPath<Uuid>,
     params: Result<Query<PageParams>, QueryRejection>,
 ) -> Result<Response, AppError> {
     let Query(params) = params?;
@@ -168,7 +169,7 @@ async fn shelf_new(
 async fn shelf_authors(
     BasicOnly(user): BasicOnly,
     State(state): State<AppState>,
-    Path(shelf_id): Path<Uuid>,
+    ApiPath(shelf_id): ApiPath<Uuid>,
     params: Result<Query<PageParams>, QueryRejection>,
 ) -> Result<Response, AppError> {
     let Query(params) = params?;
@@ -219,7 +220,7 @@ async fn shelf_authors(
 async fn shelf_author_books(
     BasicOnly(user): BasicOnly,
     State(state): State<AppState>,
-    Path((shelf_id, author_id)): Path<(Uuid, Uuid)>,
+    ApiPath((shelf_id, author_id)): ApiPath<(Uuid, Uuid)>,
     params: Result<Query<PageParams>, QueryRejection>,
 ) -> Result<Response, AppError> {
     let Query(params) = params?;
@@ -267,7 +268,7 @@ async fn shelf_author_books(
 async fn shelf_series(
     BasicOnly(user): BasicOnly,
     State(state): State<AppState>,
-    Path(shelf_id): Path<Uuid>,
+    ApiPath(shelf_id): ApiPath<Uuid>,
     params: Result<Query<PageParams>, QueryRejection>,
 ) -> Result<Response, AppError> {
     let Query(params) = params?;
@@ -318,7 +319,7 @@ async fn shelf_series(
 async fn shelf_series_books(
     BasicOnly(user): BasicOnly,
     State(state): State<AppState>,
-    Path((shelf_id, series_id)): Path<(Uuid, Uuid)>,
+    ApiPath((shelf_id, series_id)): ApiPath<(Uuid, Uuid)>,
     params: Result<Query<PageParams>, QueryRejection>,
 ) -> Result<Response, AppError> {
     let Query(params) = params?;
@@ -364,7 +365,7 @@ async fn shelf_series_books(
 async fn shelf_search(
     BasicOnly(user): BasicOnly,
     State(state): State<AppState>,
-    Path(shelf_id): Path<Uuid>,
+    ApiPath(shelf_id): ApiPath<Uuid>,
     params: Result<Query<SearchParams>, QueryRejection>,
 ) -> Result<Response, AppError> {
     let Query(params) = params?;

@@ -149,6 +149,7 @@ pub fn validate(path: &Path, issues: &mut Vec<Issue>) -> Result<ZipHandle, super
 }
 
 /// Read a specific entry from the archive bytes. Returns None if not found.
+#[must_use]
 pub fn read_entry(handle: &ZipHandle, entry_name: &str) -> Option<Vec<u8>> {
     let cursor = std::io::Cursor::new(&handle.bytes[..]);
     let mut archive = ZipArchive::new(cursor).ok()?;

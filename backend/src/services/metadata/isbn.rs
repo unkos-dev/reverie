@@ -39,6 +39,7 @@ fn normalise(raw: &str) -> String {
 
 /// Validate ISBN-10 checksum: sum of digit\[i\] * (10 - i) for i=0..10, mod 11 == 0.
 /// Check digit may be 'X' (value 10).
+#[must_use]
 pub fn validate_isbn10(isbn: &str) -> bool {
     let isbn = normalise(isbn);
     if isbn.len() != 10 {
@@ -59,6 +60,7 @@ pub fn validate_isbn10(isbn: &str) -> bool {
 }
 
 /// Validate ISBN-13 checksum: alternating 1/3 weights, mod 10 == 0.
+#[must_use]
 pub fn validate_isbn13(isbn: &str) -> bool {
     let isbn = normalise(isbn);
     if isbn.len() != 13 {
@@ -76,6 +78,7 @@ pub fn validate_isbn13(isbn: &str) -> bool {
 }
 
 /// Convert a valid ISBN-10 to ISBN-13. Returns None if input is not a valid ISBN-10.
+#[must_use]
 pub fn isbn10_to_isbn13(isbn10: &str) -> Option<String> {
     let isbn10 = normalise(isbn10);
     if !validate_isbn10(&isbn10) {
@@ -100,6 +103,7 @@ pub fn isbn10_to_isbn13(isbn10: &str) -> Option<String> {
 /// Used by the metadata PATCH handler to store ISBNs in the same digits-only
 /// shape the ingestion pipeline produces, so rematch's exact-equality join
 /// finds ingested twins regardless of operator input formatting.
+#[must_use]
 pub fn checked_isbn10(raw: &str) -> Option<String> {
     let normalised = normalise(raw);
     validate_isbn10(&normalised).then_some(normalised)
@@ -110,12 +114,14 @@ pub fn checked_isbn10(raw: &str) -> Option<String> {
 ///
 /// `None` when the length or check digit is
 /// invalid. See [`checked_isbn10`] for the normalisation rationale.
+#[must_use]
 pub fn checked_isbn13(raw: &str) -> Option<String> {
     let normalised = normalise(raw);
     validate_isbn13(&normalised).then_some(normalised)
 }
 
 /// Parse a raw identifier string: strip prefixes, normalise, detect length, validate.
+#[must_use]
 pub fn parse_isbn(raw: &str) -> IsbnResult {
     let normalised = normalise(raw);
 

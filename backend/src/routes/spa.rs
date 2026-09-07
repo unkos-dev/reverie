@@ -30,6 +30,7 @@ use crate::state::AppState;
 /// Build the SPA asset-serving router for `dist_path`. Returns `None`
 /// when no dist path is configured (API-only dev mode where Vite serves
 /// the frontend directly).
+#[must_use]
 pub fn router_enabled(dist_path: Option<&Path>) -> Option<Router<AppState>> {
     let dist = dist_path?;
     let assets_dir = dist.join("assets");

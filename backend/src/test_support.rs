@@ -876,7 +876,7 @@ pub mod db {
 
     /// Build a minimal valid EPUB with a 2×2 JPEG cover manifested at
     /// `OEBPS/cover.jpg` with manifest id `cover-image`. Mirrors the cover
-    /// extraction path under Step 5.
+    /// extraction path.
     ///
     /// Tests that create multiple fixtures in the same DB must pass a unique
     /// `marker` — it's embedded as a ZIP entry so the resulting SHA-256 is

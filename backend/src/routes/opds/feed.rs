@@ -83,6 +83,7 @@ pub enum FeedKind {
 
 impl FeedKind {
     /// Profile-tagged `Content-Type` value for this feed kind.
+    #[must_use]
     pub const fn content_type(self) -> &'static str {
         match self {
             Self::Navigation => NAVIGATION_TYPE,
@@ -136,6 +137,7 @@ impl FeedBuilder {
     /// Panics if a write to the underlying `quick-xml` writer fails, which
     /// does not happen: the writer backs onto a `Vec<u8>` and has no I/O to
     /// fail.
+    #[must_use]
     pub fn new(
         base_url: &Url,
         self_path: &str,
@@ -396,6 +398,7 @@ impl FeedBuilder {
     ///
     /// Panics if the write closing the `<feed>` element fails, which does
     /// not happen: the writer backs onto a `Vec<u8>` and has no I/O to fail.
+    #[must_use]
     pub fn finish(mut self) -> Vec<u8> {
         self.writer
             .write_event(Event::End(BytesEnd::new("feed")))
@@ -417,21 +420,25 @@ fn write_text_element(writer: &mut Writer<Cursor<Vec<u8>>>, name: &str, text: &s
 }
 
 /// Stable `urn:reverie:feed:<path>` id derived from the feed's self-path.
+#[must_use]
 pub fn feed_urn(self_path: &str) -> String {
     format!("urn:reverie:feed:{self_path}")
 }
 
 /// Stable `urn:reverie:author:<uuid>` id for an author navigation entry.
+#[must_use]
 pub fn author_urn(author_id: Uuid) -> String {
     format!("urn:reverie:author:{author_id}")
 }
 
 /// Stable `urn:reverie:series:<uuid>` id for a series navigation entry.
+#[must_use]
 pub fn series_urn(series_id: Uuid) -> String {
     format!("urn:reverie:series:{series_id}")
 }
 
 /// Stable `urn:reverie:shelf:<uuid>` id for a shelf navigation entry.
+#[must_use]
 pub fn shelf_urn(shelf_id: Uuid) -> String {
     format!("urn:reverie:shelf:{shelf_id}")
 }

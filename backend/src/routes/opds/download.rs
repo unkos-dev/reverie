@@ -8,7 +8,7 @@
 use std::path::PathBuf;
 
 use axum::body::Body;
-use axum::extract::{Path, State};
+use axum::extract::State;
 use axum::http::{StatusCode, header};
 use axum::response::Response;
 use percent_encoding::{AsciiSet, CONTROLS, utf8_percent_encode};
@@ -21,6 +21,7 @@ use uuid::Uuid;
 use crate::auth::basic_only::BasicOnly;
 use crate::db;
 use crate::error::AppError;
+use crate::extract::ApiPath;
 use crate::state::AppState;
 
 use super::feed::EPUB_MIME;
@@ -61,7 +62,7 @@ pub fn router() -> OpenApiRouter<AppState> {
 async fn download_epub(
     BasicOnly(user): BasicOnly,
     State(state): State<AppState>,
-    Path(manifestation_id): Path<Uuid>,
+    ApiPath(manifestation_id): ApiPath<Uuid>,
 ) -> Result<Response, AppError> {
     let mut tx = db::acquire_with_rls(&state.pool, user.user_id)
         .await

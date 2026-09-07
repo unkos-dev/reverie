@@ -7,7 +7,7 @@
 
 use std::collections::HashMap;
 
-use axum::extract::{Path, State};
+use axum::extract::State;
 use axum::response::Response;
 use axum_extra::extract::{Query, QueryRejection};
 use chrono::{DateTime, Utc};
@@ -21,6 +21,7 @@ use uuid::Uuid;
 use crate::auth::basic_only::BasicOnly;
 use crate::db;
 use crate::error::AppError;
+use crate::extract::ApiPath;
 use crate::state::AppState;
 
 use super::feed::{AcquisitionEntry, FeedBuilder, FeedKind, author_urn, feed_urn, series_urn};
@@ -224,7 +225,7 @@ async fn library_authors(
 async fn library_author_books(
     BasicOnly(user): BasicOnly,
     State(state): State<AppState>,
-    Path(author_id): Path<Uuid>,
+    ApiPath(author_id): ApiPath<Uuid>,
     params: Result<Query<PageParams>, QueryRejection>,
 ) -> Result<Response, AppError> {
     let Query(params) = params?;
@@ -307,7 +308,7 @@ async fn library_series(
 async fn library_series_books(
     BasicOnly(user): BasicOnly,
     State(state): State<AppState>,
-    Path(series_id): Path<Uuid>,
+    ApiPath(series_id): ApiPath<Uuid>,
     params: Result<Query<PageParams>, QueryRejection>,
 ) -> Result<Response, AppError> {
     let Query(params) = params?;

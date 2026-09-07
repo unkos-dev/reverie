@@ -9,6 +9,7 @@
 /// Base confidence multiplier for a metadata source.
 ///
 /// Returns 0.30 for any unknown source (conservative default).
+#[must_use]
 pub fn base_source(source: &str) -> f32 {
     match source {
         "manual" => 1.00,
@@ -24,6 +25,7 @@ pub fn base_source(source: &str) -> f32 {
 /// Accuracy modifier based on how the match was made.
 ///
 /// Returns 0.50 for any unknown match type (conservative default).
+#[must_use]
 pub fn match_modifier(match_type: &str) -> f32 {
     match match_type {
         // A provider-native id fetches the exact record, so it carries the
@@ -41,6 +43,7 @@ pub fn match_modifier(match_type: &str) -> f32 {
 /// * 0 or 1 source → 1.00 (no boost)
 /// * 2 sources      → 1.10
 /// * 3+ sources     → 1.20
+#[must_use]
 pub const fn agreement_boost(quorum: u32) -> f32 {
     match quorum {
         0 | 1 => 1.00,
@@ -54,6 +57,7 @@ pub const fn agreement_boost(quorum: u32) -> f32 {
 /// Formula: `base_source(source) * match_modifier(match_type) * agreement_boost(quorum)`.
 ///
 /// Clamped to `[0.0, 1.00]` for `"manual"` source, `[0.0, 0.99]` for all others.
+#[must_use]
 pub fn score(source: &str, match_type: &str, quorum: u32) -> f32 {
     let raw = base_source(source) * match_modifier(match_type) * agreement_boost(quorum);
     if source == "manual" {

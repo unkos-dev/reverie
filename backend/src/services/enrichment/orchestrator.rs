@@ -11,9 +11,9 @@
 //!   `*_version_id` pointer inside the transaction.  On ISBN changes call
 //!   [`crate::models::work::rematch_on_isbn_change`] immediately.
 //!
-//! Cover downloads are deferred to Step 11 (Library Health); sources that
-//! report cover URLs surface them as `cover_url` observations, but nothing
-//! in this orchestrator fetches them.
+//! This orchestrator does not download covers; sources that report cover
+//! URLs surface them as `cover_url` observations, and nothing fetches them
+//! yet.
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -134,6 +134,7 @@ impl CanonicalState {
     ///
     /// Both `None` and `Some("")` are treated as empty so that stub titles
     /// (inserted as `""` by `work::create_stub`) do not block auto-fill.
+    #[must_use]
     pub fn is_empty_for(&self, field: &str) -> bool {
         fn blank(v: Option<&str>) -> bool {
             v.unwrap_or("").is_empty()
@@ -1223,7 +1224,7 @@ async fn apply_field(
             Ok(true)
         }
         // Cover fields and any other recognised non-canonical fields rely on
-        // the writeback worker for the actual change (Step 11), so the
+        // the writeback worker for the actual change, so the
         // caller still enqueues a writeback and counts the apply.
         other if is_cover_field(other) => Ok(true),
         other => {

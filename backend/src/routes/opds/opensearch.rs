@@ -13,7 +13,7 @@
     reason = "all expects write to Cursor<Vec<u8>> (infallible) or build Response from static inputs (cannot fail)"
 )]
 
-use axum::extract::{Path, State};
+use axum::extract::State;
 use axum::http::{StatusCode, header};
 use axum::response::Response;
 use quick_xml::Writer;
@@ -26,6 +26,7 @@ use uuid::Uuid;
 use crate::auth::basic_only::BasicOnly;
 use crate::db;
 use crate::error::AppError;
+use crate::extract::ApiPath;
 use crate::state::AppState;
 
 use super::feed::{ACQUISITION_TYPE, OPENSEARCH_NS};
@@ -98,7 +99,7 @@ async fn library_opensearch(
 async fn shelf_opensearch(
     BasicOnly(user): BasicOnly,
     State(state): State<AppState>,
-    Path(shelf_id): Path<Uuid>,
+    ApiPath(shelf_id): ApiPath<Uuid>,
 ) -> Result<Response, AppError> {
     let base = base_url(&state)?.clone();
 

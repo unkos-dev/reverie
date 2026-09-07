@@ -181,11 +181,12 @@ fn substitute_path_params(path: &str) -> String {
     out
 }
 
-/// Minimal-but-valid request body per mutating operation. `Json<T>`-extractor
-/// handlers reject a malformed/absent body before the handler runs at all
-/// (before any scope check), so this grid needs a body that actually
-/// deserializes for every such op -- a malformed body would 422 and produce
-/// a false read on the scope assertion.
+/// Minimal-but-valid request body per mutating operation. The JSON extractor
+/// rejects a malformed or absent body before the handler runs at all, and so
+/// before any scope check, under `invalid-request-body` with the status of the
+/// rejection class (400, 413, 415, or 422). This grid therefore needs a body
+/// that actually deserializes for every such op, or the extractor's status
+/// lands on the scope assertion instead of the gate's 403.
 fn body_for(method: &str, path: &str) -> Option<Value> {
     match (method, path) {
         ("POST", "/api/v1/tokens") => Some(serde_json::json!({"name": "Matrix Test"})),
@@ -213,6 +214,7 @@ fn body_for(method: &str, path: &str) -> Option<Value> {
             "field_name": "title",
             "entity_type": "manifestation"
         })),
+        ("PATCH", "/api/v1/books/{id}/reading") => Some(serde_json::json!({"rating": 3})),
         ("PATCH", "/api/v1/books/{id}/metadata") => {
             Some(serde_json::json!({"title": "Matrix Title"}))
         }

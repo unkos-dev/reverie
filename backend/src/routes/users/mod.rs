@@ -26,7 +26,7 @@
 //! the second transaction sees the first's committed state and rejects
 //! with 422 "would leave zero admins".
 
-use axum::extract::{Path, State};
+use axum::extract::State;
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
 use chrono::{DateTime, Utc};
@@ -38,6 +38,7 @@ use uuid::Uuid;
 use crate::auth::middleware::CurrentUser;
 use crate::auth::scope::Scope;
 use crate::error::AppError;
+use crate::extract::{ApiJson, ApiPath};
 use crate::models::role::Role;
 use crate::models::user::is_addr_spec;
 use crate::state::AppState;
@@ -202,12 +203,11 @@ struct UpdateRoleRequest {
 async fn update_role(
     current_user: CurrentUser,
     State(state): State<AppState>,
-    Path(id): Path<Uuid>,
-    body: Result<axum::Json<UpdateRoleRequest>, axum::extract::rejection::JsonRejection>,
+    ApiPath(id): ApiPath<Uuid>,
+    ApiJson(req): ApiJson<UpdateRoleRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     current_user.require_scope(Scope::Admin)?;
     current_user.require_admin()?;
-    let axum::Json(req) = body.map_err(|e| AppError::Validation(e.body_text()))?;
 
     let mut tx = state
         .pool
@@ -328,12 +328,11 @@ struct UpdateChildStatusRequest {
 async fn update_child_status(
     current_user: CurrentUser,
     State(state): State<AppState>,
-    Path(id): Path<Uuid>,
-    body: Result<axum::Json<UpdateChildStatusRequest>, axum::extract::rejection::JsonRejection>,
+    ApiPath(id): ApiPath<Uuid>,
+    ApiJson(req): ApiJson<UpdateChildStatusRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     current_user.require_scope(Scope::Admin)?;
     current_user.require_admin()?;
-    let axum::Json(req) = body.map_err(|e| AppError::Validation(e.body_text()))?;
 
     let mut tx = state
         .pool
@@ -453,12 +452,11 @@ struct CreateUserRequest {
 async fn create_user(
     current_user: CurrentUser,
     State(state): State<AppState>,
-    body: Result<axum::Json<CreateUserRequest>, axum::extract::rejection::JsonRejection>,
+    ApiJson(req): ApiJson<CreateUserRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     current_user.require_scope(Scope::Admin)?;
     current_user.require_admin()?;
     current_user.require_not_child()?;
-    let axum::Json(req) = body.map_err(|e| AppError::Validation(e.body_text()))?;
 
     if !is_addr_spec(&req.email) {
         return Err(AppError::Validation("invalid email address".into()));
@@ -538,13 +536,12 @@ struct AccountStatusRequest {
 async fn update_account_status(
     current_user: CurrentUser,
     State(state): State<AppState>,
-    Path(id): Path<Uuid>,
-    body: Result<axum::Json<AccountStatusRequest>, axum::extract::rejection::JsonRejection>,
+    ApiPath(id): ApiPath<Uuid>,
+    ApiJson(req): ApiJson<AccountStatusRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     current_user.require_scope(Scope::Admin)?;
     current_user.require_admin()?;
     current_user.require_not_child()?;
-    let axum::Json(req) = body.map_err(|e| AppError::Validation(e.body_text()))?;
 
     if req.disabled && id == current_user.user_id {
         return Err(AppError::Validation(
@@ -667,13 +664,12 @@ struct AdminPasswordResetRequest {
 async fn admin_reset_password(
     current_user: CurrentUser,
     State(state): State<AppState>,
-    Path(id): Path<Uuid>,
-    body: Result<axum::Json<AdminPasswordResetRequest>, axum::extract::rejection::JsonRejection>,
+    ApiPath(id): ApiPath<Uuid>,
+    ApiJson(req): ApiJson<AdminPasswordResetRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     current_user.require_scope(Scope::Admin)?;
     current_user.require_admin()?;
     current_user.require_not_child()?;
-    let axum::Json(req) = body.map_err(|e| AppError::Validation(e.body_text()))?;
 
     // Feed the target's own email and display name to the strength estimator so a
     // password echoing them is penalized. The authoritative existence check is the
@@ -760,10 +756,9 @@ struct ChangePasswordRequest {
 async fn change_own_password(
     current_user: CurrentUser,
     State(state): State<AppState>,
-    body: Result<axum::Json<ChangePasswordRequest>, axum::extract::rejection::JsonRejection>,
+    ApiJson(req): ApiJson<ChangePasswordRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     current_user.require_scope(Scope::Write)?;
-    let axum::Json(req) = body.map_err(|e| AppError::Validation(e.body_text()))?;
     let user_id = current_user.user_id;
 
     let credential = crate::models::local_credentials::find_by_user_id(&state.pool, user_id)
@@ -930,12 +925,11 @@ fn validate_patch_email(raw: &str, admin_id: Uuid, target_user_id: Uuid) -> Resu
 async fn update_user(
     current_user: CurrentUser,
     State(state): State<AppState>,
-    Path(id): Path<Uuid>,
-    body: Result<axum::Json<UpdateUserRequest>, axum::extract::rejection::JsonRejection>,
+    ApiPath(id): ApiPath<Uuid>,
+    ApiJson(req): ApiJson<UpdateUserRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     current_user.require_scope(Scope::Admin)?;
     current_user.require_admin()?;
-    let axum::Json(req) = body.map_err(|e| AppError::Validation(e.body_text()))?;
 
     // Validate display_name: null → 422, empty → 422.
     if let Some(ref dn_opt) = req.display_name {

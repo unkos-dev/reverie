@@ -45,6 +45,7 @@ impl ReadingStatus {
     /// `"WantToRead"`, which does not match the Postgres / JSON form). Use
     /// this for log lines and error messages so the three surfaces stay
     /// consistent.
+    #[must_use]
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::WantToRead => "want_to_read",
@@ -59,6 +60,7 @@ impl ReadingStatus {
     /// [`Self::as_str`]. `None` for any string that is not one of the five
     /// wire names, so a caller can reject an unknown status token without
     /// routing it through serde.
+    #[must_use]
     pub fn from_wire(raw: &str) -> Option<Self> {
         match raw {
             "want_to_read" => Some(Self::WantToRead),

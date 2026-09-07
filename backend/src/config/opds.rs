@@ -7,7 +7,7 @@ use validator::{Validate, ValidationError};
 /// rooted at `public_url`.
 ///
 /// Note: the dual-mounted cover handlers at `/api/v1/books/:id/cover{,/thumb}` are
-/// mounted independently of `enabled` because the web UI (Step 10) needs them
+/// mounted independently of `enabled` because the web UI needs them
 /// regardless of OPDS availability.
 #[derive(Debug, Clone, serde::Deserialize, schemars::JsonSchema, Validate)]
 #[serde(default)]
