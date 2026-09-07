@@ -128,7 +128,8 @@ pub(super) struct SearchParams {
         (status = 200, description = "Top hybrid-ranked search results", body = SearchResponse),
         (status = 400, description = "Malformed query parameter", body = crate::openapi::ProblemDetails),
         (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails),
-        (status = 422, description = "Empty, missing, or over-length query", body = crate::openapi::ProblemDetails)
+        (status = 422, description = "Empty, missing, or over-length query", body = crate::openapi::ProblemDetails),
+        (status = "default", description = "Any other failure is a Problem Details document", body = crate::openapi::ProblemDetails)
     )
 )]
 pub(super) async fn search(

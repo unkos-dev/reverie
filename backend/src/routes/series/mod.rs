@@ -56,7 +56,8 @@ pub fn router() -> OpenApiRouter<AppState> {
     responses(
         (status = 200, description = "Series identity + ordered works with visible manifestations", body = SeriesDetail),
         (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails),
-        (status = 404, description = "Series not found, has no linked works, or no work has a visible manifestation under the caller's RLS context (existence-not-leaked)", body = crate::openapi::ProblemDetails)
+        (status = 404, description = "Series not found, has no linked works, or no work has a visible manifestation under the caller's RLS context (existence-not-leaked)", body = crate::openapi::ProblemDetails),
+        (status = "default", description = "Any other failure is a Problem Details document", body = crate::openapi::ProblemDetails),
     )
 )]
 async fn detail(

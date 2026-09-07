@@ -102,7 +102,8 @@ struct MetadataRow {
     responses(
         (status = 200, description = "Metadata version rows for the manifestation, newest first (empty when the manifestation is missing or RLS-hidden)", body = [MetadataRow]),
         (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails),
-        (status = 403, description = "Caller is a child account", body = crate::openapi::ProblemDetails)
+        (status = 403, description = "Caller is a child account", body = crate::openapi::ProblemDetails),
+        (status = "default", description = "Any other failure is a Problem Details document", body = crate::openapi::ProblemDetails)
     )
 )]
 async fn get_manifestation_metadata(
@@ -135,7 +136,8 @@ async fn get_manifestation_metadata(
     responses(
         (status = 200, description = "Metadata version rows across the work's manifestations, newest first (empty when the work is missing or RLS-hidden)", body = [MetadataRow]),
         (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails),
-        (status = 403, description = "Caller is a child account", body = crate::openapi::ProblemDetails)
+        (status = 403, description = "Caller is a child account", body = crate::openapi::ProblemDetails),
+        (status = "default", description = "Any other failure is a Problem Details document", body = crate::openapi::ProblemDetails)
     )
 )]
 async fn get_work_metadata(
@@ -267,7 +269,8 @@ struct LockPayload {
         (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails),
         (status = 403, description = "Caller is a child account", body = crate::openapi::ProblemDetails),
         (status = 404, description = "Version not found for this manifestation, or RLS-hidden", body = crate::openapi::ProblemDetails),
-        (status = 422, description = "Stored value fails field parsing", body = crate::openapi::ProblemDetails)
+        (status = 422, description = "Stored value fails field parsing", body = crate::openapi::ProblemDetails),
+        (status = "default", description = "Any other failure is a Problem Details document", body = crate::openapi::ProblemDetails)
     )
 )]
 async fn accept_manifestation(
@@ -351,7 +354,8 @@ async fn accept_manifestation(
         (status = 200, description = "Version marked rejected"),
         (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails),
         (status = 403, description = "Caller is a child account", body = crate::openapi::ProblemDetails),
-        (status = 404, description = "Version not found for this manifestation, or RLS-hidden", body = crate::openapi::ProblemDetails)
+        (status = 404, description = "Version not found for this manifestation, or RLS-hidden", body = crate::openapi::ProblemDetails),
+        (status = "default", description = "Any other failure is a Problem Details document", body = crate::openapi::ProblemDetails)
     )
 )]
 async fn reject_manifestation(
@@ -413,7 +417,8 @@ async fn reject_manifestation(
         (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails),
         (status = 403, description = "Caller is a child account", body = crate::openapi::ProblemDetails),
         (status = 404, description = "Manifestation or version missing, or RLS-hidden", body = crate::openapi::ProblemDetails),
-        (status = 422, description = "Field cannot be cleared or stored value fails parsing", body = crate::openapi::ProblemDetails)
+        (status = 422, description = "Field cannot be cleared or stored value fails parsing", body = crate::openapi::ProblemDetails),
+        (status = "default", description = "Any other failure is a Problem Details document", body = crate::openapi::ProblemDetails)
     )
 )]
 async fn revert_manifestation(
@@ -508,7 +513,8 @@ async fn revert_manifestation(
         (status = 201, description = "Lock recorded (idempotent)"),
         (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails),
         (status = 403, description = "Caller is a child account", body = crate::openapi::ProblemDetails),
-        (status = 422, description = "Unknown entity_type", body = crate::openapi::ProblemDetails)
+        (status = 422, description = "Unknown entity_type", body = crate::openapi::ProblemDetails),
+        (status = "default", description = "Any other failure is a Problem Details document", body = crate::openapi::ProblemDetails)
     )
 )]
 async fn lock_field(
@@ -555,7 +561,8 @@ async fn lock_field(
         (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails),
         (status = 403, description = "Caller is a child account", body = crate::openapi::ProblemDetails),
         (status = 404, description = "No matching lock", body = crate::openapi::ProblemDetails),
-        (status = 422, description = "Unknown entity_type", body = crate::openapi::ProblemDetails)
+        (status = 422, description = "Unknown entity_type", body = crate::openapi::ProblemDetails),
+        (status = "default", description = "Any other failure is a Problem Details document", body = crate::openapi::ProblemDetails)
     )
 )]
 async fn unlock_field(
@@ -2066,7 +2073,8 @@ async fn load_book_metadata(
          headers(("ETag" = String, description = "Strong entity-tag hashing this response body. Echo as If-Match on PATCH /api/v1/books/{id}/metadata"))),
         (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails),
         (status = 403, description = "Caller is a child account", body = crate::openapi::ProblemDetails),
-        (status = 404, description = "Manifestation missing or RLS-hidden (existence-not-leaked)", body = crate::openapi::ProblemDetails)
+        (status = 404, description = "Manifestation missing or RLS-hidden (existence-not-leaked)", body = crate::openapi::ProblemDetails),
+        (status = "default", description = "Any other failure is a Problem Details document", body = crate::openapi::ProblemDetails)
     )
 )]
 async fn get_book_metadata(
@@ -2227,7 +2235,8 @@ async fn load_manifestation_identifiers(
          headers(("ETag" = String, description = "Current entity-tag, so the caller can resync without a follow-up GET"))),
         (status = 400, description = "If-Match is malformed, or carries a form this API refuses by policy: the * wildcard, an entity-tag list, a weak tag, or a repeated header instance", body = crate::openapi::ProblemDetails),
         (status = 422, description = "No populated fields, ISBN/date parse failure, or attempt to clear title. Evaluated only after If-Match has matched, so a stale tag returns 412 instead", body = crate::openapi::ProblemDetails),
-        (status = 428, description = "If-Match header absent", body = crate::openapi::ProblemDetails)
+        (status = 428, description = "If-Match header absent", body = crate::openapi::ProblemDetails),
+        (status = "default", description = "Any other failure is a Problem Details document", body = crate::openapi::ProblemDetails)
     )
 )]
 #[expect(

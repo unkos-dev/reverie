@@ -55,7 +55,8 @@ pub(super) fn atom_response(body: Vec<u8>, content_type: &str) -> Response {
     security(("opds_basic" = [])),
     responses(
         (status = 200, description = "OPDS navigation feed linking the library catalog and the user's shelves", content_type = "application/atom+xml;profile=opds-catalog;kind=navigation", body = String),
-        (status = 401, description = "Basic authentication required (WWW-Authenticate: Basic)", body = crate::openapi::ProblemDetails)
+        (status = 401, description = "Basic authentication required (WWW-Authenticate: Basic)", body = crate::openapi::ProblemDetails),
+        (status = "default", description = "Any other failure is a Problem Details document", body = crate::openapi::ProblemDetails),
     )
 )]
 async fn opds_root(

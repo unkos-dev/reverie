@@ -290,7 +290,8 @@ struct BookListResponse {
             headers(("Link" = String, description = "RFC 8288 next-page link; emitted with rel=\"next\" when more rows remain"))),
         (status = 400, description = "Malformed query parameter", body = crate::openapi::ProblemDetails),
         (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails),
-        (status = 422, description = "Invalid cursor or too many filter values", body = crate::openapi::ProblemDetails)
+        (status = 422, description = "Invalid cursor or too many filter values", body = crate::openapi::ProblemDetails),
+        (status = "default", description = "Any other failure is a Problem Details document", body = crate::openapi::ProblemDetails)
     )
 )]
 async fn list(
@@ -1052,7 +1053,8 @@ fn merge_external_ids(
     responses(
         (status = 200, description = "Book detail", body = BookDetail),
         (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails),
-        (status = 404, description = "Not found or RLS-hidden", body = crate::openapi::ProblemDetails)
+        (status = 404, description = "Not found or RLS-hidden", body = crate::openapi::ProblemDetails),
+        (status = "default", description = "Any other failure is a Problem Details document", body = crate::openapi::ProblemDetails)
     )
 )]
 async fn detail(
@@ -1556,7 +1558,8 @@ fn accepted_pointer_count(row: &DetailRow) -> u32 {
     responses(
         (status = 200, description = "Work detail with visible manifestations", body = WorkDetail),
         (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails),
-        (status = 404, description = "Not found or RLS-hidden", body = crate::openapi::ProblemDetails)
+        (status = 404, description = "Not found or RLS-hidden", body = crate::openapi::ProblemDetails),
+        (status = "default", description = "Any other failure is a Problem Details document", body = crate::openapi::ProblemDetails)
     )
 )]
 async fn work_detail(

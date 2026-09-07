@@ -119,7 +119,8 @@ pub fn api_router() -> OpenApiRouter<AppState> {
         (status = 200, description = "Cover image stream (`image/jpeg` / `image/png`); Cache-Control: private, max-age=86400; carries a strong ETag"),
         (status = 304, description = "Not Modified — the request's If-None-Match matched the cover ETag"),
         (status = 401, description = "Basic authentication required (WWW-Authenticate: Basic)", body = crate::openapi::ProblemDetails),
-        (status = 404, description = "Manifestation missing, RLS-hidden, or coverless", body = crate::openapi::ProblemDetails)
+        (status = 404, description = "Manifestation missing, RLS-hidden, or coverless", body = crate::openapi::ProblemDetails),
+        (status = "default", description = "Any other failure is a Problem Details document", body = crate::openapi::ProblemDetails),
     )
 )]
 async fn opds_cover(
@@ -154,7 +155,8 @@ async fn opds_cover(
         (status = 200, description = "Thumbnail image stream (`image/jpeg`); Cache-Control: private, max-age=86400; carries a strong ETag"),
         (status = 304, description = "Not Modified — the request's If-None-Match matched the cover ETag"),
         (status = 401, description = "Basic authentication required (WWW-Authenticate: Basic)", body = crate::openapi::ProblemDetails),
-        (status = 404, description = "Manifestation missing, RLS-hidden, or coverless", body = crate::openapi::ProblemDetails)
+        (status = 404, description = "Manifestation missing, RLS-hidden, or coverless", body = crate::openapi::ProblemDetails),
+        (status = "default", description = "Any other failure is a Problem Details document", body = crate::openapi::ProblemDetails),
     )
 )]
 async fn opds_cover_thumb(
@@ -189,7 +191,8 @@ async fn opds_cover_thumb(
         (status = 200, description = "Cover image stream (`image/jpeg` / `image/png` / `image/webp`); Cache-Control: private, max-age=86400; carries a strong ETag"),
         (status = 304, description = "Not Modified — the request's If-None-Match matched the cover ETag"),
         (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails),
-        (status = 404, description = "Manifestation missing, RLS-hidden, or coverless", body = crate::openapi::ProblemDetails)
+        (status = 404, description = "Manifestation missing, RLS-hidden, or coverless", body = crate::openapi::ProblemDetails),
+        (status = "default", description = "Any other failure is a Problem Details document", body = crate::openapi::ProblemDetails),
     )
 )]
 async fn api_cover(
@@ -224,7 +227,8 @@ async fn api_cover(
         (status = 200, description = "Thumbnail image stream (`image/jpeg`); Cache-Control: private, max-age=86400; carries a strong ETag"),
         (status = 304, description = "Not Modified — the request's If-None-Match matched the cover ETag"),
         (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails),
-        (status = 404, description = "Manifestation missing, RLS-hidden, or coverless", body = crate::openapi::ProblemDetails)
+        (status = 404, description = "Manifestation missing, RLS-hidden, or coverless", body = crate::openapi::ProblemDetails),
+        (status = "default", description = "Any other failure is a Problem Details document", body = crate::openapi::ProblemDetails),
     )
 )]
 async fn api_cover_thumb(

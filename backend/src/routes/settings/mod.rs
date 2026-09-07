@@ -72,7 +72,8 @@ struct SettingsResponse {
     responses(
         (status = 200, description = "Current persisted settings plus reload health. Admin only.", body = SettingsResponse),
         (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails),
-        (status = 403, description = "Caller is not an admin", body = crate::openapi::ProblemDetails)
+        (status = 403, description = "Caller is not an admin", body = crate::openapi::ProblemDetails),
+        (status = "default", description = "Any other failure is a Problem Details document", body = crate::openapi::ProblemDetails),
     )
 )]
 async fn get_settings(
@@ -128,7 +129,8 @@ struct PutSettingsResponse {
         (status = 200, description = "Updated settings. `restart_required` is true when a changed field only takes effect after restart. Admin only.", body = PutSettingsResponse),
         (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails),
         (status = 403, description = "Caller is not an admin", body = crate::openapi::ProblemDetails),
-        (status = 422, description = "Empty patch, malformed body, or invalid field values", body = crate::openapi::ProblemDetails)
+        (status = 422, description = "Empty patch, malformed body, or invalid field values", body = crate::openapi::ProblemDetails),
+        (status = "default", description = "Any other failure is a Problem Details document", body = crate::openapi::ProblemDetails),
     )
 )]
 async fn put_settings(

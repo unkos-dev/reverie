@@ -123,7 +123,8 @@ const MAX_LISTED_USERS: i64 = 500;
     responses(
         (status = 200, description = "All users, oldest first, defensively capped at 500 rows. Admin only.", body = [UserResponse]),
         (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails),
-        (status = 403, description = "Caller is not an admin", body = crate::openapi::ProblemDetails)
+        (status = 403, description = "Caller is not an admin", body = crate::openapi::ProblemDetails),
+        (status = "default", description = "Any other failure is a Problem Details document", body = crate::openapi::ProblemDetails)
     )
 )]
 async fn list_users(
@@ -194,7 +195,8 @@ struct UpdateRoleRequest {
         (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails),
         (status = 403, description = "Caller is not an admin", body = crate::openapi::ProblemDetails),
         (status = 404, description = "Target user does not exist", body = crate::openapi::ProblemDetails),
-        (status = 422, description = "Demotion would leave zero admins, the role change conflicts with the target's child status, or the request body is malformed / contains an unknown role value", body = crate::openapi::ProblemDetails)
+        (status = 422, description = "Demotion would leave zero admins, the role change conflicts with the target's child status, or the request body is malformed / contains an unknown role value", body = crate::openapi::ProblemDetails),
+        (status = "default", description = "Any other failure is a Problem Details document", body = crate::openapi::ProblemDetails)
     )
 )]
 async fn update_role(
@@ -319,7 +321,8 @@ struct UpdateChildStatusRequest {
         (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails),
         (status = 403, description = "Caller is not an admin", body = crate::openapi::ProblemDetails),
         (status = 404, description = "Target user does not exist", body = crate::openapi::ProblemDetails),
-        (status = 422, description = "Marking the last admin as child would leave zero admins, or the request body is malformed", body = crate::openapi::ProblemDetails)
+        (status = 422, description = "Marking the last admin as child would leave zero admins, or the request body is malformed", body = crate::openapi::ProblemDetails),
+        (status = "default", description = "Any other failure is a Problem Details document", body = crate::openapi::ProblemDetails)
     )
 )]
 async fn update_child_status(
@@ -443,7 +446,8 @@ struct CreateUserRequest {
         (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails),
         (status = 403, description = "Caller is not an admin", body = crate::openapi::ProblemDetails),
         (status = 409, description = "Email already in use", body = crate::openapi::ProblemDetails),
-        (status = 422, description = "Invalid email, or password rejected by the policy", body = crate::openapi::ProblemDetails)
+        (status = 422, description = "Invalid email, or password rejected by the policy", body = crate::openapi::ProblemDetails),
+        (status = "default", description = "Any other failure is a Problem Details document", body = crate::openapi::ProblemDetails)
     )
 )]
 async fn create_user(
@@ -527,7 +531,8 @@ struct AccountStatusRequest {
         (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails),
         (status = 403, description = "Caller is not an admin", body = crate::openapi::ProblemDetails),
         (status = 404, description = "Target user does not exist", body = crate::openapi::ProblemDetails),
-        (status = 422, description = "Cannot disable your own account, or disabling would leave zero enabled admins", body = crate::openapi::ProblemDetails)
+        (status = 422, description = "Cannot disable your own account, or disabling would leave zero enabled admins", body = crate::openapi::ProblemDetails),
+        (status = "default", description = "Any other failure is a Problem Details document", body = crate::openapi::ProblemDetails)
     )
 )]
 async fn update_account_status(
@@ -655,7 +660,8 @@ struct AdminPasswordResetRequest {
         (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails),
         (status = 403, description = "Caller is not an admin", body = crate::openapi::ProblemDetails),
         (status = 404, description = "Target user does not exist", body = crate::openapi::ProblemDetails),
-        (status = 422, description = "Password rejected by the policy", body = crate::openapi::ProblemDetails)
+        (status = 422, description = "Password rejected by the policy", body = crate::openapi::ProblemDetails),
+        (status = "default", description = "Any other failure is a Problem Details document", body = crate::openapi::ProblemDetails)
     )
 )]
 async fn admin_reset_password(
@@ -747,7 +753,8 @@ struct ChangePasswordRequest {
     responses(
         (status = 200, description = "Password changed; all of the caller's sessions are invalidated."),
         (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails),
-        (status = 422, description = "Wrong current password, new password rejected by the policy, or no local credential", body = crate::openapi::ProblemDetails)
+        (status = 422, description = "Wrong current password, new password rejected by the policy, or no local credential", body = crate::openapi::ProblemDetails),
+        (status = "default", description = "Any other failure is a Problem Details document", body = crate::openapi::ProblemDetails)
     )
 )]
 async fn change_own_password(
@@ -916,7 +923,8 @@ fn validate_patch_email(raw: &str, admin_id: Uuid, target_user_id: Uuid) -> Resu
         (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails),
         (status = 403, description = "Caller is not an admin", body = crate::openapi::ProblemDetails),
         (status = 404, description = "Target user does not exist", body = crate::openapi::ProblemDetails),
-        (status = 422, description = "Null/empty display_name, malformed email, or email already in use", body = crate::openapi::ProblemDetails)
+        (status = 422, description = "Null/empty display_name, malformed email, or email already in use", body = crate::openapi::ProblemDetails),
+        (status = "default", description = "Any other failure is a Problem Details document", body = crate::openapi::ProblemDetails)
     )
 )]
 async fn update_user(

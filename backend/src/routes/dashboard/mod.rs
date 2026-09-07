@@ -127,7 +127,8 @@ struct StatsResponse {
     responses(
         (status = 200, description = "Library-wide aggregate health metrics. Admin only.", body = StatsResponse),
         (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails),
-        (status = 403, description = "Caller is not an admin", body = crate::openapi::ProblemDetails)
+        (status = 403, description = "Caller is not an admin", body = crate::openapi::ProblemDetails),
+        (status = "default", description = "Any other failure is a Problem Details document", body = crate::openapi::ProblemDetails),
     )
 )]
 #[expect(
@@ -318,7 +319,8 @@ struct ActivityResponse {
         (status = 200, description = "Most-recent ingestion batches, newest first. Admin only.", body = ActivityResponse),
         (status = 400, description = "Malformed query parameter", body = crate::openapi::ProblemDetails),
         (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails),
-        (status = 403, description = "Caller is not an admin", body = crate::openapi::ProblemDetails)
+        (status = 403, description = "Caller is not an admin", body = crate::openapi::ProblemDetails),
+        (status = "default", description = "Any other failure is a Problem Details document", body = crate::openapi::ProblemDetails),
     )
 )]
 async fn activity(

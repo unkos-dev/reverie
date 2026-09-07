@@ -112,7 +112,8 @@ struct TokenListItem {
         (status = 201, description = "Token created. The `token` field is the Bearer credential, returned exactly once — only its SHA-256 hash is persisted.", body = CreateTokenResponse),
         (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails),
         (status = 403, description = "Caller's credential lacks the write scope, or a requested scope exceeds the caller's role ceiling", body = crate::openapi::ProblemDetails),
-        (status = 422, description = "Name empty / longer than 255 characters after trim, scope set empty, expires_in_days not one of 30/60/90/365, or the per-user cap of 10 active tokens is reached", body = crate::openapi::ProblemDetails)
+        (status = 422, description = "Name empty / longer than 255 characters after trim, scope set empty, expires_in_days not one of 30/60/90/365, or the per-user cap of 10 active tokens is reached", body = crate::openapi::ProblemDetails),
+        (status = "default", description = "Any other failure is a Problem Details document", body = crate::openapi::ProblemDetails)
     )
 )]
 async fn create_token(
@@ -207,7 +208,8 @@ async fn create_token(
     security(("session_cookie" = ["read"]), ("device_token_bearer" = ["read"]), ("oidc_jwt_bearer" = ["read"]), ("opds_basic" = ["read"])),
     responses(
         (status = 200, description = "The caller's active device tokens, hash and plaintext elided", body = [TokenListItem]),
-        (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails)
+        (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails),
+        (status = "default", description = "Any other failure is a Problem Details document", body = crate::openapi::ProblemDetails)
     )
 )]
 async fn list_tokens(
@@ -251,7 +253,8 @@ async fn list_tokens(
         (status = 204, description = "Token revoked"),
         (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails),
         (status = 403, description = "Caller's credential lacks the write scope", body = crate::openapi::ProblemDetails),
-        (status = 404, description = "Token does not exist, belongs to another user, or is already revoked", body = crate::openapi::ProblemDetails)
+        (status = 404, description = "Token does not exist, belongs to another user, or is already revoked", body = crate::openapi::ProblemDetails),
+        (status = "default", description = "Any other failure is a Problem Details document", body = crate::openapi::ProblemDetails)
     )
 )]
 async fn revoke_token(

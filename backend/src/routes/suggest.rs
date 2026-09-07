@@ -557,7 +557,8 @@ async fn query_publishers(
         (status = 200, description = "Genre names in use on a visible manifestation, ranked prefix-first then by similarity", body = SuggestResponse),
         (status = 400, description = "Malformed query parameter", body = crate::openapi::ProblemDetails),
         (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails),
-        (status = 422, description = "Empty or over-length q", body = crate::openapi::ProblemDetails)
+        (status = 422, description = "Empty or over-length q", body = crate::openapi::ProblemDetails),
+        (status = "default", description = "Any other failure is a Problem Details document", body = crate::openapi::ProblemDetails)
     )
 )]
 async fn suggest_genres(
@@ -596,7 +597,8 @@ async fn suggest_genres(
         (status = 200, description = "Mood names in use on a visible manifestation, ranked prefix-first then by similarity", body = SuggestResponse),
         (status = 400, description = "Malformed query parameter", body = crate::openapi::ProblemDetails),
         (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails),
-        (status = 422, description = "Empty or over-length q", body = crate::openapi::ProblemDetails)
+        (status = 422, description = "Empty or over-length q", body = crate::openapi::ProblemDetails),
+        (status = "default", description = "Any other failure is a Problem Details document", body = crate::openapi::ProblemDetails)
     )
 )]
 async fn suggest_moods(
@@ -635,7 +637,8 @@ async fn suggest_moods(
         (status = 200, description = "Tag names in use on a visible manifestation, ranked prefix-first then by similarity", body = SuggestResponse),
         (status = 400, description = "Malformed query parameter", body = crate::openapi::ProblemDetails),
         (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails),
-        (status = 422, description = "Empty or over-length q", body = crate::openapi::ProblemDetails)
+        (status = 422, description = "Empty or over-length q", body = crate::openapi::ProblemDetails),
+        (status = "default", description = "Any other failure is a Problem Details document", body = crate::openapi::ProblemDetails)
     )
 )]
 async fn suggest_tags(
@@ -676,7 +679,8 @@ async fn suggest_tags(
         (status = 200, description = "Author names in use on a visible manifestation, ranked prefix-first then by similarity", body = SuggestResponse),
         (status = 400, description = "Malformed query parameter", body = crate::openapi::ProblemDetails),
         (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails),
-        (status = 422, description = "Empty or over-length q", body = crate::openapi::ProblemDetails)
+        (status = 422, description = "Empty or over-length q", body = crate::openapi::ProblemDetails),
+        (status = "default", description = "Any other failure is a Problem Details document", body = crate::openapi::ProblemDetails)
     )
 )]
 async fn suggest_authors(
@@ -730,7 +734,8 @@ async fn suggest_authors(
         (status = 200, description = "Resolved author labels for the requested ids", body = AuthorsResponse),
         (status = 400, description = "Malformed id parameter", body = crate::openapi::ProblemDetails),
         (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails),
-        (status = 422, description = "Missing id filter or too many ids", body = crate::openapi::ProblemDetails)
+        (status = 422, description = "Missing id filter or too many ids", body = crate::openapi::ProblemDetails),
+        (status = "default", description = "Any other failure is a Problem Details document", body = crate::openapi::ProblemDetails)
     )
 )]
 async fn authors_by_id(
@@ -795,7 +800,8 @@ async fn authors_by_id(
         (status = 200, description = "Series names in use on a visible manifestation, ranked prefix-first then by similarity", body = SuggestResponse),
         (status = 400, description = "Malformed query parameter", body = crate::openapi::ProblemDetails),
         (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails),
-        (status = 422, description = "Empty or over-length q", body = crate::openapi::ProblemDetails)
+        (status = 422, description = "Empty or over-length q", body = crate::openapi::ProblemDetails),
+        (status = "default", description = "Any other failure is a Problem Details document", body = crate::openapi::ProblemDetails)
     )
 )]
 async fn suggest_series(
@@ -836,7 +842,8 @@ async fn suggest_series(
         (status = 200, description = "Distinct publisher values in use on a visible manifestation, ranked prefix-first then by similarity", body = SuggestResponse),
         (status = 400, description = "Malformed query parameter", body = crate::openapi::ProblemDetails),
         (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails),
-        (status = 422, description = "Empty or over-length q", body = crate::openapi::ProblemDetails)
+        (status = 422, description = "Empty or over-length q", body = crate::openapi::ProblemDetails),
+        (status = "default", description = "Any other failure is a Problem Details document", body = crate::openapi::ProblemDetails)
     )
 )]
 async fn suggest_publishers(

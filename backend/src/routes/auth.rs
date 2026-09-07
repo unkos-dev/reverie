@@ -80,7 +80,8 @@ pub struct CallbackParams {
     security(()),
     responses(
         (status = 307, description = "Redirect to the OIDC issuer's authorization endpoint; PKCE verifier, anti-forgery state, and nonce are stored in the (anonymous) session"),
-        (status = 404, description = "OIDC is not configured on this instance", body = crate::openapi::ProblemDetails)
+        (status = 404, description = "OIDC is not configured on this instance", body = crate::openapi::ProblemDetails),
+        (status = "default", description = "Any other failure is a Problem Details document", body = crate::openapi::ProblemDetails)
     )
 )]
 async fn oidc_login(
@@ -145,7 +146,8 @@ async fn oidc_login(
     responses(
         (status = 307, description = "Login complete; session established, theme cookie seeded, redirect to /"),
         (status = 400, description = "Malformed query parameter", body = crate::openapi::ProblemDetails),
-        (status = 401, description = "Anti-forgery state missing/mismatched or ID-token validation failed", body = crate::openapi::ProblemDetails)
+        (status = 401, description = "Anti-forgery state missing/mismatched or ID-token validation failed", body = crate::openapi::ProblemDetails),
+        (status = "default", description = "Any other failure is a Problem Details document", body = crate::openapi::ProblemDetails)
     )
 )]
 async fn callback(
@@ -319,7 +321,8 @@ struct LocalLoginRequest {
         (status = 204, description = "Login succeeded; session established (id rotated, CSRF token minted, theme cookie seeded)"),
         (status = 404, description = "Local authentication is disabled on this instance", body = crate::openapi::ProblemDetails),
         (status = 422, description = "Invalid credentials (generic; identical for unknown email and wrong password)", body = crate::openapi::ProblemDetails),
-        (status = 429, description = "Too many login attempts", body = crate::openapi::ProblemDetails)
+        (status = 429, description = "Too many login attempts", body = crate::openapi::ProblemDetails),
+        (status = "default", description = "Any other failure is a Problem Details document", body = crate::openapi::ProblemDetails)
     )
 )]
 async fn local_login(
@@ -459,7 +462,10 @@ struct SetupStatusResponse {
     description = "Returns whether initial setup is required and which sign-in providers are enabled, for the sign-in page to decide what to show. No authentication is required to call it.",
     tag = "auth",
     security(()),
-    responses((status = 200, description = "Setup and provider state", body = SetupStatusResponse))
+    responses(
+        (status = 200, description = "Setup and provider state", body = SetupStatusResponse),
+        (status = "default", description = "Any other failure is a Problem Details document", body = crate::openapi::ProblemDetails)
+    )
 )]
 async fn setup_status(
     State(state): State<AppState>,
@@ -519,7 +525,8 @@ struct SetupRequest {
         (status = 201, description = "First administrator created (no auto-login)"),
         (status = 409, description = "An administrator already exists", body = crate::openapi::ProblemDetails),
         (status = 422, description = "Validation failed", body = crate::openapi::ProblemDetails),
-        (status = 429, description = "Too many requests", body = crate::openapi::ProblemDetails)
+        (status = 429, description = "Too many requests", body = crate::openapi::ProblemDetails),
+        (status = "default", description = "Any other failure is a Problem Details document", body = crate::openapi::ProblemDetails)
     )
 )]
 async fn setup(
@@ -605,7 +612,8 @@ struct RegisterRequest {
         (status = 404, description = "Self-registration is disabled on this instance", body = crate::openapi::ProblemDetails),
         (status = 409, description = "Email already in use", body = crate::openapi::ProblemDetails),
         (status = 422, description = "Validation failed", body = crate::openapi::ProblemDetails),
-        (status = 429, description = "Too many requests", body = crate::openapi::ProblemDetails)
+        (status = 429, description = "Too many requests", body = crate::openapi::ProblemDetails),
+        (status = "default", description = "Any other failure is a Problem Details document", body = crate::openapi::ProblemDetails)
     )
 )]
 async fn register(
@@ -704,7 +712,8 @@ struct ForgotPasswordRequest {
     responses(
         (status = 200, description = "Recovery started if the account exists (generic; no enumeration)"),
         (status = 404, description = "Local authentication is disabled", body = crate::openapi::ProblemDetails),
-        (status = 429, description = "Too many requests", body = crate::openapi::ProblemDetails)
+        (status = 429, description = "Too many requests", body = crate::openapi::ProblemDetails),
+        (status = "default", description = "Any other failure is a Problem Details document", body = crate::openapi::ProblemDetails)
     )
 )]
 async fn forgot_password(
@@ -809,7 +818,8 @@ struct ResetPasswordRequest {
         (status = 200, description = "Password reset; no session established (re-authentication required)"),
         (status = 404, description = "Local authentication is disabled", body = crate::openapi::ProblemDetails),
         (status = 422, description = "Invalid or expired reset request (generic)", body = crate::openapi::ProblemDetails),
-        (status = 429, description = "Too many requests", body = crate::openapi::ProblemDetails)
+        (status = 429, description = "Too many requests", body = crate::openapi::ProblemDetails),
+        (status = "default", description = "Any other failure is a Problem Details document", body = crate::openapi::ProblemDetails)
     )
 )]
 async fn reset_password(
@@ -926,7 +936,8 @@ async fn reset_password(
     responses(
         (status = 204, description = "Session destroyed (no-op without one)"),
         (status = 403, description = "X-CSRF-Token header present but does not match the session token", body = crate::openapi::ProblemDetails),
-        (status = 428, description = "X-CSRF-Token header required for a session-authenticated caller", body = crate::openapi::ProblemDetails)
+        (status = 428, description = "X-CSRF-Token header required for a session-authenticated caller", body = crate::openapi::ProblemDetails),
+        (status = "default", description = "Any other failure is a Problem Details document", body = crate::openapi::ProblemDetails)
     )
 )]
 async fn logout(session: Session) -> Result<impl IntoResponse, AppError> {
@@ -970,7 +981,8 @@ struct MeResponse {
     tag = "auth",
     responses(
         (status = 200, description = "Caller profile; `csrf_token` is the synchronizer token for unsafe verbs (null for Basic-auth sessions)", body = MeResponse),
-        (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails)
+        (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails),
+        (status = "default", description = "Any other failure is a Problem Details document", body = crate::openapi::ProblemDetails)
     )
 )]
 async fn me(
@@ -1041,7 +1053,8 @@ struct ThemeResponse {
     responses(
         (status = 200, description = "Preference persisted; `reverie_theme` cookie refreshed", body = ThemeResponse),
         (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails),
-        (status = 422, description = "Unknown theme_preference value", body = crate::openapi::ProblemDetails)
+        (status = 422, description = "Unknown theme_preference value", body = crate::openapi::ProblemDetails),
+        (status = "default", description = "Any other failure is a Problem Details document", body = crate::openapi::ProblemDetails)
     )
 )]
 async fn update_theme(

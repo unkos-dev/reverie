@@ -51,6 +51,16 @@
                 }
               }
             }
+          },
+          "default": {
+            "description": "Any other failure is a Problem Details document",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -133,6 +143,16 @@
           },
           "422": {
             "description": "Missing id filter or too many ids",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Any other failure is a Problem Details document",
             "content": {
               "application/json": {
                 "schema": {
@@ -228,6 +248,16 @@
           },
           "422": {
             "description": "Empty or over-length q",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Any other failure is a Problem Details document",
             "content": {
               "application/json": {
                 "schema": {
@@ -684,6 +714,16 @@
                 }
               }
             }
+          },
+          "default": {
+            "description": "Any other failure is a Problem Details document",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -753,6 +793,16 @@
           },
           "404": {
             "description": "Not found or RLS-hidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Any other failure is a Problem Details document",
             "content": {
               "application/json": {
                 "schema": {
@@ -832,6 +882,16 @@
                 }
               }
             }
+          },
+          "default": {
+            "description": "Any other failure is a Problem Details document",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -897,6 +957,16 @@
           },
           "404": {
             "description": "Manifestation missing, RLS-hidden, or coverless",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Any other failure is a Problem Details document",
             "content": {
               "application/json": {
                 "schema": {
@@ -991,6 +1061,16 @@
           },
           "404": {
             "description": "Manifestation missing or RLS-hidden (existence-not-leaked)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Any other failure is a Problem Details document",
             "content": {
               "application/json": {
                 "schema": {
@@ -1158,6 +1238,16 @@
                 }
               }
             }
+          },
+          "default": {
+            "description": "Any other failure is a Problem Details document",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -1235,6 +1325,16 @@
           },
           "404": {
             "description": "Manifestation missing or RLS-hidden (existence-not-leaked)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Any other failure is a Problem Details document",
             "content": {
               "application/json": {
                 "schema": {
@@ -1392,6 +1492,16 @@
                 }
               }
             }
+          },
+          "default": {
+            "description": "Any other failure is a Problem Details document",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -1478,6 +1588,16 @@
                 }
               }
             }
+          },
+          "default": {
+            "description": "Any other failure is a Problem Details document",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -1542,6 +1662,16 @@
                 }
               }
             }
+          },
+          "default": {
+            "description": "Any other failure is a Problem Details document",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -1599,6 +1729,16 @@
           },
           "403": {
             "description": "Caller is a child account",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Any other failure is a Problem Details document",
             "content": {
               "application/json": {
                 "schema": {
@@ -1701,6 +1841,16 @@
                 }
               }
             }
+          },
+          "default": {
+            "description": "Any other failure is a Problem Details document",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -1758,6 +1908,16 @@
           },
           "403": {
             "description": "Caller is not an admin",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Any other failure is a Problem Details document",
             "content": {
               "application/json": {
                 "schema": {
@@ -1851,6 +2011,16 @@
                 }
               }
             }
+          },
+          "default": {
+            "description": "Any other failure is a Problem Details document",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -1930,6 +2100,16 @@
                 }
               }
             }
+          },
+          "default": {
+            "description": "Any other failure is a Problem Details document",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -2002,6 +2182,16 @@
           },
           "403": {
             "description": "Caller is a child account",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Any other failure is a Problem Details document",
             "content": {
               "application/json": {
                 "schema": {
@@ -2108,6 +2298,16 @@
                 }
               }
             }
+          },
+          "default": {
+            "description": "Any other failure is a Problem Details document",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -2197,6 +2397,16 @@
                 }
               }
             }
+          },
+          "default": {
+            "description": "Any other failure is a Problem Details document",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -2279,6 +2489,16 @@
           },
           "404": {
             "description": "Version not found for this manifestation, or RLS-hidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Any other failure is a Problem Details document",
             "content": {
               "application/json": {
                 "schema": {
@@ -2385,6 +2605,16 @@
                 }
               }
             }
+          },
+          "default": {
+            "description": "Any other failure is a Problem Details document",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -2477,6 +2707,16 @@
           },
           "422": {
             "description": "Unknown entity_type",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Any other failure is a Problem Details document",
             "content": {
               "application/json": {
                 "schema": {
@@ -2579,6 +2819,16 @@
                 }
               }
             }
+          },
+          "default": {
+            "description": "Any other failure is a Problem Details document",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -2674,6 +2924,16 @@
                 }
               }
             }
+          },
+          "default": {
+            "description": "Any other failure is a Problem Details document",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -2752,6 +3012,16 @@
           },
           "422": {
             "description": "Empty, missing, or over-length query",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Any other failure is a Problem Details document",
             "content": {
               "application/json": {
                 "schema": {
@@ -2854,6 +3124,16 @@
                 }
               }
             }
+          },
+          "default": {
+            "description": "Any other failure is a Problem Details document",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -2930,6 +3210,16 @@
                 }
               }
             }
+          },
+          "default": {
+            "description": "Any other failure is a Problem Details document",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -2987,6 +3277,16 @@
           },
           "403": {
             "description": "Caller is not an admin",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Any other failure is a Problem Details document",
             "content": {
               "application/json": {
                 "schema": {
@@ -3070,6 +3370,16 @@
           },
           "422": {
             "description": "Empty patch, malformed body, or invalid field values",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Any other failure is a Problem Details document",
             "content": {
               "application/json": {
                 "schema": {
@@ -3170,6 +3480,16 @@
                 }
               }
             }
+          },
+          "default": {
+            "description": "Any other failure is a Problem Details document",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -3253,6 +3573,16 @@
           },
           "422": {
             "description": "Missing body or empty name",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Any other failure is a Problem Details document",
             "content": {
               "application/json": {
                 "schema": {
@@ -3379,6 +3709,16 @@
                 }
               }
             }
+          },
+          "default": {
+            "description": "Any other failure is a Problem Details document",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -3459,6 +3799,16 @@
           },
           "409": {
             "description": "System shelves cannot be deleted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Any other failure is a Problem Details document",
             "content": {
               "application/json": {
                 "schema": {
@@ -3581,6 +3931,16 @@
           },
           "422": {
             "description": "Missing body or empty name",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Any other failure is a Problem Details document",
             "content": {
               "application/json": {
                 "schema": {
@@ -3714,6 +4074,16 @@
                 }
               }
             }
+          },
+          "default": {
+            "description": "Any other failure is a Problem Details document",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -3809,6 +4179,16 @@
                 }
               }
             }
+          },
+          "default": {
+            "description": "Any other failure is a Problem Details document",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -3889,6 +4269,16 @@
           },
           "404": {
             "description": "Shelf missing / not owned, or item not on the shelf",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Any other failure is a Problem Details document",
             "content": {
               "application/json": {
                 "schema": {
@@ -3991,6 +4381,16 @@
                 }
               }
             }
+          },
+          "default": {
+            "description": "Any other failure is a Problem Details document",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -4041,6 +4441,16 @@
           },
           "401": {
             "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Any other failure is a Problem Details document",
             "content": {
               "application/json": {
                 "schema": {
@@ -4130,6 +4540,16 @@
                 }
               }
             }
+          },
+          "default": {
+            "description": "Any other failure is a Problem Details document",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -4209,6 +4629,16 @@
                 }
               }
             }
+          },
+          "default": {
+            "description": "Any other failure is a Problem Details document",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -4269,6 +4699,16 @@
           },
           "403": {
             "description": "Caller is not an admin",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Any other failure is a Problem Details document",
             "content": {
               "application/json": {
                 "schema": {
@@ -4361,6 +4801,16 @@
           },
           "422": {
             "description": "Invalid email, or password rejected by the policy",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Any other failure is a Problem Details document",
             "content": {
               "application/json": {
                 "schema": {
@@ -4475,6 +4925,16 @@
                 }
               }
             }
+          },
+          "default": {
+            "description": "Any other failure is a Problem Details document",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -4574,6 +5034,16 @@
           },
           "422": {
             "description": "Cannot disable your own account, or disabling would leave zero enabled admins",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Any other failure is a Problem Details document",
             "content": {
               "application/json": {
                 "schema": {
@@ -4687,6 +5157,16 @@
                 }
               }
             }
+          },
+          "default": {
+            "description": "Any other failure is a Problem Details document",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -4779,6 +5259,16 @@
           },
           "422": {
             "description": "Password rejected by the policy",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Any other failure is a Problem Details document",
             "content": {
               "application/json": {
                 "schema": {
@@ -4892,6 +5382,16 @@
                 }
               }
             }
+          },
+          "default": {
+            "description": "Any other failure is a Problem Details document",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -4961,6 +5461,16 @@
           },
           "404": {
             "description": "Not found or RLS-hidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Any other failure is a Problem Details document",
             "content": {
               "application/json": {
                 "schema": {
@@ -5047,6 +5557,16 @@
                 }
               }
             }
+          },
+          "default": {
+            "description": "Any other failure is a Problem Details document",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -5124,6 +5644,16 @@
                 }
               }
             }
+          },
+          "default": {
+            "description": "Any other failure is a Problem Details document",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -5165,6 +5695,16 @@
           },
           "429": {
             "description": "Too many requests",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Any other failure is a Problem Details document",
             "content": {
               "application/json": {
                 "schema": {
@@ -5230,6 +5770,16 @@
                 }
               }
             }
+          },
+          "default": {
+            "description": "Any other failure is a Problem Details document",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -5261,6 +5811,16 @@
           },
           "428": {
             "description": "X-CSRF-Token header required for a session-authenticated caller",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Any other failure is a Problem Details document",
             "content": {
               "application/json": {
                 "schema": {
@@ -5303,6 +5863,16 @@
                 }
               }
             }
+          },
+          "default": {
+            "description": "Any other failure is a Problem Details document",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
           }
         }
       }
@@ -5328,6 +5898,16 @@
           },
           "401": {
             "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Any other failure is a Problem Details document",
             "content": {
               "application/json": {
                 "schema": {
@@ -5401,6 +5981,16 @@
           },
           "422": {
             "description": "Empty body, unknown density or view, or an out-of-range sort stack or column key",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Any other failure is a Problem Details document",
             "content": {
               "application/json": {
                 "schema": {
@@ -5482,6 +6072,16 @@
                 }
               }
             }
+          },
+          "default": {
+            "description": "Any other failure is a Problem Details document",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
           }
         }
       }
@@ -5500,6 +6100,16 @@
           },
           "404": {
             "description": "OIDC is not configured on this instance",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Any other failure is a Problem Details document",
             "content": {
               "application/json": {
                 "schema": {
@@ -5575,6 +6185,16 @@
                 }
               }
             }
+          },
+          "default": {
+            "description": "Any other failure is a Problem Details document",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -5626,6 +6246,16 @@
           },
           "429": {
             "description": "Too many requests",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Any other failure is a Problem Details document",
             "content": {
               "application/json": {
                 "schema": {
@@ -5691,6 +6321,16 @@
                 }
               }
             }
+          },
+          "default": {
+            "description": "Any other failure is a Problem Details document",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -5716,6 +6356,16 @@
                 }
               }
             }
+          },
+          "default": {
+            "description": "Any other failure is a Problem Details document",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -5738,6 +6388,16 @@
               "text/plain": {
                 "schema": {
                   "type": "string"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Any other failure is a Problem Details document",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
                 }
               }
             }
@@ -5776,6 +6436,16 @@
                 }
               }
             }
+          },
+          "default": {
+            "description": "Any other failure is a Problem Details document",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -5804,6 +6474,16 @@
           },
           "401": {
             "description": "Basic authentication required (WWW-Authenticate: Basic)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Any other failure is a Problem Details document",
             "content": {
               "application/json": {
                 "schema": {
@@ -5866,6 +6546,16 @@
                 }
               }
             }
+          },
+          "default": {
+            "description": "Any other failure is a Problem Details document",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -5914,6 +6604,16 @@
           },
           "404": {
             "description": "Manifestation missing, RLS-hidden, or coverless",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Any other failure is a Problem Details document",
             "content": {
               "application/json": {
                 "schema": {
@@ -5986,6 +6686,16 @@
                 }
               }
             }
+          },
+          "default": {
+            "description": "Any other failure is a Problem Details document",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -6016,6 +6726,16 @@
           },
           "401": {
             "description": "Basic authentication required (WWW-Authenticate: Basic)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Any other failure is a Problem Details document",
             "content": {
               "application/json": {
                 "schema": {
@@ -6084,6 +6804,16 @@
           },
           "422": {
             "description": "Malformed cursor",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Any other failure is a Problem Details document",
             "content": {
               "application/json": {
                 "schema": {
@@ -6169,6 +6899,16 @@
                 }
               }
             }
+          },
+          "default": {
+            "description": "Any other failure is a Problem Details document",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -6237,6 +6977,16 @@
                 }
               }
             }
+          },
+          "default": {
+            "description": "Any other failure is a Problem Details document",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -6267,6 +7017,16 @@
           },
           "401": {
             "description": "Basic authentication required (WWW-Authenticate: Basic)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Any other failure is a Problem Details document",
             "content": {
               "application/json": {
                 "schema": {
@@ -6325,6 +7085,16 @@
           },
           "401": {
             "description": "Basic authentication required (WWW-Authenticate: Basic)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Any other failure is a Problem Details document",
             "content": {
               "application/json": {
                 "schema": {
@@ -6393,6 +7163,16 @@
           },
           "422": {
             "description": "Malformed cursor",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Any other failure is a Problem Details document",
             "content": {
               "application/json": {
                 "schema": {
@@ -6478,6 +7258,16 @@
                 }
               }
             }
+          },
+          "default": {
+            "description": "Any other failure is a Problem Details document",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -6530,6 +7320,16 @@
           },
           "404": {
             "description": "Shelf missing or not owned by the caller",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Any other failure is a Problem Details document",
             "content": {
               "application/json": {
                 "schema": {
@@ -6618,6 +7418,16 @@
           },
           "422": {
             "description": "Malformed cursor",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Any other failure is a Problem Details document",
             "content": {
               "application/json": {
                 "schema": {
@@ -6723,6 +7533,16 @@
                 }
               }
             }
+          },
+          "default": {
+            "description": "Any other failure is a Problem Details document",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -6811,6 +7631,16 @@
                 }
               }
             }
+          },
+          "default": {
+            "description": "Any other failure is a Problem Details document",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -6863,6 +7693,16 @@
           },
           "404": {
             "description": "Shelf missing or not owned by the caller",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Any other failure is a Problem Details document",
             "content": {
               "application/json": {
                 "schema": {
@@ -6941,6 +7781,16 @@
           },
           "404": {
             "description": "Shelf missing or not owned by the caller",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Any other failure is a Problem Details document",
             "content": {
               "application/json": {
                 "schema": {
@@ -7029,6 +7879,16 @@
           },
           "422": {
             "description": "Malformed cursor",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Any other failure is a Problem Details document",
             "content": {
               "application/json": {
                 "schema": {
@@ -7127,6 +7987,16 @@
           },
           "422": {
             "description": "Malformed cursor",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Any other failure is a Problem Details document",
             "content": {
               "application/json": {
                 "schema": {

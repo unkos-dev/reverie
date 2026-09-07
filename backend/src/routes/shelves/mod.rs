@@ -159,7 +159,8 @@ struct ShelfListResponse {
             headers(("Link" = String, description = "RFC 8288 next-page link; emitted with rel=\"next\" when more rows remain"))),
         (status = 400, description = "Malformed query parameter", body = crate::openapi::ProblemDetails),
         (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails),
-        (status = 422, description = "Malformed cursor", body = crate::openapi::ProblemDetails)
+        (status = 422, description = "Malformed cursor", body = crate::openapi::ProblemDetails),
+        (status = "default", description = "Any other failure is a Problem Details document", body = crate::openapi::ProblemDetails)
     )
 )]
 async fn list_shelves(
@@ -279,7 +280,8 @@ struct CreateShelfRequest {
          headers(("ETag" = String, description = "Entity-tag carrying the shelf's updated_at (RFC 3339, quoted per RFC 9110)"))),
         (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails),
         (status = 403, description = "Caller is a child account", body = crate::openapi::ProblemDetails),
-        (status = 422, description = "Missing body or empty name", body = crate::openapi::ProblemDetails)
+        (status = 422, description = "Missing body or empty name", body = crate::openapi::ProblemDetails),
+        (status = "default", description = "Any other failure is a Problem Details document", body = crate::openapi::ProblemDetails)
     )
 )]
 async fn create_shelf(
@@ -361,7 +363,8 @@ struct RenameShelfRequest {
         (status = 403, description = "Caller is a child account", body = crate::openapi::ProblemDetails),
         (status = 404, description = "Shelf missing or owned by another user (existence-not-leaked)", body = crate::openapi::ProblemDetails),
         (status = 409, description = "System shelves cannot be renamed", body = crate::openapi::ProblemDetails),
-        (status = 422, description = "Missing body or empty name", body = crate::openapi::ProblemDetails)
+        (status = 422, description = "Missing body or empty name", body = crate::openapi::ProblemDetails),
+        (status = "default", description = "Any other failure is a Problem Details document", body = crate::openapi::ProblemDetails)
     )
 )]
 async fn rename_shelf(
@@ -458,7 +461,8 @@ async fn rename_shelf(
         (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails),
         (status = 403, description = "Caller is a child account", body = crate::openapi::ProblemDetails),
         (status = 404, description = "Shelf missing or owned by another user (existence-not-leaked)", body = crate::openapi::ProblemDetails),
-        (status = 409, description = "System shelves cannot be deleted", body = crate::openapi::ProblemDetails)
+        (status = 409, description = "System shelves cannot be deleted", body = crate::openapi::ProblemDetails),
+        (status = "default", description = "Any other failure is a Problem Details document", body = crate::openapi::ProblemDetails)
     )
 )]
 async fn delete_shelf(
@@ -562,7 +566,8 @@ struct ShelfDetailResponse {
         (status = 400, description = "Malformed query parameter", body = crate::openapi::ProblemDetails),
         (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails),
         (status = 404, description = "Shelf missing or owned by another user (existence-not-leaked)", body = crate::openapi::ProblemDetails),
-        (status = 422, description = "Malformed cursor", body = crate::openapi::ProblemDetails)
+        (status = 422, description = "Malformed cursor", body = crate::openapi::ProblemDetails),
+        (status = "default", description = "Any other failure is a Problem Details document", body = crate::openapi::ProblemDetails)
     )
 )]
 async fn get_shelf_with_items(
@@ -707,7 +712,8 @@ struct AddItemRequest {
          headers(("ETag" = String, description = "Entity-tag carrying the shelf's new updated_at (RFC 3339, quoted per RFC 9110)"))),
         (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails),
         (status = 404, description = "Shelf missing / not owned, or manifestation not visible to the caller", body = crate::openapi::ProblemDetails),
-        (status = 422, description = "Missing or malformed body", body = crate::openapi::ProblemDetails)
+        (status = 422, description = "Missing or malformed body", body = crate::openapi::ProblemDetails),
+        (status = "default", description = "Any other failure is a Problem Details document", body = crate::openapi::ProblemDetails)
     )
 )]
 async fn add_shelf_item(
@@ -816,7 +822,8 @@ async fn add_shelf_item(
         (status = 204, description = "Item removed; shelf ETag bumped",
          headers(("ETag" = String, description = "Entity-tag carrying the shelf's new updated_at (RFC 3339, quoted per RFC 9110)"))),
         (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails),
-        (status = 404, description = "Shelf missing / not owned, or item not on the shelf", body = crate::openapi::ProblemDetails)
+        (status = 404, description = "Shelf missing / not owned, or item not on the shelf", body = crate::openapi::ProblemDetails),
+        (status = "default", description = "Any other failure is a Problem Details document", body = crate::openapi::ProblemDetails)
     )
 )]
 async fn remove_shelf_item(
@@ -909,7 +916,8 @@ struct ReorderItemsRequest {
         (status = 404, description = "Shelf missing or owned by another user (existence-not-leaked)", body = crate::openapi::ProblemDetails),
         (status = 412, description = "If-Match does not match the shelf's current updated_at", body = crate::openapi::ProblemDetails),
         (status = 422, description = "Malformed If-Match, or items list does not exactly cover the shelf", body = crate::openapi::ProblemDetails),
-        (status = 428, description = "If-Match header absent", body = crate::openapi::ProblemDetails)
+        (status = 428, description = "If-Match header absent", body = crate::openapi::ProblemDetails),
+        (status = "default", description = "Any other failure is a Problem Details document", body = crate::openapi::ProblemDetails)
     )
 )]
 async fn reorder_shelf_items(

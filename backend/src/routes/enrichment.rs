@@ -72,7 +72,8 @@ pub fn router() -> OpenApiRouter<AppState> {
         (status = 202, description = "Re-run scheduled: an idle manifestation is reset to pending for the background worker's next poll; one with an active run is re-queued when that run completes"),
         (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails),
         (status = 403, description = "Caller is a child account", body = crate::openapi::ProblemDetails),
-        (status = 404, description = "Manifestation missing or RLS-hidden", body = crate::openapi::ProblemDetails)
+        (status = 404, description = "Manifestation missing or RLS-hidden", body = crate::openapi::ProblemDetails),
+        (status = "default", description = "Any other failure is a Problem Details document", body = crate::openapi::ProblemDetails),
     )
 )]
 async fn trigger(
@@ -138,7 +139,8 @@ async fn trigger(
         (status = 200, description = "Diff of changes an enrichment pass would make; per-source failures are listed, not fatal", body = crate::services::enrichment::dry_run::DryRunDiff),
         (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails),
         (status = 403, description = "Caller is a child account", body = crate::openapi::ProblemDetails),
-        (status = 404, description = "Manifestation missing or RLS-hidden", body = crate::openapi::ProblemDetails)
+        (status = 404, description = "Manifestation missing or RLS-hidden", body = crate::openapi::ProblemDetails),
+        (status = "default", description = "Any other failure is a Problem Details document", body = crate::openapi::ProblemDetails),
     )
 )]
 async fn dry_run(
@@ -202,7 +204,8 @@ struct StatusSummary {
     responses(
         (status = 200, description = "Per-status manifestation counts under the caller's RLS context", body = StatusSummary),
         (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails),
-        (status = 403, description = "Caller is a child account", body = crate::openapi::ProblemDetails)
+        (status = 403, description = "Caller is a child account", body = crate::openapi::ProblemDetails),
+        (status = "default", description = "Any other failure is a Problem Details document", body = crate::openapi::ProblemDetails),
     )
 )]
 async fn status(
