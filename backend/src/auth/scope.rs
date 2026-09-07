@@ -63,6 +63,7 @@ pub enum Scope {
 impl Scope {
     /// Wire string for the JSON value and DB literal. Matches the
     /// `#[serde(rename_all)]` and `#[sqlx(rename_all)]` mappings.
+    #[must_use]
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::Read => "read",
@@ -75,6 +76,7 @@ impl Scope {
     /// `{read, write}`; child restrictions are enforced by
     /// [`CurrentUser::require_not_child`](crate::auth::middleware::CurrentUser::require_not_child),
     /// not by withholding scope. Only [`Role::Admin`] also derives `admin`.
+    #[must_use]
     pub const fn for_role(role: Role) -> &'static [Self] {
         match role {
             Role::Admin => &[Self::Read, Self::Write, Self::Admin],
@@ -86,6 +88,7 @@ impl Scope {
     /// scope. `read`/`write` are grantable by any role; `admin` requires the
     /// owner to already hold [`Role::Admin`] (a non-admin cannot mint an
     /// admin-scoped token).
+    #[must_use]
     pub const fn grantable_by(self, role: Role) -> bool {
         match self {
             Self::Read | Self::Write => true,

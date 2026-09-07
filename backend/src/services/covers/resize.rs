@@ -36,6 +36,7 @@ pub enum CoverSize {
 
 impl CoverSize {
     /// Return the maximum pixel length of the long edge for this tier.
+    #[must_use]
     pub const fn long_edge(self) -> u32 {
         match self {
             Self::Full => 1200,

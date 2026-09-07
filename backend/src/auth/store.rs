@@ -79,6 +79,7 @@ impl PostgresStore {
     /// Build a store over the given pool. The pool must hold `reverie_app`
     /// (or higher) credentials — the only role granted DML on
     /// `tower_sessions.session`.
+    #[must_use]
     pub const fn new(pool: PgPool) -> Self {
         Self { pool }
     }

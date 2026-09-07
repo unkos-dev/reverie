@@ -13,6 +13,7 @@
 ///
 /// The 5 XML entity characters (`& < > " '`) are NOT stripped — quick-xml
 /// escapes them on serialisation.
+#[must_use]
 pub fn sanitise_xml_text(s: &str) -> String {
     s.chars()
         .filter(|&c| {

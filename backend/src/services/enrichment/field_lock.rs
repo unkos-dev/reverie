@@ -21,6 +21,7 @@ pub enum EntityType {
 
 impl EntityType {
     /// Return the string value written to `field_locks.entity_type`.
+    #[must_use]
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::Work => "work",

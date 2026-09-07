@@ -7,6 +7,7 @@
 //! relative; callers join it to the absolute library root before any I/O.
 
 use std::collections::HashMap;
+use std::hash::BuildHasher;
 use std::path::{Path, PathBuf};
 
 /// Default path template: `{Author}/{Title}.{ext}`
@@ -17,7 +18,8 @@ pub const DEFAULT_TEMPLATE: &str = "{Author}/{Title}.{ext}";
 ///
 /// Uses a single forward pass so that substituted values are never re-scanned.
 /// This prevents infinite loops when a value itself contains `{...}` text.
-pub fn render(template: &str, vars: &HashMap<String, String>) -> PathBuf {
+#[must_use]
+pub fn render<S: BuildHasher>(template: &str, vars: &HashMap<String, String, S>) -> PathBuf {
     let mut output = String::with_capacity(template.len() + 64);
     let mut remaining = template;
 
@@ -52,6 +54,7 @@ pub fn render(template: &str, vars: &HashMap<String, String>) -> PathBuf {
 /// This function is the path-traversal guard for the library write path: because
 /// `/` and `\` are replaced, a metadata field containing `../../etc/passwd` cannot
 /// escape the library root when its sanitized value is joined to an absolute base.
+#[must_use]
 pub fn sanitize_path_component(s: &str) -> String {
     let mut result: String = s
         .chars()
@@ -110,6 +113,7 @@ pub fn resolve_collision(path: &Path) -> std::io::Result<PathBuf> {
 }
 
 /// Parse author and title from a filename using the `Author - Title.ext` convention.
+#[must_use]
 pub fn heuristic_vars_from_filename(filename: &str) -> HashMap<String, String> {
     let mut vars = HashMap::new();
 

@@ -70,6 +70,10 @@ static DUMMY_PHC: LazyLock<String> = LazyLock::new(|| {
 /// Authentication Cheat Sheet: uniform response AND timing). The boolean is
 /// always `false`; callers spend the work and ignore the value (it is not
 /// `#[must_use]` precisely because discarding it is the intended use).
+#[expect(
+    clippy::must_use_candidate,
+    reason = "the boolean is always false; callers spend the work for its timing and discard the value by design"
+)]
 pub fn verify_against_dummy(password: &[u8]) -> bool {
     verify_password(password, &DUMMY_PHC).is_ok()
 }

@@ -97,6 +97,7 @@ impl Settings {
     ///
     /// # Panics
     /// Panics if the stored value is outside `"all" | "ingested" | "none"`.
+    #[must_use]
     pub fn cleanup_mode(&self) -> CleanupMode {
         match self.cleanup_mode.as_str() {
             "all" => CleanupMode::All,
@@ -113,6 +114,7 @@ impl Settings {
     ///
     /// # Panics
     /// Panics if any stored element is not a known [`ManifestationFormat`] wire value.
+    #[must_use]
     pub fn format_priority(&self) -> Vec<ManifestationFormat> {
         self.format_priority
             .iter()
@@ -216,6 +218,7 @@ fn provider_visibility_schema() -> utoipa::openapi::schema::Object {
 
 impl UpdateSettings {
     /// Returns true if the update touches no fields (empty body).
+    #[must_use]
     pub const fn is_empty(&self) -> bool {
         self.enrichment_enabled.is_none()
             && self.enrichment_concurrency.is_none()
@@ -349,6 +352,7 @@ pub fn validate_update(req: &UpdateSettings) -> Result<(), String> {
 /// OIDC, `library_path`) are env-only (`Config`) and cannot be PUT. The API
 /// response includes `restart_required` so the frontend can surface a badge
 /// when restart-required fields are eventually promoted to the table.
+#[must_use]
 pub const fn has_restart_required_field(_req: &UpdateSettings) -> bool {
     false
 }
@@ -359,6 +363,7 @@ pub const fn has_restart_required_field(_req: &UpdateSettings) -> bool {
 /// added to the settings table. The env-only fields that would require
 /// restart (`port`, `database_url`, OIDC, `library_path`) are not in the
 /// PUT schema and cannot be set through this API.
+#[must_use]
 pub const fn restart_required_fields() -> &'static [&'static str] {
     &[]
 }

@@ -67,6 +67,7 @@ impl ExtractedMetadata {
     /// translator can precede the author; consumers that need "the author"
     /// (work matching, library path rendering) must never fall back to a
     /// non-author role.
+    #[must_use]
     pub fn first_author(&self) -> Option<&ExtractedCreator> {
         self.creators.iter().find(|c| c.role == "author")
     }

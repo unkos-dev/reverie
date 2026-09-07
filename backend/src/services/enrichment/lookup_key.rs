@@ -13,6 +13,7 @@ use crate::services::metadata::isbn::parse_isbn;
 /// Resolves both ISBN-10 and ISBN-13 inputs to their ISBN-13 canonical form
 /// via [`parse_isbn`], then prefixes with `"isbn:"`.  Returns `None` if the
 /// string is not a valid ISBN.
+#[must_use]
 pub fn isbn_key(raw: &str) -> Option<String> {
     let result = parse_isbn(raw);
     result.isbn_13.map(|s| format!("isbn:{s}"))
@@ -30,6 +31,7 @@ pub fn isbn_key(raw: &str) -> Option<String> {
 /// (contains a comma), swap to "First Last" order before the above steps.
 ///
 /// Returns a key of the form `"ta:{title}|{author}"`.
+#[must_use]
 pub fn title_author_key(title: &str, author: &str) -> String {
     let t = normalise_text(title);
     let a = normalise_author(author);

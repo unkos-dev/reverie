@@ -301,6 +301,7 @@ pub struct ShelfCursor {
 
 impl ShelfCursor {
     /// Encode as a base64url-unpadded `?cursor=` value.
+    #[must_use]
     pub fn encode(&self) -> String {
         let flag = if self.is_system { "t" } else { "f" };
         let payload = format!("sh|{flag}|{}|{}", self.name, self.id.as_hyphenated());
@@ -370,6 +371,7 @@ impl ShelfItemCursor {
     /// The timestamp is written with the same RFC 3339 spelling serde
     /// gives a `DateTime<Utc>` on the wire, so a cursor timestamp and a
     /// response-body timestamp for the same instant are byte-identical.
+    #[must_use]
     pub fn encode(&self) -> String {
         let ts = self.added_at.to_rfc3339_opts(SecondsFormat::AutoSi, true);
         let payload = format!(

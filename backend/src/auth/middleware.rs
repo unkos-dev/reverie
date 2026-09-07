@@ -155,6 +155,7 @@ impl CurrentUser {
     /// capability. It bounds a minted token to no more than its owner's role
     /// already grants, so a compromised non-admin session cannot forge an
     /// admin-scoped credential. The mint handler logs a rejected grant.
+    #[must_use]
     pub const fn may_grant_scope(&self, scope: Scope) -> bool {
         scope.grantable_by(self.role)
     }

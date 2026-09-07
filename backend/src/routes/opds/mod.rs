@@ -32,6 +32,7 @@ use crate::state::AppState;
 /// from this regardless of `config.opds.enabled` — the contract documents
 /// the OPDS surface even on instances where the operator has it switched
 /// off; only the runtime mount (see [`router_enabled`]) is config-gated.
+#[must_use]
 pub fn openapi_router() -> OpenApiRouter<AppState> {
     OpenApiRouter::new()
         .merge(root::router())
@@ -47,6 +48,7 @@ pub fn openapi_router() -> OpenApiRouter<AppState> {
 /// Returns `None` when OPDS is
 /// disabled so `crate::build_router` can skip the mount entirely; the spec
 /// half is merged unconditionally in `crate::openapi::spec_json`.
+#[must_use]
 pub fn router_enabled(config: &OpdsConfig) -> Option<Router<AppState>> {
     config.enabled.then(|| openapi_router().split_for_parts().0)
 }
@@ -58,6 +60,7 @@ pub fn router_enabled(config: &OpdsConfig) -> Option<Router<AppState>> {
 /// can load covers with a session cookie. Always mounted — independent of
 /// `config.opds.enabled` — because the web UI needs it regardless of OPDS.
 /// Merged into the documented pilot router in `crate::openapi`.
+#[must_use]
 pub fn covers_router() -> OpenApiRouter<AppState> {
     covers::api_router()
 }
