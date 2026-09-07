@@ -35,7 +35,7 @@
           "401": {
             "description": "Authentication required",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -45,7 +45,7 @@
           "422": {
             "description": "Wrong current password, new password rejected by the policy, or no local credential",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -53,9 +53,9 @@
             }
           },
           "default": {
-            "description": "Any other failure is a Problem Details document",
+            "description": "Failures raised by a handler or its extractors are Problem Details documents",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -124,7 +124,7 @@
           "400": {
             "description": "Malformed id parameter",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -134,7 +134,7 @@
           "401": {
             "description": "Authentication required",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -144,7 +144,7 @@
           "422": {
             "description": "Missing id filter or too many ids",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -152,9 +152,9 @@
             }
           },
           "default": {
-            "description": "Any other failure is a Problem Details document",
+            "description": "Failures raised by a handler or its extractors are Problem Details documents",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -229,7 +229,7 @@
           "400": {
             "description": "Malformed query parameter",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -239,7 +239,7 @@
           "401": {
             "description": "Authentication required",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -249,7 +249,7 @@
           "422": {
             "description": "Empty or over-length q",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -257,9 +257,9 @@
             }
           },
           "default": {
-            "description": "Any other failure is a Problem Details document",
+            "description": "Failures raised by a handler or its extractors are Problem Details documents",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -688,7 +688,7 @@
           "400": {
             "description": "Malformed query parameter",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -698,7 +698,7 @@
           "401": {
             "description": "Authentication required",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -708,7 +708,7 @@
           "422": {
             "description": "Invalid cursor or too many filter values",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -716,9 +716,9 @@
             }
           },
           "default": {
-            "description": "Any other failure is a Problem Details document",
+            "description": "Failures raised by a handler or its extractors are Problem Details documents",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -784,7 +784,7 @@
           "401": {
             "description": "Authentication required",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -794,7 +794,7 @@
           "404": {
             "description": "Not found or RLS-hidden",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -802,9 +802,9 @@
             }
           },
           "default": {
-            "description": "Any other failure is a Problem Details document",
+            "description": "Failures raised by a handler or its extractors are Problem Details documents",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -866,7 +866,7 @@
           "401": {
             "description": "Authentication required",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -876,7 +876,7 @@
           "404": {
             "description": "Manifestation missing, RLS-hidden, or coverless",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -884,9 +884,9 @@
             }
           },
           "default": {
-            "description": "Any other failure is a Problem Details document",
+            "description": "Failures raised by a handler or its extractors are Problem Details documents",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -948,7 +948,7 @@
           "401": {
             "description": "Authentication required",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -958,7 +958,7 @@
           "404": {
             "description": "Manifestation missing, RLS-hidden, or coverless",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -966,9 +966,9 @@
             }
           },
           "default": {
-            "description": "Any other failure is a Problem Details document",
+            "description": "Failures raised by a handler or its extractors are Problem Details documents",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -1042,7 +1042,7 @@
           "401": {
             "description": "Authentication required",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -1052,7 +1052,7 @@
           "403": {
             "description": "Caller is a child account",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -1062,7 +1062,7 @@
           "404": {
             "description": "Manifestation missing or RLS-hidden (existence-not-leaked)",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -1070,9 +1070,9 @@
             }
           },
           "default": {
-            "description": "Any other failure is a Problem Details document",
+            "description": "Failures raised by a handler or its extractors are Problem Details documents",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -1164,7 +1164,7 @@
           "400": {
             "description": "If-Match is malformed, or carries a form this API refuses by policy: the * wildcard, an entity-tag list, a weak tag, or a repeated header instance",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -1174,7 +1174,7 @@
           "401": {
             "description": "Authentication required",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -1184,7 +1184,7 @@
           "403": {
             "description": "Caller is a child account",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -1194,7 +1194,7 @@
           "404": {
             "description": "Manifestation missing or RLS-hidden (existence-not-leaked)",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -1212,7 +1212,7 @@
               }
             },
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -1222,7 +1222,7 @@
           "422": {
             "description": "No populated fields, ISBN/date parse failure, or attempt to clear title. Evaluated only after If-Match has matched, so a stale tag returns 412 instead",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -1232,7 +1232,7 @@
           "428": {
             "description": "If-Match header absent",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -1240,9 +1240,9 @@
             }
           },
           "default": {
-            "description": "Any other failure is a Problem Details document",
+            "description": "Failures raised by a handler or its extractors are Problem Details documents",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -1316,7 +1316,7 @@
           "401": {
             "description": "Authentication required",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -1326,7 +1326,7 @@
           "404": {
             "description": "Manifestation missing or RLS-hidden (existence-not-leaked)",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -1334,9 +1334,9 @@
             }
           },
           "default": {
-            "description": "Any other failure is a Problem Details document",
+            "description": "Failures raised by a handler or its extractors are Problem Details documents",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -1428,7 +1428,7 @@
           "400": {
             "description": "If-Match is malformed, or carries a form this API refuses by policy: the * wildcard, an entity-tag list, a weak tag, or a repeated header instance",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -1438,7 +1438,7 @@
           "401": {
             "description": "Authentication required",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -1448,7 +1448,7 @@
           "404": {
             "description": "Manifestation missing or RLS-hidden (existence-not-leaked)",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -1466,7 +1466,7 @@
               }
             },
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -1476,7 +1476,7 @@
           "422": {
             "description": "Empty patch, rating outside 1-5, or notes over 10000 characters. Evaluated only after If-Match has matched, so a stale tag returns 412 instead",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -1486,7 +1486,7 @@
           "428": {
             "description": "If-Match header absent",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -1494,9 +1494,9 @@
             }
           },
           "default": {
-            "description": "Any other failure is a Problem Details document",
+            "description": "Failures raised by a handler or its extractors are Problem Details documents",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -1562,7 +1562,7 @@
           "400": {
             "description": "Malformed query parameter",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -1572,7 +1572,7 @@
           "401": {
             "description": "Authentication required",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -1582,7 +1582,7 @@
           "403": {
             "description": "Caller is not an admin",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -1590,9 +1590,9 @@
             }
           },
           "default": {
-            "description": "Any other failure is a Problem Details document",
+            "description": "Failures raised by a handler or its extractors are Problem Details documents",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -1646,7 +1646,7 @@
           "401": {
             "description": "Authentication required",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -1656,7 +1656,7 @@
           "403": {
             "description": "Caller is not an admin",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -1664,9 +1664,9 @@
             }
           },
           "default": {
-            "description": "Any other failure is a Problem Details document",
+            "description": "Failures raised by a handler or its extractors are Problem Details documents",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -1720,7 +1720,7 @@
           "401": {
             "description": "Authentication required",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -1730,7 +1730,7 @@
           "403": {
             "description": "Caller is a child account",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -1738,9 +1738,9 @@
             }
           },
           "default": {
-            "description": "Any other failure is a Problem Details document",
+            "description": "Failures raised by a handler or its extractors are Problem Details documents",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -1815,7 +1815,7 @@
           "400": {
             "description": "Malformed query parameter",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -1825,7 +1825,7 @@
           "401": {
             "description": "Authentication required",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -1835,7 +1835,7 @@
           "422": {
             "description": "Empty or over-length q",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -1843,9 +1843,9 @@
             }
           },
           "default": {
-            "description": "Any other failure is a Problem Details document",
+            "description": "Failures raised by a handler or its extractors are Problem Details documents",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -1899,7 +1899,7 @@
           "401": {
             "description": "Authentication required",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -1909,7 +1909,7 @@
           "403": {
             "description": "Caller is not an admin",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -1917,9 +1917,9 @@
             }
           },
           "default": {
-            "description": "Any other failure is a Problem Details document",
+            "description": "Failures raised by a handler or its extractors are Problem Details documents",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -1985,7 +1985,7 @@
           "401": {
             "description": "Authentication required",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -1995,7 +1995,7 @@
           "403": {
             "description": "Caller is a child account",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -2005,7 +2005,7 @@
           "404": {
             "description": "Manifestation missing or RLS-hidden",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -2013,9 +2013,9 @@
             }
           },
           "default": {
-            "description": "Any other failure is a Problem Details document",
+            "description": "Failures raised by a handler or its extractors are Problem Details documents",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -2074,7 +2074,7 @@
           "401": {
             "description": "Authentication required",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -2084,7 +2084,7 @@
           "403": {
             "description": "Caller is a child account",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -2094,7 +2094,7 @@
           "404": {
             "description": "Manifestation missing or RLS-hidden",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -2102,9 +2102,9 @@
             }
           },
           "default": {
-            "description": "Any other failure is a Problem Details document",
+            "description": "Failures raised by a handler or its extractors are Problem Details documents",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -2173,7 +2173,7 @@
           "401": {
             "description": "Authentication required",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -2183,7 +2183,7 @@
           "403": {
             "description": "Caller is a child account",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -2191,9 +2191,9 @@
             }
           },
           "default": {
-            "description": "Any other failure is a Problem Details document",
+            "description": "Failures raised by a handler or its extractors are Problem Details documents",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -2262,7 +2262,7 @@
           "401": {
             "description": "Authentication required",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -2272,7 +2272,7 @@
           "403": {
             "description": "Caller is a child account",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -2282,7 +2282,7 @@
           "404": {
             "description": "Version not found for this manifestation, or RLS-hidden",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -2292,7 +2292,7 @@
           "422": {
             "description": "Stored value fails field parsing",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -2300,9 +2300,9 @@
             }
           },
           "default": {
-            "description": "Any other failure is a Problem Details document",
+            "description": "Failures raised by a handler or its extractors are Problem Details documents",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -2371,7 +2371,7 @@
           "401": {
             "description": "Authentication required",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -2381,7 +2381,7 @@
           "403": {
             "description": "Caller is a child account",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -2391,7 +2391,7 @@
           "422": {
             "description": "Unknown entity_type",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -2399,9 +2399,9 @@
             }
           },
           "default": {
-            "description": "Any other failure is a Problem Details document",
+            "description": "Failures raised by a handler or its extractors are Problem Details documents",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -2470,7 +2470,7 @@
           "401": {
             "description": "Authentication required",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -2480,7 +2480,7 @@
           "403": {
             "description": "Caller is a child account",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -2490,7 +2490,7 @@
           "404": {
             "description": "Version not found for this manifestation, or RLS-hidden",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -2498,9 +2498,9 @@
             }
           },
           "default": {
-            "description": "Any other failure is a Problem Details document",
+            "description": "Failures raised by a handler or its extractors are Problem Details documents",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -2569,7 +2569,7 @@
           "401": {
             "description": "Authentication required",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -2579,7 +2579,7 @@
           "403": {
             "description": "Caller is a child account",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -2589,7 +2589,7 @@
           "404": {
             "description": "Manifestation or version missing, or RLS-hidden",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -2599,7 +2599,7 @@
           "422": {
             "description": "Field cannot be cleared or stored value fails parsing",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -2607,9 +2607,9 @@
             }
           },
           "default": {
-            "description": "Any other failure is a Problem Details document",
+            "description": "Failures raised by a handler or its extractors are Problem Details documents",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -2678,7 +2678,7 @@
           "401": {
             "description": "Authentication required",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -2688,7 +2688,7 @@
           "403": {
             "description": "Caller is a child account",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -2698,7 +2698,7 @@
           "404": {
             "description": "No matching lock",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -2708,7 +2708,7 @@
           "422": {
             "description": "Unknown entity_type",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -2716,9 +2716,9 @@
             }
           },
           "default": {
-            "description": "Any other failure is a Problem Details document",
+            "description": "Failures raised by a handler or its extractors are Problem Details documents",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -2793,7 +2793,7 @@
           "400": {
             "description": "Malformed query parameter",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -2803,7 +2803,7 @@
           "401": {
             "description": "Authentication required",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -2813,7 +2813,7 @@
           "422": {
             "description": "Empty or over-length q",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -2821,9 +2821,9 @@
             }
           },
           "default": {
-            "description": "Any other failure is a Problem Details document",
+            "description": "Failures raised by a handler or its extractors are Problem Details documents",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -2898,7 +2898,7 @@
           "400": {
             "description": "Malformed query parameter",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -2908,7 +2908,7 @@
           "401": {
             "description": "Authentication required",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -2918,7 +2918,7 @@
           "422": {
             "description": "Empty or over-length q",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -2926,9 +2926,9 @@
             }
           },
           "default": {
-            "description": "Any other failure is a Problem Details document",
+            "description": "Failures raised by a handler or its extractors are Problem Details documents",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -2993,7 +2993,7 @@
           "400": {
             "description": "Malformed query parameter",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -3003,7 +3003,7 @@
           "401": {
             "description": "Authentication required",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -3013,7 +3013,7 @@
           "422": {
             "description": "Empty, missing, or over-length query",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -3021,9 +3021,9 @@
             }
           },
           "default": {
-            "description": "Any other failure is a Problem Details document",
+            "description": "Failures raised by a handler or its extractors are Problem Details documents",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -3098,7 +3098,7 @@
           "400": {
             "description": "Malformed query parameter",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -3108,7 +3108,7 @@
           "401": {
             "description": "Authentication required",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -3118,7 +3118,7 @@
           "422": {
             "description": "Empty or over-length q",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -3126,9 +3126,9 @@
             }
           },
           "default": {
-            "description": "Any other failure is a Problem Details document",
+            "description": "Failures raised by a handler or its extractors are Problem Details documents",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -3194,7 +3194,7 @@
           "401": {
             "description": "Authentication required",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -3204,7 +3204,7 @@
           "404": {
             "description": "Series not found, has no linked works, or no work has a visible manifestation under the caller's RLS context (existence-not-leaked)",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -3212,9 +3212,9 @@
             }
           },
           "default": {
-            "description": "Any other failure is a Problem Details document",
+            "description": "Failures raised by a handler or its extractors are Problem Details documents",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -3268,7 +3268,7 @@
           "401": {
             "description": "Authentication required",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -3278,7 +3278,7 @@
           "403": {
             "description": "Caller is not an admin",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -3286,9 +3286,9 @@
             }
           },
           "default": {
-            "description": "Any other failure is a Problem Details document",
+            "description": "Failures raised by a handler or its extractors are Problem Details documents",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -3351,7 +3351,7 @@
           "401": {
             "description": "Authentication required",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -3361,7 +3361,7 @@
           "403": {
             "description": "Caller is not an admin",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -3369,9 +3369,9 @@
             }
           },
           "422": {
-            "description": "Empty patch, malformed body, or invalid field values",
+            "description": "Empty patch or invalid field values",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -3379,9 +3379,9 @@
             }
           },
           "default": {
-            "description": "Any other failure is a Problem Details document",
+            "description": "Failures raised by a handler or its extractors are Problem Details documents",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -3454,7 +3454,7 @@
           "400": {
             "description": "Malformed query parameter",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -3464,7 +3464,7 @@
           "401": {
             "description": "Authentication required",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -3474,7 +3474,7 @@
           "422": {
             "description": "Malformed cursor",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -3482,9 +3482,9 @@
             }
           },
           "default": {
-            "description": "Any other failure is a Problem Details document",
+            "description": "Failures raised by a handler or its extractors are Problem Details documents",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -3554,7 +3554,7 @@
           "401": {
             "description": "Authentication required",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -3564,7 +3564,7 @@
           "403": {
             "description": "Caller is a child account",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -3572,9 +3572,9 @@
             }
           },
           "422": {
-            "description": "Missing body or empty name",
+            "description": "Empty name",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -3582,9 +3582,9 @@
             }
           },
           "default": {
-            "description": "Any other failure is a Problem Details document",
+            "description": "Failures raised by a handler or its extractors are Problem Details documents",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -3673,7 +3673,7 @@
           "400": {
             "description": "Malformed query parameter",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -3683,7 +3683,7 @@
           "401": {
             "description": "Authentication required",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -3693,7 +3693,7 @@
           "404": {
             "description": "Shelf missing or owned by another user (existence-not-leaked)",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -3703,7 +3703,7 @@
           "422": {
             "description": "Malformed cursor",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -3711,9 +3711,9 @@
             }
           },
           "default": {
-            "description": "Any other failure is a Problem Details document",
+            "description": "Failures raised by a handler or its extractors are Problem Details documents",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -3770,7 +3770,7 @@
           "401": {
             "description": "Authentication required",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -3780,7 +3780,7 @@
           "403": {
             "description": "Caller is a child account",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -3790,7 +3790,7 @@
           "404": {
             "description": "Shelf missing or owned by another user (existence-not-leaked)",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -3800,7 +3800,7 @@
           "409": {
             "description": "System shelves cannot be deleted",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -3808,9 +3808,9 @@
             }
           },
           "default": {
-            "description": "Any other failure is a Problem Details document",
+            "description": "Failures raised by a handler or its extractors are Problem Details documents",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -3892,7 +3892,7 @@
           "401": {
             "description": "Authentication required",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -3902,7 +3902,7 @@
           "403": {
             "description": "Caller is a child account",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -3912,7 +3912,7 @@
           "404": {
             "description": "Shelf missing or owned by another user (existence-not-leaked)",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -3922,7 +3922,7 @@
           "409": {
             "description": "System shelves cannot be renamed",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -3930,9 +3930,9 @@
             }
           },
           "422": {
-            "description": "Missing body or empty name",
+            "description": "Empty name",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -3940,9 +3940,9 @@
             }
           },
           "default": {
-            "description": "Any other failure is a Problem Details document",
+            "description": "Failures raised by a handler or its extractors are Problem Details documents",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -4028,7 +4028,7 @@
           "401": {
             "description": "Authentication required",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -4038,7 +4038,7 @@
           "404": {
             "description": "Shelf missing or owned by another user (existence-not-leaked)",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -4048,7 +4048,7 @@
           "412": {
             "description": "If-Match does not match the shelf's current updated_at",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -4058,7 +4058,7 @@
           "422": {
             "description": "Malformed If-Match, or items list does not exactly cover the shelf",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -4068,7 +4068,7 @@
           "428": {
             "description": "If-Match header absent",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -4076,9 +4076,9 @@
             }
           },
           "default": {
-            "description": "Any other failure is a Problem Details document",
+            "description": "Failures raised by a handler or its extractors are Problem Details documents",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -4153,7 +4153,7 @@
           "401": {
             "description": "Authentication required",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -4163,17 +4163,7 @@
           "404": {
             "description": "Shelf missing / not owned, or manifestation not visible to the caller",
             "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Missing or malformed body",
-            "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -4181,9 +4171,9 @@
             }
           },
           "default": {
-            "description": "Any other failure is a Problem Details document",
+            "description": "Failures raised by a handler or its extractors are Problem Details documents",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -4260,7 +4250,7 @@
           "401": {
             "description": "Authentication required",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -4270,7 +4260,7 @@
           "404": {
             "description": "Shelf missing / not owned, or item not on the shelf",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -4278,9 +4268,9 @@
             }
           },
           "default": {
-            "description": "Any other failure is a Problem Details document",
+            "description": "Failures raised by a handler or its extractors are Problem Details documents",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -4355,7 +4345,7 @@
           "400": {
             "description": "Malformed query parameter",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -4365,7 +4355,7 @@
           "401": {
             "description": "Authentication required",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -4375,7 +4365,7 @@
           "422": {
             "description": "Empty or over-length q",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -4383,9 +4373,9 @@
             }
           },
           "default": {
-            "description": "Any other failure is a Problem Details document",
+            "description": "Failures raised by a handler or its extractors are Problem Details documents",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -4442,7 +4432,7 @@
           "401": {
             "description": "Authentication required",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -4450,9 +4440,9 @@
             }
           },
           "default": {
-            "description": "Any other failure is a Problem Details document",
+            "description": "Failures raised by a handler or its extractors are Problem Details documents",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -4514,7 +4504,7 @@
           "401": {
             "description": "Authentication required",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -4524,7 +4514,7 @@
           "403": {
             "description": "Caller's credential lacks the write scope, or a requested scope exceeds the caller's role ceiling",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -4534,7 +4524,7 @@
           "422": {
             "description": "Name empty / longer than 255 characters after trim, scope set empty, expires_in_days not one of 30/60/90/365, or the per-user cap of 10 active tokens is reached",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -4542,9 +4532,9 @@
             }
           },
           "default": {
-            "description": "Any other failure is a Problem Details document",
+            "description": "Failures raised by a handler or its extractors are Problem Details documents",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -4603,7 +4593,7 @@
           "401": {
             "description": "Authentication required",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -4613,7 +4603,7 @@
           "403": {
             "description": "Caller's credential lacks the write scope",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -4623,7 +4613,7 @@
           "404": {
             "description": "Token does not exist, belongs to another user, or is already revoked",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -4631,9 +4621,9 @@
             }
           },
           "default": {
-            "description": "Any other failure is a Problem Details document",
+            "description": "Failures raised by a handler or its extractors are Problem Details documents",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -4690,7 +4680,7 @@
           "401": {
             "description": "Authentication required",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -4700,7 +4690,7 @@
           "403": {
             "description": "Caller is not an admin",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -4708,9 +4698,9 @@
             }
           },
           "default": {
-            "description": "Any other failure is a Problem Details document",
+            "description": "Failures raised by a handler or its extractors are Problem Details documents",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -4772,7 +4762,7 @@
           "401": {
             "description": "Authentication required",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -4782,7 +4772,7 @@
           "403": {
             "description": "Caller is not an admin",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -4792,7 +4782,7 @@
           "409": {
             "description": "Email already in use",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -4802,7 +4792,7 @@
           "422": {
             "description": "Invalid email, or password rejected by the policy",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -4810,9 +4800,9 @@
             }
           },
           "default": {
-            "description": "Any other failure is a Problem Details document",
+            "description": "Failures raised by a handler or its extractors are Problem Details documents",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -4889,7 +4879,7 @@
           "401": {
             "description": "Authentication required",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -4899,7 +4889,7 @@
           "403": {
             "description": "Caller is not an admin",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -4909,7 +4899,7 @@
           "404": {
             "description": "Target user does not exist",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -4919,7 +4909,7 @@
           "422": {
             "description": "Null/empty display_name, malformed email, or email already in use",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -4927,9 +4917,9 @@
             }
           },
           "default": {
-            "description": "Any other failure is a Problem Details document",
+            "description": "Failures raised by a handler or its extractors are Problem Details documents",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -5005,7 +4995,7 @@
           "401": {
             "description": "Authentication required",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -5015,7 +5005,7 @@
           "403": {
             "description": "Caller is not an admin",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -5025,7 +5015,7 @@
           "404": {
             "description": "Target user does not exist",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -5035,7 +5025,7 @@
           "422": {
             "description": "Cannot disable your own account, or disabling would leave zero enabled admins",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -5043,9 +5033,9 @@
             }
           },
           "default": {
-            "description": "Any other failure is a Problem Details document",
+            "description": "Failures raised by a handler or its extractors are Problem Details documents",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -5121,7 +5111,7 @@
           "401": {
             "description": "Authentication required",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -5131,7 +5121,7 @@
           "403": {
             "description": "Caller is not an admin",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -5141,7 +5131,7 @@
           "404": {
             "description": "Target user does not exist",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -5151,7 +5141,7 @@
           "422": {
             "description": "Marking the last admin as child would leave zero admins, or the request body is malformed",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -5159,9 +5149,9 @@
             }
           },
           "default": {
-            "description": "Any other failure is a Problem Details document",
+            "description": "Failures raised by a handler or its extractors are Problem Details documents",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -5230,7 +5220,7 @@
           "401": {
             "description": "Authentication required",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -5240,7 +5230,7 @@
           "403": {
             "description": "Caller is not an admin",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -5250,7 +5240,7 @@
           "404": {
             "description": "Target user does not exist",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -5260,7 +5250,7 @@
           "422": {
             "description": "Password rejected by the policy",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -5268,9 +5258,9 @@
             }
           },
           "default": {
-            "description": "Any other failure is a Problem Details document",
+            "description": "Failures raised by a handler or its extractors are Problem Details documents",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -5346,7 +5336,7 @@
           "401": {
             "description": "Authentication required",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -5356,7 +5346,7 @@
           "403": {
             "description": "Caller is not an admin",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -5366,7 +5356,7 @@
           "404": {
             "description": "Target user does not exist",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -5376,7 +5366,7 @@
           "422": {
             "description": "Demotion would leave zero admins, the role change conflicts with the target's child status, or the request body is malformed / contains an unknown role value",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -5384,9 +5374,9 @@
             }
           },
           "default": {
-            "description": "Any other failure is a Problem Details document",
+            "description": "Failures raised by a handler or its extractors are Problem Details documents",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -5452,7 +5442,7 @@
           "401": {
             "description": "Authentication required",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -5462,7 +5452,7 @@
           "404": {
             "description": "Not found or RLS-hidden",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -5470,9 +5460,9 @@
             }
           },
           "default": {
-            "description": "Any other failure is a Problem Details document",
+            "description": "Failures raised by a handler or its extractors are Problem Details documents",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -5541,7 +5531,7 @@
           "401": {
             "description": "Authentication required",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -5551,7 +5541,7 @@
           "403": {
             "description": "Caller is a child account",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -5559,9 +5549,9 @@
             }
           },
           "default": {
-            "description": "Any other failure is a Problem Details document",
+            "description": "Failures raised by a handler or its extractors are Problem Details documents",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -5628,7 +5618,7 @@
           "400": {
             "description": "Malformed query parameter",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -5638,7 +5628,7 @@
           "401": {
             "description": "Anti-forgery state missing/mismatched or ID-token validation failed",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -5646,9 +5636,9 @@
             }
           },
           "default": {
-            "description": "Any other failure is a Problem Details document",
+            "description": "Failures raised by a handler or its extractors are Problem Details documents",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -5686,7 +5676,7 @@
           "404": {
             "description": "Local authentication is disabled",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -5696,7 +5686,7 @@
           "429": {
             "description": "Too many requests",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -5704,9 +5694,9 @@
             }
           },
           "default": {
-            "description": "Any other failure is a Problem Details document",
+            "description": "Failures raised by a handler or its extractors are Problem Details documents",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -5744,7 +5734,7 @@
           "404": {
             "description": "Local authentication is disabled on this instance",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -5754,7 +5744,7 @@
           "422": {
             "description": "Invalid credentials (generic; identical for unknown email and wrong password)",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -5764,7 +5754,7 @@
           "429": {
             "description": "Too many login attempts",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -5772,9 +5762,9 @@
             }
           },
           "default": {
-            "description": "Any other failure is a Problem Details document",
+            "description": "Failures raised by a handler or its extractors are Problem Details documents",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -5802,7 +5792,7 @@
           "403": {
             "description": "X-CSRF-Token header present but does not match the session token",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -5812,7 +5802,7 @@
           "428": {
             "description": "X-CSRF-Token header required for a session-authenticated caller",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -5820,9 +5810,9 @@
             }
           },
           "default": {
-            "description": "Any other failure is a Problem Details document",
+            "description": "Failures raised by a handler or its extractors are Problem Details documents",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -5857,7 +5847,7 @@
           "401": {
             "description": "Authentication required",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -5865,9 +5855,9 @@
             }
           },
           "default": {
-            "description": "Any other failure is a Problem Details document",
+            "description": "Failures raised by a handler or its extractors are Problem Details documents",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -5899,7 +5889,7 @@
           "401": {
             "description": "Authentication required",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -5907,9 +5897,9 @@
             }
           },
           "default": {
-            "description": "Any other failure is a Problem Details document",
+            "description": "Failures raised by a handler or its extractors are Problem Details documents",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -5972,7 +5962,7 @@
           "401": {
             "description": "Authentication required",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -5980,9 +5970,9 @@
             }
           },
           "422": {
-            "description": "Empty body, unknown density or view, or an out-of-range sort stack or column key",
+            "description": "Unknown density or view, or an out-of-range sort",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -5990,9 +5980,9 @@
             }
           },
           "default": {
-            "description": "Any other failure is a Problem Details document",
+            "description": "Failures raised by a handler or its extractors are Problem Details documents",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -6056,7 +6046,7 @@
           "401": {
             "description": "Authentication required",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -6066,7 +6056,7 @@
           "422": {
             "description": "Unknown theme_preference value",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -6074,9 +6064,9 @@
             }
           },
           "default": {
-            "description": "Any other failure is a Problem Details document",
+            "description": "Failures raised by a handler or its extractors are Problem Details documents",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -6101,7 +6091,7 @@
           "404": {
             "description": "OIDC is not configured on this instance",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -6109,9 +6099,9 @@
             }
           },
           "default": {
-            "description": "Any other failure is a Problem Details document",
+            "description": "Failures raised by a handler or its extractors are Problem Details documents",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -6149,7 +6139,7 @@
           "404": {
             "description": "Self-registration is disabled on this instance",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -6159,7 +6149,7 @@
           "409": {
             "description": "Email already in use",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -6169,7 +6159,7 @@
           "422": {
             "description": "Validation failed",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -6179,7 +6169,7 @@
           "429": {
             "description": "Too many requests",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -6187,9 +6177,9 @@
             }
           },
           "default": {
-            "description": "Any other failure is a Problem Details document",
+            "description": "Failures raised by a handler or its extractors are Problem Details documents",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -6227,7 +6217,7 @@
           "404": {
             "description": "Local authentication is disabled",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -6237,7 +6227,7 @@
           "422": {
             "description": "Invalid or expired reset request (generic)",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -6247,7 +6237,7 @@
           "429": {
             "description": "Too many requests",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -6255,9 +6245,9 @@
             }
           },
           "default": {
-            "description": "Any other failure is a Problem Details document",
+            "description": "Failures raised by a handler or its extractors are Problem Details documents",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -6295,7 +6285,7 @@
           "409": {
             "description": "An administrator already exists",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -6305,7 +6295,7 @@
           "422": {
             "description": "Validation failed",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -6315,7 +6305,7 @@
           "429": {
             "description": "Too many requests",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -6323,9 +6313,9 @@
             }
           },
           "default": {
-            "description": "Any other failure is a Problem Details document",
+            "description": "Failures raised by a handler or its extractors are Problem Details documents",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -6358,9 +6348,9 @@
             }
           },
           "default": {
-            "description": "Any other failure is a Problem Details document",
+            "description": "Failures raised by a handler or its extractors are Problem Details documents",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -6393,9 +6383,9 @@
             }
           },
           "default": {
-            "description": "Any other failure is a Problem Details document",
+            "description": "Failures raised by a handler or its extractors are Problem Details documents",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -6430,7 +6420,7 @@
           "503": {
             "description": "Database unreachable",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -6438,9 +6428,9 @@
             }
           },
           "default": {
-            "description": "Any other failure is a Problem Details document",
+            "description": "Failures raised by a handler or its extractors are Problem Details documents",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -6475,7 +6465,7 @@
           "401": {
             "description": "Basic authentication required (WWW-Authenticate: Basic)",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -6483,9 +6473,9 @@
             }
           },
           "default": {
-            "description": "Any other failure is a Problem Details document",
+            "description": "Failures raised by a handler or its extractors are Problem Details documents",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -6530,7 +6520,7 @@
           "401": {
             "description": "Basic authentication required (WWW-Authenticate: Basic)",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -6540,7 +6530,7 @@
           "404": {
             "description": "Manifestation missing, RLS-hidden, or coverless",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -6548,9 +6538,9 @@
             }
           },
           "default": {
-            "description": "Any other failure is a Problem Details document",
+            "description": "Failures raised by a handler or its extractors are Problem Details documents",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -6595,7 +6585,7 @@
           "401": {
             "description": "Basic authentication required (WWW-Authenticate: Basic)",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -6605,7 +6595,7 @@
           "404": {
             "description": "Manifestation missing, RLS-hidden, or coverless",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -6613,9 +6603,9 @@
             }
           },
           "default": {
-            "description": "Any other failure is a Problem Details document",
+            "description": "Failures raised by a handler or its extractors are Problem Details documents",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -6660,7 +6650,7 @@
           "401": {
             "description": "Basic authentication required (WWW-Authenticate: Basic)",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -6670,7 +6660,7 @@
           "403": {
             "description": "File path escapes the library root",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -6680,7 +6670,7 @@
           "404": {
             "description": "Manifestation missing, RLS-hidden, or file absent on disk",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -6688,9 +6678,9 @@
             }
           },
           "default": {
-            "description": "Any other failure is a Problem Details document",
+            "description": "Failures raised by a handler or its extractors are Problem Details documents",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -6727,7 +6717,7 @@
           "401": {
             "description": "Basic authentication required (WWW-Authenticate: Basic)",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -6735,9 +6725,9 @@
             }
           },
           "default": {
-            "description": "Any other failure is a Problem Details document",
+            "description": "Failures raised by a handler or its extractors are Problem Details documents",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -6785,7 +6775,7 @@
           "400": {
             "description": "Malformed query parameter",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -6795,7 +6785,7 @@
           "401": {
             "description": "Basic authentication required (WWW-Authenticate: Basic)",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -6805,7 +6795,7 @@
           "422": {
             "description": "Malformed cursor",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -6813,9 +6803,9 @@
             }
           },
           "default": {
-            "description": "Any other failure is a Problem Details document",
+            "description": "Failures raised by a handler or its extractors are Problem Details documents",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -6873,7 +6863,7 @@
           "400": {
             "description": "Malformed query parameter",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -6883,7 +6873,7 @@
           "401": {
             "description": "Basic authentication required (WWW-Authenticate: Basic)",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -6893,7 +6883,7 @@
           "422": {
             "description": "Malformed cursor",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -6901,9 +6891,9 @@
             }
           },
           "default": {
-            "description": "Any other failure is a Problem Details document",
+            "description": "Failures raised by a handler or its extractors are Problem Details documents",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -6951,7 +6941,7 @@
           "400": {
             "description": "Malformed query parameter",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -6961,7 +6951,7 @@
           "401": {
             "description": "Basic authentication required (WWW-Authenticate: Basic)",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -6971,7 +6961,7 @@
           "422": {
             "description": "Malformed cursor",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -6979,9 +6969,9 @@
             }
           },
           "default": {
-            "description": "Any other failure is a Problem Details document",
+            "description": "Failures raised by a handler or its extractors are Problem Details documents",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -7018,7 +7008,7 @@
           "401": {
             "description": "Basic authentication required (WWW-Authenticate: Basic)",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -7026,9 +7016,9 @@
             }
           },
           "default": {
-            "description": "Any other failure is a Problem Details document",
+            "description": "Failures raised by a handler or its extractors are Problem Details documents",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -7076,7 +7066,7 @@
           "400": {
             "description": "Malformed query parameter",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -7086,7 +7076,7 @@
           "401": {
             "description": "Basic authentication required (WWW-Authenticate: Basic)",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -7094,9 +7084,9 @@
             }
           },
           "default": {
-            "description": "Any other failure is a Problem Details document",
+            "description": "Failures raised by a handler or its extractors are Problem Details documents",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -7144,7 +7134,7 @@
           "400": {
             "description": "Malformed query parameter",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -7154,7 +7144,7 @@
           "401": {
             "description": "Basic authentication required (WWW-Authenticate: Basic)",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -7164,7 +7154,7 @@
           "422": {
             "description": "Malformed cursor",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -7172,9 +7162,9 @@
             }
           },
           "default": {
-            "description": "Any other failure is a Problem Details document",
+            "description": "Failures raised by a handler or its extractors are Problem Details documents",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -7232,7 +7222,7 @@
           "400": {
             "description": "Malformed query parameter",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -7242,7 +7232,7 @@
           "401": {
             "description": "Basic authentication required (WWW-Authenticate: Basic)",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -7252,7 +7242,7 @@
           "422": {
             "description": "Malformed cursor",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -7260,9 +7250,9 @@
             }
           },
           "default": {
-            "description": "Any other failure is a Problem Details document",
+            "description": "Failures raised by a handler or its extractors are Problem Details documents",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -7311,7 +7301,7 @@
           "401": {
             "description": "Basic authentication required (WWW-Authenticate: Basic)",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -7321,7 +7311,7 @@
           "404": {
             "description": "Shelf missing or not owned by the caller",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -7329,9 +7319,9 @@
             }
           },
           "default": {
-            "description": "Any other failure is a Problem Details document",
+            "description": "Failures raised by a handler or its extractors are Problem Details documents",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -7389,7 +7379,7 @@
           "400": {
             "description": "Malformed query parameter",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -7399,7 +7389,7 @@
           "401": {
             "description": "Basic authentication required (WWW-Authenticate: Basic)",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -7409,7 +7399,7 @@
           "404": {
             "description": "Shelf missing or not owned by the caller",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -7419,7 +7409,7 @@
           "422": {
             "description": "Malformed cursor",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -7427,9 +7417,9 @@
             }
           },
           "default": {
-            "description": "Any other failure is a Problem Details document",
+            "description": "Failures raised by a handler or its extractors are Problem Details documents",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -7497,7 +7487,7 @@
           "400": {
             "description": "Malformed query parameter",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -7507,7 +7497,7 @@
           "401": {
             "description": "Basic authentication required (WWW-Authenticate: Basic)",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -7517,7 +7507,7 @@
           "404": {
             "description": "Shelf missing or not owned by the caller",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -7527,7 +7517,7 @@
           "422": {
             "description": "Malformed cursor",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -7535,9 +7525,9 @@
             }
           },
           "default": {
-            "description": "Any other failure is a Problem Details document",
+            "description": "Failures raised by a handler or its extractors are Problem Details documents",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -7595,7 +7585,7 @@
           "400": {
             "description": "Malformed query parameter",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -7605,7 +7595,7 @@
           "401": {
             "description": "Basic authentication required (WWW-Authenticate: Basic)",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -7615,7 +7605,7 @@
           "404": {
             "description": "Shelf missing or not owned by the caller",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -7625,7 +7615,7 @@
           "422": {
             "description": "Malformed cursor",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -7633,9 +7623,9 @@
             }
           },
           "default": {
-            "description": "Any other failure is a Problem Details document",
+            "description": "Failures raised by a handler or its extractors are Problem Details documents",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -7684,7 +7674,7 @@
           "401": {
             "description": "Basic authentication required (WWW-Authenticate: Basic)",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -7694,7 +7684,7 @@
           "404": {
             "description": "Shelf missing or not owned by the caller",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -7702,9 +7692,9 @@
             }
           },
           "default": {
-            "description": "Any other failure is a Problem Details document",
+            "description": "Failures raised by a handler or its extractors are Problem Details documents",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -7762,7 +7752,7 @@
           "400": {
             "description": "Malformed query parameter",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -7772,7 +7762,7 @@
           "401": {
             "description": "Basic authentication required (WWW-Authenticate: Basic)",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -7782,7 +7772,7 @@
           "404": {
             "description": "Shelf missing or not owned by the caller",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -7790,9 +7780,9 @@
             }
           },
           "default": {
-            "description": "Any other failure is a Problem Details document",
+            "description": "Failures raised by a handler or its extractors are Problem Details documents",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -7850,7 +7840,7 @@
           "400": {
             "description": "Malformed query parameter",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -7860,7 +7850,7 @@
           "401": {
             "description": "Basic authentication required (WWW-Authenticate: Basic)",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -7870,7 +7860,7 @@
           "404": {
             "description": "Shelf missing or not owned by the caller",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -7880,7 +7870,7 @@
           "422": {
             "description": "Malformed cursor",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -7888,9 +7878,9 @@
             }
           },
           "default": {
-            "description": "Any other failure is a Problem Details document",
+            "description": "Failures raised by a handler or its extractors are Problem Details documents",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -7958,7 +7948,7 @@
           "400": {
             "description": "Malformed query parameter",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -7968,7 +7958,7 @@
           "401": {
             "description": "Basic authentication required (WWW-Authenticate: Basic)",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -7978,7 +7968,7 @@
           "404": {
             "description": "Shelf missing or not owned by the caller",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -7988,7 +7978,7 @@
           "422": {
             "description": "Malformed cursor",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -7996,9 +7986,9 @@
             }
           },
           "default": {
-            "description": "Any other failure is a Problem Details document",
+            "description": "Failures raised by a handler or its extractors are Problem Details documents",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }

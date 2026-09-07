@@ -83,8 +83,8 @@ impl PreferencesResponse {
     security(("session_cookie" = ["read"]), ("device_token_bearer" = ["read"]), ("oidc_jwt_bearer" = ["read"]), ("opds_basic" = ["read"])),
     responses(
         (status = 200, description = "Caller's overrides plus the installation defaults; a null group means the default applies", body = PreferencesResponse),
-        (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails),
-        (status = "default", description = "Any other failure is a Problem Details document", body = crate::openapi::ProblemDetails),
+        (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
+        (status = "default", description = "Failures raised by a handler or its extractors are Problem Details documents", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
     )
 )]
 async fn get_preferences(
@@ -197,9 +197,9 @@ impl UpdatePreferencesRequest {
     request_body(content = UpdatePreferencesRequest, description = "RFC 7396 JSON Merge Patch: absent groups are unchanged, `null` resets a group to the installation default"),
     responses(
         (status = 200, description = "Preferences after the merge, in the same shape as the read", body = PreferencesResponse),
-        (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails),
-        (status = 422, description = "Unknown density or view, or an out-of-range sort", body = crate::openapi::ProblemDetails),
-        (status = "default", description = "Any other failure is a Problem Details document", body = crate::openapi::ProblemDetails),
+        (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
+        (status = 422, description = "Unknown density or view, or an out-of-range sort", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
+        (status = "default", description = "Failures raised by a handler or its extractors are Problem Details documents", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
     )
 )]
 async fn patch_preferences(

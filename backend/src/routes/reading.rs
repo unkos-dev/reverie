@@ -134,9 +134,9 @@ impl ReadingStateRow {
     responses(
         (status = 200, description = "Caller's reading state; all-null fields mean unread (no row yet)", body = ReadingState,
          headers(("ETag" = String, description = "Strong entity-tag hashing every PATCH-modifiable field; echo as If-Match on a protected write"))),
-        (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails),
-        (status = 404, description = "Manifestation missing or RLS-hidden (existence-not-leaked)", body = crate::openapi::ProblemDetails),
-        (status = "default", description = "Any other failure is a Problem Details document", body = crate::openapi::ProblemDetails)
+        (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
+        (status = 404, description = "Manifestation missing or RLS-hidden (existence-not-leaked)", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
+        (status = "default", description = "Failures raised by a handler or its extractors are Problem Details documents", body = crate::openapi::ProblemDetails, content_type = "application/problem+json")
     )
 )]
 async fn get_reading(
@@ -291,14 +291,14 @@ fn apply_patch(existing: ReadingStateRow, req: &UpdateReadingRequest) -> Reading
     responses(
         (status = 200, description = "Reading state after the patch and any transition stamps", body = ReadingState,
          headers(("ETag" = String, description = "Strong entity-tag hashing every PATCH-modifiable field, reflecting the state after this write"))),
-        (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails),
-        (status = 404, description = "Manifestation missing or RLS-hidden (existence-not-leaked)", body = crate::openapi::ProblemDetails),
-        (status = 412, description = "If-Match does not match the caller's current reading-state ETag", body = crate::openapi::ProblemDetails,
+        (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
+        (status = 404, description = "Manifestation missing or RLS-hidden (existence-not-leaked)", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
+        (status = 412, description = "If-Match does not match the caller's current reading-state ETag", body = crate::openapi::ProblemDetails, content_type = "application/problem+json",
          headers(("ETag" = String, description = "Current entity-tag, so the caller can resync without a follow-up GET"))),
-        (status = 400, description = "If-Match is malformed, or carries a form this API refuses by policy: the * wildcard, an entity-tag list, a weak tag, or a repeated header instance", body = crate::openapi::ProblemDetails),
-        (status = 422, description = "Empty patch, rating outside 1-5, or notes over 10000 characters. Evaluated only after If-Match has matched, so a stale tag returns 412 instead", body = crate::openapi::ProblemDetails),
-        (status = 428, description = "If-Match header absent", body = crate::openapi::ProblemDetails),
-        (status = "default", description = "Any other failure is a Problem Details document", body = crate::openapi::ProblemDetails)
+        (status = 400, description = "If-Match is malformed, or carries a form this API refuses by policy: the * wildcard, an entity-tag list, a weak tag, or a repeated header instance", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
+        (status = 422, description = "Empty patch, rating outside 1-5, or notes over 10000 characters. Evaluated only after If-Match has matched, so a stale tag returns 412 instead", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
+        (status = 428, description = "If-Match header absent", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
+        (status = "default", description = "Failures raised by a handler or its extractors are Problem Details documents", body = crate::openapi::ProblemDetails, content_type = "application/problem+json")
     )
 )]
 async fn patch_reading(

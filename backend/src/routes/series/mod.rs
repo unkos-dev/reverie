@@ -56,9 +56,9 @@ pub fn router() -> OpenApiRouter<AppState> {
     security(("session_cookie" = ["read"]), ("device_token_bearer" = ["read"]), ("oidc_jwt_bearer" = ["read"]), ("opds_basic" = ["read"])),
     responses(
         (status = 200, description = "Series identity + ordered works with visible manifestations", body = SeriesDetail),
-        (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails),
-        (status = 404, description = "Series not found, has no linked works, or no work has a visible manifestation under the caller's RLS context (existence-not-leaked)", body = crate::openapi::ProblemDetails),
-        (status = "default", description = "Any other failure is a Problem Details document", body = crate::openapi::ProblemDetails),
+        (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
+        (status = 404, description = "Series not found, has no linked works, or no work has a visible manifestation under the caller's RLS context (existence-not-leaked)", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
+        (status = "default", description = "Failures raised by a handler or its extractors are Problem Details documents", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
     )
 )]
 async fn detail(

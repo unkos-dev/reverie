@@ -123,9 +123,9 @@ const MAX_LISTED_USERS: i64 = 500;
     security(("session_cookie" = ["admin"]), ("device_token_bearer" = ["admin"]), ("oidc_jwt_bearer" = ["admin"]), ("opds_basic" = ["admin"])),
     responses(
         (status = 200, description = "All users, oldest first, defensively capped at 500 rows. Admin only.", body = [UserResponse]),
-        (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails),
-        (status = 403, description = "Caller is not an admin", body = crate::openapi::ProblemDetails),
-        (status = "default", description = "Any other failure is a Problem Details document", body = crate::openapi::ProblemDetails)
+        (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
+        (status = 403, description = "Caller is not an admin", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
+        (status = "default", description = "Failures raised by a handler or its extractors are Problem Details documents", body = crate::openapi::ProblemDetails, content_type = "application/problem+json")
     )
 )]
 async fn list_users(
@@ -193,11 +193,11 @@ struct UpdateRoleRequest {
     request_body = UpdateRoleRequest,
     responses(
         (status = 200, description = "Updated user. The target's active sessions are invalidated. Admin only.", body = UserResponse),
-        (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails),
-        (status = 403, description = "Caller is not an admin", body = crate::openapi::ProblemDetails),
-        (status = 404, description = "Target user does not exist", body = crate::openapi::ProblemDetails),
-        (status = 422, description = "Demotion would leave zero admins, the role change conflicts with the target's child status, or the request body is malformed / contains an unknown role value", body = crate::openapi::ProblemDetails),
-        (status = "default", description = "Any other failure is a Problem Details document", body = crate::openapi::ProblemDetails)
+        (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
+        (status = 403, description = "Caller is not an admin", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
+        (status = 404, description = "Target user does not exist", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
+        (status = 422, description = "Demotion would leave zero admins, the role change conflicts with the target's child status, or the request body is malformed / contains an unknown role value", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
+        (status = "default", description = "Failures raised by a handler or its extractors are Problem Details documents", body = crate::openapi::ProblemDetails, content_type = "application/problem+json")
     )
 )]
 async fn update_role(
@@ -318,11 +318,11 @@ struct UpdateChildStatusRequest {
     request_body = UpdateChildStatusRequest,
     responses(
         (status = 200, description = "Updated user. Enabling child status also sets role to `child`; disabling reverts `child` to `adult` (other roles unchanged). The target's active sessions are invalidated. Admin only.", body = UserResponse),
-        (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails),
-        (status = 403, description = "Caller is not an admin", body = crate::openapi::ProblemDetails),
-        (status = 404, description = "Target user does not exist", body = crate::openapi::ProblemDetails),
-        (status = 422, description = "Marking the last admin as child would leave zero admins, or the request body is malformed", body = crate::openapi::ProblemDetails),
-        (status = "default", description = "Any other failure is a Problem Details document", body = crate::openapi::ProblemDetails)
+        (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
+        (status = 403, description = "Caller is not an admin", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
+        (status = 404, description = "Target user does not exist", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
+        (status = 422, description = "Marking the last admin as child would leave zero admins, or the request body is malformed", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
+        (status = "default", description = "Failures raised by a handler or its extractors are Problem Details documents", body = crate::openapi::ProblemDetails, content_type = "application/problem+json")
     )
 )]
 async fn update_child_status(
@@ -442,11 +442,11 @@ struct CreateUserRequest {
     request_body = CreateUserRequest,
     responses(
         (status = 201, description = "Created user. Admin only.", body = UserResponse),
-        (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails),
-        (status = 403, description = "Caller is not an admin", body = crate::openapi::ProblemDetails),
-        (status = 409, description = "Email already in use", body = crate::openapi::ProblemDetails),
-        (status = 422, description = "Invalid email, or password rejected by the policy", body = crate::openapi::ProblemDetails),
-        (status = "default", description = "Any other failure is a Problem Details document", body = crate::openapi::ProblemDetails)
+        (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
+        (status = 403, description = "Caller is not an admin", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
+        (status = 409, description = "Email already in use", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
+        (status = 422, description = "Invalid email, or password rejected by the policy", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
+        (status = "default", description = "Failures raised by a handler or its extractors are Problem Details documents", body = crate::openapi::ProblemDetails, content_type = "application/problem+json")
     )
 )]
 async fn create_user(
@@ -526,11 +526,11 @@ struct AccountStatusRequest {
     request_body = AccountStatusRequest,
     responses(
         (status = 200, description = "Updated user. Disabling invalidates the target's sessions. Admin only.", body = UserResponse),
-        (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails),
-        (status = 403, description = "Caller is not an admin", body = crate::openapi::ProblemDetails),
-        (status = 404, description = "Target user does not exist", body = crate::openapi::ProblemDetails),
-        (status = 422, description = "Cannot disable your own account, or disabling would leave zero enabled admins", body = crate::openapi::ProblemDetails),
-        (status = "default", description = "Any other failure is a Problem Details document", body = crate::openapi::ProblemDetails)
+        (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
+        (status = 403, description = "Caller is not an admin", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
+        (status = 404, description = "Target user does not exist", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
+        (status = 422, description = "Cannot disable your own account, or disabling would leave zero enabled admins", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
+        (status = "default", description = "Failures raised by a handler or its extractors are Problem Details documents", body = crate::openapi::ProblemDetails, content_type = "application/problem+json")
     )
 )]
 async fn update_account_status(
@@ -654,11 +654,11 @@ struct AdminPasswordResetRequest {
     request_body = AdminPasswordResetRequest,
     responses(
         (status = 200, description = "Password reset; the target's sessions are invalidated. Admin only."),
-        (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails),
-        (status = 403, description = "Caller is not an admin", body = crate::openapi::ProblemDetails),
-        (status = 404, description = "Target user does not exist", body = crate::openapi::ProblemDetails),
-        (status = 422, description = "Password rejected by the policy", body = crate::openapi::ProblemDetails),
-        (status = "default", description = "Any other failure is a Problem Details document", body = crate::openapi::ProblemDetails)
+        (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
+        (status = 403, description = "Caller is not an admin", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
+        (status = 404, description = "Target user does not exist", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
+        (status = 422, description = "Password rejected by the policy", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
+        (status = "default", description = "Failures raised by a handler or its extractors are Problem Details documents", body = crate::openapi::ProblemDetails, content_type = "application/problem+json")
     )
 )]
 async fn admin_reset_password(
@@ -748,9 +748,9 @@ struct ChangePasswordRequest {
     request_body = ChangePasswordRequest,
     responses(
         (status = 200, description = "Password changed; all of the caller's sessions are invalidated."),
-        (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails),
-        (status = 422, description = "Wrong current password, new password rejected by the policy, or no local credential", body = crate::openapi::ProblemDetails),
-        (status = "default", description = "Any other failure is a Problem Details document", body = crate::openapi::ProblemDetails)
+        (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
+        (status = 422, description = "Wrong current password, new password rejected by the policy, or no local credential", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
+        (status = "default", description = "Failures raised by a handler or its extractors are Problem Details documents", body = crate::openapi::ProblemDetails, content_type = "application/problem+json")
     )
 )]
 async fn change_own_password(
@@ -915,11 +915,11 @@ fn validate_patch_email(raw: &str, admin_id: Uuid, target_user_id: Uuid) -> Resu
     request_body(content = UpdateUserRequest, description = "RFC 7396 JSON Merge Patch: absent fields are unchanged; explicit `null` clears `email` and is rejected for `display_name`"),
     responses(
         (status = 200, description = "Updated user. Does not invalidate the target's sessions (neither field gates access). Admin only.", body = UserResponse),
-        (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails),
-        (status = 403, description = "Caller is not an admin", body = crate::openapi::ProblemDetails),
-        (status = 404, description = "Target user does not exist", body = crate::openapi::ProblemDetails),
-        (status = 422, description = "Null/empty display_name, malformed email, or email already in use", body = crate::openapi::ProblemDetails),
-        (status = "default", description = "Any other failure is a Problem Details document", body = crate::openapi::ProblemDetails)
+        (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
+        (status = 403, description = "Caller is not an admin", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
+        (status = 404, description = "Target user does not exist", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
+        (status = 422, description = "Null/empty display_name, malformed email, or email already in use", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
+        (status = "default", description = "Failures raised by a handler or its extractors are Problem Details documents", body = crate::openapi::ProblemDetails, content_type = "application/problem+json")
     )
 )]
 async fn update_user(

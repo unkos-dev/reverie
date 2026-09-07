@@ -71,9 +71,9 @@ struct SettingsResponse {
     security(("session_cookie" = ["admin"]), ("device_token_bearer" = ["admin"]), ("oidc_jwt_bearer" = ["admin"]), ("opds_basic" = ["admin"])),
     responses(
         (status = 200, description = "Current persisted settings plus reload health. Admin only.", body = SettingsResponse),
-        (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails),
-        (status = 403, description = "Caller is not an admin", body = crate::openapi::ProblemDetails),
-        (status = "default", description = "Any other failure is a Problem Details document", body = crate::openapi::ProblemDetails),
+        (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
+        (status = 403, description = "Caller is not an admin", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
+        (status = "default", description = "Failures raised by a handler or its extractors are Problem Details documents", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
     )
 )]
 async fn get_settings(
@@ -127,10 +127,10 @@ struct PutSettingsResponse {
     security(("session_cookie" = ["admin"]), ("device_token_bearer" = ["admin"]), ("oidc_jwt_bearer" = ["admin"]), ("opds_basic" = ["admin"])),
     responses(
         (status = 200, description = "Updated settings. `restart_required` is true when a changed field only takes effect after restart. Admin only.", body = PutSettingsResponse),
-        (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails),
-        (status = 403, description = "Caller is not an admin", body = crate::openapi::ProblemDetails),
-        (status = 422, description = "Empty patch or invalid field values", body = crate::openapi::ProblemDetails),
-        (status = "default", description = "Any other failure is a Problem Details document", body = crate::openapi::ProblemDetails),
+        (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
+        (status = 403, description = "Caller is not an admin", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
+        (status = 422, description = "Empty patch or invalid field values", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
+        (status = "default", description = "Failures raised by a handler or its extractors are Problem Details documents", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
     )
 )]
 async fn put_settings(

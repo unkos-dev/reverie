@@ -39,7 +39,7 @@ pub fn router() -> OpenApiRouter<AppState> {
     security(()),
     responses(
         (status = 200, description = "Process is live", body = String, content_type = "text/plain"),
-        (status = "default", description = "Any other failure is a Problem Details document", body = crate::openapi::ProblemDetails),
+        (status = "default", description = "Failures raised by a handler or its extractors are Problem Details documents", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
     )
 )]
 pub async fn health() -> &'static str {
@@ -65,8 +65,8 @@ pub async fn health() -> &'static str {
     security(()),
     responses(
         (status = 200, description = "Ready — database reachable", body = String, content_type = "text/plain"),
-        (status = 503, description = "Database unreachable", body = ProblemDetails),
-        (status = "default", description = "Any other failure is a Problem Details document", body = crate::openapi::ProblemDetails),
+        (status = 503, description = "Database unreachable", body = ProblemDetails, content_type = "application/problem+json"),
+        (status = "default", description = "Failures raised by a handler or its extractors are Problem Details documents", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
     )
 )]
 pub async fn ready(State(state): State<AppState>) -> Result<&'static str, ProblemDetails> {
