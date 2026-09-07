@@ -1,7 +1,8 @@
 //! Background metadata writeback to managed `EPUB` files.
 //!
-//! Triggered by canonical pointer moves (Step 7's `apply_field` and the
-//! accept/revert routes) via the `writeback_jobs` queue.  The worker
+//! Triggered by canonical pointer moves (the enrichment orchestrator's
+//! `apply_field` and the accept/revert routes) via the `writeback_jobs`
+//! queue.  The worker
 //! processes jobs outside any user-facing transaction: it rewrites the `OPF`,
 //! embeds a new cover if needed, re-validates the `EPUB`, rolls back on
 //! regression, and updates `manifestations.current_file_hash` on success.
@@ -15,7 +16,7 @@ pub mod cover_embed;
 /// Module-boundary error type for the writeback pipeline.
 pub mod error;
 /// Webhook terminal-event dispatch: stable event ids + dedupe (delivery
-/// stub until Step 12).
+/// stub for now).
 pub mod events;
 /// Pure-function `OPF` XML metadata rewriter.
 pub mod opf_rewrite;

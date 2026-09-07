@@ -1,5 +1,4 @@
-//! Integration tests for the admin-only `/api/v1/dashboard/*` endpoints
-//! (Step 12 of the MVP blueprint).
+//! Integration tests for the admin-only `/api/v1/dashboard/*` endpoints.
 //!
 //! Mirrors [`crate::routes::library::tests`] — `#[sqlx::test]` per case,
 //! real-pool harness via [`crate::test_support::db::server_with_real_pools`].

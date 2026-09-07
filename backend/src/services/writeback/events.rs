@@ -1,7 +1,7 @@
 //! Webhook terminal-event dispatch: stable event ids + Postgres-backed
 //! dedupe.
 //!
-//! Step 12 owns the real delivery transport.  Until that lands, delivery is
+//! A real delivery transport is not yet implemented; delivery is
 //! a `tracing` emit so operators can observe writeback completion in logs;
 //! upgrading to real webhook delivery is contained to the private `deliver`
 //! function.
@@ -185,7 +185,7 @@ pub async fn dispatch(pool: &PgPool, event: &TerminalEvent<'_>) -> Dispatch {
     Dispatch::Delivered
 }
 
-/// Delivery stub.  Step 12's real dispatcher replaces the bodies; the
+/// Delivery stub.  A real dispatcher will replace the bodies; the
 /// dedupe gate in [`dispatch`] stays in front of it.
 fn deliver(event_id: &str, event: &TerminalEvent<'_>) {
     match event.outcome {

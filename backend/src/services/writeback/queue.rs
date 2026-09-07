@@ -365,8 +365,7 @@ async fn mark_complete(pool: &PgPool, id: Uuid) -> sqlx::Result<()> {
 }
 
 /// Transition to `failed`, or to `skipped` once `attempt_count >=
-/// max_attempts`.  `skipped` is the terminal exhaustion label; mirrors
-/// Step 7's semantic.
+/// max_attempts`.  `skipped` is the terminal exhaustion label.
 async fn mark_failed(
     pool: &PgPool,
     id: Uuid,

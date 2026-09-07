@@ -1,4 +1,4 @@
-//! Integration tests for OPDS routes. See BLUEPRINT §"Task List" (Tests 20–33).
+//! Integration tests for OPDS routes.
 //!
 //! Shared setup helpers live in [`crate::test_support::db`]. These tests use
 //! `#[sqlx::test]` so each gets its own isolated DB. Cover/download tests
@@ -375,7 +375,7 @@ async fn cross_user_shelf_returns_404(pool: PgPool) {
         .await;
     assert_eq!(response.status_code(), StatusCode::OK);
 
-    // B cannot — returns 404, not 403 per BLUEPRINT.
+    // B cannot — returns 404, not 403.
     let response = server
         .get(&format!("/opds/shelves/{shelf_a}"))
         .add_header(AUTHORIZATION, basic_b)
@@ -624,7 +624,7 @@ async fn cover_cache_populates_and_serves(pool: PgPool) {
     );
 
     // Stale/mismatched If-None-Match → 200 with the full body (the
-    // revalidate-after-content-change path, e.g. a Step 8 writeback).
+    // revalidate-after-content-change path, e.g. a writeback).
     let response = server
         .get(&format!("/opds/books/{m}/cover"))
         .add_header(AUTHORIZATION, basic.clone())

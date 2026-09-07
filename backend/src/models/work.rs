@@ -1,6 +1,6 @@
 //! Work matching + creation.
 //!
-//! After Step 7 the flow is split so the orchestrator can honour the ingest
+//! The flow is split so the orchestrator can honour the ingest
 //! invariant (every canonical field has a matching `metadata_versions` row):
 //!
 //! 1. `match_existing` — pure match; returns `Some(work_id)` on ISBN or
@@ -30,8 +30,8 @@ use uuid::Uuid;
 use crate::services::metadata::draft::DraftIds;
 use crate::services::metadata::extractor::ExtractedMetadata;
 
-/// Outcome of `rematch_on_isbn_change` — Step 7 task 6.
-/// Consumed by the enrichment orchestrator (Step 7 task 21).
+/// Outcome of `rematch_on_isbn_change`.
+/// Consumed by the enrichment orchestrator.
 #[derive(Debug, PartialEq, Eq)]
 pub enum RematchOutcome {
     /// No matching ISBN row elsewhere; the manifestation is left untouched.
@@ -302,7 +302,7 @@ async fn find_or_create_series(
     .await
 }
 
-/// Step 7 task 6 — re-check a manifestation's ISBN against other works.
+/// Re-check a manifestation's ISBN against other works.
 ///
 /// Auto-merges the current work into a matched work when:
 ///   * exactly one other work holds the same ISBN,
@@ -313,7 +313,7 @@ async fn find_or_create_series(
 ///
 /// Must be called inside the caller's transaction; uses `FOR UPDATE` on
 /// candidate rows to avoid concurrent rematch races.
-/// Consumed by the enrichment orchestrator (Step 7 task 21).
+/// Consumed by the enrichment orchestrator.
 ///
 /// # Errors
 ///
