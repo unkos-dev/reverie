@@ -67,18 +67,6 @@ export default defineConfig({
     },
   },
   test: {
-    // Coverage is configured at the root (not per-project) so a single
-    // report aggregates both the vite-plugins and frontend projects. The
-    // LCOV reporter writes coverage/lcov.info, which CI uploads to
-    // SonarQube Cloud.
-    coverage: {
-      provider: "v8",
-      reporter: ["text", "lcov"],
-      // scripts/a11y/*.mjs = allowlist.mjs, the only logic-bearing gate
-      // surface. The Playwright spec (a11y.spec.ts) runs under Playwright, not
-      // vitest, so it is deliberately outside the coverage set.
-      include: ["src/**", "vite-plugins/**", "scripts/a11y/*.mjs"],
-    },
     projects: [
       {
         extends: true,

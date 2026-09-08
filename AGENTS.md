@@ -151,7 +151,7 @@ Two aggregates anchor the local loop and should be the default reflex:
   it without the maintainer's prior approval. Before seeking approval, explain
   why the scoped gate is insufficient for the change. What it cannot run stays
   remote. The
-  MSRV (minimum supported Rust version) check, coverage, the docker image build,
+  MSRV (minimum supported Rust version) check, the docker image build,
   and the IaC, SAST (static application security testing), and secret scans each
   need a runner, an image, or a token no workstation has.
 - Two recipes gate nowhere and are invoked by hand when you are working on what

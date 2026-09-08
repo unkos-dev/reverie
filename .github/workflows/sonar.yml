@@ -1,4 +1,4 @@
-# Main-baseline analysis only; PR decoration deliberately absent (Codacy owns PR coverage).
+# Main-baseline static analysis after successful CI; PR decoration is deliberately absent.
 name: Sonar
 
 on:
@@ -25,35 +25,12 @@ jobs:
     timeout-minutes: 10
     permissions:
       contents: read
-      actions: read # needed for cross-run artifact download
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           ref: ${{ github.event.workflow_run.head_sha }}
           fetch-depth: 0 # blame-based new-code detection
           persist-credentials: false
-
-      # A missing artifact fails here rather than rewriting the baseline as 0%.
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
-        with:
-          name: backend-coverage
-          path: backend
-          run-id: ${{ github.event.workflow_run.id }}
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
-        with:
-          name: frontend-coverage
-          path: frontend/coverage
-          run-id: ${{ github.event.workflow_run.id }}
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-
-      # Both reports carry stack-relative SF: paths; without prepending the stack
-      # dir they match nothing against projectBaseDir and coverage reads 0%.
-      - name: Normalize coverage paths to repo root
-        run: |
-          set -euo pipefail
-          sed -i 's#^SF:#SF:backend/#' backend/lcov.info
-          sed -i 's#^SF:#SF:frontend/#' frontend/coverage/lcov.info
 
       # No official scanner caching guidance; established community pattern to
       # avoid re-fetching scanner on every main push.

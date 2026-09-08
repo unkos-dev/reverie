@@ -62,15 +62,10 @@ drift:
 # `just rust::test patch_identifier` (name substring) or
 # `just rust::test -E 'test(rls)'` (filterset). No args = full suite.
 #
-# DB: full test suite, fast local loop (no coverage; see `cov`).
+# DB: full test suite.
 [group('rust')]
 test *args:
     SQLX_OFFLINE=true DATABASE_URL="${REVERIE_DEV_DB_URL:-postgres:///reverie_dev?host=${XDG_STATE_HOME:-$HOME/.local/state}/reverie/pgsock&user=reverie&password=reverie}" cargo nextest run --workspace --locked {{ args }}
-
-# DB: full test suite under coverage instrumentation.
-[group('rust')]
-cov:
-    SQLX_OFFLINE=true DATABASE_URL="${REVERIE_DEV_DB_URL:-postgres:///reverie_dev?host=${XDG_STATE_HOME:-$HOME/.local/state}/reverie/pgsock&user=reverie&password=reverie}" cargo llvm-cov nextest --workspace --locked --lcov --output-path lcov.info
 
 # DB: doctests across the workspace.
 [group('rust')]

@@ -46,9 +46,6 @@ docker-compose.override.yml
 .github/hooks
 .github/skills
 
-# Test coverage
-coverage/
-*.lcov
 # Private design, planning, and evaluation artifacts.
 /plans/
 

@@ -121,12 +121,6 @@ a11y:
 test:
     vp test run
 
-# Frontend unit tests with coverage (the CI form).
-[group('js')]
-[working-directory('frontend')]
-test-coverage:
-    vp test run --coverage
-
 # Frontend production build (vp build; typecheck rides js::oxlint via tsgo).
 [group('js')]
 [working-directory('frontend')]
@@ -141,7 +135,7 @@ build:
 font-integrity:
     sha256sum -c SHA256SUMS
 
-# Locally-runnable verify set: lint + format check (a11y and coverage excluded).
+# Locally-runnable verify set: lint + format check (a11y excluded).
 [group('js')]
 check: lint fmt-check
 

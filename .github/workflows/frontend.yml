@@ -2,9 +2,6 @@ name: Frontend
 
 on:
   workflow_call:
-    secrets:
-      CODACY_PROJECT_TOKEN:
-        required: false
 
 permissions:
   contents: read
@@ -77,51 +74,8 @@ jobs:
           mise-install-args: just
           vp: "true"
 
-      - name: Test (with coverage)
-        run: just js::test-coverage
-
-      # A missing report must fail here, not read as 0% coverage downstream.
-      - name: Upload frontend coverage artifact
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
-        with:
-          name: frontend-coverage
-          path: frontend/coverage/lcov.info
-          if-no-files-found: error
-          retention-days: 1
-
-      # Codacy requires repo-root-relative SF: paths; the frontend lcov is frontend-relative.
-      - name: Normalize coverage paths to repo root
-        run: sed -i 's#^SF:#SF:frontend/#' coverage/lcov.info
-
-      # Reports above 10 MB fail server-side with an opaque JSON parse error, so
-      # size is surfaced here instead.
-      - name: Check coverage report size
-        id: frontend_lcov_size
-        run: |
-          size=$(wc -c < coverage/lcov.info)
-          if [ "${size}" -gt 10485760 ]; then
-            echo "::warning title=Coverage report oversized::frontend/coverage/lcov.info is ${size} bytes; Codacy rejects reports above 10 MB."
-            echo 'skip=true' >> "${GITHUB_OUTPUT}"
-          else
-            echo 'skip=false' >> "${GITHUB_OUTPUT}"
-          fi
-
-      # Per-language advisory upload; PR-level Codacy contexts come from these steps.
-      - name: Upload coverage to Codacy
-        if: >-
-          steps.frontend_lcov_size.outputs.skip != 'true' &&
-          github.actor != 'dependabot[bot]' &&
-          github.actor != 'renovate[bot]' &&
-          (github.event_name != 'pull_request' ||
-           (github.event.pull_request.head.repo.full_name == github.repository &&
-            !startsWith(github.head_ref, 'renovate/') &&
-            !startsWith(github.head_ref, 'dependabot/')))
-        uses: codacy/codacy-coverage-reporter-action@89d6c85cfafaec52c72b6c5e8b2878d33104c699 # v1.3.0
-        continue-on-error: true
-        with:
-          project-token: ${{ secrets.CODACY_PROJECT_TOKEN }}
-          coverage-reports: frontend/coverage/lcov.info
-          language: TypeScript
+      - name: Test
+        run: just js::test
 
   build:
     needs: changes

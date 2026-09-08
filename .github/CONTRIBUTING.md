@@ -111,7 +111,7 @@ Install the repository-pinned hook and local-check tools with [mise](https://mis
 
 ```sh
 mise install actionlint gitleaks hadolint just shellcheck typos vale yamllint \
-  pnpm github:nextest-rs/nextest github:taiki-e/cargo-llvm-cov \
+  pnpm github:nextest-rs/nextest \
   github:quarylabs/sqruff github:unkos-dev/specful
 ```
 
