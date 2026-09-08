@@ -19,8 +19,8 @@ on:
 permissions:
   contents: read
 
-# A cancelled main-push run once wiped the Sonar coverage baseline; PR runs
-# still cancel freely.
+# Main-push runs populate shared caches, so they never cancel; PR runs still
+# cancel freely.
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
@@ -38,7 +38,6 @@ jobs:
       R2_ACCESS_KEY_ID_RO: ${{ secrets.R2_ACCESS_KEY_ID_RO }}
       R2_SECRET_ACCESS_KEY_RW: ${{ secrets.R2_SECRET_ACCESS_KEY_RW }}
       R2_SECRET_ACCESS_KEY_RO: ${{ secrets.R2_SECRET_ACCESS_KEY_RO }}
-      CODACY_PROJECT_TOKEN: ${{ secrets.CODACY_PROJECT_TOKEN }}
 
   lint:
     uses: ./.github/workflows/lint.yml
@@ -51,8 +50,6 @@ jobs:
 
   frontend:
     uses: ./.github/workflows/frontend.yml
-    secrets:
-      CODACY_PROJECT_TOKEN: ${{ secrets.CODACY_PROJECT_TOKEN }}
 
   # The only caller granting more than the top-level default: a called workflow
   # can downgrade its caller's token but never elevate it, so the deploy job's

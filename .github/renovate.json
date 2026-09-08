@@ -151,8 +151,8 @@
       "enabled": false
     },
     {
-      "description": "Keep vite-plus and vitest in lockstep: vite-plus bundles the @vitest/* family with an exact vitest peer dependency, so a standalone vitest or vite-plus bump fails lockfile resolution.",
-      "matchDepNames": ["vite-plus", "vite", "@voidzero-dev/**", "vitest", "@vitest/**"],
+      "description": "Group Vite+ with its core packages and alias because vp migrate owns their joint update.",
+      "matchDepNames": ["vite-plus", "vite", "@voidzero-dev/**"],
       "groupName": "vite-plus"
     },
     {

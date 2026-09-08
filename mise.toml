@@ -53,11 +53,6 @@ version = "0.9.143"
 version_prefix = "cargo-nextest-"
 filter_bins = "cargo-nextest"
 
-[tools."github:taiki-e/cargo-llvm-cov"]
-version = "0.9.0"
-version_prefix = "v"
-filter_bins = "cargo-llvm-cov"
-
 # CI-only Rust tools. GitHub release tools use published checksums and
 # provenance when available. cargo-mutants builds from the crates.io source
 # archive with the crate checksum and its published Cargo.lock.

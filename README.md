@@ -14,7 +14,6 @@
   <a href="https://scorecard.dev/viewer/?uri=github.com/unkos-dev/reverie"><img src="https://api.securityscorecards.dev/projects/github.com/unkos-dev/reverie/badge" alt="OpenSSF Scorecard"></a>
   <a href="https://www.bestpractices.dev/projects/13071"><img src="https://www.bestpractices.dev/projects/13071/badge" alt="OpenSSF Best Practices"></a>
   <a href="https://snyk.io/test/github/unkos-dev/reverie"><img src="https://snyk.io/test/github/unkos-dev/reverie/badge.svg" alt="Known Vulnerabilities"></a>
-  <a href="https://sonarcloud.io/summary/new_code?id=unkos-dev_reverie"><img src="https://sonarcloud.io/api/project_badges/measure?project=unkos-dev_reverie&metric=coverage" alt="Coverage"></a>
   <a href="https://www.gnu.org/licenses/agpl-3.0"><img src="https://img.shields.io/badge/License-AGPL--3.0-blue.svg" alt="License: AGPL-3.0"></a>
 </p>
 

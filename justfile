@@ -83,8 +83,8 @@ build: js::build rust::build website::build
 # slower DB-backed and network-backed ones run. infra::zizmor runs the full
 # audit (online audits included when a GH_TOKEN/GITHUB_TOKEN/
 # ZIZMOR_GITHUB_TOKEN is exported, offline-degraded otherwise, matching CI's
-# own token-driven coverage). Still CI-only, and not run here: the MSRV
-# toolchain check, coverage lanes, the docker image build, IaC/SAST/secret
+# token-dependent audits). Still CI-only, and not run here: the MSRV
+# toolchain check, the docker image build, IaC/SAST/secret
 # scans, npm-license, dependency-review, and the accessibility scan.
 #
 # Two recipes are locally runnable and excluded anyway, because a laptop cannot

@@ -182,8 +182,8 @@ queue, and its job skips there. Its concurrency key falls back to the run id,
 since the PR number is empty on a queue run and a shared empty key with
 `cancel-in-progress` would make queue entries cancel each other.
 
-`sonar.yml` runs on `workflow_run` after CI completes on main, because it needs
-both coverage artifacts from one run.
+`sonar.yml` runs on `workflow_run` because it analyses only revisions that have
+passed CI on main.
 
 The rest are non-PR lanes: the release publish, the scheduled audits and
 mutation runs, the OSSF scorecard, the pull-request labelling on `pull_request_target`, and

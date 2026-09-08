@@ -1,6 +1,6 @@
 ---
 # Codacy analyses the git tree, so gitignored build output (backend/target,
-# frontend/dist, frontend/node_modules, frontend/coverage) is already outside
+# frontend/dist, frontend/node_modules) is already outside
 # its view and needs no entry here.
 #
 # What is excluded is tracked output that mechanically projects source already
