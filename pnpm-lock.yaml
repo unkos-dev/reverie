@@ -242,8 +242,8 @@ importers:
         specifier: ^6.0.3
         version: 6.1.1(@voidzero-dev/vite-plus-core@0.3.0(@types/node@24.13.3)(esbuild@0.28.2)(jiti@2.7.0)(typescript@7.0.2))
       bezier-easing:
-        specifier: 3.0.1
-        version: 3.0.1
+        specifier: 3.1.0
+        version: 3.1.0
       colorjs.io:
         specifier: 0.7.1
         version: 0.7.1
@@ -3077,8 +3077,8 @@ packages:
   bcp-47@2.1.1:
     resolution: {integrity: sha512-KLw+H/gd2p4zly1X7Yh/qziuyae5/w/QFnvTng9eZL5fvszL7Whl3MBoWF8yxL7ksUjBfOD+OxkytiqbBpG+Fw==}
 
-  bezier-easing@3.0.1:
-    resolution: {integrity: sha512-vvvg10Anq7py0+KkIqlwJpUVdde9Z8kSzeUzAkQNYAJdA3mZnLG9r9ExdwtjcASCYER6UkNHdBNHHMnVimnU7A==}
+  bezier-easing@3.1.0:
+    resolution: {integrity: sha512-o8E/9YIVAzS6S2i5Icp/DUjQXiP9ma6viSef0b8LpyTvoJw/al+jMhH8tllA18n8VY9M0J1CeWqNs2Ym5PSjOQ==}
 
   bidi-js@1.0.3:
     resolution: {integrity: sha512-RKshQI1R3YQ+n9YJz2QQ147P66ELpa1FQEg20Dk8oW9t2KgLbpDLLp9aGZ7y8WHSshDknG0bknqGw5/tyCs5tw==}
@@ -8149,7 +8149,7 @@ snapshots:
       is-alphanumerical: 2.0.1
       is-decimal: 2.0.1
 
-  bezier-easing@3.0.1: {}
+  bezier-easing@3.1.0: {}
 
   bidi-js@1.0.3:
     dependencies:
