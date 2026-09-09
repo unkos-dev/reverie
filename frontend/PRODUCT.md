@@ -1,8 +1,10 @@
 # Product
 
-## Register
+<!-- impeccable:product-schema 1 -->
 
-product
+## Platform
+
+web
 
 ## Users
 
@@ -10,6 +12,12 @@ Reverie is for two overlapping personas operating the same self-hosted instance:
 
 - **The operator** — an English-language fiction reader who self-hosts their personal ebook library, sourcing books from purchases, independent publishers, web archives, and the wild. They value data sovereignty, metadata quality, and a calm, considered surface that matches how they treat their books: as a curated, permanent record.
 - **The dependent reader** — family members (including children) who share the operator's instance but only browse and read. The UI must communicate role and permission clearly without surfacing administrative scaffolding to them.
+
+Child accounts are part of the intended audience. The parent decides which books
+their child can access and is the authority on what is appropriate for that
+child. Arbitrary ratings do not determine suitability.
+
+## Operating Context
 
 Both personas use Reverie across desktop (primary) and mobile (secondary). The operator's context is evening browsing — 5–15 minute mood-driven sessions, choosing the next book, occasional bulk metadata work — and longer admin sessions for ingestion and curation. Dependent readers' context is "find something to read now."
 
@@ -19,12 +27,30 @@ Single-tenant homelab installs and multi-user exposed instances are both first-c
 
 Reverie is a self-hosted ebook library manager. Its job is to take a collection of EPUBs sourced from the wild, treat each one as a deliberate addition to a permanent record, surface the result as a library the operator is proud to browse, and get out of the way when they're reading.
 
-Success looks like:
+High-quality metadata enrichment and curation are intended to be a key foundation
+of Reverie. This product record does not specify the enrichment process.
+
+Intended success looks like:
 
 - An operator who keeps reverie running for years because each book they add feels like an act of stewardship, not data entry.
 - A dependent reader who finds something to read in under a minute without confronting administrative surfaces.
 - Metadata that is consistently better than what shipped inside the file — because the system treats Dublin Core as hypothesis and Reverie as the canonical record.
 - A reading surface that disappears into the text, then a library surface that dignifies the catalogue when the operator comes back to it.
+
+## Product Principles
+
+1. Support ownership and long-term curation of a self-hosted personal library.
+2. Treat high-quality metadata enrichment and curation as a product foundation.
+3. Keep decisions about a child's access to books with their parent. See the
+   [access requirements](../README.md#design).
+
+## Development Status and Usage Evidence
+
+Reverie is under development with no published release. This is its current
+release status, separate from its durable product purpose.
+
+No usage evidence is confirmed in this record. The workflows and success outcomes
+above are intended and have not been validated here.
 
 ## Brand Personality
 

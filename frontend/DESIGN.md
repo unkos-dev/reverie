@@ -58,10 +58,10 @@ colors:
 typography:
   display:
     fontFamily: '"Author Variable", system-ui, -apple-system, "Segoe UI", sans-serif'
-    fontSize: "clamp(2rem, 4vw, 3.25rem)"
+    fontSize: "clamp(52px, 6.5vw, 128px)"
     fontWeight: 500
-    lineHeight: 1.05
-    letterSpacing: "-0.012em"
+    lineHeight: 0.82
+    letterSpacing: "-0.055em"
   headline:
     fontFamily: '"Author Variable", system-ui, -apple-system, "Segoe UI", sans-serif'
     fontSize: "1.875rem"
@@ -76,9 +76,15 @@ typography:
     letterSpacing: "0"
   body:
     fontFamily: '"Satoshi Variable", system-ui, -apple-system, "Segoe UI", sans-serif'
-    fontSize: "0.9375rem"
+    fontSize: "1rem"
     fontWeight: 400
-    lineHeight: 1.55
+    lineHeight: 1.5
+    letterSpacing: "0"
+  table-cell:
+    fontFamily: '"Satoshi Variable", system-ui, -apple-system, "Segoe UI", sans-serif'
+    fontSize: "0.875rem"
+    fontWeight: 400
+    lineHeight: 1.5
     letterSpacing: "0"
   label:
     fontFamily: '"JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace'
@@ -96,7 +102,7 @@ rounded:
   sm: "0.25rem"
   md: "0.5rem"
   lg: "0.75rem"
-  xl: "0.875rem"
+  xl: "0.75rem"
 components:
   # Buttons — shadcn variant set rebound to the canonical brand palette
   button-primary:
@@ -106,7 +112,7 @@ components:
     padding: "0 0.625rem"
     height: "2rem"
   button-outline:
-    backgroundColor: "{colors.canvas-dark}"
+    backgroundColor: "color-mix(in oklab, #3E3A32 30%, transparent)"
     textColor: "{colors.fg-dark}"
     rounded: "{rounded.lg}"
     padding: "0 0.625rem"
@@ -131,7 +137,7 @@ components:
     rounded: "{rounded.xl}"
     padding: "1rem"
   input:
-    backgroundColor: "{colors.canvas-dark}"
+    backgroundColor: "color-mix(in oklab, #3E3A32 30%, transparent)"
     textColor: "{colors.fg-dark}"
     rounded: "{rounded.lg}"
     padding: "0.25rem 0.625rem"
@@ -156,11 +162,14 @@ components:
 
 # Design System: Reverie
 
-## 1. Overview
+## Overview
 
 **Creative North Star: "The Curator's Archive"**
 
-Reverie's surfaces feel like a museum after hours — the collection is the point, the lighting is considered, the chrome stays out of the reader's way. Cinematic-boutique is the locked visual register: the Library is the identity surface and carries the atmosphere (a slow breathing ember field, film grain, a photographic hero band, a gilt-foil masthead H1, hover-lift on covers, and a press-F cinematic mode that dissolves the chrome). Typography does the structural work and information hierarchy is disciplined. The reader recedes into a calm long-form surface that inherits palette and motion language but withdraws nearly all chrome; utility and admin screens stay plainest of all.
+The dark Library table view is the visual reference. The light theme remains
+under review; its tokens below describe the current implementation.
+
+Reverie's surfaces feel like a museum after hours — the collection is the point, the lighting is considered, the chrome stays out of the reader's way. Cinematic-boutique is the locked visual register: the Library is the identity surface and carries the atmosphere (subtle animated warm gradients, a static noise texture, a photographic hero band, a solid accent-text masthead H1, hover-lift on covers, and a press-F cinematic mode that dissolves the chrome). Typography does the structural work and information hierarchy is disciplined. The reader recedes into a calm long-form surface that inherits palette and motion language but withdraws nearly all chrome; utility and admin screens stay plainest of all.
 
 Colour is governed through a three-tier token tree: generated Radix primitives (`--sand` / `--gold` / `--danger` ramps), then semantic roles (`--canvas` / `--fg` / `--accent` / …) with a shadcn-compatibility alias layer, then a sealed art-directed atmosphere tier (`--atm-*` / `--cover-*`) that chrome must never consume. The brand has exactly one accent (Reverie Gold) and exactly one state hue (the danger red) — every other state, hierarchy, and emphasis signal is carried by weight, opacity, type scale, density, and motion. There is no severity ladder; success, warning, and info stay hue-less. The category-reflex check has two altitudes the system answers no to: it does not look like a self-hosted media manager (Calibre, Plex), and it does not look like an AI workflow tool (SaaS-cream chrome, Linear-clone gradients).
 
@@ -172,7 +181,7 @@ Colour is governed through a three-tier token tree: generated Radix primitives (
 - Flat by default; the one signature shadow is the accent-glow cover-lift on the Library grid. Atmospheric depth on the Library page comes from the sealed `--atm-*` tier.
 - Motion budget: 180–320 ms ease-out (`--ease-standard` / `--ease-emphasised`), no bounce, no spring; route crossfades via the View Transitions API; `prefers-reduced-motion` respected as a first-class state.
 
-## 2. Colors
+## Colors
 
 A warm, considered palette of parchment, ink, cream, and gold, generated as Radix ramps from four anchors (Ink `#0E0D0A`, Parchment `#E8DCC2`, Reverie Gold `#C9A961`, Danger `#B91C1C`). No greys. The dark theme is Ink-anchored; the light theme is Parchment-anchored. Both tint surfaces warmly toward the brand hue rather than collapsing toward neutrals. sRGB hex is the floor; a P3 wide-gamut layer (OKLCH) progressively enhances where the display supports it.
 
@@ -221,22 +230,22 @@ The atmosphere tier is theme-fixed editorial constants behind a review gate. No 
 
 **The No-Black-No-White Rule.** `#000` is prohibited and `#fff` is reserved for exactly one role: `--fg-on-danger`, where the danger solid needs maximum contrast. Every other neutral tints warmly toward the brand hue. The doctrine is OKLCH thinking with sRGB-hex floor and a P3 enhancement layer; primitives are generated, not hand-tuned.
 
-## 3. Typography
+## Typography
 
 **Display Font:** Author Variable (with system-ui, -apple-system, Segoe UI, sans-serif fallback).
 **Body Font:** Satoshi Variable (with system-ui, -apple-system, Segoe UI, sans-serif fallback).
 **Mono Font:** JetBrains Mono Regular (with ui-monospace, SFMono-Regular, Menlo fallback). Used for metadata surfaces (ISBN, IDs, format codes).
 
-All three are self-hosted variable woff2 files at `public/fonts/fontshare/files/` with `font-display: swap`. The Fontshare CDN is broken in Chromium under the production CSP (Opaque Response Blocking trips on cookie-bearing CSS responses); self-hosting bypasses that and matches `font-src 'self'`.
+Author and Satoshi are variable WOFF2 fonts; JetBrains Mono is a static Regular WOFF2 font. All are self-hosted at `public/fonts/fontshare/files/` with `font-display: swap` and match the `font-src 'self'` policy.
 
 **Character:** Author and Satoshi are a deliberate Fontshare pairing — Author does the editorial work (display, book titles in detail, italic accent moments), Satoshi does the structural work (body, navigation, controls, wordmark). The wordmark uses Satoshi rather than Author because the wide-tracked 0.32em uppercase stamp is itself doing identity work; a neutral grotesque lets that treatment carry without competing with display character. JetBrains Mono carries metadata where mono affordance is needed.
 
 ### Hierarchy
 
-- **Display** (Author 500, `clamp(2rem, 4vw, 3.25rem)`, line-height 1.05, tracking -0.012em): hero headlines, book detail titles, the Library masthead H1 (gilt-foil treated).
+- **Display** (Author 500): the Library masthead uses the `display` frontmatter values and solid accent-text colour over the photographic wash. Book detail titles use Author 600 at 30px with tight tracking.
 - **Headline** (Author 500, 1.875rem / 30px, line-height 1.15, tracking -0.012em): section headers in the library and detail views.
 - **Title** (Satoshi 500, 1.125rem / 18px, line-height 1.35): card titles, primary affordance labels, nav items.
-- **Body** (Satoshi 400, 0.9375rem / 15px, line-height 1.55): paragraph text, descriptions, control text. Cap line length at 65–75ch for prose.
+- **Body** (Satoshi 400, 16px, line-height 1.5): the inherited body default. Components apply their own sizes; table cells use 14px with a 21px line height and navigation uses 14px. Cap line length at 65–75ch for prose.
 - **Label** (JetBrains Mono 400, 0.75rem / 12px, tracking 0.04em, uppercase small): metadata fields (ISBN, file size, format codes), debug surfaces. Use sparingly; mono is signal, not chrome.
 - **Wordmark** (Satoshi 700, 1.75rem reference / 28px, tracking 0.32em, uppercase, padding-left 0.32em for optical balance): the canonical Lockup component only. Not a heading style.
 
@@ -250,17 +259,41 @@ All three are self-hosted variable woff2 files at `public/fonts/fontshare/files/
 
 **The No-Black-Weight Rule.** Author and Satoshi black weights (900) are not loaded — the variable axes run 400–700. Both fight the boutique register; their absence is deliberate. If a display moment needs more weight, increase size or use tracking; do not reach for 900.
 
-## 4. Elevation
+## Layout
+
+The application uses a fluid content column beside a sticky left navigation rail
+(228px from 1024px viewport width). Below that breakpoint, navigation opens in a
+left sheet (260px, capped at 80vw). Admin content uses canvas-2.
+
+The Library has a full-width photographic masthead above its working toolbar.
+Content padding is 24px horizontally, increasing to 40px from 640px. The masthead
+bleeds to the content edges. Its height is `clamp(220px, 10vw, 340px)`, reducing to
+176px at widths of 899px or less.
+
+Search, view selection and Filters share a wrapping toolbar. Table mode adds
+Comfortable/Compact density and column visibility controls. Filters open in a
+right sheet (340px, capped at viewport width) at every Library breakpoint.
+The filter and book-detail drawers occupy the same overlay slot.
+
+The table occupies `calc(100dvh - 22rem)` with a 384px minimum height. At 899px
+or less it retains selection, details, title and added date. Comfortable rows
+stack authors below the title; compact rows omit that secondary line and the
+cover mark. The cover grid instead uses fluid columns with a minimum width of
+`clamp(170px, 10vw, 240px)`.
+
+## Elevation & Depth
 
 Flat by default, tonal layering for everyday depth, with one signature shadow and an art-directed atmosphere reserved for the Library identity surface.
 
 Everyday depth comes from the surface ramp: canvas → surface → surface-2 → surface-3 + border / border-strong does the work for cards, dialogs, dropdowns, and primitives. Shadcn primitives use `ring-1 ring-foreground/10` on cards rather than box-shadow; that ring is the rest state. Hover and focus lift use opacity and the `--surface-2` hover token, not shadow.
 
-The cinematic register earns exactly one chrome shadow: the **accent-glow cover-lift** on the Library grid, where a cover gains `box-shadow: 0 14px 32px -16px var(--accent-glow)` on hover or focus-within (`--accent-glow` is the accent at 45% via `color-mix`). Outside that, chrome shadows are absent. The Library page additionally carries the sealed atmosphere — a fixed breathing ember radial (`.lib-atm`, 12s `breathe`), film grain, and a photographic hero band that fades into the canvas — but these live in the art-directed Tier-3 layer, scoped to the Library route only, never on utility, admin, or reader chrome.
+The cinematic register earns exactly one chrome shadow: the **accent-glow cover-lift** on the Library grid, where a cover gains `box-shadow: 0 14px 32px -16px var(--accent-glow)` on hover or focus-within (`--accent-glow` is the accent at 45% via `color-mix`). Popovers and sheets currently also carry component shadows. The Library page additionally carries the sealed atmosphere — subtle animated warm gradients (`.lib-atm`, 12s `breathe`), a static noise texture, and a photographic hero band that fades into the canvas — but these live in the art-directed Tier-3 layer, scoped to the Library route only, never on utility, admin, or reader chrome.
+
+The flat-surface rule remains the design intent. The current popover uses `shadow-md` and the sheet uses `shadow-lg`; these are implementation differences, not additional approved shadow roles.
 
 ### Shadow Vocabulary
 
-- **cover-lift** (`box-shadow: 0 14px 32px -16px var(--accent-glow)`): the gold-tinted glow a Library cover gains on hover / focus-within, over `--duration-base` (240 ms). The single chrome shadow in the system.
+- **cover-lift** (`box-shadow: 0 14px 32px -16px var(--accent-glow)`): the gold-tinted glow a Library cover gains on hover / focus-within, over 200ms. The signature cover shadow.
 - **cover pedestal**: on Light, dark cloth covers carry a hairline + subtle pedestal shadow so books read as objects sitting on Parchment rather than dissolving into it.
 - **focus ring** (`outline: 2px solid var(--focus-ring)`, offset 2px): not a shadow, but the only chrome that "elevates" the focused element. `--focus-ring` is the gold `accent-text` step; a single ring, no halo.
 
@@ -268,11 +301,18 @@ The cinematic register earns exactly one chrome shadow: the **accent-glow cover-
 
 **The Flat-By-Default Rule.** Surfaces are flat at rest. Depth comes from tonal layering (canvas → surface → surface-2 → surface-3). The one chrome shadow is the Library cover-lift on hover / focus; otherwise depth is a response to state (the focus ring). If a card's resting state needs a drop shadow to look complete, the design is wrong.
 
-**The Atmosphere-Is-Library-Only Rule.** The ambient ember field, film grain, photographic hero, and gilt-foil masthead are mounted inside the Library page, never in the app shell. The identity surface carries the atmosphere; the reader recedes and utility / admin screens stay plain. Ambient drift is never app-wide and never bleeds into chrome.
+**The Atmosphere-Is-Library-Only Rule.** The subtle animated warm gradients, static noise texture, photographic hero, and solid accent-text masthead are mounted inside the Library page, never in the app shell. The identity surface carries the atmosphere; the reader recedes and utility / admin screens stay plain. Ambient drift is never app-wide and never bleeds into chrome.
 
 **The Single-Focus-Indicator Rule.** A global `:focus-visible` rule paints one 2px `accent-text` outline at a 2px offset and forces `box-shadow: none`. The `box-shadow: none` is load-bearing: it suppresses the per-primitive `focus-visible:ring-*` box-shadow rings so the app never paints two concentric indicators. Verify focus by render in both themes, not on the computed claim alone.
 
-## 5. Components
+## Shapes
+
+Controls use modest rounded corners: small (4px), medium (8px) and large (12px).
+Cards and dialogs use Tailwind's current extra-large radius (12px); the explicit
+large theme token is also 12px. The library table has an 8px outer radius and a
+single border. Cover thumbnails are rectangular; count badges are pill-shaped.
+
+## Components
 
 The component philosophy is **considered, inscribed**: every primitive feels like it was placed deliberately and cannot be moved by accident. Each affordance is a carved gesture, not a frictionless tap. Weight + restraint + intent.
 
@@ -291,7 +331,7 @@ Reverie ships shadcn/ui primitives (button, card, input, dialog, alert-dialog, d
 
 ### Cards
 
-- **Corner Style:** rounded-xl (0.875 rem / 14 px).
+- **Corner Style:** rounded-xl (0.75 rem / 12 px).
 - **Background:** bg-card (alias to surface). Slight warm tint above canvas.
 - **Border / Shadow Strategy:** `ring-1 ring-foreground/10` at rest. No drop shadow. Flat-By-Default applies.
 - **Internal Padding:** py-4 default (16 px vertical; full-bleed images extend edge-to-edge and round the matching corners); px-4 on header / content; footer is `border-t bg-muted/50`. Size `sm` collapses to gap-3 / py-3 / px-3.
@@ -306,7 +346,7 @@ Reverie ships shadcn/ui primitives (button, card, input, dialog, alert-dialog, d
 
 ### Dialogs
 
-- **Backdrop:** every overlay (dialog, alert-dialog, sheet, popover) uses the `bg-overlay` scrim token — a near-opaque warm-ink veil (`rgb(14 13 10 / 88%)`), theme-fixed on both themes, with an optional `backdrop-blur-xs` where supported. The earlier `bg-black/50` backdrops have been removed.
+- **Backdrop:** dialogs, alert dialogs and sheets use the theme-fixed ink scrim (`bg-overlay`), with backdrop blur where supported. Popovers are anchored surfaces without a scrim.
 - **Alert-Dialog (destructive confirmation):** the canonical Danger Carve-Out surface. Typed-name confirmation, **solid** danger fill on the confirm button, plain Outline button on the cancel. Cancel is the safer default and gets focus.
 - **Dialog (general):** bg-surface, rounded-xl, no shadow. Use sparingly; the modal is not a first thought.
 
@@ -314,6 +354,27 @@ Reverie ships shadcn/ui primitives (button, card, input, dialog, alert-dialog, d
 
 - **Style:** the global nav is a sticky left rail (`canvas-2`, `border-r`), not a top bar. Items are Satoshi 500 at text-sm (0.875 rem); default state is fg-muted on transparent; hover and active both lift to a `surface` pill with fg text. The active row additionally carries a 16×2px gold slot bar (`bg-accent`) at its leading edge — the glyph's slot reused as the active marker, the one place the accent appears in the rail. Disabled / planned entries render as fg-faint placeholders, `aria-disabled`, out of tab order, with a "planned" tooltip.
 - **Mobile:** sheet-based, not bottom-nav. The library is the identity surface and earns horizontal scroll affordances; nav stays vertical and quiet.
+
+### Library Table
+
+The table is a dense catalogue surface using the same canvas, text and accent
+roles as the rest of the application. Its header uses surface-2, row hover uses
+surface, and selected rows use accent-soft. Cells use the inherited body face
+at 14px; titles have medium weight.
+
+- **Density:** comfortable rows are 64px and compact rows are 44px; headers stay
+  42px. Comfortable rows carry a 30px by 42px cover or typographic fallback mark.
+- **Controls:** density and view selectors use a bordered group with a soft
+  accent fill on the selected option. Filters appear as removable chips below
+  the toolbar.
+- **Interaction:** the table supports cell editing, row selection, sorting and
+  a details drawer. Pending edits appear muted and italic. Keyboard shortcuts
+  have a dedicated help dialog.
+- **Paging:** the table scrolls through loaded rows and fetches more near the
+  bottom. Loading, retry, load-more and end-of-list states share a footer.
+
+Source: [LibraryTableView](src/pages/library/table/LibraryTableView.tsx) and the
+[grid theme](src/lib/grid/grid-theme.css).
 
 ### Signature: Lockup
 
@@ -333,7 +394,7 @@ When a book has no cover art (or it fails to load), `src/components/CoverArtwork
 
 **The Lockup-As-Brand-Carrier Rule.** The Lockup component is invariant. It uses inline hex values, not theme tokens, and must render correctly before the theme tree resolves. Do not theme it; do not re-style its parts; do not use its glyph or wordmark separately as decorative elements.
 
-## 6. Do's and Don'ts
+## Do's and Don'ts
 
 ### Do:
 
@@ -343,9 +404,9 @@ When a book has no cover art (or it fails to load), `src/components/CoverArtwork
 - **Do** carry hierarchy through weight, opacity, type scale, density, and motion. Author or Satoshi at different weights is the system's primary expressiveness.
 - **Do** cap body text at 65–75ch on prose surfaces; cards and detail panels are not prose and may run wider.
 - **Do** keep cards flat at rest (`ring-1 ring-foreground/10`, no shadow). Tonal layering — canvas → surface → surface-2 → surface-3 — does the depth work.
-- **Do** keep the ambient atmosphere (ember field, film grain, photographic hero, gilt-foil masthead) on the Library page only; the app shell, reader, and admin surfaces stay plain.
-- **Do** use the `bg-overlay` scrim token for every modal / dialog / sheet / popover backdrop.
-- **Do** respect `prefers-reduced-motion`: tile stagger and dot pulse stop, the ember field holds a still frame, route crossfades become instant swaps, cinematic transitions snap. The cinematic register survives in palette and typography when motion withdraws.
+- **Do** keep the ambient atmosphere and photographic masthead on the Library page only; the app shell, reader, and admin surfaces stay plain.
+- **Do** use the `bg-overlay` scrim token for modal and sheet backdrops. Popovers have no backdrop.
+- **Do** respect `prefers-reduced-motion`: tile stagger and dot pulse stop, the warm gradients hold a still frame, route crossfades become instant swaps, cinematic transitions snap. The cinematic register survives in palette and typography when motion withdraws.
 - **Do** use the Lockup component for the brand mark, never the glyph or wordmark alone (except favicons / footer microtext).
 
 ### Don't:
@@ -356,9 +417,9 @@ When a book has no cover art (or it fails to load), `src/components/CoverArtwork
 - **Don't** ship surfaces that look like a **cozy reading nook** (lamp, paper, warm-domestic, hand-drawn book stacks). The library is an archive, not a corner of a living room. The reader recedes; it does not invite.
 - **Don't** ship surfaces that look like a **severity-coloured dashboard** (red/amber/green pills, info-blue callouts, status banners, hero-metric templates).
 - **Don't** use `#000`. `#fff` is reserved for `--fg-on-danger` only; every other neutral tints warmly toward the brand hue.
-- **Don't** put the gold accent fill on Parchment normal-size body text — it passes WCAG large-text only. Use the darker `accent-text` step for gold that must read as text. axe-core contrast violations on small-text gold are the right signal.
+- **Don't** use the gold accent fill as text on Parchment at any size. Use the darker `accent-text` step for gold text.
 - **Don't** consume the sealed `--atm-*` atmosphere tokens from chrome. They are art-directed editorial constants for the Library masthead and ambient field only; no `bg-atm-*` utilities exist by design.
-- **Don't** use `background-clip: text` with a gradient — with one carved-out exception: the gilt-foil Library masthead H1 (`.lib-h1-gilt`), an art-directed once-per-page treatment that falls back to a solid system colour under `forced-colors` (WCAG 1.4.1). Do not extend gilt text to any other surface.
+- **Don't** extend the established gilt-text exception to other surfaces. The current Library masthead uses solid accent-text colour; no `.lib-h1-gilt` treatment is implemented.
 - **Don't** load Author or Satoshi black weights (900). Both fight the boutique register; reach for size or tracking instead.
 - **Don't** use side-stripe borders (`border-left` greater than 1px as a coloured accent). Absolute ban. Use a full border, background tint, leading numeral or icon, or nothing.
 - **Don't** paint two focus indicators. The global 2px `accent-text` outline (with `box-shadow: none`) is the single indicator; don't reintroduce a competing box-shadow ring.
