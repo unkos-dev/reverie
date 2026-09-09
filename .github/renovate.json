@@ -156,7 +156,7 @@
       "groupName": "vite-plus"
     },
     {
-      "description": "The generated color primitives pin these exactly; any bump fails the radix-gen drift test until `vp run primitives:gen` is rerun and the palette diff reviewed, so move them as one deliberate, dashboard-approved group. automerge is explicitly disabled here so the blanket cargo/npm minor-automerge rule above cannot override this group's manual gate.",
+      "description": "Group colour-generator dependencies for dashboard approval and manual review. Updates that change the generated palette require `vp run primitives:gen` and review of the palette diff. Disable automerge to override the blanket cargo/npm minor-automerge rule.",
       "matchDepNames": ["@radix-ui/colors", "colorjs.io", "bezier-easing"],
       "groupName": "radix-gen",
       "dependencyDashboardApproval": true,
