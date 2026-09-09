@@ -1,0 +1,1094 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-09-09T15:28:01.982993+00:00",
+  "title": "Design System: Reverie",
+  "extensions": {
+    "colorMeta": {
+      "parchment": {
+        "role": "neutral",
+        "displayName": "Parchment",
+        "tonalRamp": [
+          "#251f14",
+          "#3d362a",
+          "#595041",
+          "#635a49",
+          "#8f8778",
+          "#a29c90",
+          "#ada89f",
+          "#b6b2ab",
+          "#bfbcb6",
+          "#c8c6c2",
+          "#d3d1cf",
+          "#d9d8d6"
+        ]
+      },
+      "ink": {
+        "role": "neutral",
+        "displayName": "Ink",
+        "tonalRamp": [
+          "#0e0d0a",
+          "#191815",
+          "#24221e",
+          "#2b2924",
+          "#34302a",
+          "#3e3a32",
+          "#4c473d",
+          "#675f51",
+          "#756c5b",
+          "#827a69",
+          "#bab2a3",
+          "#f0eee9"
+        ]
+      },
+      "cream": {
+        "role": "neutral",
+        "displayName": "Cream",
+        "tonalRamp": [
+          "#0e0d0a",
+          "#191815",
+          "#24221e",
+          "#2b2924",
+          "#34302a",
+          "#3e3a32",
+          "#4c473d",
+          "#675f51",
+          "#756c5b",
+          "#827a69",
+          "#bab2a3",
+          "#f0eee9"
+        ]
+      },
+      "reverie-gold": {
+        "role": "primary",
+        "displayName": "Reverie Gold",
+        "tonalRamp": [
+          "#0f0d09",
+          "#1b1812",
+          "#262217",
+          "#312a1a",
+          "#3c321c",
+          "#4b3e1f",
+          "#5f4d22",
+          "#7b6225",
+          "#c9a961",
+          "#be9e56",
+          "#d9b970",
+          "#f5e2ba"
+        ]
+      },
+      "danger": {
+        "role": "secondary",
+        "displayName": "Danger",
+        "tonalRamp": [
+          "#140a09",
+          "#21110f",
+          "#410a08",
+          "#590000",
+          "#6c0003",
+          "#7f0f0f",
+          "#9a211e",
+          "#c72d29",
+          "#b91c1c",
+          "#9c241f",
+          "#ff9082",
+          "#ffcec6"
+        ]
+      },
+      "canvas-light": {
+        "role": "neutral",
+        "displayName": "Canvas Light",
+        "tonalRamp": [
+          "#251f14",
+          "#3d362a",
+          "#595041",
+          "#635a49",
+          "#8f8778",
+          "#a29c90",
+          "#ada89f",
+          "#b6b2ab",
+          "#bfbcb6",
+          "#c8c6c2",
+          "#d3d1cf",
+          "#d9d8d6"
+        ]
+      },
+      "canvas-2-light": {
+        "role": "neutral",
+        "displayName": "Canvas 2 Light",
+        "tonalRamp": [
+          "#251f14",
+          "#3d362a",
+          "#595041",
+          "#635a49",
+          "#8f8778",
+          "#a29c90",
+          "#ada89f",
+          "#b6b2ab",
+          "#bfbcb6",
+          "#c8c6c2",
+          "#d3d1cf",
+          "#d9d8d6"
+        ]
+      },
+      "surface-light": {
+        "role": "neutral",
+        "displayName": "Surface Light",
+        "tonalRamp": [
+          "#251f14",
+          "#3d362a",
+          "#595041",
+          "#635a49",
+          "#8f8778",
+          "#a29c90",
+          "#ada89f",
+          "#b6b2ab",
+          "#bfbcb6",
+          "#c8c6c2",
+          "#d3d1cf",
+          "#d9d8d6"
+        ]
+      },
+      "surface-2-light": {
+        "role": "neutral",
+        "displayName": "Surface 2 Light",
+        "tonalRamp": [
+          "#251f14",
+          "#3d362a",
+          "#595041",
+          "#635a49",
+          "#8f8778",
+          "#a29c90",
+          "#ada89f",
+          "#b6b2ab",
+          "#bfbcb6",
+          "#c8c6c2",
+          "#d3d1cf",
+          "#d9d8d6"
+        ]
+      },
+      "surface-3-light": {
+        "role": "neutral",
+        "displayName": "Surface 3 Light",
+        "tonalRamp": [
+          "#251f14",
+          "#3d362a",
+          "#595041",
+          "#635a49",
+          "#8f8778",
+          "#a29c90",
+          "#ada89f",
+          "#b6b2ab",
+          "#bfbcb6",
+          "#c8c6c2",
+          "#d3d1cf",
+          "#d9d8d6"
+        ]
+      },
+      "border-light": {
+        "role": "neutral",
+        "displayName": "Border Light",
+        "tonalRamp": [
+          "#251f14",
+          "#3d362a",
+          "#595041",
+          "#635a49",
+          "#8f8778",
+          "#a29c90",
+          "#ada89f",
+          "#b6b2ab",
+          "#bfbcb6",
+          "#c8c6c2",
+          "#d3d1cf",
+          "#d9d8d6"
+        ]
+      },
+      "border-strong-light": {
+        "role": "neutral",
+        "displayName": "Border Strong Light",
+        "tonalRamp": [
+          "#251f14",
+          "#3d362a",
+          "#595041",
+          "#635a49",
+          "#8f8778",
+          "#a29c90",
+          "#ada89f",
+          "#b6b2ab",
+          "#bfbcb6",
+          "#c8c6c2",
+          "#d3d1cf",
+          "#d9d8d6"
+        ]
+      },
+      "border-control-light": {
+        "role": "neutral",
+        "displayName": "Border Control Light",
+        "tonalRamp": [
+          "#251f14",
+          "#3d362a",
+          "#595041",
+          "#635a49",
+          "#8f8778",
+          "#a29c90",
+          "#ada89f",
+          "#b6b2ab",
+          "#bfbcb6",
+          "#c8c6c2",
+          "#d3d1cf",
+          "#d9d8d6"
+        ]
+      },
+      "fg-light": {
+        "role": "neutral",
+        "displayName": "Fg Light",
+        "tonalRamp": [
+          "#251f14",
+          "#3d362a",
+          "#595041",
+          "#635a49",
+          "#8f8778",
+          "#a29c90",
+          "#ada89f",
+          "#b6b2ab",
+          "#bfbcb6",
+          "#c8c6c2",
+          "#d3d1cf",
+          "#d9d8d6"
+        ]
+      },
+      "fg-muted-light": {
+        "role": "neutral",
+        "displayName": "Fg Muted Light",
+        "tonalRamp": [
+          "#251f14",
+          "#3d362a",
+          "#595041",
+          "#635a49",
+          "#8f8778",
+          "#a29c90",
+          "#ada89f",
+          "#b6b2ab",
+          "#bfbcb6",
+          "#c8c6c2",
+          "#d3d1cf",
+          "#d9d8d6"
+        ]
+      },
+      "fg-faint-light": {
+        "role": "neutral",
+        "displayName": "Fg Faint Light",
+        "tonalRamp": [
+          "#251f14",
+          "#3d362a",
+          "#595041",
+          "#635a49",
+          "#8f8778",
+          "#a29c90",
+          "#ada89f",
+          "#b6b2ab",
+          "#bfbcb6",
+          "#c8c6c2",
+          "#d3d1cf",
+          "#d9d8d6"
+        ]
+      },
+      "accent-light": {
+        "role": "primary",
+        "displayName": "Accent Light",
+        "tonalRamp": [
+          "#403827",
+          "#5a3e00",
+          "#967100",
+          "#a77c00",
+          "#98792f",
+          "#aa9158",
+          "#bba167",
+          "#cab076",
+          "#d1bc8f",
+          "#d6c8a8",
+          "#d7d2c9",
+          "#d9d8d6"
+        ]
+      },
+      "accent-soft-light": {
+        "role": "primary",
+        "displayName": "Accent Soft Light",
+        "tonalRamp": [
+          "#403827",
+          "#5a3e00",
+          "#967100",
+          "#a77c00",
+          "#98792f",
+          "#aa9158",
+          "#bba167",
+          "#cab076",
+          "#d1bc8f",
+          "#d6c8a8",
+          "#d7d2c9",
+          "#d9d8d6"
+        ]
+      },
+      "accent-strong-light": {
+        "role": "primary",
+        "displayName": "Accent Strong Light",
+        "tonalRamp": [
+          "#403827",
+          "#5a3e00",
+          "#967100",
+          "#a77c00",
+          "#98792f",
+          "#aa9158",
+          "#bba167",
+          "#cab076",
+          "#d1bc8f",
+          "#d6c8a8",
+          "#d7d2c9",
+          "#d9d8d6"
+        ]
+      },
+      "accent-text-light": {
+        "role": "primary",
+        "displayName": "Accent Text Light",
+        "tonalRamp": [
+          "#403827",
+          "#5a3e00",
+          "#967100",
+          "#a77c00",
+          "#98792f",
+          "#aa9158",
+          "#bba167",
+          "#cab076",
+          "#d1bc8f",
+          "#d6c8a8",
+          "#d7d2c9",
+          "#d9d8d6"
+        ]
+      },
+      "fg-on-accent-light": {
+        "role": "primary",
+        "displayName": "Fg On Accent Light",
+        "tonalRamp": [
+          "#403827",
+          "#5a3e00",
+          "#967100",
+          "#a77c00",
+          "#98792f",
+          "#aa9158",
+          "#bba167",
+          "#cab076",
+          "#d1bc8f",
+          "#d6c8a8",
+          "#d7d2c9",
+          "#d9d8d6"
+        ]
+      },
+      "danger-light": {
+        "role": "secondary",
+        "displayName": "Danger Light",
+        "tonalRamp": [
+          "#631b16",
+          "#900000",
+          "#a7000a",
+          "#b91c1c",
+          "#b15f56",
+          "#bd7a72",
+          "#c98f88",
+          "#d2a19a",
+          "#d7b1ab",
+          "#d4c2bf",
+          "#d7d0cf",
+          "#dad7d7"
+        ]
+      },
+      "danger-text-light": {
+        "role": "secondary",
+        "displayName": "Danger Text Light",
+        "tonalRamp": [
+          "#631b16",
+          "#900000",
+          "#a7000a",
+          "#b91c1c",
+          "#b15f56",
+          "#bd7a72",
+          "#c98f88",
+          "#d2a19a",
+          "#d7b1ab",
+          "#d4c2bf",
+          "#d7d0cf",
+          "#dad7d7"
+        ]
+      },
+      "danger-soft-light": {
+        "role": "secondary",
+        "displayName": "Danger Soft Light",
+        "tonalRamp": [
+          "#631b16",
+          "#900000",
+          "#a7000a",
+          "#b91c1c",
+          "#b15f56",
+          "#bd7a72",
+          "#c98f88",
+          "#d2a19a",
+          "#d7b1ab",
+          "#d4c2bf",
+          "#d7d0cf",
+          "#dad7d7"
+        ]
+      },
+      "fg-on-danger-light": {
+        "role": "secondary",
+        "displayName": "Fg On Danger Light",
+        "tonalRamp": [
+          "#631b16",
+          "#900000",
+          "#a7000a",
+          "#b91c1c",
+          "#b15f56",
+          "#bd7a72",
+          "#c98f88",
+          "#d2a19a",
+          "#d7b1ab",
+          "#d4c2bf",
+          "#d7d0cf",
+          "#dad7d7"
+        ]
+      },
+      "canvas-dark": {
+        "role": "neutral",
+        "displayName": "Canvas Dark",
+        "tonalRamp": [
+          "#0e0d0a",
+          "#191815",
+          "#24221e",
+          "#2b2924",
+          "#34302a",
+          "#3e3a32",
+          "#4c473d",
+          "#675f51",
+          "#756c5b",
+          "#827a69",
+          "#bab2a3",
+          "#f0eee9"
+        ]
+      },
+      "canvas-2-dark": {
+        "role": "neutral",
+        "displayName": "Canvas 2 Dark",
+        "tonalRamp": [
+          "#0e0d0a",
+          "#191815",
+          "#24221e",
+          "#2b2924",
+          "#34302a",
+          "#3e3a32",
+          "#4c473d",
+          "#675f51",
+          "#756c5b",
+          "#827a69",
+          "#bab2a3",
+          "#f0eee9"
+        ]
+      },
+      "surface-dark": {
+        "role": "neutral",
+        "displayName": "Surface Dark",
+        "tonalRamp": [
+          "#0e0d0a",
+          "#191815",
+          "#24221e",
+          "#2b2924",
+          "#34302a",
+          "#3e3a32",
+          "#4c473d",
+          "#675f51",
+          "#756c5b",
+          "#827a69",
+          "#bab2a3",
+          "#f0eee9"
+        ]
+      },
+      "surface-2-dark": {
+        "role": "neutral",
+        "displayName": "Surface 2 Dark",
+        "tonalRamp": [
+          "#0e0d0a",
+          "#191815",
+          "#24221e",
+          "#2b2924",
+          "#34302a",
+          "#3e3a32",
+          "#4c473d",
+          "#675f51",
+          "#756c5b",
+          "#827a69",
+          "#bab2a3",
+          "#f0eee9"
+        ]
+      },
+      "surface-3-dark": {
+        "role": "neutral",
+        "displayName": "Surface 3 Dark",
+        "tonalRamp": [
+          "#0e0d0a",
+          "#191815",
+          "#24221e",
+          "#2b2924",
+          "#34302a",
+          "#3e3a32",
+          "#4c473d",
+          "#675f51",
+          "#756c5b",
+          "#827a69",
+          "#bab2a3",
+          "#f0eee9"
+        ]
+      },
+      "border-dark": {
+        "role": "neutral",
+        "displayName": "Border Dark",
+        "tonalRamp": [
+          "#0e0d0a",
+          "#191815",
+          "#24221e",
+          "#2b2924",
+          "#34302a",
+          "#3e3a32",
+          "#4c473d",
+          "#675f51",
+          "#756c5b",
+          "#827a69",
+          "#bab2a3",
+          "#f0eee9"
+        ]
+      },
+      "border-strong-dark": {
+        "role": "neutral",
+        "displayName": "Border Strong Dark",
+        "tonalRamp": [
+          "#0e0d0a",
+          "#191815",
+          "#24221e",
+          "#2b2924",
+          "#34302a",
+          "#3e3a32",
+          "#4c473d",
+          "#675f51",
+          "#756c5b",
+          "#827a69",
+          "#bab2a3",
+          "#f0eee9"
+        ]
+      },
+      "border-control-dark": {
+        "role": "neutral",
+        "displayName": "Border Control Dark",
+        "tonalRamp": [
+          "#0e0d0a",
+          "#191815",
+          "#24221e",
+          "#2b2924",
+          "#34302a",
+          "#3e3a32",
+          "#4c473d",
+          "#675f51",
+          "#756c5b",
+          "#827a69",
+          "#bab2a3",
+          "#f0eee9"
+        ]
+      },
+      "fg-dark": {
+        "role": "neutral",
+        "displayName": "Fg Dark",
+        "tonalRamp": [
+          "#0e0d0a",
+          "#191815",
+          "#24221e",
+          "#2b2924",
+          "#34302a",
+          "#3e3a32",
+          "#4c473d",
+          "#675f51",
+          "#756c5b",
+          "#827a69",
+          "#bab2a3",
+          "#f0eee9"
+        ]
+      },
+      "fg-muted-dark": {
+        "role": "neutral",
+        "displayName": "Fg Muted Dark",
+        "tonalRamp": [
+          "#0e0d0a",
+          "#191815",
+          "#24221e",
+          "#2b2924",
+          "#34302a",
+          "#3e3a32",
+          "#4c473d",
+          "#675f51",
+          "#756c5b",
+          "#827a69",
+          "#bab2a3",
+          "#f0eee9"
+        ]
+      },
+      "fg-faint-dark": {
+        "role": "neutral",
+        "displayName": "Fg Faint Dark",
+        "tonalRamp": [
+          "#0e0d0a",
+          "#191815",
+          "#24221e",
+          "#2b2924",
+          "#34302a",
+          "#3e3a32",
+          "#4c473d",
+          "#675f51",
+          "#756c5b",
+          "#827a69",
+          "#bab2a3",
+          "#f0eee9"
+        ]
+      },
+      "accent-dark": {
+        "role": "primary",
+        "displayName": "Accent Dark",
+        "tonalRamp": [
+          "#0f0d09",
+          "#1b1812",
+          "#262217",
+          "#312a1a",
+          "#3c321c",
+          "#4b3e1f",
+          "#5f4d22",
+          "#7b6225",
+          "#c9a961",
+          "#be9e56",
+          "#d9b970",
+          "#f5e2ba"
+        ]
+      },
+      "accent-soft-dark": {
+        "role": "primary",
+        "displayName": "Accent Soft Dark",
+        "tonalRamp": [
+          "#0f0d09",
+          "#1b1812",
+          "#262217",
+          "#312a1a",
+          "#3c321c",
+          "#4b3e1f",
+          "#5f4d22",
+          "#7b6225",
+          "#c9a961",
+          "#be9e56",
+          "#d9b970",
+          "#f5e2ba"
+        ]
+      },
+      "accent-strong-dark": {
+        "role": "primary",
+        "displayName": "Accent Strong Dark",
+        "tonalRamp": [
+          "#0f0d09",
+          "#1b1812",
+          "#262217",
+          "#312a1a",
+          "#3c321c",
+          "#4b3e1f",
+          "#5f4d22",
+          "#7b6225",
+          "#c9a961",
+          "#be9e56",
+          "#d9b970",
+          "#f5e2ba"
+        ]
+      },
+      "accent-text-dark": {
+        "role": "primary",
+        "displayName": "Accent Text Dark",
+        "tonalRamp": [
+          "#0f0d09",
+          "#1b1812",
+          "#262217",
+          "#312a1a",
+          "#3c321c",
+          "#4b3e1f",
+          "#5f4d22",
+          "#7b6225",
+          "#c9a961",
+          "#be9e56",
+          "#d9b970",
+          "#f5e2ba"
+        ]
+      },
+      "fg-on-accent-dark": {
+        "role": "primary",
+        "displayName": "Fg On Accent Dark",
+        "tonalRamp": [
+          "#0f0d09",
+          "#1b1812",
+          "#262217",
+          "#312a1a",
+          "#3c321c",
+          "#4b3e1f",
+          "#5f4d22",
+          "#7b6225",
+          "#c9a961",
+          "#be9e56",
+          "#d9b970",
+          "#f5e2ba"
+        ]
+      },
+      "danger-dark": {
+        "role": "secondary",
+        "displayName": "Danger Dark",
+        "tonalRamp": [
+          "#140a09",
+          "#21110f",
+          "#410a08",
+          "#590000",
+          "#6c0003",
+          "#7f0f0f",
+          "#9a211e",
+          "#c72d29",
+          "#b91c1c",
+          "#9c241f",
+          "#ff9082",
+          "#ffcec6"
+        ]
+      },
+      "danger-text-dark": {
+        "role": "secondary",
+        "displayName": "Danger Text Dark",
+        "tonalRamp": [
+          "#140a09",
+          "#21110f",
+          "#410a08",
+          "#590000",
+          "#6c0003",
+          "#7f0f0f",
+          "#9a211e",
+          "#c72d29",
+          "#b91c1c",
+          "#9c241f",
+          "#ff9082",
+          "#ffcec6"
+        ]
+      },
+      "danger-soft-dark": {
+        "role": "secondary",
+        "displayName": "Danger Soft Dark",
+        "tonalRamp": [
+          "#140a09",
+          "#21110f",
+          "#410a08",
+          "#590000",
+          "#6c0003",
+          "#7f0f0f",
+          "#9a211e",
+          "#c72d29",
+          "#b91c1c",
+          "#9c241f",
+          "#ff9082",
+          "#ffcec6"
+        ]
+      },
+      "fg-on-danger-dark": {
+        "role": "secondary",
+        "displayName": "Fg On Danger Dark",
+        "tonalRamp": [
+          "#140a09",
+          "#21110f",
+          "#410a08",
+          "#590000",
+          "#6c0003",
+          "#7f0f0f",
+          "#9a211e",
+          "#c72d29",
+          "#b91c1c",
+          "#9c241f",
+          "#ff9082",
+          "#ffcec6"
+        ]
+      },
+      "overlay": {
+        "role": "neutral",
+        "displayName": "Overlay",
+        "tonalRamp": [
+          "#0e0d0a",
+          "#191815",
+          "#24221e",
+          "#2b2924",
+          "#34302a",
+          "#3e3a32",
+          "#4c473d",
+          "#675f51",
+          "#756c5b",
+          "#827a69",
+          "#bab2a3",
+          "#f0eee9"
+        ]
+      }
+    },
+    "typographyMeta": {
+      "display": {
+        "displayName": "Library masthead",
+        "purpose": "Solid accent-text heading over the photographic Library masthead."
+      },
+      "body": {
+        "displayName": "Body",
+        "purpose": "Inherited body text."
+      },
+      "table-cell": {
+        "displayName": "Table cell",
+        "purpose": "Compact catalogue text."
+      }
+    },
+    "shadows": [
+      {
+        "name": "cover-lift",
+        "value": "0 14px 32px -16px var(--accent-glow)",
+        "purpose": "Library cover hover and focus."
+      }
+    ],
+    "motion": [
+      {
+        "name": "duration-fast",
+        "value": "180ms",
+        "purpose": "Fast interaction timing."
+      },
+      {
+        "name": "duration-base",
+        "value": "240ms",
+        "purpose": "Base interaction timing."
+      },
+      {
+        "name": "duration-slow",
+        "value": "320ms",
+        "purpose": "Slow interaction timing."
+      },
+      {
+        "name": "duration-theme",
+        "value": "300ms",
+        "purpose": "Theme transition timing."
+      },
+      {
+        "name": "ease-standard",
+        "value": "cubic-bezier(0.22, 0.61, 0.36, 1)",
+        "purpose": "Standard easing."
+      },
+      {
+        "name": "ease-emphasised",
+        "value": "cubic-bezier(0.16, 0.78, 0.3, 1)",
+        "purpose": "Emphasised easing."
+      }
+    ],
+    "breakpoints": [
+      {
+        "name": "content-padding",
+        "value": "640px"
+      },
+      {
+        "name": "table-mobile-max",
+        "value": "899px"
+      },
+      {
+        "name": "desktop-navigation",
+        "value": "1024px"
+      }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary button",
+      "kind": "button",
+      "description": "Current primary button variant.",
+      "html": "<button type=\"button\" class=\"ds-button-primary\">Primary</button>",
+      "css": ".ds-button-primary{display:inline-flex;align-items:center;justify-content:center;gap:6px;height:32px;padding:0 10px;border:1px solid transparent;border-radius:12px;font-size:14px;font-weight:500;line-height:20px;white-space:nowrap;cursor:pointer;transition:color 150ms,background-color 150ms,transform 150ms;font-family:var(--font-body,\"Satoshi Variable\",system-ui,sans-serif);background:var(--accent, #C9A961);color:var(--fg-on-accent, #0E0D0A);border-color:transparent}.ds-button-primary:focus-visible{outline:2px solid var(--accent-text, #D9B970);outline-offset:2px;box-shadow:none;}.ds-button-primary:active{transform:translateY(1px)}.ds-button-primary:disabled{pointer-events:none;opacity:.5}",
+      "refersTo": "button-primary"
+    },
+    {
+      "name": "Outline button",
+      "kind": "button",
+      "description": "Current outline button variant.",
+      "html": "<button type=\"button\" class=\"ds-button-outline\">Outline</button>",
+      "css": ".ds-button-outline{display:inline-flex;align-items:center;justify-content:center;gap:6px;height:32px;padding:0 10px;border:1px solid transparent;border-radius:12px;font-size:14px;font-weight:500;line-height:20px;white-space:nowrap;cursor:pointer;transition:color 150ms,background-color 150ms,transform 150ms;font-family:var(--font-body,\"Satoshi Variable\",system-ui,sans-serif);background:color-mix(in oklab,var(--border, #3E3A32) 30%,transparent);color:var(--fg, #F0EEE9);border-color:var(--border, #3E3A32)}.ds-button-outline:hover{background:color-mix(in oklab,var(--border, #3E3A32) 50%,transparent)}.ds-button-outline:focus-visible{outline:2px solid var(--accent-text, #D9B970);outline-offset:2px;box-shadow:none;}.ds-button-outline:active{transform:translateY(1px)}.ds-button-outline:disabled{pointer-events:none;opacity:.5}",
+      "refersTo": "button-outline"
+    },
+    {
+      "name": "Secondary button",
+      "kind": "button",
+      "description": "Current secondary button variant.",
+      "html": "<button type=\"button\" class=\"ds-button-secondary\">Secondary</button>",
+      "css": ".ds-button-secondary{display:inline-flex;align-items:center;justify-content:center;gap:6px;height:32px;padding:0 10px;border:1px solid transparent;border-radius:12px;font-size:14px;font-weight:500;line-height:20px;white-space:nowrap;cursor:pointer;transition:color 150ms,background-color 150ms,transform 150ms;font-family:var(--font-body,\"Satoshi Variable\",system-ui,sans-serif);background:var(--surface-2, #2B2924);color:var(--fg, #F0EEE9);border-color:transparent}.ds-button-secondary:hover{background:color-mix(in oklab,var(--surface-2, #2B2924) 80%,transparent)}.ds-button-secondary:focus-visible{outline:2px solid var(--accent-text, #D9B970);outline-offset:2px;box-shadow:none;}.ds-button-secondary:active{transform:translateY(1px)}.ds-button-secondary:disabled{pointer-events:none;opacity:.5}"
+    },
+    {
+      "name": "Ghost button",
+      "kind": "button",
+      "description": "Current ghost button variant.",
+      "html": "<button type=\"button\" class=\"ds-button-ghost\">Ghost</button>",
+      "css": ".ds-button-ghost{display:inline-flex;align-items:center;justify-content:center;gap:6px;height:32px;padding:0 10px;border:1px solid transparent;border-radius:12px;font-size:14px;font-weight:500;line-height:20px;white-space:nowrap;cursor:pointer;transition:color 150ms,background-color 150ms,transform 150ms;font-family:var(--font-body,\"Satoshi Variable\",system-ui,sans-serif);background:transparent;color:var(--fg, #F0EEE9);border-color:transparent}.ds-button-ghost:hover{background:color-mix(in oklab,var(--surface, #24221E) 50%,transparent)}.ds-button-ghost:focus-visible{outline:2px solid var(--accent-text, #D9B970);outline-offset:2px;box-shadow:none;}.ds-button-ghost:active{transform:translateY(1px)}.ds-button-ghost:disabled{pointer-events:none;opacity:.5}",
+      "refersTo": "button-ghost"
+    },
+    {
+      "name": "Destructive button",
+      "kind": "button",
+      "description": "Current destructive button variant.",
+      "html": "<button type=\"button\" class=\"ds-button-destructive\">Remove</button>",
+      "css": ".ds-button-destructive{display:inline-flex;align-items:center;justify-content:center;gap:6px;height:32px;padding:0 10px;border:1px solid transparent;border-radius:12px;font-size:14px;font-weight:500;line-height:20px;white-space:nowrap;cursor:pointer;transition:color 150ms,background-color 150ms,transform 150ms;font-family:var(--font-body,\"Satoshi Variable\",system-ui,sans-serif);background:color-mix(in oklab,var(--danger, #B91C1C) 20%,transparent);color:var(--danger, #B91C1C);border-color:transparent}.ds-button-destructive:hover{background:color-mix(in oklab,var(--danger, #B91C1C) 30%,transparent)}.ds-button-destructive:focus-visible{outline:2px solid var(--accent-text, #D9B970);outline-offset:2px;box-shadow:none;}.ds-button-destructive:active{transform:translateY(1px)}.ds-button-destructive:disabled{pointer-events:none;opacity:.5}",
+      "refersTo": "button-destructive"
+    },
+    {
+      "name": "Link button",
+      "kind": "button",
+      "description": "Current link button variant.",
+      "html": "<button type=\"button\" class=\"ds-button-link\">Link</button>",
+      "css": ".ds-button-link{display:inline-flex;align-items:center;justify-content:center;gap:6px;height:32px;padding:0 10px;border:1px solid transparent;border-radius:12px;font-size:14px;font-weight:500;line-height:20px;white-space:nowrap;cursor:pointer;transition:color 150ms,background-color 150ms,transform 150ms;font-family:var(--font-body,\"Satoshi Variable\",system-ui,sans-serif);background:transparent;color:var(--accent, #C9A961);border-color:transparent}.ds-button-link:hover{text-decoration:underline;text-underline-offset:4px}.ds-button-link:focus-visible{outline:2px solid var(--accent-text, #D9B970);outline-offset:2px;box-shadow:none;}.ds-button-link:active{transform:translateY(1px)}.ds-button-link:disabled{pointer-events:none;opacity:.5}"
+    },
+    {
+      "name": "Input",
+      "kind": "input",
+      "refersTo": "input",
+      "description": "Single-line input in the dark theme.",
+      "html": "<input class=\"ds-input\" aria-label=\"Catalogue field\" placeholder=\"Catalogue field\">",
+      "css": ".ds-input{font-family:var(--font-body,\"Satoshi Variable\",system-ui,sans-serif);height:32px;width:100%;min-width:0;padding:4px 10px;border:1px solid var(--border, #3E3A32);border-radius:12px;background:color-mix(in oklab,var(--border, #3E3A32) 30%,transparent);color:var(--fg, #F0EEE9);font-size:14px;line-height:20px}.ds-input::placeholder{color:var(--fg-muted, #BAB2A3)}.ds-input:focus-visible{outline:2px solid var(--accent-text, #D9B970);outline-offset:2px;box-shadow:none;}.ds-input:disabled{opacity:.5;cursor:not-allowed}.ds-input[aria-invalid=true]{border-color:var(--danger, #B91C1C)}"
+    },
+    {
+      "name": "Card",
+      "kind": "card",
+      "refersTo": "card",
+      "description": "Flat container with a tonal surface and a fine ring.",
+      "html": "<div class=\"ds-card\"><div class=\"ds-card-title\">Catalogue</div><p class=\"ds-card-description\">Library details</p></div>",
+      "css": ".ds-card{font-family:var(--font-body,\"Satoshi Variable\",system-ui,sans-serif);display:flex;flex-direction:column;gap:16px;overflow:hidden;padding:16px;border-radius:12px;background:var(--surface, #24221E);color:var(--fg, #F0EEE9);font-size:14px;box-shadow:0 0 0 1px color-mix(in oklab,var(--fg, #F0EEE9) 10%,transparent)}.ds-card-title{font-size:16px;line-height:1.375;font-weight:500}.ds-card-description{margin:0;color:var(--fg-muted, #BAB2A3)}"
+    },
+    {
+      "name": "Navigation item",
+      "kind": "nav",
+      "description": "Active library link with the gold slot marker.",
+      "html": "<nav aria-label=\"Preview navigation\"><a class=\"ds-nav\" href=\"#library\" aria-current=\"page\"><span class=\"ds-slot\" aria-hidden=\"true\"></span>Library</a></nav>",
+      "css": ".ds-nav{font-family:var(--font-body,\"Satoshi Variable\",system-ui,sans-serif);display:flex;align-items:center;gap:8px;padding:8px 12px;border-radius:8px;background:var(--surface, #24221E);color:var(--fg, #F0EEE9);font-size:14px;font-weight:500;line-height:20px;text-decoration:none}.ds-slot{width:16px;height:2px;background:var(--accent, #C9A961)}.ds-nav:hover{background:var(--surface, #24221E)}.ds-nav:focus-visible{outline:2px solid var(--accent-text, #D9B970);outline-offset:2px;box-shadow:none;}"
+    },
+    {
+      "name": "Filter chip",
+      "kind": "chip",
+      "description": "Removable filter condition with a separate clear control.",
+      "html": "<span class=\"ds-chip\">Format: EPUB<button class=\"ds-chip-remove\" type=\"button\" aria-label=\"Remove format filter\"><svg width=\"12\" height=\"12\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" aria-hidden=\"true\"><path d=\"m18 6-12 12M6 6l12 12\"/></svg></button></span>",
+      "css": ".ds-chip{font-family:var(--font-body,\"Satoshi Variable\",system-ui,sans-serif);display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border:1px solid var(--border, #3E3A32);border-radius:9999px;color:var(--fg-muted, #BAB2A3);font-size:12px;line-height:16px}.ds-chip-remove{display:flex;align-items:center;justify-content:center;min-height:24px;min-width:24px;border:0;border-radius:9999px;background:transparent;color:inherit;cursor:pointer}.ds-chip-remove:hover{color:var(--fg, #F0EEE9)}.ds-chip-remove:focus-visible{outline:2px solid var(--accent-text, #D9B970);outline-offset:2px;box-shadow:none;}"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Curator's Archive",
+    "overview": "The dark Library table view is the visual reference. The light theme remains\nunder review; its tokens below describe the current implementation.\n\nReverie's surfaces feel like a museum after hours \u2014 the collection is the point, the lighting is considered, the chrome stays out of the reader's way. Cinematic-boutique is the locked visual register: the Library is the identity surface and carries the atmosphere (subtle animated warm gradients, a static noise texture, a photographic hero band, a solid accent-text masthead H1, hover-lift on covers, and a press-F cinematic mode that dissolves the chrome). Typography does the structural work and information hierarchy is disciplined. The reader recedes into a calm long-form surface that inherits palette and motion language but withdraws nearly all chrome; utility and admin screens stay plainest of all.\n\nColour is governed through a three-tier token tree: generated Radix primitives (`--sand` / `--gold` / `--danger` ramps), then semantic roles (`--canvas` / `--fg` / `--accent` / \u2026) with a shadcn-compatibility alias layer, then a sealed art-directed atmosphere tier (`--atm-*` / `--cover-*`) that chrome must never consume. The brand has exactly one accent (Reverie Gold) and exactly one state hue (the danger red) \u2014 every other state, hierarchy, and emphasis signal is carried by weight, opacity, type scale, density, and motion. There is no severity ladder; success, warning, and info stay hue-less. The category-reflex check has two altitudes the system answers no to: it does not look like a self-hosted media manager (Calibre, Plex), and it does not look like an AI workflow tool (SaaS-cream chrome, Linear-clone gradients).",
+    "keyCharacteristics": [
+      "Editorial pairing: Author (display) + Satoshi (workhorse) + JetBrains Mono (metadata). Sans-only; no content serif.",
+      "Two anchored canvases: Parchment (`#E8DCC2`) for light, Ink (`#0E0D0A`) for dark. Both surface ramps tint warmly toward the brand hue. No neutral greys.",
+      "Single gold accent (\u226410% of any screen), single danger hue (bounded exception, destructive/error only, fill/border/icon \u2014 never body text).",
+      "Flat by default; the one signature shadow is the accent-glow cover-lift on the Library grid. Atmospheric depth on the Library page comes from the sealed `--atm-*` tier.",
+      "Motion budget: 180\u2013320 ms ease-out (`--ease-standard` / `--ease-emphasised`), no bounce, no spring; route crossfades via the View Transitions API; `prefers-reduced-motion` respected as a first-class state."
+    ],
+    "rules": [
+      {
+        "name": "The One Accent Rule",
+        "body": "Reverie Gold is the only accent. State, hierarchy, and emphasis below the level of \"this matters\" are communicated through weight, opacity, type scale, density, and motion \u2014 never through additional hues. There is no severity ladder.",
+        "section": "colors"
+      },
+      {
+        "name": "The Danger Carve-Out Rule",
+        "body": "The danger hue is the single exception to no-hue-states. It appears in exactly two contexts: (1) irreversible destructive confirmation (alongside typed-name confirmation and an undo window where feasible), and (2) unrecoverable system errors that would otherwise survive as a wrong \"it's working\" mental model. Nowhere else, never decorative, always paired with a non-colour signal. Success, warning, and info remain hue-less.",
+        "section": "colors"
+      },
+      {
+        "name": "The Light-Gold Restriction Rule",
+        "body": "On Parchment, gold-9 (`#A77C00`) measures 2.80:1, which clears neither WCAG 1.4.11 as a hairline nor 1.4.3 as text of any size. Darkening it far enough to clear 3:1 stops it reading as gold, so contrast is carried by how the accent is used rather than by the value. As a fill it pairs with `--fg-on-accent` (Ink) at 5.11:1, clearing 1.4.3 for normal text; the fill does the work, not the gold edge. Gold that must read as text or a hairline (for example the focus ring) uses the darker `accent-text` step (`#5A3E00`, 7.27:1 on Parchment) instead. The accent fill stays restricted on light surfaces to large CTAs and recovery actions as a brand rule, not an accessibility concession. axe-core contrast violations on a gold edge or gold text are the right signal: the surface is misusing the accent.",
+        "section": "colors"
+      },
+      {
+        "name": "The No-Black-No-White Rule",
+        "body": "`#000` is prohibited and `#fff` is reserved for exactly one role: `--fg-on-danger`, where the danger solid needs maximum contrast. Every other neutral tints warmly toward the brand hue. The doctrine is OKLCH thinking with sRGB-hex floor and a P3 enhancement layer; primitives are generated, not hand-tuned.",
+        "section": "colors"
+      },
+      {
+        "name": "The Sans-Only Rule",
+        "body": "Reverie deliberately rejected the chrome-sans / content-serif convention. Author and Satoshi both sit in the sans family \u2014 Author's wide-letterform editorial energy carries the display register that a content serif would normally fill. There is no content serif in the system.",
+        "section": "typography"
+      },
+      {
+        "name": "The 65-75ch Body Rule",
+        "body": "Body text caps at 65\u201375ch for prose surfaces (book descriptions, blog-shape content). Library cards and detail panels are not prose and may exceed this; reader text is user-configurable and overrides the system default.",
+        "section": "typography"
+      },
+      {
+        "name": "The Italic-as-Editorial-Accent Rule",
+        "body": "Italics use Author italic (the editorial counterweight), not Satoshi italic. Reserved for book titles, ship-names, internal-monologue, and the tagline (which uses Author 400 regular, not italic). Not for general emphasis.",
+        "section": "typography"
+      },
+      {
+        "name": "The No-Black-Weight Rule",
+        "body": "Author and Satoshi black weights (900) are not loaded \u2014 the variable axes run 400\u2013700. Both fight the boutique register; their absence is deliberate. If a display moment needs more weight, increase size or use tracking; do not reach for 900.",
+        "section": "typography"
+      },
+      {
+        "name": "The Flat-By-Default Rule",
+        "body": "Surfaces are flat at rest. Depth comes from tonal layering (canvas \u2192 surface \u2192 surface-2 \u2192 surface-3). The one chrome shadow is the Library cover-lift on hover / focus; otherwise depth is a response to state (the focus ring). If a card's resting state needs a drop shadow to look complete, the design is wrong.",
+        "section": "elevation & depth"
+      },
+      {
+        "name": "The Atmosphere-Is-Library-Only Rule",
+        "body": "The subtle animated warm gradients, static noise texture, photographic hero, and solid accent-text masthead are mounted inside the Library page, never in the app shell. The identity surface carries the atmosphere; the reader recedes and utility / admin screens stay plain. Ambient drift is never app-wide and never bleeds into chrome.",
+        "section": "elevation & depth"
+      },
+      {
+        "name": "The Single-Focus-Indicator Rule",
+        "body": "A global `:focus-visible` rule paints one 2px `accent-text` outline at a 2px offset and forces `box-shadow: none`. The `box-shadow: none` is load-bearing: it suppresses the per-primitive `focus-visible:ring-*` box-shadow rings so the app never paints two concentric indicators. Verify focus by render in both themes, not on the computed claim alone.",
+        "section": "elevation & depth"
+      },
+      {
+        "name": "The One-Primary-Per-Surface Rule",
+        "body": "Each surface has at most one Primary button. If two actions seem to need primary weight, one of them is actually destructive (route to alert-dialog) or the surface is doing two jobs (split it).",
+        "section": "components"
+      },
+      {
+        "name": "The No-Bottom-Nav Rule",
+        "body": "Mobile nav is a sheet, not a bottom bar. Bottom-nav reads consumer-app; Reverie's mobile presence is a complement to the desktop archive, not a standalone mobile app.",
+        "section": "components"
+      },
+      {
+        "name": "The Lockup-As-Brand-Carrier Rule",
+        "body": "The Lockup component is invariant. It uses inline hex values, not theme tokens, and must render correctly before the theme tree resolves. Do not theme it; do not re-style its parts; do not use its glyph or wordmark separately as decorative elements.",
+        "section": "components"
+      }
+    ],
+    "dos": [
+      "**Do** anchor every screen on Parchment (`#E8DCC2`) or the Ink dark canvas (`#0E0D0A`); the two canvases are the only legitimate page backgrounds.",
+      "**Do** use Reverie Gold for primary CTAs, recovery actions, the active-nav slot bar, and the Slot mark fill. Use the darker `accent-text` step where gold must read as text or a hairline (e.g. the focus ring); nothing else.",
+      "**Do** restrict the danger hue (`#B91C1C`) to fill, border, or icon \u2014 never body text \u2014 in exactly the two carve-out contexts (irreversible destructive confirm, unrecoverable system error), always paired with a non-colour signal.",
+      "**Do** carry hierarchy through weight, opacity, type scale, density, and motion. Author or Satoshi at different weights is the system's primary expressiveness.",
+      "**Do** cap body text at 65\u201375ch on prose surfaces; cards and detail panels are not prose and may run wider.",
+      "**Do** keep cards flat at rest (`ring-1 ring-foreground/10`, no shadow). Tonal layering \u2014 canvas \u2192 surface \u2192 surface-2 \u2192 surface-3 \u2014 does the depth work.",
+      "**Do** keep the ambient atmosphere and photographic masthead on the Library page only; the app shell, reader, and admin surfaces stay plain.",
+      "**Do** use the `bg-overlay` scrim token for modal and sheet backdrops. Popovers have no backdrop.",
+      "**Do** respect `prefers-reduced-motion`: tile stagger and dot pulse stop, the warm gradients hold a still frame, route crossfades become instant swaps, cinematic transitions snap. The cinematic register survives in palette and typography when motion withdraws.",
+      "**Do** use the Lockup component for the brand mark, never the glyph or wordmark alone (except favicons / footer microtext)."
+    ],
+    "donts": [
+      "**Don't** introduce a severity colour ladder. No red/amber/green pills. No info-blue callouts. No \"did you know\" banners. Gold says \"this matters\"; the danger hue says \"stop\"; everything else is weight + density + motion. This is the One Accent Rule, hard.",
+      "**Don't** ship surfaces that look like **SaaS-cream AI-workflow chrome** (Linear, Stripe, vercel-cream marketing). The first-order category trap for self-hosted media managers in 2026. Reverie is not a workflow tool.",
+      "**Don't** ship surfaces that look like **generic ebook UI** (Calibre, Plex-clone shelves, default-Tailwind grids of identical title + author + cover cards). The category clich\u00e9. Reverie is in the category but must not look like it shipped from the category.",
+      "**Don't** ship surfaces that look like a **cozy reading nook** (lamp, paper, warm-domestic, hand-drawn book stacks). The library is an archive, not a corner of a living room. The reader recedes; it does not invite.",
+      "**Don't** ship surfaces that look like a **severity-coloured dashboard** (red/amber/green pills, info-blue callouts, status banners, hero-metric templates).",
+      "**Don't** use `#000`. `#fff` is reserved for `--fg-on-danger` only; every other neutral tints warmly toward the brand hue.",
+      "**Don't** use the gold accent fill as text on Parchment at any size. Use the darker `accent-text` step for gold text.",
+      "**Don't** consume the sealed `--atm-*` atmosphere tokens from chrome. They are art-directed editorial constants for the Library masthead and ambient field only; no `bg-atm-*` utilities exist by design.",
+      "**Don't** extend the established gilt-text exception to other surfaces. The current Library masthead uses solid accent-text colour; no `.lib-h1-gilt` treatment is implemented.",
+      "**Don't** load Author or Satoshi black weights (900). Both fight the boutique register; reach for size or tracking instead.",
+      "**Don't** use side-stripe borders (`border-left` greater than 1px as a coloured accent). Absolute ban. Use a full border, background tint, leading numeral or icon, or nothing.",
+      "**Don't** paint two focus indicators. The global 2px `accent-text` outline (with `box-shadow: none`) is the single indicator; don't reintroduce a competing box-shadow ring.",
+      "**Don't** use em dashes (`\u2014` or `--`) in UI copy. Commas, colons, semicolons, periods, or parentheses do the work.",
+      "**Don't** centre the Slot in the glyph (it sits at 53 % from top), recolour the glyph, change the wordmark tracking, stack the Lockup vertically, or apply effects (shadow, glow, gradient, bevel, outline) to either part.",
+      "**Don't** invent additional accents or state hues. Gold is the only accent; the danger red is the only state hue. Do not relitigate success / warning / info colours \u2014 they stay hue-less."
+    ]
+  }
+}
