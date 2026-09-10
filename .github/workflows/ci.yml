@@ -71,6 +71,7 @@ jobs:
     uses: ./.github/workflows/codeql.yml
     permissions:
       contents: read
+      pull-requests: read
       security-events: write
       actions: read
 
