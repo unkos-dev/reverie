@@ -6,7 +6,7 @@ project carries temporarily because of a specific constraint, with a recorded pl
 `debt/` is sister to `docs/adr/`, not a subset:
 
 | Artefact | Purpose | Lifecycle |
-| ----------- | -------------------------------------------------------------- | -------------------------------------- |
+| -------- | ------- | --------- |
 | `docs/adr/` | Decisions ("we chose X over Y, here's why") | proposed → accepted → maybe superseded |
 | `debt/` | Concessions ("we know this is wrong, accepting until Y lifts") | active → purged on resolution |
 
@@ -115,11 +115,10 @@ by definition active debt, the roadmap reads the directory as-is: no status filt
 
 ## Active
 
-- [Explicit header alignment enables table compaction](2026-09-10-rumdl-table-compaction.md): lifts when rumdl checks
-  the width of already aligned tables without explicit header alignment.
-
 <!-- listed most-stale first; new entries go to the top -->
 
+- [Explicit header alignment enables table compaction](2026-09-10-rumdl-table-compaction.md): lifts when rumdl checks
+  the width of already aligned tables without explicit header alignment.
 - [pnpm updates stay on v11](2026-09-10-pnpm-update-lockfile.md): lifts when a stable newer release passes both targeted
   updates and clean frozen installs.
 - [Pre-migration manifestations have no embedded-cover flag](2026-07-31-embedded-cover-flag-not-backfilled.md): adopted

@@ -31,3 +31,4 @@ enabled = true
 style = "aligned"
 max-width = 120
 column-align-header = "auto"
+aligned-delimiter = true

@@ -8,7 +8,7 @@ document is for operators: it explains what ships, why, and how to tune it.
 Every response carries four unconditional headers:
 
 | Header | Value | Purpose |
-| ------------------------ | ------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------- |
+| ------ | ----- | ------- |
 | `X-Content-Type-Options` | `nosniff` | Disables MIME sniffing |
 | `Referrer-Policy` | `no-referrer` | Omits `Referer` on outgoing navigations |
 | `Permissions-Policy` | `camera=(), microphone=(), geolocation=(), payment=(), usb=(), midi=(), magnetometer=(), accelerometer=(), gyroscope=()` | Denies every high-risk browser capability |
@@ -79,7 +79,7 @@ injection. Must be a valid absolute `http(s)://` URL.
 ## Dev mode vs production
 
 | Surface | Dev (Vite dev server) | Production (Docker container) |
-| -------------------- | ------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------- |
+| ------- | --------------------- | ----------------------------- |
 | HTML CSP | `'unsafe-inline' 'unsafe-eval'` + HMR WebSocket | Strict hash-based, no `'unsafe-inline'`/`'unsafe-eval'` |
 | API CSP | Vite proxies `/api`, `/auth`, `/opds` to the backend; backend's API CSP applies to those responses | `default-src 'none'; frame-ancestors 'none'; base-uri 'none'` |
 | HSTS | Off | Off by default; on behind TLS with `REVERIE_BEHIND_HTTPS=true` |
@@ -108,7 +108,7 @@ documented in `frontend/public/fonts/fontshare/README.md`.
 Reverie sets two cookies on authenticated browsers:
 
 | Name | HttpOnly | Max-Age | Path | SameSite | Purpose | Lifecycle |
-| --------------- | -------- | -------- | ---- | -------- | ------------------------------------------ | ------------------------------------------------- |
+| ---- | -------- | ------- | ---- | -------- | ------- | --------- |
 | `id` | **Yes** | Session | `/` | `Lax` | tower-sessions session cookie (auth state) | Cleared on logout; short-lived |
 | `reverie_theme` | **No** | 365 days | `/` | `Lax` | Dark/Light/System preference for FOUC | Survives logout by design (device state, not PII) |
 

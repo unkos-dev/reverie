@@ -10,7 +10,7 @@ remains the source of truth for the palette.
 ## The three tiers
 
 | Tier | Where | Contents | Raw color? |
-| ------------- | --------------------------------- | ------------------------------------------------------------------------------------ | --------------------------------- |
+| ---- | ----- | -------- | ---------- |
 | 1: Primitives | `themes/primitives.generated.css` | `--sand-*` / `--gold-*` / `--danger-*` 12-step ramps (+ alpha, P3, contrast, `--bg`) | Yes, generated, never hand-edited |
 | 2: Semantic | `themes/index.css` | `--canvas` / `--fg` / `--accent` / `--danger` / `--border` … + shadcn aliases | No, `var()` references only |
 | 3: Atmosphere | `themes/atmosphere.css` | `--atm-*` / `--cover-*` art-directed editorial constants | Yes, art-directed |

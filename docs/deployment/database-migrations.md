@@ -6,7 +6,7 @@ from the long-lived application process so that an internet-exposed server never
 ## Two identities, one principle
 
 | Identity | Holds the migration credential? | Privileges |
-| ------------------ | ------------------------------- | -------------------------------------------------------------------------------- |
+| -------- | ------------------------------- | ---------- |
 | `reverie_migrator` | Yes — only while migrating | `NOSUPERUSER NOCREATEROLE NOBYPASSRLS`; CREATE on the database + schema `public` |
 | `reverie_app` | No | DML under row-level security; `SELECT` on migration history only |
 

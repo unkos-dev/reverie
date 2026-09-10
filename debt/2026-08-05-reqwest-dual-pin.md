@@ -57,7 +57,7 @@ As of 2026-05-29 the `ramosbugs/openidconnect-rs` repository's last commit was N
 release was 4.0.1, from July 2025. Slow, not abandoned.
 
 | Option | reqwest | Maintenance | Switch cost |
-| ------------------------------------ | -------------------------- | ----------------------- | ---------------------------------------------------------------------- |
+| ------ | ------- | ----------- | ----------- |
 | **stay** openidconnect 4.0.1 | dual 0.12 and 0.13 | slowing | none |
 | **openid** (kilork) 0.23 | **0.13 only** | active-ish | full auth rewrite |
 | **mas-oidc-client** 0.11 | http-agnostic (BYO client) | strong (Element/Matrix) | rewrite plus off-label use |

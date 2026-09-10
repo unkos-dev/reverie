@@ -78,7 +78,7 @@ axe-core scan on the grid region plus a keyboard-walk checklist).
 Measured at 50K rows with simulated API latency of 0 ms:
 
 | Budget | Threshold | react-data-grid | AG Grid Community |
-| ----------------------------------- | ----------------- | --------------------------------------------- | --------------------------------------------- |
+| ------ | --------- | --------------- | ----------------- |
 | Keystroke p95 (200 moves) | ≤ 33 ms | 27.0 ms (p50 16.6, max 63.1, 0 dropped): pass | 21.3 ms (p50 16.6, max 28.1, 0 dropped): pass |
 | Scroll: max frame, wheel + Ctrl+End | no stall > 100 ms | max frame 50.1 ms, 0 stalls: pass | not measured: fail |
 | Mount to interactive | < 1 s | 12.1 ms: pass | 25.8 ms: pass |

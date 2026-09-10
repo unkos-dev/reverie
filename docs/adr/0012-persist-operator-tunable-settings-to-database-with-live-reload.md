@@ -110,7 +110,7 @@ unnecessary staleness, up to the poll interval, when LISTEN/NOTIFY is trivial to
 All settings are hot-reloadable except four groups of infrastructure fields that require a process restart:
 
 | Field | Why restart-required |
-| ------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------- |
+| ----- | -------------------- |
 | `port` | Requires a `TcpListener` rebind; `axum::serve` does not support a hot swap. |
 | `database_url` | Requires pool reconstruction and drain coordination. |
 | `oidc_issuer_url`, `oidc_client_id`, `oidc_client_secret`, `oidc_redirect_uri` | Requires OIDC re-discovery (async HTTP) and a client rebuild. |

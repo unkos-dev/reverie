@@ -35,7 +35,7 @@ that step currently resolves to in `frontend/src/styles/themes/primitives.genera
 the hex, so treat the primitive as canonical and the hex as informative.
 
 | Token | Primitive | Light | Dark | Purpose |
-| ------------------ | ----------------- | ----------- | ----------- | ------------------------------------------------------ |
+| ----- | --------- | ----- | ---- | ------- |
 | `--canvas` | `--bg` | `#E8DCC2` | `#0E0D0A` | Page canvas |
 | `--canvas-2` | `sand-2` | `#D3D1CF` | `#191815` | Slightly recessed canvas |
 | `--surface` | `sand-3` | `#C8C6C2` | `#24221E` | Card / panel surface |

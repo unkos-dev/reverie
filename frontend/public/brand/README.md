@@ -17,7 +17,7 @@ affected ship files into this directory.
 ## What's here
 
 | Path | Purpose |
-| --------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| ---- | ------- |
 | `glyph/slot.svg` | Canonical mark — used in app chrome. |
 | `glyph/slot-favicon.svg` | Thicker-slot variant for sub-24px raster. |
 | `lockup/lockup-on-dark.svg` | Static lockup asset (e.g. share cards, README). The runtime lockup is rendered by `frontend/src/components/Lockup.tsx`. |

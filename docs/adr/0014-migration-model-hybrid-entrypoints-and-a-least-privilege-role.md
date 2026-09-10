@@ -139,7 +139,7 @@ timeout strategy.
 Interim levels pending project-wide logging conventions:
 
 | Scenario | Level | Message |
-| ---------------------------------------------- | ----- | --------------------------------------------------------------------------------------------- |
+| -------- | ----- | ------- |
 | No pending migrations | DEBUG | `database schema is up to date` |
 | Migrations applied | INFO | `applied {n} pending migrations ({elapsed}ms)` |
 | Individual migration applying | DEBUG | `applying migration {version} ({name})` |

@@ -47,7 +47,7 @@ start it with `just db-up`. CI runs the same commands against its own Postgres s
 The `docker/init-roles.sql` script creates these roles when the cluster starts:
 
 | Role | Connection | Purpose |
-| ------------------- | --------------------------------------------------------------------------- | --------------------------------------------------------- |
+| ---- | ---------- | ------- |
 | `reverie` | `postgres://reverie:reverie@localhost:5432/reverie_dev` | Bootstraps the cluster. Do not use for application logic. |
 | `reverie_migrator` | `postgres://reverie_migrator:reverie_migrator@localhost:5432/reverie_dev` | Runs migrations. Owns schema objects. |
 | `reverie_app` | `postgres://reverie_app:reverie_app@localhost:5432/reverie_dev` | Serves web traffic. Obeys RLS policies. |

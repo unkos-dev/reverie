@@ -47,7 +47,7 @@ toggle, which is too coarse for a zone that hosts more than the dev surface.
 ## When to revisit
 
 | Trigger | Action |
-| --------------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| ------- | ------ |
 | Upgrade to Cloudflare Pro on the zone | Switch to a per-hostname Exclude rule and remove the dev-CSP allowlist (cleaner posture). |
 | Zone no longer hosts non-dev services that need RUM | Disable RUM zone-wide; drop the dev-CSP allowlist. |
 | Beacon origin or path changes upstream | Update the dev CSP allowlist. (Cloudflare has changed beacon hostnames historically.) |

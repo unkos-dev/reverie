@@ -41,7 +41,7 @@ the table's sortable column headers, and the route loader that prefetches the fi
 ### State-writer census
 
 | State item | Where it lives | Single owner |
-| ----------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------ |
+| ---------- | -------------- | ------------ |
 | Library filter URL params (`q`, vocabulary, text, range, date, status, `series`, `shelf`) | Flat keys in the route's `URLSearchParams`, declared by `LIBRARY_PARSERS` in `frontend/src/lib/hooks/use-library-filters.ts` | `useLibraryFilters()` in that module; the `q` key also through `useQuickSearchFilter()` in the same module |
 | `cursor` URL parameter | `LIBRARY_PARSERS.cursor`, same module | `useLibraryFilters()` and `useQuickSearchFilter()`, which drop it with every filter write |
 | `view` URL parameter | `LIBRARY_PARSERS.view`, same module | `useLibraryFilters().setView` |

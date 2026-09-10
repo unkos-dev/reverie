@@ -44,7 +44,7 @@ ingestion_jobs     (standalone)
 ### Core (FRBR Model)
 
 | Table | Purpose | Key Columns |
-| ---------------- | -------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| ----- | ------- | ----------- |
 | `users` | Canonical user identity | `role`, `is_child`, `theme_preference`, `email` (`oidc_subject` is vestigial/nullable; identity resolves through `user_identities`) |
 | `works` | Abstract titles | `title`, `sort_title`, `search_vector` |
 | `authors` | Author/contributor records | `name`, `sort_name` |
@@ -54,7 +54,7 @@ ingestion_jobs     (standalone)
 ### Series & Metadata
 
 | Table | Purpose | Key Columns |
-| ---------------------- | --------------------------------------------- | ------------------------------------------------------------------------------ |
+| ----- | ------- | ----------- |
 | `series` | Series with self-referential nesting | `name`, `parent_id` |
 | `series_works` | Series-Work join | `series_id`, `work_id`, `position` (double precision for fractional ordering) |
 | `omnibus_contents` | Omnibus edition mapping | `omnibus_manifestation_id`, `contained_work_id`, `position` |
@@ -69,7 +69,7 @@ ingestion_jobs     (standalone)
 ### User Features
 
 | Table | Purpose | Key Columns |
-| ------------------ | -------------------------------- | ----------------------------------------------------------------- |
+| ----- | ------- | ----------- |
 | `shelves` | Per-user collections | `user_id`, `name`, `is_system` |
 | `shelf_items` | Shelf-Manifestation join | `shelf_id`, `manifestation_id`, `position` |
 | `device_tokens` | OPDS/reader device auth | `user_id`, `token_hash`, `revoked_at`, `scopes`, `expires_at` |
@@ -82,14 +82,14 @@ write, so a fresh account has no row at all.
 ### Auth & Identity
 
 | Table | Purpose | Key Columns |
-| ------------------- | ---------------------------------------- | ---------------------------------------------------------------------- |
+| ----- | ------- | ----------- |
 | `user_identities` | External-provider identity links | `user_id`, `provider`, `issuer`, `subject`; `UNIQUE (issuer, subject)` |
 | `local_credentials` | Local password credential (one per user) | `user_id` (PK), `password_hash` (Argon2id PHC; secret, app-grant only) |
 
 ### System
 
 | Table | Purpose | Key Columns |
-| -------------------- | ----------------------------------------- | ------------------------------------------------------- |
+| ----- | ------- | ----------- |
 | `api_cache` | External API response cache | `source`, `lookup_key`, `response`, `expires_at` |
 | `ingestion_jobs` | Batch job tracking | `batch_id`, `source_path`, `status` |
 | `writeback_jobs` | Queue of pending OPF writeback operations | `manifestation_id`, `reason`, `status`, `attempt_count` |
@@ -128,7 +128,7 @@ write, so a fresh account has no row at all.
 ## Database Role Architecture
 
 | Role | Purpose | Privileges | RLS |
-| ------------------- | ------------------------------------ | --------------------------------------------------------------------- | -------------------------------- |
+| ---- | ------- | ---------- | --- |
 | `reverie` | Cluster bootstrap — provisions roles | Superuser; not used at runtime or for migrations | Bypasses (superuser) |
 | `reverie_migrator` | Runs migrations (`reverie migrate`) | CREATE on database + schema `public`; owns created objects | Enforced — NOBYPASSRLS |
 | `reverie_app` | Web app, OPDS, webhooks | DML on all tables | Enforced — user-scoped |
@@ -157,7 +157,7 @@ Denied: `users`, `user_identities`, `local_credentials`, `shelves`, `shelf_items
 Six per-operation policies control access:
 
 | Policy | Operation | Roles | Logic |
-| -------------------------------------- | --------- | --------------------------------- | -------------------------------- |
+| ------ | --------- | ----- | ----- |
 | `manifestations_select_adult` | SELECT | `reverie_app`, `reverie_readonly` | Adults/admins see all |
 | `manifestations_select_child` | SELECT | `reverie_app`, `reverie_readonly` | Children see shelf-assigned only |
 | `manifestations_insert` | INSERT | `reverie_app` | Unrestricted (WITH CHECK true) |
@@ -175,7 +175,7 @@ or shelf check, so a session that reads or writes the junction table directly ge
 session that joins through `manifestations`:
 
 | Policy | Operation | Roles | Logic |
-| ------------------------------- | --------- | --------------------------------- | ----------------------------------------------- |
+| ------ | --------- | ----- | ----- |
 | `<table>_select` | SELECT | `reverie_app`, `reverie_readonly` | Visible iff the linked manifestation is visible |
 | `<table>_insert` | INSERT | `reverie_app` | Admin/adult, and the manifestation is visible |
 | `<table>_update` | UPDATE | `reverie_app` | Admin/adult, and the manifestation is visible |

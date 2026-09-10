@@ -31,7 +31,7 @@ State communicates through **typography weight, surface opacity, motion, and the
 with a single bounded exception, **danger** (below)). This is a load-bearing brand invariant:
 
 | State | Expression |
-| --------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| ----- | ---------- |
 | Default / idle | `text-fg`, `bg-surface` (or unchanged) |
 | Hover (surface lift) | `translate-y-[-1px]` + `border-border-strong` |
 | Hover (in-list item) | `bg-hover` (= `bg-surface-2`); brand gold is reserved for primary affordances and is never a hover treatment |
