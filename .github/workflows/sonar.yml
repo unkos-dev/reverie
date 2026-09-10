@@ -1,26 +1,18 @@
-# Main-baseline static analysis after successful CI; PR decoration is deliberately absent.
+# Main-baseline static analysis; PR decoration is deliberately absent.
 name: Sonar
 
 on:
-  workflow_run:
-    # "CI" is ci.yml's `name:` — renaming either side silently orphans this trigger.
-    workflows: [CI]
-    types: [completed]
+  # THREAT: workflow_run's branch filter also matches fork PRs from a branch
+  # named main, putting fork code in a job whose environment holds SONAR_TOKEN.
+  push:
     branches: [main]
 
 permissions:
   contents: read
 
-# Main CI runs vary in duration so completions can invert; queueing serializes
-# scans instead of letting a scan of an older commit cancel a newer one.
-concurrency:
-  group: sonar
-  cancel-in-progress: false
-
 jobs:
   scan:
     name: SonarQube Cloud
-    if: github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -28,7 +20,6 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
-          ref: ${{ github.event.workflow_run.head_sha }}
           fetch-depth: 0 # blame-based new-code detection
           persist-credentials: false
 

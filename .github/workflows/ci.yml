@@ -1,6 +1,5 @@
-name: CI # sonar.yml's workflow_run trigger matches this string; renaming either orphans it silently.
+name: CI
 
-# Display only, and independent of `name:` above, so the sonar.yml coupling is untouched.
 run-name: >-
   ${{ github.event_name == 'pull_request'
       && format('PR #{0}: {1}', github.event.number, github.event.pull_request.title)
@@ -9,7 +8,7 @@ run-name: >-
 
 on:
   # PRs are squash-merged, so main's head commit is a SHA no pull_request run
-  # analyzed; push keeps SonarQube Cloud's baseline current.
+  # analyzed.
   push:
     branches: [main]
   pull_request:
