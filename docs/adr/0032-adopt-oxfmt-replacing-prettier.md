@@ -76,3 +76,6 @@ The forcing details resolved as follows.
 
 Pairs with [Adopt oxlint](./0030-adopt-oxlint-replacing-the-eslint-toolchain.md), which moved linting to the same oxc
 toolchain. Together they complete the lint-and-format swap to oxc for the JS/TS surface.
+
+[Use rumdl for Markdown linting and formatting](0048-use-rumdl-for-markdown-linting-and-formatting.md) records the
+replacement Markdown ownership and reflow policy. The other formatter choices in this record remain unchanged.
