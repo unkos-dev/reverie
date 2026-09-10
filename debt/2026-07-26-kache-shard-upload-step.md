@@ -27,9 +27,9 @@ upload never happens.
 
 ## Workaround
 
-`.github/workflows/backend.yml` runs `kache save-manifest` as an ordinary step
-after the compiling steps, where it inherits `backend/` from the job's
-working directory. It passes no arguments: the action's setup step
+The backend and CodeQL workflows run `kache save-manifest` as an ordinary step
+after compilation and analysis respectively. The backend step inherits
+`backend/` from the job; CodeQL sets it explicitly. Neither passes arguments: the action's setup step
 exports `KACHE_NAMESPACE` and the remote settings into the job
 environment, so the namespace stays declared once. The step is confined
 to the default branch, matching every other write to the store.

@@ -69,6 +69,12 @@ jobs:
 
   codeql:
     uses: ./.github/workflows/codeql.yml
+    secrets:
+      R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+      R2_ACCESS_KEY_ID_RW: ${{ secrets.R2_ACCESS_KEY_ID_RW }}
+      R2_ACCESS_KEY_ID_RO: ${{ secrets.R2_ACCESS_KEY_ID_RO }}
+      R2_SECRET_ACCESS_KEY_RW: ${{ secrets.R2_SECRET_ACCESS_KEY_RW }}
+      R2_SECRET_ACCESS_KEY_RO: ${{ secrets.R2_SECRET_ACCESS_KEY_RO }}
     permissions:
       contents: read
       pull-requests: read

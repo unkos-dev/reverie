@@ -78,22 +78,29 @@ interpolation, so a crafted filename cannot inject into the shell.
 
 ### CodeQL language scope
 
-Rust analysis runs on PRs, merge groups and main pushes that change `backend/`,
-root Cargo configuration, manifests or toolchain files, or the CI caller,
-CodeQL workflow or CodeQL configuration. The Rust job uses no shared setup
-action or mise toolchain. Its dependency, build-script and migration inputs
-live under `backend/`.
+Rust analysis runs on every PR and merge group. Main pushes use path filtering
+for `backend/`, root Cargo configuration, manifests and toolchain files, the CI
+caller, CodeQL workflow and configuration, `mise.toml`, and the shared Rust
+toolchain action. Its dependency, build-script and migration inputs live under
+`backend/`.
+
+The Rust extractor uses kache and the existing R2 bucket for internal Cargo
+compilation. The CodeQL namespace groups downloads of compatible compiled
+artifacts, which remain reusable from the shared store. Main runs can write, while
+PR and merge-group runs use read-only credentials. Without an R2 account ID,
+including on forks without secrets, scans compile without the remote cache.
+When the account ID is set, missing credentials for the current event fail the
+job with the missing secret names. The Actions cache stores only Cargo registry
+data. Every scan creates a fresh CodeQL database and runs the configured queries.
 
 JavaScript/TypeScript analysis runs on every PR and merge group and uses its
 path filter on main pushes. Actions analysis always runs. The weekly schedule
 runs all three languages without path filtering.
 
-Language skips happen at job level so required check names still report.
-The ruleset also requires CodeQL findings at its configured alert thresholds;
-job completion alone does not establish that protection. After changing
-language scope, verify with a frontend-only PR and merge group that GitHub
-accepts the skipped Rust category, and with a Rust-relevant change that the
-analyser runs. Detector and analyser failures remain subject to `CI gate`.
+The code-scanning ruleset requires a Rust result on PRs even when the required
+Rust job reports an accepted skip. PR scans therefore retain every language
+category. Merge groups run the same analyses on the queued commit. Detector
+and analyser failures remain subject to `CI gate`.
 
 ## The backstop gate
 
