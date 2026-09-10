@@ -7,7 +7,7 @@ just = "1.58.0"
 # here rather than installed with apt so CI resolves it through the same
 # checksum-verified path as every other tool.
 mold = "2.42.0"
-opengrep = "1.29.0"
+opengrep = "1.30.0"
 rumdl = "0.2.70"
 shellcheck = "0.11.0"
 snyk = "1.1307.0"
