@@ -213,3 +213,9 @@ jobs:
         uses: github/codeql-action/analyze@b96794f015dfd88f77b49b1c93e0fa7110f94c63 # v4
         with:
           category: /language:rust
+
+      # The action's post step cannot find backend/Cargo.lock from the repository root.
+      - name: Upload prefetch shards
+        if: env.R2_CONFIGURED == 'true' && github.ref == 'refs/heads/main'
+        working-directory: backend
+        run: kache save-manifest
