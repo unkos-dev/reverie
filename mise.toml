@@ -73,7 +73,7 @@ locked = true
 # builds. Pinning it here keeps `mise install` provisioning the same
 # version the wrapper is configured against.
 [tools."github:kunobi-ninja/kache"]
-version = "0.17.0"
+version = "0.19.0"
 filter_bins = "kache"
 
 # Specification linter for docs/specs, run by `just infra::specful`.
