@@ -3,7 +3,8 @@ type: ADR
 profile-version: 1
 id: "REV-ADR-0048"
 title: "Use rumdl for Markdown linting and formatting"
-status: "proposed"
+status: "accepted"
+decided-on: "2026-09-10"
 recorded-on: "2026-09-10"
 decision-makers:
   - "John Unkovich"
@@ -20,7 +21,7 @@ while rumdl provides Markdown linting and formatting without that npm dependency
 
 ## Decision drivers
 
-- Use rumdl for Markdown linting and formatting.
+- Remove the vulnerable npm dependency while keeping Markdown formatting consistent.
 - Enforce 120-column normalised prose reflow consistently in hooks, local checks and CI.
 - Preserve table content, generated documents and upstream-owned text.
 - Keep one formatter responsible for each file type.

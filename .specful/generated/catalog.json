@@ -339,7 +339,7 @@
       "id": "REV-ADR-0048",
       "kind": "adr",
       "path": "docs/adr/0048-use-rumdl-for-markdown-linting-and-formatting.md",
-      "status": "proposed",
+      "status": "accepted",
       "title": "Use rumdl for Markdown linting and formatting"
     },
     {
