@@ -1,122 +1,102 @@
 # Release Documentation Backlog
 
-Operator- and user-facing documentation deferred until the relevant
-product surface is built out. Each item names the decision or feature
-whose rationale needs a proper Starlight page before a public release,
-rather than a half-built page written ahead of the surface it documents.
+Operator- and user-facing documentation deferred until the relevant product surface is built out. Each item names the
+decision or feature whose rationale needs a proper Starlight page before a public release, rather than a half-built page
+written ahead of the surface it documents.
 
-This file is the holding area; items graduate into `website/` Starlight
-pages when their surface lands.
+This file is the holding area; items graduate into `website/` Starlight pages when their surface lands.
 
 ## Items
 
 ### `validation_status` operator semantics
 
-**Source:** [A typed ValidationStatus enum reconciles the vocabulary](./adr/0013-a-typed-validationstatus-enum-reconciles-the-vocabulary.md) (the validation status vocabulary task)
+**Source:**
+[A typed ValidationStatus enum reconciles the vocabulary](./adr/0013-a-typed-validationstatus-enum-reconciles-the-vocabulary.md)
+(the validation status vocabulary task)
 
-The `validation_status` enum is `pending | clean | repaired | degraded`.
-The distinction is not self-evident to an operator reading the value:
+The `validation_status` enum is `pending | clean | repaired | degraded`. The distinction is not self-evident to an
+operator reading the value:
 
-- `pending`: the manifestation row exists but structural validation has
-  not run yet.
+- `pending`: the manifestation row exists but structural validation has not run yet.
 - `clean`: validation found no issues.
-- `repaired`: validation found issues that were automatically repaired;
-  the file is ingested, stored, and served.
-- `degraded`: validation found issues that are tolerated; the file is
-  still served.
+- `repaired`: validation found issues that were automatically repaired; the file is ingested, stored, and served.
+- `degraded`: validation found issues that are tolerated; the file is still served.
 
-The load-bearing point operators need: `clean`, `repaired`, and
-`degraded` are **all** stored-and-served outcomes on one quality tier:
-`clean` means _no issues found_, not _the only valid state_. A
-quarantined file is never represented here because quarantine deletes the
-file and writes no row.
+The load-bearing point operators need: `clean`, `repaired`, and `degraded` are **all** stored-and-served outcomes on one
+quality tier: `clean` means _no issues found_, not _the only valid state_. A quarantined file is never represented here
+because quarantine deletes the file and writes no row.
 
-Write an operator-facing Starlight page covering these states (and how
-quarantine differs) when the library/validation UI surface that exposes
-them lands. The dev-facing reference in
-[`docs/schema.md`](./schema.md) is already corrected.
+Write an operator-facing Starlight page covering these states (and how quarantine differs) when the library/validation
+UI surface that exposes them lands. The dev-facing reference in [`docs/schema.md`](./schema.md) is already corrected.
 
 ### OIDC `email` claim: addr-spec validation and degrade-to-NULL
 
-**Source:** `backend/src/models/user.rs`
-(`is_addr_spec`, `upsert_from_oidc`), which is tracked in the email validation task
+**Source:** `backend/src/models/user.rs` (`is_addr_spec`, `upsert_from_oidc`), which is tracked in the email validation
+task
 
-The OIDC `email` claim is signature-verified but not format-checked
-upstream. Reverie validates it against RFC 5322 _addr-spec_ rules before
-persisting. Two operator-visible behaviours:
+The OIDC `email` claim is signature-verified but not format-checked upstream. Reverie validates it against RFC 5322
+_addr-spec_ rules before persisting. Two operator-visible behaviours:
 
-- **Invalid format degrades to NULL, not a login failure.** A malformed
-  claim (display-name form `Alice <alice@example.com>`, domain-literal
-  `alice@[127.0.0.1]`, or a non-email string) is discarded and
-  `users.email` stored as `NULL`. Login still succeeds, identity is
-  `(issuer, subject)` resolved through `user_identities`, not the email
-  claim (OIDC Core §5.7: email is optional and non-identifying).
-- **Malformed claim on re-login overwrites a previously-stored valid
-  email to NULL.** If an IdP changes from a valid to an invalid claim, the
-  stored email is cleared on next login. The rejection is logged at `warn`
-  with a `had_prior_email` field so operators can tell a known-good value
-  being wiped (IdP misconfiguration) apart from a first-login carrying junk.
+- **Invalid format degrades to NULL, not a login failure.** A malformed claim (display-name form
+  `Alice <alice@example.com>`, domain-literal `alice@[127.0.0.1]`, or a non-email string) is discarded and `users.email`
+  stored as `NULL`. Login still succeeds, identity is `(issuer, subject)` resolved through `user_identities`, not the
+  email claim (OIDC Core §5.7: email is optional and non-identifying).
+- **Malformed claim on re-login overwrites a previously-stored valid email to NULL.** If an IdP changes from a valid to
+  an invalid claim, the stored email is cleared on next login. The rejection is logged at `warn` with a
+  `had_prior_email` field so operators can tell a known-good value being wiped (IdP misconfiguration) apart from a
+  first-login carrying junk.
 
-Write an operator-facing Starlight page covering email-claim validation
-behaviour when the admin user-management surface lands.
+Write an operator-facing Starlight page covering email-claim validation behaviour when the admin user-management surface
+lands.
 
 ### First-user auto-promotion retired; bootstrap model
 
 **Source:** `backend/src/models/user.rs` (`upsert_from_oidc`),
 [Unified identity with pluggable authentication providers](adr/0029-unified-identity-with-pluggable-authentication-providers.md)
 
-The first OIDC login no longer becomes an administrator. A fresh instance
-has no admin until one is granted through a bootstrap path that ships in a
-later slice. This closes the escalation route where any caller reaching
-OIDC login before setup could self-promote. Operators upgrading from a
-pre-S1 instance keep their existing admin row.
+The first OIDC login no longer becomes an administrator. A fresh instance has no admin until one is granted through a
+bootstrap path that ships in a later slice. This closes the escalation route where any caller reaching OIDC login before
+setup could self-promote. Operators upgrading from a pre-S1 instance keep their existing admin row.
 
-Write an operator-facing Starlight page covering the bootstrap and recovery
-model (how the first admin is granted, and recovery when no admin exists)
-when that surface lands.
+Write an operator-facing Starlight page covering the bootstrap and recovery model (how the first admin is granted, and
+recovery when no admin exists) when that surface lands.
 
 ### Admin `PATCH /api/v1/users/{id}`: addr-spec email validation
 
 **Source:** `backend/src/routes/users/mod.rs`, which is tracked in the email validation task
 
-The admin `PATCH /api/v1/users/{id}` endpoint validates the email field
-against the same RFC 5322 _addr-spec_ rules as the OIDC path
-(`is_addr_spec`). This tightens the prior `EmailAddress::is_valid` check,
-which accepted display-name (`Alice <alice@example.com>`) and
-domain-literal (`alice@[127.0.0.1]`) forms: both now rejected with 422.
-Email changes and clears do **not** bump `session_version`: email is not
-an access-control input (login identity is the `(issuer, subject)` pair in
-`user_identities`, RLS keys on user id/role/`is_child`), so no active
-session needs invalidating.
+The admin `PATCH /api/v1/users/{id}` endpoint validates the email field against the same RFC 5322 _addr-spec_ rules as
+the OIDC path (`is_addr_spec`). This tightens the prior `EmailAddress::is_valid` check, which accepted display-name
+(`Alice <alice@example.com>`) and domain-literal (`alice@[127.0.0.1]`) forms: both now rejected with 422. Email changes
+and clears do **not** bump `session_version`: email is not an access-control input (login identity is the
+`(issuer, subject)` pair in `user_identities`, RLS keys on user id/role/`is_child`), so no active session needs
+invalidating.
 
-Write an operator-facing Starlight page documenting these constraints when
-the admin user-management UI lands.
+Write an operator-facing Starlight page documenting these constraints when the admin user-management UI lands.
 
 ### `/api/v1` URL versioning and the breaking move from `/api/*`
 
-**Source:** [API versioning by URL path with OpenAPI as the contract](./adr/0016-api-versioning-by-url-path-with-openapi-as-the-contract.md) (the API versioning and OpenAPI contract task)
+**Source:**
+[API versioning by URL path with OpenAPI as the contract](./adr/0016-api-versioning-by-url-path-with-openapi-as-the-contract.md)
+(the API versioning and OpenAPI contract task)
 
-The JSON data API is served under `/api/v1/*`; `/health`, `/auth`, and
-`/opds` are deliberately unversioned (operational / standard-protocol
-paths exempt from the URL-path major-version rule). The data routes moved
-from `/api/*` to `/api/v1/*`: a breaking change. Old `/api/*` paths now
-return a JSON Problem `404`.
+The JSON data API is served under `/api/v1/*`; `/health`, `/auth`, and `/opds` are deliberately unversioned (operational
+/ standard-protocol paths exempt from the URL-path major-version rule). The data routes moved from `/api/*` to
+`/api/v1/*`: a breaking change. Old `/api/*` paths now return a JSON Problem `404`.
 
-Deferred on purpose: pre-v0.1.0 there are no released API consumers, so no
-migration guide is owed yet, and full `#[utoipa::path]` coverage of the
-versioned surface lands across the API versioning task PRs rather than this mount-move
-PR. Write a user-facing "API versioning and breaking-change migration"
-Starlight page (the `/api/v1` contract, what's unversioned and why, the
-deprecation policy for a future `/api/v2`) once the generated API
-reference covers the full route set.
+Deferred on purpose: pre-v0.1.0 there are no released API consumers, so no migration guide is owed yet, and full
+`#[utoipa::path]` coverage of the versioned surface lands across the API versioning task PRs rather than this mount-move
+PR. Write a user-facing "API versioning and breaking-change migration" Starlight page (the `/api/v1` contract, what's
+unversioned and why, the deprecation policy for a future `/api/v2`) once the generated API reference covers the full
+route set.
 
 ### Shelves list/detail pagination envelopes
 
-**Source:** [Keyset pagination as the default list contract](./adr/0019-keyset-pagination-as-the-default-list-contract.md) (the list contract compliance task, PR #465)
+**Source:**
+[Keyset pagination as the default list contract](./adr/0019-keyset-pagination-as-the-default-list-contract.md) (the list
+contract compliance task, PR #465)
 
-Pre-release breaking wire change to capture in the eventual `/api/v1`
-migration guide: `GET /api/v1/shelves` moved from a bare JSON array to a
-`{items, next_cursor}` envelope, and `GET /api/v1/shelves/{id}` pages its
-`items` with a `next_cursor` field plus a `?cursor` query parameter. The
-OPDS authors/series navigation feeds also gained RFC 5005 `rel="next"`
-paging, and `GET /api/v1/users` carries a defensive 500-row cap.
+Pre-release breaking wire change to capture in the eventual `/api/v1` migration guide: `GET /api/v1/shelves` moved from
+a bare JSON array to a `{items, next_cursor}` envelope, and `GET /api/v1/shelves/{id}` pages its `items` with a
+`next_cursor` field plus a `?cursor` query parameter. The OPDS authors/series navigation feeds also gained RFC 5005
+`rel="next"` paging, and `GET /api/v1/users` carries a defensive 500-row cap.

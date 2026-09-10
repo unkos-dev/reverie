@@ -8,11 +8,14 @@ Run `just js::test` from the repository root to execute the frontend unit tests.
 
 Configure the development environment using these variables.
 
-**REVERIE_DEV_HOSTS**
-Vite rejects unknown non-loopback hostnames to prevent DNS rebinding. Loopback hosts work without configuration. Set `REVERIE_DEV_HOSTS` to a comma-separated list of hostnames when using cloud development environments like Coder or Codespaces. The `vite-plugins/allowed-hosts.ts` script parses this value. The `vite-plugins/dev-csp.ts` script adds each hostname to the `connect-src` policy, allowing the HMR websocket to connect through TLS. Format hostnames without schemes, paths, whitespace, or semicolons.
+**REVERIE_DEV_HOSTS** Vite rejects unknown non-loopback hostnames to prevent DNS rebinding. Loopback hosts work without
+configuration. Set `REVERIE_DEV_HOSTS` to a comma-separated list of hostnames when using cloud development environments
+like Coder or Codespaces. The `vite-plugins/allowed-hosts.ts` script parses this value. The `vite-plugins/dev-csp.ts`
+script adds each hostname to the `connect-src` policy, allowing the HMR websocket to connect through TLS. Format
+hostnames without schemes, paths, whitespace, or semicolons.
 
-**REVERIE_DEV_HMR_CLIENT_PORT**
-The HMR websocket client defaults to port 5173. Set `REVERIE_DEV_HMR_CLIENT_PORT` to 443 when a reverse proxy fronts the dev server. The `vite-plugins/hmr-config.ts` script reads this value.
+**REVERIE_DEV_HMR_CLIENT_PORT** The HMR websocket client defaults to port 5173. Set `REVERIE_DEV_HMR_CLIENT_PORT` to 443
+when a reverse proxy fronts the dev server. The `vite-plugins/hmr-config.ts` script reads this value.
 
 ## Project Structure
 

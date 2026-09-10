@@ -14,13 +14,13 @@ decision-makers:
 ## Context and problem statement
 
 Reverie's documentation records why durable choices were made, in architecture decision records, and what the product
-looks like, in design documents. It has no record of what the software must do or how a subsystem currently works.
-The repository's own rule that user-facing design comes from artifacts rather than from an agent's judgement has few
+looks like, in design documents. It has no record of what the software must do or how a subsystem currently works. The
+repository's own rule that user-facing design comes from artifacts rather than from an agent's judgement has few
 artifacts to point at, so every session that touches a subsystem re-derives its behaviour and its obligations from code,
 and the re-derivation is lost when the session ends.
 
-Which convention should hold requirements and current-state designs, and how should the repository check that they
-stay accurate?
+Which convention should hold requirements and current-state designs, and how should the repository check that they stay
+accurate?
 
 ## Decision drivers
 
@@ -46,8 +46,8 @@ loses its shape or its links, while the artifacts themselves stay Markdown with 
 search reads. The first corpus is one subsystem, the library filter and sort state, rather than a sweep of the codebase;
 a partially documented repository is a valid state under the convention.
 
-Every decision record lives under `docs/adr/` in the profile. The records that predated it were reviewed one by one
-and re-recorded, or retired where they no longer earned their place; the previous `adr/` directory no longer exists.
+Every decision record lives under `docs/adr/` in the profile. The records that predated it were reviewed one by one and
+re-recorded, or retired where they no longer earned their place; the previous `adr/` directory no longer exists.
 
 ### Consequences
 
@@ -67,8 +67,8 @@ and re-recorded, or retired where they no longer earned their place; the previou
 ### Adopt Specful
 
 - Positive: identifiers, index, trace, and validation come from one pinned binary with attested releases.
-- Positive: the record model separates what must hold, how the system works, and why the choice was made, with a
-  written boundary between an obligation and a decision.
+- Positive: the record model separates what must hold, how the system works, and why the choice was made, with a written
+  boundary between an obligation and a decision.
 - Negative: the ADR profile is stricter than the MADR shape, so a record written to MADR has to be rewritten to enter
   it.
 
@@ -87,6 +87,6 @@ and re-recorded, or retired where they no longer earned their place; the previou
 
 ## More information
 
-The adoption page and the profiles are at <https://unkos-dev.github.io/specful/>. The first Design under the
-convention is [Library filter and sort state](../specs/library/design/0001-library-filter-and-sort-state.md). Revisit
-this record if a profile change makes the existing corpus invalid without a documented conversion.
+The adoption page and the profiles are at <https://unkos-dev.github.io/specful/>. The first Design under the convention
+is [Library filter and sort state](../specs/library/design/0001-library-filter-and-sort-state.md). Revisit this record
+if a profile change makes the existing corpus invalid without a documented conversion.

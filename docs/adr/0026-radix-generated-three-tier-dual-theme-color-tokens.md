@@ -15,20 +15,19 @@ decision-makers:
 ## Context and problem statement
 
 Reverie's frontend renders in both a light and a dark theme, and every text and UI-control role must meet WCAG 2.2 AA
-contrast in each. Achieving that with hand-picked per-theme hex values means tuning, and re-tuning, each value by
-hand and re-checking its contrast against every surface it lands on; the two themes drift apart as values are
-adjusted independently, and the set of one-off color tokens grows without bound. The system also needs raw color
-confined to a single origin so the rest of the UI refers to named roles (surface, border, text, accent, danger)
-rather than hexes, and it needs art-directed decorative color (the "atmosphere": gilt, cloth, vellum, ember) kept
-strictly separate from functional UI color so chrome can never depend on a decorative tone.
+contrast in each. Achieving that with hand-picked per-theme hex values means tuning, and re-tuning, each value by hand
+and re-checking its contrast against every surface it lands on; the two themes drift apart as values are adjusted
+independently, and the set of one-off color tokens grows without bound. The system also needs raw color confined to a
+single origin so the rest of the UI refers to named roles (surface, border, text, accent, danger) rather than hexes, and
+it needs art-directed decorative color (the "atmosphere": gilt, cloth, vellum, ember) kept strictly separate from
+functional UI color so chrome can never depend on a decorative tone.
 
 How should the frontend's color be structured so that both themes stay AA-correct and in lockstep, raw color lives in
 one governable place, and decorative color cannot leak into UI chrome?
 
 ## Decision drivers
 
-- Light and dark must derive from one source and stay in lockstep, with no independently hand-maintained second
-  palette.
+- Light and dark must derive from one source and stay in lockstep, with no independently hand-maintained second palette.
 - WCAG 2.2 AA contrast for text and non-text UI roles, guaranteed by construction rather than per-value review.
 - A single origin for raw color; everything else references named semantic roles.
 - Tailwind v4 with `@theme inline` and no `tailwind.config.ts`.
@@ -37,8 +36,8 @@ one governable place, and decorative color cannot leak into UI chrome?
 
 ## Considered options
 
-- Radix Colors generated scales: generated 12-step perceptual scales, consumed through two semantic tiers, with a
-  sealed atmosphere tier.
+- Radix Colors generated scales: generated 12-step perceptual scales, consumed through two semantic tiers, with a sealed
+  atmosphere tier.
 - Radix Themes: the Radix component library with its own theming.
 - Hand-tuned per-theme hex ramps.
 
@@ -46,9 +45,9 @@ one governable place, and decorative color cannot leak into UI chrome?
 
 Chosen option: **Radix Colors generated scales**, consumed through a three-tier contract of generated primitives, a
 semantic role layer, and a sealed atmosphere tier, because it satisfies every driver at once. The generator produces
-matched light and dark 12-step scales from the same anchors, with per-step roles whose contrast holds by
-construction, so AA is structural and the two themes cannot drift, and its output is plain CSS custom properties,
-vendored as a static file, so there is no runtime dependency and nothing to fetch.
+matched light and dark 12-step scales from the same anchors, with per-step roles whose contrast holds by construction,
+so AA is structural and the two themes cannot drift, and its output is plain CSS custom properties, vendored as a static
+file, so there is no runtime dependency and nothing to fetch.
 
 The three tiers:
 
@@ -56,14 +55,14 @@ The three tiers:
    alpha, P3, contrast, and a `--bg` page token, generated for both themes and vendored verbatim as
    `frontend/src/styles/themes/primitives.generated.css`. Raw hex lives only here; regenerated, never hand-edited.
 2. **Semantic (Tier 2)**: reverie role names (`--canvas`, `--surface`, `--border`, `--fg`, `--accent`, `--danger`, …)
-   plus the shadcn aliases, each resolving to a Tier 1 step via `var()`. No raw color. The mapping is
-   theme-constant; the primitive layer does the light/dark switch.
+   plus the shadcn aliases, each resolving to a Tier 1 step via `var()`. No raw color. The mapping is theme-constant;
+   the primitive layer does the light/dark switch.
 3. **Atmosphere (Tier 3)**: `--atm-*` art-directed constants (gilt, ember, sheen, vellum, cloth). A sealed parallel
    namespace: UI chrome resolves color through Tier 2 only and never reads `--atm-*`.
 
-Components reference Tier 2; Tier 2 references Tier 1; raw color is Tier 1 (plus a small, named set of exceptions
-such as the ink modal scrim). The shadcn alias layer re-skins automatically because it already routes through the
-semantic tokens.
+Components reference Tier 2; Tier 2 references Tier 1; raw color is Tier 1 (plus a small, named set of exceptions such
+as the ink modal scrim). The shadcn alias layer re-skins automatically because it already routes through the semantic
+tokens.
 
 Stylelint's `color-no-hex` rule confines raw hex to the generated primitive file and the atmosphere file, and bans it
 from the semantic file; a contract test asserts every semantic token resolves to an existing primitive and that
@@ -71,10 +70,10 @@ role-pair contrasts meet their AA floor.
 
 ### Consequences
 
-- Positive: contrast for each role holds by construction in both themes: no per-value AA bookkeeping and no
-  light/dark drift.
-- Positive: raw color is confined to one generated file, lint-enforceable, and the rest of the UI is `var()`
-  references to named roles.
+- Positive: contrast for each role holds by construction in both themes: no per-value AA bookkeeping and no light/dark
+  drift.
+- Positive: raw color is confined to one generated file, lint-enforceable, and the rest of the UI is `var()` references
+  to named roles.
 - Positive: there is no runtime dependency: the generated scales are static CSS, CSP-clean, and shadcn components
   re-skin with no per-component work.
 - Negative: changing or adding a color requires regenerating the scales rather than a quick one-off hex edit, and the
@@ -94,8 +93,8 @@ role-pair contrasts meet their AA floor.
 ### Radix Themes
 
 - Positive: it bundles a complete themed component system.
-- Negative: it imposes its own components and styling model on top of the existing shadcn/Tailwind UI, far more than
-  a color foundation needs, and a large surface to adopt and override.
+- Negative: it imposes its own components and styling model on top of the existing shadcn/Tailwind UI, far more than a
+  color foundation needs, and a large surface to adopt and override.
 - Negative: it is a runtime dependency, against the CSP-clean / vendored-color driver.
 
 ### Hand-tuned per-theme hex ramps

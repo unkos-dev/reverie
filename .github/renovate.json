@@ -35,6 +35,11 @@
   },
   "packageRules": [
     {
+      "description": "Keep pnpm on v11 until targeted no-save updates preserve catalogue overrides and pass clean frozen installs; see debt/2026-09-10-pnpm-update-lockfile.md.",
+      "matchPackageNames": ["pnpm", "ghcr.io/pnpm/pnpm"],
+      "allowedVersions": "<12"
+    },
+    {
       "description": "Update lockfiles within compatible cargo and npm ranges; replace ranges for incompatible releases.",
       "matchManagers": ["cargo", "npm"],
       "rangeStrategy": "update-lockfile"

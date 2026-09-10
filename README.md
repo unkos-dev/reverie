@@ -1,4 +1,5 @@
-<!-- markdownlint-disable-next-line MD041 -- brand lockup header, no h1 -->
+<!-- brand lockup header, no h1 -->
+<!-- rumdl-disable-next-line MD041 -->
 <div align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="frontend/public/brand/lockup/lockup-on-dark.svg">
@@ -17,35 +18,27 @@
   <a href="https://www.gnu.org/licenses/agpl-3.0"><img src="https://img.shields.io/badge/License-AGPL--3.0-blue.svg" alt="License: AGPL-3.0"></a>
 </p>
 
-Reverie is an ebook library manager for self-hosting. It is early in
-development: the design is settled and the badges above track the
-engineering, but there is no supported install path yet.
+Reverie is an ebook library manager for self-hosting. It is early in development: the design is settled and the badges
+above track the engineering, but there is no supported install path yet.
 
-> **Status:** Pre-alpha. APIs, schema, and behaviour all change without
-> notice.
+> **Status:** Pre-alpha. APIs, schema, and behaviour all change without notice.
 
 ## Design
 
 These constraints are fixed:
 
-- Source files are read-only. Ingestion copies or hardlinks into a managed
-  library and never modifies or deletes an original.
-- A book is a work, not a file. Editions and formats of the same title group
-  under one catalogue entry.
-- Fetched metadata is staged, with its source recorded, until you accept or
-  reject it. External sources cannot write to the catalogue directly.
-- PostgreSQL row-level security enforces user isolation, rather than
-  application-level filtering.
+- Source files are read-only. Ingestion copies or hardlinks into a managed library and never modifies or deletes an
+  original.
+- A book is a work, not a file. Editions and formats of the same title group under one catalogue entry.
+- Fetched metadata is staged, with its source recorded, until you accept or reject it. External sources cannot write to
+  the catalogue directly.
+- PostgreSQL row-level security enforces user isolation, rather than application-level filtering.
 - Child accounts see nothing by default. Access is granted per shelf.
-- No telemetry. Reverie sends nothing about you, your library, or your
-  deployment anywhere.
-- The whole application deploys as one container plus PostgreSQL. EPUB
-  processing is pure Rust with no Java dependency, tagged releases publish
-  multi-arch images for amd64 and arm64 (the pre-release staging image
-  tracks main and is arm64 only), and the idle memory target is under
-  200 MB.
-- Authentication is OIDC with PKCE. OPDS clients and reader apps use hashed
-  device tokens.
+- No telemetry. Reverie sends nothing about you, your library, or your deployment anywhere.
+- The whole application deploys as one container plus PostgreSQL. EPUB processing is pure Rust with no Java dependency,
+  tagged releases publish multi-arch images for amd64 and arm64 (the pre-release staging image tracks main and is arm64
+  only), and the idle memory target is under 200 MB.
+- Authentication is OIDC with PKCE. OPDS clients and reader apps use hashed device tokens.
 
 ## Tech stack
 
@@ -57,17 +50,13 @@ These constraints are fixed:
 
 ## Documentation
 
-Guides and reference material live on the
-[documentation site](https://unkos-dev.github.io/reverie/). Requirements and
-designs live under [`docs/specs/`](docs/specs/). Architectural decisions are
-recorded in [`docs/adr/`](docs/adr/).
+Guides and reference material live on the [documentation site](https://unkos-dev.github.io/reverie/). Requirements and
+designs live under [`docs/specs/`](docs/specs/). Architectural decisions are recorded in [`docs/adr/`](docs/adr/).
 
 ## Security
 
-Reverie is built on the assumption it will face the public internet. The
-backend sends modern browser protection headers on every response, including
-a strict `Content-Security-Policy`, and reverse proxies should pass them
-through unchanged.
+Reverie is built on the assumption it will face the public internet. The backend sends modern browser protection headers
+on every response, including a strict `Content-Security-Policy`, and reverse proxies should pass them through unchanged.
 
 To report a vulnerability, use
 [GitHub private advisories](https://github.com/unkos-dev/reverie/security/advisories/new).
@@ -75,11 +64,9 @@ Process and response times are in [SECURITY.md](.github/SECURITY.md).
 
 ### Verifying image signatures
 
-Published container images are signed with [Sigstore](https://www.sigstore.dev/)
-cosign, and each signature is recorded in the public Rekor transparency log.
-Images also carry an SBOM and full build-provenance attestations.
-Verification confirms an image was built by this repository's release
-workflow and has not been altered since:
+Published container images are signed with [Sigstore](https://www.sigstore.dev/) cosign, and each signature is recorded
+in the public Rekor transparency log. Images also carry an SBOM and full build-provenance attestations. Verification
+confirms an image was built by this repository's release workflow and has not been altered since:
 
 ```bash
 cosign verify \
@@ -90,9 +77,8 @@ cosign verify \
 
 ## Contributing
 
-[CONTRIBUTING.md](.github/CONTRIBUTING.md) covers development setup,
-contribution terms, and the pull request process. The
-[Code of Conduct](.github/CODE_OF_CONDUCT.md) applies across the project.
+[CONTRIBUTING.md](.github/CONTRIBUTING.md) covers development setup, contribution terms, and the pull request process.
+The [Code of Conduct](.github/CODE_OF_CONDUCT.md) applies across the project.
 
 ## License
 

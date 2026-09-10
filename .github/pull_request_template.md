@@ -1,4 +1,5 @@
-<!-- markdownlint-disable-file MD041 -- PR template is a fragment, not a standalone document; top-level h1 is not wanted here. -->
+<!-- rumdl-disable-file MD041 -->
+<!-- PR template is a fragment, not a standalone document; top-level h1 is not wanted here. -->
 
 <!--
 The title and description become the squash commit message. Write the
