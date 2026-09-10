@@ -5,6 +5,17 @@ on:
   # triggers for those events would double every scan under clashing check
   # names; the weekly deep scan has no caller and keeps its own.
   workflow_call:
+    secrets:
+      R2_ACCOUNT_ID:
+        required: false
+      R2_ACCESS_KEY_ID_RW:
+        required: false
+      R2_ACCESS_KEY_ID_RO:
+        required: false
+      R2_SECRET_ACCESS_KEY_RW:
+        required: false
+      R2_SECRET_ACCESS_KEY_RO:
+        required: false
   schedule:
     # Off-peak, off top-of-the-hour, to dodge runner contention.
     - cron: "37 17 * * 0"
@@ -52,6 +63,8 @@ jobs:
               - 'Cargo.lock'
               - 'rust-toolchain'
               - 'rust-toolchain.toml'
+              - 'mise.toml'
+              - '.github/actions/rust-toolchain/**'
               - '.github/workflows/ci.yml'
               - '.github/workflows/codeql.yml'
               - '.github/codeql/**'
@@ -117,10 +130,93 @@ jobs:
       security-events: write
       actions: read
       contents: read
+    env:
+      CARGO_INCREMENTAL: 0
+      KACHE_REMOTE_READONLY: ${{ github.ref == 'refs/heads/main' && 'false' || 'true' }}
+      KACHE_CC_EXTRA_ALLOWLIST_FLAGS: -fmerge-all-constants
+      R2_CONFIGURED: ${{ secrets.R2_ACCOUNT_ID != '' }}
     steps:
+      - name: Validate remote cache credentials
+        if: env.R2_CONFIGURED == 'true'
+        env:
+          R2_ACCESS_KEY_ID: ${{ github.ref == 'refs/heads/main' && secrets.R2_ACCESS_KEY_ID_RW || github.ref != 'refs/heads/main' && secrets.R2_ACCESS_KEY_ID_RO || '' }}
+          R2_SECRET_ACCESS_KEY: ${{ github.ref == 'refs/heads/main' && secrets.R2_SECRET_ACCESS_KEY_RW || github.ref != 'refs/heads/main' && secrets.R2_SECRET_ACCESS_KEY_RO || '' }}
+          R2_CREDENTIAL_SUFFIX: ${{ github.ref == 'refs/heads/main' && 'RW' || 'RO' }}
+        run: |
+          missing=0
+          if [ -z "$R2_ACCESS_KEY_ID" ]; then
+            echo "::error::Missing R2_ACCESS_KEY_ID_${R2_CREDENTIAL_SUFFIX} for the configured remote cache"
+            missing=1
+          fi
+          if [ -z "$R2_SECRET_ACCESS_KEY" ]; then
+            echo "::error::Missing R2_SECRET_ACCESS_KEY_${R2_CREDENTIAL_SUFFIX} for the configured remote cache"
+            missing=1
+          fi
+          exit "$missing"
+
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
+
+      - name: Resolve pinned build-cache version
+        id: kache
+        run: |
+          set -euo pipefail
+          version=$(awk '
+            /^\[tools\."github:kunobi-ninja\/kache"\]/ { in_kache = 1; next }
+            in_kache && /^\[/ { exit }
+            in_kache && /^version[[:space:]]*=/ { gsub(/[^0-9.]/, ""); print; exit }
+          ' mise.toml || true)
+          if [[ ! "${version}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Could not extract a valid kache version from mise.toml (got: '${version}')" >&2
+            exit 1
+          fi
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+
+      - id: rust
+        uses: ./.github/actions/rust-toolchain
+        with:
+          components: rust-src
+
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+        with:
+          workspaces: backend
+          cache-targets: false
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+
+      - name: Remote build cache (kache)
+        if: env.R2_CONFIGURED == 'true'
+        uses: kunobi-ninja/kache-action@78ff455251aa37139061201a39113a1924994035 # main
+        with:
+          version: ${{ steps.kache.outputs.version }}
+          s3-bucket: reverie-ci-cache
+          s3-region: auto
+          s3-endpoint: https://${{ secrets.R2_ACCOUNT_ID }}.r2.cloudflarestorage.com
+          s3-access-key-id: ${{ github.ref == 'refs/heads/main' && secrets.R2_ACCESS_KEY_ID_RW || secrets.R2_ACCESS_KEY_ID_RO }}
+          s3-secret-access-key: ${{ github.ref == 'refs/heads/main' && secrets.R2_SECRET_ACCESS_KEY_RW || secrets.R2_SECRET_ACCESS_KEY_RO }}
+          github-cache: false
+          save-cache: ${{ github.ref == 'refs/heads/main' }}
+          pr-comment: false
+          cache-executables: true
+          namespace: x86_64-unknown-linux-gnu/${{ steps.rust.outputs.version }}/codeql
+
+      - name: Verify the remote cache resolved
+        if: env.R2_CONFIGURED == 'true'
+        run: |
+          set -euo pipefail
+          stats="$(kache stats 2>&1 || true)"
+          printf '%s\n' "${stats}"
+          remote="$(printf '%s\n' "${stats}" | grep -m1 'Remote:' || true)"
+          if [ -z "${remote}" ]; then
+            echo "kache stats reported no Remote line; the output shape changed and this check can no longer tell configured from not" >&2
+            exit 1
+          fi
+          case "${remote}" in
+            *"not configured"*)
+              echo "kache has no remote configured: the S3 inputs did not reach it, so this job would compile uncached and still pass" >&2
+              exit 1
+              ;;
+          esac
 
       - name: Initialize CodeQL
         uses: github/codeql-action/init@b96794f015dfd88f77b49b1c93e0fa7110f94c63 # v4
@@ -135,3 +231,9 @@ jobs:
         uses: github/codeql-action/analyze@b96794f015dfd88f77b49b1c93e0fa7110f94c63 # v4
         with:
           category: /language:rust
+
+      # The action's post step cannot find backend/Cargo.lock from the repository root.
+      - name: Upload prefetch shards
+        if: env.R2_CONFIGURED == 'true' && github.ref == 'refs/heads/main'
+        working-directory: backend
+        run: kache save-manifest

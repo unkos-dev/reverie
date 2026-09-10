@@ -80,9 +80,18 @@ interpolation, so a crafted filename cannot inject into the shell.
 
 Rust analysis runs on PRs, merge groups and main pushes that change `backend/`,
 root Cargo configuration, manifests or toolchain files, or the CI caller,
-CodeQL workflow or CodeQL configuration. The Rust job uses no shared setup
-action or mise toolchain. Its dependency, build-script and migration inputs
-live under `backend/`.
+CodeQL workflow or CodeQL configuration. Changes to `mise.toml` and the shared
+Rust toolchain action also select Rust analysis. Its dependency, build-script
+and migration inputs live under `backend/`.
+
+The Rust extractor uses kache and the existing R2 bucket for internal Cargo
+compilation. The CodeQL namespace groups downloads of compatible compiled
+artifacts, which remain reusable from the shared store. Main runs can write, while
+PR and merge-group runs use read-only credentials. Without an R2 account ID,
+including on forks without secrets, scans compile without the remote cache.
+When the account ID is set, missing credentials for the current event fail the
+job with the missing secret names. The Actions cache stores only Cargo registry
+data. Every scan creates a fresh CodeQL database and runs the configured queries.
 
 JavaScript/TypeScript analysis runs on every PR and merge group and uses its
 path filter on main pushes. Actions analysis always runs. The weekly schedule
