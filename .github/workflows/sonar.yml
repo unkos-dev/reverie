@@ -2,8 +2,8 @@
 name: Sonar
 
 on:
-  # THREAT: a workflow_run trigger's branch filter also matches fork PRs opened
-  # from a branch named main, which would scan fork code holding SONAR_TOKEN.
+  # THREAT: workflow_run's branch filter also matches fork PRs from a branch
+  # named main, putting fork code in a job whose environment holds SONAR_TOKEN.
   push:
     branches: [main]
 
