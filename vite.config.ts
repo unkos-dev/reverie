@@ -1,7 +1,7 @@
 import { defineConfig } from "vite-plus";
 
 // Repo-root config: the single authoritative fmt + lint config for the monorepo.
-// fmt governs the whole tree (Rust .rs stays on cargo fmt); lint is frontend-only,
+// fmt excludes Markdown (rumdl) and Rust (cargo fmt); lint is frontend-only,
 // so every lint override is scoped to frontend/**. Ignores are root-relative.
 // Frontend build/server/test config stays in frontend/vite.config.ts.
 export default defineConfig({
@@ -22,6 +22,7 @@ export default defineConfig({
     endOfLine: "lf",
     sortPackageJson: false,
     ignorePatterns: [
+      "**/*.md",
       "CHANGELOG.md",
       "backend/.sqlx/",
       "frontend/src/components/ui/",

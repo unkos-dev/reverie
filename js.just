@@ -63,16 +63,16 @@ stylelint *files:
 # With an explicit file list, scopes to those paths; otherwise whole-tree
 # (archival .claude excluded to match CI).
 #
-# markdownlint over tracked Markdown at the repo root.
+# rumdl over tracked Markdown at the repo root.
 [group('js')]
 [positional-arguments]
 markdownlint *files:
     #!/usr/bin/env bash
     set -ueo pipefail
     if [ "$#" -gt 0 ]; then
-        vp exec markdownlint-cli2 "$@"
+        rumdl check "$@"
     else
-        git ls-files -z '*.md' ':!:.claude/**' | xargs -0 -r vp exec markdownlint-cli2
+        git ls-files -z '*.md' ':!:.claude/**' | xargs -0 -r rumdl check
     fi
 
 # Advisory (CI runs it continue-on-error), so deliberately not in `lint`/`check`.
@@ -84,13 +84,13 @@ detect:
     vp run detect
 
 # Runs at the repo root over every oxfmt-owned type; never a dependency of
-# check/lint. vp's bundled oxfmt is the one formatter; config is the root
-# vite.config.ts fmt block.
+# check/lint. rumdl owns Markdown; oxfmt uses the root vite.config.ts fmt block.
 #
 # Format the whole tree in place (TS/JS/JSON/CSS/MD/HTML/TOML/YAML). WRITES.
 [group('js')]
 fmt:
     vp fmt --write --no-error-on-unmatched-pattern .
+    git ls-files -z '*.md' ':!:.claude/**' | xargs -0 -r rumdl fmt
 
 # Verify whole-tree formatting without writing (the authoritative CI gate form).
 [group('js')]

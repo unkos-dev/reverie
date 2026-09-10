@@ -28,13 +28,17 @@ pre-commit:
       group:
         piped: true
         jobs:
-          # Covers every type oxfmt formats except YAML (split out below so the
+          - name: rumdl
+            glob: "**/*.md"
+            run: rumdl fmt {staged_files}
+            stage_fixed: true
+          # Covers every oxfmt-owned type except YAML (split out below so the
           # formatter is ordered before yamllint). stage_fixed re-stages the
           # rewrite, so the formatted bytes are what the commit captures.
           # --no-error-on-unmatched-pattern keeps a commit of only ignored files
           # (e.g. a regenerated backend/config.schema.json) a clean no-op.
           - name: oxfmt
-            glob: "**/*.{ts,tsx,js,jsx,mjs,cjs,mts,cts,json,jsonc,css,md,mdx,html,toml}"
+            glob: "**/*.{ts,tsx,js,jsx,mjs,cjs,mts,cts,json,jsonc,css,mdx,html,toml}"
             run: vp fmt --write --no-error-on-unmatched-pattern {staged_files}
             stage_fixed: true
           # The `&&` orders oxfmt before yamllint within the one command, so the
@@ -53,7 +57,7 @@ pre-commit:
             run: gitleaks protect --staged --no-banner --redact
           - name: markdownlint
             glob: "**/*.md"
-            run: vp exec markdownlint-cli2 {staged_files}
+            run: rumdl check {staged_files}
           - name: actionlint
             glob: ".github/workflows/**/*.{yml,yaml}"
             run: actionlint -color {staged_files}

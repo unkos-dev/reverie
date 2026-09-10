@@ -11,17 +11,17 @@ governed-by:
 
 ## Statement
 
-WHEN a request to `GET /api/v1/books` carries a filter query parameter whose value does not decode into the typed
-column condition its suffix declares (an ill-formed UUID on an id-valued parameter, a non-integer on an integer-valued
+WHEN a request to `GET /api/v1/books` carries a filter query parameter whose value does not decode into the typed column
+condition its suffix declares (an ill-formed UUID on an id-valued parameter, a non-integer on an integer-valued
 parameter, or a value that is not a `YYYY-MM-DD` calendar date on a date-valued parameter), the server MUST reject the
-request with `400 Bad Request` and MUST NOT execute the list query with that parameter silently dropped or coerced to
-a default.
+request with `400 Bad Request` and MUST NOT execute the list query with that parameter silently dropped or coerced to a
+default.
 
 ## Rationale
 
-The typed filter grammar closes the column-name surface to a fixed set of suffix parameters so that no client input
-ever names a raw SQL identifier; the corresponding obligation on the value side is that a value the grammar cannot
-type-check is refused rather than absorbed. Silently dropping a condition that is not parseable would let a client believe a
+The typed filter grammar closes the column-name surface to a fixed set of suffix parameters so that no client input ever
+names a raw SQL identifier; the corresponding obligation on the value side is that a value the grammar cannot type-check
+is refused rather than absorbed. Silently dropping a condition that is not parseable would let a client believe a
 narrowing filter is active when the server applied none, returning a broader result set than the request asked for
 without any signal that anything was wrong. Rejecting the request instead makes the mismatch visible at the point it
 occurs.

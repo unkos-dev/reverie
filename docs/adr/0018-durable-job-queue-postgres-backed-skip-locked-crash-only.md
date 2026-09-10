@@ -14,19 +14,18 @@ decision-makers:
 
 ## Context and problem statement
 
-Reverie runs background work (enrichment, cover/metadata writeback, ingestion). The claim path already exists: jobs
-are Postgres rows, claimed with `FOR UPDATE SKIP LOCKED`, with one `in_progress` row per work-unit enforced by a
-partial unique index. What is half-wired is crash recovery of an orphaned `in_progress` row: writeback reverts
-orphaned `in_progress` rows to `pending` at startup, but enrichment reverts only on graceful shutdown, so a hard kill
-of enrichment strands its `in_progress` rows with nothing to reclaim them. No decision is on record for how a crashed
-job is reclaimed.
+Reverie runs background work (enrichment, cover/metadata writeback, ingestion). The claim path already exists: jobs are
+Postgres rows, claimed with `FOR UPDATE SKIP LOCKED`, with one `in_progress` row per work-unit enforced by a partial
+unique index. What is half-wired is crash recovery of an orphaned `in_progress` row: writeback reverts orphaned
+`in_progress` rows to `pending` at startup, but enrichment reverts only on graceful shutdown, so a hard kill of
+enrichment strands its `in_progress` rows with nothing to reclaim them. No decision is on record for how a crashed job
+is reclaimed.
 
-The [crash-safe state ADR](./0020-durable-crash-safe-state-in-postgres-via-atomic-transactions.md) makes committed state survive an
-instant kill and explicitly defers the crash-safety of in-flight work to here. Reverie is single-instance and
-durable-not-distributed
-([scale-stance ADR](./0021-scale-stance-stateless-application-operator-enabled-ha.md)), so the requirement is durable,
-safe reclaim, not distribution. The open question: how is a crashed job reclaimed, and does the default deployment
-need wall-clock lease or visibility timeouts to do it?
+The [crash-safe state ADR](./0020-durable-crash-safe-state-in-postgres-via-atomic-transactions.md) makes committed state
+survive an instant kill and explicitly defers the crash-safety of in-flight work to here. Reverie is single-instance and
+durable-not-distributed ([scale-stance ADR](./0021-scale-stance-stateless-application-operator-enabled-ha.md)), so the
+requirement is durable, safe reclaim, not distribution. The open question: how is a crashed job reclaimed, and does the
+default deployment need wall-clock lease or visibility timeouts to do it?
 
 ## Decision drivers
 
@@ -40,8 +39,8 @@ need wall-clock lease or visibility timeouts to do it?
   wrong for a long-but-healthy job.
 - Reuse Postgres, add no broker. Postgres is already the crash-safe store; a queue service is another component and a
   single point of failure.
-- At-least-once is acceptable if handlers are idempotent. Exactly-once is not a realistic guarantee; idempotency is
-  what makes reclaim-and-retry safe.
+- At-least-once is acceptable if handlers are idempotent. Exactly-once is not a realistic guarantee; idempotency is what
+  makes reclaim-and-retry safe.
 
 ## Considered options
 
@@ -53,9 +52,9 @@ need wall-clock lease or visibility timeouts to do it?
 
 ## Decision outcome
 
-Chosen option: **Restart-bounded reclaim**, because within a single instance a restart proves every `in_progress` row
-is an orphan, so reclaim is exact with no lease to tune, and it reuses the already-crash-safe Postgres store instead
-of adding new infrastructure.
+Chosen option: **Restart-bounded reclaim**, because within a single instance a restart proves every `in_progress` row is
+an orphan, so reclaim is exact with no lease to tune, and it reuses the already-crash-safe Postgres store instead of
+adding new infrastructure.
 
 An instance is one app process (the deployment unit); a worker is one of the N concurrent job-running tasks inside it
 (`enrichment.concurrency`, a semaphore-gated pool). Reclaim exactness rests on the instance boundary, not on worker
@@ -65,51 +64,49 @@ count.
   the concurrency-safe primitive the
   [scale-stance ADR](./0021-scale-stance-stateless-application-operator-enabled-ha.md) names as a "don't preclude scale"
   guardrail. Mutual exclusion of one `in_progress` row per work-unit is enforced by a partial unique index.
-- Crash recovery is restart-bounded. At instance startup, once per process boot, before the worker pool begins
-  claiming, orphaned `in_progress` rows are reverted to `pending` and re-claimed. Because every worker lives inside
-  the one instance, a crash kills them all together, so a restart proves any `in_progress` row is an orphan
-  regardless of how many workers were running; reclaim is exact and needs no timeout to tune.
+- Crash recovery is restart-bounded. At instance startup, once per process boot, before the worker pool begins claiming,
+  orphaned `in_progress` rows are reverted to `pending` and re-claimed. Because every worker lives inside the one
+  instance, a crash kills them all together, so a restart proves any `in_progress` row is an orphan regardless of how
+  many workers were running; reclaim is exact and needs no timeout to tune.
 - Live-worker job death is closed by point fixes, not a lease. A worker task that dies while the instance stays alive
   (panic or hang) is the one case startup-revert misses, and in a pool it is the common individual failure, not
-  whole-process death. Hangs are bounded by per-job timeouts, which is already a project-wide invariant (enrichment
-  has a fetch budget), so a hang becomes a caught error that completes the job's bookkeeping. A task panic re-pends
-  the row via a guard on the spawned task. Both are required, not optional, for this option to be complete.
-- Handlers are idempotent. Because reclaim re-runs a job that may have partially executed, every handler must be safe
-  to run again. File-mutating jobs (writeback: OPF rewrite, cover embed, path rename) are not transactional with
-  their Postgres row; the crash-safe-state ADR's transaction guarantee does not extend to filesystem writes, so each
-  must document its re-run safety (write-to-temp-then-rename, or a per-work-unit guard), not merely be labelled
-  idempotent.
-- Workers are crash-only. Correctness never depends on a graceful shutdown having run. A SIGTERM drain (stop
-  claiming, finish in-flight work) is an optimisation that avoids needless re-runs on a planned restart (politeness,
-  not correctness).
+  whole-process death. Hangs are bounded by per-job timeouts, which is already a project-wide invariant (enrichment has
+  a fetch budget), so a hang becomes a caught error that completes the job's bookkeeping. A task panic re-pends the row
+  via a guard on the spawned task. Both are required, not optional, for this option to be complete.
+- Handlers are idempotent. Because reclaim re-runs a job that may have partially executed, every handler must be safe to
+  run again. File-mutating jobs (writeback: OPF rewrite, cover embed, path rename) are not transactional with their
+  Postgres row; the crash-safe-state ADR's transaction guarantee does not extend to filesystem writes, so each must
+  document its re-run safety (write-to-temp-then-rename, or a per-work-unit guard), not merely be labelled idempotent.
+- Workers are crash-only. Correctness never depends on a graceful shutdown having run. A SIGTERM drain (stop claiming,
+  finish in-flight work) is an optimisation that avoids needless re-runs on a planned restart (politeness, not
+  correctness).
 - No distribution. Durability and mutual exclusion come from Postgres; there is no external broker, distributed
-  scheduler, or cross-node coordination. Parallelism is a pool of N workers within the instance against the one
-  queue.
+  scheduler, or cross-node coordination. Parallelism is a pool of N workers within the instance against the one queue.
 
 Deferred: lease or visibility-timeout reclaim is the multi-instance lift, not part of the default. The moment an
 operator runs multiple instances (enabled, not owned, by the
 [scale-stance ADR](./0021-scale-stance-stateless-application-operator-enabled-ha.md); no leader election means each
-instance runs its own worker pool), restart-bounded reclaim becomes unsafe: one instance booting would re-pend a
-peer's still-running job. That topology, and only that topology, needs wall-clock leases plus heartbeat renewal to
-avoid double-running long jobs. Adopting it now would buy nothing for the single-instance default and would add a
-double-run hazard for long writeback jobs (a fixed lease expiring while the holder is still mutating an EPUB), so it
-is a non-trivial build that waits for the topology that justifies it.
+instance runs its own worker pool), restart-bounded reclaim becomes unsafe: one instance booting would re-pend a peer's
+still-running job. That topology, and only that topology, needs wall-clock leases plus heartbeat renewal to avoid
+double-running long jobs. Adopting it now would buy nothing for the single-instance default and would add a double-run
+hazard for long writeback jobs (a fixed lease expiring while the holder is still mutating an EPUB), so it is a
+non-trivial build that waits for the topology that justifies it.
 
 ### Consequences
 
 - Positive: reclaim is exact (driven by the restart signal, not a clock) with no double-run-while-alive hazard and no
   lease tuning.
-- Positive: the `SKIP LOCKED` claim is concurrency-safe, so it already satisfies the scale-stance guardrail without
-  the rest of a lease.
+- Positive: the `SKIP LOCKED` claim is concurrency-safe, so it already satisfies the scale-stance guardrail without the
+  rest of a lease.
 - Positive: it reuses the already-crash-safe Postgres and adds no queue component to deploy or monitor.
 - Positive: it holds the same defer-multi-instance posture as the pooling ADR, keeping the data layer's stance
   consistent.
-- Negative: restart-bounded reclaim does not recover a job whose worker died while the process stayed alive; that
-  case is only covered if the per-job timeout and the panic guard are in place, so they are mandatory.
-- Negative: multi-instance support carries an additive migration later (lease columns, reaper, heartbeat); deferring
-  it does not remove that cost.
-- Neutral: idempotency is a hard per-handler obligation, and file-mutating handlers must prove re-run safety rather
-  than assert it.
+- Negative: restart-bounded reclaim does not recover a job whose worker died while the process stayed alive; that case
+  is only covered if the per-job timeout and the panic guard are in place, so they are mandatory.
+- Negative: multi-instance support carries an additive migration later (lease columns, reaper, heartbeat); deferring it
+  does not remove that cost.
+- Neutral: idempotency is a hard per-handler obligation, and file-mutating handlers must prove re-run safety rather than
+  assert it.
 
 ## Pros and cons of the options
 
@@ -145,8 +142,8 @@ while `backend/src/services/enrichment/queue.rs` calls it only on shutdown, so a
 crash stays `in_progress` until the next graceful shutdown.
 
 Sibling ADR: [crash-safe state](./0020-durable-crash-safe-state-in-postgres-via-atomic-transactions.md), committed-state
-durability; this ADR is its in-flight-work complement, and the boundary it notes (transactions do not cover
-filesystem writes) is why file-mutating handlers must prove re-run safety.
+durability; this ADR is its in-flight-work complement, and the boundary it notes (transactions do not cover filesystem
+writes) is why file-mutating handlers must prove re-run safety.
 
 Sibling ADR: [scale stance](./0021-scale-stance-stateless-application-operator-enabled-ha.md), durable-not-distributed
 posture and the `SKIP LOCKED` concurrency guardrail; multi-instance is the trigger for the deferred lease.

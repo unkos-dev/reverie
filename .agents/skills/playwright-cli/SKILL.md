@@ -13,15 +13,21 @@ Run commands from the repository root. Every `playwright-cli` command shown in t
 vp exec --fail-if-no-match -- playwright-cli
 ```
 
-Append the documented arguments after that prefix. Do not use `npx`, `pnpm dlx`, npm, or a global installation; the root package owns the pnpm-managed dependency and lockfile.
+Append the documented arguments after that prefix. Do not use `npx`, `pnpm dlx`, npm, or a global installation; the root
+package owns the pnpm-managed dependency and lockfile.
 
-- Use a short task-specific `-s=<name>` and `--browser=chromium` when opening a session. Close only that named session when finished.
+- Use a short task-specific `-s=<name>` and `--browser=chromium` when opening a session. Close only that named session
+  when finished.
 - Do not use `close-all`, `kill-all`, or `delete-data` without explicit authorisation.
 - Use snapshots and `find` for routine inspection, and use screenshots when the rendered page is the acceptance surface.
-- Never pass real credentials as command arguments or print cookies, tokens, passwords, storage-state contents, or other secrets. Load reusable state only from a user-approved file outside the repository.
-- Use `just dev-up`, `just dev-status`, and `just dev-down` for Reverie's application lifecycle. Do not reuse a server unless its owning checkout is known.
-- Keep generated snapshots, screenshots, traces, and profiles in the ignored `.playwright-cli/` or `.playwright/` directories.
-- The CI accessibility suite remains Playwright Test plus axe-core. Run it through `just js::a11y`; do not rewrite that gate as CLI commands.
+- Never pass real credentials as command arguments or print cookies, tokens, passwords, storage-state contents, or other
+  secrets. Load reusable state only from a user-approved file outside the repository.
+- Use `just dev-up`, `just dev-status`, and `just dev-down` for Reverie's application lifecycle. Do not reuse a server
+  unless its owning checkout is known.
+- Keep generated snapshots, screenshots, traces, and profiles in the ignored `.playwright-cli/` or `.playwright/`
+  directories.
+- The CI accessibility suite remains Playwright Test plus axe-core. Run it through `just js::a11y`; do not rewrite that
+  gate as CLI commands.
 
 ## Quick start
 
@@ -194,7 +200,8 @@ playwright-cli highlight --hide
 
 ## Raw output
 
-The global `--raw` option strips page status, generated code, and snapshot sections from the output, returning only the result value. Use it to pipe command output into other tools. Commands that don't produce output return nothing.
+The global `--raw` option strips page status, generated code, and snapshot sections from the output, returning only the
+result value. Use it to pipe command output into other tools. Commands that don't produce output return nothing.
 
 ```bash
 playwright-cli --raw eval "JSON.stringify(performance.timing)" | jq '.loadEventEnd - .navigationStart'
@@ -253,7 +260,8 @@ playwright-cli -s=msedge detach
 
 ## URLs with `&` on Windows
 
-On Windows, `cmd.exe` and PowerShell treat `&` as a command separator, so URLs with multiple query parameters get truncated before `playwright-cli` runs. Escape `&` with `^&` in `cmd.exe`, or use `--%` in PowerShell:
+On Windows, `cmd.exe` and PowerShell treat `&` as a command separator, so URLs with multiple query parameters get
+truncated before `playwright-cli` runs. Escape `&` with `^&` in `cmd.exe`, or use `--%` in PowerShell:
 
 ```batch
 playwright-cli goto "https://example.com/?a=1^&b=2"
@@ -276,7 +284,8 @@ After each command, playwright-cli provides a snapshot of the current browser st
 [Snapshot](.playwright-cli/page-2026-02-14T19-22-42-679Z.yml)
 ```
 
-You can also take a snapshot on demand using `playwright-cli snapshot` command. All the options below can be combined as needed.
+You can also take a snapshot on demand using `playwright-cli snapshot` command. All the options below can be combined as
+needed.
 
 ```bash
 # default - save to a file with timestamp-based name
@@ -347,7 +356,8 @@ Restore the workspace dependency with the repository setup command:
 just install
 ```
 
-If the required browser binary is missing, stop and report the exact installation command. Do not install it without maintainer approval.
+If the required browser binary is missing, stop and report the exact installation command. Do not install it without
+maintainer approval.
 
 ```bash
 vp exec --fail-if-no-match -- playwright-cli install-browser chrome-for-testing
@@ -399,7 +409,9 @@ playwright-cli close
 
 ## Example: Interactive session
 
-Ask the user for UI review or design feedback. The user draws boxes on the live page and types comments; you receive the annotated screenshot, the snapshot of the marked region, and the user's notes. Use this whenever the user asks for "UI review", "design feedback", or to "ask the user what they think / want / mean":
+Ask the user for UI review or design feedback. The user draws boxes on the live page and types comments; you receive the
+annotated screenshot, the snapshot of the marked region, and the user's notes. Use this whenever the user asks for "UI
+review", "design feedback", or to "ask the user what they think / want / mean":
 
 ```bash
 playwright-cli open https://example.com

@@ -7,7 +7,7 @@ permissions:
   contents: read
 
 env:
-  MISE_TOOLS: just shellcheck hadolint typos vale yamllint github:quarylabs/sqruff actionlint zizmor github:unkos-dev/specful
+  MISE_TOOLS: just rumdl shellcheck hadolint typos vale yamllint github:quarylabs/sqruff actionlint zizmor github:unkos-dev/specful
 
 jobs:
   changes:
@@ -134,7 +134,7 @@ jobs:
       - name: Spell check (typos)
         run: just infra::typos
 
-      - name: Markdown lint (markdownlint-cli2)
+      - name: Markdown lint (rumdl)
         run: just js::markdownlint
 
       # Emits at `warning`, so this surfaces findings without failing the build.

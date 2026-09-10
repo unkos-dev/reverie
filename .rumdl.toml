@@ -1,0 +1,34 @@
+[global]
+disable = ["MD033"]
+exclude = [
+  "node_modules",
+  "target",
+  "CHANGELOG.md",
+  ".claude/**",
+  "docs/security/codeguard/**",
+  "CLAUDE.md",
+  "**/CLAUDE.md",
+  "docs/specs/**/index.md",
+  "docs/specs/index.md",
+]
+
+[MD004]
+style = "dash"
+
+[MD025]
+front-matter-title = ""
+
+[MD013]
+line-length = 120
+headings = true
+code-blocks = false
+tables = false
+reflow = true
+reflow-mode = "normalize"
+
+[MD060]
+enabled = true
+style = "aligned"
+max-width = 120
+column-align-header = "auto"
+aligned-delimiter = true

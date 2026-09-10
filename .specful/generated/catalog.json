@@ -336,6 +336,13 @@
       "title": "Library sort is a per-user preference, never URL state"
     },
     {
+      "id": "REV-ADR-0048",
+      "kind": "adr",
+      "path": "docs/adr/0048-use-rumdl-for-markdown-linting-and-formatting.md",
+      "status": "accepted",
+      "title": "Use rumdl for Markdown linting and formatting"
+    },
+    {
       "governed-by": [
         "REV-ADR-0041",
         "REV-ADR-0047"

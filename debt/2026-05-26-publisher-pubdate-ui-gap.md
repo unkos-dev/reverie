@@ -11,20 +11,16 @@ lift-when: BookDetail API response includes publisher and pub_date canonical col
 
 ## Constraint
 
-The metadata edit dialog (`EditMetadataDialog`) lets users
-accept/reject/edit metadata fields. However, `publisher` and
-`pub_date` are not included because the `BookDetail` API response
-does not yet surface those canonical columns. Users cannot confirm
-or correct publisher/publication date through the UI.
+The metadata edit dialog (`EditMetadataDialog`) lets users accept/reject/edit metadata fields. However, `publisher` and
+`pub_date` are not included because the `BookDetail` API response does not yet surface those canonical columns. Users
+cannot confirm or correct publisher/publication date through the UI.
 
 ## Workaround
 
-Those fields are only editable via direct API calls or through the
-enrichment pipeline's automatic metadata flow. The UI gap means
-manual correction requires API knowledge.
+Those fields are only editable via direct API calls or through the enrichment pipeline's automatic metadata flow. The UI
+gap means manual correction requires API knowledge.
 
 ## Lift trigger
 
-Extend `BookDetail` query and response to include `publisher` and
-`pub_date` from the canonical metadata. Add corresponding fields to
-the edit dialog. Wire accept/reject for both fields.
+Extend `BookDetail` query and response to include `publisher` and `pub_date` from the canonical metadata. Add
+corresponding fields to the edit dialog. Wire accept/reject for both fields.

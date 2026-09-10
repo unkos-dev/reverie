@@ -20,13 +20,13 @@ with no half-applied changes and no bespoke recovery dance.
 
 Durable state already lives in Postgres in the places that matter: operator settings
 ([persist operator-tunable settings ADR](./0012-persist-operator-tunable-settings-to-database-with-live-reload.md))
-and sessions ([first-party session layer ADR](./0015-first-party-session-layer-on-the-tower-sessions-core.md)), but
-this is convention, not a recorded decision, so nothing stops new code from parking critical state in process memory
-or a local file where a crash would lose or corrupt it. Equally, a state change that spans several rows or tables can
-leave an invariant half-applied if it is not atomic.
+and sessions ([first-party session layer ADR](./0015-first-party-session-layer-on-the-tower-sessions-core.md)), but this
+is convention, not a recorded decision, so nothing stops new code from parking critical state in process memory or a
+local file where a crash would lose or corrupt it. Equally, a state change that spans several rows or tables can leave
+an invariant half-applied if it is not atomic.
 
-Two questions need to be on record: where does critical state live, and how are multi-write invariants kept
-consistent across a crash?
+Two questions need to be on record: where does critical state live, and how are multi-write invariants kept consistent
+across a crash?
 
 ## Decision drivers
 
@@ -58,9 +58,9 @@ An in-memory value is never the source of truth.
 Multi-write invariants are atomic. Any state change spanning multiple rows or tables that must hold an invariant is
 wrapped in a single transaction: it commits whole or rolls back whole, never half.
 
-Crash-safety follows by construction. A committed transaction survives an instant kill through Postgres WAL and
-fsync; an uncommitted one rolls back on recovery. Reverie therefore needs no application-level write-ahead log and no
-custom crash-recovery code for committed state: a crash is a safe event.
+Crash-safety follows by construction. A committed transaction survives an instant kill through Postgres WAL and fsync;
+an uncommitted one rolls back on recovery. Reverie therefore needs no application-level write-ahead log and no custom
+crash-recovery code for committed state: a crash is a safe event.
 
 The crash-safety of in-flight background work, a job killed mid-execution, is out of scope here and is owned by the
 [durable job queue ADR](./0018-durable-job-queue-postgres-backed-skip-locked-crash-only.md) (leases, visibility
@@ -68,9 +68,9 @@ timeouts, idempotency). Statelessness as a horizontal-scaling enabler is owned b
 [scale-stance ADR](./0021-scale-stance-stateless-application-operator-enabled-ha.md). This decision covers only the
 durability and atomicity of persisted state.
 
-This guarantee rests on Postgres running with `fsync` enabled, which is the default. An operator who disables
-`fsync`, or runs on storage that lies about flushes, voids the crash-safety guarantee; that operator dependency is
-documented and not undertaken.
+This guarantee rests on Postgres running with `fsync` enabled, which is the default. An operator who disables `fsync`,
+or runs on storage that lies about flushes, voids the crash-safety guarantee; that operator dependency is documented and
+not undertaken.
 
 ### Consequences
 
@@ -95,8 +95,8 @@ documented and not undertaken.
 ### Critical state in process memory or local files, rebuilt on restart
 
 - Positive: in-memory reads and writes are faster.
-- Negative: a crash between mutation and the next persistence point loses or corrupts state, and reconstruction logic
-  is exactly the bespoke recovery code this decision avoids.
+- Negative: a crash between mutation and the next persistence point loses or corrupts state, and reconstruction logic is
+  exactly the bespoke recovery code this decision avoids.
 - Negative: it does not survive a power-cut, which is the requirement.
 
 ### Postgres-backed state without enclosing transactions
@@ -110,13 +110,13 @@ documented and not undertaken.
 Existing instances of this rule, not re-derived here:
 [persist operator-tunable settings ADR](./0012-persist-operator-tunable-settings-to-database-with-live-reload.md)
 (database-backed settings with a rebuildable in-memory cache) and
-[first-party session layer ADR](./0015-first-party-session-layer-on-the-tower-sessions-core.md) (sessions in a
-Postgres table).
+[first-party session layer ADR](./0015-first-party-session-layer-on-the-tower-sessions-core.md) (sessions in a Postgres
+table).
 
 [Durable job queue ADR](./0018-durable-job-queue-postgres-backed-skip-locked-crash-only.md) owns the crash-safety of
 in-flight work, the complement to this decision's committed-state durability.
 [Scale-stance ADR](./0021-scale-stance-stateless-application-operator-enabled-ha.md) owns statelessness as a scaling
 enabler; this decision owns it as a durability property.
 
-Revisit trigger: if a future feature has a genuine need for authoritative in-memory or non-Postgres durable state,
-for example an embedded cache that must survive restart, it gets its own ADR rather than an exception here.
+Revisit trigger: if a future feature has a genuine need for authoritative in-memory or non-Postgres durable state, for
+example an embedded cache that must survive restart, it gets its own ADR rather than an exception here.

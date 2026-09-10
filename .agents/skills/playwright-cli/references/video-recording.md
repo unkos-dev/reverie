@@ -1,6 +1,7 @@
 # Video Recording
 
-Capture browser automation sessions as video for debugging, documentation, or verification. Produces WebM (VP8/VP9 codec).
+Capture browser automation sessions as video for debugging, documentation, or verification. Produces WebM (VP8/VP9
+codec).
 
 ## Basic Recording
 
@@ -39,13 +40,17 @@ playwright-cli video-start recordings/checkout-test-run-42.webm
 
 ### 2. Record complete scripts
 
-For a user-facing video or proof of work, write a code snippet and execute it with `run-code`. This supports deliberate pauses and annotations through Playwright's video APIs.
+For a user-facing video or proof of work, write a code snippet and execute it with `run-code`. This supports deliberate
+pauses and annotations through Playwright's video APIs.
 
-1. Perform scenario using CLI and take note of all locators and actions. You'll need those locators to request their bounding boxes for highlight.
-2. Create a file with the intended video script shown below. Use `pressSequentially` with a delay for natural typing, and add reasonable pauses.
+1. Perform scenario using CLI and take note of all locators and actions. You'll need those locators to request their
+   bounding boxes for highlight.
+2. Create a file with the intended video script shown below. Use `pressSequentially` with a delay for natural typing,
+   and add reasonable pauses.
 3. Use playwright-cli run-code --filename your-script.js
 
-**Important**: Overlays use `pointer-events: none`, so they do not interfere with page interactions. You can keep sticky overlays visible while clicking, filling, or performing other actions on the page.
+**Important**: Overlays use `pointer-events: none`, so they do not interfere with page interactions. You can keep sticky
+overlays visible while clicking, filling, or performing other actions on the page.
 
 ```js
 async (page) => {
@@ -127,12 +132,12 @@ Embrace creativity, overlays are powerful.
 
 ### Overlay API Summary
 
-| Method                                                                         | Use Case                                                                 |
-| ------------------------------------------------------------------------------ | ------------------------------------------------------------------------ |
+| Method | Use Case |
+| ------ | -------- |
 | `page.screencast.showChapter(title, { description?, duration?, styleSheet? })` | Full-screen chapter card with a blurred backdrop for section transitions |
-| `page.screencast.showOverlay(html, { duration? })`                             | Custom HTML overlay for callouts, labels, or highlights                  |
-| `disposable.dispose()`                                                         | Remove a sticky overlay added without duration                           |
-| `page.screencast.hideOverlays()` / `page.screencast.showOverlays()`            | Temporarily hide/show all overlays                                       |
+| `page.screencast.showOverlay(html, { duration? })` | Custom HTML overlay for callouts, labels, or highlights |
+| `disposable.dispose()` | Remove a sticky overlay added without duration |
+| `page.screencast.hideOverlays()` / `page.screencast.showOverlays()` | Temporarily hide/show all overlays |
 
 ## Tracing vs Video
 

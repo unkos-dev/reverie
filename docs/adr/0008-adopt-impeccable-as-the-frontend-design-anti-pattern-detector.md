@@ -16,11 +16,10 @@ decision-makers:
 
 Reverie's UI/UX agent toolset accreted three skills with overlapping remits: `ui-ux-pro-max` (catalog and shadcn MCP
 bridge), `design-system` (audit and consistency review), and `frontend-patterns` (React patterns). The design system
-itself is locked: Reverie has a published brand identity, D2 design tokens, shadcn primitives aliased onto the
-canonical palette, and a tiered comment policy that codifies threat-aware docstrings on UI surfaces. Catalog-style
-skills produce diminishing returns once the visual direction is settled, since their value front-loads on a
-greenfield project and then drifts toward soft-everything scorecards ("7/10 on colour, 7/10 on spacing") that don't
-move work forward.
+itself is locked: Reverie has a published brand identity, D2 design tokens, shadcn primitives aliased onto the canonical
+palette, and a tiered comment policy that codifies threat-aware docstrings on UI surfaces. Catalog-style skills produce
+diminishing returns once the visual direction is settled, since their value front-loads on a greenfield project and then
+drifts toward soft-everything scorecards ("7/10 on colour, 7/10 on spacing") that don't move work forward.
 
 The maintainer ran a side-by-side empirical comparison on `frontend/src/pages/design/system.tsx` between:
 
@@ -33,25 +32,24 @@ Outcomes:
 
 - `design-system` produced a 10-line scorecard with vague references, no file:line, and no actionable diff.
 - `impeccable detect` (deterministic) caught three `bg-black` instances in stock shadcn overlays (`alert-dialog`,
-  `dialog`, `sheet`), direct violations of Reverie's tinted-neutral brand spec, with file:line and a fix
-  recommendation per finding.
-- `impeccable critique` (LLM) produced a 14-finding punch list with file:line and framework-grounded fixes (an em
-  dash ban violation, nested cards, identical card grids, a missing alarm colour token in the showcase, and copy
-  that leaks implementation detail).
+  `dialog`, `sheet`), direct violations of Reverie's tinted-neutral brand spec, with file:line and a fix recommendation
+  per finding.
+- `impeccable critique` (LLM) produced a 14-finding punch list with file:line and framework-grounded fixes (an em dash
+  ban violation, nested cards, identical card grids, a missing alarm colour token in the showcase, and copy that leaks
+  implementation detail).
 - `taste-skill` overlaps `impeccable`'s territory and outputs prompts for external image generators (ChatGPT, Codex
   image mode), which don't fit the Claude-Code-first workflow.
 
-The detector is the load-bearing finding: a deterministic, CI-runnable, no-LLM gate catches anti-patterns no LLM
-skill surfaces reliably. That capability doesn't exist anywhere else in the toolset. Which tool, if any, should fill
-it?
+The detector is the load-bearing finding: a deterministic, CI-runnable, no-LLM gate catches anti-patterns no LLM skill
+surfaces reliably. That capability doesn't exist anywhere else in the toolset. Which tool, if any, should fill it?
 
 ## Decision drivers
 
 - Empirical comparison on a real Reverie surface, not vendor claims.
 - Deterministic, CI-runnable, and free of API cost: an axis orthogonal to the LLM skills already in use.
 - Catches what the existing skills miss (the three `bg-black` findings).
-- Compatible with the locked brand: the tool flags violations of Reverie's own tokens rather than imposing its own
-  taste catalog.
+- Compatible with the locked brand: the tool flags violations of Reverie's own tokens rather than imposing its own taste
+  catalog.
 - Husky, lint-staged, and Renovate are already wired, so the incremental cost is one devDependency, one lint-staged
   entry, and one CI step.
 
@@ -64,45 +62,43 @@ it?
 
 ## Decision outcome
 
-Chosen option: **adopt `impeccable`**, because the empirical comparison showed it is the only tool that catches
-concrete anti-patterns the existing skills miss, at negligible wall-time cost, while respecting Reverie's locked
-brand rather than imposing its own taste.
+Chosen option: **adopt `impeccable`**, because the empirical comparison showed it is the only tool that catches concrete
+anti-patterns the existing skills miss, at negligible wall-time cost, while respecting Reverie's locked brand rather
+than imposing its own taste.
 
 This decision governs the dependency itself; the skill side (the full impeccable command surface) is a separate
 decision, to be made once the detector has earned its keep.
 
-`impeccable` runs in static-scan mode only, as `impeccable detect src`, operating on file content. The pre-commit
-hook runs a full scan whenever a staged path under `frontend/src/` has a `.ts`, `.tsx`, `.html`, or `.css`
-extension, through the same command the frontend CI job runs, so the local and CI checks agree. Both sides run advisory (the pre-commit hook with
-`|| true`, CI with `continue-on-error: true`) until the three deferred `bg-black` findings are addressed. Renovate
-tracks the package through the existing `config:recommended` extension; impeccable is past v1.0, so its patch and
-minor bumps auto-merge under the stable-dependency rule rather than the pre-v1.0 manual-review rule; a major
-bump still waits for review.
+`impeccable` runs in static-scan mode only, as `impeccable detect src`, operating on file content. The pre-commit hook
+runs a full scan whenever a staged path under `frontend/src/` has a `.ts`, `.tsx`, `.html`, or `.css` extension, through
+the same command the frontend CI job runs, so the local and CI checks agree. Both sides run advisory (the pre-commit
+hook with `|| true`, CI with `continue-on-error: true`) until the three deferred `bg-black` findings are addressed.
+Renovate tracks the package through the existing `config:recommended` extension; impeccable is past v1.0, so its patch
+and minor bumps auto-merge under the stable-dependency rule rather than the pre-v1.0 manual-review rule; a major bump
+still waits for review.
 
 The install-script default-deny in `pnpm-workspace.yaml` denies puppeteer's install script, so the postinstall Chromium
 fetch never runs. impeccable's static path never invokes the puppeteer code path, which is reached only through the
 dynamically imported, URL-only `detectUrl()` function.
 
-`impeccable` ships `jsdom` (required, for static-scan HTML parsing), `marked` (required transitively, for
-impeccable's skill surface), and `puppeteer` (optional, used only by `detectUrl()`; dynamically imported, so
-top-level imports never reach it). Denying the install script drops the postinstall Chromium fetch without removing
-the puppeteer JavaScript itself; a URL-scan would still fail at `launch()` for want of a browser rather than at the
-import.
+`impeccable` ships `jsdom` (required, for static-scan HTML parsing), `marked` (required transitively, for impeccable's
+skill surface), and `puppeteer` (optional, used only by `detectUrl()`; dynamically imported, so top-level imports never
+reach it). Denying the install script drops the postinstall Chromium fetch without removing the puppeteer JavaScript
+itself; a URL-scan would still fail at `launch()` for want of a browser rather than at the import.
 
-Alternatives weighed for the Chromium download and rejected: `npm ci --omit=optional` (breaks
-`@tailwindcss/oxide`'s platform-binary optional dependencies), a `PUPPETEER_SKIP_DOWNLOAD` environment variable
-scoped to CI only (leaves the download firing on every developer's local install), and baking Chromium into the
-development environment image (doesn't solve GitHub-hosted CI runners, introduces a puppeteer-versus-system-Chromium
-drift, and pays the cost for a feature that isn't run).
+Alternatives weighed for the Chromium download and rejected: `npm ci --omit=optional` (breaks `@tailwindcss/oxide`'s
+platform-binary optional dependencies), a `PUPPETEER_SKIP_DOWNLOAD` environment variable scoped to CI only (leaves the
+download firing on every developer's local install), and baking Chromium into the development environment image (doesn't
+solve GitHub-hosted CI runners, introduces a puppeteer-versus-system-Chromium drift, and pays the cost for a feature
+that isn't run).
 
 ### Consequences
 
 - Positive: frontend anti-patterns are surfaced deterministically on every commit and every pull request.
-- Positive: the three `bg-black` findings are visible in CI logs on every frontend pull request until the deferred
-  fix lands, creating pressure to address them on the first modal, dialog, or sheet change.
+- Positive: the three `bg-black` findings are visible in CI logs on every frontend pull request until the deferred fix
+  lands, creating pressure to address them on the first modal, dialog, or sheet change.
 - Positive: the CI signal is independent of LLM availability, running on `ubuntu-latest` in under two seconds.
-- Positive: the install-script default-deny keeps the Chromium fetch out of a clean install and preserves install
-  time.
+- Positive: the install-script default-deny keeps the Chromium fetch out of a clean install and preserves install time.
 - Negative: one more devDependency plus its transitive packages.
 - Negative: detector rules are upstream-controlled, so rule churn could surface false positives mid-development.
 - Negative: the LLM critique surface is opinionated and could conflict with the locked brand if invoked
@@ -112,8 +108,7 @@ drift, and pays the cost for a feature that isn't run).
 
 ### Adopt `impeccable`
 
-- Positive: a deterministic 27-rule detector catches anti-patterns the LLM skills miss (the three `bg-black`
-  findings).
+- Positive: a deterministic 27-rule detector catches anti-patterns the LLM skills miss (the three `bg-black` findings).
 - Positive: a full scan runs in about one second and a single-file scan in about 400ms, well inside the pre-commit
   budget.
 - Positive: ships as a standalone npm package, installable as a devDependency and Renovate-trackable.
@@ -155,16 +150,17 @@ drift, and pays the cost for a feature that isn't run).
 
 ## More information
 
-Unlike paid-tool trials run under a fixed evaluation window, `impeccable` is a static development tool with no
-recurring cost, so no trial period applies. Open a superseding record if any of the following happen:
+Unlike paid-tool trials run under a fixed evaluation window, `impeccable` is a static development tool with no recurring
+cost, so no trial period applies. Open a superseding record if any of the following happen:
 
-- The detector becomes unreliable (a false-positive rate above 15% across a representative pull request sample);
-  revisit rule selection or drop the tool.
+- The detector becomes unreliable (a false-positive rate above 15% across a representative pull request sample); revisit
+  rule selection or drop the tool.
 - The tool stops being maintained upstream (no commits for 90 days while bugs accumulate); fork or drop it.
 - An equivalent first-party tool ships (shadcn, Tailwind, or an ESLint plugin); consolidate onto it.
-
-- Related decision: [Strict lint policy: pedantic Clippy and strict frontend
-  lint](./0002-strict-lint-policy-pedantic-clippy-and-strict-frontend-lint.md), a sibling enforcement layer.
-- Related decision: [Package ingress default-deny](./0045-package-ingress-default-deny-controls-no-per-package-allowances.md), which
+- Related decision:
+  [Strict lint policy: pedantic Clippy and strict frontend lint](./0002-strict-lint-policy-pedantic-clippy-and-strict-frontend-lint.md),
+  a sibling enforcement layer.
+- Related decision:
+  [Package ingress default-deny](./0045-package-ingress-default-deny-controls-no-per-package-allowances.md), which
   governs the install-script denial this record relies on.
 - Upstream: <https://github.com/pbakaus/impeccable> (Apache-2.0, forked from Anthropic's `frontend-design` skill).
