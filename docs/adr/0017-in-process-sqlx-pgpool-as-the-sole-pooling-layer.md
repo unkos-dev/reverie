@@ -19,15 +19,15 @@ role-scoped pools per the migration-role model (`reverie_app` for request handle
 ingestion worker). This pooling shape arrived incrementally and was never recorded as a decision.
 
 Reverie's deployment contract is a single-instance Docker Compose service (see the migration model ADR), not a
-horizontally scaled fleet. The open question: is the in-process pool the connection-pooling layer, or does Reverie
-need a separate pooling tier between the application and Postgres?
+horizontally scaled fleet. The open question: is the in-process pool the connection-pooling layer, or does Reverie need
+a separate pooling tier between the application and Postgres?
 
 ## Decision drivers
 
-- Single-instance deployment: the shipped topology is one app process. The problem a separate pooling tier solves,
-  many app processes exhausting Postgres `max_connections`, does not exist by default.
-- Minimise component count and single points of failure for a self-hosted operator; every bundled component is one
-  more thing to run, monitor, and have fail.
+- Single-instance deployment: the shipped topology is one app process. The problem a separate pooling tier solves, many
+  app processes exhausting Postgres `max_connections`, does not exist by default.
+- Minimise component count and single points of failure for a self-hosted operator; every bundled component is one more
+  thing to run, monitor, and have fail.
 - Session-level Postgres features are load-bearing: Reverie's persisted settings use `LISTEN`/`NOTIFY` over a
   `PgListener` (see the persisted-settings ADR), and the migration path takes a session-level advisory lock. A
   transaction-multiplexing pooler tier breaks both.
@@ -55,12 +55,11 @@ fleet may front Postgres with a pooler externally. Reverie does not ship or depe
 
 ### Consequences
 
-- Positive: no new component and no new single point of failure, which ratifies what already ships rather than
-  adding code.
+- Positive: no new component and no new single point of failure, which ratifies what already ships rather than adding
+  code.
 - Positive: `LISTEN`/`NOTIFY` settings reload, session-level advisory locks, and prepared-statement caching all keep
   working natively, because an in-process pool runs each connection in session mode.
-- Positive: the connection budget is bounded and predictable, one process, one pool per role, sized to the Docker
-  host.
+- Positive: the connection budget is bounded and predictable, one process, one pool per role, sized to the Docker host.
 - Positive: choosing not to bundle a pooling tier does not forbid one; an operator may add one externally with no
   Reverie change.
 - Negative: an operator who runs multiple app instances multiplies the connection budget (instances times pool size)
@@ -82,8 +81,8 @@ fleet may front Postgres with a pooler externally. Reverie does not ship or depe
   horizontally scaled fleet.
 - Negative: a transaction-multiplexing tier breaks `LISTEN`/`NOTIFY` and the session-level locks Reverie relies on; a
   session-mode tier gives up most of the multiplexing benefit that would justify it.
-- Negative: adds a bundled component and a single point of failure to a single-instance deployment that gains
-  nothing from it.
+- Negative: adds a bundled component and a single point of failure to a single-instance deployment that gains nothing
+  from it.
 
 ### Connection per request (no pool)
 
@@ -92,9 +91,8 @@ fleet may front Postgres with a pooler externally. Reverie does not ship or depe
 
 ## More information
 
-- Pairs with the
-  [scale-stance ADR](./0021-scale-stance-stateless-application-operator-enabled-ha.md), which owns the multi-instance
-  pool-sizing question this one defers.
+- Pairs with the [scale-stance ADR](./0021-scale-stance-stateless-application-operator-enabled-ha.md), which owns the
+  multi-instance pool-sizing question this one defers.
 - [Migration model ADR](./0014-migration-model-hybrid-entrypoints-and-a-least-privilege-role.md): the single-instance
   contract and the `reverie_app` / `reverie_ingestion` / `reverie_readonly` role split the per-role pools follow.
 - [Persisted-settings ADR](./0012-persist-operator-tunable-settings-to-database-with-live-reload.md): the

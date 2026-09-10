@@ -56,7 +56,7 @@ check: js::check rust::check infra::check website::check infra::zizmor-offline
 lint: js::lint rust::lint infra::lint
 
 # oxfmt (js::fmt) covers all its types whole-tree, incl. website and backend TOML;
-# cargo fmt (rust::fmt) covers Rust. Together they format the whole tree.
+# rumdl covers Markdown and cargo fmt (rust::fmt) covers Rust.
 #
 # Format the whole tree in place. WRITES; never depended on by check/lint.
 [group('aggregate')]

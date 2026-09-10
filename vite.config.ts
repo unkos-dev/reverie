@@ -22,6 +22,7 @@ export default defineConfig({
     endOfLine: "lf",
     sortPackageJson: false,
     ignorePatterns: [
+      "**/*.md",
       "CHANGELOG.md",
       "backend/.sqlx/",
       "frontend/src/components/ui/",

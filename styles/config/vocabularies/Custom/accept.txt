@@ -613,3 +613,4 @@ yamllint
 Zitadel
 zizmor
 zxcvbn
+rumdl

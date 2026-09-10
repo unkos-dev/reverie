@@ -12,11 +12,11 @@ governed-by:
 ## Statement
 
 The library surface MUST resolve the active sort stack from the reader's stored `sort_stack` preference alone, falling
-back to the installation default when that preference is unset. A component on the library route MUST NOT read or
-write a `?sort=` URL parameter, and every sort gesture MUST persist its result as the reader's `sort_stack` preference.
-WHEN the books list request is built, the client MUST send the reader's non-empty override explicitly as the `sort`
-query parameter and MUST NOT send a `sort` parameter when the reader has no override, so the installation default is
-never serialised onto the wire.
+back to the installation default when that preference is unset. A component on the library route MUST NOT read or write
+a `?sort=` URL parameter, and every sort gesture MUST persist its result as the reader's `sort_stack` preference. WHEN
+the books list request is built, the client MUST send the reader's non-empty override explicitly as the `sort` query
+parameter and MUST NOT send a `sort` parameter when the reader has no override, so the installation default is never
+serialised onto the wire.
 
 ## Rationale
 
@@ -45,5 +45,5 @@ its drivers are recorded in
 
 ## More information
 
-- [Multi-column sort stack on the keyset list contract](../../../adr/0037-multi-column-sort-stack-on-the-keyset-list-contract.md): the
-  wire grammar and whitelist the resolved stack is expressed in.
+- [Multi-column sort stack on the keyset list contract](../../../adr/0037-multi-column-sort-stack-on-the-keyset-list-contract.md):
+  the wire grammar and whitelist the resolved stack is expressed in.
