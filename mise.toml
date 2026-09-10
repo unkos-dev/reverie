@@ -10,7 +10,7 @@ mold = "2.42.0"
 opengrep = "1.30.0"
 rumdl = "0.2.70"
 shellcheck = "0.11.0"
-snyk = "1.1307.0"
+snyk = "1.1307.1"
 trivy = "0.74.0"
 typos = "1.50.1"
 # OpenAPI linter for the generated spec, run by the openapi-policy CI job
