@@ -158,7 +158,7 @@ detector skips its dependents into being counted as passed, is what the backstop
 
 ## Workflows outside the composition
 
-Three sit beside `ci.yml` rather than under it, each for a reason that would break if it were composed.
+Several sit beside `ci.yml` rather than under it, each for a reason that would break if it were composed.
 
 `pr-hygiene.yml` needs `pull_request: types: [edited]`, so a title edit re-checks the title. On a caller that trigger
 would rerun all of CI every time someone fixes a typo in a PR title. It carries `merge_group:` from the start, because a
@@ -166,10 +166,9 @@ required context whose workflow lacks that trigger deadlocks the queue, and its 
 falls back to the run id, since the PR number is empty on a queue run and a shared empty key with `cancel-in-progress`
 would make queue entries cancel each other.
 
-`sonar.yml` runs on `workflow_run` because it analyses only revisions that have passed CI on main.
-
 The rest are non-PR lanes: the release publish, the scheduled audits and mutation runs, the OSSF scorecard, the
-pull-request labelling on `pull_request_target`, and release automation. None of them has a PR-time surface to compose.
+main-branch Sonar scan, the pull-request labelling on `pull_request_target`, and release automation. None of them has a
+PR-time surface to compose.
 
 ## Repository-specific values
 
@@ -182,5 +181,3 @@ Everything above is portable. These are the parts that are not:
   respectively. Neither carries a required context on that path, so the bare job names those runs report are fine.
 - Filters live in `.github/path-filters.yml` and are consumed by both CI and `scripts/preflight-scope.sh`.
 - Tools come from `mise.toml`; the JS workspace resolves under the package manager `package.json` declares.
-- `ci.yml` is named `CI`, and `sonar.yml` matches that string in a `workflow_run` trigger. Renaming one orphans the
-  other silently.
