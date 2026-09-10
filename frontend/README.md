@@ -2,6 +2,8 @@
 
 This directory contains the Vite React frontend.
 
+Run `just js::test` from the repository root to execute the frontend unit tests.
+
 ## Environment Variables
 
 Configure the development environment using these variables.
