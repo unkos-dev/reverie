@@ -136,6 +136,24 @@ jobs:
       KACHE_CC_EXTRA_ALLOWLIST_FLAGS: -fmerge-all-constants
       R2_CONFIGURED: ${{ secrets.R2_ACCOUNT_ID != '' }}
     steps:
+      - name: Validate remote cache credentials
+        if: env.R2_CONFIGURED == 'true'
+        env:
+          R2_ACCESS_KEY_ID: ${{ github.ref == 'refs/heads/main' && secrets.R2_ACCESS_KEY_ID_RW || github.ref != 'refs/heads/main' && secrets.R2_ACCESS_KEY_ID_RO || '' }}
+          R2_SECRET_ACCESS_KEY: ${{ github.ref == 'refs/heads/main' && secrets.R2_SECRET_ACCESS_KEY_RW || github.ref != 'refs/heads/main' && secrets.R2_SECRET_ACCESS_KEY_RO || '' }}
+          R2_CREDENTIAL_SUFFIX: ${{ github.ref == 'refs/heads/main' && 'RW' || 'RO' }}
+        run: |
+          missing=0
+          if [ -z "$R2_ACCESS_KEY_ID" ]; then
+            echo "::error::Missing R2_ACCESS_KEY_ID_${R2_CREDENTIAL_SUFFIX} for the configured remote cache"
+            missing=1
+          fi
+          if [ -z "$R2_SECRET_ACCESS_KEY" ]; then
+            echo "::error::Missing R2_SECRET_ACCESS_KEY_${R2_CREDENTIAL_SUFFIX} for the configured remote cache"
+            missing=1
+          fi
+          exit "$missing"
+
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
