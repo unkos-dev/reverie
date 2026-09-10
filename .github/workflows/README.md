@@ -86,7 +86,8 @@ toolchain action. Its dependency, build-script and migration inputs live under
 
 The Rust extractor uses kache and the existing R2 bucket for internal Cargo
 compilation. The CodeQL namespace groups downloads of compatible compiled
-artifacts, which remain reusable from the shared store. Main runs can write, while
+artifacts, which remain reusable from the shared store. A matching manifest key
+keeps early prefetch scoped to CodeQL builds. Main runs can write, while
 PR and merge-group runs use read-only credentials. Without an R2 account ID,
 including on forks without secrets, scans compile without the remote cache.
 When the account ID is set, missing credentials for the current event fail the

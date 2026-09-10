@@ -198,6 +198,7 @@ jobs:
           save-cache: ${{ github.ref == 'refs/heads/main' }}
           pr-comment: false
           cache-executables: true
+          manifest-key: x86_64-unknown-linux-gnu/${{ steps.rust.outputs.version }}/codeql
           namespace: x86_64-unknown-linux-gnu/${{ steps.rust.outputs.version }}/codeql
 
       - name: Verify the remote cache resolved
