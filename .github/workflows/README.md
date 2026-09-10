@@ -77,6 +77,8 @@ Without an R2 account ID, including on forks without secrets, scans compile with
 ID is set, missing credentials for the current event fail the job with the missing secret names. The Actions cache
 stores only Cargo registry data. Every scan creates a fresh CodeQL database and runs the configured queries.
 
+Backend checks use a separate `dev` manifest key matching their namespace, so prefetch selects backend build artifacts.
+
 JavaScript/TypeScript analysis runs on every PR and merge group and uses its path filter on main pushes. Actions
 analysis always runs. The weekly schedule runs all three languages without path filtering.
 

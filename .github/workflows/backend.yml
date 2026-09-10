@@ -187,6 +187,7 @@ jobs:
           # Shards make prefetch useful; unset, hits arrive one at a time. Keyed on
           # build configuration, not job name, so a toolchain bump rotates it rather
           # than warming shards for artifacts that no longer exist.
+          manifest-key: x86_64-unknown-linux-gnu/${{ steps.rust.outputs.version }}/dev
           namespace: x86_64-unknown-linux-gnu/${{ steps.rust.outputs.version }}/dev
 
       # kache degrades quietly by design: it compiles for real when the store is
