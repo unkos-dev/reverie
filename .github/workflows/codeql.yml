@@ -20,12 +20,12 @@ concurrency:
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
-  # Gates the analyze jobs on push only. PR and merge-queue runs analyze every
-  # language: the ruleset's code-scanning rule expects per-category results, so
-  # a skipped analyzer blocks the PR forever.
   changes:
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
     outputs:
       javascript-typescript: ${{ steps.filter.outputs.javascript-typescript }}
       rust: ${{ steps.filter.outputs.rust }}
@@ -34,9 +34,11 @@ jobs:
         with:
           persist-credentials: false
       - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4
-        if: github.event_name == 'push'
+        if: github.event_name != 'schedule'
         id: filter
         with:
+          base: ${{ github.event.merge_group.base_sha || github.base_ref }}
+          ref: ${{ github.event.merge_group.head_sha || github.ref }}
           filters: |
             javascript-typescript:
               - 'frontend/**'
@@ -45,6 +47,12 @@ jobs:
               - '.github/codeql/**'
             rust:
               - 'backend/**'
+              - '.cargo/**'
+              - 'Cargo.toml'
+              - 'Cargo.lock'
+              - 'rust-toolchain'
+              - 'rust-toolchain.toml'
+              - '.github/workflows/ci.yml'
               - '.github/workflows/codeql.yml'
               - '.github/codeql/**'
 
@@ -102,7 +110,7 @@ jobs:
 
   rust:
     needs: changes
-    if: github.event_name != 'push' || needs.changes.outputs.rust == 'true'
+    if: github.event_name == 'schedule' || needs.changes.outputs.rust == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:

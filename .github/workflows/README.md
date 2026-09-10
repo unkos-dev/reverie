@@ -63,19 +63,37 @@ strings that never report again.
 
 ## The changes job and path filters
 
-Every concern file starts with a `changes` job running `dorny/paths-filter`
-against `.github/path-filters.yml`, and exposes only the filters that concern
-needs as outputs.
+Concern files use a `changes` job running `dorny/paths-filter` and expose the
+filters they need as outputs. Most use `.github/path-filters.yml`; CodeQL keeps
+its extraction-specific filters in `codeql.yml`.
 
 The filter file is shared with `scripts/preflight-scope.sh`, which decides
 which lanes a local gate runs. One file, so a local gate and CI cannot disagree
 about what a change touches.
 
-Two details are easy to get wrong. The `merge_group` base defaults to `HEAD~1`,
-which on a synthetic merge ref sees only the topmost commit, so the filter pins
-`base` and `ref` explicitly. And a filter that feeds a guard a file list passes
-it through the environment rather than inline `${{ }}` interpolation, so a
-crafted filename cannot inject into the shell.
+Merge-group filters pass the event's `base_sha` and `head_sha` explicitly to
+compare the whole group against its base. A filter that feeds a guard a file
+list passes it through the environment rather than inline `${{ }}`
+interpolation, so a crafted filename cannot inject into the shell.
+
+### CodeQL language scope
+
+Rust analysis runs on PRs, merge groups and main pushes that change `backend/`,
+root Cargo configuration, manifests or toolchain files, or the CI caller,
+CodeQL workflow or CodeQL configuration. The Rust job uses no shared setup
+action or mise toolchain. Its dependency, build-script and migration inputs
+live under `backend/`.
+
+JavaScript/TypeScript analysis runs on every PR and merge group and uses its
+path filter on main pushes. Actions analysis always runs. The weekly schedule
+runs all three languages without path filtering.
+
+Language skips happen at job level so required check names still report.
+The ruleset also requires CodeQL findings at its configured alert thresholds;
+job completion alone does not establish that protection. After changing
+language scope, verify with a frontend-only PR and merge group that GitHub
+accepts the skipped Rust category, and with a Rust-relevant change that the
+analyser runs. Detector and analyser failures remain subject to `CI gate`.
 
 ## The backstop gate
 
