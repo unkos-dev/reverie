@@ -24,6 +24,11 @@ A `Content-Security-Policy` differentiated by route class:
 - **API responses** (`/api/*`, `/auth/*`, `/health/*`, `/opds/*`):
   `default-src 'none'; frame-ancestors 'none'; base-uri 'none'`, APIs never render, so everything is locked down.
 
+Two kinds of response carry no `Content-Security-Policy`. A session-authenticated mutation rejected by CSRF enforcement
+(`428`, `403`, or `500` when the session store cannot be read) has none, because that check runs before the API policy
+is attached. Neither does the plain `404` the SPA fallback returns when no frontend build is configured or `index.html`
+cannot be read.
+
 ## Opt-in: HSTS
 
 `Strict-Transport-Security` is disabled by default because Reverie's container speaks plain HTTP. Turn it on only when a

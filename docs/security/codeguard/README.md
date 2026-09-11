@@ -135,8 +135,9 @@ the usage pattern; shorter timeouts would force repeated re-authentication
 during a natural reading session.
 
 **Compensating controls:** Sessions regenerate on authentication; logout
-invalidates the server-side session immediately. Admin-equivalent operations
-(if introduced) must use a stricter session context.
+invalidates the server-side session immediately. Admin operations run under the
+same session policy as every other request; there is no separate, stricter
+session context for them.
 
 ### 4. EPUB ingestion processes ZIP archives
 
@@ -150,7 +151,8 @@ function without parsing them.
 
 **Compensating controls required:**
 
-- Magic-byte validation (confirm ZIP signature before processing)
+- Archive structure checked before processing: a file the ZIP reader cannot open
+  as an archive is rejected as irrecoverable before any entry is read
 - Bounded decompression guards against zip-bomb patterns (max decompressed
   size, max entry count, max nesting depth)
 - Generated filenames for extracted content; never trust manifest-provided
@@ -218,8 +220,10 @@ just knowledge of an email address.
   concurrently; the file itself is staged and renamed into place, so a reader
   never sees a partial PIN
 - Per-source rate limiting on both recovery endpoints
-- Generic responses on both endpoints and equivalent cryptographic work on the
-  unknown-account path, so neither response nor timing enumerates accounts
+- Generic responses on both endpoints, and equivalent Argon2 work on the
+  unknown-account path so password hashing does not reveal whether an account
+  exists; the known-account path's small database and file-write timing
+  difference is accepted
 - No auto-login after reset: the user must re-authenticate with the new password
 
 ### 7. Scope authorization verified by a generated-spec CI matrix, not by this list
@@ -237,9 +241,10 @@ and that a credential one level below the required scope in the hierarchy
 (`read` < `write` < `admin`) is rejected with 403, while a scopeless credential
 is rejected at the auth seam. A companion check flags any mutating-verb
 (`POST`/`PUT`/`PATCH`/`DELETE`) operation that does not require at least
-`write`, with a small explicit allow-list, logged rather than silent, for the
-rare side-effect-free exception (the enrichment dry-run, a `POST` that computes
-a preview without persisting).
+`write`, with a small explicit allow-list for the rare side-effect-free
+exception (the enrichment dry-run, a `POST` that computes a preview without
+persisting). The test fails when an allow-list entry no longer matches an
+operation, so the list cannot go stale unnoticed.
 Mint requests for personal tokens go through a mass-assignment allow-list DTO
 (`CreateTokenRequest` in `backend/src/routes/tokens.rs`: exactly `name`,
 `scopes`, `expires_in_days`), so no other field on the token row is settable at
