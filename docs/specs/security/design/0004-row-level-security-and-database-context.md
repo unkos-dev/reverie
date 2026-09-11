@@ -26,8 +26,9 @@ This subject owns the mechanism that turns a caller with an identity into a data
 that caller's rows: the `app.current_user_id` and `app.system_context` settings (custom PostgreSQL parameters set with
 `set_config`), `acquire_with_rls` in `backend/src/db.rs`, the pool factories `init_pool` and `init_writeback_pool` and
 the role each pool connects as, the roles themselves (`docker/init-roles.sql`), and every policy and grant the
-migrations create (`backend/migrations/20260810000000_initial_schema.up.sql` and
-`backend/migrations/20260903000000_junction_table_rls.up.sql`).
+migrations create (`backend/migrations/20260810000000_initial_schema.up.sql`,
+`backend/migrations/20260903000000_junction_table_rls.up.sql` and
+`backend/migrations/20260911000000_readonly_session_id_grant.up.sql`).
 
 It does not own the migration runner or the `reverie_migrator` identity that runs it (`run_migrations` and
 `verify_schema_current` in `backend/src/db.rs`, and the `reverie migrate` entry point in `backend/src/lib.rs`), a
@@ -137,7 +138,9 @@ every operation to every role except their owner, whatever the grants say. No ap
 Every SELECT policy except `manifestations_select_system`, and both owner-scoped `ALL` policies, name `reverie_readonly`
 alongside `reverie_app`; the INSERT, UPDATE and DELETE policies and the two system-context policies name `reverie_app`
 alone. Because `reverie_readonly` holds only `SELECT` grants, a connection as that role sees the same filtered view a
-`reverie_app` connection with the same `app.current_user_id` would.
+`reverie_app` connection with the same `app.current_user_id` would. Row-level security does not bound a
+`reverie_readonly` connection made by hand, though: nothing stops it setting `app.current_user_id` to any account, so
+its grants are what limit it.
 
 ### The grant boundary
 
@@ -152,6 +155,11 @@ is no policy on either table to narrow or widen.
 on `identifier_schemes`, `metadata_sources`, `rating_sources`, `manifestation_external_ratings` and the migration
 history table `_sqlx_migrations`; `SELECT` and `UPDATE` on `settings`; `SELECT` and `INSERT` on `instance_bootstrap`;
 and everything except `DELETE` on `user_preferences`.
+
+The session store sits outside row-level security. `reverie_app` holds `USAGE` on the `tower_sessions` schema and
+`SELECT`, `INSERT`, `UPDATE` and `DELETE` on `tower_sessions.session`. `reverie_readonly` holds `USAGE` on the schema
+and `SELECT` on the table's `expiry_date` column alone, so it can count and age sessions but cannot read a session ID,
+the credential the session cookie carries. `reverie_ingestion` has no grant in the schema.
 
 `reverie_ingestion` is granted the catalogue and pipeline tables: `works`, `authors`, `work_authors`, `manifestations`,
 `series`, `series_works`, `omnibus_contents`, `metadata_versions`, `metadata_sources`, `field_locks`, `tags`,
@@ -258,14 +266,20 @@ application never doing so outside the writeback pool. The ingestion pool, when 
 path around per-user row-level security: the `reverie_ingestion` role's policies admit every row, and its grants confine
 it to the catalogue and pipeline tables.
 
+The system-context guarantee also assumes each pooled connection stays one PostgreSQL session. Behind a pooler that
+shares server connections between transactions, a connection the writeback pool marked could serve a request's
+transaction, and the system-context policies would then admit every `manifestations` row to that request. Reverie pools
+in-process (REV-ADR-0017); an operator who puts a pooler of their own in front of PostgreSQL needs it in session mode.
+
 The ownership axis that REV-ADR-0028 assigns to the data layer takes two forms. `reading_state` and `user_preferences`
 enforce it with row-level security, in this subject. `shelves` and `shelf_items` enforce it with a `WHERE user_id = …`
 predicate in handler code (`backend/src/routes/shelves/mod.rs`), which this subject relies on but does not own.
 
 An operator who runs the ingestion pipeline needs `DATABASE_URL_INGESTION` set to the `reverie_ingestion` role's
 credentials; the startup warning is the signal that it is missing. `reverie_readonly` is for connections made by hand,
-for debugging or reporting. Such a connection is refused with a permission error on `device_tokens` and
-`local_credentials`, rather than seeing zero rows, because neither table has a policy and the role has no grant on them.
+for debugging or reporting. Such a connection is refused with a permission error on `device_tokens`, `local_credentials`
+and the `id` column of `tower_sessions.session`, rather than seeing zero rows, because none of them has a policy and the
+role has no grant on them.
 
 ## More information
 

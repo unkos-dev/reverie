@@ -39,10 +39,11 @@ Depends on: `CurrentUser` in `backend/src/auth/middleware.rs` for the `role`, `i
 assertion methods read; `crate::openapi::spec_json` for the OpenAPI document the matrix parses; the `device_token` model
 for minting a scoped credential in tests; `crate::db::acquire_with_rls` for the RLS half of the ownership map.
 
-Depended on by: every `/api/v1` handler, each of which calls at least one of `require_scope`, `require_admin` or
-`require_not_child` before touching its resource; the mint handler in `backend/src/routes/tokens.rs`, which reads
-`may_grant_scope` to bound a requested token; and the backend test suite, which runs the matrix as an ordinary
-`#[sqlx::test]` module.
+Depended on by: every `/api/v1` handler that needs more than `read` scope or an adult caller, each of which calls
+`require_scope`, `require_admin` or `require_not_child` before touching its resource (a `read` operation calls none,
+because authentication already refuses a credential with no scopes); the mint handler in `backend/src/routes/tokens.rs`,
+which reads `may_grant_scope` to bound a requested token; and the backend test suite, which runs the matrix as an
+ordinary `#[sqlx::test]` module.
 
 ## Structure
 
@@ -212,9 +213,11 @@ A non-admin can never mint an admin-scoped token (`Scope::grantable_by`, enforce
 `routes::tokens::tests::create_token_rejects_admin_scope_ceiling`), so the scope ceiling and the role ceiling agree at
 the one point where a person chooses a scope instead of the system deriving it from role.
 
-Ownership is enforced by two mechanisms, and this Design records which resource uses which: `shelves` and `shelf_items`
-by a predicate in each handler, and every other per-user resource by row-level security. The authorization matrix itself
-is recorded as approved enforcement infrastructure in deviation 7 of the CodeGuard deviation register.
+Ownership is enforced by two mechanisms, and this Design records which resource uses which. Row-level security covers
+`reading_state` and `user_preferences`. `shelves`, `shelf_items` and `device_tokens` rely on a `user_id` predicate in
+each query instead, and `local_credentials` and `user_identities`, which also have no policy, are read by user ID or by
+the presented issuer and subject. The authorization matrix itself is recorded as approved enforcement infrastructure in
+deviation 7 of the CodeGuard deviation register.
 
 ## More information
 
