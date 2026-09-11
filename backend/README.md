@@ -57,7 +57,8 @@ The `docker/init-roles.sql` script creates these roles when the cluster starts:
 | `reverie_readonly` | `postgres://reverie_readonly:reverie_readonly@localhost:5432/reverie_dev` | Queries data for debugging. SELECT only. |
 
 The `tower_sessions` schema bypasses RLS. The session id resolves user identity. Role grants control access. The
-`reverie_app` role receives DML access, `reverie_readonly` receives SELECT, and `reverie_ingestion` receives no access.
+`reverie_app` role receives DML access, `reverie_readonly` can read only the `expiry_date` column, and
+`reverie_ingestion` receives no access.
 
 ### Migrations
 
