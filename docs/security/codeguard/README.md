@@ -87,21 +87,25 @@ Log any reverie-specific override here with the overridden file + section,
 reverie's position, rationale, and compensating controls. Prefer documenting
 the deviation over editing the imported file.
 
-### 1. Session cookie `Secure` flag omitted
+### 1. Session cookie `Secure` flag omitted on plain-HTTP deployments
 
 **Override:** `codeguard-0-session-management-and-cookies.md` → "Cookie Security
 Configuration" — mandates `Secure` on session cookies.
 
-**Reverie's position:** `Secure` is omitted. See
+**Reverie's position:** `Secure` follows `REVERIE_BEHIND_HTTPS`: set when it is
+`true`, omitted when it is `false` (the default). See
 `backend/src/lib.rs::build_router_with_session_store` (session setup).
 
-**Rationale:** The backend runs behind a TLS-terminating reverse proxy and
-sees plain HTTP. Setting `Secure` on the cookie would prevent delivery over
-the plaintext hop between proxy and backend.
+**Rationale:** A browser never sends a `Secure` cookie over plain HTTP, so an
+HTTP-only deployment could not hold a session if the flag were always set. The
+browser judges `Secure` by its own connection to the edge, so a deployment
+behind a TLS-terminating proxy gets the flag even though the proxy-to-backend
+hop is plain HTTP.
 
-**Compensating controls:** TLS enforced at the reverse proxy boundary.
-Deployments must ensure the proxy-to-backend hop is not routed over an
-untrusted network.
+**Compensating controls:** The cookie is always `HttpOnly` and `SameSite=Lax`,
+and session IDs come from a cryptographically secure random generator. The
+operator documentation treats a publicly reachable HTTP-only deployment as a
+misconfiguration and directs it behind TLS with `REVERIE_BEHIND_HTTPS=true`.
 
 ### 2. `SameSite=Lax` instead of `Strict`
 
