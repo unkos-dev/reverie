@@ -260,6 +260,14 @@ jobs:
       - name: Check sqlx query cache freshness
         run: mise exec mold -- cargo sqlx prepare --check -- --locked --tests
 
+      # pg_dump runs inside the service container so its version is the server's.
+      - name: Check the schema dump against the migrations
+        working-directory: ${{ github.workspace }}
+        env:
+          REVERIE_PG_CONTAINER: ${{ job.services.postgres.id }}
+          REVERIE_PG_HOST: localhost
+        run: mise exec just -- just rust::schema-check
+
       # nextest does not run doctests; Reverie has none today, so this exists to fail
       # CI from day one on doctest drift.
       - name: Doctests

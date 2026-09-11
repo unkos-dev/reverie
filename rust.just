@@ -96,6 +96,22 @@ sqlx-check:
 sqlx-prepare:
     DATABASE_URL="${REVERIE_DEV_DB_URL:-postgres:///reverie_dev?host=${XDG_STATE_HOME:-$HOME/.local/state}/reverie/pgsock&user=reverie&password=reverie}" cargo sqlx prepare -- --locked --tests
 
+# Migrates a scratch database on the dev cluster, never reverie_dev, and runs
+# pg_dump inside the Postgres container, so it needs docker access.
+#
+# DB: check backend/schema.sql against the migrations.
+[group('rust')]
+schema-check:
+    ../scripts/schema-dump.sh check
+
+# WRITES backend/schema.sql; commit the result in the same change as the
+# migration that produced it. `schema-check` is the read-only gate form.
+#
+# DB: regenerate backend/schema.sql from the migrations.
+[group('rust')]
+schema-dump:
+    ../scripts/schema-dump.sh write
+
 # WRITES backend/openapi.json plus the generated config reference and schema;
 # commit the result in the same change that moved the API or config surface.
 # `drift` is the read-only gate form. Offline: compiles against the sqlx

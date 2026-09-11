@@ -74,6 +74,10 @@ that depends on an earlier migration's commit passes under sqlx-cli and fails un
 branch that adds a migration, run `just db-reset && just db-migrate` once so the shipped runner has applied it to a
 fresh database; no other local loop or preflight lane exercises it.
 
+`backend/schema.sql` is the committed `pg_dump` of a database with every migration applied. A change to the migrations
+regenerates it with `just rust::schema-dump`, which migrates a scratch database on the dev cluster instead of reading
+`reverie_dev`; `just rust::schema-check` and CI fail when the committed file differs.
+
 Operator-facing `MigrationError` modes:
 
 | Variant              | Meaning                             | Recovery                                      |

@@ -18,6 +18,8 @@
 exclude_paths:
   # Query metadata cache, rewritten by `just rust::sqlx-prepare`.
   - "backend/.sqlx/**"
+  # pg_dump of the migrated schema, rewritten by `just rust::schema-dump`.
+  - "backend/schema.sql"
   # JSON Schema projected from the Rust config types by `just rust::regen`.
   - "backend/config.schema.json"
   # Design-token stylesheet emitted by the primitives generator.
