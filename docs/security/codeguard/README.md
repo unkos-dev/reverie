@@ -125,18 +125,21 @@ flow; session regeneration on authentication.
 ### 3. 24-hour idle session expiry
 
 **Override:** `codeguard-0-session-management-and-cookies.md` → "Expiration and
-Logout" — prefers non-persistent cookies with 2–30 min idle timeouts.
+Logout" — prefers non-persistent cookies, an idle timeout of 2 to 30 minutes and
+an absolute timeout of 4 to 8 hours.
 
-**Reverie's position:** `Expiry::OnInactivity(24h)` via `tower-sessions`.
+**Reverie's position:** `Expiry::OnInactivity(24h)` via `tower-sessions`. The
+session is saved on every request, so each request renews the 24-hour window,
+and no absolute session lifetime is set. The same policy applies to every
+session, administrators' included.
 
 **Rationale:** Reverie is a personal-library application with long-running
-read sessions, not a high-value admin surface. A 24-hour idle window reflects
-the usage pattern; shorter timeouts would force repeated re-authentication
-during a natural reading session.
+read sessions. A 24-hour idle window reflects the usage pattern; shorter
+timeouts would force repeated re-authentication during a natural reading
+session.
 
 **Compensating controls:** Sessions regenerate on authentication; logout
-invalidates the server-side session immediately. Admin-equivalent operations
-(if introduced) must use a stricter session context.
+invalidates the server-side session immediately.
 
 ### 4. EPUB ingestion processes ZIP archives
 
@@ -218,8 +221,10 @@ just knowledge of an email address.
   concurrently; the file itself is staged and renamed into place, so a reader
   never sees a partial PIN
 - Per-source rate limiting on both recovery endpoints
-- Generic responses on both endpoints and equivalent cryptographic work on the
-  unknown-account path, so neither response nor timing enumerates accounts
+- Generic responses on both endpoints, and equivalent Argon2 work on the
+  unknown-account path so password hashing does not reveal whether an account
+  exists; the known-account path's small database and file-write timing
+  difference is accepted
 - No auto-login after reset: the user must re-authenticate with the new password
 
 ### 7. Scope authorization verified by a generated-spec CI matrix, not by this list
@@ -237,9 +242,12 @@ and that a credential one level below the required scope in the hierarchy
 (`read` < `write` < `admin`) is rejected with 403, while a scopeless credential
 is rejected at the auth seam. A companion check flags any mutating-verb
 (`POST`/`PUT`/`PATCH`/`DELETE`) operation that does not require at least
-`write`, with a small explicit allow-list, logged rather than silent, for the
-rare side-effect-free exception (the enrichment dry-run, a `POST` that computes
-a preview without persisting).
+`write`, with an explicit allow-list for exceptions. It holds one entry: the
+enrichment dry-run, a `POST` that declares `read` and previews an enrichment run
+by calling the configured metadata providers and writing their responses to
+`api_cache`, without changing any manifestation. The test fails when an
+allow-list entry no longer matches an operation's route path; it does not
+detect a change in what an allow-listed operation does.
 Mint requests for personal tokens go through a mass-assignment allow-list DTO
 (`CreateTokenRequest` in `backend/src/routes/tokens.rs`: exactly `name`,
 `scopes`, `expires_in_days`), so no other field on the token row is settable at
