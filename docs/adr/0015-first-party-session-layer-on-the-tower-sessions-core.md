@@ -75,9 +75,9 @@ and a direct call to the existing OIDC upsert from the `/auth/callback` handler.
 by a first-party `SessionStore` + `ExpiredDeletion` implementation against the unchanged `tower_sessions.session` table.
 
 The session-table schema, its RLS-exemption, the role grants (`reverie_app` DML; `reverie_readonly` column-scoped
-`SELECT (id, expiry_date)`; `reverie_ingestion` none), and the `expiry_date` index are unchanged and remain in force:
-the first-party store targets the identical table, so the data-layer decisions from the earlier
-tower-sessions-sqlx-store decision are carried forward intact.
+`SELECT (expiry_date)`, because the `id` column holds the credential the session cookie carries; `reverie_ingestion`
+none), and the `expiry_date` index remain in force: the first-party store targets the identical table, so the data-layer
+decisions from the earlier tower-sessions-sqlx-store decision carry forward.
 
 ### Consequences
 
