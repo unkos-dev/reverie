@@ -7,8 +7,6 @@
 backend:
   - "backend/**"
   - "docker/init-roles.sql"
-  # Pins the Postgres image whose pg_dump writes backend/schema.sql.
-  - "docker/compose.dev.yml"
   - "mise.toml"
   - ".github/workflows/ci.yml"
   - ".github/workflows/backend.yml"

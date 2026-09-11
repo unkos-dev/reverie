@@ -30,6 +30,8 @@ container created before the socket mount existed has no host socket; one `just 
 match the image's `local all all trust` pg_hba rule and are passwordless for every role, the same effective access the
 role-name passwords on TCP already grant. Docker Desktop on macOS/Windows cannot share Unix sockets across its VM
 boundary; there, drop the mount with a local compose override and set `REVERIE_DEV_DB_URL` to the TCP schema-owner DSN.
+The schema recipes (`just rust::schema-dump` and `just rust::schema-check`) take `REVERIE_PG_HOST=localhost` instead,
+plus `REVERIE_MIGRATOR_PASSWORD` when the cluster's migrator password is not the dev default.
 
 To run the server itself: `just rust::dev` in the foreground, or `just rust::dev-start` / `dev-stop` / `dev-status` for
 a background process logging to `backend/.dev-server.log`. `just dev-up` from the repository root does the whole

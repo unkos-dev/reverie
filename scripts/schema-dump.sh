@@ -28,20 +28,25 @@ esac
 container="${REVERIE_PG_CONTAINER:-$(docker compose -f docker/compose.dev.yml ps -q postgres)}"
 [ -n "$container" ] || die "no dev Postgres container is running; start it with \`just db-up\`"
 host="${REVERIE_PG_HOST:-${XDG_STATE_HOME:-$HOME/.local/state}/reverie/pgsock}"
-db="reverie_schema_dump_$$"
+db="reverie_schema_dump_$(od -An -N6 -tx1 /dev/urandom | tr -d ' \n')"
 dump="$(mktemp)"
+created=0
 
 psql_owner() {
   docker exec -i "$container" psql -X -q -v ON_ERROR_STOP=1 -U reverie "$@"
 }
 
+# Drop only a database this run created: a failed CREATE means the name is taken.
 cleanup() {
   rm -f "$dump"
-  psql_owner -d postgres -c "DROP DATABASE IF EXISTS $db WITH (FORCE)" || true
+  if [ "$created" = 1 ]; then
+    psql_owner -d postgres -c "DROP DATABASE IF EXISTS $db WITH (FORCE)" || true
+  fi
 }
 trap cleanup EXIT
 
 psql_owner -d postgres -c "CREATE DATABASE $db TEMPLATE template0"
+created=1
 # From its DO block on, init-roles.sql grants per database rather than per
 # cluster; the dump records the part of that it applies to schema public.
 sed -n '/^DO \$\$$/,$p' docker/init-roles.sql | psql_owner -d "$db"
