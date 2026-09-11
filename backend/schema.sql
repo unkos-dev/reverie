@@ -3621,13 +3621,6 @@ GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE tower_sessions.session TO reverie_app
 
 
 --
--- Name: COLUMN session.id; Type: ACL; Schema: tower_sessions; Owner: reverie_migrator
---
-
-GRANT SELECT(id) ON TABLE tower_sessions.session TO reverie_readonly;
-
-
---
 -- Name: COLUMN session.expiry_date; Type: ACL; Schema: tower_sessions; Owner: reverie_migrator
 --
 
