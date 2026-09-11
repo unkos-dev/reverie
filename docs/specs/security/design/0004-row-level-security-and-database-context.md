@@ -82,7 +82,9 @@ the ingestion pool then connects as `reverie_app`, the separation between the tw
 `SELECT set_config('app.system_context', 'writeback', false)` once, in `after_connect`, before the pool hands it out. It
 connects as `reverie_app`, the same role as the request-handling pool; the `system_context` setting, not a separate
 role, is what the `manifestations_*_system` policies look for. `backend/src/lib.rs` builds this pool separately and
-passes it straight to the writeback worker. It is not a field on `AppState`, so no request handler can reach it.
+passes it straight to the writeback worker. It is not a field on `AppState`, so no request handler can reach it. The
+setting lasts for a connection's life because each pooled connection stays one PostgreSQL session throughout: the
+application pools its own connections in-process, not behind a pooler that shares sessions between transactions.
 
 `acquire_with_rls(pool, user_id)` begins a transaction and runs
 `SELECT set_config('app.current_user_id', $1::text, true)` on it. The third argument, `true`, makes the setting local to
@@ -145,6 +147,11 @@ two checks are independent. Five tables have no policy and are granted to `rever
 `local_login_throttle` and `password_reset_pins`. For `device_tokens` and `local_credentials`, which hold hashed token
 and password material, the missing `reverie_readonly` grant is the whole boundary against a reporting connection; there
 is no policy on either table to narrow or widen.
+
+`reverie_app` holds `SELECT`, `INSERT`, `UPDATE` and `DELETE` on every table it is granted except eight: `SELECT` only
+on `identifier_schemes`, `metadata_sources`, `rating_sources`, `manifestation_external_ratings` and the migration
+history table `_sqlx_migrations`; `SELECT` and `UPDATE` on `settings`; `SELECT` and `INSERT` on `instance_bootstrap`;
+and everything except `DELETE` on `user_preferences`.
 
 `reverie_ingestion` is granted the catalogue and pipeline tables: `works`, `authors`, `work_authors`, `manifestations`,
 `series`, `series_works`, `omnibus_contents`, `metadata_versions`, `metadata_sources`, `field_locks`, `tags`,
@@ -247,10 +254,9 @@ The `manifestations_*_system` policies are the only policies that read `app.syst
 `app.current_user_id`, and outside test support only the connection setup in `init_writeback_pool` sets that value. No
 request-handling path sets it, so no request, whatever its credential, role or scope, reaches the system-context
 policies. The database does not prevent a `reverie_app` connection from setting the value; the guarantee rests on the
-application never doing so outside the writeback pool. This is part of the picture recorded under deviation 4 in the
-CodeGuard deviation register: the ingestion and writeback paths sit outside per-user row-level security, and the
-system-context policies plus the separate `reverie_ingestion` role keep that exemption out of reach of ordinary
-requests.
+application never doing so outside the writeback pool. The ingestion pool, when it has its own credentials, is the other
+path around per-user row-level security: the `reverie_ingestion` role's policies admit every row, and its grants confine
+it to the catalogue and pipeline tables.
 
 The ownership axis that REV-ADR-0028 assigns to the data layer takes two forms. `reading_state` and `user_preferences`
 enforce it with row-level security, in this subject. `shelves` and `shelf_items` enforce it with a `WHERE user_id = …`
@@ -265,6 +271,6 @@ for debugging or reporting. Such a connection is refused with a permission error
 
 - [Database migrations](../../../deployment/database-migrations.md): the migration runner and the `reverie_migrator`
   identity this subject depends on.
-- [CodeGuard deviation register](../../../security/codeguard/README.md), deviation 4: the compensating controls around
-  ingestion, including the ingestion pool's policy exemption this Design describes.
+- [CodeGuard deviation register](../../../security/codeguard/README.md), deviation 4: its compensating controls for EPUB
+  ingestion include running the EPUB parser on the ingestion pool.
 - [Backend README](../../../../backend/README.md): the per-role local connection strings for development.
