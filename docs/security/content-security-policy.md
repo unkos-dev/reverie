@@ -109,7 +109,7 @@ Reverie sets two cookies on authenticated browsers:
 
 | Name | HttpOnly | Max-Age | Path | SameSite | Purpose | Lifecycle |
 | ---- | -------- | ------- | ---- | -------- | ------- | --------- |
-| `id` | **Yes** | Session | `/` | `Lax` | tower-sessions session cookie (auth state) | Cleared on logout; short-lived |
+| `id` | **Yes** | 24 hours, renewed on each request | `/` | `Lax` | tower-sessions session cookie (auth state) | Cleared on logout; short-lived |
 | `reverie_theme` | **No** | 365 days | `/` | `Lax` | Dark/Light/System preference for FOUC | Survives logout by design (device state, not PII) |
 
 `reverie_theme` is intentionally not `HttpOnly` because JavaScript must read it synchronously before React hydrates to
