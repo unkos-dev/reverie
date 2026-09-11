@@ -125,19 +125,21 @@ flow; session regeneration on authentication.
 ### 3. 24-hour idle session expiry
 
 **Override:** `codeguard-0-session-management-and-cookies.md` → "Expiration and
-Logout" — prefers non-persistent cookies with 2–30 min idle timeouts.
+Logout" — prefers non-persistent cookies, an idle timeout of 2 to 30 minutes and
+an absolute timeout of 4 to 8 hours.
 
-**Reverie's position:** `Expiry::OnInactivity(24h)` via `tower-sessions`.
+**Reverie's position:** `Expiry::OnInactivity(24h)` via `tower-sessions`. The
+session is saved on every request, so each request renews the 24-hour window,
+and no absolute session lifetime is set. The same policy applies to every
+session, administrators' included.
 
 **Rationale:** Reverie is a personal-library application with long-running
-read sessions, not a high-value admin surface. A 24-hour idle window reflects
-the usage pattern; shorter timeouts would force repeated re-authentication
-during a natural reading session.
+read sessions. A 24-hour idle window reflects the usage pattern; shorter
+timeouts would force repeated re-authentication during a natural reading
+session.
 
 **Compensating controls:** Sessions regenerate on authentication; logout
-invalidates the server-side session immediately. Admin operations run under the
-same session policy as every other request; there is no separate, stricter
-session context for them.
+invalidates the server-side session immediately.
 
 ### 4. EPUB ingestion processes ZIP archives
 
@@ -151,8 +153,7 @@ function without parsing them.
 
 **Compensating controls required:**
 
-- Archive structure checked before processing: a file the ZIP reader cannot open
-  as an archive is rejected as irrecoverable before any entry is read
+- Magic-byte validation (confirm ZIP signature before processing)
 - Bounded decompression guards against zip-bomb patterns (max decompressed
   size, max entry count, max nesting depth)
 - Generated filenames for extracted content; never trust manifest-provided
@@ -241,10 +242,12 @@ and that a credential one level below the required scope in the hierarchy
 (`read` < `write` < `admin`) is rejected with 403, while a scopeless credential
 is rejected at the auth seam. A companion check flags any mutating-verb
 (`POST`/`PUT`/`PATCH`/`DELETE`) operation that does not require at least
-`write`, with a small explicit allow-list for the rare side-effect-free
-exception (the enrichment dry-run, a `POST` that computes a preview without
-persisting). The test fails when an allow-list entry no longer matches an
-operation, so the list cannot go stale unnoticed.
+`write`, with an explicit allow-list for exceptions. It holds one entry: the
+enrichment dry-run, a `POST` that declares `read` and previews an enrichment run
+by calling the configured metadata providers and writing their responses to
+`api_cache`, without changing any manifestation. The test fails when an
+allow-list entry no longer matches an operation's route path; it does not
+detect a change in what an allow-listed operation does.
 Mint requests for personal tokens go through a mass-assignment allow-list DTO
 (`CreateTokenRequest` in `backend/src/routes/tokens.rs`: exactly `name`,
 `scopes`, `expires_in_days`), so no other field on the token row is settable at
