@@ -137,6 +137,6 @@ backend/
 │   ├── security/        # Response security headers + CSRF validating middleware
 │   ├── config/          # Declarative config module
 │   ├── state.rs         # AppState
-│   └── error.rs         # AppError type
+│   └── error/           # AppError and its Problem Details mapping
 └── tests/               # Integration tests
 ```

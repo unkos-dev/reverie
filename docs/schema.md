@@ -58,7 +58,8 @@ ingestion_jobs     (standalone)
 | `series` | Series with self-referential nesting | `name`, `parent_id` |
 | `series_works` | Series-Work join | `series_id`, `work_id`, `position` (double precision for fractional ordering) |
 | `omnibus_contents` | Omnibus edition mapping | `omnibus_manifestation_id`, `contained_work_id`, `position` |
-| `metadata_versions` | Metadata versioning (draft/accepted/rejected) | `manifestation_id`, `source`, `field_name`, `old_value`, `new_value`, `status` |
+| `metadata_versions` | Per-field metadata versions (`pending` or `rejected`; accepting one moves the canonical field's version pointer) | `manifestation_id`, `source`, `field_name`, `old_value`, `new_value`, `status` |
+| `metadata_sources` | Metadata source registry, seeded by the initial migration | `id`, `display_name`, `kind`, `enabled`, `base_priority`; `metadata_versions.source` references `id` |
 | `tags` | Flat tag vocabulary, unique on `lower(name)` | `name` |
 | `manifestation_tags` | Manifestation-Tag join | `manifestation_id`, `tag_id`, `source_version_id` |
 | `genres` | Genre vocabulary, unique on `lower(name)` | `name` |
@@ -93,15 +94,15 @@ write, so a fresh account has no row at all.
 | `api_cache` | External API response cache | `source`, `lookup_key`, `response`, `expires_at` |
 | `ingestion_jobs` | Batch job tracking | `batch_id`, `source_path`, `status` |
 | `writeback_jobs` | Queue of pending OPF writeback operations | `manifestation_id`, `reason`, `status`, `attempt_count` |
-| `webhooks` | User-configured webhooks | `user_id`, `url`, `events`, `enabled` |
-| `webhook_deliveries` | Delivery log | `webhook_id`, `event_type`, `response_status` |
 
 ### Reserved (Phase 2)
 
-| Table               | Purpose                  | Notes                               |
-| ------------------- | ------------------------ | ----------------------------------- |
-| `reading_sessions`  | Reading session tracking | Empty structure, no logic yet       |
-| `reading_positions` | Reader position sync     | Has `updated_at` but no trigger yet |
+| Table                | Purpose                  | Notes                                         |
+| -------------------- | ------------------------ | --------------------------------------------- |
+| `reading_sessions`   | Reading session tracking | Empty structure, no logic yet                 |
+| `reading_positions`  | Reader position sync     | Has `updated_at` but no trigger yet           |
+| `webhooks`           | User-configured webhooks | RLS enabled with no policies; no handlers yet |
+| `webhook_deliveries` | Webhook delivery log     | RLS enabled with no policies; no handlers yet |
 
 ## Enum Types
 
@@ -112,10 +113,9 @@ write, so a fresh account has no row at all.
 | `scope`                  | read, write, admin                              | `device_tokens.scopes`             |
 | `author_role`            | author, editor, translator, narrator            | `work_authors.role`                |
 | `manifestation_format`   | epub, pdf, mobi, azw3, cbz, cbr                 | `manifestations.format`            |
-| `validation_status`      | pending, clean, repaired, degraded              | `manifestations.validation_status` |
+| `validation_status`      | pending, clean, repaired, degraded, failed      | `manifestations.validation_status` |
 | `ingestion_status`       | pending, processing, complete, failed, skipped  | `manifestations.ingestion_status`  |
-| `metadata_source`        | opf, openlibrary, googlebooks, manual, ai       | `metadata_versions.source`         |
-| `metadata_review_status` | draft, accepted, rejected                       | `metadata_versions.status`         |
+| `metadata_review_status` | pending, rejected                               | `metadata_versions.status`         |
 | `content_rating`         | everyone, teen, mature, adult, explicit         | `manifestations.content_rating`    |
 | `job_status`             | queued, running, complete, failed               | `ingestion_jobs.status`            |
 | `writeback_status`       | pending, in_progress, complete, failed, skipped | `writeback_jobs.status`            |
@@ -131,7 +131,7 @@ write, so a fresh account has no row at all.
 | ---- | ------- | ---------- | --- |
 | `reverie` | Cluster bootstrap — provisions roles | Superuser; not used at runtime or for migrations | Bypasses (superuser) |
 | `reverie_migrator` | Runs migrations (`reverie migrate`) | CREATE on database + schema `public`; owns created objects | Enforced — NOBYPASSRLS |
-| `reverie_app` | Web app, OPDS, webhooks | DML on all tables | Enforced — user-scoped |
+| `reverie_app` | Web app and OPDS | DML on all tables | Enforced — user-scoped |
 | `reverie_ingestion` | Background pipeline | DML on pipeline tables only | Own permissive policy |
 | `reverie_readonly` | Debugging, reporting | SELECT on most tables (excludes `device_tokens`, `local_credentials`) | Enforced — same as `reverie_app` |
 
