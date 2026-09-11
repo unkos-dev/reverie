@@ -192,8 +192,53 @@ impl ExpiredDeletion for PostgresStore {
 #[cfg(test)]
 mod tests {
     use super::expiry_to_timestamptz;
+    use crate::test_support::db::readonly_pool_for;
     use chrono::SecondsFormat;
+    use sqlx::PgPool;
     use time::OffsetDateTime;
+
+    async fn insert_session(pool: &PgPool) {
+        sqlx::query!(
+            "INSERT INTO tower_sessions.session (id, data, expiry_date) \
+             VALUES ('fixture-session', ''::bytea, now() + interval '1 hour')"
+        )
+        .execute(pool)
+        .await
+        .expect("insert session fixture");
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn readonly_role_is_refused_session_ids(pool: PgPool) {
+        insert_session(&pool).await;
+        let readonly = readonly_pool_for(&pool).await;
+
+        let err = sqlx::query_scalar!("SELECT id FROM tower_sessions.session")
+            .fetch_all(&readonly)
+            .await
+            .expect_err("reverie_readonly must not read session IDs");
+
+        assert_eq!(
+            err.as_database_error()
+                .and_then(sqlx::error::DatabaseError::code)
+                .as_deref(),
+            Some("42501"),
+            "expected insufficient_privilege, got {err:?}"
+        );
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn readonly_role_reads_session_expiry(pool: PgPool) {
+        insert_session(&pool).await;
+        let readonly = readonly_pool_for(&pool).await;
+
+        let count: i64 =
+            sqlx::query_scalar!("SELECT count(expiry_date) AS \"c!\" FROM tower_sessions.session")
+                .fetch_one(&readonly)
+                .await
+                .expect("reverie_readonly keeps SELECT on expiry_date");
+
+        assert_eq!(count, 1);
+    }
 
     #[test]
     fn preserves_a_subsecond_instant() {
