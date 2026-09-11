@@ -109,7 +109,7 @@ Reverie sets two cookies on authenticated browsers:
 
 | Name | HttpOnly | Max-Age | Path | SameSite | Purpose | Lifecycle |
 | ---- | -------- | ------- | ---- | -------- | ------- | --------- |
-| `id` | **Yes** | Session | `/` | `Lax` | tower-sessions session cookie (auth state) | Cleared on logout; short-lived |
+| `id` | **Yes** | 24 hours, renewed on each request | `/` | `Lax` | tower-sessions session cookie (auth state) | Cleared on logout; short-lived |
 | `reverie_theme` | **No** | 365 days | `/` | `Lax` | Dark/Light/System preference for FOUC | Survives logout by design (device state, not PII) |
 
 `reverie_theme` is intentionally not `HttpOnly` because JavaScript must read it synchronously before React hydrates to
@@ -123,7 +123,8 @@ still works because Chrome (≥v89) and Firefox treat `http://localhost` as a se
 it. An operator running Reverie behind a public DNS name on plain HTTP will see the browser silently reject the cookie,
 which is the documented signal to put the deployment behind TLS, whether terminated at a proxy or directly.
 
-The session cookie (`id`) does not set `Secure` today; that's tracked as a follow-up to apply the same treatment.
+The session cookie (`id`) sets `Secure` when `REVERIE_BEHIND_HTTPS=true`: a TLS-fronted deployment gets it, an HTTP-only
+one does not.
 
 ## `style-src 'unsafe-inline'`: why it's still there
 

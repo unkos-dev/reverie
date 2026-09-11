@@ -17,10 +17,11 @@ not a private homelab deploy.
 
 ## OIDC & sessions
 
-- `OidcCredentials` must only be constructed from verified ID tokens (signature + claims validated by `openidconnect`
-  crate). Never from unverified responses.
-- Session cookies: `HttpOnly=true`, `SameSite=Lax`. No `Secure` flag (backend behind TLS-terminating proxy). Adding
-  `Secure` breaks non-TLS dev setups.
+- The login callback must only read OIDC identity claims from a verified ID token (signature + claims validated by the
+  `openidconnect` crate). Never from unverified responses. Bearer access tokens are a separate path, validated by
+  `JwtValidator` under REV-ADR-0028.
+- Session cookies: `HttpOnly=true`, `SameSite=Lax`, and `Secure` whenever `REVERIE_BEHIND_HTTPS=true` (a TLS-fronted
+  deployment). An HTTP-only deployment gets no `Secure` flag.
 - Session tokens must never appear in logs, error messages, or serialised output.
 - Auth enforcement uses `CurrentUser::require_admin()` / `require_not_child()`. Direct field reads on role/is_child
   bypass the canonical check; flag them.

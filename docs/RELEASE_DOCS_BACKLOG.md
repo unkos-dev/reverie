@@ -14,13 +14,15 @@ This file is the holding area; items graduate into `website/` Starlight pages wh
 [A typed ValidationStatus enum reconciles the vocabulary](./adr/0013-a-typed-validationstatus-enum-reconciles-the-vocabulary.md)
 (the validation status vocabulary task)
 
-The `validation_status` enum is `pending | clean | repaired | degraded`. The distinction is not self-evident to an
-operator reading the value:
+The `validation_status` enum is `pending | clean | repaired | degraded | failed`. The distinction is not self-evident to
+an operator reading the value:
 
 - `pending`: the manifestation row exists but structural validation has not run yet.
 - `clean`: validation found no issues.
 - `repaired`: validation found issues that were automatically repaired; the file is ingested, stored, and served.
 - `degraded`: validation found issues that are tolerated; the file is still served.
+- `failed`: the validator could not run to completion, so the file's structural quality is unknown; the file is still
+  ingested and served.
 
 The load-bearing point operators need: `clean`, `repaired`, and `degraded` are **all** stored-and-served outcomes on one
 quality tier: `clean` means _no issues found_, not _the only valid state_. A quarantined file is never represented here
