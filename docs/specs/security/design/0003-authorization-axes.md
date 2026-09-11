@@ -40,10 +40,10 @@ assertion methods read; `crate::openapi::spec_json` for the OpenAPI document the
 for minting a scoped credential in tests; `crate::db::acquire_with_rls` for the RLS half of the ownership map.
 
 Depended on by: every `/api/v1` handler that needs more than `read` scope or an adult caller, each of which calls
-`require_scope`, `require_admin` or `require_not_child` before touching its resource (a `read` operation calls none,
-because authentication already refuses a credential with no scopes); the mint handler in `backend/src/routes/tokens.rs`,
-which reads `may_grant_scope` to bound a requested token; and the backend test suite, which runs the matrix as an
-ordinary `#[sqlx::test]` module.
+`require_scope`, `require_admin` or `require_not_child` before touching its resource (a `read` operation may omit the
+call, because authentication already refuses a credential with no scopes; `get_reading` and `get_preferences` make it
+anyway); the mint handler in `backend/src/routes/tokens.rs`, which reads `may_grant_scope` to bound a requested token;
+and the backend test suite, which runs the matrix as an ordinary `#[sqlx::test]` module.
 
 ## Structure
 
