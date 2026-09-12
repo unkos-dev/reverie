@@ -64,6 +64,10 @@ CREATE ROLE reverie_readonly  WITH LOGIN PASSWORD :'ro_pw';
 CREATE ROLE reverie_migrator  WITH LOGIN PASSWORD :'mig_pw'
   NOSUPERUSER NOCREATEROLE NOBYPASSRLS;
 
+-- scripts/schema-dump.sh replays this file from the DO block below to the end
+-- against a scratch database, so per-database statements belong inside or
+-- after that block and cluster-wide ones above it.
+--
 -- CONNECT grants are kept explicit so they remain load-bearing if a
 -- future migration ever issues `REVOKE CONNECT ON DATABASE … FROM PUBLIC`
 -- (a common hardening step that would otherwise lock the runtime roles

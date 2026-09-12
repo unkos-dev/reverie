@@ -92,7 +92,7 @@ done
 # faithful local lane to run; `just preflight-full` never ran them either.
 lanes_for() {
   case "$1" in
-    backend) printf '%s\n' rust::guards db-up rust::check rust::doc-lint rust::test rust::doctests rust::sqlx-check rust::machete ;;
+    backend) printf '%s\n' rust::guards db-up rust::check rust::doc-lint rust::test rust::doctests rust::sqlx-check rust::schema-check rust::machete ;;
     audit) printf '%s\n' rust::deny ;;
     frontend) printf '%s\n' js::check js::test js::build js::font-integrity ;;
     website) printf '%s\n' website::check ;;
@@ -131,6 +131,7 @@ LANE_ORDER=(
   rust::test
   rust::doctests
   rust::sqlx-check
+  rust::schema-check
   rust::machete
   rust::deny
   js::check

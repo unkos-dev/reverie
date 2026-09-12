@@ -61,6 +61,7 @@ rust::doc-lint
 rust::test
 rust::doctests
 rust::sqlx-check
+rust::schema-check
 rust::machete
 rust::deny
 js::check
@@ -78,6 +79,7 @@ rust::doc-lint
 rust::test
 rust::doctests
 rust::sqlx-check
+rust::schema-check
 rust::machete'
 
 FRONTEND='infra::check
@@ -152,6 +154,7 @@ rust::doc-lint
 rust::test
 rust::doctests
 rust::sqlx-check
+rust::schema-check
 rust::machete
 rust::deny'
 
@@ -165,6 +168,7 @@ rust::doc-lint
 rust::test
 rust::doctests
 rust::sqlx-check
+rust::schema-check
 rust::machete
 js::check
 js::test

@@ -17,6 +17,7 @@
 #   - issue-form templates, whose placeholders show the identifier format,
 #   - the initial schema migration, whose checksum sqlx has recorded and which
 #     the pre-release migration rollup rewrites; later migrations are gated,
+#   - backend/schema.sql, which reprints that migration's comments,
 #   - the two reference guards, whose self-checks carry the patterns.
 # Gitignored files (caches, build output, /plans, node_modules) are never
 # reached: the file set comes from `git ls-files`, which only ever lists
@@ -43,7 +44,7 @@ is_gated() {
     .claude/*) return 1 ;;
     CLAUDE.md | AGENTS.md | GEMINI.md | */CLAUDE.md | */AGENTS.md | */GEMINI.md) return 1 ;;
     .github/ISSUE_TEMPLATE/*) return 1 ;;
-    backend/migrations/20260810000000_initial_schema.up.sql) return 1 ;;
+    backend/migrations/20260810000000_initial_schema.up.sql | backend/schema.sql) return 1 ;;
     scripts/no-issue-refs.sh | scripts/no-plan-refs.sh) return 1 ;;
   esac
   return 0
@@ -73,6 +74,7 @@ self_check() {
   ! is_gated .github/ISSUE_TEMPLATE/bug_report.yml || return 1
   is_gated backend/migrations/20260901000000_x.up.sql || return 1
   ! is_gated backend/migrations/20260810000000_initial_schema.up.sql || return 1
+  ! is_gated backend/schema.sql || return 1
   ! is_gated scripts/no-issue-refs.sh || return 1
 }
 if ! self_check; then
