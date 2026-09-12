@@ -32,13 +32,13 @@ the runtime response body and the documented OpenAPI component schema, `ApiDoc`,
 (`backend/tests/gen_openapi.rs`); and, on the client, `ApiError` (`frontend/src/api/errors.ts`) and the Problem Details
 parsing path inside `apiFetch` (`frontend/src/api/fetch.ts`).
 
-It does not own the CSRF synchronizer-token check that raises `AppError::CsrfMissing`/`CsrfMismatch`, which is the
-Design "CSRF protection"; the `If-Match` grammar, comparison and precondition contract behind
+It does not own the CSRF synchronizer-token check that raises `AppError::CsrfMissing`/`CsrfMismatch`, which belongs to
+the CSRF protection subject; the `If-Match` grammar, comparison and precondition contract behind
 `AppError::IfMatchRequired`/`IfMatchMismatch`/the header half of `MalformedHeader`, the Design "Conditional requests and
 optimistic concurrency"; the security-header middleware, the two-class CSP, or the composite router's fallback dispatch
 (including the reserved-prefix `404` and the `405` substitution that both construct an `AppError` directly), the Design
 "Response security headers and CSP"; or how a request becomes a `CurrentUser` in the first place, a neighbouring subject
-with no Design yet (`backend/src/auth/middleware.rs`). It does not own the scope/role authorisation checks that raise
+(`backend/src/auth/middleware.rs`). It does not own the scope/role authorisation checks that raise
 `AppError::Forbidden`, the Design "Authorization axes"; the row-level-security mechanism behind the
 RLS-hidden-row-to-`404` mapping, the Design "Row-level security and database context"; or any one handler's own
 business-rule message inside `AppError::Validation`, which belongs to that handler's own Design.
@@ -60,7 +60,7 @@ route). It is also depended on by `backend/src/authz_matrix.rs` (Design "Authori
 their error responses their own way instead). On the client, `ApiError` is depended on throughout the SPA: every page
 and mutation hook that branches on `err instanceof ApiError`, the library cell-editing and metadata-dialog surfaces that
 layer `isIfMatchMismatch`/`isIfMatchRequired` on top of it (owned by "Conditional requests and optimistic concurrency"),
-and the 401 recovery funnel in `frontend/src/lib/query/client.ts` (Design "Sessions").
+and the 401 recovery funnel in `frontend/src/lib/query/client.ts` (the Sessions subject).
 
 ## Structure
 

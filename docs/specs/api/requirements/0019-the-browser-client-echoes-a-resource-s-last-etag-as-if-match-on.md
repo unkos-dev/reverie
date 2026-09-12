@@ -32,8 +32,8 @@ explicitly sets its own `If-Match` is never overridden.
 - After a `412` response on a resource, a further `PATCH` on that same resource carries the current `ETag` value the
   `412` response carried, not the stale value that caused the mismatch. Checked by "a 412's current ETag replaces the
   stale retained tag" in `frontend/src/api/fetch.test.ts`.
-- A `PATCH` for a resource the client has not previously seen an `ETag` for carries no `If-Match` header at all. Checked
-  by "a resource with no retained tag PATCHes without If-Match" in `frontend/src/api/fetch.test.ts`.
+- A `PATCH` for a resource for which the client holds no retained `ETag` carries no `If-Match` header at all. Checked by
+  "a resource with no retained tag PATCHes without If-Match" in `frontend/src/api/fetch.test.ts`.
 - A last-seen `ETag` for one resource is never sent as `If-Match` on a `PATCH` to a different resource, even when both
   are in flight in the same session. Checked by "a retained tag on a manifestation's metadata resource is not sent for
   an unrelated shelves PATCH" in `frontend/src/api/fetch.test.ts`.

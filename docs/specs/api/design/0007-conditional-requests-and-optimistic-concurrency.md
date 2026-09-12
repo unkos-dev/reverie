@@ -30,9 +30,9 @@ request body's own semantic validation; and the client-side capture and replay i
 `frontend/src/api/fetch.ts`.
 
 It does not own the business logic of any endpoint that uses this contract: what fields
-`PATCH /api/v1/books/{id}/reading` may change and its transition-stamp rules (Design "Reading state"), the per-field
-apply/journal mechanics `PATCH /api/v1/books/{id}/metadata` runs once its precondition holds (Design "Metadata review
-and editing"), or shelf CRUD and its handler-enforced ownership predicate (Design "Shelves"). It does not own the
+`PATCH /api/v1/books/{id}/reading` may change and its transition-stamp rules (the Reading state subject), the per-field
+apply/journal mechanics `PATCH /api/v1/books/{id}/metadata` runs once its precondition holds (the Metadata review and
+editing subject), or shelf CRUD and its handler-enforced ownership predicate (the Shelves subject). It does not own the
 content of any one endpoint's dedicated hash-input struct beyond the contract those structs must satisfy. It does not
 own the RFC 9457 Problem Details envelope the resulting errors render into, or the status-code selection rules that
 assign `400`/`412`/`428` to a failure class (Design "API error contract and OpenAPI").
@@ -40,12 +40,12 @@ assign `400`/`412`/`428` to a failure class (Design "API error contract and Open
 Depends on: RFC 9110 §8.8.3 (`entity-tag` grammar), §13.1.1 (`If-Match`), and §13.1.2 (strong comparison), and RFC 6585
 §3 (`428 Precondition Required`), all fixed for Reverie's surface by REV-ADR-0011; `axum::http::HeaderMap` and
 `HeaderValue` for header access; each consuming endpoint's own row lock, which is what makes the tag comparison
-race-free against a concurrent writer (owned by that endpoint's own Design, not restated here).
+race-free against a concurrent writer (owned by that endpoint's own subject, not restated here).
 
-Depended on by: `PATCH /api/v1/books/{id}/reading` (Design "Reading state"), `PATCH /api/v1/books/{id}/metadata` (Design
-"Metadata review and editing"), and `PUT /api/v1/shelves/{id}/items` (Design "Shelves") on the server side; the metadata
-edit dialog and the library table's cell-editing surface (Design "Library table cell editing and undo") on the client
-side, both of which read a captured tag through `apiFetch` rather than handling `If-Match` themselves.
+Depended on by: `PATCH /api/v1/books/{id}/reading` (the Reading state subject), `PATCH /api/v1/books/{id}/metadata` (the
+Metadata review and editing subject), and `PUT /api/v1/shelves/{id}/items` (the Shelves subject) on the server side; the
+metadata edit dialog and the library table's cell-editing surface (the Library table cell editing and undo subject) on
+the client side, both of which read a captured tag through `apiFetch` rather than handling `If-Match` themselves.
 
 ## Structure
 
@@ -192,7 +192,7 @@ so a fresh page load starts with an empty cache; the next `GET` of either resour
    under `metadata:{id}`.
 2. A second client's `PATCH` commits first, changing the manifestation's editable fields.
 3. The dialog submits its own `PATCH`. `sendRequest` finds no caller-set `If-Match`, resolves `metadata:{id}`, and
-   echoes the now-stale cached tag as `If-Match`.
+   echoes the cached tag as `If-Match`, which the second client's commit has made stale.
 4. `update_book_metadata` checks `require_scope`/`require_not_child`, then `parse_if_match` (well-formed, so parsing
    succeeds), then acquires an RLS transaction and row-locks the manifestation and its work — the point at which a
    missing or RLS-hidden manifestation would answer `404`, ahead of the tag comparison.

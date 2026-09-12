@@ -28,8 +28,8 @@ string would defeat that: every consumer, including Reverie's own browser client
 ## Acceptance criteria
 
 - Every sampled failure response from an `/api/v1` operation carries `Content-Type: application/problem+json` and a
-  `type` field ending in one of the registered slugs (`not-found`, `unauthorized`, `forbidden`, `validation`,
-  `csrf-missing`, `csrf-mismatch`, `if-match-required`, `if-match-mismatch`, `system-shelf-immutable`,
+  `type` field ending in one of the registered slugs (`not-found`, `unauthorized`, `basic-auth-required`, `forbidden`,
+  `validation`, `csrf-missing`, `csrf-mismatch`, `if-match-required`, `if-match-mismatch`, `system-shelf-immutable`,
   `malformed-query`, `malformed-header`, `malformed-path`, `invalid-request-body`, `rate-limited`,
   `setup-already-complete`, `email-conflict`, `method-not-allowed`, `internal`). Checked per problem class in
   `backend/src/error/mod.rs`'s test module, for example `not_found_returns_404_problem`,
