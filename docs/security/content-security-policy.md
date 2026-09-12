@@ -5,7 +5,7 @@ document is for operators: it explains what ships, why, and how to tune it.
 
 ## What ships by default
 
-Every response carries four unconditional headers:
+Every response carries these four headers, except the session layer's empty `500` described below:
 
 | Header | Value | Purpose |
 | ------ | ----- | ------- |
@@ -23,6 +23,12 @@ A `Content-Security-Policy` differentiated by route class:
   identical policy, so a file that stops existing cannot silently change the policy on its URL.
 - **API responses** (`/api/*`, `/auth/*`, `/health/*`, `/opds/*`):
   `default-src 'none'; frame-ancestors 'none'; base-uri 'none'`, APIs never render, so everything is locked down.
+
+Three kinds of response carry no `Content-Security-Policy`. A session-authenticated mutation rejected by CSRF
+enforcement (`428`, `403`, or `500` when the session store cannot be read) has none, because that check runs before the
+API policy is attached. Neither does the plain `404` the SPA fallback returns when no frontend build is configured or
+`index.html` cannot be read. The third is the empty `500` the session layer returns when saving a session fails: that
+layer sits outside the header middleware, so the response carries none of the headers on this page.
 
 ## Opt-in: HSTS
 
