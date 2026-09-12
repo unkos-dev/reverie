@@ -29,6 +29,7 @@ allowlists
 analyzes
 ansible
 Anthropic
+api
 APIs
 approver
 arg
@@ -116,6 +117,7 @@ creds
 cron
 crossfade
 crossfades
+cryptographic
 cryptographically
 cssMinify
 CTAs
@@ -614,5 +616,6 @@ xs
 yamllint
 Zitadel
 zizmor
+Zod
 zxcvbn
 rumdl

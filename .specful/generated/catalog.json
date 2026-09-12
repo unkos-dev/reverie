@@ -414,6 +414,36 @@
     },
     {
       "governed-by": [
+        "REV-ADR-0011",
+        "REV-ADR-0016"
+      ],
+      "id": "REV-DESIGN-0006",
+      "kind": "design",
+      "path": "docs/specs/api/design/0006-api-error-contract-and-openapi.md",
+      "satisfies": [
+        "REV-REQ-0014",
+        "REV-REQ-0015",
+        "REV-REQ-0016",
+        "REV-REQ-0017"
+      ],
+      "title": "API error contract and OpenAPI"
+    },
+    {
+      "governed-by": [
+        "REV-ADR-0011"
+      ],
+      "id": "REV-DESIGN-0007",
+      "kind": "design",
+      "path": "docs/specs/api/design/0007-conditional-requests-and-optimistic-concurrency.md",
+      "satisfies": [
+        "REV-REQ-0018",
+        "REV-REQ-0019",
+        "REV-REQ-0020"
+      ],
+      "title": "Conditional requests and optimistic concurrency"
+    },
+    {
+      "governed-by": [
         "REV-ADR-0047"
       ],
       "id": "REV-REQ-0001",
@@ -519,6 +549,60 @@
       "kind": "req",
       "path": "docs/specs/security/requirements/0013-reserved-prefix-paths-never-fall-through-to-the-spa-index.md",
       "title": "Reserved-prefix paths never fall through to the SPA index"
+    },
+    {
+      "governed-by": [
+        "REV-ADR-0011"
+      ],
+      "id": "REV-REQ-0014",
+      "kind": "req",
+      "path": "docs/specs/api/requirements/0014-api-error-responses-are-problem-details-with-a-registered-type.md",
+      "title": "API error responses are Problem Details with a registered type"
+    },
+    {
+      "governed-by": [
+        "REV-ADR-0011"
+      ],
+      "id": "REV-REQ-0015",
+      "kind": "req",
+      "path": "docs/specs/api/requirements/0015-a-request-that-fails-to-decode-answers-the-status-its-failure-im.md",
+      "title": "A request that fails to decode answers the status its failure implies"
+    },
+    {
+      "id": "REV-REQ-0016",
+      "kind": "req",
+      "path": "docs/specs/api/requirements/0016-the-browser-client-surfaces-every-non-2xx-response-as-an-error-w.md",
+      "title": "The browser client surfaces every non-2xx response as an error with its status"
+    },
+    {
+      "id": "REV-REQ-0017",
+      "kind": "req",
+      "path": "docs/specs/api/requirements/0017-a-500-response-carries-no-internal-error-text.md",
+      "title": "A 500 response carries no internal error text"
+    },
+    {
+      "governed-by": [
+        "REV-ADR-0011"
+      ],
+      "id": "REV-REQ-0018",
+      "kind": "req",
+      "path": "docs/specs/api/requirements/0018-metadata-and-reading-state-patch-compare-if-match-byte-for-byte.md",
+      "title": "Metadata and reading-state PATCH compare If-Match byte for byte"
+    },
+    {
+      "id": "REV-REQ-0019",
+      "kind": "req",
+      "path": "docs/specs/api/requirements/0019-the-browser-client-echoes-a-resource-s-last-etag-as-if-match-on.md",
+      "title": "The browser client echoes a resource's last ETag as If-Match on its PATCH"
+    },
+    {
+      "governed-by": [
+        "REV-ADR-0011"
+      ],
+      "id": "REV-REQ-0020",
+      "kind": "req",
+      "path": "docs/specs/api/requirements/0020-a-precondition-protected-write-answers-428-without-if-match.md",
+      "title": "A precondition-protected write answers 428 without If-Match"
     }
   ]
 }
