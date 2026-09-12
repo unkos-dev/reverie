@@ -53,18 +53,24 @@ jobs:
           filters: |
             javascript-typescript:
               - 'frontend/**'
+              # The extractor's JavaScript, TypeScript and HTML file types,
+              # matched repo-wide so a file added outside frontend/ cannot fall
+              # out of coverage. JSON and YAML are extractor types too, left out
+              # because '**/*.yml' would scan on every workflow edit.
               - '**/*.html'
-              # The JavaScript and TypeScript the extractor sees outside frontend/.
-              - 'vite.config.ts'
-              - 'scripts/verify-frontend-sbom.mjs'
-              - 'website/**/*.ts'
-              - 'website/**/*.mjs'
-              - 'website/**/*.astro'
+              - '**/*.ts'
+              - '**/*.tsx'
+              - '**/*.js'
+              - '**/*.jsx'
+              - '**/*.mjs'
+              - '**/*.cjs'
               - '.github/workflows/codeql.yml'
               - '.github/codeql/**'
             rust:
               # The crate, its manifests, lockfile and toolchain files all live
-              # under backend/; no Rust input sits at the repository root.
+              # under backend/, so no root Cargo, lockfile or toolchain pattern
+              # selects Rust. mise.toml is the root exception: the job reads the
+              # kache pin out of it.
               - 'backend/**'
               - 'mise.toml'
               - '.github/actions/rust-toolchain/**'
