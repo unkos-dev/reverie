@@ -53,16 +53,33 @@ jobs:
           filters: |
             javascript-typescript:
               - 'frontend/**'
+              # The extractor file types this repository has or plausibly will,
+              # matched repo-wide so a file added outside frontend/ cannot fall
+              # out of coverage. Left out on purpose: the template and embedded
+              # HTML types (.vue, .hbs, .ejs, .njk, .erb, .jsp, .dot), the
+              # legacy JavaScript spellings (.es6, .es, .xsjs, .xsjslib), and
+              # JSON and YAML, since '**/*.yml' would scan on every workflow
+              # edit.
               - '**/*.html'
+              - '**/*.htm'
+              - '**/*.xhtml'
+              - '**/*.xhtm'
+              - '**/*.ts'
+              - '**/*.tsx'
+              - '**/*.mts'
+              - '**/*.cts'
+              - '**/*.js'
+              - '**/*.jsx'
+              - '**/*.mjs'
+              - '**/*.cjs'
               - '.github/workflows/codeql.yml'
               - '.github/codeql/**'
             rust:
+              # The crate, its manifests, lockfile and toolchain files all live
+              # under backend/, so no root Cargo, lockfile or toolchain pattern
+              # selects Rust. mise.toml is the root exception: the job reads the
+              # kache pin out of it.
               - 'backend/**'
-              - '.cargo/**'
-              - 'Cargo.toml'
-              - 'Cargo.lock'
-              - 'rust-toolchain'
-              - 'rust-toolchain.toml'
               - 'mise.toml'
               - '.github/actions/rust-toolchain/**'
               - '.github/workflows/ci.yml'
