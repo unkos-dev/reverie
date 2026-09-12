@@ -371,6 +371,49 @@
     },
     {
       "governed-by": [
+        "REV-ADR-0028"
+      ],
+      "id": "REV-DESIGN-0003",
+      "kind": "design",
+      "path": "docs/specs/security/design/0003-authorization-axes.md",
+      "satisfies": [
+        "REV-REQ-0005",
+        "REV-REQ-0006"
+      ],
+      "title": "Authorization axes"
+    },
+    {
+      "governed-by": [
+        "REV-ADR-0028",
+        "REV-ADR-0017"
+      ],
+      "id": "REV-DESIGN-0004",
+      "kind": "design",
+      "path": "docs/specs/security/design/0004-row-level-security-and-database-context.md",
+      "satisfies": [
+        "REV-REQ-0007",
+        "REV-REQ-0008",
+        "REV-REQ-0009",
+        "REV-REQ-0010"
+      ],
+      "title": "Row-level security and database context"
+    },
+    {
+      "governed-by": [
+        "REV-ADR-0003"
+      ],
+      "id": "REV-DESIGN-0005",
+      "kind": "design",
+      "path": "docs/specs/security/design/0005-response-security-headers-and-csp.md",
+      "satisfies": [
+        "REV-REQ-0011",
+        "REV-REQ-0012",
+        "REV-REQ-0013"
+      ],
+      "title": "Response security headers and CSP"
+    },
+    {
+      "governed-by": [
         "REV-ADR-0047"
       ],
       "id": "REV-REQ-0001",
@@ -401,6 +444,81 @@
       "kind": "req",
       "path": "docs/specs/accessibility/requirements/0004-web-surfaces-meet-wcag-2-2-level-aa.md",
       "title": "Web surfaces meet WCAG 2.2 Level AA"
+    },
+    {
+      "governed-by": [
+        "REV-ADR-0028"
+      ],
+      "id": "REV-REQ-0005",
+      "kind": "req",
+      "path": "docs/specs/security/requirements/0005-every-api-operation-requires-its-declared-scope.md",
+      "title": "Every API operation requires its declared scope"
+    },
+    {
+      "governed-by": [
+        "REV-ADR-0028"
+      ],
+      "id": "REV-REQ-0006",
+      "kind": "req",
+      "path": "docs/specs/security/requirements/0006-api-operations-with-a-mutating-method-require-write-scope.md",
+      "title": "API operations with a mutating method require write scope"
+    },
+    {
+      "governed-by": [
+        "REV-ADR-0028"
+      ],
+      "id": "REV-REQ-0007",
+      "kind": "req",
+      "path": "docs/specs/security/requirements/0007-rls-gated-rows-are-unreadable-without-a-user-context.md",
+      "title": "RLS-gated rows are unreadable without a user context"
+    },
+    {
+      "governed-by": [
+        "REV-ADR-0028"
+      ],
+      "id": "REV-REQ-0008",
+      "kind": "req",
+      "path": "docs/specs/security/requirements/0008-requests-write-manifestations-only-within-the-caller-s-rls-scope.md",
+      "title": "Requests write manifestations only within the caller's RLS scope"
+    },
+    {
+      "governed-by": [
+        "REV-ADR-0028"
+      ],
+      "id": "REV-REQ-0009",
+      "kind": "req",
+      "path": "docs/specs/security/requirements/0009-a-child-account-sees-only-manifestations-on-its-own-shelves.md",
+      "title": "A child account sees only manifestations on its own shelves"
+    },
+    {
+      "id": "REV-REQ-0010",
+      "kind": "req",
+      "path": "docs/specs/security/requirements/0010-read-only-role-cannot-read-device-tokens-or-local-credentials.md",
+      "title": "Read-only role cannot read device tokens or local credentials"
+    },
+    {
+      "governed-by": [
+        "REV-ADR-0003"
+      ],
+      "id": "REV-REQ-0011",
+      "kind": "req",
+      "path": "docs/specs/security/requirements/0011-html-and-dist-file-responses-carry-the-html-csp.md",
+      "title": "HTML and dist-file responses carry the HTML CSP"
+    },
+    {
+      "governed-by": [
+        "REV-ADR-0003"
+      ],
+      "id": "REV-REQ-0012",
+      "kind": "req",
+      "path": "docs/specs/security/requirements/0012-the-spa-is-never-served-without-a-valid-csp-hash-set.md",
+      "title": "The SPA is never served without a valid CSP hash set"
+    },
+    {
+      "id": "REV-REQ-0013",
+      "kind": "req",
+      "path": "docs/specs/security/requirements/0013-reserved-prefix-paths-never-fall-through-to-the-spa-index.md",
+      "title": "Reserved-prefix paths never fall through to the SPA index"
     }
   ]
 }
