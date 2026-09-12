@@ -65,8 +65,8 @@ CREATE ROLE reverie_migrator  WITH LOGIN PASSWORD :'mig_pw'
   NOSUPERUSER NOCREATEROLE NOBYPASSRLS;
 
 -- scripts/schema-dump.sh replays this file from the DO block below to the end
--- against a scratch database, so per-database statements belong below this
--- point and cluster-wide ones above it.
+-- against a scratch database, so per-database statements belong inside or
+-- after that block and cluster-wide ones above it.
 --
 -- CONNECT grants are kept explicit so they remain load-bearing if a
 -- future migration ever issues `REVOKE CONNECT ON DATABASE … FROM PUBLIC`

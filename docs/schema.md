@@ -4,40 +4,6 @@ Reverie uses PostgreSQL with a FRBR-inspired data model. **Works** represent abs
 represent concrete files (EPUBs, PDFs, etc.). This separation allows multiple editions, formats, and translations to
 share metadata.
 
-## Entity-Relationship Overview
-
-```text
-users ─────────┬──── shelves ──── shelf_items ────┐
-               │                                   │
-               ├──── user_identities               │
-               │                                   │
-               ├──── local_credentials             │
-               │                                   │
-               ├──── device_tokens                 │
-               │                                   │
-               ├──── user_preferences              │
-               │                                   │
-               └──── webhooks ──── webhook_deliveries
-                                                   │
-works ────┬──── work_authors ──── authors           │
-          │                                        │
-          ├──── series_works ──── series (self-ref) │
-          │                                        │
-          ├──── omnibus_contents                    │
-          │                                        │
-          └──── manifestations ◄───────────────────┘
-                    │
-                    ├──── metadata_versions
-                    ├──── manifestation_tags ──── tags
-                    ├──── manifestation_genres ──── genres
-                    └──── manifestation_moods ──── moods
-
-reading_sessions ──── users, manifestations
-
-api_cache          (standalone)
-ingestion_jobs     (standalone)
-```
-
 ## Tables and types
 
 [`backend/schema.sql`](../backend/schema.sql) is the full schema: every table, column, enum type, constraint, index,

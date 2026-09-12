@@ -79,7 +79,8 @@ fresh database; no other local loop or preflight lane exercises it.
 
 `backend/schema.sql` is the committed `pg_dump` of a database with every migration applied. A change to the migrations
 regenerates it with `just rust::schema-dump`, which migrates a scratch database on the dev cluster instead of reading
-`reverie_dev`; `just rust::schema-check` and CI fail when the committed file differs.
+`reverie_dev`; `just rust::schema-check` and CI fail when the committed file differs. A Postgres image bump that carries
+a new minor release can change `pg_dump`'s output, and regenerates the dump the same way.
 
 Operator-facing `MigrationError` modes:
 
