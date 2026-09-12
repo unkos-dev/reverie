@@ -81,9 +81,8 @@
       "automerge": true
     },
     {
-      "description": "Exempt action digest updates from the release-age hold. The hold earns its keep against a newly published version that has not been in the wild long enough to be trusted. A digest update is not that: it re-pins an action to the commit its already-pinned major tag now names, which is the version this repo has been trusting by tag all along. Holding it only means carrying a knowingly stale pin for three days and occupying a prConcurrentLimit slot while it waits.",
-      "matchManagers": ["github-actions"],
-      "matchUpdateTypes": ["digest"],
+      "description": "Exempt digest updates from the release-age hold. The hold earns its keep against a newly published version that has not been in the wild long enough to be trusted, which is what REV-ADR-0045 records: new versions wait. A digest update is not a new version. It re-pins a reference to whatever its already-pinned tag names now, and for a base image that is usually a rebuild carrying patched OS packages, so the wait delays the fix. Some tags cannot be aged at all: debian:trixie-slim is a codename with no version behind it, and GHCR publishes no timestamps, so under Renovate's default minimumReleaseAgeBehaviour of timestamp-required both sit pending forever rather than for three days.",
+      "matchUpdateTypes": ["digest", "pinDigest"],
       "minimumReleaseAge": null
     },
     {
@@ -129,12 +128,11 @@
       "groupName": "commitlint"
     },
     {
-      "description": "Keep every PostgreSQL image pin in one PR. docker/compose.dev.yml and the backend.yml services are meant to pin the identical postgres digest so dev and CI test against one database version; nothing checks that, so this grouping is what holds it. Splitting across the docker-compose and github-actions managers would drift them. The release-age hold is restated here because Renovate parses that workflow service image under the github-actions manager, so the digest exemption above would otherwise reach the CI half alone. Grouping does not wait for a member that is not yet eligible: it ships the eligible subset, which drifts the pins by date rather than by manager. The pins are single-component tags (postgres:18@sha256:...), so Renovate only ever offers a major or a digest update here; there is no minor to include.",
+      "description": "Keep every PostgreSQL image pin in one PR. docker/compose.dev.yml and the backend.yml services are meant to pin the identical postgres digest so dev and CI test against one database version; nothing checks that, so this grouping is what holds it. Splitting across the docker-compose and github-actions managers would drift them. The pins are single-component tags (postgres:18@sha256:...), so Renovate only ever offers a major or a digest update here; there is no minor to include.",
       "matchManagers": ["docker-compose", "github-actions"],
       "matchPackageNames": ["postgres"],
       "matchUpdateTypes": ["patch", "pin", "digest"],
-      "groupName": "postgres-images",
-      "minimumReleaseAge": "3 days"
+      "groupName": "postgres-images"
     },
     {
       "description": "Keep the SQLx library and migration CLI compatible.",
