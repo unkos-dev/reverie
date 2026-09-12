@@ -27,8 +27,9 @@ or enforced one level looser than declared, would give that credential capabilit
 - A credential holding a scope exactly one level below an operation's declared scope is refused with `403`, for every
   gated operation and for both device-token and JWT credentials. Checked by `scope_grid_enforces_the_hierarchy` and
   `jwt_scope_grid_enforces_the_hierarchy`.
-- A credential holding the declared scope, or a higher one, is not refused on scope grounds. Checked by the positive
-  controls in the same two tests.
+- A credential holding the declared scope is not refused on scope grounds, and neither is one holding `admin`. Checked
+  by the two positive controls in the same two tests, which sample the hierarchy at the declared scope and at its top
+  rather than at every scope in between.
 - A credential carrying no scope is refused with `401` at authentication for every `/api/v1` operation, and no operation
   runs. Checked by `scopeless_token_rejected_by_every_op`, which writes an empty-scope token directly through the model
   layer so the check covers the authentication step itself.

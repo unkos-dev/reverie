@@ -26,7 +26,8 @@ write their responses to `api_cache`; it changes no manifestation.
 - Every `/api/v1` operation using `POST`, `PUT`, `PATCH` or `DELETE` declares `write` or higher, except the operations
   on `METHOD_LINT_ALLOWLIST`, which holds only the enrichment dry run. Checked by
   `mutating_verb_ops_require_write_scope` in `backend/src/authz_matrix.rs`, which also fails when an allow-list entry
-  matches no operation, so the list holds only real exceptions.
+  matches no operation, so the list holds no stale route. The check reads route paths only; that the allow-listed
+  operation still writes no manifestation, metadata version or writeback job is held by review.
 - A credential carrying only `read` is refused with `403` by every operation declared at `write` or higher, for both
   device-token and JWT credentials. Checked by `read_token_blocked_from_every_mutation` and
   `jwt_read_scope_claim_blocked_from_every_mutation`.

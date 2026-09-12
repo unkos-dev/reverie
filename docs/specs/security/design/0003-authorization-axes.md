@@ -75,7 +75,9 @@ and the backend test suite, which runs the matrix as an ordinary `#[sqlx::test]`
   `read`. It previews an enrichment run: it calls the metadata providers and stores their responses in `api_cache`, but
   changes no manifestation, metadata version or writeback job. The lint records which allow-list entries matched a
   parsed operation (`allowlist_seen`) and fails if an entry matches nothing, so a renamed or removed route cannot leave
-  a stale exemption behind.
+  a stale exemption behind. That check matches route paths only: nothing detects a change in what the allow-listed
+  operation does, and review is what holds the premise that it still persists no manifestation, metadata version or
+  writeback job.
 - `create_token` in `backend/src/routes/tokens.rs` is the only place `Scope::grantable_by` is read at mint time. It
   checks each requested scope in `CreateTokenRequest.scopes` against `current_user.may_grant_scope(scope)` and rejects
   the whole request with `Forbidden`, logged, at the first one that exceeds the ceiling. `CreateTokenRequest` accepts
@@ -198,8 +200,9 @@ without a `security(...)` scope array fails the build instead of shipping as an 
 Every `/api/v1` operation is deny-by-default on the scope axis: `every_api_v1_op_declares_a_scope` fails the build if an
 operation is added without a declared scope requirement. The hierarchy grid (`scope_grid_enforces_the_hierarchy`, and
 `jwt_scope_grid_enforces_the_hierarchy` for JWTs) then shows each declared requirement has a working gate behind it:
-across every operation in the spec, for both device-token and JWT credentials, a credential one level below is refused
-and one at or above the requirement is not.
+across every operation in the spec, for both device-token and JWT credentials, a credential one level below is refused,
+while the two positive controls, one holding the declared scope and one holding `admin`, are not. The grid samples the
+hierarchy at those two points rather than at every scope above the requirement.
 
 The scope and role axes are separate controls. A device token's scopes are fixed at mint and never re-derived from the
 owner's current role, so a demoted administrator's token can still pass `require_scope(Scope::Admin)`; each of the

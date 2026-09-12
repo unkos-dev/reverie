@@ -40,3 +40,6 @@ far from the operator mistake that caused it. Refusing to start shows the failur
 
 - This obligation covers the hash set's validity when the server accepts its first request. It does not require the
   served document to keep matching that set later; a build replaced under a running process is a separate condition.
+- The hash-set cases are checked by the `validate_frontend_dist` unit tests in
+  `backend/src/security/dist_validation.rs`, which cover the validation step the startup path calls. No test asserts the
+  process exit itself.

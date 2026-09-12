@@ -28,3 +28,8 @@ security applies elsewhere.
   returns `false`.
 - A `SELECT` against either table over a connection authenticated as `reverie_readonly` fails with a permission-denied
   error rather than returning an empty or filtered result.
+
+## More information
+
+- Nothing automated checks these criteria. They are inspections run by hand against a migrated database, so a migration
+  that widened the role's grants would pass every gate in the repository.

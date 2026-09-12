@@ -35,3 +35,5 @@ cannot read as the error it is.
   prefix, but whose raw form does not, is not covered.
 - A request that matches a route under a reserved prefix with an unsupported method gets `405 Method Not Allowed` on
   that route and is outside this obligation.
+- The sub-path case is covered by request tests. The bare-prefix case is checked through `is_reserved_prefix` in
+  isolation, not through a request.

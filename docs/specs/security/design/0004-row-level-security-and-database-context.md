@@ -145,11 +145,11 @@ its grants are what limit it.
 ### The grant boundary
 
 Row-level security decides which rows a query sees; the grant decides whether the role may run the query at all, and the
-two checks are independent. Five tables have no policy and are granted to `reverie_app` alone, with no grant to
+two checks are independent. Six tables have no policy and are granted to `reverie_app` alone, with no grant to
 `reverie_readonly` or `reverie_ingestion`: `device_tokens`, `local_credentials`, `instance_bootstrap`,
-`local_login_throttle` and `password_reset_pins`. For `device_tokens` and `local_credentials`, which hold hashed token
-and password material, the missing `reverie_readonly` grant is the whole boundary against a reporting connection; there
-is no policy on either table to narrow or widen.
+`local_login_throttle`, `password_reset_pins` and the migration history table `_sqlx_migrations`. For `device_tokens`
+and `local_credentials`, which hold hashed token and password material, the missing `reverie_readonly` grant is the
+whole boundary against a reporting connection; there is no policy on either table to narrow or widen.
 
 `reverie_app` holds `SELECT`, `INSERT`, `UPDATE` and `DELETE` on every table it is granted except eight: `SELECT` only
 on `identifier_schemes`, `metadata_sources`, `rating_sources`, `manifestation_external_ratings` and the migration

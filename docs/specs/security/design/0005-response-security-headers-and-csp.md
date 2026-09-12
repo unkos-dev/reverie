@@ -52,11 +52,16 @@ order.
 
 - `backend/src/security/mod.rs` is the module root. It declares `csp`, `csrf`, `dist_validation` and `headers`, and its
   module docs mark everything beneath it as security-critical.
-- `backend/src/security/csp.rs` holds two pure builders. `build_html_csp` produces self-origin defaults, a
-  hash-allowlisted `script-src`, `'unsafe-inline'` on `style-src` only, and `upgrade-insecure-requests`. `build_api_csp`
-  produces `default-src 'none'; frame-ancestors 'none'; base-uri 'none'`. Both add `report-to` and `report-uri`
-  directives when a reporting endpoint is configured. `build_api_csp` runs once at startup; `build_html_csp` runs at
-  most once, and only when a frontend build directory is configured.
+- `backend/src/security/csp.rs` holds two pure builders. `build_html_csp` produces eleven directives:
+  `default-src 'self'`, a hash-allowlisted `script-src 'self'`, `style-src 'self' 'unsafe-inline'`,
+  `img-src 'self' data:`, `font-src 'self'`, `connect-src 'self'`, `frame-ancestors 'none'`, `base-uri 'self'`,
+  `form-action 'self'`, `object-src 'none'` and `upgrade-insecure-requests`. `'unsafe-inline'` appears on `style-src`
+  alone and `data:` on `img-src` alone; `frame-ancestors` and `object-src` are outright denials. The Requirements this
+  Design satisfies bind the policy's presence and the hash set behind `script-src`; the remaining directives are
+  recorded here and bound by none of them. `build_api_csp` produces
+  `default-src 'none'; frame-ancestors 'none'; base-uri 'none'`. Both add `report-to` and `report-uri` directives when a
+  reporting endpoint is configured. `build_api_csp` runs once at startup; `build_html_csp` runs at most once, and only
+  when a frontend build directory is configured.
 - `backend/src/security/dist_validation.rs` (`validate_frontend_dist`) checks a configured build directory in a fixed
   order: the path exists, is a directory, contains `index.html`, and carries a `csp-hashes.json` whose
   `script-src-hashes` array is present, non-empty and holds only strings matching the anchored pattern
