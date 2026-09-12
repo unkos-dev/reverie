@@ -66,9 +66,10 @@ crafted filename cannot inject into the shell.
 
 ### CodeQL language scope
 
-Rust analysis runs on every PR and merge group. Main pushes use path filtering for `backend/`, root Cargo configuration,
-manifests and toolchain files, the CI caller, CodeQL workflow and configuration, `mise.toml`, and the shared Rust
-toolchain action. Its dependency, build-script and migration inputs live under `backend/`.
+Rust analysis runs on every PR, and merge groups skip it. Main pushes use path filtering for `backend/`, the CI caller,
+the CodeQL workflow and configuration, `mise.toml`, and the shared Rust toolchain action. The crate's manifests,
+lockfile, toolchain files and its dependency, build-script and migration inputs all live under `backend/`, so no
+repository-root pattern selects Rust.
 
 The Rust extractor uses kache and the existing R2 bucket for internal Cargo compilation. The CodeQL namespace groups
 downloads of compatible compiled artifacts, which remain reusable from the shared store. A matching manifest key keeps
@@ -79,12 +80,15 @@ stores only Cargo registry data. Every scan creates a fresh CodeQL database and 
 
 Backend checks use a separate `dev` manifest key matching their namespace, so prefetch selects backend build artifacts.
 
-JavaScript/TypeScript analysis runs on every PR and merge group and uses its path filter on main pushes. Actions
-analysis always runs. The weekly schedule runs all three languages without path filtering.
+JavaScript/TypeScript analysis runs on every PR, merge groups skip it, and main pushes use its path filter: `frontend/`,
+HTML anywhere, `vite.config.ts`, `scripts/verify-frontend-sbom.mjs`, and the site's TypeScript, `.mjs` and Astro
+sources. Actions analysis always runs. The weekly schedule runs all three languages without path filtering.
 
-The code-scanning ruleset requires a Rust result on PRs even when the required Rust job reports an accepted skip. PR
-scans therefore retain every language category. Merge groups run the same analyses on the queued commit. Detector and
-analyser failures remain subject to `CI gate`.
+Code scanning compares a PR against the configurations present on main and reports a missing configuration when a
+language did not analyse, which blocks the PR even where the required job reports an accepted skip. PR scans therefore
+retain every language category. Merge-group commits carry no code-scanning check at all, so the two language analyses
+skip there and the queue does not repeat work the PR already did. Detector and analyser failures remain subject to
+`CI gate`.
 
 ## The backstop gate
 

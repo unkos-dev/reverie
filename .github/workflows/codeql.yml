@@ -54,15 +54,18 @@ jobs:
             javascript-typescript:
               - 'frontend/**'
               - '**/*.html'
+              # JavaScript and TypeScript the extractor sees outside frontend/.
+              - 'vite.config.ts'
+              - 'scripts/verify-frontend-sbom.mjs'
+              - 'website/**/*.ts'
+              - 'website/**/*.mjs'
+              - 'website/**/*.astro'
               - '.github/workflows/codeql.yml'
               - '.github/codeql/**'
             rust:
+              # The crate, its manifests, lockfile and toolchain files all live
+              # under backend/; no Rust input sits at the repository root.
               - 'backend/**'
-              - '.cargo/**'
-              - 'Cargo.toml'
-              - 'Cargo.lock'
-              - 'rust-toolchain'
-              - 'rust-toolchain.toml'
               - 'mise.toml'
               - '.github/actions/rust-toolchain/**'
               - '.github/workflows/ci.yml'
@@ -97,9 +100,12 @@ jobs:
 
   javascript-typescript:
     needs: changes
-    # The weekly scan runs no path filter, so it selects itself here; every
-    # other event analyses only when this language's inputs changed.
-    if: github.event_name == 'schedule' || needs.changes.outputs.javascript-typescript == 'true'
+    # Pull requests always analyse: code-scanning merge protection compares a
+    # pull request against the configurations present on main and blocks when
+    # one is missing. It does not evaluate merge-group commits, which carry no
+    # code-scanning check at all, so the queue re-run is pure cost. Pushes keep
+    # the path filter; the weekly scan reads no filter and selects itself.
+    if: github.event_name != 'merge_group' && (github.event_name != 'push' || needs.changes.outputs.javascript-typescript == 'true')
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
@@ -125,9 +131,10 @@ jobs:
 
   rust:
     needs: changes
-    # The weekly scan runs no path filter, so it selects itself here; every
-    # other event analyses only when Rust inputs changed.
-    if: github.event_name == 'schedule' || needs.changes.outputs.rust == 'true'
+    # Same shape as the JavaScript/TypeScript job above: pull requests always
+    # analyse because merge protection demands a result per configuration,
+    # merge groups never do because merge protection ignores them.
+    if: github.event_name != 'merge_group' && (github.event_name != 'push' || needs.changes.outputs.rust == 'true')
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:
