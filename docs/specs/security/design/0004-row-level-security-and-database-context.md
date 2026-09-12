@@ -32,12 +32,11 @@ migrations create (`backend/migrations/20260810000000_initial_schema.up.sql`,
 
 It does not own the migration runner or the `reverie_migrator` identity that runs it (`run_migrations` and
 `verify_schema_current` in `backend/src/db.rs`, and the `reverie migrate` entry point in `backend/src/lib.rs`), a
-neighbouring subject with no Design yet. It does not own the scope, role and ownership model that assigns ownership to
-the data layer; that is the Design "Authorization axes", and this subject is the mechanism behind the ownership axis
-wherever that model uses row-level security. It does not own the list query that row-level security filters
-(`backend/src/routes/library/mod.rs`, `backend/src/routes/library/filters.rs` and `backend/src/routes/sort_spec.rs`), or
-the handler-level ownership predicate that `shelves` and `shelf_items` use instead of a policy
-(`backend/src/routes/shelves/mod.rs`).
+neighbouring subject. It does not own the scope, role and ownership model that assigns ownership to the data layer; that
+is the Design "Authorization axes", and this subject is the mechanism behind the ownership axis wherever that model uses
+row-level security. It does not own the list query that row-level security filters (`backend/src/routes/library/mod.rs`,
+`backend/src/routes/library/filters.rs` and `backend/src/routes/sort_spec.rs`), or the handler-level ownership predicate
+that `shelves` and `shelf_items` use instead of a policy (`backend/src/routes/shelves/mod.rs`).
 
 Depends on: the migrations, run as `reverie_migrator`, for the schema objects, grants and policies; the `users.role`
 column the manifestation policies read.

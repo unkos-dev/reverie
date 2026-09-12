@@ -30,13 +30,12 @@ server accepts a request. It also owns the two headers computed from operator co
 and `Reporting-Endpoints`.
 
 It does not own CSRF enforcement: `backend/src/security/csrf.rs` implements the synchronizer-token check as a
-neighbouring layer with no Design yet, and this Design depends only on its position in the layer order. It does not own
-session cookie attributes: the `SessionManagerLayer` built in `backend/src/lib.rs` sets `Secure`, `SameSite` and expiry
-independently, and has no Design yet. It does not own the Problem Details body of the `404` and `405` responses the
-fallback returns; `AppError::NotFound` and `AppError::MethodNotAllowed` (`backend/src/error/mod.rs`) and
-`problem_instance_layer` (`backend/src/error/instance.rs`) belong to the API error contract. It does not own the
-dev-only Vite plugins that relax the policy, allow extra dev hostnames or move the HMR port; they run only under
-`vp dev`.
+neighbouring layer, and this Design depends only on its position in the layer order. It does not own session cookie
+attributes: the `SessionManagerLayer` built in `backend/src/lib.rs` sets `Secure`, `SameSite` and expiry independently.
+It does not own the Problem Details body of the `404` and `405` responses the fallback returns; `AppError::NotFound` and
+`AppError::MethodNotAllowed` (`backend/src/error/mod.rs`) and `problem_instance_layer` (`backend/src/error/instance.rs`)
+belong to the API error contract. It does not own the dev-only Vite plugins that relax the policy, allow extra dev
+hostnames or move the HMR port; they run only under `vp dev`.
 
 Depends on: the frontend build's output directory and its hash sidecar, produced by `vite build`; the routed handlers
 and the OPDS router mounted under `/api`, `/auth` and `/opds`; `crate::state::AppState` for the `SecurityConfig` every

@@ -28,12 +28,11 @@ Postgres row-level security, reached through `crate::db::acquire_with_rls`, and 
 
 It does not own how a request becomes a `CurrentUser`. Session-cookie rehydration, `Authorization: Basic` and `Bearer`
 parsing, and JWT signature, issuer and audience validation live in `backend/src/auth/middleware.rs` and
-`backend/src/auth/jwt.rs`, a neighbouring subject with no Design yet; this Design names them only as call sites. It does
-not own device-token minting beyond the ceiling it supplies (`Scope::grantable_by`): the token row, the per-user cap and
-revocation live in `backend/src/models/device_token.rs` and `backend/src/routes/tokens.rs`, also without a Design yet.
-It does not own row-level security itself, meaning the `app.current_user_id` setting, the policies that read it and the
-roles they apply to; that is the Design "Row-level security and database context". This Design states only which
-resources rely on that mechanism for ownership.
+`backend/src/auth/jwt.rs`; this Design names them only as call sites. It does not own device-token minting beyond the
+ceiling it supplies (`Scope::grantable_by`): the token row, the per-user cap and revocation live in
+`backend/src/models/device_token.rs` and `backend/src/routes/tokens.rs`. It does not own row-level security itself,
+meaning the `app.current_user_id` setting, the policies that read it and the roles they apply to; that is the Design
+"Row-level security and database context". This Design states only which resources rely on that mechanism for ownership.
 
 Depends on: `CurrentUser` in `backend/src/auth/middleware.rs` for the `role`, `is_child` and `scopes` fields its
 assertion methods read; `crate::openapi::spec_json` for the OpenAPI document the matrix parses; the `device_token` model
@@ -217,10 +216,14 @@ A non-admin can never mint an admin-scoped token (`Scope::grantable_by`, enforce
 the one point where a person chooses a scope instead of the system deriving it from role.
 
 Ownership is enforced by two mechanisms, and this Design records which resource uses which. Row-level security covers
-`reading_state` and `user_preferences`. `shelves`, `shelf_items` and `device_tokens` rely on a `user_id` predicate in
-each query instead, and `local_credentials` and `user_identities`, which also have no policy, are read by user ID or by
-the presented issuer and subject. The authorization matrix itself is recorded as approved enforcement infrastructure in
-deviation 7 of the CodeGuard deviation register.
+`reading_state` and `user_preferences`, and it scopes the cover endpoints too: `services::covers::get_or_create` opens
+an `acquire_with_rls` transaction before it reads the manifestation, so a cover the caller cannot see answers as no
+cover at all. `shelves`, `shelf_items` and `device_tokens` rely on a `user_id` predicate in each query instead, in
+`backend/src/routes/shelves/mod.rs` and, for the shelf-scoped OPDS feeds, in `assert_shelf_owned`
+(`backend/src/routes/opds/shelves.rs`), which takes that predicate inside an RLS-scoped transaction. `local_credentials`
+and `user_identities`, which also have no policy, are read by user ID or by the presented issuer and subject. The
+authorization matrix itself is recorded as approved enforcement infrastructure in deviation 7 of the CodeGuard deviation
+register.
 
 ## More information
 
