@@ -97,7 +97,9 @@ jobs:
 
   javascript-typescript:
     needs: changes
-    if: github.event_name != 'push' || needs.changes.outputs.javascript-typescript == 'true'
+    # The weekly scan runs no path filter, so it selects itself here; every
+    # other event analyses only when this language's inputs changed.
+    if: github.event_name == 'schedule' || needs.changes.outputs.javascript-typescript == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
@@ -123,7 +125,9 @@ jobs:
 
   rust:
     needs: changes
-    if: github.event_name != 'push' || needs.changes.outputs.rust == 'true'
+    # The weekly scan runs no path filter, so it selects itself here; every
+    # other event analyses only when Rust inputs changed.
+    if: github.event_name == 'schedule' || needs.changes.outputs.rust == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:
