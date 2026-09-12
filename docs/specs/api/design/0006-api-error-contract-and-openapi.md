@@ -33,7 +33,7 @@ the runtime response body and the documented OpenAPI component schema, `ApiDoc`,
 parsing path inside `apiFetch` (`frontend/src/api/fetch.ts`).
 
 It does not own the CSRF synchronizer-token check that raises `AppError::CsrfMissing`/`CsrfMismatch`, which belongs to
-the CSRF protection subject; the `If-Match` grammar, comparison and precondition contract behind
+the Design "CSRF protection"; the `If-Match` grammar, comparison and precondition contract behind
 `AppError::IfMatchRequired`/`IfMatchMismatch`/the header half of `MalformedHeader`, the Design "Conditional requests and
 optimistic concurrency"; the security-header middleware, the two-class CSP, or the composite router's fallback dispatch
 (including the reserved-prefix `404` and the `405` substitution that both construct an `AppError` directly), the Design
@@ -122,9 +122,9 @@ and the 401 recovery funnel in `frontend/src/lib/query/client.ts` (the Sessions 
   optional, parsed with Zod via `safeParse`), `peekProblem` (clones the response, gates on the `Content-Type` header,
   parses), `problemFromResponse`/`problemToApiError` (assemble the `ApiError`, falling back to `response.statusText` and
   empty strings for fields a non-conforming body omits), and `decodeSuccess` (the shared 2xx/error decoder used by both
-  the first attempt and the CSRF-retry attempt, described by "CSRF protection"). CSRF token injection and retry, and
-  `ETag` capture/replay, live in the same file but are owned by their own Designs; this Design covers only the
-  request/response mechanics every code path shares regardless of which of those two other concerns fired.
+  the first attempt and the CSRF-retry attempt, described by the Design "CSRF protection"). CSRF token injection and
+  retry, and `ETag` capture/replay, live in the same file but are owned by their own Designs; this Design covers only
+  the request/response mechanics every code path shares regardless of which of those two other concerns fired.
 
 ## Interfaces and dependencies
 

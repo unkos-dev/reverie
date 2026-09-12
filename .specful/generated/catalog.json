@@ -444,6 +444,21 @@
     },
     {
       "governed-by": [
+        "REV-ADR-0011"
+      ],
+      "id": "REV-DESIGN-0008",
+      "kind": "design",
+      "path": "docs/specs/security/design/0008-csrf-protection.md",
+      "satisfies": [
+        "REV-REQ-0021",
+        "REV-REQ-0022",
+        "REV-REQ-0023",
+        "REV-REQ-0024"
+      ],
+      "title": "CSRF protection"
+    },
+    {
+      "governed-by": [
         "REV-ADR-0047"
       ],
       "id": "REV-REQ-0001",
@@ -603,6 +618,42 @@
       "kind": "req",
       "path": "docs/specs/api/requirements/0020-a-precondition-protected-write-answers-428-without-if-match.md",
       "title": "A precondition-protected write answers 428 without If-Match"
+    },
+    {
+      "governed-by": [
+        "REV-ADR-0011"
+      ],
+      "id": "REV-REQ-0021",
+      "kind": "req",
+      "path": "docs/specs/security/requirements/0021-a-session-authenticated-mutating-request-carries-the-session-s-c.md",
+      "title": "A session-authenticated mutating request carries the session's CSRF token"
+    },
+    {
+      "governed-by": [
+        "REV-ADR-0011"
+      ],
+      "id": "REV-REQ-0022",
+      "kind": "req",
+      "path": "docs/specs/security/requirements/0022-the-browser-client-sends-its-csrf-token-on-mutating-requests.md",
+      "title": "The browser client sends its CSRF token on every mutating request and never an empty one"
+    },
+    {
+      "governed-by": [
+        "REV-ADR-0011"
+      ],
+      "id": "REV-REQ-0023",
+      "kind": "req",
+      "path": "docs/specs/security/requirements/0023-the-browser-client-retries-a-csrf-rejected-mutation-once-with-a.md",
+      "title": "The browser client retries a CSRF-rejected mutation once with a refreshed token"
+    },
+    {
+      "governed-by": [
+        "REV-ADR-0011"
+      ],
+      "id": "REV-REQ-0024",
+      "kind": "req",
+      "path": "docs/specs/security/requirements/0024-a-request-authenticated-without-a-browser-session-is-not-csrf-ga.md",
+      "title": "A request authenticated without a browser session is not CSRF-gated"
     }
   ]
 }
