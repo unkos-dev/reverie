@@ -5,5 +5,6 @@
 ## Scopes
 
 - [accessibility](accessibility/index.md)
+- [api](api/index.md)
 - [library](library/index.md)
 - [security](security/index.md)
