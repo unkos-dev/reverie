@@ -169,7 +169,7 @@ jobs:
       # carries the date resolves to nothing.
       - name: Remote build cache (kache)
         if: env.R2_CONFIGURED == 'true'
-        uses: kunobi-ninja/kache-action@78ff455251aa37139061201a39113a1924994035 # main
+        uses: kunobi-ninja/kache-action@ecc6d82e288961469b9b374ee6f5eae18da147f6 # main
         with:
           version: ${{ needs.changes.outputs.kache }}
           s3-bucket: reverie-ci-cache
