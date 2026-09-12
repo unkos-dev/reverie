@@ -32,8 +32,8 @@ allowBuilds:
 # every importer, which is what keeps the vp version from being restated across
 # root and frontend manifests.
 catalog:
-  vite: "npm:@voidzero-dev/vite-plus-core@0.3.0"
-  vite-plus: "0.3.0"
+  vite: "npm:@voidzero-dev/vite-plus-core@0.3.1"
+  vite-plus: "0.3.1"
 
 # Transitive security floors. Each entry is a deliberate minimum, not a
 # convenience pin, and removing one reopens the advisory it closes.
