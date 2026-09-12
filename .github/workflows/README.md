@@ -81,10 +81,13 @@ stores only Cargo registry data. Every scan creates a fresh CodeQL database and 
 
 Backend checks use a separate `dev` manifest key matching their namespace, so prefetch selects backend build artifacts.
 
-JavaScript/TypeScript analysis runs on every PR and merge group and uses its path filter on main pushes: `frontend/`
-plus the extractor's JavaScript, TypeScript and HTML file types, matched repo-wide. JSON and YAML are extractor types
-too and are left out on purpose, since `**/*.yml` would start a scan on every workflow edit. Actions analysis always
-runs. The weekly schedule runs all three languages without path filtering.
+JavaScript/TypeScript analysis runs on every PR and merge group and uses its path filter on main pushes: `frontend/`,
+plus the extractor file types this repository has or plausibly will, matched repo-wide. Those are the JavaScript and
+TypeScript extensions and the plain HTML ones. Left out on purpose are the template and embedded HTML types (`.vue`,
+`.hbs`, `.ejs`, `.njk`, `.erb`, `.jsp`, `.dot`), the legacy JavaScript spellings (`.es6`, `.es`, `.xsjs`, `.xsjslib`),
+and JSON and YAML, since `**/*.yml` would start a scan on every workflow edit. The extractor also reads a file that has
+no extension at all when its shebang invokes node, which no path pattern can select; the repository tracks none. Actions
+analysis always runs. The weekly schedule runs all three languages without path filtering.
 
 The code-scanning ruleset requires a Rust result on PRs even when the required Rust job reports an accepted skip. PR
 scans therefore retain every language category. Merge groups run the same analyses on the queued commit. Detector and

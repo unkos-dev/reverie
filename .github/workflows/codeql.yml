@@ -53,13 +53,21 @@ jobs:
           filters: |
             javascript-typescript:
               - 'frontend/**'
-              # The extractor's JavaScript, TypeScript and HTML file types,
+              # The extractor file types this repository has or plausibly will,
               # matched repo-wide so a file added outside frontend/ cannot fall
-              # out of coverage. JSON and YAML are extractor types too, left out
-              # because '**/*.yml' would scan on every workflow edit.
+              # out of coverage. Left out on purpose: the template and embedded
+              # HTML types (.vue, .hbs, .ejs, .njk, .erb, .jsp, .dot), the
+              # legacy JavaScript spellings (.es6, .es, .xsjs, .xsjslib), and
+              # JSON and YAML, since '**/*.yml' would scan on every workflow
+              # edit.
               - '**/*.html'
+              - '**/*.htm'
+              - '**/*.xhtml'
+              - '**/*.xhtm'
               - '**/*.ts'
               - '**/*.tsx'
+              - '**/*.mts'
+              - '**/*.cts'
               - '**/*.js'
               - '**/*.jsx'
               - '**/*.mjs'
