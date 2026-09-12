@@ -86,6 +86,9 @@ jobs:
     env:
       # sqlx::test connects as the schema owner; per-test role pools are built in code.
       DATABASE_URL: postgres://reverie:ci-${{ github.run_id }}-${{ github.run_attempt }}@localhost:5432/reverie_dev
+      # init-roles.sql reads this when it creates the migrator role, and the
+      # schema check logs in with it over TCP; run-scoped like POSTGRES_PASSWORD.
+      REVERIE_MIGRATOR_PASSWORD: ci-${{ github.run_id }}-${{ github.run_attempt }}
       # Debuginfo deliberately absent here: backend/Cargo.toml declares it, so both
       # planes compile the same way without two settings having to agree.
       CARGO_INCREMENTAL: 0

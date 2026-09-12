@@ -10,6 +10,8 @@
 # REVERIE_PG_CONTAINER names the Postgres container (default: the dev compose
 # service). REVERIE_PG_HOST is where sqlx-cli reaches the same server, as a
 # socket directory or a hostname (default: the dev socket directory).
+# REVERIE_MIGRATOR_PASSWORD is the migrator role's password (default: the dev
+# role-name password); it travels as PGPASSWORD, never inside the URL.
 set -euo pipefail
 
 cd "$(git rev-parse --show-toplevel)"
@@ -50,7 +52,8 @@ created=1
 # From its DO block on, init-roles.sql grants per database rather than per
 # cluster; the dump records the part of that it applies to schema public.
 sed -n '/^DO \$\$$/,$p' docker/init-roles.sql | psql_owner -d "$db"
-DATABASE_URL="postgres:///${db}?host=${host}&user=reverie_migrator&password=${REVERIE_MIGRATOR_PASSWORD:-reverie_migrator}" \
+PGPASSWORD="${REVERIE_MIGRATOR_PASSWORD:-reverie_migrator}" \
+  DATABASE_URL="postgres:///${db}?host=${host}&user=reverie_migrator" \
   sqlx migrate run --source backend/migrations
 
 docker exec "$container" pg_dump --schema-only --restrict-key=reverie -U reverie -d "$db" \
