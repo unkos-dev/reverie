@@ -26,7 +26,6 @@
     "release-please--**",
     "build/**",
     "chore/**",
-    "docs/**",
     "test/**",
     "perf/**",
     "ci/**",
@@ -43,9 +42,13 @@
     "website/src/content/docs/reference/configuration.mdx",
     "frontend/src/styles/themes/primitives.generated.css"
   ],
-  "instructions": "ADRs in docs/adr/ are authoritative architectural constraints, not background reading. Before flagging a pattern as wrong, check whether a relevant ADR in docs/adr/ already decided it — a change that conforms to an accepted ADR is correct even if it looks unusual; a change that contradicts one is a finding. Cross-cutting ADRs (JSON:API conventions, API versioning and OpenAPI, validation-status vocabulary, keyset pagination and its sort and filter extensions, first-party session layer, standards-first integrations, authentication and identity model, API authorization model, password policy, lint-suppression policy, monorepo toolchain) are pinned below; consult the others in docs/adr/ by filename when a diff touches their area.",
+  "instructions": "ADRs in docs/adr/ are authoritative architectural constraints, not background reading. Before flagging a pattern as wrong, check whether a relevant ADR in docs/adr/ already decided it — a change that conforms to an accepted ADR is correct even if it looks unusual; a change that contradicts one is a finding. Cross-cutting ADRs (JSON:API conventions, API versioning and OpenAPI, validation-status vocabulary, keyset pagination and its sort and filter extensions, first-party session layer, standards-first integrations, authentication and identity model, API authorization model, password policy, lint-suppression policy, monorepo toolchain) are pinned below; consult the others in docs/adr/ by filename when a diff touches their area. Requirements and Designs under docs/specs/ are authoritative alongside the ADRs: a Requirement states an obligation the code must keep, so a diff contradicting one is a finding, and a Design records how one subject works today. Start at docs/specs/index.md and follow the scope indexes to the Design covering the code a diff touches.",
   "customContext": {
     "files": [
+      {
+        "path": "docs/specs/index.md",
+        "description": "Map of the Requirement and Design corpus. Scope indexes link every Requirement (one observable obligation the code must keep) and every Design (how one subject works today, with its boundaries and the ADRs it embodies). Read the Design covering the code a diff touches before flagging the shape of that code, and treat a diff that contradicts a Requirement as a finding."
+      },
       {
         "path": "AGENTS.md",
         "description": "Project-wide conventions: GitHub Flow, Conventional Commits, SemVer, hard rules (TDD mandatory, security scrutiny, no merge without human approval)."
@@ -267,6 +270,12 @@
         "severity": "high",
         "rule": "Queue workers are crash-only: correctness must never depend on a graceful shutdown having run, and a SIGTERM drain is an optimisation, not a guarantee. Startup reverts orphaned in_progress rows to pending and re-runs them, so every handler must be safe to re-run after partial execution. Each job needs a bounding timeout and a panic guard on the spawned task that re-pends its row. File-mutating work (OPF rewrite, cover embed, path rename) is not transactional with its Postgres row, so it must document its concrete re-run safety, write-to-temp-then-rename or a per-work-unit guard, rather than merely being labelled idempotent. Claims use FOR UPDATE SKIP LOCKED; flag a claim path that does not.",
         "scope": ["backend/src/services/{enrichment,writeback}/**/*.rs"]
+      },
+      {
+        "id": "specs-current-state",
+        "severity": "medium",
+        "rule": "Requirements and Designs under docs/specs/ describe Reverie as it is today. Flag history and transition narrative (`now`, `previously`, `will be`), planning labels, and commentary on the documentation's own status (for example `no Design yet`). A Requirement states one observable obligation whose acceptance criteria name a real check; a criterion citing a test or inspection that does not exist is a finding, as is a Design claim that contradicts the code. Identifiers come only from `specful new`, and docs/specs/**/index.md plus .specful/generated/** are written by `specful index` and never hand-edited.",
+        "scope": ["docs/specs/**"]
       }
     ]
   }
