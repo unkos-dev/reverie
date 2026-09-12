@@ -59,7 +59,7 @@ export function LeftRail(): ReactElement {
           viewTransition
           className="focus-visible:ring-accent inline-flex rounded-sm focus-visible:outline-none focus-visible:ring-2"
         >
-          <Lockup size={13} theme={effective} />
+          <Lockup size={20} theme={effective} />
         </Link>
       </div>
       <nav aria-label="Primary" className="flex-1 overflow-y-auto overflow-x-hidden px-3 pb-4">
