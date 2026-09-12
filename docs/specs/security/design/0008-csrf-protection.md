@@ -88,9 +88,9 @@ per-request handle onto the session store. Depended on by: every mutating reques
   reset establish no session at all.
 - `backend/src/lib.rs::build_router_with_session_store` layers `csrf_required` onto the composite `/api`, `/auth`,
   `/opds` router (`api_like`) after `api_csp_layer`, which places it outside that layer: a request the middleware
-  rejects never reaches `next.run`, so it never reaches `api_csp_layer` either. The router's outermost layer,
-  `session_layer` (`SessionManagerLayer`), wraps everything including `csrf_required`, so the `Session` extractor the
-  middleware takes is always already populated by the time it runs.
+  rejects never reaches `next.run`, so it never reaches `api_csp_layer` either. `session_layer` (`SessionManagerLayer`)
+  wraps the composite router, `csrf_required` included, so the `Session` extractor the middleware takes is always
+  already populated by the time it runs.
 
 The pre-authentication mutations (`POST /auth/local/login`, `/auth/setup`, `/auth/register`, forgot-password and
 reset-password) sit outside the gate because no session names a user yet at the point they run. A cross-site HTML form
