@@ -30,11 +30,10 @@ use sha2::{Digest, Sha256};
 use sqlx::PgPool;
 use tempfile::NamedTempFile;
 use uuid::Uuid;
-use zip::ZipArchive;
 
 use crate::config::Config;
 use crate::models::manifestation_format::ManifestationFormat;
-use crate::services::epub::{self, ValidationOutcome, ValidationReport, repack};
+use crate::services::epub::{self, ValidationOutcome, ValidationReport, repack, zip_layer};
 use crate::services::ingestion::path_template;
 
 use super::cover_embed;
@@ -182,7 +181,8 @@ pub async fn run_once(
 
     // Read the OPF entry path from META-INF/container.xml.
     let opf_path = find_opf_path(&original_bytes)?;
-    let opf_bytes = read_entry_bytes(&original_bytes, &opf_path)?;
+    let opf_bytes = zip_layer::read_entry_from_bytes(&original_bytes, &opf_path)
+        .ok_or(zip::result::ZipError::FileNotFound)?;
 
     // Build writeback target from the per-field canonical columns.
     let target = Target {
@@ -581,8 +581,8 @@ async fn load_snapshot(pool: &PgPool, job_id: Uuid) -> Result<JobSnapshot, Write
 // ── OPF path + entry helpers ──────────────────────────────────────────────
 
 fn find_opf_path(epub_bytes: &[u8]) -> Result<String, WritebackError> {
-    let container_bytes = read_entry_bytes(epub_bytes, "META-INF/container.xml")
-        .map_err(|_| WritebackError::MissingOpf)?;
+    let container_bytes = zip_layer::read_entry_from_bytes(epub_bytes, "META-INF/container.xml")
+        .ok_or(WritebackError::MissingOpf)?;
     extract_opf_path(&container_bytes).ok_or(WritebackError::MissingOpf)
 }
 
@@ -630,16 +630,6 @@ fn extract_opf_path(container_bytes: &[u8]) -> Option<String> {
             _ => {}
         }
     }
-}
-
-fn read_entry_bytes(epub_bytes: &[u8], entry: &str) -> Result<Vec<u8>, WritebackError> {
-    let cursor = std::io::Cursor::new(epub_bytes);
-    let mut ar = ZipArchive::new(cursor).map_err(WritebackError::Zip)?;
-    let file = ar.by_name(entry).map_err(WritebackError::Zip)?;
-    let mut buf = Vec::new();
-    file.take(crate::services::epub::MAX_ENTRY_UNCOMPRESSED_BYTES + 1)
-        .read_to_end(&mut buf)?;
-    Ok(buf)
 }
 
 // ── Regression detection ──────────────────────────────────────────────────
@@ -951,7 +941,7 @@ mod tests {
 
         // OPF at OEBPS/package.opf should contain the new title.
         let new_bytes = std::fs::read(&path).unwrap();
-        let opf_bytes = read_entry_bytes(&new_bytes, "OEBPS/package.opf").unwrap();
+        let opf_bytes = zip_layer::read_entry_from_bytes(&new_bytes, "OEBPS/package.opf").unwrap();
         let opf_str = String::from_utf8(opf_bytes).unwrap();
         assert!(
             opf_str.contains(&format!("<dc:title>{new_title}</dc:title>")),
@@ -1294,7 +1284,8 @@ mod tests {
         // the original.  (Same-media replacement is in-place under the
         // existing manifest href.)
         let new_bytes = std::fs::read(&src_path).unwrap();
-        let embedded_cover = read_entry_bytes(&new_bytes, "OEBPS/images/cover.png").unwrap();
+        let embedded_cover =
+            zip_layer::read_entry_from_bytes(&new_bytes, "OEBPS/images/cover.png").unwrap();
         assert_eq!(
             embedded_cover, PNG_REPLACEMENT,
             "embedded cover bytes should match the replacement sidecar"

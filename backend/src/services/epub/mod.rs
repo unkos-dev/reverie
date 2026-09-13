@@ -112,6 +112,23 @@ pub enum IssueKind {
         /// Offending entry name.
         entry_name: String,
     },
+    /// Data precedes the start of the `ZIP` archive within the file.
+    PreludeBeforeArchive {
+        /// Length of the prelude in bytes.
+        bytes: u64,
+    },
+    /// Two `ZIP` central-directory entries declare the same name.
+    DuplicateEntry {
+        /// The name shared by more than one entry.
+        entry_name: String,
+    },
+    /// `ZIP` entry uses a compression method other than Stored or Deflate.
+    UnsupportedCompression {
+        /// Offending entry name.
+        entry_name: String,
+        /// Raw `ZIP` compression method identifier.
+        method: u16,
+    },
     /// `META-INF/container.xml` absent; `OPF` path provided if regeneratable.
     MissingContainer {
         /// Best-guess `OPF` path that the repair pass might use; `None` when no
