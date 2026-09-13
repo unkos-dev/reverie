@@ -9,12 +9,13 @@
 //! throttle exists independent of whether the email resolves to an account,
 //! keeping the failed-login path account-existence uniform.
 //!
-//! THREAT (lockout DoS): this escalating per-account backoff must
-//! NOT block a correct password. The login handler verifies the password first
-//! and only calls [`record_failure`](crate::models::login_throttle::record_failure)
-//! on a *failed* attempt; a success calls
-//! [`reset`](crate::models::login_throttle::reset). Per-source (per-IP) rate
-//! limiting does the hard blocking; this is the IP-independent backstop.
+//! THREAT (lockout DoS): while a window is active, the login handler refuses
+//! every attempt against that email, correct or not, before any account lookup
+//! or password verification, and attempts inside the window neither extend it
+//! nor count as failures. The window is capped at `login_throttle_cap_secs`,
+//! and `reverie unlock-account` clears a row out of band for the stuck case.
+//! Per-source (per-IP) rate limiting does the hard blocking; this is the
+//! IP-independent backstop.
 
 use chrono::{DateTime, Utc};
 use sqlx::PgPool;

@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE local_login_throttle SET locked_until = now() - interval '1 second' WHERE email_lower = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "bff3ec04bb042d71dbb8053242b163339d6a1d8e4867d9941e4705f8dfb1a054"
+}
