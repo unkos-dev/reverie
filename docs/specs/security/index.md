@@ -13,9 +13,14 @@
 - [REV-REQ-0011](requirements/0011-html-and-dist-file-responses-carry-the-html-csp.md): HTML and dist-file responses carry the HTML CSP
 - [REV-REQ-0012](requirements/0012-the-spa-is-never-served-without-a-valid-csp-hash-set.md): The SPA is never served without a valid CSP hash set
 - [REV-REQ-0013](requirements/0013-reserved-prefix-paths-never-fall-through-to-the-spa-index.md): Reserved-prefix paths never fall through to the SPA index
+- [REV-REQ-0021](requirements/0021-a-session-authenticated-mutating-request-carries-the-session-s-c.md): A session-authenticated mutating request carries the session's CSRF token
+- [REV-REQ-0022](requirements/0022-the-browser-client-sends-its-csrf-token-on-mutating-requests.md): The browser client sends its CSRF token on every mutating request and never an empty one
+- [REV-REQ-0023](requirements/0023-the-browser-client-retries-a-csrf-rejected-mutation-once-with-a.md): The browser client retries a CSRF-rejected mutation once with a refreshed token
+- [REV-REQ-0024](requirements/0024-a-request-authenticated-without-a-browser-session-is-not-csrf-ga.md): A request authenticated without a browser session is not CSRF-gated
 
 ## Designs
 
 - [REV-DESIGN-0003](design/0003-authorization-axes.md): Authorization axes
 - [REV-DESIGN-0004](design/0004-row-level-security-and-database-context.md): Row-level security and database context
 - [REV-DESIGN-0005](design/0005-response-security-headers-and-csp.md): Response security headers and CSP
+- [REV-DESIGN-0008](design/0008-csrf-protection.md): CSRF protection
