@@ -60,7 +60,7 @@ route). It is also depended on by `backend/src/authz_matrix.rs` (Design "Authori
 their error responses their own way instead). On the client, `ApiError` is depended on throughout the SPA: every page
 and mutation hook that branches on `err instanceof ApiError`, the library cell-editing and metadata-dialog surfaces that
 layer `isIfMatchMismatch`/`isIfMatchRequired` on top of it (owned by "Conditional requests and optimistic concurrency"),
-and the 401 recovery funnel in `frontend/src/lib/query/client.ts` (the Sessions subject).
+and the 401 recovery funnel in `frontend/src/lib/query/client.ts` (the Design "Sessions").
 
 ## Structure
 

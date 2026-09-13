@@ -243,6 +243,7 @@ hotfix
 hotfixes
 href
 idempotency
+idempotently
 iff
 ignorePatterns
 Immich
@@ -296,6 +297,7 @@ localhost
 localStorage
 lockfile
 lockfiles
+lookups
 loopback
 Lua
 maintainer
@@ -410,6 +412,7 @@ refetches
 reflow
 reformats
 regenerations
+rehydrated
 rehydration
 reimplement
 reimplementation
@@ -619,3 +622,7 @@ zizmor
 Zod
 zxcvbn
 rumdl
+unlinked
+unmount
+upserts
+walkthrough

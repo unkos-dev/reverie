@@ -471,6 +471,54 @@
     },
     {
       "governed-by": [
+        "REV-ADR-0028"
+      ],
+      "id": "REV-DESIGN-0010",
+      "kind": "design",
+      "path": "docs/specs/accounts/design/0010-request-authentication.md",
+      "satisfies": [
+        "REV-REQ-0029",
+        "REV-REQ-0030",
+        "REV-REQ-0031",
+        "REV-REQ-0032",
+        "REV-REQ-0033"
+      ],
+      "title": "Request authentication"
+    },
+    {
+      "governed-by": [
+        "REV-ADR-0015"
+      ],
+      "id": "REV-DESIGN-0011",
+      "kind": "design",
+      "path": "docs/specs/accounts/design/0011-sessions.md",
+      "satisfies": [
+        "REV-REQ-0034",
+        "REV-REQ-0035",
+        "REV-REQ-0036",
+        "REV-REQ-0037",
+        "REV-REQ-0038"
+      ],
+      "title": "Sessions"
+    },
+    {
+      "governed-by": [
+        "REV-ADR-0029",
+        "REV-ADR-0034"
+      ],
+      "id": "REV-DESIGN-0012",
+      "kind": "design",
+      "path": "docs/specs/accounts/design/0012-local-password-sign-in.md",
+      "satisfies": [
+        "REV-REQ-0039",
+        "REV-REQ-0040",
+        "REV-REQ-0041",
+        "REV-REQ-0042"
+      ],
+      "title": "Local password sign-in"
+    },
+    {
+      "governed-by": [
         "REV-ADR-0047"
       ],
       "id": "REV-REQ-0001",
@@ -690,6 +738,132 @@
       "kind": "req",
       "path": "docs/specs/library/requirements/0028-deleting-a-metadata-version-leaves-the-canonical-value-in-place.md",
       "title": "Deleting a metadata version leaves the canonical value in place"
+    },
+    {
+      "governed-by": [
+        "REV-ADR-0028"
+      ],
+      "id": "REV-REQ-0029",
+      "kind": "req",
+      "path": "docs/specs/accounts/requirements/0029-a-session-predating-a-change-to-its-account-is-refused-and-destr.md",
+      "title": "A session predating a change to its account is refused and destroyed"
+    },
+    {
+      "governed-by": [
+        "REV-ADR-0028"
+      ],
+      "id": "REV-REQ-0030",
+      "kind": "req",
+      "path": "docs/specs/accounts/requirements/0030-a-disabled-account-is-refused-on-every-credential-type.md",
+      "title": "A disabled account is refused on every credential type"
+    },
+    {
+      "governed-by": [
+        "REV-ADR-0028"
+      ],
+      "id": "REV-REQ-0031",
+      "kind": "req",
+      "path": "docs/specs/accounts/requirements/0031-a-credential-s-scope-is-never-widened-beyond-what-it-grants.md",
+      "title": "A credential's scope is never widened beyond what it grants"
+    },
+    {
+      "governed-by": [
+        "REV-ADR-0028"
+      ],
+      "id": "REV-REQ-0032",
+      "kind": "req",
+      "path": "docs/specs/accounts/requirements/0032-a-bearer-token-for-an-unlinked-identity-never-provisions-an-acco.md",
+      "title": "A bearer token for an unlinked identity never provisions an account"
+    },
+    {
+      "governed-by": [
+        "REV-ADR-0028"
+      ],
+      "id": "REV-REQ-0033",
+      "kind": "req",
+      "path": "docs/specs/accounts/requirements/0033-an-authentication-failure-carries-the-challenge-for-the-route-s.md",
+      "title": "An authentication failure carries the challenge for the route's credential type"
+    },
+    {
+      "governed-by": [
+        "REV-ADR-0015"
+      ],
+      "id": "REV-REQ-0034",
+      "kind": "req",
+      "path": "docs/specs/accounts/requirements/0034-an-expired-session-never-authenticates-a-request.md",
+      "title": "An expired session never authenticates a request"
+    },
+    {
+      "governed-by": [
+        "REV-ADR-0015"
+      ],
+      "id": "REV-REQ-0035",
+      "kind": "req",
+      "path": "docs/specs/accounts/requirements/0035-a-lapsed-session-redirects-the-browser-to-sign-in-once.md",
+      "title": "A lapsed session redirects the browser to sign-in once"
+    },
+    {
+      "governed-by": [
+        "REV-ADR-0015"
+      ],
+      "id": "REV-REQ-0036",
+      "kind": "req",
+      "path": "docs/specs/accounts/requirements/0036-the-browser-forgets-its-active-account-hint-when-the-session-end.md",
+      "title": "The browser forgets its active-account hint when the session ends"
+    },
+    {
+      "governed-by": [
+        "REV-ADR-0015"
+      ],
+      "id": "REV-REQ-0037",
+      "kind": "req",
+      "path": "docs/specs/accounts/requirements/0037-sign-in-issues-a-new-session-id-before-it-attaches-an-identity.md",
+      "title": "Sign-in issues a new session id before it attaches an identity"
+    },
+    {
+      "governed-by": [
+        "REV-ADR-0015"
+      ],
+      "id": "REV-REQ-0038",
+      "kind": "req",
+      "path": "docs/specs/accounts/requirements/0038-sign-out-destroys-the-session-server-side.md",
+      "title": "Sign-out destroys the session server-side"
+    },
+    {
+      "governed-by": [
+        "REV-ADR-0034"
+      ],
+      "id": "REV-REQ-0039",
+      "kind": "req",
+      "path": "docs/specs/accounts/requirements/0039-a-breach-check-outage-never-blocks-setting-a-password.md",
+      "title": "A breach-check outage never blocks setting a password"
+    },
+    {
+      "governed-by": [
+        "REV-ADR-0029"
+      ],
+      "id": "REV-REQ-0040",
+      "kind": "req",
+      "path": "docs/specs/accounts/requirements/0040-a-failed-sign-in-does-not-reveal-whether-the-account-exists.md",
+      "title": "A failed sign-in does not reveal whether the account exists"
+    },
+    {
+      "governed-by": [
+        "REV-ADR-0034"
+      ],
+      "id": "REV-REQ-0041",
+      "kind": "req",
+      "path": "docs/specs/accounts/requirements/0041-a-password-over-the-configured-maximum-is-refused-without-a-brea.md",
+      "title": "A password over the configured maximum is refused without a breach-check request"
+    },
+    {
+      "governed-by": [
+        "REV-ADR-0029"
+      ],
+      "id": "REV-REQ-0042",
+      "kind": "req",
+      "path": "docs/specs/accounts/requirements/0042-a-self-registered-account-is-an-adult-account.md",
+      "title": "A self-registered account is an adult account"
     }
   ]
 }

@@ -23,7 +23,7 @@ refresh-and-retry.
 
 This subject owns: the mint statements that generate the synchronizer token and write it into the session, which live
 inline inside two handlers otherwise owned by neighbouring subjects (the OIDC interactive login subject,
-`backend/src/routes/auth.rs::callback`, and the Local password sign-in subject,
+`backend/src/routes/auth.rs::callback`, and the Design "Local password sign-in",
 `backend/src/routes/auth.rs::local_login`); the validating middleware itself, `csrf_required` in
 `backend/src/security/csrf.rs`, and the two problem-type constants it raises
 (`backend/src/error/problems.rs::CSRF_MISSING`, `CSRF_MISMATCH`); the point in `build_router_with_session_store`
@@ -33,7 +33,7 @@ hydration triggers (`frontend/src/api/csrf.ts`), and the header-injection and mi
 
 It does not own the session itself: the Postgres-backed store, the cookie's `SameSite`, `Secure` and expiry attributes,
 session id rotation, the `session_version` force-logout check, or the `GET /auth/me` and `POST /auth/logout` handlers
-the token rides alongside, all the Sessions subject, which this subject depends on for the session key the middleware
+the token rides alongside, all the Design "Sessions", which this subject depends on for the session key the middleware
 reads and the endpoint the client cache hydrates from. It does not own how a request becomes a `CurrentUser` or the
 scope and role checks a handler applies once the CSRF gate has passed (`backend/src/auth/middleware.rs`, the Request
 authentication subject): the middleware's own session-user check is a lighter, independent read of the same session key,
@@ -44,7 +44,7 @@ OpenAPI", or the ETag capture and replay `fetch.ts` also performs for a differen
 "Conditional requests and optimistic concurrency". It does not own `frontend/src/hooks/useAuthMe.ts`, a second,
 independent `/auth/me` reader that happens to parse the same `csrf_token` field into its own react-query cache; that
 field is unused by every caller of the hook, so no second cache participates in the CSRF path, and the hook itself
-belongs to the Sessions subject.
+belongs to the Design "Sessions".
 
 Depends on: the session's `user_id` claim (`backend/src/auth/session.rs::SESSION_KEY_USER_ID`) to decide whether a
 caller is session-authenticated; `GET /auth/me` to carry the token to the browser; `tower_sessions::Session` as the
@@ -62,7 +62,7 @@ per-request handle onto the session store. Depended on by: every mutating reques
   sequence. The session's `user_id` and `session_version` keys are read and written through the `SESSION_KEY_USER_ID`
   and `SESSION_KEY_SESSION_VERSION` constants in `auth/session.rs`; the CSRF key has no such constant in common.
   `csrf.rs` declares its own private `CSRF_SESSION_KEY` for the enforcement read, and the two mint sites and the
-  `GET /auth/me` session read in `routes/auth.rs` (the Sessions subject) each use the literal `"csrf_token"`. Both mint
+  `GET /auth/me` session read in `routes/auth.rs` (the Design "Sessions") each use the literal `"csrf_token"`. Both mint
   sites overwrite unconditionally: re-running either flow on an already-authenticated session (a repeat OIDC callback, a
   re-submitted local login) replaces the prior value rather than leaving it in place.
 - `backend/src/security/csrf.rs::csrf_required` is an `axum::middleware::from_fn` layer taking the request's
@@ -72,7 +72,7 @@ per-request handle onto the session store. Depended on by: every mutating reques
   shares the exact key the login helpers write) also passes straight through, covering Basic- and Bearer-authenticated
   callers and every pre-auth `/auth/*` mutation (`local_login`, `/auth/setup`, `/auth/register`, password recovery) in
   one check. A request that carries both a session naming a user and an `Authorization` header is still gated:
-  `CurrentUser` resolution (the Request authentication subject) tries the session cookie first and returns it when
+  `CurrentUser` resolution (the Design "Request authentication") tries the session cookie first and returns it when
   valid, and this middleware reads only the session, so a present `Authorization` header does not exempt a
   session-authenticated caller. This session-user read is unconditional on the session store, independent of
   `session_version`; the middleware never asks whether the session is otherwise still valid, only whether it names a
@@ -133,7 +133,7 @@ carrying a JSON body fails its preflight before it can reach the handler.
 ## Interfaces and dependencies
 
 - The wire contract is the `X-CSRF-Token` request header (`CSRF_HEADER` in `csrf.rs`) against the session-carried
-  `csrf_token` string, and the `csrf_token: Option<String>` field `GET /auth/me` (the Sessions subject) returns: a
+  `csrf_token` string, and the `csrf_token: Option<String>` field `GET /auth/me` (the Design "Sessions") returns: a
   43-character base64url-unpadded string for a session-authenticated caller, or `null` for a Basic-auth OPDS session,
   per the field's OpenAPI description and a backend test that pins both the length and the character set.
 - The two rejections are RFC 9457 Problem Details bodies distinguished by `type`:
@@ -150,7 +150,7 @@ carrying a JSON body fails its preflight before it can reach the handler.
 
 ## Data and state
 
-- **The session-carried token.** Lives in the caller's session row (the Sessions subject) under the key `csrf_token`,
+- **The session-carried token.** Lives in the caller's session row (the Design "Sessions") under the key `csrf_token`,
   alongside `user_id` and `session_version`. Its lifetime is the session's: it is written once per successful sign-in
   and never rewritten independently of a fresh sign-in on that same session, so it survives every request the session
   survives and disappears only when the session itself is flushed (force-logout, disabling, or explicit
@@ -218,7 +218,7 @@ here is never retried; it reaches the caller as an `ApiError` on the first attem
   header entirely; the second attempt then earns its own `428` from the server, which `apiFetch` does not retry again,
   so the caller sees an `ApiError` from the outcome of the retry rather than the original rejection.
 - **A CSRF-rejected logout.** `POST /auth/logout` is a session-authenticated mutation like any other and is subject to
-  the same gate: a missing or mismatched token on it returns `428` or `403` before the handler (the Sessions subject)
+  the same gate: a missing or mismatched token on it returns `428` or `403` before the handler (the Design "Sessions")
   ever runs, so the session row is not flushed. `UserMenu.tsx`'s sign-out handler catches any `apiFetch` failure, logs
   it, and navigates to `/login` regardless; the client-visible effect (the SPA lands on the sign-in screen with an empty
   token cache) is the same whether the server-side session was actually destroyed or merely left to its normal idle
@@ -242,7 +242,7 @@ subject; the only place it is read back to the caller is the `GET /auth/me` JSON
 authenticated connection. Comparison is constant-time (`subtle::ConstantTimeEq`) specifically so that a byte-by-byte
 guessing attack cannot use response timing to recover the stored value.
 
-`SameSite=Lax` on the session cookie (the Sessions subject) and the API Content Security Policy (the Design "Response
+`SameSite=Lax` on the session cookie (the Design "Sessions") and the API Content Security Policy (the Design "Response
 security headers and CSP") are both additional layers against the same cross-site-request class this synchronizer token
 defends against directly; this subject does not depend on either being correctly configured, and neither substitutes for
 the header check if it were removed. The CodeGuard deviation register records `SameSite=Lax` itself as an accepted
