@@ -304,8 +304,9 @@ struct LocalLoginRequest {
 ///
 /// # Errors
 /// - [`AppError::NotFound`] when local authentication is disabled.
-/// - [`AppError::RateLimited`] (429) when the per-source limit is exceeded, or a
-///   failed attempt arrives during an active per-account backoff.
+/// - [`AppError::RateLimited`] (429) when the per-source limit is exceeded, or
+///   when the submitted email is within an active per-account backoff window
+///   (carries `Retry-After` in the latter case).
 /// - [`AppError::Validation`] (422) on bad credentials (generic; no enumeration).
 /// - [`AppError::Internal`] on session-store or database failure.
 #[utoipa::path(
@@ -345,7 +346,26 @@ async fn local_login(
         state.config.trusted_client_ip_header.as_deref(),
     ) && state.login_limiter.check_key(&ip).is_err()
     {
-        return Err(AppError::RateLimited);
+        return Err(AppError::RateLimited { retry_after: None });
+    }
+
+    // THREAT (lockout DoS / enumeration): checked before any account lookup or
+    // Argon2 work, and keyed on the submitted email regardless of whether it
+    // resolves to an account, so a locked-out attacker cannot use verification
+    // latency as an existence oracle and a wrong guess inside the window cannot
+    // buy a fresh attempt by spending Argon2 work anyway.
+    if let Some(until) = crate::models::login_throttle::backoff_until(&state.pool, &body.email)
+        .await
+        .map_err(|e| AppError::Internal(e.into()))?
+    {
+        let remaining = until
+            .signed_duration_since(chrono::Utc::now())
+            .max(chrono::TimeDelta::zero())
+            .to_std()
+            .map_err(|e| AppError::Internal(anyhow::anyhow!(e)))?;
+        return Err(AppError::RateLimited {
+            retry_after: Some(remaining),
+        });
     }
 
     // Resolve the account, then verify. On an unknown email or an account with
@@ -370,10 +390,6 @@ async fn local_login(
         false
     };
 
-    // A correct password succeeds even during an active backoff (which it then
-    // clears). Verify-first means backoff never blocks a legitimate login; it
-    // only rejects continued *wrong* attempts.
-    //
     // THREAT (account-state enumeration, CWE-204): a soft-disabled account with
     // a CORRECT password must be indistinguishable from a wrong password. It
     // falls through to the generic failed-login path below (same email-keyed
@@ -410,21 +426,12 @@ async fn local_login(
     // not it resolves to an account.
     //
     // THREAT (enumeration, CWE-204): gating this on account existence would let
-    // two quick wrong attempts distinguish a known email (which hits the backoff
-    // and returns 429) from an unknown one (which never would), reintroducing the
-    // account-enumeration oracle the constant-work verify paths close. The
+    // a wrong attempt distinguish a known email from an unknown one, reintroducing
+    // the account-enumeration oracle the constant-work verify paths close. The
     // throttle table is email-keyed with no FK, so an unknown email simply gets
     // its own row; record_failure upserts on that key, so repeated attempts on
     // one email update a single row, and the per-source limiter bounds how fast
-    // distinct rows can be created. A correct password still succeeds during an
-    // active backoff (verify-first, above) and clears the row.
-    if crate::models::login_throttle::backoff_until(&state.pool, &body.email)
-        .await
-        .map_err(|e| AppError::Internal(e.into()))?
-        .is_some()
-    {
-        return Err(AppError::RateLimited);
-    }
+    // distinct rows can be created.
     crate::models::login_throttle::record_failure(
         &state.pool,
         &body.email,
@@ -666,7 +673,7 @@ fn enforce_source_rate_limit(
         state.config.trusted_client_ip_header.as_deref(),
     ) && state.login_limiter.check_key(&ip).is_err()
     {
-        return Err(AppError::RateLimited);
+        return Err(AppError::RateLimited { retry_after: None });
     }
     Ok(())
 }
@@ -2136,6 +2143,198 @@ mod tests {
             wrong.text(),
             "unknown-email and wrong-password bodies must be byte-identical"
         );
+    }
+
+    /// Force an email's throttle window into the past, simulating expiry
+    /// without sleeping through the (test-config) `login_throttle_base_secs`
+    /// window.
+    async fn expire_throttle(app_pool: &sqlx::PgPool, email: &str) {
+        sqlx::query!(
+            "UPDATE local_login_throttle SET locked_until = now() - interval '1 second' \
+             WHERE email_lower = $1",
+            email.to_lowercase(),
+        )
+        .execute(app_pool)
+        .await
+        .expect("expire throttle row");
+    }
+
+    /// Read `(fail_count, locked_until)` back for an email, bypassing the
+    /// handler so the assertions observe the row a request left behind.
+    async fn throttle_row(
+        app_pool: &sqlx::PgPool,
+        email: &str,
+    ) -> Option<(i32, Option<chrono::DateTime<chrono::Utc>>)> {
+        sqlx::query!(
+            "SELECT fail_count, locked_until FROM local_login_throttle WHERE email_lower = $1",
+            email.to_lowercase(),
+        )
+        .fetch_optional(app_pool)
+        .await
+        .expect("query throttle row")
+        .map(|row| (row.fail_count, row.locked_until))
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn local_login_backoff_refuses_correct_password_until_window_ends(pool: sqlx::PgPool) {
+        let app_pool = test_support::db::app_pool_for(&pool).await;
+        let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+        let email = "backoff-correct@example.com";
+        test_support::db::create_adult_with_password(&app_pool, "backoff-correct", email, "right")
+            .await;
+        let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+
+        let wrong = server
+            .post("/auth/local/login")
+            .json(&serde_json::json!({"email": email, "password": "wrong"}))
+            .await;
+        assert_eq!(wrong.status_code(), StatusCode::UNPROCESSABLE_ENTITY);
+
+        let correct_during_window = server
+            .post("/auth/local/login")
+            .json(&serde_json::json!({"email": email, "password": "right"}))
+            .await;
+        assert_eq!(
+            correct_during_window.status_code(),
+            StatusCode::TOO_MANY_REQUESTS,
+            "the correct password is refused while the window is active"
+        );
+        let retry_after: u64 = correct_during_window
+            .header("retry-after")
+            .to_str()
+            .unwrap()
+            .parse()
+            .expect("Retry-After is a plain integer");
+        assert!(retry_after >= 1, "Retry-After must be at least one second");
+        assert!(
+            correct_during_window.maybe_cookie("id").is_none(),
+            "a refused attempt must not establish a session"
+        );
+
+        expire_throttle(&app_pool, email).await;
+
+        let correct_after_window = server
+            .post("/auth/local/login")
+            .json(&serde_json::json!({"email": email, "password": "right"}))
+            .await;
+        assert_eq!(
+            correct_after_window.status_code(),
+            StatusCode::NO_CONTENT,
+            "the correct password succeeds once the window has elapsed"
+        );
+        assert!(
+            throttle_row(&app_pool, email).await.is_none(),
+            "a successful login clears the throttle row"
+        );
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn local_login_backoff_does_not_record_attempts_inside_window(pool: sqlx::PgPool) {
+        let app_pool = test_support::db::app_pool_for(&pool).await;
+        let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+        let email = "backoff-repeat@example.com";
+        test_support::db::create_adult_with_password(&app_pool, "backoff-repeat", email, "right")
+            .await;
+        let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+
+        let first_wrong = server
+            .post("/auth/local/login")
+            .json(&serde_json::json!({"email": email, "password": "wrong"}))
+            .await;
+        assert_eq!(first_wrong.status_code(), StatusCode::UNPROCESSABLE_ENTITY);
+        let (fail_count, locked_until) = throttle_row(&app_pool, email)
+            .await
+            .expect("throttle row exists after a failure");
+        assert_eq!(fail_count, 1);
+
+        let second_wrong = server
+            .post("/auth/local/login")
+            .json(&serde_json::json!({"email": email, "password": "wrong"}))
+            .await;
+        assert_eq!(
+            second_wrong.status_code(),
+            StatusCode::TOO_MANY_REQUESTS,
+            "a wrong attempt inside the window is refused before verification"
+        );
+        let unchanged = throttle_row(&app_pool, email)
+            .await
+            .expect("throttle row still exists");
+        assert_eq!(
+            unchanged,
+            (fail_count, locked_until),
+            "a refused attempt must neither record a failure nor extend the window"
+        );
+
+        expire_throttle(&app_pool, email).await;
+
+        let third_wrong = server
+            .post("/auth/local/login")
+            .json(&serde_json::json!({"email": email, "password": "wrong"}))
+            .await;
+        assert_eq!(third_wrong.status_code(), StatusCode::UNPROCESSABLE_ENTITY);
+        let (fail_count_after, _) = throttle_row(&app_pool, email)
+            .await
+            .expect("throttle row exists");
+        assert_eq!(
+            fail_count_after, 2,
+            "a wrong attempt after the window escalates the failure count"
+        );
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn local_login_backoff_applies_to_unknown_email(pool: sqlx::PgPool) {
+        let app_pool = test_support::db::app_pool_for(&pool).await;
+        let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+        let known_email = "backoff-known@example.com";
+        test_support::db::create_adult_with_password(
+            &app_pool,
+            "backoff-known",
+            known_email,
+            "right",
+        )
+        .await;
+        let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+        let unknown_email = "backoff-unknown@example.com";
+
+        // Unknown email: same two-response sequence as a known one.
+        let unknown_first = server
+            .post("/auth/local/login")
+            .json(&serde_json::json!({"email": unknown_email, "password": "anything"}))
+            .await;
+        assert_eq!(
+            unknown_first.status_code(),
+            StatusCode::UNPROCESSABLE_ENTITY
+        );
+        let unknown_second = server
+            .post("/auth/local/login")
+            .json(&serde_json::json!({"email": unknown_email, "password": "anything"}))
+            .await;
+        assert_eq!(
+            unknown_second.status_code(),
+            StatusCode::TOO_MANY_REQUESTS,
+            "an unknown email locks out the same way a known one does"
+        );
+        assert!(
+            unknown_second
+                .header("retry-after")
+                .to_str()
+                .unwrap()
+                .parse::<u64>()
+                .is_ok()
+        );
+
+        // Known email: identical sequence, so the 429 is not an
+        // account-existence oracle.
+        let known_first = server
+            .post("/auth/local/login")
+            .json(&serde_json::json!({"email": known_email, "password": "wrong"}))
+            .await;
+        assert_eq!(known_first.status_code(), StatusCode::UNPROCESSABLE_ENTITY);
+        let known_second = server
+            .post("/auth/local/login")
+            .json(&serde_json::json!({"email": known_email, "password": "wrong"}))
+            .await;
+        assert_eq!(known_second.status_code(), StatusCode::TOO_MANY_REQUESTS);
     }
 
     #[sqlx::test(migrations = "./migrations")]

@@ -173,11 +173,17 @@ pub enum AppError {
         /// Fixed, class-level sentence emitted as the `detail` field.
         detail: String,
     },
-    /// Per-source login rate limit exceeded (governor, per client IP). RFC 9457
-    /// `type` [`problems::RATE_LIMITED`]. HTTP 429 Too Many Requests. Raised by
-    /// the login / recovery handlers; the per-account backoff is separate.
+    /// Too many requests: either the per-source login/recovery limiter
+    /// (governor, per client IP) or an active per-account login backoff. RFC
+    /// 9457 `type` [`problems::RATE_LIMITED`]. HTTP 429 Too Many Requests.
+    /// `retry_after`, when present, is rendered as a `Retry-After` header
+    /// (RFC 9110 §10.2.3 delay-seconds); the per-source limiter has no fixed
+    /// resume time and passes `None`.
     #[error("too many requests")]
-    RateLimited,
+    RateLimited {
+        /// Seconds until the caller may retry, rounded up to a minimum of 1.
+        retry_after: Option<std::time::Duration>,
+    },
     /// First-run setup (bootstrap) attempted when an administrator already
     /// exists. RFC 9457 `type` [`problems::SETUP_ALREADY_COMPLETE`]. HTTP 409
     /// Conflict. The authoritative guard is the `instance_bootstrap` singleton
@@ -225,6 +231,17 @@ impl IntoResponse for AppError {
             Self::BasicAuthRequired { realm } => {
                 let challenge = format!("Basic realm=\"{realm}\", charset=\"UTF-8\"");
                 HeaderValue::from_str(&challenge).ok()
+            }
+            _ => None,
+        };
+        // Delay-seconds form (RFC 9110 §10.2.3): whole seconds, rounded up, floor
+        // 1 so a sub-second remainder never renders as an immediate retry.
+        let retry_after = match &self {
+            Self::RateLimited {
+                retry_after: Some(remaining),
+            } => {
+                let secs = remaining.as_secs() + u64::from(remaining.subsec_nanos() > 0);
+                Some(HeaderValue::from(secs.max(1)))
             }
             _ => None,
         };
@@ -317,7 +334,7 @@ impl IntoResponse for AppError {
                 "Invalid Request Body",
                 detail,
             ),
-            Self::RateLimited => (
+            Self::RateLimited { .. } => (
                 StatusCode::TOO_MANY_REQUESTS,
                 problems::RATE_LIMITED,
                 "Too Many Requests",
@@ -368,6 +385,9 @@ impl IntoResponse for AppError {
             response
                 .headers_mut()
                 .insert(header::WWW_AUTHENTICATE, value);
+        }
+        if let Some(value) = retry_after {
+            response.headers_mut().insert(header::RETRY_AFTER, value);
         }
 
         response
@@ -783,6 +803,58 @@ mod tests {
         let (status, _, json) = parse_problem(AppError::SystemShelfImmutable).await;
         assert_eq!(status, StatusCode::CONFLICT);
         assert_problem_shape(&json, problems::SYSTEM_SHELF_IMMUTABLE, 409, "Conflict");
+    }
+
+    #[tokio::test]
+    async fn rate_limited_with_retry_after_carries_header_and_body() {
+        let (status, _, json) = parse_problem(AppError::RateLimited {
+            retry_after: Some(std::time::Duration::from_millis(1500)),
+        })
+        .await;
+        assert_eq!(status, StatusCode::TOO_MANY_REQUESTS);
+        assert_problem_shape(&json, problems::RATE_LIMITED, 429, "Too Many Requests");
+    }
+
+    #[tokio::test]
+    async fn rate_limited_retry_after_rounds_up_to_whole_seconds() {
+        let response = AppError::RateLimited {
+            retry_after: Some(std::time::Duration::from_millis(1500)),
+        }
+        .into_response();
+        let header = response
+            .headers()
+            .get(header::RETRY_AFTER)
+            .expect("Retry-After header present")
+            .to_str()
+            .unwrap();
+        assert_eq!(header, "2", "a fractional remainder rounds up");
+    }
+
+    #[tokio::test]
+    async fn rate_limited_retry_after_floors_at_one_second() {
+        let response = AppError::RateLimited {
+            retry_after: Some(std::time::Duration::ZERO),
+        }
+        .into_response();
+        let header = response
+            .headers()
+            .get(header::RETRY_AFTER)
+            .expect("Retry-After header present")
+            .to_str()
+            .unwrap();
+        assert_eq!(
+            header, "1",
+            "an elapsed remainder still waits at least a second"
+        );
+    }
+
+    #[tokio::test]
+    async fn rate_limited_without_retry_after_omits_header() {
+        let response = AppError::RateLimited { retry_after: None }.into_response();
+        assert!(
+            response.headers().get(header::RETRY_AFTER).is_none(),
+            "the per-source limiter has no fixed resume time"
+        );
     }
 
     #[tokio::test]
