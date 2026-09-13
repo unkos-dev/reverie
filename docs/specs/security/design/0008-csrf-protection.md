@@ -248,6 +248,16 @@ defends against directly; this subject does not depend on either being correctly
 the header check if it were removed. The CodeGuard deviation register records `SameSite=Lax` itself as an accepted
 deviation from a stricter default, with its own compensating-controls rationale, which this subject does not restate.
 
+Seven mutating routes take no body: `POST /auth/logout`, the enrichment trigger and dry-run `POST`s, the ingestion scan
+`POST`, and the three `DELETE`s (a token, a shelf, a shelf item). The JSON-only extractor that keeps a cross-site HTML
+form off the pre-authentication mutations does nothing for these, so a form-encoded cross-site `POST` reaches the
+handler with whatever credential the browser attached. For the session cookie that is two layers: `SameSite=Lax`
+withholds the cookie on a cross-site `POST` navigation, and this middleware refuses the request if the cookie arrives
+anyway. For a cached Basic credential it is one, and it is browser behaviour rather than anything this subject checks: a
+browser re-sends the credential preemptively only within the protection space where it was challenged (RFC 7617 §2.2),
+Reverie challenges with `Basic` on the OPDS routes alone, no mutating route exists there, and the `/api/v1` challenge is
+`Bearer`. The three `DELETE`s additionally trigger a CORS preflight from any script, which no CORS grant answers.
+
 An operator's own deployment cannot weaken this check: there are no environment variables or settings that alter
 `csrf_required`'s behaviour, and the exemption for Basic- and Bearer-authenticated OPDS clients and device-token
 consumers is fixed by credential type in code, not configurable per instance.

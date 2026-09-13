@@ -16,11 +16,14 @@ CSRF token, including a request authenticated by a device token or HTTP Basic cr
 
 ## Rationale
 
-The OWASP CSRF threat model rests on the browser attaching cookies to a cross-site request on its own. A device token or
-a Basic credential reaches the server only when the client sets the `Authorization` header itself, and no CORS grant
-lets a cross-site script send one, so a request that carries only that header cannot be forged that way. Gating it on a
-token it was never asked to send would refuse every reader app and device-token consumer for no security benefit. See
-the
+The OWASP CSRF threat model rests on the browser attaching a credential to a cross-site request on its own, and the
+cookie is the credential it attaches that way. A Bearer device token or JWT is set by the client alone. A cached Basic
+credential is re-sent by a browser only within the protection space where it was challenged
+([RFC 7617 §2.2](https://www.rfc-editor.org/rfc/rfc7617#section-2.2)); Reverie issues its Basic challenge on the OPDS
+routes alone, no mutating route exists there, and the `/api/v1` challenge is `Bearer`, which prompts for nothing. A
+request that carries only an `Authorization` header therefore reaches a mutating route only because its client put the
+header there, and gating it on a token it was never asked to send would refuse every reader app and device-token
+consumer for no security benefit. See the
 [OWASP CSRF cheat sheet](https://cheatsheetseries.owasp.org/cheatsheets/Cross-Site_Request_Forgery_Prevention_Cheat_Sheet.html).
 [REV-ADR-0028](../../../adr/0028-api-authorization-orthogonal-scope-role-and-ownership-axes.md) and
 [REV-ADR-0029](../../../adr/0029-unified-identity-with-pluggable-authentication-providers.md) record the credential
