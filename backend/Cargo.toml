@@ -41,8 +41,6 @@ chrono = { version = "0.4.44", features = ["serde"] }
 crc = "3.4.0"
 email_address = "0.2.9"
 encoding_rs = "0.8.35"
-# Deflate decoder for the EPUB read path; zip depends on it too, so this
-# only makes an existing transitive dependency direct.
 flate2 = "1.1"
 futures = "0.3.32"
 governor = { version = "0.10.4", features = ["dashmap"] }
