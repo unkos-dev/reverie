@@ -93,6 +93,13 @@ pub enum IssueKind {
         /// Configured limit that was exceeded.
         limit: u64,
     },
+    /// `ZIP` central directory declares more entries than the archive cap.
+    EntryCapExceeded {
+        /// Declared entry count.
+        count: usize,
+        /// Configured limit that was exceeded.
+        limit: usize,
+    },
     /// `ZIP` entry is unreadable (corrupt data).
     CorruptEntry {
         /// Offending entry name.
@@ -233,6 +240,9 @@ pub const MAX_AGGREGATE_UNCOMPRESSED_BYTES: u64 = 2 * 1024 * 1024 * 1024;
 
 /// Maximum spine items before skipping `XHTML` validation (emits `Degraded`).
 pub const MAX_SPINE_ITEMS: usize = 500;
+
+/// Maximum `ZIP` central-directory entries before the archive is quarantined.
+pub const MAX_ZIP_ENTRIES: usize = 20_000;
 
 // ── Entry point ───────────────────────────────────────────────────────────────
 

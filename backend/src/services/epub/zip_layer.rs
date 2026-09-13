@@ -1,8 +1,9 @@
 //! `ZIP` archive integrity layer (Layer 1) and the `ZipHandle` backing store.
 //!
-//! Reads the entire archive into memory once, checks every entry for path
-//! traversal, per-entry uncompressed size (500 MB cap), aggregate uncompressed
-//! size (2 GB cap), and extractability. Entries passing all checks are recorded
+//! Reads the entire archive into memory once, checks the central-directory
+//! entry count (20,000 cap) before checking every entry for path traversal,
+//! per-entry uncompressed size (500 MB cap), aggregate uncompressed size
+//! (2 GB cap), and extractability. Entries passing all checks are recorded
 //! in `ZipHandle::entries`; the raw bytes are kept in `ZipHandle::bytes` so
 //! upper layers can re-open the archive without additional filesystem I/O.
 //!
@@ -15,7 +16,7 @@ use zip::ZipArchive;
 
 use super::{
     Issue, IssueKind, Layer, MAX_AGGREGATE_UNCOMPRESSED_BYTES, MAX_ENTRY_UNCOMPRESSED_BYTES,
-    Severity,
+    MAX_ZIP_ENTRIES, Severity,
 };
 
 /// Lightweight handle returned by `zip_layer` so upper layers can re-open the archive.
@@ -53,6 +54,19 @@ pub fn validate(path: &Path, issues: &mut Vec<Issue>) -> Result<ZipHandle, super
             });
             break 'zip;
         };
+
+        let count = archive.len();
+        if count > MAX_ZIP_ENTRIES {
+            issues.push(Issue {
+                layer: Layer::Zip,
+                severity: Severity::Irrecoverable,
+                kind: IssueKind::EntryCapExceeded {
+                    count,
+                    limit: MAX_ZIP_ENTRIES,
+                },
+            });
+            break 'zip;
+        }
 
         let mut aggregate_size: u64 = 0;
 
@@ -216,5 +230,44 @@ mod tests {
             i.severity == Severity::Irrecoverable
                 && matches!(&i.kind, IssueKind::CorruptEntry { .. })
         }));
+    }
+
+    #[test]
+    fn entry_count_at_cap_passes() {
+        let names: Vec<String> = (0..MAX_ZIP_ENTRIES).map(|i| format!("e{i}.txt")).collect();
+        let entries: Vec<(&str, &[u8])> = names.iter().map(|n| (n.as_str(), &b""[..])).collect();
+        let bytes = make_zip(&entries);
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("test.epub");
+        std::fs::write(&path, &bytes).unwrap();
+        let mut issues = Vec::new();
+        let handle = validate(&path, &mut issues).unwrap();
+        assert!(
+            !issues
+                .iter()
+                .any(|i| matches!(&i.kind, IssueKind::EntryCapExceeded { .. }))
+        );
+        assert_eq!(handle.entries.len(), MAX_ZIP_ENTRIES);
+    }
+
+    #[test]
+    fn entry_count_over_cap_is_quarantined() {
+        let names: Vec<String> = (0..=MAX_ZIP_ENTRIES).map(|i| format!("e{i}.txt")).collect();
+        let entries: Vec<(&str, &[u8])> = names.iter().map(|n| (n.as_str(), &b""[..])).collect();
+        let bytes = make_zip(&entries);
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("test.epub");
+        std::fs::write(&path, &bytes).unwrap();
+        let mut issues = Vec::new();
+        let handle = validate(&path, &mut issues).unwrap();
+        assert!(issues.iter().any(|i| {
+            i.severity == Severity::Irrecoverable
+                && matches!(
+                    &i.kind,
+                    IssueKind::EntryCapExceeded { count, limit }
+                        if *count == MAX_ZIP_ENTRIES + 1 && *limit == MAX_ZIP_ENTRIES
+                )
+        }));
+        assert!(handle.entries.is_empty());
     }
 }
