@@ -22,11 +22,11 @@ unreachable or misbehaving.
 
 A self-hosted instance may run with no outbound network at all, or the breach-checking service may itself be unreachable
 or degraded; blocking a credential-setting request under those conditions makes such an instance unusable out of the
-box. [NIST SP 800-63B §5.1.1.2](https://pages.nist.gov/800-63-3/sp800-63b.html#sec5) asks that a verifier screen
-candidate passwords against known-breached corpora, but treats that as a strength control layered on top of the primary
-length and complexity requirements, not as a hard dependency. See
-[REV-ADR-0034](../../../adr/0034-password-policy-zxcvbn-floor-plus-a-fail-open-hibp-check.md) for the decision to make
-the check fail-open rather than fail-closed.
+box. [NIST SP 800-63B-4 §3.1.1.2](https://pages.nist.gov/800-63-4/sp800-63b.html#passwordver) says a verifier SHALL
+compare a prospective password against a blocklist of known compromised passwords, and says nothing about what a
+verifier does when that comparison cannot be made. Treating an unreachable service as "not found" rather than refusing
+the request is Reverie's own decision, recorded in
+[REV-ADR-0034](../../../adr/0034-password-policy-zxcvbn-floor-plus-a-fail-open-hibp-check.md).
 
 ## Acceptance criteria
 

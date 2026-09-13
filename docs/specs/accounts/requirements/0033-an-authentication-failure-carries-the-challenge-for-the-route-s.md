@@ -12,9 +12,9 @@ governed-by:
 ## Statement
 
 An authentication failure MUST answer with HTTP status 401 and a `WWW-Authenticate` challenge matching the route's
-credential type: on an API route, `Bearer`, with `error="invalid_token"` added when a credential was presented and
-rejected; on an OPDS route, `Basic` with a realm. The response body MUST be identical whether no credential was
-presented or a credential was presented and rejected.
+credential type: on an API route, `Bearer`, with `error="invalid_token"` added when a credential presented in the
+`Authorization` header was rejected; on an OPDS route, `Basic` with a realm. The response body MUST be identical whether
+no credential was presented or a credential was presented and rejected.
 
 ## Rationale
 
@@ -31,8 +31,13 @@ distinguishes the two cases for a legitimate client.
 
 - No credential presented on an API route answers 401 with the bare challenge `Bearer`. Checked by
   `unauthorized_carries_bare_bearer_challenge` in `backend/src/error/mod.rs`.
-- A credential presented and rejected on an API route answers 401 with the challenge `Bearer error="invalid_token"`.
-  Checked by `invalid_credential_carries_invalid_token_challenge` in `backend/src/error/mod.rs`.
+- An `Authorization` credential presented and rejected on an API route answers 401 with the challenge
+  `Bearer error="invalid_token"`. Checked by `invalid_credential_carries_invalid_token_challenge` in
+  `backend/src/error/mod.rs`.
+- A session cookie that names a disabled account, or an account whose session version has moved on, is rejected with the
+  bare challenge `Bearer`, not `error="invalid_token"`, because a cookie is not a bearer token. Verified by inspection
+  of the session leg in `backend/src/auth/middleware.rs`; `disabled_user_live_session_is_rejected` in
+  `backend/src/routes/auth.rs` asserts the status only.
 - The response body is identical whether no credential was presented or a credential was presented and rejected. Checked
   by `invalid_credential_returns_same_body_as_unauthorized` in `backend/src/error/mod.rs`.
 - No credential presented on an OPDS route answers 401 with a `Basic` challenge naming the configured realm, for example

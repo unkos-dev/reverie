@@ -253,10 +253,10 @@ the timer branch, so a shutdown in progress returns promptly rather than waiting
   the consequence for response headers belongs to the Design "Response security headers and CSP"; this subject's part is
   that the save can fail (store I/O error) and that the layer's own response on that path bypasses every layer nested
   inside it, this store included.
-- **A missed or failed sweep tick.** `sweep_once`'s error is logged at `warn` and swallowed; the next tick retries. This
-  is availability hardening only: `PostgresStore::load`'s `expiry_date > now()` filter is what actually keeps an expired
-  session from authenticating, so an accumulating backlog of rows awaiting the sweep degrades table size, never access
-  control.
+- **A missed or failed sweep tick.** `sweep_once` returns its error and `run_sweep` logs it at `warn` and carries on;
+  the next tick retries. This is availability hardening only: `PostgresStore::load`'s `expiry_date > now()` filter is
+  what actually keeps an expired session from authenticating, so an accumulating backlog of rows awaiting the sweep
+  degrades table size, never access control.
 - **The `/auth/setup/status` lookup failing during redirect resolution.** `resolveLoginRedirect` (`App.tsx`) wraps the
   cached query in a `try`/`catch` and falls back to `/login` on any failure, so a lapsed session's redirect never
   strands the caller on a broken provider-detection request; it degrades to the always-valid local login form.

@@ -300,7 +300,10 @@ resolves every hostname it dials, including each redirect hop it follows, throug
 shared with the enrichment pipeline's `cover_client`. Unlike `cover_client`, `api_client` carries no per-redirect-hop
 URL revalidation (`cover_client`'s `validate_hop`); the case that gap leaves open, and that `cover_client` closes, is a
 redirect whose target is a bare IP address literal rather than a hostname, since a literal never triggers a resolver
-lookup at all and so is never checked against the denied-range list by this client.
+lookup at all and so is never checked against the denied-range list by this client. The breach-check URL is
+operator-configured (`password_breach_check_url`, defaulting to the public range service) and the only request content
+an outside party influences is the five-character hash prefix in the path, so reaching that case requires the operator's
+own chosen upstream to redirect to an address literal.
 
 Registration is config-gated (`self_registration_enabled`, default `false`) and the route is not mounted in the shipped
 client (`frontend/src/main.tsx` mounts no `/register` route); reaching `POST /auth/register` requires calling the API

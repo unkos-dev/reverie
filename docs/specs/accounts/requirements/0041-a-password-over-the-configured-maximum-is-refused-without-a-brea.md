@@ -21,10 +21,10 @@ at least one of the paths that applies this obligation is reachable without auth
 a denial-of-service vector. The
 [OWASP Authentication Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/Authentication_Cheat_Sheet.html)
 calls for bounding the cost of attacker-supplied credential input, and
-[NIST SP 800-63B §5.1.1.2](https://pages.nist.gov/800-63-3/sp800-63b.html#sec5) requires a verifier to permit passwords
-of at least 64 characters, so the configured maximum can be raised but never set below that floor. See
-[REV-ADR-0034](../../../adr/0034-password-policy-zxcvbn-floor-plus-a-fail-open-hibp-check.md) for the decision to check
-the length cap first, ahead of any other policy work.
+[NIST SP 800-63B-4 §3.1.1.2](https://pages.nist.gov/800-63-4/sp800-63b.html#passwordver) says a verifier SHOULD permit a
+maximum password length of at least 64 characters, so the configured maximum can be raised but never set below that
+floor. See [REV-ADR-0034](../../../adr/0034-password-policy-zxcvbn-floor-plus-a-fail-open-hibp-check.md) for the
+decision to check the length cap first, ahead of any other policy work.
 
 ## Acceptance criteria
 
