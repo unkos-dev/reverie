@@ -37,6 +37,10 @@ expectation as the rest of Reverie's identity surface.
   Checked by `local_login_disabled_account_is_generic_422` in `backend/src/routes/auth.rs`, which asserts the status and
   the absence of a session; that the response body is identical to the other two failure cases is verified by inspection
   of the shared failed-attempt code path all three cases fall into.
+- An attempt whose email resolves to no stored credential still performs a full password verification against a
+  well-formed dummy hash that never matches. Checked by `dummy_path_runs_a_verify_and_never_matches` in
+  `backend/src/auth/password.rs`; that `local_login` calls that path on every attempt without a stored credential is
+  verified by inspection of the handler in `backend/src/routes/auth.rs`.
 - This obligation binds the response's status and body. It does not bind the account-lookup step that precedes password
   verification: an email that resolves to an account issues one further database read (its stored credential) that an
   unknown email does not, and no acceptance criterion here measures wall-clock timing.

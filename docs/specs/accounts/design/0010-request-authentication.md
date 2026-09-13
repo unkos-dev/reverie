@@ -172,7 +172,7 @@ self-service:
 (`backend/src/models/user.rs::disable_account`); `enable_account` only clears `disabled_at` and never bumps
 `session_version` back down or forward. A session that predates the disable stored the pre-bump version, so the version
 comparison in `CurrentUser::from_request_parts` never matches again once that bump has happened, re-enable or not: the
-the `session_version` increment the disable performs, not the `disabled_at` flag, is what forces the logout, and it is
+`session_version` increment the disable performs, not the `disabled_at` flag, is what forces the logout, and it is
 permanent. `enable_account`'s job is only to lift the `disabled_at` gate for a fresh sign-in; it cannot and does not
 restore a pre-disable session's validity, so no live session skips re-authentication across a disable/enable cycle.
 

@@ -35,12 +35,12 @@ It does not own the session itself: the Postgres-backed store, the cookie's `Sam
 session id rotation, the `session_version` force-logout check, or the `GET /auth/me` and `POST /auth/logout` handlers
 the token rides alongside, all the Design "Sessions", which this subject depends on for the session key the middleware
 reads and the endpoint the client cache hydrates from. It does not own how a request becomes a `CurrentUser` or the
-scope and role checks a handler applies once the CSRF gate has passed (`backend/src/auth/middleware.rs`, the Request
-authentication subject): the middleware's own session-user check is a lighter, independent read of the same session key,
-not a call into that resolution. It does not own the Content Security Policy a CSRF rejection lacks, only the fact that
-it lacks one; that is the Design "Response security headers and CSP", which records the same layering from its side. It
-does not own the RFC 9457 Problem Details envelope the rejections render into, the Design "API error contract and
-OpenAPI", or the ETag capture and replay `fetch.ts` also performs for a different resource family, the Design
+scope and role checks a handler applies once the CSRF gate has passed (`backend/src/auth/middleware.rs`, the Design
+"Request authentication"): the middleware's own session-user check is a lighter, independent read of the same session
+key, not a call into that resolution. It does not own the Content Security Policy a CSRF rejection lacks, only the fact
+that it lacks one; that is the Design "Response security headers and CSP", which records the same layering from its
+side. It does not own the RFC 9457 Problem Details envelope the rejections render into, the Design "API error contract
+and OpenAPI", or the ETag capture and replay `fetch.ts` also performs for a different resource family, the Design
 "Conditional requests and optimistic concurrency". It does not own `frontend/src/hooks/useAuthMe.ts`, a second,
 independent `/auth/me` reader that happens to parse the same `csrf_token` field into its own react-query cache; that
 field is unused by every caller of the hook, so no second cache participates in the CSRF path, and the hook itself

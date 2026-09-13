@@ -303,8 +303,8 @@ redirect whose target is a bare IP address literal rather than a hostname, since
 lookup at all and so is never checked against the denied-range list by this client.
 
 Registration is config-gated (`self_registration_enabled`, default `false`) and the route is not mounted in the shipped
-client (`frontend/src/main.tsx` mounts no `/register` route); reaching `POST /auth/register` today requires calling the
-API directly. `RegisterRequest` declares no role field, and the JSON extractor does not reject unrecognised fields, so a
+client (`frontend/src/main.tsx` mounts no `/register` route); reaching `POST /auth/register` requires calling the API
+directly. `RegisterRequest` declares no role field, and the JSON extractor does not reject unrecognised fields, so a
 role value supplied in the request body is silently ignored rather than causing a rejection; `register` always calls
 `create_local` with `Role::Adult` as a literal argument, so privilege escalation through this path would require a
 source change to that literal, not a crafted request body.

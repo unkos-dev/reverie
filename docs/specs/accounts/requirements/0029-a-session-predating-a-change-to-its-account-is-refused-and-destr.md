@@ -28,9 +28,14 @@ authorisation model this obligation keeps honest across a change to the underlyi
 
 ## Acceptance criteria
 
-- A session opened before a change to its account's role, child status, disabled status, or password is refused on its
-  next request and its server-side row is destroyed. Pinned by `session_version_bump_forces_logout` in
-  `backend/src/routes/auth.rs`.
+- A session opened before its account's session version changes is refused on its next request and its server-side row
+  is destroyed. Pinned by `session_version_bump_forces_logout` in `backend/src/routes/auth.rs`, which bumps the version
+  directly.
+- A session opened before a PIN-based password reset is refused afterwards. Pinned by
+  `reset_password_invalidates_existing_sessions` in `backend/src/routes/auth.rs`.
+- A role change, a child-status change, an administrator's password reset and a self-service password change each bump
+  the session version in the same transaction as the change. Verified by inspection of `update_role`,
+  `update_child_status`, `admin_reset_password` and `change_own_password` in `backend/src/routes/users/mod.rs`.
 - A session established before an account is disabled remains refused once the account is re-enabled; re-enabling does
   not restore the pre-disable session's validity. Verified by inspection of `disable_account` and `enable_account` in
   `backend/src/models/user.rs` and the version comparison they feed in `backend/src/auth/middleware.rs`.
