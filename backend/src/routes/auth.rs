@@ -349,11 +349,10 @@ async fn local_login(
         return Err(AppError::RateLimited { retry_after: None });
     }
 
-    // THREAT (lockout DoS / enumeration): checked before any account lookup or
-    // Argon2 work, and keyed on the submitted email regardless of whether it
-    // resolves to an account, so a locked-out attacker cannot use verification
-    // latency as an existence oracle and a wrong guess inside the window cannot
-    // buy a fresh attempt by spending Argon2 work anyway.
+    // THREAT (online guessing, CWE-307): a locked email refuses every attempt,
+    // correct or not, before any account lookup or Argon2 work. Keyed on the
+    // submitted email whether or not it resolves, so the 429 is not an
+    // account-existence oracle.
     if let Some(until) = crate::models::login_throttle::backoff_until(&state.pool, &body.email)
         .await
         .map_err(|e| AppError::Internal(e.into()))?

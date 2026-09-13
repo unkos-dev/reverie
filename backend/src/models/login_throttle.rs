@@ -10,12 +10,12 @@
 //! keeping the failed-login path account-existence uniform.
 //!
 //! THREAT (lockout DoS): while a window is active, the login handler refuses
-//! every attempt against that email — correct or not — before any account
-//! lookup or password verification, so it cannot be extended or bypassed by
-//! guessing. The window is capped at `login_throttle_cap_secs` regardless of
-//! how many failures accumulate, and `reverie unlock-account` clears a row
-//! out of band for the stuck case. Per-source (per-IP) rate limiting does the
-//! hard blocking; this is the IP-independent backstop.
+//! every attempt against that email, correct or not, before any account lookup
+//! or password verification, and attempts inside the window neither extend it
+//! nor count as failures. The window is capped at `login_throttle_cap_secs`,
+//! and `reverie unlock-account` clears a row out of band for the stuck case.
+//! Per-source (per-IP) rate limiting does the hard blocking; this is the
+//! IP-independent backstop.
 
 use chrono::{DateTime, Utc};
 use sqlx::PgPool;
