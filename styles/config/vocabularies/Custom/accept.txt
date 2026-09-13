@@ -39,6 +39,7 @@ ASIN
 aspirational
 Astro
 async
+async_zip
 atlassian
 atomicity
 Audiobookshelf
@@ -371,6 +372,7 @@ perf
 pg_hba
 pgvector
 pixmap
+piz
 plaintext
 Plex
 pluggable
@@ -399,6 +401,7 @@ rasterized
 rasterizer
 rasterizes
 rasterizing
+rawzip
 Reachability
 readonly
 rebuildable
