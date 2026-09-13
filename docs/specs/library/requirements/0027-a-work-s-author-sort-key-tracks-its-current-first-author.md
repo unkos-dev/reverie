@@ -23,9 +23,13 @@ an author it no longer has.
   by `upgrade_stub_wires_per_role_source_version_id_and_sort_name` in `backend/src/models/work.rs`.
 - Replacing a work's authors through a metadata patch sets the sort key to the new first author's sort name, in the
   replaced order. Checked by `patch_contributors_replace_sets_names_in_order` in `backend/src/routes/metadata.rs`.
-- Removing a work's only author-role contributor clears the key, and a change that touches no author-role row leaves it
-  unchanged. No automated check exercises either case; both follow from `refresh_first_author_sort` recomputing the key
-  from the current rows, verified by inspection.
+- A work whose extracted metadata carries no author-role contributor has no key. Checked by
+  `upgrade_stub_authorless_metadata_leaves_sort_name_null` in `backend/src/models/work.rs`. A work that has an author
+  cannot lose its last one: every contributor write path refuses that change.
+- A change that touches no author-role row leaves the key unchanged.
+  `patch_contributors_editor_only_leaves_authors_untouched` in `backend/src/routes/metadata.rs` checks that an
+  editor-only patch leaves the author-role rows as they were; the key is recomputed from those rows, so it is unchanged
+  by construction.
 
 ## More information
 
