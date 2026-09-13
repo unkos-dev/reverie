@@ -29,7 +29,8 @@ quality tier: `clean` means _no issues found_, not _the only valid state_. A qua
 because quarantine deletes the file and writes no row.
 
 Write an operator-facing Starlight page covering these states (and how quarantine differs) when the library/validation
-UI surface that exposes them lands. The dev-facing reference in [`docs/schema.md`](./schema.md) is already corrected.
+UI surface that exposes them lands. The dev-facing reference, [`backend/schema.sql`](../backend/schema.sql), carries the
+vocabulary.
 
 ### OIDC `email` claim: addr-spec validation and degrade-to-NULL
 

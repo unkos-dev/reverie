@@ -458,6 +458,18 @@
       "title": "CSRF protection"
     },
     {
+      "id": "REV-DESIGN-0009",
+      "kind": "design",
+      "path": "docs/specs/library/design/0009-works-and-manifestations-data-model.md",
+      "satisfies": [
+        "REV-REQ-0025",
+        "REV-REQ-0026",
+        "REV-REQ-0027",
+        "REV-REQ-0028"
+      ],
+      "title": "Works and manifestations data model"
+    },
+    {
       "governed-by": [
         "REV-ADR-0047"
       ],
@@ -654,6 +666,30 @@
       "kind": "req",
       "path": "docs/specs/security/requirements/0024-a-request-authenticated-without-a-browser-session-is-not-csrf-ga.md",
       "title": "A request authenticated without a browser session is not CSRF-gated"
+    },
+    {
+      "id": "REV-REQ-0025",
+      "kind": "req",
+      "path": "docs/specs/library/requirements/0025-a-manifestation-s-file-identity-is-unique.md",
+      "title": "A manifestation's file identity is unique"
+    },
+    {
+      "id": "REV-REQ-0026",
+      "kind": "req",
+      "path": "docs/specs/library/requirements/0026-a-manifestation-s-ingestion-hash-never-changes.md",
+      "title": "A manifestation's ingestion hash never changes"
+    },
+    {
+      "id": "REV-REQ-0027",
+      "kind": "req",
+      "path": "docs/specs/library/requirements/0027-a-work-s-author-sort-key-tracks-its-current-first-author.md",
+      "title": "A work's author sort key tracks its current first author"
+    },
+    {
+      "id": "REV-REQ-0028",
+      "kind": "req",
+      "path": "docs/specs/library/requirements/0028-deleting-a-metadata-version-leaves-the-canonical-value-in-place.md",
+      "title": "Deleting a metadata version leaves the canonical value in place"
     }
   ]
 }

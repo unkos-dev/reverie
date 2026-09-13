@@ -7,7 +7,12 @@
 - [REV-REQ-0001](requirements/0001-library-sort-resolves-only-from-the-per-user-preference.md): Library sort resolves only from the per-user preference
 - [REV-REQ-0002](requirements/0002-library-filter-state-has-exactly-one-writer.md): Library filter state has exactly one writer
 - [REV-REQ-0003](requirements/0003-library-list-filter-values-that-fail-to-decode-are-rejected.md): Library list filter values that fail to decode are rejected
+- [REV-REQ-0025](requirements/0025-a-manifestation-s-file-identity-is-unique.md): A manifestation's file identity is unique
+- [REV-REQ-0026](requirements/0026-a-manifestation-s-ingestion-hash-never-changes.md): A manifestation's ingestion hash never changes
+- [REV-REQ-0027](requirements/0027-a-work-s-author-sort-key-tracks-its-current-first-author.md): A work's author sort key tracks its current first author
+- [REV-REQ-0028](requirements/0028-deleting-a-metadata-version-leaves-the-canonical-value-in-place.md): Deleting a metadata version leaves the canonical value in place
 
 ## Designs
 
 - [REV-DESIGN-0001](design/0001-library-filter-and-sort-state.md): Library filter and sort state
+- [REV-DESIGN-0009](design/0009-works-and-manifestations-data-model.md): Works and manifestations data model
