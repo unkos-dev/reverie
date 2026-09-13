@@ -659,6 +659,42 @@ mod tests {
     }
 
     #[test]
+    fn empty_archive_validates_clean() {
+        // No entries at all: entries_hint() is 0 and the prelude falls back
+        // to directory_offset() rather than min(local_header_offset).
+        let buf = std::io::Cursor::new(Vec::new());
+        let w = zip::ZipWriter::new(buf);
+        let bytes = w.finish().unwrap().into_inner();
+        let (_dir, path) = write_temp(&bytes);
+        let mut issues = Vec::new();
+        let handle = validate(&path, &mut issues).unwrap();
+        assert!(issues.is_empty());
+        assert!(handle.entries.is_empty());
+    }
+
+    #[test]
+    fn directory_entry_and_file_validate_clean_in_order() {
+        let buf = std::io::Cursor::new(Vec::new());
+        let mut w = zip::ZipWriter::new(buf);
+        let dir_opts: zip::write::FileOptions<zip::write::ExtendedFileOptions> =
+            zip::write::FileOptions::default();
+        w.add_directory("OEBPS", dir_opts).unwrap();
+        let file_opts: zip::write::FileOptions<zip::write::ExtendedFileOptions> =
+            zip::write::FileOptions::default();
+        w.start_file("OEBPS/content.opf", file_opts).unwrap();
+        w.write_all(b"<package/>").unwrap();
+        let bytes = w.finish().unwrap().into_inner();
+        let (_dir, path) = write_temp(&bytes);
+        let mut issues = Vec::new();
+        let handle = validate(&path, &mut issues).unwrap();
+        assert!(issues.is_empty());
+        assert_eq!(
+            handle.entries,
+            vec!["OEBPS/".to_string(), "OEBPS/content.opf".to_string()]
+        );
+    }
+
+    #[test]
     fn trailing_one_byte_is_quarantined() {
         let mut bytes = make_zip(&[("a.txt", b"hello world")]);
         bytes.push(0xAA);
@@ -884,6 +920,31 @@ mod tests {
         assert_eq!(
             read_entry(&handle, "deflated.bin").as_deref(),
             Some(deflated_data.as_slice())
+        );
+    }
+
+    #[test]
+    fn stored_entry_larger_than_probe_cap_validates_clean_and_reads_back_whole() {
+        // 8192 bytes is larger than the 4096-byte probe cap, so the probe
+        // reads only a prefix; the lying-directory check must not fire just
+        // because the entry is bigger than the probe, only when the probe
+        // cap itself equals declared+1 and fills completely.
+        let data = vec![0xABu8; 8_192];
+        let buf = std::io::Cursor::new(Vec::new());
+        let mut w = zip::ZipWriter::new(buf);
+        let opts: zip::write::FileOptions<zip::write::ExtendedFileOptions> =
+            zip::write::FileOptions::default().compression_method(zip::CompressionMethod::Stored);
+        w.start_file("big.bin", opts).unwrap();
+        w.write_all(&data).unwrap();
+        let bytes = w.finish().unwrap().into_inner();
+
+        let (_dir, path) = write_temp(&bytes);
+        let mut issues = Vec::new();
+        let handle = validate(&path, &mut issues).unwrap();
+        assert!(issues.is_empty());
+        assert_eq!(
+            read_entry(&handle, "big.bin").as_deref(),
+            Some(data.as_slice())
         );
     }
 }
