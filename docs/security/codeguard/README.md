@@ -154,9 +154,10 @@ function without parsing them.
 **Compensating controls required:**
 
 - Magic-byte validation (confirm ZIP signature before processing)
-- Bounded decompression guards against zip-bomb patterns: a per-entry and an
-  aggregate uncompressed-size cap, and a cap on the number of
-  central-directory entries
+- Bounded decompression guards against zip-bomb patterns: an archive-size cap
+  checked before the file is read, a central-directory entry-count cap
+  checked from the archive tail before the archive is parsed, and a per-entry
+  and an aggregate uncompressed-size cap
 - Nested archives are never opened: no code path opens an archive found
   inside an EPUB, so no nesting-depth bound applies
 - Generated filenames for extracted content; never trust manifest-provided

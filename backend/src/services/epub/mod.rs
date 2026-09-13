@@ -96,9 +96,16 @@ pub enum IssueKind {
     /// `ZIP` central directory declares more entries than the archive cap.
     EntryCapExceeded {
         /// Declared entry count.
-        count: usize,
+        count: u64,
         /// Configured limit that was exceeded.
         limit: usize,
+    },
+    /// Archive file size exceeds the cap, so it is never read.
+    ArchiveTooLarge {
+        /// Observed file size in bytes.
+        size: u64,
+        /// Configured limit that was exceeded.
+        limit: u64,
     },
     /// `ZIP` entry is unreadable (corrupt data).
     CorruptEntry {
@@ -243,6 +250,9 @@ pub const MAX_SPINE_ITEMS: usize = 500;
 
 /// Maximum `ZIP` central-directory entries before the archive is quarantined.
 pub const MAX_ZIP_ENTRIES: usize = 20_000;
+
+/// Maximum archive file size before the file is quarantined unread.
+pub const MAX_ARCHIVE_BYTES: u64 = MAX_AGGREGATE_UNCOMPRESSED_BYTES;
 
 // ── Entry point ───────────────────────────────────────────────────────────────
 
