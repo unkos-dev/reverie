@@ -3290,6 +3290,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "rawzip"
+version = "0.5.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "75a2b2577f5fd7e26caabd4aa7bba1ef18653ff32204eea251c1136db1a549f3"
+
+[[package]]
 name = "redox_syscall"
 version = "0.5.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3474,6 +3480,7 @@ dependencies = [
  "email_address",
  "encoding_rs",
  "figment",
+ "flate2",
  "futures",
  "governor",
  "hickory-resolver",
@@ -3486,6 +3493,7 @@ dependencies = [
  "quick-xml",
  "rand 0.10.2",
  "rand_core 0.6.4",
+ "rawzip",
  "regex",
  "reqwest 0.13.5",
  "resvg",

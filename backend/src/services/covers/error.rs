@@ -1,11 +1,11 @@
 //! Cover serving errors. Maps to HTTP status at the handler boundary:
-//! `NoCover` → 404, everything else → 500.
+//! `NoCover` and `ArchiveRejected` → 404, everything else → 500.
 
 /// All failure modes that can arise when serving a cover image.
 ///
-/// The handler maps `NoCover` → 404 and every other variant → 500; variants carry
-/// enough context for structured log fields without leaking internals to the
-/// client.
+/// `NoCover` and `ArchiveRejected` map to 404, everything else to 500;
+/// variants carry enough context for structured log fields without leaking
+/// internals to the client.
 #[derive(Debug, thiserror::Error)]
 pub enum CoverError {
     /// No servable cover: the EPUB declares none (no `properties="cover-image"`
@@ -13,6 +13,11 @@ pub enum CoverError {
     /// file is absent from the archive. Maps to 404.
     #[error("no cover")]
     NoCover,
+    /// Layer 1 validation rejected the archive structure, so no entry can be
+    /// read. Carries the `Debug` rendering of the issue kinds. Maps to 404:
+    /// the file is in the library but has no servable cover.
+    #[error("archive rejected: {0}")]
+    ArchiveRejected(String),
     /// Decoded but the bytes don't form a JPEG/PNG/WebP the `image` crate
     /// can read.
     #[error("decode: {0}")]

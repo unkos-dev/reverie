@@ -153,9 +153,17 @@ function without parsing them.
 
 **Compensating controls required:**
 
-- Magic-byte validation (confirm ZIP signature before processing)
-- Bounded decompression guards against zip-bomb patterns (max decompressed
-  size, max entry count, max nesting depth)
+- The archive must begin at offset zero: the offset of its first entry, or of
+  its central directory when the archive is empty, must be zero, and any data
+  preceding it is rejected
+- Bounded decompression guards against zip-bomb patterns: an archive-size cap
+  checked before the file is read, a declared-entry-count cap checked from the
+  end-of-central-directory record before any header is parsed, a counted
+  central-directory iteration that refuses the moment it exceeds the cap
+  regardless of what the end record declared, and a per-entry and an
+  aggregate uncompressed-size cap
+- Nested archives are never opened: no code path opens an archive found
+  inside an EPUB, so no nesting-depth bound applies
 - Generated filenames for extracted content; never trust manifest-provided
   paths
 - Extracted content stored outside web root
@@ -165,8 +173,7 @@ function without parsing them.
   (directories) resolves outside the ingestion tree — directory pruning landed
   in PR #387, file deletion in PR #388
 
-Any of these currently missing is a security bug. Verification tracked
-separately — see the conflict-check comment on PR #40.
+Any of these currently missing is a security bug.
 
 ### 5. First-party MFA deferred
 

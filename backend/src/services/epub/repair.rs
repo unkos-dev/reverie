@@ -8,13 +8,11 @@
 //! renamed over the source.
 
 use std::collections::HashMap;
-use std::io::Read;
 use std::path::Path;
-use zip::ZipArchive;
 use zip::write::{ExtendedFileOptions, FileOptions};
 
 use super::repack;
-use super::{EpubError, Issue, IssueKind};
+use super::{EpubError, Issue, IssueKind, zip_layer};
 
 /// Re-package the `EPUB` at `path` applying all `Repaired`-severity issues.
 ///
@@ -23,20 +21,14 @@ use super::{EpubError, Issue, IssueKind};
 ///
 /// # Errors
 ///
-/// Returns [`EpubError::Io`] if the archive bytes cannot be read from `path`
-/// or if a `ZIP` entry referenced by an encoding-fix issue cannot be extracted.
-/// Returns [`EpubError::Zip`] when `ZipArchive::new` or `by_name` fails while
-/// reading entries in either of the two propagating paths: the spine-rewrite
-/// `OPF` read, or the non-`OPF` encoding-fix loop where `ZipArchive::new` is
-/// invoked once per entry to transcode (`?` propagation). The encoding-only
-/// `OPF` rewrite path (taken when no broken spine refs exist) uses `.ok()?`
-/// for the same calls and silently skips the fix rather than propagating.
-/// Returns [`EpubError::TempFile`] if the repacked temp file cannot be
-/// atomically persisted over `path`.
-#[expect(
-    clippy::too_many_lines,
-    reason = "repackage handles 4 distinct EPUB structural repair cases in one pass; splitting would require passing shared state between helpers and obscure the repair logic"
-)]
+/// Returns [`EpubError::Io`] if the archive bytes cannot be read from `path`.
+/// Returns [`EpubError::Zip`] if the `OPF` entry needed for the spine rewrite
+/// is missing or unreadable (absent, unsupported method, encrypted, or
+/// failing its declared CRC or size). The encoding-only `OPF` rewrite path
+/// (taken when no broken spine refs exist) and the non-`OPF` encoding-fix
+/// loop both treat such an entry as "no fix available" and skip it rather
+/// than propagating. Returns [`EpubError::TempFile`] if the repacked temp
+/// file cannot be atomically persisted over `path`.
 pub fn repackage(path: &Path, issues: &[Issue], opf_path: Option<&str>) -> Result<(), EpubError> {
     let dir = path.parent().unwrap_or_else(|| Path::new("."));
 
@@ -88,18 +80,7 @@ pub fn repackage(path: &Path, issues: &[Issue], opf_path: Option<&str>) -> Resul
         if Some(entry_name.as_str()) == opf_path {
             continue;
         }
-        let cursor = std::io::Cursor::new(&bytes[..]);
-        let mut ar = ZipArchive::new(cursor)?;
-        let entry_bytes: Option<Vec<u8>> = match ar.by_name(entry_name) {
-            Ok(entry) => {
-                let mut buf = Vec::new();
-                entry
-                    .take(super::MAX_ENTRY_UNCOMPRESSED_BYTES + 1)
-                    .read_to_end(&mut buf)?;
-                Some(buf)
-            }
-            Err(_) => None,
-        };
+        let entry_bytes = zip_layer::read_entry_from_bytes(&bytes, entry_name);
         if let Some(raw) = entry_bytes
             && let Some(transcoded) = transcode_to_utf8(&raw, declared_enc)
         {
@@ -110,12 +91,8 @@ pub fn repackage(path: &Path, issues: &[Issue], opf_path: Option<&str>) -> Resul
     // OPF replacement: chain encoding fix + spine rewrite when both apply.
     let rewritten_opf: Option<Vec<u8>> = if !broken_refs.is_empty() {
         if let Some(opf) = opf_path {
-            let cursor = std::io::Cursor::new(&bytes[..]);
-            let mut ar = ZipArchive::new(cursor)?;
-            let mut opf_bytes = Vec::new();
-            ar.by_name(opf)?
-                .take(super::MAX_ENTRY_UNCOMPRESSED_BYTES + 1)
-                .read_to_end(&mut opf_bytes)?;
+            let opf_bytes = zip_layer::read_entry_from_bytes(&bytes, opf)
+                .ok_or(zip::result::ZipError::FileNotFound)?;
             let opf_bytes = if let Some((_, enc)) = encoding_fixes.iter().find(|(n, _)| n == opf) {
                 transcode_to_utf8(&opf_bytes, enc).unwrap_or(opf_bytes)
             } else {
@@ -131,14 +108,7 @@ pub fn repackage(path: &Path, issues: &[Issue], opf_path: Option<&str>) -> Resul
             .iter()
             .find(|(n, _)| n == opf)
             .and_then(|(_, enc)| {
-                let cursor = std::io::Cursor::new(&bytes[..]);
-                let mut ar = ZipArchive::new(cursor).ok()?;
-                let mut opf_bytes = Vec::new();
-                ar.by_name(opf)
-                    .ok()?
-                    .take(super::MAX_ENTRY_UNCOMPRESSED_BYTES + 1)
-                    .read_to_end(&mut opf_bytes)
-                    .ok()?;
+                let opf_bytes = zip_layer::read_entry_from_bytes(&bytes, opf)?;
                 transcode_to_utf8(&opf_bytes, enc)
             })
     } else {
@@ -304,7 +274,7 @@ mod tests {
     use crate::services::epub::repack::MIMETYPE_ENTRY;
     use crate::services::epub::{IssueKind, Layer, Severity};
     use std::io::Write;
-    use zip::ZipWriter;
+    use zip::{ZipArchive, ZipWriter};
 
     fn make_epub(entries: &[(&str, &[u8])]) -> Vec<u8> {
         let buf = std::io::Cursor::new(Vec::new());

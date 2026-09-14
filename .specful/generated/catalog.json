@@ -343,6 +343,13 @@
       "title": "Use rumdl for Markdown linting and formatting"
     },
     {
+      "id": "REV-ADR-0049",
+      "kind": "adr",
+      "path": "docs/adr/0049-read-epub-archives-with-rawzip.md",
+      "status": "accepted",
+      "title": "Read EPUB archives with rawzip"
+    },
+    {
       "governed-by": [
         "REV-ADR-0041",
         "REV-ADR-0047"

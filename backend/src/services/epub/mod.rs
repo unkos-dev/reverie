@@ -93,8 +93,44 @@ pub enum IssueKind {
         /// Configured limit that was exceeded.
         limit: u64,
     },
+    /// `ZIP` central directory declares more entries than the archive cap.
+    EntryCapExceeded {
+        /// Declared entry count.
+        count: u64,
+        /// Configured limit that was exceeded.
+        limit: usize,
+    },
+    /// Archive file size exceeds the cap, so it is never read.
+    ArchiveTooLarge {
+        /// Observed file size in bytes.
+        size: u64,
+        /// Configured limit that was exceeded.
+        limit: u64,
+    },
     /// `ZIP` entry is unreadable (corrupt data).
     CorruptEntry {
+        /// Offending entry name.
+        entry_name: String,
+    },
+    /// Data precedes the start of the `ZIP` archive within the file.
+    PreludeBeforeArchive {
+        /// Length of the prelude in bytes.
+        bytes: u64,
+    },
+    /// Two `ZIP` central-directory entries declare the same name.
+    DuplicateEntry {
+        /// The name shared by more than one entry.
+        entry_name: String,
+    },
+    /// `ZIP` entry uses a compression method other than Stored or Deflate.
+    UnsupportedCompression {
+        /// Offending entry name.
+        entry_name: String,
+        /// Raw `ZIP` compression method identifier.
+        method: u16,
+    },
+    /// `ZIP` entry is encrypted; `OCF` containers must not use `ZIP` encryption.
+    EncryptedEntry {
         /// Offending entry name.
         entry_name: String,
     },
@@ -233,6 +269,12 @@ pub const MAX_AGGREGATE_UNCOMPRESSED_BYTES: u64 = 2 * 1024 * 1024 * 1024;
 
 /// Maximum spine items before skipping `XHTML` validation (emits `Degraded`).
 pub const MAX_SPINE_ITEMS: usize = 500;
+
+/// Maximum `ZIP` central-directory entries before the archive is quarantined.
+pub const MAX_ZIP_ENTRIES: usize = 20_000;
+
+/// Maximum archive file size before the file is quarantined unread.
+pub const MAX_ARCHIVE_BYTES: u64 = MAX_AGGREGATE_UNCOMPRESSED_BYTES;
 
 // ── Entry point ───────────────────────────────────────────────────────────────
 

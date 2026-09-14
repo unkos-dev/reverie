@@ -257,6 +257,12 @@ pub fn spawn_warm_thumb(
             Err(CoverError::NoCover) => {
                 tracing::debug!(%manifestation_id, "cover warm: EPUB declares no cover");
             }
+            Err(CoverError::ArchiveRejected(_)) => {
+                tracing::debug!(
+                    %manifestation_id,
+                    "cover warm: archive rejected by validation, already logged"
+                );
+            }
             Err(e) => {
                 tracing::warn!(%manifestation_id, error = %e, "cover warm failed");
             }
