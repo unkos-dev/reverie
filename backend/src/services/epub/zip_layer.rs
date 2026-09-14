@@ -903,15 +903,29 @@ mod tests {
         assert!(handle.bytes.is_empty());
     }
 
+    /// Sets the compression-method field to `method` on the first
+    /// central-directory entry in `bytes` and on its corresponding local
+    /// header, so a method the `zip` crate has no feature to write (e.g.
+    /// bzip2, once its feature is trimmed from the dependency) can still be
+    /// exercised as a declared method. The central-directory method field is
+    /// at offset 10; the local header's own method field is at offset 8,
+    /// located via the central-directory entry's local-offset field at +42.
+    fn mark_first_entry_method(bytes: &mut [u8], method: u16) {
+        let offsets = cd_entry_offsets(bytes);
+        let cd = offsets[0];
+        let patched = method.to_le_bytes();
+        bytes[cd + 10..cd + 12].copy_from_slice(&patched);
+        let local_offset = u32::from_le_bytes(bytes[cd + 42..cd + 46].try_into().unwrap()) as usize;
+        bytes[local_offset + 8..local_offset + 10].copy_from_slice(&patched);
+    }
+
     #[test]
     fn unsupported_compression_method_is_quarantined() {
-        let buf = std::io::Cursor::new(Vec::new());
-        let mut w = zip::ZipWriter::new(buf);
-        let opts: zip::write::FileOptions<zip::write::ExtendedFileOptions> =
-            zip::write::FileOptions::default().compression_method(zip::CompressionMethod::Bzip2);
-        w.start_file("a.txt", opts).unwrap();
-        w.write_all(b"payload").unwrap();
-        let bytes = w.finish().unwrap().into_inner();
+        // Declares method 12 (bzip2) on an otherwise-ordinary entry: the
+        // dependency carries no bzip2 feature, so the declared method is
+        // patched directly rather than asking `zip` to write real bzip2 data.
+        let mut bytes = make_zip(&[("a.txt", b"payload")]);
+        mark_first_entry_method(&mut bytes, 12);
         let (_dir, path) = write_temp(&bytes);
         let mut issues = Vec::new();
         let handle = validate(&path, &mut issues).unwrap();
