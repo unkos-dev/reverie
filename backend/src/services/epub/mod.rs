@@ -75,6 +75,21 @@ pub enum Severity {
     Degraded,
 }
 
+/// Which OCF container rule the `mimetype` entry breaks.
+#[derive(Debug, Clone)]
+pub enum MimetypeProblem {
+    /// No entry named `mimetype` exists.
+    Missing,
+    /// The entry exists but its local header is not the archive's first bytes.
+    NotFirst,
+    /// The entry's local header declares a method other than Stored.
+    Compressed,
+    /// The entry's local header carries an extra field.
+    ExtraField,
+    /// The content is not exactly `application/epub+zip`.
+    Content,
+}
+
 /// Repair-relevant context for each issue kind.
 /// Each variant carries the data needed to apply the corresponding fix.
 #[derive(Debug, Clone)]
@@ -133,6 +148,11 @@ pub enum IssueKind {
     EncryptedEntry {
         /// Offending entry name.
         entry_name: String,
+    },
+    /// `OCF` `mimetype` entry breaks a container rule; repack rewrites it.
+    InvalidMimetype {
+        /// The rule broken.
+        problem: MimetypeProblem,
     },
     /// `META-INF/container.xml` absent; `OPF` path provided if regeneratable.
     MissingContainer {
@@ -379,4 +399,95 @@ pub fn validate_and_repair(path: &Path) -> Result<ValidationReport, EpubError> {
         opf_data,
         has_usable_embedded_cover,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::{Read, Write};
+    use zip::write::{ExtendedFileOptions, FileOptions};
+    use zip::{ZipArchive, ZipWriter};
+
+    const CONTAINER_XML: &[u8] = br#"<?xml version="1.0" encoding="UTF-8"?>
+<container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container">
+  <rootfiles>
+    <rootfile full-path="OEBPS/content.opf" media-type="application/oebps-package+xml"/>
+  </rootfiles>
+</container>"#;
+
+    const CONTENT_OPF: &[u8] = br#"<?xml version="1.0" encoding="UTF-8"?>
+<package xmlns="http://www.idpf.org/2007/opf" version="3.0">
+  <metadata/>
+  <manifest/>
+  <spine/>
+</package>"#;
+
+    /// A structurally otherwise-valid `EPUB` whose only problem is a
+    /// `mimetype` entry that is neither first nor stored, so the mimetype
+    /// rules are the sole source of the `Repaired` issues.
+    fn make_epub_with_bad_mimetype() -> Vec<u8> {
+        let buf = std::io::Cursor::new(Vec::new());
+        let mut w = ZipWriter::new(buf);
+        let default_opts: FileOptions<ExtendedFileOptions> = FileOptions::default();
+
+        w.start_file("META-INF/container.xml", default_opts.clone())
+            .unwrap();
+        w.write_all(CONTAINER_XML).unwrap();
+
+        w.start_file("OEBPS/content.opf", default_opts).unwrap();
+        w.write_all(CONTENT_OPF).unwrap();
+
+        // mimetype deliberately last and Deflated: violates position and
+        // compression, but nothing else.
+        let mimetype_opts: FileOptions<ExtendedFileOptions> =
+            FileOptions::default().compression_method(zip::CompressionMethod::Deflated);
+        w.start_file(repack::MIMETYPE_ENTRY, mimetype_opts).unwrap();
+        w.write_all(repack::MIMETYPE_CONTENT).unwrap();
+
+        w.finish().unwrap().into_inner()
+    }
+
+    #[test]
+    fn invalid_mimetype_is_repaired_end_to_end() {
+        let bytes = make_epub_with_bad_mimetype();
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("test.epub");
+        std::fs::write(&path, &bytes).unwrap();
+
+        let report = validate_and_repair(&path).unwrap();
+        assert_eq!(report.outcome, ValidationOutcome::Repaired);
+        assert!(report.issues.iter().any(|i| matches!(
+            &i.kind,
+            IssueKind::InvalidMimetype {
+                problem: MimetypeProblem::NotFirst
+            }
+        )));
+        assert!(report.issues.iter().any(|i| matches!(
+            &i.kind,
+            IssueKind::InvalidMimetype {
+                problem: MimetypeProblem::Compressed
+            }
+        )));
+
+        let repacked = std::fs::read(&path).unwrap();
+        let mut archive = ZipArchive::new(std::io::Cursor::new(repacked)).unwrap();
+        {
+            let mut first = archive.by_index(0).unwrap();
+            assert_eq!(first.name(), repack::MIMETYPE_ENTRY);
+            assert_eq!(first.compression(), zip::CompressionMethod::Stored);
+            let mut content = Vec::new();
+            first.read_to_end(&mut content).unwrap();
+            assert_eq!(content, repack::MIMETYPE_CONTENT);
+        }
+
+        // A second pass over the repacked file reports no InvalidMimetype issue.
+        let report2 = validate_and_repair(&path).unwrap();
+        assert!(
+            !report2
+                .issues
+                .iter()
+                .any(|i| matches!(&i.kind, IssueKind::InvalidMimetype { .. }))
+        );
+        assert_eq!(report2.outcome, ValidationOutcome::Clean);
+    }
 }
