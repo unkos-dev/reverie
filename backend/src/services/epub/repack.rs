@@ -40,7 +40,8 @@ pub(super) const MIMETYPE_CONTENT: &[u8] = b"application/epub+zip";
 ///   regenerated `META-INF/container.xml` or a freshly-inserted cover
 ///   manifest target).
 ///
-/// Untouched entries are copied with their compressed bytes and metadata intact.
+/// Untouched entries are copied with their compressed bytes and metadata
+/// intact. A replaced entry keeps the source entry's compression method.
 ///
 /// # Errors
 ///
@@ -76,13 +77,18 @@ pub fn with_modifications<S: BuildHasher>(
                 continue;
             }
 
+            let compression = file.compression();
             if opf_path == Some(name.as_str())
                 && let Some(repl) = opf_replacement
             {
-                writer.start_file(&name, FileOptions::<ExtendedFileOptions>::default())?;
+                let opts: FileOptions<ExtendedFileOptions> =
+                    FileOptions::default().compression_method(compression);
+                writer.start_file(&name, opts)?;
                 writer.write_all(repl)?;
             } else if let Some(replacement) = binary_replacements.get(&name) {
-                writer.start_file(&name, FileOptions::<ExtendedFileOptions>::default())?;
+                let opts: FileOptions<ExtendedFileOptions> =
+                    FileOptions::default().compression_method(compression);
+                writer.start_file(&name, opts)?;
                 writer.write_all(replacement)?;
             } else {
                 writer.raw_copy_file(file)?;
@@ -259,6 +265,30 @@ mod tests {
             .read_to_end(&mut buf)
             .unwrap();
         assert_eq!(buf, b"NEW_BYTES");
+    }
+
+    #[test]
+    fn binary_replacement_keeps_stored_compression() {
+        let bytes = build_epub(&[
+            (
+                MIMETYPE_ENTRY,
+                MIMETYPE_CONTENT,
+                zip::CompressionMethod::Stored,
+            ),
+            (
+                "images/cover.jpg",
+                b"OLD_BYTES",
+                zip::CompressionMethod::Stored,
+            ),
+        ]);
+        let (dir, path) = write_to_temp(&bytes);
+        let mut replacements = HashMap::new();
+        replacements.insert("images/cover.jpg".to_string(), b"NEW_BYTES".to_vec());
+        let temp = with_modifications(&path, dir.path(), None, None, &replacements, &[]).unwrap();
+        let out = std::fs::read(temp.path()).unwrap();
+        let mut ar = ZipArchive::new(Cursor::new(&out[..])).unwrap();
+        let f = ar.by_name("images/cover.jpg").unwrap();
+        assert_eq!(f.compression(), zip::CompressionMethod::Stored);
     }
 
     #[test]
