@@ -106,6 +106,6 @@ this decision covers only the read side.
 
 ## More information
 
-The write side still constructs archives with `zip`'s `ZipWriter`. A later change is expected to copy untouched entries
-verbatim on a raw-copy path and trim `zip` to the features that writing actually needs; full retirement of the crate is
-a longer-term direction, not a commitment made by this decision.
+The write side still constructs archives with `zip`'s `ZipWriter`, copying untouched entries verbatim on a raw-copy path
+and building the crate with only the features writing needs; full retirement of the crate is a longer-term direction,
+not a commitment made by this decision.
