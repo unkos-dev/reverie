@@ -129,6 +129,11 @@ pub enum IssueKind {
         /// Raw `ZIP` compression method identifier.
         method: u16,
     },
+    /// `ZIP` entry is encrypted; `OCF` containers must not use `ZIP` encryption.
+    EncryptedEntry {
+        /// Offending entry name.
+        entry_name: String,
+    },
     /// `META-INF/container.xml` absent; `OPF` path provided if regeneratable.
     MissingContainer {
         /// Best-guess `OPF` path that the repair pass might use; `None` when no

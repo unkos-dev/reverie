@@ -260,7 +260,10 @@ async fn serve_cover(
 ) -> Result<Response, AppError> {
     let artifact = match get_or_create(state, manifestation_id, user_id, size).await {
         Ok(a) => a,
-        Err(CoverError::NoCover) => return Err(AppError::NotFound),
+        // ArchiveRejected is already logged at warn where Layer 1 detected it.
+        Err(CoverError::NoCover | CoverError::ArchiveRejected(_)) => {
+            return Err(AppError::NotFound);
+        }
         // A cover file that has vanished from disk (the source EPUB moved, an
         // evicted cache entry, an unmounted library) is a 404, not a 500: the
         // manifestation was already RLS-gated inside `get_or_create`, so this

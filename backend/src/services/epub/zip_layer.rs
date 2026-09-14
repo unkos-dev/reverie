@@ -215,16 +215,12 @@ fn validate_entries(
         }
 
         let method = record.compression_method();
-        // OCF 4.3.2 forbids ZIP encryption; there is no method-independent
-        // "encrypted" issue kind, so this reuses UnsupportedCompression.
+        // OCF 4.3.2 forbids ZIP encryption.
         if record.flags().is_encrypted() {
             issues.push(Issue {
                 layer: Layer::Zip,
                 severity: Severity::Irrecoverable,
-                kind: IssueKind::UnsupportedCompression {
-                    entry_name: name,
-                    method: method.as_u16(),
-                },
+                kind: IssueKind::EncryptedEntry { entry_name: name },
             });
             return None;
         }
@@ -729,6 +725,14 @@ mod tests {
         w.write_all(&opf_data).unwrap();
 
         let bytes = w.finish().unwrap().into_inner();
+
+        // Confirm the fixture actually exercises a data descriptor rather
+        // than passing vacuously on a seekable-equivalent archive.
+        let precheck = ZipArchive::from_slice(bytes.as_slice()).unwrap();
+        for entry in precheck.entries() {
+            assert!(entry.unwrap().flags().has_data_descriptor());
+        }
+
         let (_dir, path) = write_temp(&bytes);
         let mut issues = Vec::new();
         let handle = validate(&path, &mut issues).unwrap();
@@ -947,7 +951,7 @@ mod tests {
             i.severity == Severity::Irrecoverable
                 && matches!(
                     &i.kind,
-                    IssueKind::UnsupportedCompression { entry_name, .. }
+                    IssueKind::EncryptedEntry { entry_name }
                         if entry_name == "a.txt"
                 )
         }));

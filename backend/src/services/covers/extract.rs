@@ -29,9 +29,10 @@ use crate::services::epub::{
 /// # Errors
 ///
 /// Returns [`CoverError::Zip`] or [`CoverError::Io`] if the archive cannot be
-/// opened, [`CoverError::NoCover`] if no cover is declared, the declared OPF
-/// or cover entry is missing, or [`CoverError::Decode`] if the cover bytes
-/// are neither a decodable raster format nor `SVG`.
+/// opened, [`CoverError::ArchiveRejected`] if Layer 1 validation rejects the
+/// archive structure, [`CoverError::NoCover`] if no cover is declared, the
+/// declared OPF or cover entry is missing, or [`CoverError::Decode`] if the
+/// cover bytes are neither a decodable raster format nor `SVG`.
 pub fn extract_cover_bytes(epub_path: &Path) -> Result<(Vec<u8>, ImageFormat), CoverError> {
     let mut issues = Vec::new();
     let handle = zip_layer::validate(epub_path, &mut issues).map_err(|e| match e {
@@ -40,9 +41,8 @@ pub fn extract_cover_bytes(epub_path: &Path) -> Result<(Vec<u8>, ImageFormat), C
         other => CoverError::Decode(other.to_string()),
     })?;
 
-    // An archive Layer 1 rejects yields no cover either way (the handle is
-    // empty), but the rejection is logged here at warn because the file is
-    // already in the library and nothing else on this call path would see it.
+    // The rejection is logged here at warn because the file is already in
+    // the library and nothing else on this call path would otherwise see it.
     if issues.iter().any(|i| i.severity == Severity::Irrecoverable) {
         let kinds: Vec<_> = issues.iter().map(|i| &i.kind).collect();
         tracing::warn!(
@@ -50,7 +50,7 @@ pub fn extract_cover_bytes(epub_path: &Path) -> Result<(Vec<u8>, ImageFormat), C
             issues = ?kinds,
             "cover extraction: archive rejected by Layer 1 validation"
         );
-        return Err(CoverError::NoCover);
+        return Err(CoverError::ArchiveRejected(format!("{kinds:?}")));
     }
 
     let opf_path = container_layer::validate(&handle, &mut issues);
@@ -113,7 +113,7 @@ mod tests {
     use std::io::Write;
 
     #[test]
-    fn archive_rejected_by_layer_one_yields_no_cover() {
+    fn archive_rejected_by_layer_one_yields_archive_rejected() {
         let buf = std::io::Cursor::new(Vec::new());
         let mut w = zip::ZipWriter::new(buf);
         let opts: zip::write::FileOptions<zip::write::ExtendedFileOptions> =
@@ -129,7 +129,7 @@ mod tests {
 
         assert!(matches!(
             extract_cover_bytes(&path),
-            Err(CoverError::NoCover)
+            Err(CoverError::ArchiveRejected(_))
         ));
     }
 
