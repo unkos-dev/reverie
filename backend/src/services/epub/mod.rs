@@ -80,7 +80,7 @@ pub enum Severity {
 pub enum MimetypeProblem {
     /// No entry named `mimetype` exists.
     Missing,
-    /// The entry exists but is not the first entry in the central directory.
+    /// The entry exists but its local header is not the archive's first bytes.
     NotFirst,
     /// The entry's local header declares a method other than Stored.
     Compressed,

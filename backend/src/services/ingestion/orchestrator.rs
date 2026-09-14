@@ -405,6 +405,11 @@ async fn process_file(
     // claiming 'clean' for a check that never happened. If a
     // validator for another format ships later, its files are already in
     // the truthful pre-validation state.
+    //
+    // A Repaired outcome rewrites the library file, so only that arm replaces
+    // the copy's hash and size.
+    let mut current_hash = copy_result.sha256.clone();
+    let mut current_size = copy_result.file_size;
     let (validation_status, accessibility_metadata, opf_data, has_embedded_cover): (
         ValidationStatus,
         Option<serde_json::Value>,
@@ -460,6 +465,49 @@ async fn process_file(
                         (ValidationStatus::Clean, a11y, opf, Some(has_cover))
                     }
                     ValidationOutcome::Repaired => {
+                        // `ingestion_file_hash` keeps the copy hash: dedup keys on it
+                        // and it never changes after ingestion.
+                        let lib_file_for_hash = lib_file.clone();
+                        let rehash = tokio::task::spawn_blocking(
+                            move || -> Result<(String, u64), std::io::Error> {
+                                let hash = copier::hash_file(&lib_file_for_hash)?;
+                                let size = std::fs::metadata(&lib_file_for_hash)?.len();
+                                Ok((hash, size))
+                            },
+                        )
+                        .await;
+
+                        match rehash {
+                            Ok(Ok((hash, size))) => {
+                                current_hash = hash;
+                                current_size = size;
+                            }
+                            Ok(Err(e)) => {
+                                let lib_file_str = lib_file.display().to_string();
+                                if let Err(e) = tokio::task::spawn_blocking(move || {
+                                    if let Err(e) = std::fs::remove_file(&lib_file_str) {
+                                        tracing::warn!(
+                                            path = %lib_file_str,
+                                            error = %e,
+                                            "failed to remove library file after repaired EPUB re-hash failure"
+                                        );
+                                    }
+                                })
+                                .await
+                                {
+                                    tracing::warn!(error = %e, "cleanup spawn_blocking panicked for repaired EPUB re-hash failure");
+                                }
+                                let reason = format!("failed to re-hash repaired EPUB: {e}");
+                                quarantine_async(&source, &quarantine_path, &reason).await;
+                                return ProcessResult::Failed(reason);
+                            }
+                            Err(e) => {
+                                return ProcessResult::Failed(format!(
+                                    "spawn_blocking panicked: {e}"
+                                ));
+                            }
+                        }
+
                         (ValidationStatus::Repaired, a11y, opf, Some(has_cover))
                     }
                     ValidationOutcome::Degraded => {
@@ -568,6 +616,8 @@ async fn process_file(
             validation_status,
             accessibility_metadata: &accessibility_metadata,
             has_embedded_cover,
+            current_hash: &current_hash,
+            current_size,
         },
     )
     .await;
@@ -614,13 +664,13 @@ async fn process_file(
 
     // Pre-warm the thumbnail cover off the request path so the first library
     // grid view is a warm cache hit instead of a cold rasterize. Best-effort
-    // and concurrency-bounded. `current_file_hash` is `copy_result.sha256`
-    // (see `commit_ingest`), which keys the cover cache.
+    // and concurrency-bounded. `current_hash` is `current_file_hash` (see
+    // `commit_ingest`), which keys the cover cache.
     if should_warm_cover(format, has_embedded_cover) {
         crate::services::covers::spawn_warm_thumb(
             library_path.display().to_string(),
             manifestation_id,
-            copy_result.sha256.clone(),
+            current_hash,
             final_path_str.clone(),
         );
     }
@@ -645,6 +695,10 @@ struct ManifestationMeta<'a> {
     validation_status: ValidationStatus,
     accessibility_metadata: &'a Option<serde_json::Value>,
     has_embedded_cover: Option<bool>,
+    /// Hash and size of the library file as it exists now: the copy's values
+    /// unless a repair rewrote the file.
+    current_hash: &'a str,
+    current_size: u64,
 }
 
 /// Run the ingest DB sequence atomically and return `(work_id, manifestation_id)`.
@@ -689,19 +743,20 @@ async fn commit_ingest(
     //    their typed Rust enums (sqlx::Type impls), so the write boundary stays
     //    symmetric with the read paths — a bad variant fails at the type system,
     //    not as a runtime Postgres cast error.
-    let file_size = copy_result.file_size.cast_signed();
+    let file_size = meta.current_size.cast_signed();
     let ingestion_status = IngestionStatus::Complete;
     let manifestation_id = sqlx::query_scalar!(
         "INSERT INTO manifestations \
              (work_id, format, file_path, ingestion_file_hash, current_file_hash, \
               file_size_bytes, ingestion_status, validation_status, accessibility_metadata, \
               has_embedded_cover) \
-         VALUES ($1, $2, $3, $4, $4, $5, $6, $7, $8, $9) \
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) \
          RETURNING id",
         work_id,
         meta.format as ManifestationFormat,
         final_path_str,
         &copy_result.sha256,
+        meta.current_hash,
         file_size,
         ingestion_status as IngestionStatus,
         meta.validation_status as ValidationStatus,
@@ -1412,6 +1467,115 @@ mod tests {
             status,
             ValidationStatus::Repaired,
             "expected validation_status=repaired"
+        );
+    }
+
+    /// Build an EPUB the validator rates `Repaired` via the `mimetype` OCF
+    /// rules: `mimetype` is second in the archive and Deflate-compressed, so
+    /// repack rewrites the file and its bytes differ from the source.
+    fn make_epub_with_mimetype_second_and_deflated() -> Vec<u8> {
+        use std::io::Write as _;
+        use zip::write::{ExtendedFileOptions, FileOptions};
+
+        let buf = std::io::Cursor::new(Vec::new());
+        let mut w = zip::ZipWriter::new(buf);
+        let default: FileOptions<ExtendedFileOptions> = FileOptions::default();
+
+        w.start_file("META-INF/container.xml", default.clone())
+            .unwrap();
+        w.write_all(CONTAINER_XML).unwrap();
+
+        let mimetype_opts: FileOptions<ExtendedFileOptions> =
+            FileOptions::default().compression_method(zip::CompressionMethod::Deflated);
+        w.start_file("mimetype", mimetype_opts).unwrap();
+        w.write_all(b"application/epub+zip").unwrap();
+
+        w.start_file("OEBPS/content.opf", default).unwrap();
+        w.write_all(
+            br#"<?xml version="1.0" encoding="UTF-8"?>
+<package xmlns="http://www.idpf.org/2007/opf" version="3.0">
+  <metadata/>
+  <manifest/>
+  <spine/>
+</package>"#,
+        )
+        .unwrap();
+
+        w.finish().unwrap().into_inner()
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn scan_once_repaired_epub_refreshes_current_hash_and_size(pool: PgPool) {
+        // A repaired EPUB's `current_file_hash`/`file_size_bytes` must describe
+        // the post-repack library bytes, not the pre-repack copy: `repack`
+        // rewrites the file in place, so the copy-time hash and size are stale.
+        // `ingestion_file_hash` (the dedup key) must still be the source hash.
+        let pool = ingestion_pool_for(&pool).await;
+        let (ingestion, library, _quarantine, config) = scan_env();
+
+        let source_bytes = make_epub_with_mimetype_second_and_deflated();
+        let source = ingestion.path().join("Fixed - Broken Mimetype.epub");
+        std::fs::write(&source, &source_bytes).unwrap();
+
+        let result = scan_once(&config, &pool).await.unwrap();
+        assert_eq!(result.processed, 1, "expected 1 processed");
+        assert_eq!(result.failed, 0);
+
+        let dest = library.path().join("Fixed/Broken Mimetype.epub");
+        let dest_str = dest.to_str().unwrap();
+
+        use crate::models::validation_status::ValidationStatus;
+        let status = sqlx::query_scalar!(
+            "SELECT validation_status AS \"validation_status!: ValidationStatus\" FROM manifestations WHERE file_path = $1",
+            dest_str,
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(
+            status,
+            ValidationStatus::Repaired,
+            "expected validation_status=repaired"
+        );
+
+        let (ingestion_hash, current_hash, file_size_bytes) = sqlx::query!(
+            "SELECT ingestion_file_hash, current_file_hash, file_size_bytes \
+             FROM manifestations WHERE file_path = $1",
+            dest_str,
+        )
+        .fetch_one(&pool)
+        .await
+        .map(|r| {
+            (
+                r.ingestion_file_hash,
+                r.current_file_hash,
+                r.file_size_bytes,
+            )
+        })
+        .unwrap();
+
+        let expected_ingestion_hash = copier::hash_file(&source).unwrap();
+        assert_eq!(
+            ingestion_hash, expected_ingestion_hash,
+            "ingestion_file_hash must equal the source bytes' SHA-256"
+        );
+
+        let library_bytes = std::fs::read(&dest).unwrap();
+        let expected_current_hash = copier::hash_file(&dest).unwrap();
+        assert_eq!(
+            current_hash, expected_current_hash,
+            "current_file_hash must equal the post-repair library file's SHA-256"
+        );
+
+        assert_ne!(
+            ingestion_hash, current_hash,
+            "repack must change the bytes, so the two hashes must differ"
+        );
+
+        assert_eq!(
+            file_size_bytes,
+            i64::try_from(library_bytes.len()).unwrap(),
+            "file_size_bytes must equal the library file's length"
         );
     }
 

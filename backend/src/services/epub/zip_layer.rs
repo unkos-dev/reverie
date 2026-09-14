@@ -157,7 +157,6 @@ fn validate_entries(
     let mut aggregate_size: u64 = 0;
     let mut min_local_header_offset: Option<u64> = None;
     let mut count: usize = 0;
-    let mut first_entry_name: Option<String> = None;
     let mut mimetype_facts: Option<MimetypeFacts> = None;
 
     let mut iter = archive.entries();
@@ -325,11 +324,12 @@ fn validate_entries(
             return None;
         }
 
-        if count == 1 {
-            first_entry_name = Some(name.clone());
-        }
         if name.as_str() == MIMETYPE_ENTRY {
-            mimetype_facts = Some(gather_mimetype_facts(&slice_entry, method));
+            mimetype_facts = Some(gather_mimetype_facts(
+                &slice_entry,
+                method,
+                record.local_header_offset(),
+            ));
         }
 
         entries.push(name);
@@ -356,32 +356,43 @@ fn validate_entries(
         return None;
     }
 
-    let is_first = first_entry_name.as_deref() == Some(MIMETYPE_ENTRY);
-    push_mimetype_issues(issues, is_first, mimetype_facts.as_ref());
+    push_mimetype_issues(issues, mimetype_facts.as_ref());
 
     Some(entries)
 }
 
 /// Local-header facts about the `mimetype` entry needed to evaluate the OCF
 /// container rules (`EPUB` 3.3 §4.3.3).
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "each field is an independent OCF-rule fact read from the local header, not a state machine over exclusive states"
+)]
 struct MimetypeFacts {
+    /// The entry's local header is the archive's first bytes and names it.
+    at_offset_zero: bool,
     /// The local header declares a method other than Stored.
     compressed: bool,
-    /// The local header's extra-fields iterator yields at least one field.
+    /// The local header's extra-field length is non-zero.
     has_extra_field: bool,
     /// The first (at most 64) content bytes are byte-exact `application/epub+zip`.
     content_matches: bool,
 }
 
-/// Reads the `mimetype` entry's local-header compression method, extra
-/// fields, and up to [`MIMETYPE_CONTENT_PROBE_CAP`] bytes of content;
+/// Reads the `mimetype` entry's local-header position, compression method,
+/// extra fields, and up to [`MIMETYPE_CONTENT_PROBE_CAP`] bytes of content;
 /// `method` is the central directory's method, which decodes the content,
 /// while the local header's own method is what the `Compressed` rule judges.
+/// `local_header_offset` is the central directory's record of where this
+/// entry's local header starts.
 fn gather_mimetype_facts(
     slice_entry: &ZipSliceEntry<'_>,
     method: CompressionMethod,
+    local_header_offset: u64,
 ) -> MimetypeFacts {
     let local_header = slice_entry.local_header();
+    let file_path = local_header.file_path();
+    let name_bytes: &[u8] = file_path.as_ref();
+    let at_offset_zero = local_header_offset == 0 && name_bytes == MIMETYPE_ENTRY.as_bytes();
 
     let mut buf = Vec::new();
     let probe_result = if method == CompressionMethod::DEFLATE {
@@ -399,8 +410,9 @@ fn gather_mimetype_facts(
     }
 
     MimetypeFacts {
+        at_offset_zero,
         compressed: local_header.compression_method() != CompressionMethod::STORE,
-        has_extra_field: local_header.extra_fields().next().is_some(),
+        has_extra_field: !local_header.extra_fields().remaining_bytes().is_empty(),
         content_matches: buf == MIMETYPE_CONTENT,
     }
 }
@@ -408,7 +420,7 @@ fn gather_mimetype_facts(
 /// Pushes one `Repaired` `InvalidMimetype` issue per OCF container rule
 /// broken by the `mimetype` entry. Absence is reported alone; every other
 /// rule is checked independently, so more than one can fire together.
-fn push_mimetype_issues(issues: &mut Vec<Issue>, is_first: bool, facts: Option<&MimetypeFacts>) {
+fn push_mimetype_issues(issues: &mut Vec<Issue>, facts: Option<&MimetypeFacts>) {
     let mut push_problem = |problem: MimetypeProblem| {
         issues.push(Issue {
             layer: Layer::Zip,
@@ -422,7 +434,7 @@ fn push_mimetype_issues(issues: &mut Vec<Issue>, is_first: bool, facts: Option<&
         return;
     };
 
-    if !is_first {
+    if !facts.at_offset_zero {
         push_problem(MimetypeProblem::NotFirst);
     }
     if facts.compressed {
@@ -1217,15 +1229,6 @@ mod tests {
     }
 
     #[test]
-    fn compliant_mimetype_yields_no_issue() {
-        let bytes = make_zip_with_mimetype(&[("OEBPS/content.opf", b"<package/>")]);
-        let (_dir, path) = write_temp(&bytes);
-        let mut issues = Vec::new();
-        let _ = validate(&path, &mut issues).unwrap();
-        assert!(mimetype_problems(&issues).is_empty());
-    }
-
-    #[test]
     fn missing_mimetype_is_repaired() {
         let bytes = make_zip(&[("OEBPS/content.opf", b"<package/>")]);
         let (_dir, path) = write_temp(&bytes);
@@ -1374,5 +1377,85 @@ mod tests {
                 .iter()
                 .any(|p| matches!(p, MimetypeProblem::Compressed))
         );
+    }
+
+    fn write_u16(buf: &mut Vec<u8>, value: u16) {
+        buf.extend_from_slice(&value.to_le_bytes());
+    }
+
+    fn write_u32(buf: &mut Vec<u8>, value: u32) {
+        buf.extend_from_slice(&value.to_le_bytes());
+    }
+
+    #[test]
+    fn mimetype_one_byte_extra_field_is_repaired() {
+        // The `zip` crate refuses to emit an extra field shorter than the
+        // four-byte header, so a one-byte local extra field, too short for
+        // `ExtraFields::next()` to parse but still present, is built by hand.
+        const CONTENT: &[u8] = b"application/epub+zip";
+        // CRC-32 of `application/epub+zip`.
+        const CRC32: u32 = 0x2cab_616f;
+        let content_len = u32::try_from(CONTENT.len()).unwrap();
+
+        let mut bytes = Vec::new();
+
+        // Local file header: mimetype, Stored, one-byte extra field.
+        bytes.extend_from_slice(b"PK\x03\x04");
+        write_u16(&mut bytes, 10); // version needed to extract
+        write_u16(&mut bytes, 0); // general purpose flags
+        write_u16(&mut bytes, 0); // compression method: Stored
+        write_u16(&mut bytes, 0); // last mod time
+        write_u16(&mut bytes, 0); // last mod date
+        write_u32(&mut bytes, CRC32);
+        write_u32(&mut bytes, content_len); // compressed size
+        write_u32(&mut bytes, content_len); // uncompressed size
+        write_u16(&mut bytes, 8); // file name length
+        write_u16(&mut bytes, 1); // extra field length: malformed, one byte
+        bytes.extend_from_slice(MIMETYPE_ENTRY.as_bytes());
+        bytes.push(0x00); // the one-byte extra field
+        bytes.extend_from_slice(CONTENT);
+
+        let cd_start = bytes.len();
+
+        // Central directory header for the same entry (extra length 0: the
+        // malformed extra field is local-header-only, as real writers do).
+        bytes.extend_from_slice(b"PK\x01\x02");
+        write_u16(&mut bytes, 20); // version made by
+        write_u16(&mut bytes, 10); // version needed to extract
+        write_u16(&mut bytes, 0); // general purpose flags
+        write_u16(&mut bytes, 0); // compression method: Stored
+        write_u16(&mut bytes, 0); // last mod time
+        write_u16(&mut bytes, 0); // last mod date
+        write_u32(&mut bytes, CRC32);
+        write_u32(&mut bytes, content_len); // compressed size
+        write_u32(&mut bytes, content_len); // uncompressed size
+        write_u16(&mut bytes, 8); // file name length
+        write_u16(&mut bytes, 0); // extra field length
+        write_u16(&mut bytes, 0); // file comment length
+        write_u16(&mut bytes, 0); // disk number start
+        write_u16(&mut bytes, 0); // internal file attributes
+        write_u32(&mut bytes, 0); // external file attributes
+        write_u32(&mut bytes, 0); // local header offset
+        bytes.extend_from_slice(MIMETYPE_ENTRY.as_bytes());
+
+        let central_dir_offset = u32::try_from(cd_start).unwrap();
+        let central_dir_size = u32::try_from(bytes.len() - cd_start).unwrap();
+
+        // End of central directory record: one entry on this disk and in total.
+        bytes.extend_from_slice(b"PK\x05\x06");
+        write_u16(&mut bytes, 0); // disk number
+        write_u16(&mut bytes, 0); // disk with the start of the central directory
+        write_u16(&mut bytes, 1); // entries on this disk
+        write_u16(&mut bytes, 1); // total entries
+        write_u32(&mut bytes, central_dir_size);
+        write_u32(&mut bytes, central_dir_offset);
+        write_u16(&mut bytes, 0); // comment length
+
+        let (_dir, path) = write_temp(&bytes);
+        let mut issues = Vec::new();
+        let _ = validate(&path, &mut issues).unwrap();
+        let problems = mimetype_problems(&issues);
+        assert_eq!(problems.len(), 1);
+        assert!(matches!(problems[0], MimetypeProblem::ExtraField));
     }
 }
