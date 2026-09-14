@@ -156,6 +156,10 @@ function without parsing them.
 - The archive must begin at offset zero: the offset of its first entry, or of
   its central directory when the archive is empty, must be zero, and any data
   preceding it is rejected
+- The OCF mimetype entry is checked against the container rules: first entry,
+  stored, no extra field in its local header, and exact application/epub+zip
+  content; a violation is repaired by rewriting the archive with a compliant
+  entry
 - Bounded decompression guards against zip-bomb patterns: an archive-size cap
   checked before the file is read, a declared-entry-count cap checked from the
   end-of-central-directory record before any header is parsed, a counted

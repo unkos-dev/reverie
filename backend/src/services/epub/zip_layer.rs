@@ -7,8 +7,10 @@
 //! then walked as a counted iteration that refuses at the cap, checking
 //! every entry for a valid `UTF-8` name, path safety, a duplicate name, an
 //! allowed compression method (Stored or Deflate), per-entry uncompressed
-//! size (500 MB cap), aggregate uncompressed size (2 GB cap), and
-//! extractability. After the counted iteration, the whole archive is checked
+//! size (500 MB cap), aggregate uncompressed size (2 GB cap), extractability,
+//! and, for the `mimetype` entry, the OCF container rules (first entry,
+//! stored, no local extra field, exact `application/epub+zip` content).
+//! After the counted iteration, the whole archive is checked
 //! for data preceding the first entry and for a counted total that differs
 //! from the declared count. Entries passing all checks are recorded in
 //! `ZipHandle::entries`; the raw bytes are kept in `ZipHandle::bytes` so
@@ -22,12 +24,18 @@ use std::io::Read;
 use std::path::Path;
 
 use flate2::bufread::DeflateDecoder;
-use rawzip::{CompressionMethod, ZipArchive, ZipSliceArchive};
+use rawzip::{CompressionMethod, ZipArchive, ZipSliceArchive, ZipSliceEntry};
 
+use super::repack::{MIMETYPE_CONTENT, MIMETYPE_ENTRY};
 use super::{
     Issue, IssueKind, Layer, MAX_AGGREGATE_UNCOMPRESSED_BYTES, MAX_ARCHIVE_BYTES,
-    MAX_ENTRY_UNCOMPRESSED_BYTES, MAX_ZIP_ENTRIES, Severity,
+    MAX_ENTRY_UNCOMPRESSED_BYTES, MAX_ZIP_ENTRIES, MimetypeProblem, Severity,
 };
+
+/// Bytes read from the `mimetype` entry to check against the required
+/// `application/epub+zip` content: enough to catch any non-conforming
+/// payload without decompressing an adversarially large entry.
+const MIMETYPE_CONTENT_PROBE_CAP: u64 = 64;
 
 /// Maximum bytes to search backwards from the end of the file for the
 /// end-of-central-directory signature: the fixed 22-byte record plus the
@@ -149,6 +157,8 @@ fn validate_entries(
     let mut aggregate_size: u64 = 0;
     let mut min_local_header_offset: Option<u64> = None;
     let mut count: usize = 0;
+    let mut first_entry_name: Option<String> = None;
+    let mut mimetype_facts: Option<MimetypeFacts> = None;
 
     let mut iter = archive.entries();
     loop {
@@ -315,6 +325,13 @@ fn validate_entries(
             return None;
         }
 
+        if count == 1 {
+            first_entry_name = Some(name.clone());
+        }
+        if name.as_str() == MIMETYPE_ENTRY {
+            mimetype_facts = Some(gather_mimetype_facts(&slice_entry, method));
+        }
+
         entries.push(name);
     }
 
@@ -339,7 +356,84 @@ fn validate_entries(
         return None;
     }
 
+    let is_first = first_entry_name.as_deref() == Some(MIMETYPE_ENTRY);
+    push_mimetype_issues(issues, is_first, mimetype_facts.as_ref());
+
     Some(entries)
+}
+
+/// Local-header facts about the `mimetype` entry needed to evaluate the OCF
+/// container rules (`EPUB` 3.3 §4.3.3).
+struct MimetypeFacts {
+    /// The local header declares a method other than Stored.
+    compressed: bool,
+    /// The local header's extra-fields iterator yields at least one field.
+    has_extra_field: bool,
+    /// The first (at most 64) content bytes are byte-exact `application/epub+zip`.
+    content_matches: bool,
+}
+
+/// Reads the `mimetype` entry's local-header compression method, extra
+/// fields, and up to [`MIMETYPE_CONTENT_PROBE_CAP`] bytes of content;
+/// `method` is the central directory's method, which decodes the content,
+/// while the local header's own method is what the `Compressed` rule judges.
+fn gather_mimetype_facts(
+    slice_entry: &ZipSliceEntry<'_>,
+    method: CompressionMethod,
+) -> MimetypeFacts {
+    let local_header = slice_entry.local_header();
+
+    let mut buf = Vec::new();
+    let probe_result = if method == CompressionMethod::DEFLATE {
+        DeflateDecoder::new(slice_entry.data())
+            .take(MIMETYPE_CONTENT_PROBE_CAP)
+            .read_to_end(&mut buf)
+    } else {
+        slice_entry
+            .data()
+            .take(MIMETYPE_CONTENT_PROBE_CAP)
+            .read_to_end(&mut buf)
+    };
+    if probe_result.is_err() {
+        buf.clear();
+    }
+
+    MimetypeFacts {
+        compressed: local_header.compression_method() != CompressionMethod::STORE,
+        has_extra_field: local_header.extra_fields().next().is_some(),
+        content_matches: buf == MIMETYPE_CONTENT,
+    }
+}
+
+/// Pushes one `Repaired` `InvalidMimetype` issue per OCF container rule
+/// broken by the `mimetype` entry. Absence is reported alone; every other
+/// rule is checked independently, so more than one can fire together.
+fn push_mimetype_issues(issues: &mut Vec<Issue>, is_first: bool, facts: Option<&MimetypeFacts>) {
+    let mut push_problem = |problem: MimetypeProblem| {
+        issues.push(Issue {
+            layer: Layer::Zip,
+            severity: Severity::Repaired,
+            kind: IssueKind::InvalidMimetype { problem },
+        });
+    };
+
+    let Some(facts) = facts else {
+        push_problem(MimetypeProblem::Missing);
+        return;
+    };
+
+    if !is_first {
+        push_problem(MimetypeProblem::NotFirst);
+    }
+    if facts.compressed {
+        push_problem(MimetypeProblem::Compressed);
+    }
+    if facts.has_extra_field {
+        push_problem(MimetypeProblem::ExtraField);
+    }
+    if !facts.content_matches {
+        push_problem(MimetypeProblem::Content);
+    }
 }
 
 /// Read a specific entry from the archive bytes.
@@ -409,6 +503,25 @@ mod tests {
     fn make_zip(entries: &[(&str, &[u8])]) -> Vec<u8> {
         let buf = std::io::Cursor::new(Vec::new());
         let mut w = zip::ZipWriter::new(buf);
+        for (name, data) in entries {
+            let opts: zip::write::FileOptions<zip::write::ExtendedFileOptions> =
+                zip::write::FileOptions::default();
+            w.start_file(*name, opts).unwrap();
+            w.write_all(data).unwrap();
+        }
+        w.finish().unwrap().into_inner()
+    }
+
+    /// Like [`make_zip`], but prepends a compliant `mimetype` entry (Stored,
+    /// exact OCF content) first, so tests unrelated to the mimetype rules
+    /// keep asserting an empty issue list.
+    fn make_zip_with_mimetype(entries: &[(&str, &[u8])]) -> Vec<u8> {
+        let buf = std::io::Cursor::new(Vec::new());
+        let mut w = zip::ZipWriter::new(buf);
+        let mimetype_opts: zip::write::FileOptions<zip::write::ExtendedFileOptions> =
+            zip::write::FileOptions::default().compression_method(zip::CompressionMethod::Stored);
+        w.start_file(MIMETYPE_ENTRY, mimetype_opts).unwrap();
+        w.write_all(MIMETYPE_CONTENT).unwrap();
         for (name, data) in entries {
             let opts: zip::write::FileOptions<zip::write::ExtendedFileOptions> =
                 zip::write::FileOptions::default();
@@ -489,12 +602,15 @@ mod tests {
 
     #[test]
     fn clean_zip_produces_no_issues() {
-        let bytes = make_zip(&[("OEBPS/content.opf", b"<package/>")]);
+        let bytes = make_zip_with_mimetype(&[("OEBPS/content.opf", b"<package/>")]);
         let (_dir, path) = write_temp(&bytes);
         let mut issues = Vec::new();
         let handle = validate(&path, &mut issues).unwrap();
         assert!(issues.is_empty());
-        assert_eq!(handle.entries, vec!["OEBPS/content.opf"]);
+        assert_eq!(
+            handle.entries,
+            vec![MIMETYPE_ENTRY.to_string(), "OEBPS/content.opf".to_string()]
+        );
     }
 
     #[test]
@@ -648,7 +764,7 @@ mod tests {
 
     #[test]
     fn three_deflated_entries_validate_clean_in_order() {
-        let bytes = make_zip(&[
+        let bytes = make_zip_with_mimetype(&[
             ("a.txt", b"first entry payload data, long enough to deflate"),
             (
                 "b.txt",
@@ -663,6 +779,7 @@ mod tests {
         assert_eq!(
             handle.entries,
             vec![
+                MIMETYPE_ENTRY.to_string(),
                 "a.txt".to_string(),
                 "b.txt".to_string(),
                 "c.txt".to_string()
@@ -671,16 +788,27 @@ mod tests {
     }
 
     #[test]
-    fn empty_archive_validates_clean() {
+    fn empty_archive_reports_only_missing_mimetype() {
         // No entries at all: entries_hint() is 0 and the prelude falls back
-        // to directory_offset() rather than min(local_header_offset).
+        // to directory_offset() rather than min(local_header_offset). An
+        // empty archive is also necessarily missing the mimetype entry.
         let buf = std::io::Cursor::new(Vec::new());
         let w = zip::ZipWriter::new(buf);
         let bytes = w.finish().unwrap().into_inner();
         let (_dir, path) = write_temp(&bytes);
         let mut issues = Vec::new();
         let handle = validate(&path, &mut issues).unwrap();
-        assert!(issues.is_empty());
+        assert_eq!(issues.len(), 1);
+        assert!(matches!(
+            &issues[0],
+            Issue {
+                severity: Severity::Repaired,
+                kind: IssueKind::InvalidMimetype {
+                    problem: MimetypeProblem::Missing
+                },
+                ..
+            }
+        ));
         assert!(handle.entries.is_empty());
     }
 
@@ -688,6 +816,10 @@ mod tests {
     fn directory_entry_and_file_validate_clean_in_order() {
         let buf = std::io::Cursor::new(Vec::new());
         let mut w = zip::ZipWriter::new(buf);
+        let mimetype_opts: zip::write::FileOptions<zip::write::ExtendedFileOptions> =
+            zip::write::FileOptions::default().compression_method(zip::CompressionMethod::Stored);
+        w.start_file(MIMETYPE_ENTRY, mimetype_opts).unwrap();
+        w.write_all(MIMETYPE_CONTENT).unwrap();
         let dir_opts: zip::write::FileOptions<zip::write::ExtendedFileOptions> =
             zip::write::FileOptions::default();
         w.add_directory("OEBPS", dir_opts).unwrap();
@@ -702,7 +834,11 @@ mod tests {
         assert!(issues.is_empty());
         assert_eq!(
             handle.entries,
-            vec!["OEBPS/".to_string(), "OEBPS/content.opf".to_string()]
+            vec![
+                MIMETYPE_ENTRY.to_string(),
+                "OEBPS/".to_string(),
+                "OEBPS/content.opf".to_string()
+            ]
         );
     }
 
@@ -779,6 +915,10 @@ mod tests {
     fn archive_with_comment_validates_clean() {
         let buf = std::io::Cursor::new(Vec::new());
         let mut w = zip::ZipWriter::new(buf);
+        let mimetype_opts: zip::write::FileOptions<zip::write::ExtendedFileOptions> =
+            zip::write::FileOptions::default().compression_method(zip::CompressionMethod::Stored);
+        w.start_file(MIMETYPE_ENTRY, mimetype_opts).unwrap();
+        w.write_all(MIMETYPE_CONTENT).unwrap();
         let opts: zip::write::FileOptions<zip::write::ExtendedFileOptions> =
             zip::write::FileOptions::default();
         w.start_file("a.txt", opts).unwrap();
@@ -789,7 +929,10 @@ mod tests {
         let mut issues = Vec::new();
         let handle = validate(&path, &mut issues).unwrap();
         assert!(issues.is_empty());
-        assert_eq!(handle.entries, vec!["a.txt".to_string()]);
+        assert_eq!(
+            handle.entries,
+            vec![MIMETYPE_ENTRY.to_string(), "a.txt".to_string()]
+        );
     }
 
     #[test]
@@ -1004,6 +1147,10 @@ mod tests {
 
         let buf = std::io::Cursor::new(Vec::new());
         let mut w = zip::ZipWriter::new(buf);
+        let mimetype_opts: zip::write::FileOptions<zip::write::ExtendedFileOptions> =
+            zip::write::FileOptions::default().compression_method(zip::CompressionMethod::Stored);
+        w.start_file(MIMETYPE_ENTRY, mimetype_opts).unwrap();
+        w.write_all(MIMETYPE_CONTENT).unwrap();
         let stored_opts: zip::write::FileOptions<zip::write::ExtendedFileOptions> =
             zip::write::FileOptions::default().compression_method(zip::CompressionMethod::Stored);
         w.start_file("stored.bin", stored_opts).unwrap();
@@ -1038,6 +1185,10 @@ mod tests {
         let data = vec![0xABu8; 8_192];
         let buf = std::io::Cursor::new(Vec::new());
         let mut w = zip::ZipWriter::new(buf);
+        let mimetype_opts: zip::write::FileOptions<zip::write::ExtendedFileOptions> =
+            zip::write::FileOptions::default().compression_method(zip::CompressionMethod::Stored);
+        w.start_file(MIMETYPE_ENTRY, mimetype_opts).unwrap();
+        w.write_all(MIMETYPE_CONTENT).unwrap();
         let opts: zip::write::FileOptions<zip::write::ExtendedFileOptions> =
             zip::write::FileOptions::default().compression_method(zip::CompressionMethod::Stored);
         w.start_file("big.bin", opts).unwrap();
@@ -1051,6 +1202,177 @@ mod tests {
         assert_eq!(
             read_entry(&handle, "big.bin").as_deref(),
             Some(data.as_slice())
+        );
+    }
+
+    /// The `InvalidMimetype` problems present in `issues`, in discovery order.
+    fn mimetype_problems(issues: &[Issue]) -> Vec<&MimetypeProblem> {
+        issues
+            .iter()
+            .filter_map(|i| match &i.kind {
+                IssueKind::InvalidMimetype { problem } => Some(problem),
+                _ => None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn compliant_mimetype_yields_no_issue() {
+        let bytes = make_zip_with_mimetype(&[("OEBPS/content.opf", b"<package/>")]);
+        let (_dir, path) = write_temp(&bytes);
+        let mut issues = Vec::new();
+        let _ = validate(&path, &mut issues).unwrap();
+        assert!(mimetype_problems(&issues).is_empty());
+    }
+
+    #[test]
+    fn missing_mimetype_is_repaired() {
+        let bytes = make_zip(&[("OEBPS/content.opf", b"<package/>")]);
+        let (_dir, path) = write_temp(&bytes);
+        let mut issues = Vec::new();
+        let _ = validate(&path, &mut issues).unwrap();
+        let mimetype_issues: Vec<&Issue> = issues
+            .iter()
+            .filter(|i| matches!(&i.kind, IssueKind::InvalidMimetype { .. }))
+            .collect();
+        assert_eq!(mimetype_issues.len(), 1);
+        assert_eq!(mimetype_issues[0].severity, Severity::Repaired);
+        assert!(matches!(
+            &mimetype_issues[0].kind,
+            IssueKind::InvalidMimetype {
+                problem: MimetypeProblem::Missing
+            }
+        ));
+    }
+
+    #[test]
+    fn mimetype_second_is_not_first() {
+        let buf = std::io::Cursor::new(Vec::new());
+        let mut w = zip::ZipWriter::new(buf);
+        let default_opts: zip::write::FileOptions<zip::write::ExtendedFileOptions> =
+            zip::write::FileOptions::default();
+        w.start_file("OEBPS/content.opf", default_opts).unwrap();
+        w.write_all(b"<package/>").unwrap();
+        let mimetype_opts: zip::write::FileOptions<zip::write::ExtendedFileOptions> =
+            zip::write::FileOptions::default().compression_method(zip::CompressionMethod::Stored);
+        w.start_file(MIMETYPE_ENTRY, mimetype_opts).unwrap();
+        w.write_all(MIMETYPE_CONTENT).unwrap();
+        let bytes = w.finish().unwrap().into_inner();
+
+        let (_dir, path) = write_temp(&bytes);
+        let mut issues = Vec::new();
+        let _ = validate(&path, &mut issues).unwrap();
+        let problems = mimetype_problems(&issues);
+        assert_eq!(problems.len(), 1);
+        assert!(matches!(problems[0], MimetypeProblem::NotFirst));
+    }
+
+    #[test]
+    fn mimetype_deflated_is_compressed() {
+        let buf = std::io::Cursor::new(Vec::new());
+        let mut w = zip::ZipWriter::new(buf);
+        let mimetype_opts: zip::write::FileOptions<zip::write::ExtendedFileOptions> =
+            zip::write::FileOptions::default().compression_method(zip::CompressionMethod::Deflated);
+        w.start_file(MIMETYPE_ENTRY, mimetype_opts).unwrap();
+        w.write_all(MIMETYPE_CONTENT).unwrap();
+        let bytes = w.finish().unwrap().into_inner();
+
+        let (_dir, path) = write_temp(&bytes);
+        let mut issues = Vec::new();
+        let _ = validate(&path, &mut issues).unwrap();
+        let problems = mimetype_problems(&issues);
+        assert_eq!(problems.len(), 1);
+        assert!(matches!(problems[0], MimetypeProblem::Compressed));
+    }
+
+    #[test]
+    fn mimetype_local_extra_field_is_repaired() {
+        // 0x1234 is outside both the zip crate's implemented extra-field set
+        // and its table of reserved PKWARE/third-party IDs, so it writes
+        // without requiring the "unreserved" feature.
+        let buf = std::io::Cursor::new(Vec::new());
+        let mut w = zip::ZipWriter::new(buf);
+        let mut mimetype_opts: zip::write::FileOptions<zip::write::ExtendedFileOptions> =
+            zip::write::FileOptions::default().compression_method(zip::CompressionMethod::Stored);
+        mimetype_opts.add_extra_data(0x1234, b"x", false).unwrap();
+        w.start_file(MIMETYPE_ENTRY, mimetype_opts).unwrap();
+        w.write_all(MIMETYPE_CONTENT).unwrap();
+        let bytes = w.finish().unwrap().into_inner();
+
+        let (_dir, path) = write_temp(&bytes);
+        let mut issues = Vec::new();
+        let _ = validate(&path, &mut issues).unwrap();
+        let problems = mimetype_problems(&issues);
+        assert_eq!(problems.len(), 1);
+        assert!(matches!(problems[0], MimetypeProblem::ExtraField));
+    }
+
+    #[test]
+    fn mimetype_content_with_trailing_byte_is_repaired() {
+        let buf = std::io::Cursor::new(Vec::new());
+        let mut w = zip::ZipWriter::new(buf);
+        let mimetype_opts: zip::write::FileOptions<zip::write::ExtendedFileOptions> =
+            zip::write::FileOptions::default().compression_method(zip::CompressionMethod::Stored);
+        w.start_file(MIMETYPE_ENTRY, mimetype_opts).unwrap();
+        w.write_all(b"application/epub+zip\n").unwrap();
+        let bytes = w.finish().unwrap().into_inner();
+
+        let (_dir, path) = write_temp(&bytes);
+        let mut issues = Vec::new();
+        let _ = validate(&path, &mut issues).unwrap();
+        let problems = mimetype_problems(&issues);
+        assert_eq!(problems.len(), 1);
+        assert!(matches!(problems[0], MimetypeProblem::Content));
+    }
+
+    #[test]
+    fn mimetype_content_with_bom_is_repaired() {
+        let buf = std::io::Cursor::new(Vec::new());
+        let mut w = zip::ZipWriter::new(buf);
+        let mimetype_opts: zip::write::FileOptions<zip::write::ExtendedFileOptions> =
+            zip::write::FileOptions::default().compression_method(zip::CompressionMethod::Stored);
+        w.start_file(MIMETYPE_ENTRY, mimetype_opts).unwrap();
+        let mut content = vec![0xEF, 0xBB, 0xBF];
+        content.extend_from_slice(MIMETYPE_CONTENT);
+        w.write_all(&content).unwrap();
+        let bytes = w.finish().unwrap().into_inner();
+
+        let (_dir, path) = write_temp(&bytes);
+        let mut issues = Vec::new();
+        let _ = validate(&path, &mut issues).unwrap();
+        let problems = mimetype_problems(&issues);
+        assert_eq!(problems.len(), 1);
+        assert!(matches!(problems[0], MimetypeProblem::Content));
+    }
+
+    #[test]
+    fn mimetype_second_and_compressed_reports_both() {
+        let buf = std::io::Cursor::new(Vec::new());
+        let mut w = zip::ZipWriter::new(buf);
+        let default_opts: zip::write::FileOptions<zip::write::ExtendedFileOptions> =
+            zip::write::FileOptions::default();
+        w.start_file("OEBPS/content.opf", default_opts).unwrap();
+        w.write_all(b"<package/>").unwrap();
+        let mimetype_opts: zip::write::FileOptions<zip::write::ExtendedFileOptions> =
+            zip::write::FileOptions::default().compression_method(zip::CompressionMethod::Deflated);
+        w.start_file(MIMETYPE_ENTRY, mimetype_opts).unwrap();
+        w.write_all(MIMETYPE_CONTENT).unwrap();
+        let bytes = w.finish().unwrap().into_inner();
+
+        let (_dir, path) = write_temp(&bytes);
+        let mut issues = Vec::new();
+        let _ = validate(&path, &mut issues).unwrap();
+        let problems = mimetype_problems(&issues);
+        assert_eq!(problems.len(), 2);
+        assert!(
+            problems
+                .iter()
+                .any(|p| matches!(p, MimetypeProblem::NotFirst))
+        );
+        assert!(
+            problems
+                .iter()
+                .any(|p| matches!(p, MimetypeProblem::Compressed))
         );
     }
 }
