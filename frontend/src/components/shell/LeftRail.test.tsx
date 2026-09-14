@@ -107,6 +107,17 @@ describe("LeftRail — primary navigation", () => {
       "/library",
     );
   });
+
+  // The rail mark is sized so its glyph clears the threshold below which the
+  // blunter favicon variant takes over. Shrinking it silently coarsens the
+  // mark, so pin the variant rather than the pixel size.
+  test("sizes the rail lockup for the fine-slot glyph", () => {
+    renderRail();
+    expect(screen.getByRole("img", { name: "Reverie" }).querySelector("img")).toHaveAttribute(
+      "src",
+      "/brand/glyph/slot.svg",
+    );
+  });
 });
 
 describe("LeftRail — shelves", () => {
