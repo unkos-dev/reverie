@@ -23,11 +23,12 @@ use super::{EpubError, Issue, IssueKind, zip_layer};
 ///
 /// Returns [`EpubError::Io`] if the archive bytes cannot be read from `path`.
 /// Returns [`EpubError::Zip`] if the `OPF` entry needed for the spine rewrite
-/// is missing from the archive. The encoding-only `OPF` rewrite path (taken
-/// when no broken spine refs exist) and the non-`OPF` encoding-fix loop both
-/// treat a missing entry as "no fix available" and skip it rather than
-/// propagating. Returns [`EpubError::TempFile`] if the repacked temp file
-/// cannot be atomically persisted over `path`.
+/// is missing or unreadable (absent, unsupported method, encrypted, or
+/// failing its declared CRC or size). The encoding-only `OPF` rewrite path
+/// (taken when no broken spine refs exist) and the non-`OPF` encoding-fix
+/// loop both treat such an entry as "no fix available" and skip it rather
+/// than propagating. Returns [`EpubError::TempFile`] if the repacked temp
+/// file cannot be atomically persisted over `path`.
 pub fn repackage(path: &Path, issues: &[Issue], opf_path: Option<&str>) -> Result<(), EpubError> {
     let dir = path.parent().unwrap_or_else(|| Path::new("."));
 
