@@ -126,7 +126,11 @@ utoipa = { version = "5.5", features = ["axum_extras", "chrono", "uuid"] }
 utoipa-axum = "0.2"
 uuid = { version = "1.23.4", features = ["v4", "serde"] }
 walkdir = "2.5.0"
-zip = "8.6.0"
+# An EPUB container (OCF 4.3.2) allows only Stored and Deflate, and forbids
+# encryption, so default features would pull in compression methods and
+# crypto code no valid archive uses. `time` stays because ZipWriter's default
+# write timestamp needs it. See docs/adr/0049-read-epub-archives-with-rawzip.md.
+zip = { version = "8.6.0", default-features = false, features = ["deflate-flate2-zlib-rs", "time"] }
 # Server-side password-strength estimator (NIST SP 800-63B strength floor,
 # docs/adr/0034-password-policy-zxcvbn-floor-plus-a-fail-open-hibp-check.md). Pure Rust, no network.
 zxcvbn = "3"

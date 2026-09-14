@@ -69,6 +69,8 @@ this decision covers only the read side.
   1, so a crafted file cannot use the locator's leniency to slip past the cap.
 - Positive: EPUB containers may declare only Stored and Deflate compression; Layer 1 now enforces that restriction
   directly, where it previously accepted whatever the `zip` crate happened to be able to decode.
+- Positive: `zip` is compiled with only Deflate and timestamp support, since an OCF container may use no other
+  compression method and no encryption.
 - Negative: two ZIP-reading crates now sit in the dependency tree, `rawzip` for reads and `zip` for writes, until `zip`
   is retired from repack.
 - Negative: `rawzip` is maintained by one person. The risk is offset by its empty dependency list, its
