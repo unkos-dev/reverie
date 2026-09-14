@@ -13,7 +13,9 @@ use image::ImageFormat;
 
 use super::error::CoverError;
 use super::svg;
-use crate::services::epub::{container_layer, cover_layer, is_safe_path, opf_layer, zip_layer};
+use crate::services::epub::{
+    Severity, container_layer, cover_layer, is_safe_path, opf_layer, zip_layer,
+};
 
 /// Read the EPUB at `epub_path` and return its cover's raw bytes and detected
 /// `ImageFormat`.
@@ -31,15 +33,25 @@ use crate::services::epub::{container_layer, cover_layer, is_safe_path, opf_laye
 /// or cover entry is missing, or [`CoverError::Decode`] if the cover bytes
 /// are neither a decodable raster format nor `SVG`.
 pub fn extract_cover_bytes(epub_path: &Path) -> Result<(Vec<u8>, ImageFormat), CoverError> {
-    // zip_layer::validate emits issues into a Vec rather than returning them;
-    // we need the ZipHandle but don't care about its advisory issues here
-    // — the download handler would have bounced a corrupt archive earlier.
     let mut issues = Vec::new();
     let handle = zip_layer::validate(epub_path, &mut issues).map_err(|e| match e {
         crate::services::epub::EpubError::Zip(z) => CoverError::Zip(z),
         crate::services::epub::EpubError::Io(io) => CoverError::Io(io),
         other => CoverError::Decode(other.to_string()),
     })?;
+
+    // An archive Layer 1 rejects yields no cover either way (the handle is
+    // empty), but the rejection is logged here at warn because the file is
+    // already in the library and nothing else on this call path would see it.
+    if issues.iter().any(|i| i.severity == Severity::Irrecoverable) {
+        let kinds: Vec<_> = issues.iter().map(|i| &i.kind).collect();
+        tracing::warn!(
+            path = %epub_path.display(),
+            issues = ?kinds,
+            "cover extraction: archive rejected by Layer 1 validation"
+        );
+        return Err(CoverError::NoCover);
+    }
 
     let opf_path = container_layer::validate(&handle, &mut issues);
     let opf_data = opf_layer::validate(&handle, opf_path.as_deref(), &mut issues);
@@ -96,7 +108,30 @@ pub(crate) fn join_sibling_path(cover_dir: &str, href: &str) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::join_sibling_path;
+    use super::{extract_cover_bytes, join_sibling_path};
+    use crate::services::covers::error::CoverError;
+    use std::io::Write;
+
+    #[test]
+    fn archive_rejected_by_layer_one_yields_no_cover() {
+        let buf = std::io::Cursor::new(Vec::new());
+        let mut w = zip::ZipWriter::new(buf);
+        let opts: zip::write::FileOptions<zip::write::ExtendedFileOptions> =
+            zip::write::FileOptions::default();
+        w.start_file("mimetype", opts).unwrap();
+        w.write_all(b"application/epub+zip").unwrap();
+        let mut bytes = w.finish().unwrap().into_inner();
+        bytes.push(0xAA);
+
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("test.epub");
+        std::fs::write(&path, &bytes).unwrap();
+
+        assert!(matches!(
+            extract_cover_bytes(&path),
+            Err(CoverError::NoCover)
+        ));
+    }
 
     #[test]
     fn join_sibling_path_scopes_to_cover_dir() {

@@ -215,6 +215,19 @@ fn validate_entries(
         }
 
         let method = record.compression_method();
+        // OCF 4.3.2 forbids ZIP encryption; there is no method-independent
+        // "encrypted" issue kind, so this reuses UnsupportedCompression.
+        if record.flags().is_encrypted() {
+            issues.push(Issue {
+                layer: Layer::Zip,
+                severity: Severity::Irrecoverable,
+                kind: IssueKind::UnsupportedCompression {
+                    entry_name: name,
+                    method: method.as_u16(),
+                },
+            });
+            return None;
+        }
         if method != CompressionMethod::STORE && method != CompressionMethod::DEFLATE {
             issues.push(Issue {
                 layer: Layer::Zip,
@@ -365,6 +378,9 @@ pub fn read_entry_from_bytes(bytes: &[u8], entry_name: &str) -> Option<Vec<u8>> 
     };
 
     let method = record.compression_method();
+    if record.flags().is_encrypted() {
+        return None;
+    }
     if method != CompressionMethod::STORE && method != CompressionMethod::DEFLATE {
         return None;
     }
@@ -695,6 +711,39 @@ mod tests {
     }
 
     #[test]
+    fn data_descriptor_entries_validate_clean_and_deflated_reads_back_whole() {
+        // A non-seekable sink forces zip to write a trailing data descriptor
+        // (bit 3 of the general-purpose flag) for every entry, Stored ones
+        // included, since sizes and CRC cannot be back-filled into the local
+        // header once it has already been written.
+        let mut w = zip::ZipWriter::new_stream(Vec::new());
+        let mimetype_opts: zip::write::FileOptions<zip::write::ExtendedFileOptions> =
+            zip::write::FileOptions::default().compression_method(zip::CompressionMethod::Stored);
+        w.start_file("mimetype", mimetype_opts).unwrap();
+        w.write_all(b"application/epub+zip").unwrap();
+
+        let opf_data = vec![b'x'; 4_096];
+        let opf_opts: zip::write::FileOptions<zip::write::ExtendedFileOptions> =
+            zip::write::FileOptions::default();
+        w.start_file("OEBPS/content.opf", opf_opts).unwrap();
+        w.write_all(&opf_data).unwrap();
+
+        let bytes = w.finish().unwrap().into_inner();
+        let (_dir, path) = write_temp(&bytes);
+        let mut issues = Vec::new();
+        let handle = validate(&path, &mut issues).unwrap();
+        assert!(issues.is_empty());
+        assert_eq!(
+            handle.entries,
+            vec!["mimetype".to_string(), "OEBPS/content.opf".to_string()]
+        );
+        assert_eq!(
+            read_entry(&handle, "OEBPS/content.opf").as_deref(),
+            Some(opf_data.as_slice())
+        );
+    }
+
+    #[test]
     fn trailing_one_byte_is_quarantined() {
         let mut bytes = make_zip(&[("a.txt", b"hello world")]);
         bytes.push(0xAA);
@@ -871,6 +920,45 @@ mod tests {
                 )
         }));
         assert!(handle.bytes.is_empty());
+    }
+
+    /// Sets the general-purpose "encrypted" bit (bit 0) on the first
+    /// central-directory entry in `bytes` and on its corresponding local
+    /// header. The central-directory flag field is at offset 8 (after the
+    /// signature, version-made-by, and version-needed fields); the local
+    /// header's own flag field is at offset 6 within the local header,
+    /// located via the central-directory entry's local-offset field at +42.
+    fn mark_first_entry_encrypted(bytes: &mut [u8]) {
+        let offsets = cd_entry_offsets(bytes);
+        let cd = offsets[0];
+        bytes[cd + 8] |= 0x01;
+        let local_offset = u32::from_le_bytes(bytes[cd + 42..cd + 46].try_into().unwrap()) as usize;
+        bytes[local_offset + 6] |= 0x01;
+    }
+
+    #[test]
+    fn encrypted_entry_is_quarantined() {
+        let mut bytes = make_zip(&[("a.txt", b"one"), ("b.txt", b"two")]);
+        mark_first_entry_encrypted(&mut bytes);
+        let (_dir, path) = write_temp(&bytes);
+        let mut issues = Vec::new();
+        let handle = validate(&path, &mut issues).unwrap();
+        assert!(issues.iter().any(|i| {
+            i.severity == Severity::Irrecoverable
+                && matches!(
+                    &i.kind,
+                    IssueKind::UnsupportedCompression { entry_name, .. }
+                        if entry_name == "a.txt"
+                )
+        }));
+        assert!(handle.bytes.is_empty());
+    }
+
+    #[test]
+    fn read_entry_from_bytes_rejects_encrypted_entry() {
+        let mut bytes = make_zip(&[("a.txt", b"one"), ("b.txt", b"two")]);
+        mark_first_entry_encrypted(&mut bytes);
+        assert!(read_entry_from_bytes(&bytes, "a.txt").is_none());
     }
 
     #[test]
