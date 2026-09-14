@@ -192,8 +192,9 @@ tables.
 `ingestion_file_hash` is set once, on the row's initial `INSERT`, and no code path in `backend/src` updates it
 afterwards; that holds only because no writer exists, not because any schema constraint or runtime guard enforces it. A
 test in the writeback orchestrator, `ingestion_file_hash_immutable_across_writeback_chain`, checks it.
-`current_file_hash` equals `ingestion_file_hash` until the Writeback pipeline subject's first successful rewrite of the
-file, after which that pipeline is the column's sole writer.
+`current_file_hash` equals `ingestion_file_hash` on insert unless validation repaired the file during ingestion, in
+which case the initial `INSERT` already carries the hash of the rewritten file; after insert, the Writeback pipeline
+subject is the column's only updater, on each successful rewrite.
 
 ## Runtime behaviour
 
