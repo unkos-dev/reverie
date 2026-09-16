@@ -8,7 +8,7 @@ just = "1.58.0"
 # checksum-verified path as every other tool.
 mold = "2.42.1"
 opengrep = "1.30.0"
-rumdl = "0.2.71"
+rumdl = "0.2.73"
 shellcheck = "0.11.0"
 snyk = "1.1307.2"
 trivy = "0.74.0"
