@@ -608,22 +608,13 @@ fn extract_opf_path(container_bytes: &[u8]) -> Option<String> {
             }
         };
         match event {
-            Event::Empty(e) | Event::Start(e) if e.name().as_ref() == b"rootfile" => {
+            Event::Empty(e) | Event::Start(e) if e.name().as_ref() == "rootfile" => {
                 if let Some(attr) = e
                     .attributes()
                     .flatten()
-                    .find(|a| a.key.as_ref() == b"full-path")
+                    .find(|a| a.key.as_ref() == "full-path")
                 {
-                    match std::str::from_utf8(&attr.value) {
-                        Ok(s) => return Some(s.to_string()),
-                        Err(decode_err) => {
-                            tracing::warn!(
-                                error = %decode_err,
-                                "writeback: container.xml rootfile@full-path is not valid UTF-8"
-                            );
-                            return None;
-                        }
-                    }
+                    return Some(attr.value.into_owned());
                 }
             }
             Event::Eof => return None,

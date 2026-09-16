@@ -156,19 +156,15 @@ fn rewrite_opf_remove_broken_spine(opf_bytes: &[u8], broken_refs: &[String]) -> 
     let mut skip_depth: u32 = 0;
     loop {
         match reader.read_event() {
-            Ok(quick_xml::events::Event::Empty(e)) if e.name().as_ref() == b"itemref" => {
+            Ok(quick_xml::events::Event::Empty(e)) if e.name().as_ref() == "itemref" => {
                 if skip_depth > 0 {
                     continue; // inside a skipped subtree
                 }
                 let idref = e
                     .attributes()
                     .flatten()
-                    .find(|a| a.key.as_ref() == b"idref")
-                    .and_then(|a| {
-                        std::str::from_utf8(&a.value)
-                            .ok()
-                            .map(std::string::ToString::to_string)
-                    });
+                    .find(|a| a.key.as_ref() == "idref")
+                    .map(|a| a.value.into_owned());
                 if idref
                     .as_deref()
                     .is_some_and(|id| broken_refs.iter().any(|r| r == id))
@@ -181,16 +177,12 @@ fn rewrite_opf_remove_broken_spine(opf_bytes: &[u8], broken_refs: &[String]) -> 
                     tracing::warn!(error = ?e, "opf rewrite: unexpected write error (infallible sink)");
                 }
             }
-            Ok(quick_xml::events::Event::Start(e)) if e.name().as_ref() == b"itemref" => {
+            Ok(quick_xml::events::Event::Start(e)) if e.name().as_ref() == "itemref" => {
                 let idref = e
                     .attributes()
                     .flatten()
-                    .find(|a| a.key.as_ref() == b"idref")
-                    .and_then(|a| {
-                        std::str::from_utf8(&a.value)
-                            .ok()
-                            .map(std::string::ToString::to_string)
-                    });
+                    .find(|a| a.key.as_ref() == "idref")
+                    .map(|a| a.value.into_owned());
                 if skip_depth > 0
                     || idref
                         .as_deref()
@@ -203,7 +195,7 @@ fn rewrite_opf_remove_broken_spine(opf_bytes: &[u8], broken_refs: &[String]) -> 
                     tracing::warn!(error = ?e, "opf rewrite: unexpected write error (infallible sink)");
                 }
             }
-            Ok(quick_xml::events::Event::End(e)) if e.name().as_ref() == b"itemref" => {
+            Ok(quick_xml::events::Event::End(e)) if e.name().as_ref() == "itemref" => {
                 if skip_depth > 0 {
                     skip_depth -= 1;
                 } else if let Err(e) =

@@ -66,13 +66,13 @@ fn extract_opf_path(bytes: &[u8], issues: &mut Vec<Issue>) -> Option<String> {
 
     loop {
         match reader.read_event().ok()? {
-            Event::Empty(e) | Event::Start(e) if e.name().as_ref() == b"rootfile" => {
+            Event::Empty(e) | Event::Start(e) if e.name().as_ref() == "rootfile" => {
                 if let Some(path) = e
                     .attributes()
                     .flatten()
-                    .find(|a| a.key.as_ref() == b"full-path")
+                    .find(|a| a.key.as_ref() == "full-path")
                 {
-                    let raw = std::str::from_utf8(&path.value).ok()?.to_string();
+                    let raw = path.value.into_owned();
                     // C4: path safety check via shared helper.
                     if !super::is_safe_path(&raw) {
                         issues.push(Issue {
