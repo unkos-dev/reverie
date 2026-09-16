@@ -39,13 +39,13 @@ runs:
       uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
       with:
         # renovate: datasource=github-releases depName=jdx/mise extractVersion=^v(?<version>.+)$
-        version: "2026.9.5"
+        version: "2026.9.6"
         install_args: ${{ inputs.mise-install-args }}
         add_shims_to_path: ${{ inputs.add-shims-to-path }}
 
     - name: Install vp
       if: inputs.vp == 'true'
-      uses: voidzero-dev/setup-vp@49c3e4e92c52e7f8392712a9267bbe71c5ab30e5 # v1.19.0
+      uses: voidzero-dev/setup-vp@9fd26ff49f9b5e6276c2b493da4454ad4527f7f4 # v1.20.0
       with:
         node-manager: true
         cache: true
