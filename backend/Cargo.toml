@@ -65,7 +65,7 @@ jwks_client_rs = { version = "0.6.2", default-features = false, features = [
 ] }
 notify = "8.2.0"
 openidconnect = { version = "4.0.1", features = ["reqwest"] }
-quick-xml = "0.41.0"
+quick-xml = "0.42.0"
 rand = "0.10.1"
 # Reads ZIP central directories lazily with no per-entry allocation, so the
 # EPUB entry-count cap runs as a counted iteration instead of after the zip
