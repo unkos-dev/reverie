@@ -21,11 +21,11 @@
 //! `href` stays raw and will not resolve to its archive entry.
 
 use quick_xml::Reader;
+use quick_xml::XmlVersion;
 use quick_xml::escape::resolve_xml_entity;
 use quick_xml::events::Event;
 use quick_xml::events::attributes::Attribute;
 use quick_xml::name::QName;
-use quick_xml::{Decoder, XmlVersion};
 use std::collections::{HashMap, HashSet};
 
 use super::{
@@ -121,11 +121,9 @@ pub struct OpfData {
 }
 
 /// Extract the local name from a possibly-namespaced element name.
-/// e.g. b"dc:title" → b"title", b"title" → b"title"
-fn local_name(name: &[u8]) -> &[u8] {
-    name.iter()
-        .position(|&b| b == b':')
-        .map_or(name, |pos| &name[pos + 1..])
+/// e.g. `dc:title` → `title`, `title` → `title`
+fn local_name(name: &str) -> &str {
+    name.split_once(':').map_or(name, |(_, local)| local)
 }
 
 /// Resolve a named entity reference in `OPF` metadata text.
@@ -178,8 +176,8 @@ fn resolve_reference(body: &str) -> Option<String> {
 /// normalisation), before references are expanded, so whitespace produced
 /// by a character reference such as `&#x9;` survives as itself, matching
 /// the strict path's ordering.
-fn lenient_attr_text(decoder: Decoder, a: &Attribute<'_>) -> Option<String> {
-    let raw = decoder.decode(&a.value).ok()?;
+fn lenient_attr_text(a: &Attribute<'_>) -> String {
+    let raw = a.value.as_ref();
 
     let mut normalized = String::with_capacity(raw.len());
     let mut chars = raw.chars().peekable();
@@ -219,7 +217,7 @@ fn lenient_attr_text(decoder: Decoder, a: &Attribute<'_>) -> Option<String> {
         }
     }
     result.push_str(remaining);
-    Some(result)
+    result
 }
 
 /// Decode an attribute value as character data.
@@ -238,14 +236,9 @@ fn lenient_attr_text(decoder: Decoder, a: &Attribute<'_>) -> Option<String> {
 /// attribute values are not always strictly valid XML, and an
 /// all-or-nothing fallback would let a single bad reference turn every
 /// `&amp;` in the value back into literal markup.
-fn attr_text(decoder: Decoder, a: &Attribute<'_>) -> Option<String> {
-    a.decoded_and_normalized_value_with(
-        XmlVersion::Implicit1_0,
-        decoder,
-        1,
-        resolve_metadata_entity,
-    )
-    .map_or_else(|_| lenient_attr_text(decoder, a), |v| Some(v.into_owned()))
+fn attr_text(a: &Attribute<'_>) -> String {
+    a.normalized_value_with(XmlVersion::Implicit1_0, 1, resolve_metadata_entity)
+        .map_or_else(|_| lenient_attr_text(a), std::borrow::Cow::into_owned)
 }
 
 /// Read an element's character data up to its matching end tag.
@@ -258,7 +251,7 @@ fn attr_text(decoder: Decoder, a: &Attribute<'_>) -> Option<String> {
 /// `CDATA` content is never escaped (`<![CDATA[&amp;]]>` is the five literal
 /// characters `&amp;`), but a text node's entities must be resolved (`a
 /// &amp; b` is the string `a & b`). Walking events keeps that distinction:
-/// `Text` is decoded and its split-out `GeneralRef` entities resolved,
+/// `Text` is read as valid UTF-8 and its split-out `GeneralRef` entities resolved,
 /// `CData` is taken verbatim, and the parts are concatenated in document
 /// order, which also naturally handles a body mixing both forms (legal XML).
 fn read_element_text(reader: &mut Reader<&[u8]>, end: QName) -> Option<String> {
@@ -290,21 +283,13 @@ fn read_element_text(reader: &mut Reader<&[u8]>, end: QName) -> Option<String> {
                 }
                 depth -= 1;
             }
-            Event::Text(t) => match t.decode() {
-                Ok(s) => text.push_str(&s),
-                Err(_) => break 'parse None,
-            },
-            Event::CData(c) => match c.decode() {
-                Ok(s) => text.push_str(&s),
-                Err(_) => break 'parse None,
-            },
+            Event::Text(t) => text.push_str(t.as_ref()),
+            Event::CData(c) => text.push_str(c.as_ref()),
             Event::GeneralRef(r) => match r.resolve_char_ref() {
                 Ok(Some(ch)) => text.push(ch),
                 Ok(None) => {
-                    let Ok(name) = r.decode() else {
-                        break 'parse None;
-                    };
-                    if let Some(resolved) = resolve_metadata_entity(&name) {
+                    let name = r.as_ref();
+                    if let Some(resolved) = resolve_metadata_entity(name) {
                         text.push_str(resolved);
                     } else {
                         // Not a resolvable named entity (the predefined
@@ -313,7 +298,7 @@ fn read_element_text(reader: &mut Reader<&[u8]>, end: QName) -> Option<String> {
                         // against, so keep the original markup rather
                         // than lose it.
                         text.push('&');
-                        text.push_str(&name);
+                        text.push_str(name);
                         text.push(';');
                     }
                 }
@@ -326,11 +311,9 @@ fn read_element_text(reader: &mut Reader<&[u8]>, end: QName) -> Option<String> {
                     // leave the reader positioned mid-element, and the
                     // caller's loop would misread the remainder of this
                     // element's body as document-level content.
-                    let Ok(name) = r.decode() else {
-                        break 'parse None;
-                    };
+                    let name = r.as_ref();
                     text.push('&');
-                    text.push_str(&name);
+                    text.push_str(name);
                     text.push(';');
                 }
             },
@@ -422,49 +405,33 @@ pub fn validate(
             // EPUB 3 text-content meta: <meta property="schema:accessMode">textual</meta>
             // Also handles belongs-to-collection and group-position.
             // Must come BEFORE general Event::Start arm to avoid shadowing.
-            Event::Start(e) if e.name().as_ref() == b"meta" => {
+            Event::Start(e) if e.name().as_ref() == "meta" => {
                 let e = e.into_owned(); // release reader buffer borrow before read_element_text
                 let prop = e
                     .attributes()
                     .flatten()
-                    .find(|a| a.key.as_ref() == b"property")
-                    .and_then(|a| {
-                        std::str::from_utf8(&a.value)
-                            .ok()
-                            .map(std::string::ToString::to_string)
-                    });
+                    .find(|a| a.key.as_ref() == "property")
+                    .map(|a| a.value.into_owned());
                 let content_attr = e
                     .attributes()
                     .flatten()
-                    .find(|a| a.key.as_ref() == b"content")
-                    .and_then(|a| attr_text(reader.decoder(), &a));
+                    .find(|a| a.key.as_ref() == "content")
+                    .map(|a| attr_text(&a));
                 let id_attr = e
                     .attributes()
                     .flatten()
-                    .find(|a| a.key.as_ref() == b"id")
-                    .and_then(|a| {
-                        std::str::from_utf8(&a.value)
-                            .ok()
-                            .map(std::string::ToString::to_string)
-                    });
+                    .find(|a| a.key.as_ref() == "id")
+                    .map(|a| a.value.into_owned());
                 let refines_attr = e
                     .attributes()
                     .flatten()
-                    .find(|a| a.key.as_ref() == b"refines")
-                    .and_then(|a| {
-                        std::str::from_utf8(&a.value)
-                            .ok()
-                            .map(std::string::ToString::to_string)
-                    });
+                    .find(|a| a.key.as_ref() == "refines")
+                    .map(|a| a.value.into_owned());
                 let name_attr = e
                     .attributes()
                     .flatten()
-                    .find(|a| a.key.as_ref() == b"name")
-                    .and_then(|a| {
-                        std::str::from_utf8(&a.value)
-                            .ok()
-                            .map(std::string::ToString::to_string)
-                    });
+                    .find(|a| a.key.as_ref() == "name")
+                    .map(|a| a.value.into_owned());
 
                 // EPUB 2 cover declaration in Start-tag form:
                 // <meta name="cover" content="ID"></meta>. First match wins,
@@ -556,39 +523,27 @@ pub fn validate(
                 }
             }
             // EPUB 2 attribute-style meta: <meta name="..." content="..."/>
-            Event::Empty(e) if e.name().as_ref() == b"meta" => {
+            Event::Empty(e) if e.name().as_ref() == "meta" => {
                 let prop = e
                     .attributes()
                     .flatten()
-                    .find(|a| a.key.as_ref() == b"property")
-                    .and_then(|a| {
-                        std::str::from_utf8(&a.value)
-                            .ok()
-                            .map(std::string::ToString::to_string)
-                    });
+                    .find(|a| a.key.as_ref() == "property")
+                    .map(|a| a.value.into_owned());
                 let name_attr = e
                     .attributes()
                     .flatten()
-                    .find(|a| a.key.as_ref() == b"name")
-                    .and_then(|a| {
-                        std::str::from_utf8(&a.value)
-                            .ok()
-                            .map(std::string::ToString::to_string)
-                    });
+                    .find(|a| a.key.as_ref() == "name")
+                    .map(|a| a.value.into_owned());
                 let content = e
                     .attributes()
                     .flatten()
-                    .find(|a| a.key.as_ref() == b"content")
-                    .and_then(|a| attr_text(reader.decoder(), &a));
+                    .find(|a| a.key.as_ref() == "content")
+                    .map(|a| attr_text(&a));
                 let refines_attr = e
                     .attributes()
                     .flatten()
-                    .find(|a| a.key.as_ref() == b"refines")
-                    .and_then(|a| {
-                        std::str::from_utf8(&a.value)
-                            .ok()
-                            .map(std::string::ToString::to_string)
-                    });
+                    .find(|a| a.key.as_ref() == "refines")
+                    .map(|a| a.value.into_owned());
 
                 // EPUB 3 self-closing group-position: value lives in the
                 // `content` attr, no text body (quick-xml fires Event::Empty,
@@ -664,18 +619,18 @@ pub fn validate(
             Event::Start(e)
                 if matches!(
                     local_name(e.name().as_ref()),
-                    b"title"
-                        | b"creator"
-                        | b"contributor"
-                        | b"description"
-                        | b"publisher"
-                        | b"date"
-                        | b"language"
-                        | b"identifier"
-                        | b"subject"
-                ) && e.name().as_ref() != b"meta" =>
+                    "title"
+                        | "creator"
+                        | "contributor"
+                        | "description"
+                        | "publisher"
+                        | "date"
+                        | "language"
+                        | "identifier"
+                        | "subject"
+                ) && e.name().as_ref() != "meta" =>
             {
-                let local = local_name(e.name().as_ref()).to_vec();
+                let local = local_name(e.name().as_ref()).to_owned();
                 // opf:role/role attribute: EPUB2 relator code. Kept as a plain,
                 // non-namespace-aware attribute match (not `NsReader`) because
                 // real-world EPUB2 files routinely omit the `xmlns:opf`
@@ -688,22 +643,14 @@ pub fn validate(
                     .flatten()
                     .find(|a| {
                         let k = a.key.as_ref();
-                        k == b"opf:role" || k == b"role"
+                        k == "opf:role" || k == "role"
                     })
-                    .and_then(|a| {
-                        std::str::from_utf8(&a.value)
-                            .ok()
-                            .map(std::string::ToString::to_string)
-                    });
+                    .map(|a| a.value.into_owned());
                 let id_attr = e
                     .attributes()
                     .flatten()
-                    .find(|a| a.key.as_ref() == b"id")
-                    .and_then(|a| {
-                        std::str::from_utf8(&a.value)
-                            .ok()
-                            .map(std::string::ToString::to_string)
-                    });
+                    .find(|a| a.key.as_ref() == "id")
+                    .map(|a| a.value.into_owned());
 
                 let e = e.into_owned();
                 let text = read_element_text(&mut reader, e.name())
@@ -711,41 +658,37 @@ pub fn validate(
                     .filter(|s| !s.is_empty());
 
                 if let Some(text) = text {
-                    match local.as_slice() {
-                        b"title" => title_elements.push((id_attr, text)),
-                        b"creator" => creator_bufs.push(CreatorBuf {
+                    match local.as_str() {
+                        "title" => title_elements.push((id_attr, text)),
+                        "creator" => creator_bufs.push(CreatorBuf {
                             id: id_attr,
                             name: text,
                             inline_role,
                             from_contributor: false,
                         }),
-                        b"contributor" => creator_bufs.push(CreatorBuf {
+                        "contributor" => creator_bufs.push(CreatorBuf {
                             id: id_attr,
                             name: text,
                             inline_role,
                             from_contributor: true,
                         }),
-                        b"description" if description.is_none() => description = Some(text),
-                        b"publisher" if publisher.is_none() => publisher = Some(text),
-                        b"date" if date.is_none() => date = Some(text),
-                        b"language" if language.is_none() => language = Some(text),
-                        b"identifier" => identifiers.push(text),
-                        b"subject" => subjects.push(text),
+                        "description" if description.is_none() => description = Some(text),
+                        "publisher" if publisher.is_none() => publisher = Some(text),
+                        "date" if date.is_none() => date = Some(text),
+                        "language" if language.is_none() => language = Some(text),
+                        "identifier" => identifiers.push(text),
+                        "subject" => subjects.push(text),
                         _ => {}
                     }
                 }
             }
             // General arm — meta and DC already handled by guarded arms above
             Event::Empty(e) | Event::Start(e) => match e.name().as_ref() {
-                b"item" => {
+                "item" => {
                     let attrs: HashMap<String, String> = e
                         .attributes()
                         .flatten()
-                        .filter_map(|a| {
-                            let k = std::str::from_utf8(a.key.as_ref()).ok()?.to_string();
-                            let v = std::str::from_utf8(&a.value).ok()?.to_string();
-                            Some((k, v))
-                        })
+                        .map(|a| (a.key.as_ref().to_owned(), a.value.into_owned()))
                         .collect();
 
                     if let (Some(id), Some(href)) = (attrs.get("id"), attrs.get("href")) {
@@ -775,14 +718,11 @@ pub fn validate(
                         }
                     }
                 }
-                b"itemref" => {
-                    if let Some(idref) = e
-                        .attributes()
-                        .flatten()
-                        .find(|a| a.key.as_ref() == b"idref")
-                        && let Ok(v) = std::str::from_utf8(&idref.value)
+                "itemref" => {
+                    if let Some(idref) =
+                        e.attributes().flatten().find(|a| a.key.as_ref() == "idref")
                     {
-                        spine_idrefs.push(v.to_string());
+                        spine_idrefs.push(idref.value.into_owned());
                     }
                 }
                 _ => {}
