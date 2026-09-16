@@ -4,7 +4,7 @@ surfaces: [developer, security, ci]
 adopted: 2026-09-16
 adopted-because: the pinned workflow linter rejects GitHub's self-repository syntax
 lift-when-class: dep-unblocks
-lift-when: a released version of the pinned workflow linter parses $/ references and passes the workflow tree after every executable self-reference is migrated
+lift-when: a released version of the pinned workflow linter parses $/ references and passes the workflow tree after every workflow self-reference and the README example intended for copying are migrated
 ---
 
 # Zizmor self-repository audit disabled
@@ -17,6 +17,6 @@ While the audit is disabled, zizmor cannot report a local action loaded from cha
 self-reference that prevents GitHub's SHA-pin enforcement. Current workflow checkouts do not replace `.github/actions`,
 and every third-party action is pinned to a full commit SHA.
 
-Lift this entry by replacing every executable `./.github/actions/...` and `./.github/workflows/...` reference with the
-equivalent `$/` reference, then remove the zizmor rule disable. Verify the migrated tree with `just infra::actionlint`
-and `just infra::zizmor`.
+Lift this entry by replacing every `./.github/actions/...` and `./.github/workflows/...` reference in the workflow tree
+and the example intended for copying in `.github/workflows/README.md` with the equivalent `$/` reference, then remove
+the zizmor rule disable. Verify the migrated tree with `just infra::actionlint` and `just infra::zizmor`.
