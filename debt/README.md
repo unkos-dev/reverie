@@ -117,6 +117,8 @@ by definition active debt, the roadmap reads the directory as-is: no status filt
 
 <!-- listed most-stale first; new entries go to the top -->
 
+- [Zizmor self-repository audit disabled](2026-09-16-zizmor-self-repository.md): lifts when the pinned `actionlint`
+  accepts `$/` and both workflow linters pass after migrating every executable self-reference.
 - [Explicit header alignment enables table compaction](2026-09-10-rumdl-table-compaction.md): lifts when rumdl checks
   the width of already aligned tables without explicit header alignment.
 - [pnpm updates stay on v11](2026-09-10-pnpm-update-lockfile.md): lifts when a stable newer release passes both targeted
