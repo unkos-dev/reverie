@@ -1,3 +1,6 @@
+-- Preserve valid casts, correlated references, and join ordering; review these exclusions at the next schema rollup.
+-- noqa: disable=CV11,RF01,RF03,ST09
+
 CREATE EXTENSION IF NOT EXISTS pg_trgm WITH SCHEMA public;
 CREATE EXTENSION IF NOT EXISTS pgcrypto WITH SCHEMA public;
 CREATE EXTENSION IF NOT EXISTS unaccent WITH SCHEMA public;
@@ -262,7 +265,7 @@ CREATE TABLE public.device_tokens (
     last_used_at timestamp with time zone,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     revoked_at timestamp with time zone,
-    scopes public.scope[] DEFAULT '{read}'::public.scope[] NOT NULL,
+    scopes public.scope [] DEFAULT '{read}'::public.scope [] NOT NULL,
     expires_at timestamp with time zone,
     CONSTRAINT device_tokens_created_at_ts_decode_range
     CHECK ((
@@ -340,7 +343,7 @@ CREATE TABLE public.ingestion_jobs (
 );
 
 CREATE TABLE public.instance_bootstrap (
-    id boolean DEFAULT true NOT NULL,
+    id boolean DEFAULT TRUE NOT NULL,
     bootstrapped_at timestamp with time zone DEFAULT now() NOT NULL,
     CONSTRAINT instance_bootstrap_bootstrapped_at_ts_decode_range
     CHECK ((
@@ -466,7 +469,7 @@ CREATE TABLE public.manifestations (
     pages_version_id uuid,
     content_rating public.content_rating,
     content_rating_version_id uuid,
-    enrichment_rerun_requested boolean DEFAULT false NOT NULL,
+    enrichment_rerun_requested boolean DEFAULT FALSE NOT NULL,
     has_embedded_cover boolean,
     CONSTRAINT manifestations_created_at_ts_decode_range
     CHECK ((
@@ -504,7 +507,7 @@ CREATE TABLE public.metadata_sources (
     id text NOT NULL,
     display_name text NOT NULL,
     kind text NOT NULL,
-    enabled boolean DEFAULT true NOT NULL,
+    enabled boolean DEFAULT TRUE NOT NULL,
     base_priority integer NOT NULL,
     config jsonb DEFAULT '{}'::jsonb NOT NULL,
     added_at timestamp with time zone DEFAULT now() NOT NULL,
@@ -687,13 +690,13 @@ CREATE TABLE public.series_works (
     series_id uuid NOT NULL,
     work_id uuid NOT NULL,
     "position" double precision,
-    is_omnibus boolean DEFAULT false NOT NULL,
+    is_omnibus boolean DEFAULT FALSE NOT NULL,
     note text
 );
 
 CREATE TABLE public.settings (
-    id boolean DEFAULT true NOT NULL,
-    enrichment_enabled boolean DEFAULT true NOT NULL,
+    id boolean DEFAULT TRUE NOT NULL,
+    enrichment_enabled boolean DEFAULT TRUE NOT NULL,
     enrichment_concurrency integer DEFAULT 2 NOT NULL,
     enrichment_poll_idle_secs integer DEFAULT 30 NOT NULL,
     enrichment_fetch_budget_secs integer DEFAULT 15 NOT NULL,
@@ -701,13 +704,13 @@ CREATE TABLE public.settings (
     cover_download_timeout_secs integer DEFAULT 30 NOT NULL,
     cover_min_long_edge_px integer DEFAULT 1000 NOT NULL,
     cover_redirect_limit integer DEFAULT 3 NOT NULL,
-    writeback_enabled boolean DEFAULT true NOT NULL,
+    writeback_enabled boolean DEFAULT TRUE NOT NULL,
     writeback_concurrency integer DEFAULT 2 NOT NULL,
     writeback_poll_idle_secs integer DEFAULT 5 NOT NULL,
     writeback_max_attempts integer DEFAULT 3 NOT NULL,
-    opds_enabled boolean DEFAULT true NOT NULL,
+    opds_enabled boolean DEFAULT TRUE NOT NULL,
     opds_page_size integer DEFAULT 50 NOT NULL,
-    format_priority text[] DEFAULT '{epub,pdf,mobi,azw3,cbz,cbr}'::text[] NOT NULL,
+    format_priority text [] DEFAULT '{epub,pdf,mobi,azw3,cbz,cbr}'::text [] NOT NULL,
     cleanup_mode text DEFAULT 'all'::text NOT NULL,
     openlibrary_base_url text DEFAULT 'https://openlibrary.org'::text NOT NULL,
     googlebooks_base_url text DEFAULT 'https://www.googleapis.com/books/v1'::text NOT NULL,
@@ -715,7 +718,7 @@ CREATE TABLE public.settings (
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
     provider_visibility jsonb DEFAULT '{}'::jsonb NOT NULL,
     revision bigint DEFAULT 0 NOT NULL,
-    CONSTRAINT settings_cleanup_mode_check CHECK ((cleanup_mode = ANY(ARRAY[
+    CONSTRAINT settings_cleanup_mode_check CHECK ((cleanup_mode = any(ARRAY[
         'all'::text,
         'ingested'::text,
         'none'::text
@@ -742,7 +745,7 @@ CREATE TABLE public.settings (
     )),
     CONSTRAINT settings_writeback_max_attempts_check CHECK ((writeback_max_attempts >= 1)),
     CONSTRAINT settings_writeback_poll_idle_secs_check CHECK ((writeback_poll_idle_secs >= 1)),
-    CONSTRAINT singleton CHECK ((id = true))
+    CONSTRAINT singleton CHECK ((id = TRUE))
 );
 
 CREATE TABLE public.shelf_items (
@@ -761,7 +764,7 @@ CREATE TABLE public.shelves (
     id uuid DEFAULT uuidv7() NOT NULL,
     user_id uuid NOT NULL,
     name text NOT NULL,
-    is_system boolean DEFAULT false NOT NULL,
+    is_system boolean DEFAULT FALSE NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
     CONSTRAINT shelves_created_at_ts_decode_range
@@ -807,7 +810,7 @@ CREATE TABLE public.user_identities (
 
 CREATE TABLE public.user_preferences (
     user_id uuid NOT NULL,
-    hidden_columns text[],
+    hidden_columns text [],
     density public.library_density,
     view public.library_view,
     sort_stack text,
@@ -827,15 +830,15 @@ CREATE TABLE public.users (
     display_name text NOT NULL,
     email text,
     role public.user_role DEFAULT 'adult'::public.user_role NOT NULL,
-    is_child boolean DEFAULT false NOT NULL,
+    is_child boolean DEFAULT FALSE NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
     session_version integer DEFAULT 0 NOT NULL,
     theme_preference public.theme_preference DEFAULT 'system'::public.theme_preference NOT NULL,
     disabled_at timestamp with time zone,
     CONSTRAINT chk_child_role_sync CHECK ((
-        ((is_child = true) AND (role = 'child'::public.user_role))
-        OR ((is_child = false) AND (role <> 'child'::public.user_role))
+        ((is_child = TRUE) AND (role = 'child'::public.user_role))
+        OR ((is_child = FALSE) AND (role <> 'child'::public.user_role))
     )),
     CONSTRAINT users_created_at_ts_decode_range
     CHECK ((
@@ -894,7 +897,7 @@ CREATE TABLE public.webhooks (
     url text NOT NULL,
     events jsonb DEFAULT '[]'::jsonb NOT NULL,
     payload_template text,
-    enabled boolean DEFAULT true NOT NULL,
+    enabled boolean DEFAULT TRUE NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     CONSTRAINT webhooks_created_at_ts_decode_range
     CHECK ((
@@ -977,7 +980,7 @@ CREATE TABLE public.writeback_jobs (
         (last_attempted_at >= '0001-01-01 00:00:00+00'::timestamp with time zone)
         AND (last_attempted_at < '10000-01-01 00:00:00+00'::timestamp with time zone)
     )),
-    CONSTRAINT writeback_jobs_reason_chk CHECK ((reason = ANY(ARRAY['metadata'::text, 'cover'::text])))
+    CONSTRAINT writeback_jobs_reason_chk CHECK ((reason = any(ARRAY['metadata'::text, 'cover'::text])))
 );
 
 COMMENT ON TABLE public.writeback_jobs IS
@@ -1201,7 +1204,7 @@ WHERE (cover_version_id IS NOT NULL);
 CREATE INDEX idx_manifestations_enrichment_queue ON public.manifestations USING btree (
     enrichment_status,
     enrichment_attempted_at NULLS FIRST) WHERE (
-    enrichment_status = ANY(ARRAY[
+    enrichment_status = any(ARRAY[
         'pending'::public.enrichment_status,
         'failed'::public.enrichment_status
     ])
@@ -1366,7 +1369,7 @@ CREATE INDEX idx_writeback_jobs_manifestation_status ON public.writeback_jobs US
 CREATE INDEX idx_writeback_jobs_queue ON public.writeback_jobs USING btree (
     last_attempted_at NULLS FIRST,
     created_at) WHERE (
-    status = ANY(ARRAY[
+    status = any(ARRAY[
         'pending'::public.writeback_status,
         'failed'::public.writeback_status
     ])
@@ -1403,220 +1406,220 @@ description ON public.works FOR EACH ROW EXECUTE FUNCTION public.works_search_ve
 CREATE TRIGGER trg_works_updated_at BEFORE UPDATE ON public.works FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
 
 ALTER TABLE ONLY public.device_tokens
-ADD CONSTRAINT device_tokens_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users (id) ON DELETE CASCADE;
+ADD CONSTRAINT device_tokens_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
 
 ALTER TABLE ONLY public.field_locks
-ADD CONSTRAINT field_locks_locked_by_fkey FOREIGN KEY (locked_by) REFERENCES public.users (id) ON DELETE SET NULL;
+ADD CONSTRAINT field_locks_locked_by_fkey FOREIGN KEY (locked_by) REFERENCES public.users(id) ON DELETE SET NULL;
 
 ALTER TABLE ONLY public.field_locks
-ADD CONSTRAINT field_locks_manifestation_id_fkey FOREIGN KEY (manifestation_id) REFERENCES public.manifestations (id)
+ADD CONSTRAINT field_locks_manifestation_id_fkey FOREIGN KEY (manifestation_id) REFERENCES public.manifestations(id)
 ON DELETE CASCADE;
 
 ALTER TABLE ONLY public.local_credentials
-ADD CONSTRAINT local_credentials_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users (id) ON DELETE CASCADE;
+ADD CONSTRAINT local_credentials_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
 
 ALTER TABLE ONLY public.manifestation_external_identifiers
 ADD CONSTRAINT manifestation_external_identifiers_manifestation_id_fkey FOREIGN KEY (manifestation_id)
-REFERENCES public.manifestations (id) ON DELETE CASCADE;
+REFERENCES public.manifestations(id) ON DELETE CASCADE;
 
 ALTER TABLE ONLY public.manifestation_external_identifiers
 ADD CONSTRAINT manifestation_external_identifiers_scheme_fkey FOREIGN KEY (scheme)
-REFERENCES public.identifier_schemes (id);
+REFERENCES public.identifier_schemes(id);
 
 ALTER TABLE ONLY public.manifestation_external_identifiers
 ADD CONSTRAINT manifestation_external_identifiers_source_version_id_fkey FOREIGN KEY (source_version_id)
-REFERENCES public.metadata_versions (id) ON DELETE SET NULL;
+REFERENCES public.metadata_versions(id) ON DELETE SET NULL;
 
 ALTER TABLE ONLY public.manifestation_external_ratings
 ADD CONSTRAINT manifestation_external_ratings_manifestation_id_fkey FOREIGN KEY (manifestation_id)
-REFERENCES public.manifestations (id) ON DELETE CASCADE;
+REFERENCES public.manifestations(id) ON DELETE CASCADE;
 
 ALTER TABLE ONLY public.manifestation_external_ratings
-ADD CONSTRAINT manifestation_external_ratings_source_fkey FOREIGN KEY (source) REFERENCES public.rating_sources (id);
+ADD CONSTRAINT manifestation_external_ratings_source_fkey FOREIGN KEY (source) REFERENCES public.rating_sources(id);
 
 ALTER TABLE ONLY public.manifestation_genres
-ADD CONSTRAINT manifestation_genres_genre_id_fkey FOREIGN KEY (genre_id) REFERENCES public.genres (id)
+ADD CONSTRAINT manifestation_genres_genre_id_fkey FOREIGN KEY (genre_id) REFERENCES public.genres(id)
 ON DELETE CASCADE;
 
 ALTER TABLE ONLY public.manifestation_genres
 ADD CONSTRAINT manifestation_genres_manifestation_id_fkey FOREIGN KEY (manifestation_id)
-REFERENCES public.manifestations (id) ON DELETE CASCADE;
+REFERENCES public.manifestations(id) ON DELETE CASCADE;
 
 ALTER TABLE ONLY public.manifestation_genres
 ADD CONSTRAINT manifestation_genres_source_version_id_fkey FOREIGN KEY (source_version_id)
-REFERENCES public.metadata_versions (id) ON DELETE SET NULL;
+REFERENCES public.metadata_versions(id) ON DELETE SET NULL;
 
 ALTER TABLE ONLY public.manifestation_moods
 ADD CONSTRAINT manifestation_moods_manifestation_id_fkey FOREIGN KEY (manifestation_id)
-REFERENCES public.manifestations (id) ON DELETE CASCADE;
+REFERENCES public.manifestations(id) ON DELETE CASCADE;
 
 ALTER TABLE ONLY public.manifestation_moods
-ADD CONSTRAINT manifestation_moods_mood_id_fkey FOREIGN KEY (mood_id) REFERENCES public.moods (id) ON DELETE CASCADE;
+ADD CONSTRAINT manifestation_moods_mood_id_fkey FOREIGN KEY (mood_id) REFERENCES public.moods(id) ON DELETE CASCADE;
 
 ALTER TABLE ONLY public.manifestation_moods
 ADD CONSTRAINT manifestation_moods_source_version_id_fkey FOREIGN KEY (source_version_id)
-REFERENCES public.metadata_versions (id) ON DELETE SET NULL;
+REFERENCES public.metadata_versions(id) ON DELETE SET NULL;
 
 ALTER TABLE ONLY public.manifestation_tags
 ADD CONSTRAINT manifestation_tags_manifestation_id_fkey FOREIGN KEY (manifestation_id)
-REFERENCES public.manifestations (id) ON DELETE CASCADE;
+REFERENCES public.manifestations(id) ON DELETE CASCADE;
 
 ALTER TABLE ONLY public.manifestation_tags
 ADD CONSTRAINT manifestation_tags_source_version_id_fkey FOREIGN KEY (source_version_id)
-REFERENCES public.metadata_versions (id) ON DELETE SET NULL;
+REFERENCES public.metadata_versions(id) ON DELETE SET NULL;
 
 ALTER TABLE ONLY public.manifestation_tags
-ADD CONSTRAINT manifestation_tags_tag_id_fkey FOREIGN KEY (tag_id) REFERENCES public.tags (id) ON DELETE CASCADE;
+ADD CONSTRAINT manifestation_tags_tag_id_fkey FOREIGN KEY (tag_id) REFERENCES public.tags(id) ON DELETE CASCADE;
 
 ALTER TABLE ONLY public.manifestations
 ADD CONSTRAINT manifestations_content_rating_version_id_fkey FOREIGN KEY (content_rating_version_id)
-REFERENCES public.metadata_versions (id) ON DELETE SET NULL;
+REFERENCES public.metadata_versions(id) ON DELETE SET NULL;
 
 ALTER TABLE ONLY public.manifestations
-ADD CONSTRAINT manifestations_cover_source_fkey FOREIGN KEY (cover_source) REFERENCES public.metadata_sources (id);
+ADD CONSTRAINT manifestations_cover_source_fkey FOREIGN KEY (cover_source) REFERENCES public.metadata_sources(id);
 
 ALTER TABLE ONLY public.manifestations
 ADD CONSTRAINT manifestations_cover_version_id_fkey FOREIGN KEY (cover_version_id)
-REFERENCES public.metadata_versions (id) ON DELETE SET NULL;
+REFERENCES public.metadata_versions(id) ON DELETE SET NULL;
 
 ALTER TABLE ONLY public.manifestations
 ADD CONSTRAINT manifestations_isbn_10_version_id_fkey FOREIGN KEY (isbn_10_version_id)
-REFERENCES public.metadata_versions (id) ON DELETE SET NULL;
+REFERENCES public.metadata_versions(id) ON DELETE SET NULL;
 
 ALTER TABLE ONLY public.manifestations
 ADD CONSTRAINT manifestations_isbn_13_version_id_fkey FOREIGN KEY (isbn_13_version_id)
-REFERENCES public.metadata_versions (id) ON DELETE SET NULL;
+REFERENCES public.metadata_versions(id) ON DELETE SET NULL;
 
 ALTER TABLE ONLY public.manifestations
 ADD CONSTRAINT manifestations_pages_version_id_fkey FOREIGN KEY (pages_version_id)
-REFERENCES public.metadata_versions (id) ON DELETE SET NULL;
+REFERENCES public.metadata_versions(id) ON DELETE SET NULL;
 
 ALTER TABLE ONLY public.manifestations
 ADD CONSTRAINT manifestations_pub_date_version_id_fkey FOREIGN KEY (pub_date_version_id)
-REFERENCES public.metadata_versions (id) ON DELETE SET NULL;
+REFERENCES public.metadata_versions(id) ON DELETE SET NULL;
 
 ALTER TABLE ONLY public.manifestations
 ADD CONSTRAINT manifestations_publisher_version_id_fkey FOREIGN KEY (publisher_version_id)
-REFERENCES public.metadata_versions (id) ON DELETE SET NULL;
+REFERENCES public.metadata_versions(id) ON DELETE SET NULL;
 
 ALTER TABLE ONLY public.manifestations
 ADD CONSTRAINT manifestations_suspected_duplicate_work_id_fkey FOREIGN KEY (suspected_duplicate_work_id)
-REFERENCES public.works (id) ON DELETE SET NULL;
+REFERENCES public.works(id) ON DELETE SET NULL;
 
 ALTER TABLE ONLY public.manifestations
-ADD CONSTRAINT manifestations_work_id_fkey FOREIGN KEY (work_id) REFERENCES public.works (id) ON DELETE CASCADE;
+ADD CONSTRAINT manifestations_work_id_fkey FOREIGN KEY (work_id) REFERENCES public.works(id) ON DELETE CASCADE;
 
 ALTER TABLE ONLY public.metadata_versions
 ADD CONSTRAINT metadata_versions_manifestation_id_fkey FOREIGN KEY (manifestation_id)
-REFERENCES public.manifestations (id) ON DELETE CASCADE;
+REFERENCES public.manifestations(id) ON DELETE CASCADE;
 
 ALTER TABLE ONLY public.metadata_versions
-ADD CONSTRAINT metadata_versions_resolved_by_fkey FOREIGN KEY (resolved_by) REFERENCES public.users (id)
+ADD CONSTRAINT metadata_versions_resolved_by_fkey FOREIGN KEY (resolved_by) REFERENCES public.users(id)
 ON DELETE SET NULL;
 
 ALTER TABLE ONLY public.metadata_versions
-ADD CONSTRAINT metadata_versions_source_fk FOREIGN KEY (source) REFERENCES public.metadata_sources (id);
+ADD CONSTRAINT metadata_versions_source_fk FOREIGN KEY (source) REFERENCES public.metadata_sources(id);
 
 ALTER TABLE ONLY public.omnibus_contents
-ADD CONSTRAINT omnibus_contents_contained_work_id_fkey FOREIGN KEY (contained_work_id) REFERENCES public.works (id)
+ADD CONSTRAINT omnibus_contents_contained_work_id_fkey FOREIGN KEY (contained_work_id) REFERENCES public.works(id)
 ON DELETE CASCADE;
 
 ALTER TABLE ONLY public.omnibus_contents
 ADD CONSTRAINT omnibus_contents_omnibus_manifestation_id_fkey FOREIGN KEY (omnibus_manifestation_id)
-REFERENCES public.manifestations (id) ON DELETE CASCADE;
+REFERENCES public.manifestations(id) ON DELETE CASCADE;
 
 ALTER TABLE ONLY public.password_reset_pins
-ADD CONSTRAINT password_reset_pins_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users (id) ON DELETE CASCADE;
+ADD CONSTRAINT password_reset_pins_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
 
 ALTER TABLE ONLY public.rating_sources
-ADD CONSTRAINT rating_sources_id_fkey FOREIGN KEY (id) REFERENCES public.metadata_sources (id);
+ADD CONSTRAINT rating_sources_id_fkey FOREIGN KEY (id) REFERENCES public.metadata_sources(id);
 
 ALTER TABLE ONLY public.reading_sessions
 ADD CONSTRAINT reading_sessions_manifestation_id_fkey FOREIGN KEY (manifestation_id)
-REFERENCES public.manifestations (id) ON DELETE CASCADE;
+REFERENCES public.manifestations(id) ON DELETE CASCADE;
 
 ALTER TABLE ONLY public.reading_sessions
-ADD CONSTRAINT reading_sessions_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users (id) ON DELETE CASCADE;
+ADD CONSTRAINT reading_sessions_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
 
 ALTER TABLE ONLY public.reading_state
 ADD CONSTRAINT reading_state_manifestation_id_fkey FOREIGN KEY (manifestation_id)
-REFERENCES public.manifestations (id) ON DELETE CASCADE;
+REFERENCES public.manifestations(id) ON DELETE CASCADE;
 
 ALTER TABLE ONLY public.reading_state
-ADD CONSTRAINT reading_state_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users (id) ON DELETE CASCADE;
+ADD CONSTRAINT reading_state_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
 
 ALTER TABLE ONLY public.series
-ADD CONSTRAINT series_parent_id_fkey FOREIGN KEY (parent_id) REFERENCES public.series (id) ON DELETE SET NULL;
+ADD CONSTRAINT series_parent_id_fkey FOREIGN KEY (parent_id) REFERENCES public.series(id) ON DELETE SET NULL;
 
 ALTER TABLE ONLY public.series_works
-ADD CONSTRAINT series_works_series_id_fkey FOREIGN KEY (series_id) REFERENCES public.series (id) ON DELETE CASCADE;
+ADD CONSTRAINT series_works_series_id_fkey FOREIGN KEY (series_id) REFERENCES public.series(id) ON DELETE CASCADE;
 
 ALTER TABLE ONLY public.series_works
-ADD CONSTRAINT series_works_work_id_fkey FOREIGN KEY (work_id) REFERENCES public.works (id) ON DELETE CASCADE;
+ADD CONSTRAINT series_works_work_id_fkey FOREIGN KEY (work_id) REFERENCES public.works(id) ON DELETE CASCADE;
 
 ALTER TABLE ONLY public.shelf_items
-ADD CONSTRAINT shelf_items_manifestation_id_fkey FOREIGN KEY (manifestation_id) REFERENCES public.manifestations (id)
+ADD CONSTRAINT shelf_items_manifestation_id_fkey FOREIGN KEY (manifestation_id) REFERENCES public.manifestations(id)
 ON DELETE CASCADE;
 
 ALTER TABLE ONLY public.shelf_items
-ADD CONSTRAINT shelf_items_shelf_id_fkey FOREIGN KEY (shelf_id) REFERENCES public.shelves (id) ON DELETE CASCADE;
+ADD CONSTRAINT shelf_items_shelf_id_fkey FOREIGN KEY (shelf_id) REFERENCES public.shelves(id) ON DELETE CASCADE;
 
 ALTER TABLE ONLY public.shelves
-ADD CONSTRAINT shelves_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users (id) ON DELETE CASCADE;
+ADD CONSTRAINT shelves_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
 
 ALTER TABLE ONLY public.user_identities
-ADD CONSTRAINT user_identities_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users (id) ON DELETE CASCADE;
+ADD CONSTRAINT user_identities_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
 
 ALTER TABLE ONLY public.user_preferences
-ADD CONSTRAINT user_preferences_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users (id) ON DELETE CASCADE;
+ADD CONSTRAINT user_preferences_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
 
 ALTER TABLE ONLY public.webhook_deliveries
-ADD CONSTRAINT webhook_deliveries_webhook_id_fkey FOREIGN KEY (webhook_id) REFERENCES public.webhooks (id)
+ADD CONSTRAINT webhook_deliveries_webhook_id_fkey FOREIGN KEY (webhook_id) REFERENCES public.webhooks(id)
 ON DELETE CASCADE;
 
 ALTER TABLE ONLY public.webhooks
-ADD CONSTRAINT webhooks_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users (id) ON DELETE CASCADE;
+ADD CONSTRAINT webhooks_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
 
 ALTER TABLE ONLY public.work_authors
-ADD CONSTRAINT work_authors_author_id_fkey FOREIGN KEY (author_id) REFERENCES public.authors (id) ON DELETE CASCADE;
+ADD CONSTRAINT work_authors_author_id_fkey FOREIGN KEY (author_id) REFERENCES public.authors(id) ON DELETE CASCADE;
 
 ALTER TABLE ONLY public.work_authors
 ADD CONSTRAINT work_authors_source_version_id_fkey FOREIGN KEY (source_version_id)
-REFERENCES public.metadata_versions (id) ON DELETE SET NULL;
+REFERENCES public.metadata_versions(id) ON DELETE SET NULL;
 
 ALTER TABLE ONLY public.work_authors
-ADD CONSTRAINT work_authors_work_id_fkey FOREIGN KEY (work_id) REFERENCES public.works (id) ON DELETE CASCADE;
+ADD CONSTRAINT work_authors_work_id_fkey FOREIGN KEY (work_id) REFERENCES public.works(id) ON DELETE CASCADE;
 
 ALTER TABLE ONLY public.work_external_identifiers
-ADD CONSTRAINT work_external_identifiers_scheme_fkey FOREIGN KEY (scheme) REFERENCES public.identifier_schemes (id);
+ADD CONSTRAINT work_external_identifiers_scheme_fkey FOREIGN KEY (scheme) REFERENCES public.identifier_schemes(id);
 
 ALTER TABLE ONLY public.work_external_identifiers
 ADD CONSTRAINT work_external_identifiers_source_version_id_fkey FOREIGN KEY (source_version_id)
-REFERENCES public.metadata_versions (id) ON DELETE SET NULL;
+REFERENCES public.metadata_versions(id) ON DELETE SET NULL;
 
 ALTER TABLE ONLY public.work_external_identifiers
-ADD CONSTRAINT work_external_identifiers_work_id_fkey FOREIGN KEY (work_id) REFERENCES public.works (id)
+ADD CONSTRAINT work_external_identifiers_work_id_fkey FOREIGN KEY (work_id) REFERENCES public.works(id)
 ON DELETE CASCADE;
 
 ALTER TABLE ONLY public.works
 ADD CONSTRAINT works_description_version_id_fkey FOREIGN KEY (description_version_id)
-REFERENCES public.metadata_versions (id) ON DELETE SET NULL;
+REFERENCES public.metadata_versions(id) ON DELETE SET NULL;
 
 ALTER TABLE ONLY public.works
 ADD CONSTRAINT works_language_version_id_fkey FOREIGN KEY (language_version_id)
-REFERENCES public.metadata_versions (id) ON DELETE SET NULL;
+REFERENCES public.metadata_versions(id) ON DELETE SET NULL;
 
 ALTER TABLE ONLY public.works
 ADD CONSTRAINT works_subtitle_version_id_fkey FOREIGN KEY (subtitle_version_id)
-REFERENCES public.metadata_versions (id) ON DELETE SET NULL;
+REFERENCES public.metadata_versions(id) ON DELETE SET NULL;
 
 ALTER TABLE ONLY public.works
-ADD CONSTRAINT works_title_version_id_fkey FOREIGN KEY (title_version_id) REFERENCES public.metadata_versions (id)
+ADD CONSTRAINT works_title_version_id_fkey FOREIGN KEY (title_version_id) REFERENCES public.metadata_versions(id)
 ON DELETE SET NULL;
 
 ALTER TABLE ONLY public.writeback_jobs
 ADD CONSTRAINT writeback_jobs_manifestation_id_fkey FOREIGN KEY (manifestation_id)
-REFERENCES public.manifestations (id) ON DELETE CASCADE;
+REFERENCES public.manifestations(id) ON DELETE CASCADE;
 
 ALTER TABLE public.manifestation_external_identifiers ENABLE ROW LEVEL SECURITY;
 
@@ -1630,16 +1633,16 @@ TO reverie_app USING (((EXISTS (
     WHERE ((users.id = ((
         SELECT current_setting(
             'app.current_user_id'::text,
-            true
+            TRUE
         ) AS current_setting
-    ))::uuid) AND (users.role = ANY(ARRAY[
+    ))::uuid) AND (users.role = any(ARRAY[
         'admin'::public.user_role,
         'adult'::public.user_role
     ])))
 ))));
 
 CREATE POLICY manifestation_external_identifiers_ingestion_full_access ON public.manifestation_external_identifiers
-TO reverie_ingestion USING (true) WITH CHECK (true);
+TO reverie_ingestion USING (TRUE) WITH CHECK (TRUE);
 
 CREATE POLICY manifestation_external_identifiers_insert ON public.manifestation_external_identifiers FOR INSERT
 TO reverie_app WITH CHECK (((EXISTS (
@@ -1651,9 +1654,9 @@ TO reverie_app WITH CHECK (((EXISTS (
     WHERE ((users.id = ((
         SELECT current_setting(
             'app.current_user_id'::text,
-            true
+            TRUE
         ) AS current_setting
-    ))::uuid) AND (users.role = ANY(ARRAY[
+    ))::uuid) AND (users.role = any(ARRAY[
         'admin'::public.user_role,
         'adult'::public.user_role
     ])))
@@ -1677,9 +1680,9 @@ TO reverie_app USING (((EXISTS (
     WHERE ((users.id = ((
         SELECT current_setting(
             'app.current_user_id'::text,
-            true
+            TRUE
         ) AS current_setting
-    ))::uuid) AND (users.role = ANY(ARRAY[
+    ))::uuid) AND (users.role = any(ARRAY[
         'admin'::public.user_role,
         'adult'::public.user_role
     ])))
@@ -1692,9 +1695,9 @@ TO reverie_app USING (((EXISTS (
     WHERE ((users.id = ((
         SELECT current_setting(
             'app.current_user_id'::text,
-            true
+            TRUE
         ) AS current_setting
-    ))::uuid) AND (users.role = ANY(ARRAY[
+    ))::uuid) AND (users.role = any(ARRAY[
         'admin'::public.user_role,
         'adult'::public.user_role
     ])))
@@ -1703,7 +1706,7 @@ TO reverie_app USING (((EXISTS (
 ALTER TABLE public.manifestation_external_ratings ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY manifestation_external_ratings_ingestion_full_access ON public.manifestation_external_ratings
-TO reverie_ingestion USING (true) WITH CHECK (true);
+TO reverie_ingestion USING (TRUE) WITH CHECK (TRUE);
 
 CREATE POLICY manifestation_external_ratings_select ON public.manifestation_external_ratings FOR SELECT TO reverie_app,
 reverie_readonly USING ((EXISTS (
@@ -1720,16 +1723,16 @@ CREATE POLICY manifestations_delete ON public.manifestations FOR DELETE TO rever
     WHERE ((users.id = ((
         SELECT current_setting(
             'app.current_user_id'::text,
-            true
+            TRUE
         ) AS current_setting
-    ))::uuid) AND (users.role = ANY(ARRAY[
+    ))::uuid) AND (users.role = any(ARRAY[
         'admin'::public.user_role,
         'adult'::public.user_role
     ])))
 )));
 
-CREATE POLICY manifestations_ingestion_full_access ON public.manifestations TO reverie_ingestion USING (true) WITH
-CHECK (true);
+CREATE POLICY manifestations_ingestion_full_access ON public.manifestations TO reverie_ingestion USING (TRUE) WITH
+CHECK (TRUE);
 
 CREATE POLICY manifestations_insert ON public.manifestations FOR INSERT TO reverie_app WITH CHECK ((EXISTS (
     SELECT 1
@@ -1737,9 +1740,9 @@ CREATE POLICY manifestations_insert ON public.manifestations FOR INSERT TO rever
     WHERE ((users.id = ((
         SELECT current_setting(
             'app.current_user_id'::text,
-            true
+            TRUE
         ) AS current_setting
-    ))::uuid) AND (users.role = ANY(ARRAY[
+    ))::uuid) AND (users.role = any(ARRAY[
         'admin'::public.user_role,
         'adult'::public.user_role
     ])))
@@ -1752,9 +1755,9 @@ reverie_readonly USING ((EXISTS (
     WHERE ((users.id = ((
         SELECT current_setting(
             'app.current_user_id'::text,
-            true
+            TRUE
         ) AS current_setting
-    ))::uuid) AND (users.role = ANY(ARRAY[
+    ))::uuid) AND (users.role = any(ARRAY[
         'admin'::public.user_role,
         'adult'::public.user_role
     ])))
@@ -1767,19 +1770,19 @@ reverie_readonly USING (((EXISTS (
     WHERE ((users.id = ((
         SELECT current_setting(
             'app.current_user_id'::text,
-            true
+            TRUE
         ) AS current_setting
     ))::uuid) AND (users.role = 'child'::public.user_role))
 )) AND (EXISTS (
     SELECT 1
     FROM public.shelf_items AS si
-    JOIN public.shelves AS s ON ((s.id = si.shelf_id))
+    INNER JOIN public.shelves AS s ON ((s.id = si.shelf_id))
     WHERE (
         (si.manifestation_id = manifestations.id)
         AND (s.user_id = ((
             SELECT current_setting(
                 'app.current_user_id'::text,
-                true
+                TRUE
             ) AS current_setting
         ))::uuid)
     )
@@ -1789,7 +1792,7 @@ CREATE POLICY manifestations_select_system ON public.manifestations FOR SELECT T
 USING (((
     SELECT current_setting(
         'app.system_context'::text,
-        true
+        TRUE
     ) AS current_setting
 ) = 'writeback'::text));
 
@@ -1799,21 +1802,21 @@ CREATE POLICY manifestations_update ON public.manifestations FOR UPDATE TO rever
     WHERE ((users.id = ((
         SELECT current_setting(
             'app.current_user_id'::text,
-            true
+            TRUE
         ) AS current_setting
-    ))::uuid) AND (users.role = ANY(ARRAY[
+    ))::uuid) AND (users.role = any(ARRAY[
         'admin'::public.user_role,
         'adult'::public.user_role
     ])))
-))) WITH CHECK (true);
+))) WITH CHECK (TRUE);
 
 CREATE POLICY manifestations_update_system ON public.manifestations FOR UPDATE TO reverie_app
 USING (((
     SELECT current_setting(
         'app.system_context'::text,
-        true
+        TRUE
     ) AS current_setting
-) = 'writeback'::text)) WITH CHECK (true);
+) = 'writeback'::text)) WITH CHECK (TRUE);
 
 ALTER TABLE public.reading_sessions ENABLE ROW LEVEL SECURITY;
 
@@ -1822,11 +1825,11 @@ ALTER TABLE public.reading_state ENABLE ROW LEVEL SECURITY;
 CREATE POLICY reading_state_owner ON public.reading_state TO reverie_app,
 reverie_readonly USING ((user_id = ((SELECT current_setting(
     'app.current_user_id'::text,
-    true
+    TRUE
 ) AS current_setting))::uuid)) WITH CHECK ((user_id = ((
     SELECT current_setting(
         'app.current_user_id'::text,
-        true
+        TRUE
     ) AS current_setting
 ))::uuid));
 
@@ -1835,11 +1838,11 @@ ALTER TABLE public.user_preferences ENABLE ROW LEVEL SECURITY;
 CREATE POLICY user_preferences_owner ON public.user_preferences TO reverie_app,
 reverie_readonly USING ((user_id = ((SELECT current_setting(
     'app.current_user_id'::text,
-    true
+    TRUE
 ) AS current_setting))::uuid)) WITH CHECK ((user_id = ((
     SELECT current_setting(
         'app.current_user_id'::text,
-        true
+        TRUE
     ) AS current_setting
 ))::uuid));
 
@@ -1859,16 +1862,16 @@ USING (((EXISTS (
     WHERE ((users.id = ((
         SELECT current_setting(
             'app.current_user_id'::text,
-            true
+            TRUE
         ) AS current_setting
-    ))::uuid) AND (users.role = ANY(ARRAY[
+    ))::uuid) AND (users.role = any(ARRAY[
         'admin'::public.user_role,
         'adult'::public.user_role
     ])))
 ))));
 
 CREATE POLICY work_external_identifiers_ingestion_full_access ON public.work_external_identifiers TO reverie_ingestion
-USING (true) WITH CHECK (true);
+USING (TRUE) WITH CHECK (TRUE);
 
 CREATE POLICY work_external_identifiers_insert ON public.work_external_identifiers FOR INSERT TO reverie_app WITH
 CHECK (((EXISTS (
@@ -1880,9 +1883,9 @@ CHECK (((EXISTS (
     WHERE ((users.id = ((
         SELECT current_setting(
             'app.current_user_id'::text,
-            true
+            TRUE
         ) AS current_setting
-    ))::uuid) AND (users.role = ANY(ARRAY[
+    ))::uuid) AND (users.role = any(ARRAY[
         'admin'::public.user_role,
         'adult'::public.user_role
     ])))
@@ -1905,9 +1908,9 @@ USING (((EXISTS (
     WHERE ((users.id = ((
         SELECT current_setting(
             'app.current_user_id'::text,
-            true
+            TRUE
         ) AS current_setting
-    ))::uuid) AND (users.role = ANY(ARRAY[
+    ))::uuid) AND (users.role = any(ARRAY[
         'admin'::public.user_role,
         'adult'::public.user_role
     ])))
@@ -1920,9 +1923,9 @@ USING (((EXISTS (
     WHERE ((users.id = ((
         SELECT current_setting(
             'app.current_user_id'::text,
-            true
+            TRUE
         ) AS current_setting
-    ))::uuid) AND (users.role = ANY(ARRAY[
+    ))::uuid) AND (users.role = any(ARRAY[
         'admin'::public.user_role,
         'adult'::public.user_role
     ])))
@@ -2086,18 +2089,18 @@ INSERT INTO public.metadata_sources (
     id, display_name, kind, enabled, base_priority, config
 )
 VALUES
-('opf', 'OPF Metadata', 'file', true, 100, '{}'),
-('manual', 'Manual Override', 'user', true, 10, '{}'),
-('openlibrary', 'Open Library', 'api', true, 100, '{}'),
-('googlebooks', 'Google Books', 'api', true, 100, '{}'),
-('hardcover', 'Hardcover', 'api', true, 90, '{}'),
-('ai', 'AI-assisted', 'ai', true, 500, '{}'),
-('goodreads', 'Goodreads', 'external', true, 10, '{}'),
-('librarything', 'LibraryThing', 'external', true, 10, '{}'),
-('asin', 'Amazon ASIN', 'external', true, 10, '{}'),
-('wikidata', 'Wikidata', 'external', true, 10, '{}'),
-('calibre', 'Calibre', 'external', true, 10, '{}'),
-('amazon', 'Amazon', 'external', true, 10, '{}');
+('opf', 'OPF Metadata', 'file', TRUE, 100, '{}'),
+('manual', 'Manual Override', 'user', TRUE, 10, '{}'),
+('openlibrary', 'Open Library', 'api', TRUE, 100, '{}'),
+('googlebooks', 'Google Books', 'api', TRUE, 100, '{}'),
+('hardcover', 'Hardcover', 'api', TRUE, 90, '{}'),
+('ai', 'AI-assisted', 'ai', TRUE, 500, '{}'),
+('goodreads', 'Goodreads', 'external', TRUE, 10, '{}'),
+('librarything', 'LibraryThing', 'external', TRUE, 10, '{}'),
+('asin', 'Amazon ASIN', 'external', TRUE, 10, '{}'),
+('wikidata', 'Wikidata', 'external', TRUE, 10, '{}'),
+('calibre', 'Calibre', 'external', TRUE, 10, '{}'),
+('amazon', 'Amazon', 'external', TRUE, 10, '{}');
 
 INSERT INTO public.identifier_schemes (id, display_name)
 VALUES

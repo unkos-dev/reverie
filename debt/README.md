@@ -117,6 +117,8 @@ by definition active debt, the roadmap reads the directory as-is: no status filt
 
 <!-- listed most-stale first; new entries go to the top -->
 
+- [SQL lint exclusions preserve the initial schema rollup](2026-09-17-sqruff-schema-rollup-exclusions.md): lifts when
+  the next schema rollup passes SQL lint without the CV11, RF01, RF03, and ST09 exclusions.
 - [Zizmor self-repository audit disabled](2026-09-16-zizmor-self-repository.md): lifts when the pinned `actionlint`
   accepts `$/` and both workflow linters pass after migrating every executable self-reference.
 - [Explicit header alignment enables table compaction](2026-09-10-rumdl-table-compaction.md): lifts when rumdl checks
