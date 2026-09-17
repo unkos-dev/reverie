@@ -93,7 +93,8 @@ expect "stop without pidfile is a no-op" 0 "no dev server started by dev-start" 
 
 # A dead pid in the pidfile must be treated as stale, not signalled.
 bash -c 'echo "$$"' >"${tmp}/.dev-server.pid"
-expect "stale-pid status names the js start recipe" 1 "run 'just js::dev-start' to clean it up" status
+expect "status with dead-pid pidfile exits 1" 1 "stale pidfile" status
+expect "stale-pid status names the full-stack start recipe" 1 "the next run of 'just dev-up' clears it" status
 expect "stop cleans a dead-pid pidfile" 0 "removed stale pidfile" stop
 
 # A live reused pgid whose leader is not the dev server must survive stop
@@ -197,7 +198,6 @@ rm -f "${tmp}/.dev-server.pid"
 
 export DEV_SERVER_STOP_HINT="just rust::dev-stop"
 export DEV_SERVER_FG_HINT="just rust::dev"
-export DEV_SERVER_START_HINT="just rust::dev-start"
 expect "stop no-op advice uses the caller's foreground hint" 0 "just rust::dev" stop
 start_owned_hang rust-hint
 expect "not-serving status advice uses the caller's stop hint" 1 "just rust::dev-stop" status
@@ -205,7 +205,7 @@ kill -KILL -- "-$(cat "${tmp}/rust-hint.cleanup-pgid")" 2>/dev/null || true
 rm -f "${tmp}/.dev-server.pid"
 
 bash -c 'echo "$$"' >"${tmp}/.dev-server.pid"
-expect "stale-pid status uses the caller's start hint" 1 "run 'just rust::dev-start' to clean it up" status
+expect "rust stale-pid status names the full-stack start recipe" 1 "the next run of 'just dev-up' clears it" status
 rm -f "${tmp}/.dev-server.pid"
 
 exit "$fail"
