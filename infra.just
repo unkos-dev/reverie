@@ -28,10 +28,10 @@ yamllint:
 # --config is explicit because sqruff also auto-discovers `.sqlfluff`. That file
 # belongs to Codacy, and any key `.sqruff` leaves unset would otherwise be taken
 # from it.
-# Lint every tracked SQL file against `.sqruff`.
+# Lint every non-ignored tracked SQL file against `.sqruff`, including parser failures.
 [group('infra')]
 sqruff:
-    git ls-files -z '*.sql' | xargs -0 -r sqruff lint --config .sqruff
+    git ls-files -z '*.sql' | xargs -0 -r sqruff lint --parsing-errors --config .sqruff
 
 # Lint GitHub Actions workflow files.
 [group('infra')]
