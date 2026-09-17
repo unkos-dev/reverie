@@ -10,3 +10,7 @@ rules:
     ignore:
       # setup-node there has no cache: input; the finding fires on presence.
       - website.yml
+  self-repository:
+    # actionlint 1.7.12 rejects GitHub's `$/` syntax. This loses warnings when
+    # `./` reads changed workspace state or prevents SHA-pin enforcement.
+    disable: true

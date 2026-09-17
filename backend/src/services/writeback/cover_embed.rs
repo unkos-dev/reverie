@@ -154,17 +154,18 @@ fn scan_opf(opf_bytes: &[u8]) -> OpfScan {
             }
             Ok(Event::Eof) => break,
             Ok(Event::Start(e) | Event::Empty(e)) => {
-                let local = local_name(e.name().as_ref()).to_vec();
-                if local == b"package"
-                    && let Some(v) = attr_str(&e, b"version")
+                let name = e.name();
+                let local = local_name(name.as_ref());
+                if local == "package"
+                    && let Some(v) = attr_str(&e, "version")
                 {
                     scan.epub_version = v;
                 }
-                if local == b"item" {
-                    let id = attr_str(&e, b"id");
-                    let href = attr_str(&e, b"href");
-                    let media = attr_str(&e, b"media-type");
-                    let props = attr_str(&e, b"properties");
+                if local == "item" {
+                    let id = attr_str(&e, "id");
+                    let href = attr_str(&e, "href");
+                    let media = attr_str(&e, "media-type");
+                    let props = attr_str(&e, "properties");
                     if let (Some(id), Some(href)) = (id.clone(), href.clone()) {
                         scan.manifest
                             .insert(id.clone(), (href.clone(), media.clone()));
@@ -178,12 +179,12 @@ fn scan_opf(opf_bytes: &[u8]) -> OpfScan {
                         }
                     }
                 }
-                if local == b"meta"
-                    && attr_str(&e, b"name")
+                if local == "meta"
+                    && attr_str(&e, "name")
                         .as_deref()
                         .is_some_and(|n| n.eq_ignore_ascii_case("cover"))
                 {
-                    scan.cover_meta_content = attr_str(&e, b"content");
+                    scan.cover_meta_content = attr_str(&e, "content");
                 }
             }
             _ => {}
@@ -215,19 +216,17 @@ fn scan_opf(opf_bytes: &[u8]) -> OpfScan {
     scan
 }
 
-fn attr_str(start: &BytesStart<'_>, name: &[u8]) -> Option<String> {
+fn attr_str(start: &BytesStart<'_>, name: &str) -> Option<String> {
     for attr in start.attributes().flatten() {
         if local_name(attr.key.as_ref()) == name {
-            return Some(String::from_utf8_lossy(&attr.value).into_owned());
+            return Some(attr.value.into_owned());
         }
     }
     None
 }
 
-fn local_name(name: &[u8]) -> &[u8] {
-    name.iter()
-        .position(|&b| b == b':')
-        .map_or(name, |pos| &name[pos + 1..])
+fn local_name(name: &str) -> &str {
+    name.split_once(':').map_or(name, |(_, local)| local)
 }
 
 // ── OPF rewriters ─────────────────────────────────────────────────────────
@@ -251,19 +250,18 @@ fn rewrite_opf_cover_reference(
         {
             Event::Eof => break,
             Event::Start(e) | Event::Empty(e)
-                if local_name(e.name().as_ref()) == b"item"
-                    && cover_id.as_deref() == attr_str(&e, b"id").as_deref() =>
+                if local_name(e.name().as_ref()) == "item"
+                    && cover_id.as_deref() == attr_str(&e, "id").as_deref() =>
             {
-                let mut new_el =
-                    BytesStart::new(String::from_utf8_lossy(e.name().as_ref()).to_string());
+                let mut new_el = BytesStart::new(e.name().as_ref().to_owned());
                 for attr in e.attributes().flatten() {
                     let key_local = local_name(attr.key.as_ref());
                     let new_val = match key_local {
-                        b"href" => new_href.as_bytes().to_vec(),
-                        b"media-type" => new_media_type.as_bytes().to_vec(),
+                        "href" => new_href.to_owned(),
+                        "media-type" => new_media_type.to_owned(),
                         _ => attr.value.into_owned(),
                     };
-                    new_el.push_attribute((attr.key.as_ref(), new_val.as_slice()));
+                    new_el.push_attribute((attr.key.as_ref(), new_val.as_str()));
                 }
                 writer.write_event(Event::Empty(new_el))?;
             }
@@ -295,15 +293,15 @@ fn insert_opf_cover(
             .map_err(WritebackError::Xml)?
         {
             Event::Eof => break,
-            Event::Start(e) if local_name(e.name().as_ref()) == b"metadata" => {
+            Event::Start(e) if local_name(e.name().as_ref()) == "metadata" => {
                 saw_metadata_open = true;
                 writer.write_event(Event::Start(e.into_owned()))?;
             }
-            Event::Empty(e) if local_name(e.name().as_ref()) == b"metadata" => {
+            Event::Empty(e) if local_name(e.name().as_ref()) == "metadata" => {
                 // Self-closing <metadata/>: open it, inject the EPUB-2 cover
                 // meta if needed, then close — otherwise we lose the insert site.
-                let name = e.name().as_ref().to_vec();
-                let mut start = BytesStart::new(String::from_utf8_lossy(&name).to_string());
+                let name = e.name().as_ref().to_owned();
+                let mut start = BytesStart::new(name.clone());
                 for attr in e.attributes().flatten() {
                     start.push_attribute(attr);
                 }
@@ -314,11 +312,9 @@ fn insert_opf_cover(
                     m.push_attribute(("content", "cover-image"));
                     writer.write_event(Event::Empty(m))?;
                 }
-                writer.write_event(Event::End(BytesEnd::new(
-                    String::from_utf8_lossy(&name).to_string(),
-                )))?;
+                writer.write_event(Event::End(BytesEnd::new(name)))?;
             }
-            Event::End(e) if local_name(e.name().as_ref()) == b"metadata" => {
+            Event::End(e) if local_name(e.name().as_ref()) == "metadata" => {
                 // For EPUB 2, insert <meta name="cover" content="cover-image"/> here.
                 if saw_metadata_open && !is_epub3 {
                     let mut m = BytesStart::new("meta");
@@ -328,7 +324,7 @@ fn insert_opf_cover(
                 }
                 writer.write_event(Event::End(e.into_owned()))?;
             }
-            Event::Start(e) if local_name(e.name().as_ref()) == b"manifest" => {
+            Event::Start(e) if local_name(e.name().as_ref()) == "manifest" => {
                 saw_manifest_open = true;
                 writer.write_event(Event::Start(e.into_owned()))?;
                 // Insert new cover manifest item immediately after the opening tag.

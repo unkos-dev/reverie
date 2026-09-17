@@ -106,11 +106,10 @@ pub fn transform(opf_bytes: &[u8], target: &Target<'_>) -> Result<Vec<u8>, Write
         let ev = &events[i];
         match ev {
             Event::Start(e) => {
-                let name_bytes = e.name().as_ref().to_vec();
                 depth += 1;
-                let local = local_name(&name_bytes).to_vec();
+                let local = local_name(e.name().as_ref()).to_owned();
 
-                if local == b"metadata" && in_metadata_depth.is_none() {
+                if local == "metadata" && in_metadata_depth.is_none() {
                     in_metadata_depth = Some(depth);
                     writer.write_event(Event::Start(e.clone()))?;
                     i += 1;
@@ -128,7 +127,7 @@ pub fn transform(opf_bytes: &[u8], target: &Target<'_>) -> Result<Vec<u8>, Write
                         continue;
                     }
                     // dc:identifier — update if opf:scheme matches ISBN.
-                    if local == b"identifier"
+                    if local == "identifier"
                         && is_isbn_identifier(e)
                         && let Some(new_isbn) = target.isbn_13.or(target.isbn_10)
                     {
@@ -139,12 +138,12 @@ pub fn transform(opf_bytes: &[u8], target: &Target<'_>) -> Result<Vec<u8>, Write
                         continue;
                     }
                     // <meta property="belongs-to-collection"> — update text + refinement metas.
-                    if local == b"meta"
-                        && has_attr(e, b"property", b"belongs-to-collection")
+                    if local == "meta"
+                        && has_attr(e, "property", "belongs-to-collection")
                         && let Some(series) = target.series
                         && use_belongs
                     {
-                        let id = attr_value(e, b"id").unwrap_or_else(|| b"series-1".to_vec());
+                        let id = attr_value(e, "id").unwrap_or_else(|| "series-1".to_owned());
                         write_belongs_to_collection(&mut writer, &id, series.name)?;
                         i = skip_to_matching_end(&events, i) + 1;
                         depth -= 1;
@@ -159,8 +158,7 @@ pub fn transform(opf_bytes: &[u8], target: &Target<'_>) -> Result<Vec<u8>, Write
                 writer.write_event(Event::Start(e.clone()))?;
             }
             Event::Empty(e) => {
-                let name_bytes = e.name().as_ref().to_vec();
-                let local = local_name(&name_bytes).to_vec();
+                let local = local_name(e.name().as_ref()).to_owned();
 
                 if in_metadata_depth.is_some() {
                     if let Some(new_text) = target_text_for_dc(&local, e, target, &meta.title_types)
@@ -170,7 +168,7 @@ pub fn transform(opf_bytes: &[u8], target: &Target<'_>) -> Result<Vec<u8>, Write
                         i += 1;
                         continue;
                     }
-                    if local == b"identifier"
+                    if local == "identifier"
                         && is_isbn_identifier(e)
                         && let Some(new_isbn) = target.isbn_13.or(target.isbn_10)
                     {
@@ -180,8 +178,8 @@ pub fn transform(opf_bytes: &[u8], target: &Target<'_>) -> Result<Vec<u8>, Write
                         continue;
                     }
                     // <meta name="calibre:series" content="..."/>
-                    if local == b"meta"
-                        && has_attr(e, b"name", b"calibre:series")
+                    if local == "meta"
+                        && has_attr(e, "name", "calibre:series")
                         && let Some(series) = target.series
                         && use_calibre
                     {
@@ -190,8 +188,8 @@ pub fn transform(opf_bytes: &[u8], target: &Target<'_>) -> Result<Vec<u8>, Write
                         calibre_series_written = true;
                         continue;
                     }
-                    if local == b"meta"
-                        && has_attr(e, b"name", b"calibre:series_index")
+                    if local == "meta"
+                        && has_attr(e, "name", "calibre:series_index")
                         && let Some(series) = target.series
                         && use_calibre
                     {
@@ -204,12 +202,11 @@ pub fn transform(opf_bytes: &[u8], target: &Target<'_>) -> Result<Vec<u8>, Write
                 writer.write_event(Event::Empty(e.clone()))?;
             }
             Event::End(e) => {
-                let name_bytes = e.name().as_ref().to_vec();
                 depth -= 1;
-                let local = local_name(&name_bytes).to_vec();
+                let local = local_name(e.name().as_ref()).to_owned();
 
                 // Before closing <metadata>, insert any fresh elements we need.
-                if in_metadata_depth == Some(depth + 1) && local == b"metadata" {
+                if in_metadata_depth == Some(depth + 1) && local == "metadata" {
                     // ISBN insertion when absent.
                     if !isbn_identifier_written
                         && let Some(new_isbn) = target.isbn_13.or(target.isbn_10)
@@ -222,7 +219,7 @@ pub fn transform(opf_bytes: &[u8], target: &Target<'_>) -> Result<Vec<u8>, Write
                         && use_belongs_to
                         && let Some(series) = target.series
                     {
-                        let id = b"series-1";
+                        let id = "series-1";
                         write_belongs_to_collection(&mut writer, id, series.name)?;
                         write_belongs_to_collection_refinements(&mut writer, id, series.index)?;
                     }
@@ -257,48 +254,50 @@ struct ScanResult {
     had_calibre_series: bool,
     /// Declared `title-type` per refined element `id` (the `refines`
     /// attribute with its leading `#` stripped), lowercased.
-    title_types: HashMap<Vec<u8>, String>,
+    title_types: HashMap<String, String>,
 }
 
 fn scan_metadata(events: &[Event<'static>]) -> ScanResult {
     let mut epub_version = "3.0".to_string();
     let mut had_belongs = false;
     let mut had_calibre = false;
-    let mut title_types: HashMap<Vec<u8>, String> = HashMap::new();
+    let mut title_types: HashMap<String, String> = HashMap::new();
     for (i, ev) in events.iter().enumerate() {
         match ev {
             Event::Start(e) => {
-                let local = local_name(e.name().as_ref()).to_vec();
-                if local == b"package"
-                    && let Some(v) = attr_value_as_string(e, b"version")
+                let name = e.name();
+                let local = local_name(name.as_ref());
+                if local == "package"
+                    && let Some(v) = attr_value_as_string(e, "version")
                 {
                     epub_version = v;
                 }
-                if local == b"meta" && has_attr(e, b"property", b"belongs-to-collection") {
+                if local == "meta" && has_attr(e, "property", "belongs-to-collection") {
                     had_belongs = true;
                 }
                 // `<meta refines="#t2" property="title-type">subtitle</meta>`:
                 // the value is the element's text body.
-                if local == b"meta"
-                    && has_attr(e, b"property", b"title-type")
-                    && let Some(refines) = attr_value(e, b"refines")
+                if local == "meta"
+                    && has_attr(e, "property", "title-type")
+                    && let Some(refines) = attr_value(e, "refines")
                     && let Some(value) =
-                        attr_value_as_string(e, b"content").or_else(|| element_text(events, i))
+                        attr_value_as_string(e, "content").or_else(|| element_text(events, i))
                 {
                     title_types.insert(strip_fragment(&refines), normalize_title_type(&value));
                 }
             }
             Event::Empty(e) => {
-                let local = local_name(e.name().as_ref()).to_vec();
-                if local == b"meta" && has_attr(e, b"name", b"calibre:series") {
+                let name = e.name();
+                let local = local_name(name.as_ref());
+                if local == "meta" && has_attr(e, "name", "calibre:series") {
                     had_calibre = true;
                 }
                 // Self-closing refine: the value lives in `content`, and
                 // quick-xml never fires a Text event for it.
-                if local == b"meta"
-                    && has_attr(e, b"property", b"title-type")
-                    && let Some(refines) = attr_value(e, b"refines")
-                    && let Some(value) = attr_value_as_string(e, b"content")
+                if local == "meta"
+                    && has_attr(e, "property", "title-type")
+                    && let Some(refines) = attr_value(e, "refines")
+                    && let Some(value) = attr_value_as_string(e, "content")
                 {
                     title_types.insert(strip_fragment(&refines), normalize_title_type(&value));
                 }
@@ -325,18 +324,16 @@ fn element_text(events: &[Event<'static>], start_idx: usize) -> Option<String> {
     events[start_idx + 1..end.min(events.len())]
         .iter()
         .find_map(|ev| match ev {
-            Event::Text(t) => t.decode().ok().map(|s| s.trim().to_string()),
-            Event::CData(c) => std::str::from_utf8(c.as_ref())
-                .ok()
-                .map(|s| s.trim().to_string()),
+            Event::Text(t) => Some(t.trim().to_string()),
+            Event::CData(c) => Some(c.trim().to_string()),
             _ => None,
         })
         .filter(|s| !s.is_empty())
 }
 
 /// `refines="#t2"` addresses the element whose `id` is `t2`.
-fn strip_fragment(refines: &[u8]) -> Vec<u8> {
-    refines.strip_prefix(b"#").unwrap_or(refines).to_vec()
+fn strip_fragment(refines: &str) -> String {
+    refines.strip_prefix('#').unwrap_or(refines).to_owned()
 }
 
 fn normalize_title_type(value: &str) -> String {
@@ -350,12 +347,10 @@ fn write_replaced_element(
     start: &BytesStart<'_>,
     new_text: &str,
 ) -> Result<(), WritebackError> {
-    let name_bytes = start.name().as_ref().to_vec();
+    let name = start.name().as_ref().to_owned();
     writer.write_event(Event::Start(start.clone()))?;
     writer.write_event(Event::Text(BytesText::new(new_text)))?;
-    writer.write_event(Event::End(BytesEnd::new(
-        String::from_utf8_lossy(&name_bytes).to_string(),
-    )))?;
+    writer.write_event(Event::End(BytesEnd::new(name)))?;
     Ok(())
 }
 
@@ -364,16 +359,14 @@ fn write_replaced_element_from_empty(
     empty: &BytesStart<'_>,
     new_text: &str,
 ) -> Result<(), WritebackError> {
-    let name_bytes = empty.name().as_ref().to_vec();
-    let mut start = BytesStart::new(String::from_utf8_lossy(&name_bytes).to_string());
+    let name = empty.name().as_ref().to_owned();
+    let mut start = BytesStart::new(name.clone());
     for attr in empty.attributes().flatten() {
         start.push_attribute(attr);
     }
     writer.write_event(Event::Start(start))?;
     writer.write_event(Event::Text(BytesText::new(new_text)))?;
-    writer.write_event(Event::End(BytesEnd::new(
-        String::from_utf8_lossy(&name_bytes).to_string(),
-    )))?;
+    writer.write_event(Event::End(BytesEnd::new(name)))?;
     Ok(())
 }
 
@@ -391,13 +384,12 @@ fn write_new_isbn_identifier(
 
 fn write_belongs_to_collection(
     writer: &mut Writer<Cursor<Vec<u8>>>,
-    id: &[u8],
+    id: &str,
     name: &str,
 ) -> Result<(), WritebackError> {
-    let id_str = String::from_utf8_lossy(id);
     let mut start = BytesStart::new("meta");
     start.push_attribute(("property", "belongs-to-collection"));
-    start.push_attribute(("id", id_str.as_ref()));
+    start.push_attribute(("id", id));
     writer.write_event(Event::Start(start))?;
     writer.write_event(Event::Text(BytesText::new(name)))?;
     writer.write_event(Event::End(BytesEnd::new("meta")))?;
@@ -406,10 +398,10 @@ fn write_belongs_to_collection(
 
 fn write_belongs_to_collection_refinements(
     writer: &mut Writer<Cursor<Vec<u8>>>,
-    id: &[u8],
+    id: &str,
     index: Option<f64>,
 ) -> Result<(), WritebackError> {
-    let refines_target = format!("#{}", String::from_utf8_lossy(id));
+    let refines_target = format!("#{id}");
     let mut t = BytesStart::new("meta");
     t.push_attribute(("refines", refines_target.as_str()));
     t.push_attribute(("property", "collection-type"));
@@ -466,21 +458,21 @@ fn write_calibre_series_index(
 /// layer does not model it and writing the main title over it would destroy
 /// the declared value.
 fn target_text_for_dc<'t>(
-    local: &[u8],
+    local: &str,
     el: &BytesStart<'_>,
     target: &'t Target<'_>,
-    title_types: &HashMap<Vec<u8>, String>,
+    title_types: &HashMap<String, String>,
 ) -> Option<&'t str> {
     match local {
-        b"title" => match title_type_of(el, title_types) {
+        "title" => match title_type_of(el, title_types) {
             Some("subtitle") => target.subtitle,
             Some(other) if other != "main" => None,
             _ => target.title,
         },
-        b"description" => target.description,
-        b"language" => target.language,
-        b"publisher" => target.publisher,
-        b"date" => target.pub_date,
+        "description" => target.description,
+        "language" => target.language,
+        "publisher" => target.publisher,
+        "date" => target.pub_date,
         _ => None,
     }
 }
@@ -488,13 +480,13 @@ fn target_text_for_dc<'t>(
 /// The `title-type` refine declared for `el`, looked up by the element's `id`.
 fn title_type_of<'m>(
     el: &BytesStart<'_>,
-    title_types: &'m HashMap<Vec<u8>, String>,
+    title_types: &'m HashMap<String, String>,
 ) -> Option<&'m str> {
-    let id = attr_value(el, b"id")?;
+    let id = attr_value(el, "id")?;
     title_types.get(&id).map(String::as_str)
 }
 
-fn has_attr(start: &BytesStart<'_>, name: &[u8], value: &[u8]) -> bool {
+fn has_attr(start: &BytesStart<'_>, name: &str, value: &str) -> bool {
     for attr in start.attributes().flatten() {
         if local_name(attr.key.as_ref()) == name && attr.value.as_ref().eq_ignore_ascii_case(value)
         {
@@ -504,7 +496,7 @@ fn has_attr(start: &BytesStart<'_>, name: &[u8], value: &[u8]) -> bool {
     false
 }
 
-fn attr_value(start: &BytesStart<'_>, name: &[u8]) -> Option<Vec<u8>> {
+fn attr_value(start: &BytesStart<'_>, name: &str) -> Option<String> {
     for attr in start.attributes().flatten() {
         if local_name(attr.key.as_ref()) == name {
             return Some(attr.value.into_owned());
@@ -513,14 +505,14 @@ fn attr_value(start: &BytesStart<'_>, name: &[u8]) -> Option<Vec<u8>> {
     None
 }
 
-fn attr_value_as_string(start: &BytesStart<'_>, name: &[u8]) -> Option<String> {
-    attr_value(start, name).map(|v| String::from_utf8_lossy(&v).into_owned())
+fn attr_value_as_string(start: &BytesStart<'_>, name: &str) -> Option<String> {
+    attr_value(start, name)
 }
 
 fn is_isbn_identifier(start: &BytesStart<'_>) -> bool {
     for attr in start.attributes().flatten() {
-        if local_name(attr.key.as_ref()) == b"scheme"
-            && attr.value.as_ref().eq_ignore_ascii_case(b"ISBN")
+        if local_name(attr.key.as_ref()) == "scheme"
+            && attr.value.as_ref().eq_ignore_ascii_case("ISBN")
         {
             return true;
         }
@@ -528,10 +520,8 @@ fn is_isbn_identifier(start: &BytesStart<'_>) -> bool {
     false
 }
 
-fn local_name(name: &[u8]) -> &[u8] {
-    name.iter()
-        .position(|&b| b == b':')
-        .map_or(name, |pos| &name[pos + 1..])
+fn local_name(name: &str) -> &str {
+    name.split_once(':').map_or(name, |(_, local)| local)
 }
 
 fn format_index(idx: f64) -> String {
@@ -553,17 +543,17 @@ fn skip_to_matching_end(events: &[Event<'static>], start_idx: usize) -> usize {
     // Walk forward until we find the matching End tag, accounting for
     // nested Start/End pairs.
     let start_name = match &events[start_idx] {
-        Event::Start(e) => e.name().as_ref().to_vec(),
+        Event::Start(e) => e.name().as_ref().to_owned(),
         _ => return start_idx,
     };
     let mut depth = 1usize;
     let mut i = start_idx + 1;
     while i < events.len() {
         match &events[i] {
-            Event::Start(e) if e.name().as_ref() == start_name.as_slice() => {
+            Event::Start(e) if e.name().as_ref() == start_name.as_str() => {
                 depth += 1;
             }
-            Event::End(e) if e.name().as_ref() == start_name.as_slice() => {
+            Event::End(e) if e.name().as_ref() == start_name.as_str() => {
                 depth -= 1;
                 if depth == 0 {
                     return i;
