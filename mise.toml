@@ -79,5 +79,5 @@ filter_bins = "kache"
 
 # Specification linter for docs/specs, run by `just infra::specful`.
 [tools."github:unkos-dev/specful"]
-version = "0.5.1"
+version = "0.5.2"
 filter_bins = "specful"
