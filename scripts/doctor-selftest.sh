@@ -21,7 +21,6 @@ trap 'rm -rf "${tmp}"' EXIT
 fixture="${tmp}/fixture"
 mkdir -p "${fixture}/scripts" "${fixture}/backend/.sqlx"
 cp "${doctor}" "${fixture}/scripts/doctor.sh"
-cp "${repo_root}/scripts/rust-exec.sh" "${fixture}/scripts/rust-exec.sh"
 chmod +x "${fixture}/scripts/doctor.sh"
 cp "${repo_root}/scripts/require-disk-backed.sh" "${fixture}/scripts/require-disk-backed.sh"
 chmod +x "${fixture}/scripts/require-disk-backed.sh"
@@ -80,7 +79,7 @@ noop_stub() { # <dir> <name>
 
 stub_bin="${tmp}/bin"
 mkdir -p "${stub_bin}"
-for real in env bash git jq readlink ls df date dirname cat head tail tr cut uname grep stat cmp; do
+for real in env bash git jq ls df date dirname cat head tail tr cut uname grep stat cmp; do
   link_real "${stub_bin}" "${real}"
 done
 for tool in just cargo rustc node pnpm vp; do
@@ -119,35 +118,22 @@ exec du.real "$@"
 DU_STUB
 chmod +x "${stub_bin}/du"
 
-export DOCTOR_KACHE_LOG="$tmp/kache-calls"
-export DOCTOR_KACHE_DIR="$tmp/kache-install"
-mkdir -p "$DOCTOR_KACHE_DIR/bin"
-cat >"$stub_bin/kache" <<'KACHE_STUB'
+export DOCTOR_KACHE_CALLS="${tmp}/kache-calls"
+: >"$DOCTOR_KACHE_CALLS"
+cat >"${stub_bin}/kache" <<'KACHE_STUB'
 #!/usr/bin/env bash
-printf '%s\n' "$*" >>"$DOCTOR_KACHE_LOG"
+printf '%s\n' "$*" >>"$DOCTOR_KACHE_CALLS"
 exit 99
 KACHE_STUB
-chmod +x "$stub_bin/kache"
-cp "$stub_bin/kache" "$DOCTOR_KACHE_DIR/bin/kache"
+chmod +x "${stub_bin}/kache"
 
-cat >"$stub_bin/kache-lifecycle" <<'INSPECT_STUB'
+cat >"${stub_bin}/systemctl" <<'SYSTEMCTL_STUB'
 #!/usr/bin/env bash
-set -euo pipefail
-[[ $# == 4 && $1 == inspect && $2 == --client && $3 == "$DOCTOR_KACHE_DIR/bin/kache" && $4 == --json ]]
-[[ ${DOCTOR_INSPECT_STATE:-compatible} != malformed ]] || { echo '{'; exit 0; }
-rc=0
-case "${DOCTOR_INSPECT_STATE:-compatible}" in
-  incompatible|unhealthy) rc=1 ;;
-  unknown) rc=2 ;;
-esac
-jq -n --arg client "$3" --arg state "${DOCTOR_INSPECT_STATE:-compatible}" --arg reason "${DOCTOR_INSPECT_REASON:-managed snapshot}" '
-  {schema_version:1,state:$state,reason:$reason,client_path:$client,client_epoch:100,daemon_path:$client,
-   daemon_epoch:100,main_pid:42,start_ticks:50,n_restarts:0,socket_path:"/tmp/managed.sock",
-   endpoint:"untested",remedy_argv:["kache-lifecycle","update"]}
-  | if env.DOCTOR_BAD_SCHEMA=="1" then .schema_version=2 else . end'
-exit "${DOCTOR_INSPECT_EXIT:-$rc}"
-INSPECT_STUB
-chmod +x "$stub_bin/kache-lifecycle"
+[[ "$*" == "--user show kache.service --property=ActiveState --value" ]] || exit 99
+[[ ${DOCTOR_STUB_SYSTEMCTL_ERROR:-0} == 0 ]] || exit 1
+printf '%s\n' "${DOCTOR_STUB_KACHE_STATE-active}"
+SYSTEMCTL_STUB
+chmod +x "${stub_bin}/systemctl"
 
 cat >"${stub_bin}/mise" <<'MISE_STUB'
 #!/usr/bin/env bash
@@ -159,12 +145,6 @@ cat >"${stub_bin}/mise" <<'MISE_STUB'
 # independent of DOCTOR_STUB_MISE_MISSING, so the fail-closed path is
 # reachable without needing a real broken mise.
 set -euo pipefail
-if [[ $# == 4 && $1 == -C && $3 == where && $4 == github:kunobi-ninja/kache ]]; then
-  [[ $MISE_AUTO_INSTALL == 0 && -f $2/scripts/doctor.sh ]] || exit 99
-  [[ ${DOCTOR_KACHE_MISSING:-0} == 0 ]] || exit 1
-  printf '%s\n' "$DOCTOR_KACHE_DIR"
-  exit 0
-fi
 if [ "$#" -eq 4 ] && [ "$1" = "ls" ] && [ "$2" = "--current" ] && [ "$3" = "--missing" ] && [ "$4" = "-J" ]; then
   if [ -n "${DOCTOR_STUB_MISE_ERROR:-}" ]; then
     exit 2
@@ -424,12 +404,6 @@ echo '{}' >"${fixture}/pnpm-lock.yaml"
 expect_exit "a matching lockfile exits zero" 0 "${stub_bin}"
 expect_contains "a matching lockfile passes" "PASS node_modules matches pnpm-lock.yaml"
 
-export DOCTOR_KACHE_MISSING=1
-expect_exit "missing selected client warns" 0 "${stub_bin}"
-expect_contains "missing selected client advises setup" "run mise install in the checkout"
-expect_not_contains "missing selected client is not compatible" "PASS kache managed"
-unset DOCTOR_KACHE_MISSING
-
 # --- kache store size: a store that has never been populated here degrades
 # silently (no PASS, WARN, or FAIL line at all) rather than treating
 # "kache hasn't run yet" as a problem worth reporting. This is also the
@@ -537,41 +511,39 @@ expect_not_contains "boundary warning does not display the truncated 50 GiB figu
 unset DOCTOR_STUB_DU_KIB
 rm -rf "${linux_default}"
 
-expect_exit "compatible managed snapshot passes" 0 "$stub_bin"
-expect_contains "compatible snapshot is reported" "PASS kache managed service/process is compatible"
-expect_contains "endpoint limitation is explicit" "kache endpoint responsiveness is untested"
-for state in unhealthy incompatible unknown malformed; do
-  export DOCTOR_INSPECT_STATE=$state
-  expect_exit "inspection $state warns only" 0 "$stub_bin"
-  expect_contains "inspection $state warns" "WARN kache managed service/process"
-  expect_not_contains "inspection $state cannot forge health" "PASS kache managed"
+expect_exit "active kache service passes" 0 "${stub_bin}"
+expect_contains "active service is reported" "PASS kache systemd service is active"
+expect_contains "endpoint remains untested" "INFO kache endpoint responsiveness is untested"
+
+for state in inactive failed activating; do
+  export DOCTOR_STUB_KACHE_STATE="$state"
+  expect_exit "$state service warns" 0 "${stub_bin}"
+  expect_contains "$state service does not pass" "WARN kache systemd service is not active"
 done
-unset DOCTOR_INSPECT_STATE
-for reason in "newer client" "bus denied" "proc denied"; do
-  export DOCTOR_INSPECT_STATE=unknown DOCTOR_INSPECT_REASON=$reason
-  expect_exit "$reason warns only" 0 "$stub_bin"
-  expect_contains "$reason is explained" "$reason"
-done
-unset DOCTOR_INSPECT_STATE DOCTOR_INSPECT_REASON
-export DOCTOR_BAD_SCHEMA=1
-expect_exit "unsupported schema warns" 0 "$stub_bin"
-expect_contains "unsupported schema is unobservable" "WARN kache managed service/process is unobservable"
-unset DOCTOR_BAD_SCHEMA
-export DOCTOR_INSPECT_EXIT=1
-expect_exit "state and exit mismatch warns" 0 "$stub_bin"
-expect_not_contains "state and exit mismatch cannot forge health" "PASS kache managed"
-unset DOCTOR_INSPECT_EXIT
-mv "$stub_bin/kache-lifecycle" "$tmp/inspector"
-expect_exit "absent inspector warns only" 0 "$stub_bin"
-expect_contains "absent inspector names setup" "install the machine-owned kache-lifecycle command"
-mv "$tmp/inspector" "$stub_bin/kache-lifecycle"
-if [[ -s $DOCTOR_KACHE_LOG ]]; then
-  echo "FAIL doctor invoked Kache" >&2
-  exit 1
+export DOCTOR_STUB_KACHE_STATE=""
+expect_exit "missing state warns" 0 "${stub_bin}"
+expect_contains "missing state is unknown" "WARN kache systemd service state is unknown"
+unset DOCTOR_STUB_KACHE_STATE
+export DOCTOR_STUB_SYSTEMCTL_ERROR=1
+expect_exit "unavailable user bus warns" 0 "${stub_bin}"
+expect_contains "bus error is unobservable" "WARN kache systemd service is unobservable"
+unset DOCTOR_STUB_SYSTEMCTL_ERROR
+
+mv "${stub_bin}/systemctl" "${tmp}/systemctl"
+expect_exit "systemctl absent skips service check" 0 "${stub_bin}"
+expect_contains "absent systemctl is explicit" "INFO systemctl unavailable; kache service check skipped"
+mv "${tmp}/systemctl" "${stub_bin}/systemctl"
+
+if [[ -s "$DOCTOR_KACHE_CALLS" ]]; then
+  echo "FAIL doctor invoked Kache"
+  fail=1
 fi
-"$DOCTOR_KACHE_DIR/bin/kache" daemon status >/dev/null 2>&1 || true
-[[ -s $DOCTOR_KACHE_LOG ]] || { echo "FAIL Kache invocation control did not fire" >&2; exit 1; }
-: >"$DOCTOR_KACHE_LOG"
+"${stub_bin}/kache" daemon status || true
+if [[ ! -s "$DOCTOR_KACHE_CALLS" ]]; then
+  echo "FAIL Kache invocation recorder did not fire"
+  fail=1
+fi
+: >"$DOCTOR_KACHE_CALLS"
 
 # --- missing-binary detection: PATH with one required binary removed ---
 stub_bin_missing="${tmp}/bin-missing"
@@ -686,5 +658,4 @@ esac
 # appended after it.
 export DOCTOR_STUB_DISK_AVAIL_BYTES=$((10 * 1024 * 1024 * 1024))
 
-[[ ! -s $DOCTOR_KACHE_LOG ]] || { echo "FAIL doctor invoked Kache" >&2; exit 1; }
 exit "${fail}"

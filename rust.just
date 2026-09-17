@@ -1,6 +1,6 @@
 # Rust plane: backend format/lint/test/build. All recipes run from backend/.
-# Compiling recipes resolve checkout tools and inspect the managed Kache client.
-# Rust remains rustup-selected. Recipes marked DB need the
+# Backend tools are system-PATH (image-baked toolchain), so bare invocation is
+# correct here (unlike the node-local JS plane). Recipes marked DB need the
 # local dev Postgres up (`just db-up`).
 #
 # DB recipes inject the schema-owner DSN inline via shell parameter expansion,
@@ -43,19 +43,19 @@ fmt-check:
 # Clippy across the whole workspace, all targets, warnings denied.
 [group('rust')]
 clippy:
-    SQLX_OFFLINE=true ../scripts/rust-exec.sh compile -- cargo clippy --workspace --all-targets --locked -- -D warnings
+    SQLX_OFFLINE=true cargo clippy --workspace --all-targets --locked -- -D warnings
 
 # Reject broken intra-doc links in the public docstrings.
 [group('rust')]
 doc-lint:
-    SQLX_OFFLINE=true RUSTDOCFLAGS="-D rustdoc::broken_intra_doc_links" ../scripts/rust-exec.sh compile -- cargo doc --locked --no-deps --workspace
+    SQLX_OFFLINE=true RUSTDOCFLAGS="-D rustdoc::broken_intra_doc_links" cargo doc --locked --no-deps --workspace
 
 # Offline (no database), so it runs locally; this is the backend pre-push gate.
 #
 # Generated-artifact drift guard (OpenAPI spec + config reference + config schema).
 [group('rust')]
 drift:
-    SQLX_OFFLINE=true ../scripts/rust-exec.sh compile -- cargo test --locked --test gen_openapi --test gen_config_ref --test gen_config_schema
+    SQLX_OFFLINE=true cargo test --locked --test gen_openapi --test gen_config_ref --test gen_config_schema
 
 # Extra args pass through to nextest as filters, so the red-green loop can
 # run just the tests under work instead of the whole suite: e.g.
@@ -65,12 +65,12 @@ drift:
 # DB: full test suite.
 [group('rust')]
 test *args:
-    SQLX_OFFLINE=true DATABASE_URL="${REVERIE_DEV_DB_URL:-postgres:///reverie_dev?host=${XDG_STATE_HOME:-$HOME/.local/state}/reverie/pgsock&user=reverie&password=reverie}" ../scripts/rust-exec.sh nextest -- cargo nextest run --workspace --locked {{ args }}
+    SQLX_OFFLINE=true DATABASE_URL="${REVERIE_DEV_DB_URL:-postgres:///reverie_dev?host=${XDG_STATE_HOME:-$HOME/.local/state}/reverie/pgsock&user=reverie&password=reverie}" cargo nextest run --workspace --locked {{ args }}
 
 # DB: doctests across the workspace.
 [group('rust')]
 doctests:
-    SQLX_OFFLINE=true DATABASE_URL="${REVERIE_DEV_DB_URL:-postgres:///reverie_dev?host=${XDG_STATE_HOME:-$HOME/.local/state}/reverie/pgsock&user=reverie&password=reverie}" ../scripts/rust-exec.sh compile -- cargo test --locked --doc --workspace
+    SQLX_OFFLINE=true DATABASE_URL="${REVERIE_DEV_DB_URL:-postgres:///reverie_dev?host=${XDG_STATE_HOME:-$HOME/.local/state}/reverie/pgsock&user=reverie&password=reverie}" cargo test --locked --doc --workspace
 
 # This is the one recipe that dirties the shared target dir, and it is
 # unavoidable: `sqlx prepare` deliberately bumps the mtimes of the crate's
@@ -86,7 +86,7 @@ doctests:
 # DB: sqlx query-cache freshness against the live schema.
 [group('rust')]
 sqlx-check:
-    DATABASE_URL="${REVERIE_DEV_DB_URL:-postgres:///reverie_dev?host=${XDG_STATE_HOME:-$HOME/.local/state}/reverie/pgsock&user=reverie&password=reverie}" ../scripts/rust-exec.sh compile -- cargo sqlx prepare --check -- --locked --tests
+    DATABASE_URL="${REVERIE_DEV_DB_URL:-postgres:///reverie_dev?host=${XDG_STATE_HOME:-$HOME/.local/state}/reverie/pgsock&user=reverie&password=reverie}" cargo sqlx prepare --check -- --locked --tests
 
 # WRITES backend/.sqlx; commit the result in the same change as the queries
 # that produced it. `sqlx-check` is the read-only gate form.
@@ -94,7 +94,7 @@ sqlx-check:
 # DB: regenerate the sqlx offline query cache from the live schema.
 [group('rust')]
 sqlx-prepare:
-    DATABASE_URL="${REVERIE_DEV_DB_URL:-postgres:///reverie_dev?host=${XDG_STATE_HOME:-$HOME/.local/state}/reverie/pgsock&user=reverie&password=reverie}" ../scripts/rust-exec.sh compile -- cargo sqlx prepare -- --locked --tests
+    DATABASE_URL="${REVERIE_DEV_DB_URL:-postgres:///reverie_dev?host=${XDG_STATE_HOME:-$HOME/.local/state}/reverie/pgsock&user=reverie&password=reverie}" cargo sqlx prepare -- --locked --tests
 
 # Migrates a scratch database on the dev cluster, never reverie_dev, and runs
 # pg_dump inside the Postgres container, so it needs docker access.
@@ -120,12 +120,12 @@ schema-dump:
 # Regenerate the OpenAPI spec, config reference, and config schema in place.
 [group('rust')]
 regen:
-    REGEN=1 SQLX_OFFLINE=true ../scripts/rust-exec.sh compile -- cargo test --locked --test gen_openapi --test gen_config_ref --test gen_config_schema
+    REGEN=1 SQLX_OFFLINE=true cargo test --locked --test gen_openapi --test gen_config_ref --test gen_config_schema
 
 # Compile the workspace.
 [group('rust')]
 build:
-    SQLX_OFFLINE=true ../scripts/rust-exec.sh compile -- cargo build --workspace --locked
+    SQLX_OFFLINE=true cargo build --workspace --locked
 
 # Offline (no database, no toolchain needed). Mirrors backend.yml's checks
 # static guards: runtime sqlx::query/raw_sql, raw axum .route( registrations,
@@ -144,7 +144,7 @@ guards:
 # Fail on unused workspace dependencies.
 [group('rust')]
 machete:
-    ../scripts/rust-exec.sh machete -- cargo machete
+    cargo machete
 
 # Reads the RustSec advisory database over the network, so it is offline-excluded
 # from `check`. Mirrors the CI "cargo-deny" job (config: backend/deny.toml).
@@ -152,7 +152,7 @@ machete:
 # Check advisories, license, bans, and source policy.
 [group('rust')]
 deny:
-    ../scripts/rust-exec.sh deny -- cargo deny check
+    cargo deny check
 
 # Backend lint surface: clippy + doc-lint.
 [group('rust')]
@@ -175,7 +175,7 @@ dev:
     #!/usr/bin/env bash
     set -ueo pipefail
     source ../scripts/backend-dev-env.sh
-    exec ../scripts/rust-exec.sh compile -- cargo run --locked
+    exec cargo run --locked
 
 # DB: needs the local dev Postgres up (`just db-up`). The binary no longer
 # self-loads any env file (backend/src/lib.rs run_migrate), so the migration
@@ -187,7 +187,7 @@ migrate:
     #!/usr/bin/env bash
     set -ueo pipefail
     source ../scripts/backend-dev-env.sh
-    exec ../scripts/rust-exec.sh compile -- cargo run --locked -- migrate
+    exec cargo run --locked -- migrate
 
 # Shared lifecycle plumbing for dev-start/dev-stop/dev-status. The script owns
 # the ownership and race checks (see scripts/dev-server.sh); this sets the
@@ -206,10 +206,6 @@ _dev-lifecycle action:
     #!/usr/bin/env bash
     set -ueo pipefail
     source ../scripts/backend-dev-env.sh
-    command=(../scripts/dev-server.sh '{{ action }}')
-    if [[ '{{ action }}' == start ]]; then
-        command=(../scripts/rust-exec.sh compile -- "${command[@]}")
-    fi
     DEV_SERVER_DIR=. \
     DEV_SERVER_PORT="$REVERIE_PORT" \
     DEV_SERVER_CMD="cargo run --locked" \
@@ -217,7 +213,7 @@ _dev-lifecycle action:
     DEV_SERVER_START_TICKS=600 \
     DEV_SERVER_STOP_HINT="just rust::dev-stop" \
     DEV_SERVER_FG_HINT="just rust::dev" \
-    "${command[@]}"
+    ../scripts/dev-server.sh '{{ action }}'
 
 # DB: needs the local dev Postgres up (`just db-up`); without it the server
 # exits during startup and the failure is reported from the log.

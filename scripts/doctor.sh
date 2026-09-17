@@ -3,7 +3,7 @@
 # Reverie?" Prints one PASS/WARN/FAIL line per check plus a summary, and
 # exits nonzero iff any check FAILed. No writes, no network calls beyond the
 # already-running local docker daemon this repo's dev stack owns, the dev
-# cluster's own unix socket. Kache inspection sends no IPC.
+# cluster's own unix socket. Kache checks use systemd without daemon contact.
 set -ueo pipefail
 
 repo_root="$(cd "$(dirname "$0")/.." && pwd -P)"
@@ -307,31 +307,31 @@ else
   warn "disk space check" "cannot determine free space (non-GNU df); check manually"
 fi
 
-# Kache inspection observes ownership; endpoint responsiveness remains untested.
-inspection_rc=0
-inspection="$(scripts/rust-exec.sh inspect 2>&1)" || inspection_rc=$?
-if [ "$inspection_rc" -eq 0 ]; then
-  pass "kache managed service/process is compatible"
-else
-  detail="inspection unavailable; install the machine-owned kache-lifecycle command and check mise tools"
-  if command -v jq >/dev/null 2>&1; then
-    if message="$(jq -er 'select(type=="object") | (.reason|@json) + "; remedy: " + (.remedy_argv|@sh)' <<<"$inspection" 2>/dev/null)"; then
-      detail="$message"
-    else
-      detail="$(jq -Rsc . <<<"$inspection")"
-    fi
-  fi
-  if [ "$inspection_rc" -eq 1 ]; then
-    warn "kache managed service/process is unhealthy or incompatible" "$detail; kache-lifecycle update honours the machine pin"
+# A Kache diagnostic can stop an older daemon, so observe the service through systemd.
+if command -v systemctl >/dev/null 2>&1; then
+  if kache_state="$(systemctl --user show kache.service --property=ActiveState --value 2>/dev/null)"; then
+    case "$kache_state" in
+      active)
+        pass "kache systemd service is active"
+        ;;
+      inactive|failed|activating|deactivating|reloading)
+        warn "kache systemd service is not active" "run the machine's Kache update command"
+        ;;
+      *)
+        warn "kache systemd service state is unknown" "systemctl --user status kache.service"
+        ;;
+    esac
   else
-    warn "kache managed service/process is unobservable" "$detail"
+    warn "kache systemd service is unobservable" "systemctl --user status kache.service"
   fi
+else
+  info "systemctl unavailable; kache service check skipped"
 fi
 info "kache endpoint responsiveness is untested"
 
 # 14. kache content-addressed store size, checked against the cap kache
 # itself enforces rather than against free disk. Eviction only happens while
-# the daemon runs (check 13), and it holds the store under
+# the daemon runs, and it holds the store under
 # `cache.local_max_size`, so a store found above that ceiling means eviction
 # is not happening: a dead daemon, a failing sweep, or a machine whose
 # configured cap no longer matches this threshold. Sizing the check to the cap

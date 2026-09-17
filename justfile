@@ -554,7 +554,7 @@ db-reset:
 # Apply pending migrations with the dedicated migrator identity.
 [group('db')]
 db-migrate:
-    cd backend && DATABASE_URL_MIGRATION="${DATABASE_URL_MIGRATION:-postgres:///reverie_dev?host=${XDG_STATE_HOME:-$HOME/.local/state}/reverie/pgsock&user=reverie_migrator&password=reverie_migrator}" ../scripts/rust-exec.sh compile -- cargo run --locked -- migrate
+    cd backend && DATABASE_URL_MIGRATION="${DATABASE_URL_MIGRATION:-postgres:///reverie_dev?host=${XDG_STATE_HOME:-$HOME/.local/state}/reverie/pgsock&user=reverie_migrator&password=reverie_migrator}" cargo run --locked -- migrate
 
 # Is: a development-loop unblocker for the compile/cache/migration cycle
 # when a branch is authoring a new migration. `db-migrate` compiles the
@@ -606,7 +606,7 @@ db-migrate:
 # Apply pending migrations directly with sqlx-cli, bypassing the backend build.
 [group('db')]
 db-migrate-raw *args:
-    cd backend && DATABASE_URL="${DATABASE_URL_MIGRATION:-postgres:///reverie_dev?host=${XDG_STATE_HOME:-$HOME/.local/state}/reverie/pgsock&user=reverie_migrator&password=reverie_migrator}" ../scripts/rust-exec.sh tools -- cargo sqlx migrate run {{ args }}
+    cd backend && DATABASE_URL="${DATABASE_URL_MIGRATION:-postgres:///reverie_dev?host=${XDG_STATE_HOME:-$HOME/.local/state}/reverie/pgsock&user=reverie_migrator&password=reverie_migrator}" cargo sqlx migrate run {{ args }}
 
 # Idempotent by construction: db-up is a no-op when the container is already
 # healthy, db-migrate is a no-op once the schema is current, and each

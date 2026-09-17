@@ -167,26 +167,15 @@ check. Analysis runs on Snyk's managed SaaS (see their
 [privacy and data handling terms](https://snyk.io/policies/privacy/)); the code it receives is already public. Like the
 scanners above, Snyk is CI-only and not part of contributor setup.
 
-### Local Rust tools and Kache
+### Local Kache
 
-Compiling Just recipes establish the checkout's mise tool paths before Cargo runs, including migrations and detached
-backend startup. Run `mise install` from the checkout to provision missing pinned tools. Builds disable automatic
-installation and preserve rustup selection, SQLX settings, database URLs and Cargo target directories.
+Configure local Cargo with the absolute Kache executable used by the local daemon. A mise shim or bare command can
+select another version when the working directory changes. Keep the wrapper and service registration together when
+updating the local installation; installing a binary alone does not update an existing service.
 
-Local compilation requires the machine-owned `kache-lifecycle` command on PATH. Arrange its installation as part of
-machine setup. The project calls only `kache-lifecycle inspect --client ABSOLUTE_PATH --json`; it never installs or
-repairs the daemon. Inspection must admit the selected client before Cargo starts. The wrapper uses the resolved
-executable and inspected socket even when Cargo changes working directory.
-
-The project client and machine daemon have independent pins. A newer client, an untested binary pair or unavailable
-inspection blocks managed local compilation. Run `kache-lifecycle update` for machine reconciliation; it honours the
-machine's existing pin, so an older pin needs an explicit maintainer change. A caller's conflicting `KACHE_SOCKET_PATH`
-also blocks the build. Doctor reports service/process compatibility without contacting Kache and labels endpoint
-responsiveness as untested. These Kache observations remain warnings in doctor.
-
-Formatting, static guards, recipe listing and server stop/status do not require inspection. With `CI=true`, an explicit
-`RUSTC_WRAPPER` retains its exact value, including an empty value, and skips local service inspection. Setting `CI=true`
-alone does not bypass the local check.
+The repository's Kache pin selects the CI cache version. Local builds use Cargo's configured wrapper, and explicit
+`RUSTC_WRAPPER` values retain Cargo's normal precedence. Just recipes do not install or repair a local daemon. Doctor
+reads service state through `systemctl` without contacting Kache; it does not test endpoint responsiveness.
 
 ### CI toolchain pins
 
@@ -203,11 +192,11 @@ floor, and the MSRV job overrides the file through `RUSTUP_TOOLCHAIN` so it stil
 than against the pinned version.
 
 CI also keeps a content-addressed Rust build cache in object storage, installed by `kunobi-ninja/kache-action` at the
-version pinned for `kache` in [`mise.toml`](../mise.toml) and read from there rather than named a second time, so CI and
-the project client use the same version. The machine daemon is pinned independently. It runs alongside
-`Swatinem/rust-cache`, which now carries the cargo registry only. Write credentials are reserved for pushes to `main`;
-pull requests receive object-read credentials and run with the remote in read-only mode, so a branch cannot write into
-the store the default branch restores from. The rationale, the alternatives, and the measured numbers behind it are in
+version pinned for `kache` in [`mise.toml`](../mise.toml) and read from there rather than named a second time. This pin
+does not select the local Cargo wrapper. The CI cache runs alongside `Swatinem/rust-cache`, which carries the cargo
+registry only. Write credentials are reserved for pushes to `main`; pull requests receive object-read credentials and
+run with the remote in read-only mode, so a branch cannot write into the store the default branch restores from. The
+rationale, the alternatives, and the measured numbers behind it are in
 [Remote Rust build cache on object storage](../docs/adr/0043-remote-rust-build-cache-on-object-storage.md).
 
 CI installs vp through [`voidzero-dev/setup-vp`](https://github.com/voidzero-dev/setup-vp). No workflow pins the vp

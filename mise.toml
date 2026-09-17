@@ -70,9 +70,8 @@ filter_bins = "cargo-deny"
 version = "27.1.0"
 locked = true
 
-# Content-addressed build cache used as the cargo rustc-wrapper for local
-# builds. This selects the project client; the machine daemon has its own
-# pin. Managed compilation requires a compatible inspected daemon.
+# CI build-cache version, read by the Kache action. Local Cargo uses the
+# absolute wrapper configured with the machine's daemon installation.
 [tools."github:kunobi-ninja/kache"]
 version = "0.21.0"
 filter_bins = "kache"
