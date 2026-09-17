@@ -176,7 +176,7 @@ do_status() {
     exit 0
   fi
   if [ -f "$pidfile" ]; then
-    echo "dev server is down (stale pidfile from pid $(cat "$pidfile"); dev-start will clean it up)"
+    echo "dev server is down (stale pidfile from pid $(cat "$pidfile"); the next run of 'just dev-up' clears it)"
   else
     echo "dev server is down"
   fi
