@@ -33,8 +33,9 @@ cmd="${DEV_SERVER_CMD:-vp dev --strictPort}"
 # process as ours. vp execs in place as the group leader; node is kept
 # because a direct-node server is still a supported DEV_SERVER_CMD.
 leader_pattern="${DEV_SERVER_LEADER_PATTERN:-(^|/)(vp|node)$}"
-# Advice strings name the caller's recipes, so the rust plane's recipes can
-# point at rust::dev-stop instead of the js defaults.
+# Advice strings name the caller's recipes, so the rust plane can point at
+# its own lifecycle recipes instead of the js defaults.
+start_hint="${DEV_SERVER_START_HINT:-just js::dev-start}"
 stop_hint="${DEV_SERVER_STOP_HINT:-just js::dev-stop}"
 fg_hint="${DEV_SERVER_FG_HINT:-just js::dev}"
 
@@ -176,7 +177,7 @@ do_status() {
     exit 0
   fi
   if [ -f "$pidfile" ]; then
-    echo "dev server is down (stale pidfile from pid $(cat "$pidfile"); dev-start will clean it up)"
+    echo "dev server is down (stale pidfile from pid $(cat "$pidfile"); run '${start_hint}' to clean it up)"
   else
     echo "dev server is down"
   fi

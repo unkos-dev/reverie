@@ -211,6 +211,7 @@ _dev-lifecycle action:
     DEV_SERVER_CMD="cargo run --locked" \
     DEV_SERVER_LEADER_PATTERN='(^|/)(cargo|reverie-api)$' \
     DEV_SERVER_START_TICKS=600 \
+    DEV_SERVER_START_HINT="just rust::dev-start" \
     DEV_SERVER_STOP_HINT="just rust::dev-stop" \
     DEV_SERVER_FG_HINT="just rust::dev" \
     ../scripts/dev-server.sh '{{ action }}'
