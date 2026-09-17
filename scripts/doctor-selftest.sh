@@ -21,6 +21,7 @@ trap 'rm -rf "${tmp}"' EXIT
 fixture="${tmp}/fixture"
 mkdir -p "${fixture}/scripts" "${fixture}/backend/.sqlx"
 cp "${doctor}" "${fixture}/scripts/doctor.sh"
+cp "${repo_root}/scripts/rust-exec.sh" "${fixture}/scripts/rust-exec.sh"
 chmod +x "${fixture}/scripts/doctor.sh"
 cp "${repo_root}/scripts/require-disk-backed.sh" "${fixture}/scripts/require-disk-backed.sh"
 chmod +x "${fixture}/scripts/require-disk-backed.sh"
@@ -79,7 +80,7 @@ noop_stub() { # <dir> <name>
 
 stub_bin="${tmp}/bin"
 mkdir -p "${stub_bin}"
-for real in env bash git jq ls df date dirname cat head tail tr cut uname grep stat cmp; do
+for real in env bash git jq readlink ls df date dirname cat head tail tr cut uname grep stat cmp; do
   link_real "${stub_bin}" "${real}"
 done
 for tool in just cargo rustc node pnpm vp; do
@@ -118,34 +119,35 @@ exec du.real "$@"
 DU_STUB
 chmod +x "${stub_bin}/du"
 
-cat >"${stub_bin}/kache" <<'KACHE_STUB'
+export DOCTOR_KACHE_LOG="$tmp/kache-calls"
+export DOCTOR_KACHE_DIR="$tmp/kache-install"
+mkdir -p "$DOCTOR_KACHE_DIR/bin"
+cat >"$stub_bin/kache" <<'KACHE_STUB'
 #!/usr/bin/env bash
-# Fixture stub: supports only `kache daemon status`, the single invocation
-# doctor.sh makes, and exits 2 on anything else so an argument regression in
-# doctor.sh fails this selftest instead of the stub silently accepting
-# whatever it was called with. The reported state comes from
-# DOCTOR_STUB_KACHE_DAEMON (default "running"); setting it to the empty
-# string drops the Daemon line entirely, modelling a future release that
-# changes the status format.
-#
-# The output is reproduced with the ANSI colour real kache wraps the state
-# in. That wrapping is the whole reason the check cannot simply compare the
-# line to a literal, so a stub emitting bare text would test a parser this
-# repo does not have.
-set -euo pipefail
-if [ "$#" -eq 2 ] && [ "$1" = "daemon" ] && [ "$2" = "status" ]; then
-  state="${DOCTOR_STUB_KACHE_DAEMON-running}"
-  printf '  kache:    v0.11.0 (epoch 1)\n'
-  printf '  Service:  \033[32minstalled\033[0m (/dev/null)\n'
-  if [ -n "${state}" ]; then
-    printf '  Daemon:   \033[31m%s\033[0m\n' "${state}"
-  fi
-  printf '  Socket:   /dev/null\n'
-  exit 0
-fi
-exit 2
+printf '%s\n' "$*" >>"$DOCTOR_KACHE_LOG"
+exit 99
 KACHE_STUB
-chmod +x "${stub_bin}/kache"
+chmod +x "$stub_bin/kache"
+cp "$stub_bin/kache" "$DOCTOR_KACHE_DIR/bin/kache"
+
+cat >"$stub_bin/kache-lifecycle" <<'INSPECT_STUB'
+#!/usr/bin/env bash
+set -euo pipefail
+[[ $# == 4 && $1 == inspect && $2 == --client && $3 == "$DOCTOR_KACHE_DIR/bin/kache" && $4 == --json ]]
+[[ ${DOCTOR_INSPECT_STATE:-compatible} != malformed ]] || { echo '{'; exit 0; }
+rc=0
+case "${DOCTOR_INSPECT_STATE:-compatible}" in
+  incompatible|unhealthy) rc=1 ;;
+  unknown) rc=2 ;;
+esac
+jq -n --arg client "$3" --arg state "${DOCTOR_INSPECT_STATE:-compatible}" --arg reason "${DOCTOR_INSPECT_REASON:-managed snapshot}" '
+  {schema_version:1,state:$state,reason:$reason,client_path:$client,client_epoch:100,daemon_path:$client,
+   daemon_epoch:100,main_pid:42,start_ticks:50,n_restarts:0,socket_path:"/tmp/managed.sock",
+   endpoint:"untested",remedy_argv:["kache-lifecycle","update"]}
+  | if env.DOCTOR_BAD_SCHEMA=="1" then .schema_version=2 else . end'
+exit "${DOCTOR_INSPECT_EXIT:-$rc}"
+INSPECT_STUB
+chmod +x "$stub_bin/kache-lifecycle"
 
 cat >"${stub_bin}/mise" <<'MISE_STUB'
 #!/usr/bin/env bash
@@ -157,6 +159,12 @@ cat >"${stub_bin}/mise" <<'MISE_STUB'
 # independent of DOCTOR_STUB_MISE_MISSING, so the fail-closed path is
 # reachable without needing a real broken mise.
 set -euo pipefail
+if [[ $# == 4 && $1 == -C && $3 == where && $4 == github:kunobi-ninja/kache ]]; then
+  [[ $MISE_AUTO_INSTALL == 0 && -f $2/scripts/doctor.sh ]] || exit 99
+  [[ ${DOCTOR_KACHE_MISSING:-0} == 0 ]] || exit 1
+  printf '%s\n' "$DOCTOR_KACHE_DIR"
+  exit 0
+fi
 if [ "$#" -eq 4 ] && [ "$1" = "ls" ] && [ "$2" = "--current" ] && [ "$3" = "--missing" ] && [ "$4" = "-J" ]; then
   if [ -n "${DOCTOR_STUB_MISE_ERROR:-}" ]; then
     exit 2
@@ -416,21 +424,11 @@ echo '{}' >"${fixture}/pnpm-lock.yaml"
 expect_exit "a matching lockfile exits zero" 0 "${stub_bin}"
 expect_contains "a matching lockfile passes" "PASS node_modules matches pnpm-lock.yaml"
 
-# --- kache binary check: absent from PATH warns (not fails) and names the
-# fix; present passes. ---
-stub_bin_no_kache="${tmp}/bin-no-kache"
-mkdir -p "${stub_bin_no_kache}"
-for f in "${stub_bin}"/*; do
-  name="$(basename "${f}")"
-  [ "${name}" = "kache" ] && continue
-  cp -P "${f}" "${stub_bin_no_kache}/${name}"
-done
-expect_exit "absent kache binary warns, does not fail" 0 "${stub_bin_no_kache}"
-expect_contains "absent kache binary advises mise install" "WARN binary 'kache' resolves on PATH -- fix: mise install"
-expect_not_contains "absent kache binary produces no FAIL lines" "FAIL "
-
-expect_exit "present kache binary passes" 0 "${stub_bin}"
-expect_contains "present kache binary is reported" "PASS binary 'kache' resolves on PATH"
+export DOCTOR_KACHE_MISSING=1
+expect_exit "missing selected client warns" 0 "${stub_bin}"
+expect_contains "missing selected client advises setup" "run mise install in the checkout"
+expect_not_contains "missing selected client is not compatible" "PASS kache managed"
+unset DOCTOR_KACHE_MISSING
 
 # --- kache store size: a store that has never been populated here degrades
 # silently (no PASS, WARN, or FAIL line at all) rather than treating
@@ -539,43 +537,41 @@ expect_not_contains "boundary warning does not display the truncated 50 GiB figu
 unset DOCTOR_STUB_DU_KIB
 rm -rf "${linux_default}"
 
-# --- kache daemon check. The daemon is what sweeps the store, so a stopped
-# one is the usual cause of the over-threshold warning above, but local hits
-# and misses survive without it: every branch below stays at WARN and exits
-# zero. `kache daemon status` exits 0 either way and colours the state, so
-# the check parses its output, and these cases pin that parse. ---
-expect_exit "running kache daemon passes" 0 "${stub_bin}"
-expect_contains "running kache daemon is reported" "PASS kache daemon is running"
-expect_not_contains "running kache daemon produces no WARN lines" "WARN "
-
-# "not running" contains "running", so a naive substring match would report a
-# stopped daemon as healthy. This is the regression test for that ordering.
-export DOCTOR_STUB_KACHE_DAEMON="not running"
-expect_exit "stopped kache daemon warns, does not fail" 0 "${stub_bin}"
-expect_contains "stopped kache daemon names the exact fix" "WARN kache daemon is running -- fix: kache daemon start"
-expect_not_contains "stopped kache daemon is never reported as passing" "PASS kache daemon is running"
-expect_not_contains "stopped kache daemon produces no FAIL lines" "FAIL "
-
-# A status format this check no longer recognises must read as indeterminate.
-# Silently passing would leave the check reporting health forever after an
-# upstream output change, which is the failure mode the mise-pin check above
-# is also written to avoid.
-export DOCTOR_STUB_KACHE_DAEMON=""
-expect_exit "absent Daemon line warns, does not fail" 0 "${stub_bin}"
-expect_contains "absent Daemon line reports the state as indeterminate" "WARN kache daemon is running -- fix: cannot determine daemon state"
-expect_not_contains "absent Daemon line does not forge a pass" "PASS kache daemon is running"
-
-export DOCTOR_STUB_KACHE_DAEMON="wedged"
-expect_exit "unrecognised daemon state warns, does not fail" 0 "${stub_bin}"
-expect_contains "unrecognised daemon state reports the state as indeterminate" "WARN kache daemon is running -- fix: cannot determine daemon state"
-expect_not_contains "unrecognised daemon state does not forge a pass" "PASS kache daemon is running"
-unset DOCTOR_STUB_KACHE_DAEMON
-
-# With no kache on PATH there is no daemon to ask about: the binary check
-# above already warns, and a second warning naming a command that cannot run
-# would be noise.
-expect_exit "absent kache binary skips the daemon check" 0 "${stub_bin_no_kache}"
-expect_not_contains "absent kache binary produces no daemon line" "kache daemon is running"
+expect_exit "compatible managed snapshot passes" 0 "$stub_bin"
+expect_contains "compatible snapshot is reported" "PASS kache managed service/process is compatible"
+expect_contains "endpoint limitation is explicit" "kache endpoint responsiveness is untested"
+for state in unhealthy incompatible unknown malformed; do
+  export DOCTOR_INSPECT_STATE=$state
+  expect_exit "inspection $state warns only" 0 "$stub_bin"
+  expect_contains "inspection $state warns" "WARN kache managed service/process"
+  expect_not_contains "inspection $state cannot forge health" "PASS kache managed"
+done
+unset DOCTOR_INSPECT_STATE
+for reason in "newer client" "bus denied" "proc denied"; do
+  export DOCTOR_INSPECT_STATE=unknown DOCTOR_INSPECT_REASON=$reason
+  expect_exit "$reason warns only" 0 "$stub_bin"
+  expect_contains "$reason is explained" "$reason"
+done
+unset DOCTOR_INSPECT_STATE DOCTOR_INSPECT_REASON
+export DOCTOR_BAD_SCHEMA=1
+expect_exit "unsupported schema warns" 0 "$stub_bin"
+expect_contains "unsupported schema is unobservable" "WARN kache managed service/process is unobservable"
+unset DOCTOR_BAD_SCHEMA
+export DOCTOR_INSPECT_EXIT=1
+expect_exit "state and exit mismatch warns" 0 "$stub_bin"
+expect_not_contains "state and exit mismatch cannot forge health" "PASS kache managed"
+unset DOCTOR_INSPECT_EXIT
+mv "$stub_bin/kache-lifecycle" "$tmp/inspector"
+expect_exit "absent inspector warns only" 0 "$stub_bin"
+expect_contains "absent inspector names setup" "install the machine-owned kache-lifecycle command"
+mv "$tmp/inspector" "$stub_bin/kache-lifecycle"
+if [[ -s $DOCTOR_KACHE_LOG ]]; then
+  echo "FAIL doctor invoked Kache" >&2
+  exit 1
+fi
+"$DOCTOR_KACHE_DIR/bin/kache" daemon status >/dev/null 2>&1 || true
+[[ -s $DOCTOR_KACHE_LOG ]] || { echo "FAIL Kache invocation control did not fire" >&2; exit 1; }
+: >"$DOCTOR_KACHE_LOG"
 
 # --- missing-binary detection: PATH with one required binary removed ---
 stub_bin_missing="${tmp}/bin-missing"
@@ -690,4 +686,5 @@ esac
 # appended after it.
 export DOCTOR_STUB_DISK_AVAIL_BYTES=$((10 * 1024 * 1024 * 1024))
 
+[[ ! -s $DOCTOR_KACHE_LOG ]] || { echo "FAIL doctor invoked Kache" >&2; exit 1; }
 exit "${fail}"

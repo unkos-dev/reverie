@@ -112,6 +112,11 @@ dev-server-selftest:
 backend-dev-env-selftest:
     scripts/backend-dev-env-selftest.sh
 
+# Assert checkout tool selection, managed-client refusal and preserved compiler arguments.
+[group('infra')]
+rust-exec-selftest:
+    scripts/rust-exec-selftest.sh
+
 # Self-test `just doctor` (missing-binary, fully-stubbed happy path, warn-only path).
 [group('infra')]
 doctor-selftest:
@@ -209,7 +214,7 @@ lint: shellcheck hadolint typos yamllint sqruff actionlint prose specful filter-
 #
 # Self-tests for this repository's local developer tooling; gates nothing, run it by hand.
 [group('infra')]
-selftests: dev-server-selftest backend-dev-env-selftest doctor-selftest require-disk-backed-selftest worktree-selftest worktree-base-selftest gate-detach-selftest
+selftests: rust-exec-selftest dev-server-selftest backend-dev-env-selftest doctor-selftest require-disk-backed-selftest worktree-selftest worktree-base-selftest gate-detach-selftest
 
 # Infra has no formatter (oxfmt owns formatting via the JS plane), so check == lint.
 [group('infra')]

@@ -3,7 +3,7 @@
 # Reverie?" Prints one PASS/WARN/FAIL line per check plus a summary, and
 # exits nonzero iff any check FAILed. No writes, no network calls beyond the
 # already-running local docker daemon this repo's dev stack owns, the dev
-# cluster's own unix socket, and the kache build cache's own unix socket.
+# cluster's own unix socket. Kache inspection sends no IPC.
 set -ueo pipefail
 
 repo_root="$(cd "$(dirname "$0")/.." && pwd -P)"
@@ -307,45 +307,27 @@ else
   warn "disk space check" "cannot determine free space (non-GNU df); check manually"
 fi
 
-# 12. kache build-cache binary resolves on PATH. It is configured as the
-# cargo rustc-wrapper outside this repo; absence only means local builds
-# fall back to uncached compiles, not a broken toolchain, so this warns
-# rather than fails.
-kache_present=0
-if command -v kache >/dev/null 2>&1; then
-  kache_present=1
-  pass "binary 'kache' resolves on PATH"
+# Kache inspection observes ownership; endpoint responsiveness remains untested.
+inspection_rc=0
+inspection="$(scripts/rust-exec.sh inspect 2>&1)" || inspection_rc=$?
+if [ "$inspection_rc" -eq 0 ]; then
+  pass "kache managed service/process is compatible"
 else
-  warn "binary 'kache' resolves on PATH" "mise install"
+  detail="inspection unavailable; install the machine-owned kache-lifecycle command and check mise tools"
+  if command -v jq >/dev/null 2>&1; then
+    if message="$(jq -er 'select(type=="object") | (.reason|@json) + "; remedy: " + (.remedy_argv|@sh)' <<<"$inspection" 2>/dev/null)"; then
+      detail="$message"
+    else
+      detail="$(jq -Rsc . <<<"$inspection")"
+    fi
+  fi
+  if [ "$inspection_rc" -eq 1 ]; then
+    warn "kache managed service/process is unhealthy or incompatible" "$detail; kache-lifecycle update honours the machine pin"
+  else
+    warn "kache managed service/process is unobservable" "$detail"
+  fi
 fi
-
-# 13. kache daemon reachable. The daemon owns the store's only automatic
-# eviction (one sweep on startup, then every six hours), so a stopped daemon
-# is the usual reason the size check below eventually fires. Local cache hits
-# and misses work without it, which is why this warns rather than fails.
-#
-# `kache daemon status` exits 0 whether or not the daemon is up, so the state
-# has to be read out of its output rather than its exit code. Two properties
-# shape the match: the state is wrapped in ANSI colour that no NO_COLOR
-# setting suppresses, and "not running" contains "running". Hence globs that
-# tolerate the escape sequences, with the negative case tested first.
-# Anything neither pattern recognises is reported as indeterminate: an
-# upstream change to this output must surface as a warning, never keep
-# forging a PASS.
-if [ "${kache_present}" -eq 1 ]; then
-  daemon_line="$(kache daemon status 2>/dev/null | grep 'Daemon:' | head -n 1 || true)"
-  case "${daemon_line}" in
-    *not*running*)
-      warn "kache daemon is running" "kache daemon start"
-      ;;
-    *running*)
-      pass "kache daemon is running"
-      ;;
-    *)
-      warn "kache daemon is running" "cannot determine daemon state (unrecognized 'kache daemon status' output); run it manually"
-      ;;
-  esac
-fi
+info "kache endpoint responsiveness is untested"
 
 # 14. kache content-addressed store size, checked against the cap kache
 # itself enforces rather than against free disk. Eviction only happens while
