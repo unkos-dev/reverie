@@ -280,9 +280,10 @@ Maintainer review remains the only merge gate.
 
 ## Dependencies
 
-Dependency updates are managed by [Renovate](https://docs.renovatebot.com/) on a weekly schedule.
-**Don't file separate PRs for dependency bumps** unless you're patching a security advisory that Renovate hasn't yet
-flagged. Security-related dependency updates bypass the weekly schedule and land whenever the advisory is published.
+Dependency updates are managed by [Renovate](https://docs.renovatebot.com/), which raises them as releases appear and
+holds most for three days after release. **Don't file separate PRs for dependency bumps** unless you're patching a
+security advisory that Renovate hasn't yet flagged. Security-related dependency updates skip that hold and land whenever
+the advisory is published.
 
 New Rust dependencies must satisfy the supply-chain policy in [`backend/deny.toml`](../backend/deny.toml): a crate whose
 license is outside the permissive allowlist (any GPL/LGPL/AGPL or otherwise unlisted license) or that resolves to a git
@@ -292,8 +293,8 @@ for such a dependency, raise it in the PR so the policy exception can be reviewe
 No dependency runs an install script. `allowBuilds` in `pnpm-workspace.yaml` rules on every package that ships one, and
 `strictDepBuilds` fails the install on anything undecided, so a dependency that starts shipping a script stops CI until
 someone rules on it.
-[The package-ingress ADR](../docs/adr/0045-package-ingress-default-deny-controls-no-per-package-allowances.md) records
-why.
+[The package-ingress ADR](../docs/adr/0050-package-ingress-global-controls-with-named-exceptions-merged-on-required-checks.md)
+records why.
 
 To clear one: read what the script does, then run `vp pm approve-builds` and deny it if the package works without it.
 That is the usual answer, because native tooling now ships its binaries as platform `optionalDependencies` and keeps the

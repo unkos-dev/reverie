@@ -148,8 +148,8 @@ by definition active debt, the roadmap reads the directory as-is: no status filt
   cache; actions/cache versions entries by path set, so a fork asking for target/ cannot restore the registry-only
   tarball the default branch saves; lifts when forks reach a cache again or measurement shows they need not
 - [kache-action digest pinned past its only tag](2026-07-26-kache-action-digest-pinned-past-tag.md): adopted because the
-  v1 tag predates the namespace and pr-comment inputs and GitHub silently discards undeclared ones; lifts when upstream
-  tags a release containing a257c05
+  v1 tag predated the namespace and pr-comment inputs and GitHub silently discards undeclared ones; lifts when upstream
+  publishes a vX.Y.Z tag containing d71ab254
 - [Prefetch shards uploaded by a hand-written step](2026-07-26-kache-shard-upload-step.md): adopted because the action's
   JavaScript post step runs from the repository root where this workspace has no Cargo.lock; lifts when upstream accepts
   a working directory for that step

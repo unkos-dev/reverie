@@ -350,6 +350,13 @@
       "title": "Read EPUB archives with rawzip"
     },
     {
+      "id": "REV-ADR-0050",
+      "kind": "adr",
+      "path": "docs/adr/0050-package-ingress-global-controls-with-named-exceptions-merged-on-required-checks.md",
+      "status": "proposed",
+      "title": "Package ingress: global controls with named exceptions, merged on required checks"
+    },
+    {
       "governed-by": [
         "REV-ADR-0041",
         "REV-ADR-0047"

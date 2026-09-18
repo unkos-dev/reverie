@@ -49,6 +49,7 @@ Authelia
 Authentik
 authorization
 automerged
+automerges
 axum
 backend
 backends

@@ -4,7 +4,7 @@
     "config:recommended",
     ":semanticCommits",
     ":gitSignOff",
-    "helpers:pinGitHubActionDigests",
+    "helpers:pinGitHubActionDigestsToSemver",
     "mergeConfidence:all-badges",
     "customManagers:dockerfileVersions"
   ],
@@ -75,13 +75,24 @@
       "automerge": true
     },
     {
-      "description": "Automerge third-party action patch and pin updates; require manual review when a pinned tag moves to a new digest.",
+      "description": "Automerge third-party action patch, minor, and pin updates; a digest update under an exact tag means a published tag was rewritten, so it stays manual.",
       "matchManagers": ["github-actions"],
-      "matchUpdateTypes": ["patch", "pin"],
+      "matchUpdateTypes": ["patch", "minor", "pin"],
       "automerge": true
     },
     {
-      "description": "Exempt digest updates from the release-age hold. The hold earns its keep against a newly published version that has not been in the wild long enough to be trusted, which is what REV-ADR-0045 records: new versions wait. A digest update is not a new version. It re-pins a reference to whatever its already-pinned tag names now, and for a base image that is usually a rebuild carrying patched OS packages, so the wait delays the fix. Some tags cannot be aged at all: debian:trixie-slim is a codename with no version behind it, and GHCR publishes no timestamps, so under Renovate's default minimumReleaseAgeBehaviour of timestamp-required both sit pending forever rather than for three days.",
+      "description": "Keep every third-party action update manual in the workflows whose jobs publish, sign, or write to the repository. The review boundary is the job's privilege, not the update type; GitHub-owned actions keep the rule above.",
+      "matchManagers": ["github-actions"],
+      "matchFileNames": [
+        ".github/workflows/docker-publish.yml",
+        ".github/workflows/website.yml",
+        ".github/workflows/release-please.yml"
+      ],
+      "matchDepNames": ["!actions/**", "!github/**"],
+      "automerge": false
+    },
+    {
+      "description": "Exempt digest updates from the release-age hold. The hold earns its keep against a newly published version that has not been in the wild long enough to be trusted, which is what REV-ADR-0050 records: new versions wait. A digest update is not a new version. It re-pins a reference to whatever its already-pinned tag names now, and for a base image that is usually a rebuild carrying patched OS packages, so the wait delays the fix. Some tags cannot be aged at all: debian:trixie-slim is a codename with no version behind it, and GHCR publishes no timestamps, so under Renovate's default minimumReleaseAgeBehaviour of timestamp-required both sit pending forever rather than for three days.",
       "matchUpdateTypes": ["digest", "pinDigest"],
       "minimumReleaseAge": null
     },
@@ -128,11 +139,19 @@
       "groupName": "commitlint"
     },
     {
-      "description": "Keep every PostgreSQL image pin in one PR. docker/compose.dev.yml and the backend.yml services are meant to pin the identical postgres digest so dev and CI test against one database version; nothing checks that, so this grouping is what holds it. Splitting across the docker-compose and github-actions managers would drift them. The pins are single-component tags (postgres:18@sha256:...), so Renovate only ever offers a major or a digest update here; there is no minor to include.",
+      "description": "Keep the dev and CI PostgreSQL pins in one automerged PR so both test against one database version.",
       "matchManagers": ["docker-compose", "github-actions"],
+      "matchFileNames": ["docker/compose.dev.yml", ".github/workflows/**"],
       "matchPackageNames": ["postgres"],
       "matchUpdateTypes": ["patch", "pin", "digest"],
-      "groupName": "postgres-images"
+      "groupName": "postgres-images",
+      "automerge": true
+    },
+    {
+      "description": "Keep staging PostgreSQL updates manual: a changed image can change the unaccent dictionary the persisted search indexes were built under.",
+      "matchFileNames": ["docker/compose.staging.yml"],
+      "matchPackageNames": ["postgres"],
+      "automerge": false
     },
     {
       "description": "Keep the SQLx library and migration CLI compatible.",

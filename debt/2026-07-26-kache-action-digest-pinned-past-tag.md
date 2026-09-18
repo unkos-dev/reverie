@@ -2,50 +2,42 @@
 severity: low
 surfaces: [ci]
 adopted: 2026-07-26
-adopted-because: kache-action's only tag, v1, predates the `namespace` and `pr-comment` inputs the backend cache step depends on; GitHub discards an undeclared input with a warning rather than an error, so pinning to the tag left both settings silently inert
+adopted-because: kache-action's only tag, v1, predated the `namespace` and `pr-comment` inputs the backend cache step depends on; GitHub discards an undeclared input with a warning rather than an error, so pinning to the tag left both settings silently inert
 lift-when-class: upstream
-lift-when: kunobi-ninja/kache-action publishes a tag containing commit a257c05, at which point the digest pin returns to that tag
+lift-when: kunobi-ninja/kache-action publishes a vX.Y.Z tag containing commit d71ab254, at which point the pin moves to that tag and Renovate tracks it by version
 ---
 
 # kache-action digest pinned past its only tag
 
 ## Constraint
 
-`.github/workflows/backend.yml` pins `kunobi-ninja/kache-action` to commit `a257c055543c2840700a9bbca8f9c3094a421b1b`,
-which is the head of the upstream default branch rather than a released tag.
+`.github/workflows/backend.yml` and `.github/workflows/codeql.yml` pin `kunobi-ninja/kache-action` to commit
+`d71ab254aa8c20bdfa2dc38856611f5e78678cc6` on the upstream default branch, and the trailing `# main` comment makes
+Renovate track that branch.
 
-The action has exactly one tag, `v1`, published 2026-06-15 and never re-pointed. Two inputs the backend cache step
-depends on arrived after it:
-
-- `pr-comment`, added in upstream #8 on 2026-06-15
-- `namespace`, added in upstream #12 on 2026-06-19
+The action publishes one tag, `v1`, and moves it. It points at `78ff455`, which declares the `namespace` and
+`pr-comment` inputs the backend cache step passes. The pin is four commits past it, including the fix that skips the
+GitHub cache save after an exact-key restore.
 
 GitHub does not fail a workflow that passes an input the action does not declare. It emits
-`##[warning]Unexpected input(s)` and drops the value. Pinned at `v1`, both settings were accepted by the workflow,
-discarded by the runner, and the job stayed green: prefetch shards were never uploaded, and no comment was withheld by
-the setting that appeared to withhold it.
+`##[warning]Unexpected input(s)` and drops the value, so an input added to the step must be checked against `action.yml`
+at the pinned revision.
 
 ## Workaround
 
-The pin names the commit that declares both inputs, with a comment on the step recording that the digest is the contract
-and that any input added there must be checked against `action.yml` at that exact revision rather than at the upstream
-default branch.
+The pin names a default-branch commit. Renovate proposes a digest update whenever upstream `main` moves, and those
+updates stay manual: `renovate.json` automerges digest updates only for `actions/**` and `github/**`.
 
 ## Why this isn't the right shape
 
-An unreleased commit carries no changelog and no release testing. The seven commits between `v1` and this one include
-Windows runner support and a test refresh, none of which were exercised by a release. Renovate tracks the pin by the
-branch named in its trailing comment, so it will propose digest bumps as upstream moves, and each one changes the
-contract the step is written against. Those bumps are not automerged: under `renovate.json`, only `patch` and `pin` are
-automerged for a third-party action, and `digest` only for `actions/**` and `github/**`. A bump therefore arrives as a
-pull request to check against `action.yml` at the revision it proposes.
-
-Every other action in this repository is pinned to a digest that corresponds to a published release.
+An unreleased commit carries no changelog and no release testing. Pinning the moving `v1` tag instead would not help:
+`helpers:pinGitHubActionDigestsToSemver` tracks only tags with a full version, so every other action is followed by
+version while this one is followed by commit.
 
 ## Lift conditions
 
-Upstream publishes any tag containing `a257c05`. The pin then moves to that tag's digest and the trailing comment names
-the version, matching every other action in the workflow.
+Upstream publishes a `vX.Y.Z` tag containing `d71ab254`. The pin then moves to that tag's digest with an exact-version
+comment, matching every other action in the workflows.
 
 ## Related
 
