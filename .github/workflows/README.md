@@ -67,10 +67,9 @@ crafted filename cannot inject into the shell.
 ### CodeQL language scope
 
 Rust analysis runs on every PR and merge group. Main pushes use path filtering for `backend/`, the CI caller, the CodeQL
-workflow and configuration, `mise.toml`, and the shared Rust toolchain action. The crate's manifests, lockfile,
-toolchain files and its dependency, build-script and migration inputs all live under `backend/`, so no root Cargo,
-lockfile or toolchain pattern selects Rust. `mise.toml` is the root exception, because the job reads the kache pin from
-it.
+workflow and configuration, and the shared Rust toolchain action. The crate's manifests, lockfile, toolchain files and
+its dependency, build-script and migration inputs all live under `backend/`, so no root Cargo, lockfile or toolchain
+pattern selects Rust.
 
 The Rust extractor uses kache and the existing R2 bucket for internal Cargo compilation. The CodeQL namespace groups
 downloads of compatible compiled artifacts, which remain reusable from the shared store. A matching manifest key keeps

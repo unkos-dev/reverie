@@ -70,13 +70,6 @@ filter_bins = "cargo-deny"
 version = "27.1.0"
 locked = true
 
-# Content-addressed build cache used as the cargo rustc-wrapper for local
-# builds. Pinning it here keeps `mise install` provisioning the same
-# version the wrapper is configured against.
-[tools."github:kunobi-ninja/kache"]
-version = "0.21.0"
-filter_bins = "kache"
-
 # Specification linter for docs/specs, run by `just infra::specful`.
 [tools."github:unkos-dev/specful"]
 version = "0.5.2"

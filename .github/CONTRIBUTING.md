@@ -182,8 +182,8 @@ floor, and the MSRV job overrides the file through `RUSTUP_TOOLCHAIN` so it stil
 than against the pinned version.
 
 CI also keeps a content-addressed Rust build cache in object storage, installed by `kunobi-ninja/kache-action` at the
-version pinned for `kache` in [`mise.toml`](../mise.toml) and read from there rather than named a second time, so CI and
-a contributor's machine stay on one version. It runs alongside `Swatinem/rust-cache`, which now carries the cargo
+versions pinned in the [backend](workflows/backend.yml) and [CodeQL](workflows/codeql.yml) workflows and updated by
+Renovate. This cache is not required for local builds. It runs alongside `Swatinem/rust-cache`, which carries the cargo
 registry only. Write credentials are reserved for pushes to `main`; pull requests receive object-read credentials and
 run with the remote in read-only mode, so a branch cannot write into the store the default branch restores from. The
 rationale, the alternatives, and the measured numbers behind it are in

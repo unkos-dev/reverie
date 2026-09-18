@@ -156,9 +156,8 @@ Two aggregates anchor the local loop and should be the default reflex:
 - `just doctor` answers "is this machine ready to develop Reverie?" in seconds: required binaries, mise pins, docker
   daemon, dev Postgres health, runtime-role login and host unix-socket reachability, node_modules freshness, the sqlx
   offline cache, a CARGO_TARGET_DIR or CARGO_BUILD_TARGET_DIR override of a worktree's isolated target dir, git sync
-  state, disk space, and the kache build cache's presence, daemon state, and store size. Every warning and failure names
-  the exact fixing command. Run it first whenever the environment might have changed or a failure looks environmental
-  rather than caused by the change.
+  state and disk space. Every warning and failure names the exact fixing command. Run it first whenever the environment
+  might have changed or a failure looks environmental rather than caused by the change.
 - `just preflight` runs only the preflight lanes this branch's changed paths require, deciding from
   `.github/path-filters.yml` (the file CI's `changes` job feeds to dorny/paths-filter, so the two cannot drift). A
   docs-only or frontend-only branch skips the database, the Rust rebuild, and the dependency audit. Changes to the
