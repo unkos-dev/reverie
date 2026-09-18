@@ -241,14 +241,6 @@ export function useLibraryPreferences(): LibraryPreferences {
     });
   }, [density, hiddenColumns, view, sortOverride]);
 
-  // One-time expiry of the retired view cookie. Its writer was deleted when
-  // the view choice moved to the account, but a year-long cookie written by
-  // an earlier build keeps riding every same-origin request until told to
-  // stop. Removable once no client predating the preferences surface exists.
-  useEffect(() => {
-    document.cookie = "reverie_library_view=; Path=/; Max-Age=0";
-  }, []);
-
   // The setters are stable so a caller can depend on one from an effect
   // without re-running it every render.
   const setDensity = useCallback(
