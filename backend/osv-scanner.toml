@@ -1,0 +1,10 @@
+# OpenSSF Scorecard's OSV scan of Cargo.lock reads this file, not deny.toml;
+# each entry applies a deny.toml ruling, so change the two together.
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2023-0071"
+reason = "No patched rsa release. Production uses rsa only for public-key signature verification, and private-key operations happen only in tests; deny.toml ignores it on the same grounds."
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2024-0436"
+reason = "paste is unmaintained rather than vulnerable, and reaches the tree only as a compile-time macro under utoipa-axum 0.2.0. deny.toml checks maintenance for direct dependencies only. Lift when a utoipa-axum release drops paste."
