@@ -72,5 +72,5 @@ locked = true
 
 # Specification linter for docs/specs, run by `just infra::specful`.
 [tools."github:unkos-dev/specful"]
-version = "0.5.2"
+version = "0.5.4"
 filter_bins = "specful"
