@@ -55,6 +55,10 @@ jobs:
         with:
           node-manager: true
           cache: false
+          run-install: false
+
+      - name: Install workspace
+        run: vp install
 
       # One root lockfile covers every workspace project. `--` passes the
       # severity threshold through vp to the package manager; without it vp

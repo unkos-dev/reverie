@@ -49,6 +49,7 @@ runs:
       with:
         node-manager: true
         cache: true
+        run-install: false
 
     # Anchored explicitly: composite steps don't inherit the calling job's
     # default working-directory, and the workspace root is where the lockfile
