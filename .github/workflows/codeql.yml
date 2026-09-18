@@ -77,10 +77,8 @@ jobs:
             rust:
               # The crate, its manifests, lockfile and toolchain files all live
               # under backend/, so no root Cargo, lockfile or toolchain pattern
-              # selects Rust. mise.toml is the root exception: the job reads the
-              # kache pin out of it.
+              # selects Rust.
               - 'backend/**'
-              - 'mise.toml'
               - '.github/actions/rust-toolchain/**'
               - '.github/workflows/ci.yml'
               - '.github/workflows/codeql.yml'
@@ -175,21 +173,6 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Resolve pinned build-cache version
-        id: kache
-        run: |
-          set -euo pipefail
-          version=$(awk '
-            /^\[tools\."github:kunobi-ninja\/kache"\]/ { in_kache = 1; next }
-            in_kache && /^\[/ { exit }
-            in_kache && /^version[[:space:]]*=/ { gsub(/[^0-9.]/, ""); print; exit }
-          ' mise.toml || true)
-          if [[ ! "${version}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            echo "Could not extract a valid kache version from mise.toml (got: '${version}')" >&2
-            exit 1
-          fi
-          echo "version=${version}" >> "$GITHUB_OUTPUT"
-
       - id: rust
         uses: ./.github/actions/rust-toolchain
         with:
@@ -205,7 +188,8 @@ jobs:
         if: env.R2_CONFIGURED == 'true'
         uses: kunobi-ninja/kache-action@d71ab254aa8c20bdfa2dc38856611f5e78678cc6 # main
         with:
-          version: ${{ steps.kache.outputs.version }}
+          # renovate: datasource=github-releases depName=kunobi-ninja/kache extractVersion=^v(?<version>.+)$
+          version: "0.21.0"
           s3-bucket: reverie-ci-cache
           s3-region: auto
           s3-endpoint: https://${{ secrets.R2_ACCOUNT_ID }}.r2.cloudflarestorage.com

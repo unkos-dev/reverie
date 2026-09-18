@@ -3,7 +3,7 @@
 # Reverie?" Prints one PASS/WARN/FAIL line per check plus a summary, and
 # exits nonzero iff any check FAILed. No writes, no network calls beyond the
 # already-running local docker daemon this repo's dev stack owns, the dev
-# cluster's own unix socket, and the kache build cache's own unix socket.
+# cluster's own unix socket.
 set -ueo pipefail
 
 repo_root="$(cd "$(dirname "$0")/.." && pwd -P)"
@@ -305,119 +305,6 @@ if [ "${disk_probe_ok}" -eq 1 ]; then
   fi
 else
   warn "disk space check" "cannot determine free space (non-GNU df); check manually"
-fi
-
-# 12. kache build-cache binary resolves on PATH. It is configured as the
-# cargo rustc-wrapper outside this repo; absence only means local builds
-# fall back to uncached compiles, not a broken toolchain, so this warns
-# rather than fails.
-kache_present=0
-if command -v kache >/dev/null 2>&1; then
-  kache_present=1
-  pass "binary 'kache' resolves on PATH"
-else
-  warn "binary 'kache' resolves on PATH" "mise install"
-fi
-
-# 13. kache daemon reachable. The daemon owns the store's only automatic
-# eviction (one sweep on startup, then every six hours), so a stopped daemon
-# is the usual reason the size check below eventually fires. Local cache hits
-# and misses work without it, which is why this warns rather than fails.
-#
-# `kache daemon status` exits 0 whether or not the daemon is up, so the state
-# has to be read out of its output rather than its exit code. Two properties
-# shape the match: the state is wrapped in ANSI colour that no NO_COLOR
-# setting suppresses, and "not running" contains "running". Hence globs that
-# tolerate the escape sequences, with the negative case tested first.
-# Anything neither pattern recognises is reported as indeterminate: an
-# upstream change to this output must surface as a warning, never keep
-# forging a PASS.
-if [ "${kache_present}" -eq 1 ]; then
-  daemon_line="$(kache daemon status 2>/dev/null | grep 'Daemon:' | head -n 1 || true)"
-  case "${daemon_line}" in
-    *not*running*)
-      warn "kache daemon is running" "kache daemon start"
-      ;;
-    *running*)
-      pass "kache daemon is running"
-      ;;
-    *)
-      warn "kache daemon is running" "cannot determine daemon state (unrecognized 'kache daemon status' output); run it manually"
-      ;;
-  esac
-fi
-
-# 14. kache content-addressed store size, checked against the cap kache
-# itself enforces rather than against free disk. Eviction only happens while
-# the daemon runs (check 13), and it holds the store under
-# `cache.local_max_size`, so a store found above that ceiling means eviction
-# is not happening: a dead daemon, a failing sweep, or a machine whose
-# configured cap no longer matches this threshold. Sizing the check to the cap
-# rather than to a smaller number of its own keeps the two from disagreeing,
-# which is the state that made an earlier 20 GiB threshold fire permanently
-# against a 50 GiB cap on a disk with hundreds of gigabytes free.
-#
-# A store that has never been populated (kache has
-# never run here, or the resolved directory does not exist on this
-# platform) is not a problem to report on, so an absent directory degrades
-# silently rather than warning or failing.
-#
-# The remedy has to be an age sweep, not a size one. `kache gc` with no age
-# evicts only down to the configured cap, which defaults far above this
-# threshold, and KACHE_MAX_SIZE in the invoking environment does not reach
-# that sweep: measured against a 31 GiB store, a 29 GiB cap evicted nothing
-# while an age sweep over the same store reclaimed 6.7 GiB. The age also has
-# to be short enough to match something. Entries turn over in days here, not
-# weeks, so the 30d this once advised could evict nothing on a store that had
-# just tripped the threshold.
-#
-# Directory resolution follows kache's own documented precedence (kache's
-# configuration reference, v0.11.0): the KACHE_CACHE_DIR environment
-# variable overrides everywhere it is set, and otherwise the platform
-# default applies: ~/Library/Caches/kache on macOS, ~/.cache/kache
-# everywhere else. kache's docs describe XDG_CACHE_HOME as affecting only
-# where kache looks for its *config* file, never the cache directory
-# itself, so it is not treated as authoritative here and never substitutes
-# for the documented default when that default exists. It is still probed
-# as a last-resort fallback, after both documented sources, only when the
-# platform default directory is absent: Rust's common cache-dir resolution
-# libraries honor $XDG_CACHE_HOME as the Linux cache root when it is set,
-# so a machine that relies on that convention is still found rather than
-# silently going unreported. Probing this extra candidate can only add a
-# location to check; it never suppresses the documented default when that
-# one is actually present.
-platform="$(uname -s 2>/dev/null || echo unknown)"
-if [ -n "${KACHE_CACHE_DIR:-}" ]; then
-  kache_store="${KACHE_CACHE_DIR}"
-elif [ "${platform}" = "Darwin" ]; then
-  kache_store="${HOME}/Library/Caches/kache"
-else
-  kache_store="${HOME}/.cache/kache"
-  if [ ! -d "${kache_store}" ] && [ -n "${XDG_CACHE_HOME:-}" ]; then
-    kache_store="${XDG_CACHE_HOME}/kache"
-  fi
-fi
-
-# `du -sk` (1024-byte blocks) rather than GNU-only `du -sb` (bytes, via
-# `--apparent-size`): `-b` has no BSD/macOS equivalent, so it either fails
-# or reports wildly different units on a non-GNU userland. `-sk` is
-# supported by both and, as a real-disk-usage measurement rather than an
-# apparent-size one, is the more honest number for a disk-space check.
-store_cap_kib=$((50 * 1024 * 1024))
-if [ -d "${kache_store}" ]; then
-  if store_kib="$(du -sk "${kache_store}" 2>/dev/null | cut -f1)" && [ -n "${store_kib}" ]; then
-    # Round to the nearest GiB rather than truncating: truncation alone
-    # would display a 20.9 GiB store as "20 GiB", reading as though the
-    # warning fired under its own stated threshold.
-    store_gib=$(( (store_kib + 524288) / 1048576 ))
-    if [ "${store_kib}" -ge "${store_cap_kib}" ]; then
-      warn "kache store size: ${store_gib} GiB" "kache gc --max-age 7d"
-    else
-      pass "kache store size: ${store_gib} GiB"
-    fi
-  else
-    warn "kache store size" "cannot determine store size (du failed); check manually"
-  fi
 fi
 
 echo "----"
