@@ -12,7 +12,7 @@ rumdl = "0.2.73"
 shellcheck = "0.11.0"
 snyk = "1.1307.2"
 trivy = "0.74.0"
-typos = "1.50.1"
+typos = "1.50.2"
 # OpenAPI linter for the generated spec, run by the openapi-policy CI job
 # against .vacuum.yaml.
 vacuum = "0.30.5"
