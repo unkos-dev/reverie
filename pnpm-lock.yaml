@@ -26,8 +26,8 @@ importers:
         specifier: ^21.1.0
         version: 21.2.2
       '@playwright/cli':
-        specifier: 0.1.19
-        version: 0.1.19
+        specifier: 0.1.20
+        version: 0.1.20
       lefthook:
         specifier: 2.1.14
         version: 2.1.14
@@ -1420,8 +1420,8 @@ packages:
     cpu: [x64]
     os: [win32]
 
-  '@playwright/cli@0.1.19':
-    resolution: {integrity: sha512-eGXIsYa5D+dC6wHGf+9uEislhPGip1djK+yiNAD7BVsXN3WzzR1J4ClFAhYhyu7wSEFqhcPrqXAYeBJF1dKJ7A==}
+  '@playwright/cli@0.1.20':
+    resolution: {integrity: sha512-kEL+73IwNVFmUjGn0rmpBStZ8jju8MmmWBMXmVMesBzoZ8YW2b/Nv7aCOYLBrCbYzc7RvWZCbVj88+wOCg8yyw==}
     engines: {node: '>=18'}
     hasBin: true
 
@@ -4543,8 +4543,8 @@ packages:
     engines: {node: '>=20'}
     hasBin: true
 
-  playwright-core@1.63.0-alpha-2026-08-31:
-    resolution: {integrity: sha512-1ek0Lyr12h6jcs/WTcNoVtzZkQp7D/90PsMuBW/Rm6h3AsWAbzpqj0geMv8+8Tzzr9CSUYvg9kznrVZINQMXXw==}
+  playwright-core@1.64.0-alpha-2026-09-14:
+    resolution: {integrity: sha512-VCqlQ8lEKS8NAfEU/sWx3KP7gL2oCWd/DAGzPDZncGV7dUNNHpaVxHd2LWe2pc5y53h0Hqu3SWzRiPqKqkrYQA==}
     engines: {node: '>=20'}
     hasBin: true
 
@@ -4553,8 +4553,8 @@ packages:
     engines: {node: '>=20'}
     hasBin: true
 
-  playwright@1.63.0-alpha-2026-08-31:
-    resolution: {integrity: sha512-3XAsuznfu8jBVJ4QxdGvBkt0+b8ZFwuwJYyOfiIw5ZjUOrNLNRhKxzLzLuydou3gJ9c6eMwVqgzdiOwhy54Kzw==}
+  playwright@1.64.0-alpha-2026-09-14:
+    resolution: {integrity: sha512-CdpbZ03/Iq4HMth9RP2NHBv/gv9exDLkR3eJEDvS2fKdAjZSNYvL2PrJum3wHe8qOSFR8KzWuyKUx3AZ5vZc4w==}
     engines: {node: '>=20'}
     hasBin: true
 
@@ -6447,10 +6447,10 @@ snapshots:
   '@pagefind/windows-x64@1.5.2':
     optional: true
 
-  '@playwright/cli@0.1.19':
+  '@playwright/cli@0.1.20':
     dependencies:
-      playwright: 1.63.0-alpha-2026-08-31
-      playwright-core: 1.63.0-alpha-2026-08-31
+      playwright: 1.64.0-alpha-2026-09-14
+      playwright-core: 1.64.0-alpha-2026-09-14
 
   '@playwright/test@1.63.0':
     dependencies:
@@ -9546,15 +9546,15 @@ snapshots:
 
   playwright-core@1.63.0: {}
 
-  playwright-core@1.63.0-alpha-2026-08-31: {}
+  playwright-core@1.64.0-alpha-2026-09-14: {}
 
   playwright@1.63.0:
     dependencies:
       playwright-core: 1.63.0
 
-  playwright@1.63.0-alpha-2026-08-31:
+  playwright@1.64.0-alpha-2026-09-14:
     dependencies:
-      playwright-core: 1.63.0-alpha-2026-08-31
+      playwright-core: 1.64.0-alpha-2026-09-14
 
   pngjs@7.0.0: {}
 
