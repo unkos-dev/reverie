@@ -47,7 +47,7 @@ services:
     # indexes were built under; this volume persists, so REINDEX the
     # immutable_unaccent indexes and recompute works.search_vector with the
     # bump. See docs/adr/0044-match-time-accent-folding-via-unaccent-expression-indexes.md.
-    image: postgres:18-alpine@sha256:d3e1620b530c944afa6e887d22eb899824da68e19c52024bf98f5220c88a65b2
+    image: postgres:18-alpine@sha256:650d7a867dc5336eff67802a1417fcc801821d73d824c608e80afbde792fe6e1
     # Scope explicitly: postgres only needs bootstrap credentials and the
     # init-roles.sql password inputs. Loading the full app `.env` would
     # leak unrelated secrets (DATABASE_URL, OIDC client secret, session
