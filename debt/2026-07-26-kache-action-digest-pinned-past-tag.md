@@ -26,7 +26,7 @@ at the pinned revision.
 ## Workaround
 
 The pin names a default-branch commit. Renovate proposes a digest update whenever upstream `main` moves, and those
-updates stay manual: `renovate.json` automerges digest updates only for `actions/**` and `github/**`.
+updates stay manual, because `renovate.json` limits automerged digest updates to `actions/**` and `github/**`.
 
 ## Why this isn't the right shape
 
