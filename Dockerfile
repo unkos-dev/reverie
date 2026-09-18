@@ -15,8 +15,12 @@ FROM rust:1-slim-trixie@sha256:3999a7ff854f315cf5f2b9a58071cb71196fdfc2ccd32fa20
 # binary. Without it the published SBOM is silent about every crate,
 # because the runtime image holds a compiled binary rather than
 # installed packages; syft and trivy both recover the embedded list.
-RUN cargo install cargo-chef@0.1.77 --locked \
-    && cargo install cargo-auditable@0.7.5 --locked
+# renovate: datasource=crate depName=cargo-chef
+ARG CARGO_CHEF_VERSION=0.1.77
+# renovate: datasource=crate depName=cargo-auditable
+ARG CARGO_AUDITABLE_VERSION=0.7.5
+RUN cargo install "cargo-chef@${CARGO_CHEF_VERSION}" --locked \
+    && cargo install "cargo-auditable@${CARGO_AUDITABLE_VERSION}" --locked
 WORKDIR /build
 
 # Stage 1b: planner — emits recipe.json describing the dependency tree.
@@ -105,7 +109,6 @@ RUN PNPM_CONFIG_VERIFY_DEPS_BEFORE_RUN=false pnpm --filter frontend run build
 # that a directory scan cannot follow. Syft's default dir scan excludes its
 # JavaScript cataloger, so it must be selected explicitly.
 FROM js-toolchain AS frontend-sbom
-# renovate: datasource=docker depName=anchore/syft
 COPY --from=anchore/syft:v1.51.1@sha256:95fe0835e5bebc6f8b1f8acef68d47d63d594ef4c0f25c097ff853b23cbac74c /syft /usr/local/bin/syft
 RUN pnpm deploy --ignore-scripts --filter frontend --prod /sbom-tree \
     && syft dir:/sbom-tree --override-default-catalogers javascript-package-cataloger \
