@@ -25,3 +25,7 @@ rules:
   comments:
     min-spaces-from-content: 1
   comments-indentation: disable
+  # oxfmt writes two-space indentation. Stated explicitly because ryl
+  # mis-infers the step for a root-level sequence under `consistent`.
+  indentation:
+    spaces: 2
