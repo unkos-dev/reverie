@@ -75,23 +75,6 @@
       "automerge": true
     },
     {
-      "description": "Automerge third-party action patch, minor, and pin updates; a digest update under an exact tag means a published tag was rewritten, so it stays manual.",
-      "matchManagers": ["github-actions"],
-      "matchUpdateTypes": ["patch", "minor", "pin"],
-      "automerge": true
-    },
-    {
-      "description": "Keep every third-party action update manual in the workflows whose jobs publish, sign, or write to the repository. The review boundary is the job's privilege, not the update type; GitHub-owned actions keep the rule above.",
-      "matchManagers": ["github-actions"],
-      "matchFileNames": [
-        ".github/workflows/docker-publish.yml",
-        ".github/workflows/website.yml",
-        ".github/workflows/release-please.yml"
-      ],
-      "matchDepNames": ["!actions/**", "!github/**"],
-      "automerge": false
-    },
-    {
       "description": "Exempt digest updates from the release-age hold. The hold earns its keep against a newly published version that has not been in the wild long enough to be trusted, which is what REV-ADR-0050 records: new versions wait. A digest update is not a new version. It re-pins a reference to whatever its already-pinned tag names now, and for a base image that is usually a rebuild carrying patched OS packages, so the wait delays the fix. Some tags cannot be aged at all: debian:trixie-slim is a codename with no version behind it, and GHCR publishes no timestamps, so under Renovate's default minimumReleaseAgeBehaviour of timestamp-required both sit pending forever rather than for three days.",
       "matchUpdateTypes": ["digest", "pinDigest"],
       "minimumReleaseAge": null

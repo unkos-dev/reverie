@@ -45,14 +45,14 @@ The controls are pinned and enforced managers, frozen installs, downloads verifi
 install-time code execution by default, a release-age hold, and audits of every ingested tree. An exception names its
 package and records its reason. Updates merge automatically when required checks pass and the hold has elapsed. A human
 reviews major versions, a released action tag that has been rewritten, pre-1.0 libraries linked into the product,
-updates that need a manual step, and any third-party action update in a workflow whose job can publish, sign, or write
-to the repository, because the review boundary is the privilege of the job a workflow runs, not the kind of update.
+updates that need a manual step, and every update to a third-party action, because each such action runs in at least one
+job that holds a write scope or a credential and an update PR spans every workflow that uses it.
 
 ### Consequences
 
 - Positive: no entry is keyed to a version the repository does not own.
 - Positive: a dependency that starts shipping an install script fails the install rather than running it unreviewed.
-- Positive: review attention concentrates on rewritten tags, majors, and privileged workflows, rather than spreading
+- Positive: review attention concentrates on rewritten tags, majors, and third-party actions, rather than spreading
   across every routine update.
 - Negative: an automerged tool update reaches developer machines without a look.
 - Negative: the release-age hold on action tags ages by commit date, which a publisher can backdate.
