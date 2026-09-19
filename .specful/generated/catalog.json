@@ -318,7 +318,10 @@
       "id": "REV-ADR-0045",
       "kind": "adr",
       "path": "docs/adr/0045-package-ingress-default-deny-controls-no-per-package-allowances.md",
-      "status": "accepted",
+      "status": "superseded",
+      "superseded-by": [
+        "REV-ADR-0050"
+      ],
       "title": "Package ingress: default-deny controls, no per-package allowances"
     },
     {
@@ -353,7 +356,10 @@
       "id": "REV-ADR-0050",
       "kind": "adr",
       "path": "docs/adr/0050-package-ingress-global-controls-with-named-exceptions-merged-on-required-checks.md",
-      "status": "proposed",
+      "status": "accepted",
+      "supersedes": [
+        "REV-ADR-0045"
+      ],
       "title": "Package ingress: global controls with named exceptions, merged on required checks"
     },
     {

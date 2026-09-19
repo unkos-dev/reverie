@@ -3,10 +3,12 @@ type: ADR
 profile-version: 1
 id: "REV-ADR-0050"
 title: "Package ingress: global controls with named exceptions, merged on required checks"
-status: "proposed"
+status: "accepted"
 recorded-on: "2026-09-19"
 decision-makers:
   - "John Unkovich"
+supersedes:
+  - "REV-ADR-0045"
 ---
 
 # Package ingress: global controls with named exceptions, merged on required checks
