@@ -37,9 +37,10 @@ const COVER_MAX_AGE_SECS: u32 = 86_400;
 /// `Vary`, on a shared browser a cached cover for user A would be replayed to
 /// user B after an account switch, leaking an RLS-hidden cover (e.g. a child
 /// account seeing an adult-only cover an adult viewed). `Vary` partitions the
-/// cache by the credential: `Authorization` for OPDS Basic, `Cookie` for the
-/// web session. Session/Basic credentials are stable within a session, so this
-/// preserves the per-session caching win while closing the cross-user replay.
+/// cache by the credential: `Authorization` for Basic, device-token and OIDC
+/// bearer credentials, `Cookie` for the web session. Each is stable within a
+/// session, so this preserves the per-session caching win while closing the
+/// cross-user replay.
 const COVER_VARY: &str = "Authorization, Cookie";
 
 /// `Cache-Control` for cover responses. `private` (not `no-store`) — covers are
@@ -112,7 +113,7 @@ pub fn api_router() -> OpenApiRouter<AppState> {
     get,
     path = "/opds/books/{id}/cover",
     summary = "Get a book's cover for OPDS",
-    description = "Streams the full-size cover image for a manifestation as `image/jpeg` or `image/png`, with a strong `ETag` and a day-long `Cache-Control`. Requires HTTP Basic authentication.",
+    description = "Streams the full-size cover image for a manifestation as `image/jpeg`, `image/png`, or `image/webp`, with a strong `ETag` and a day-long `Cache-Control`. Requires HTTP Basic authentication.",
     tag = "opds",
     security(("opds_basic" = [])),
     params(("id" = Uuid, Path, description = "Manifestation id")),

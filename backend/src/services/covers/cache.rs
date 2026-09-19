@@ -1,8 +1,7 @@
 //! On-disk cover cache, content-addressed by `current_file_hash` prefix.
 //!
-//! A writeback (which rewrites `current_file_hash`) naturally evicts stale
-//! entries: the next read computes a different key and the old file becomes
-//! an orphan for the cache sweep.
+//! A writeback (which rewrites `current_file_hash`) changes the key the next
+//! read computes; the old file stays on disk as an orphan nothing reclaims.
 
 use std::path::{Path, PathBuf};
 

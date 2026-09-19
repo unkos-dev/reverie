@@ -33,7 +33,7 @@ struct ScanResponse {
     /// Files that errored during ingestion.
     #[schema(format = Int64)]
     failed: usize,
-    /// Files skipped (already ingested or unsupported).
+    /// Files skipped as duplicates of an existing manifestation.
     #[schema(format = Int64)]
     skipped: usize,
 }

@@ -1,5 +1,5 @@
 config-version: 1
 project-key: REV
 next-adr-sequence: 51
-next-requirement-sequence: 43
-next-design-sequence: 13
+next-requirement-sequence: 51
+next-design-sequence: 16

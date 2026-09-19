@@ -33,6 +33,7 @@ sqlx = "sqlx"
 serde = "serde"
 tokio = "tokio"
 reqwest = "reqwest"
+flate = "flate"
 
 # EPUB spec vocabulary
 opf = "opf"
