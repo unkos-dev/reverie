@@ -48,6 +48,7 @@ jobs:
         with:
           node-manager: true
           cache: false
+          run-install: false
 
       - name: Install workspace
         run: vp install
