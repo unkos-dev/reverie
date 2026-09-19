@@ -15,16 +15,16 @@ governed-by:
 # Covers
 
 This Design covers the pipeline that serves a book's cover art: detecting and extracting the cover image embedded in an
-EPUB archive, rasterising an SVG-declared cover to PNG under a set of hardening guards, resizing into two size tiers
+EPUB archive, rasterizing an SVG-declared cover to PNG under a set of hardening guards, resizing into two size tiers
 with tier-dependent encoding, caching the result on disk under a content-addressed key, serving it from two HTTP mounts
 with a strong validator and cache headers, and the client's fallback to a generated cloth-bound spine when a cover fails
 to load.
 
 ## Purpose and boundaries
 
-This subject owns: cover-byte extraction from an EPUB archive, including the fallback into SVG rasterisation when the
+This subject owns: cover-byte extraction from an EPUB archive, including the fallback into SVG rasterization when the
 raster decoder cannot read the declared cover (`backend/src/services/covers/extract.rs::extract_cover_bytes`); the
-hardened SVG-to-PNG rasteriser and every guard around it: the input-byte cap, the raw-byte nesting-depth bound, the
+hardened SVG-to-PNG rasterizer and every guard around it: the input-byte cap, the raw-byte nesting-depth bound, the
 DTD-disabled parse, the hardened image-href resolver bounding per-image and cumulative decode cost and
 sibling-resolution count, the render-cost gate rejecting filters and over-budget geometry, and the blank-render
 rejection (`backend/src/services/covers/svg.rs`); the two size tiers and their tier-dependent encoding, JPEG for
@@ -39,9 +39,9 @@ the book detail page).
 
 It does not own: the archive structural validation, container and OPF parsing, and cover-href detection this subject
 calls into on every extraction, which belongs to the Design "EPUB validation and repair"; this subject only reuses their
-output and maps an irrecoverable structural failure to the same outcome as a coverless archive. It does not own the
+output and maps an irrecoverable structural failure to the same outcome as an archive with no cover. It does not own the
 reverse call: the Design "EPUB validation and repair" describes a cover-usability check that calls back into this
-subject's SVG rasteriser and its resolver-free parse-and-gate check to decide, at ingestion, whether a manifestation's
+subject's SVG rasterizer and its resolver-free parse-and-gate check to decide, at ingestion, whether a manifestation's
 cover renders. This subject supplies the routine, not the ingestion-time verdict built on it. It does not own the
 `has_embedded_cover` column, its ingestion-time write, or the predicate that decides whether an ingest invokes this
 subject's pre-warm mechanism: those belong to the Design "Ingestion pipeline"; this subject owns only the mechanism the
@@ -69,7 +69,7 @@ OPDS mount's runtime mount (the API mount is unconditional).
 Depended on by: the library grid, the library table view, the book detail page, the book detail drawer, and the series
 page on the client, all of which request only the thumbnail tier; OPDS reader apps, which reach both tiers through the
 acquisition feed's image and thumbnail links; the Layer 5 cover check the Design "EPUB validation and repair" describes,
-which calls this subject's rasteriser to decide cover usability at ingestion; and the Design "Ingestion pipeline", which
+which calls this subject's rasterizer to decide cover usability at ingestion; and the Design "Ingestion pipeline", which
 calls this subject's pre-warm mechanism after a successful ingest.
 
 ## Structure
@@ -84,11 +84,11 @@ path:
 | ---------- | -------------- | ------- |
 | Cached cover file | `{library_path}/_covers/cache/…` | `get_or_create` (request-path miss) and `warm_one` (background pre-warm) |
 
-Both funnel through the one write primitive, `CoverCache::write_atomic`: a tempfile in the cache directory, written and
-flushed, then renamed into place, so a partial write is never visible at the final path. Neither writer takes a lock
-over the destination path, and nothing coordinates the two: a request-path miss racing a pre-warm task for the same
-`(manifestation_id, file_hash, size)`, or two concurrent request-path misses for the same cover, can both run the
-extract-resize-write pipeline and both call `write_atomic` for the same destination. This is safe only because the
+Both funnel through the one write primitive, `CoverCache::write_atomic`: a temporary file in the cache directory,
+written and flushed, then renamed into place, so a partial write is never visible at the final path. Neither writer
+takes a lock over the destination path, and nothing coordinates the two: a request-path miss racing a pre-warm task for
+the same `(manifestation_id, file_hash, size)`, or two concurrent request-path misses for the same cover, can both run
+the extract-resize-write pipeline and both call `write_atomic` for the same destination. This is safe only because the
 destination path is itself content-addressed: every writer computing the same key from the same source bytes produces
 the same output bytes, so the redundant write is a no-op in effect, and `write_atomic`'s own documentation records
 last-writer-wins on identical content as benign.
@@ -106,7 +106,7 @@ have this gap.
   resolve the declared cover entry, before reading its bytes. When the raster decoder (`image::guess_format`) cannot
   read the bytes and they look like SVG (`svg::looks_like_svg`), it hands them to `svg::rasterize_svg` with a sibling
   resolver scoped to the cover's directory inside the archive (`join_sibling_path`); the Layer 5 check the Design "EPUB
-  validation and repair" describes calls `join_sibling_path` the same way, so both routes to a rasterised sibling
+  validation and repair" describes calls `join_sibling_path` the same way, so both routes to a rasterized sibling
   resolve identically.
 - `svg.rs::parse_and_gate` is the one hardened parse-and-gate routine shared by serve-time `rasterize_svg` and the
   resolver-free `parses_as_svg`, which the Layer 5 check in the Design "EPUB validation and repair" calls: input-byte
@@ -123,7 +123,7 @@ have this gap.
   encodes JPEG at quality 82; the full tier re-encodes in the input format.
 - `mod.rs::generate_into_cache` is the one synchronous extract-resize-write pipeline both writers call from inside
   `tokio::task::spawn_blocking`. `get_or_create` runs it on a cache miss reached from a request; it drops its RLS-scoped
-  transaction before entering `spawn_blocking`, so no database connection is held during extraction or rasterisation.
+  transaction before entering `spawn_blocking`, so no database connection is held during extraction or rasterization.
   `warm_one` runs it from a background task, bounded by the `WARM_LIMIT` semaphore (three concurrent permits), which
   `spawn_warm_thumb` acquires before generating; nothing in the tree closes this semaphore.
 - `routes/opds/covers.rs::serve_cover` is the one handler body both HTTP mounts share. It calls `get_or_create`,
@@ -134,8 +134,8 @@ have this gap.
   documented in the OpenAPI spec); `covers::api_router()`, exposed as `routes::opds::covers_router()`, builds
   `/api/v1/books/{id}/cover{,/thumb}` behind `CurrentUser`, merged into the pilot router unconditionally, so it is
   mounted regardless of `opds.enabled`.
-- On the client, `CoverArtwork` is a pure presentational component with no data dependency on the cover pipeline; each
-  of its two call sites (`LibraryPage.tsx`'s `BookCard`, `BookPage.tsx`'s `DetailCover`) pairs it with its own `<img>`
+- On the client, `CoverArtwork` is a pure decorative component with no data dependency on the cover pipeline; each of
+  its two call sites (`LibraryPage.tsx`'s `BookCard`, `BookPage.tsx`'s `DetailCover`) pairs it with its own `<img>`
   element and its own `useState` boolean, set by that `<img>`'s `onError` handler. Two further `cover_url` consumers
   (`BookDetailDrawer.tsx`, `LibraryTableView.tsx`'s `TitleCellMark`) each implement the same pattern with their own,
   independent title-initials fallback instead of calling `CoverArtwork`; a fifth consumer, `SeriesPage.tsx`, attaches no
@@ -158,8 +158,8 @@ have this gap.
 - Four `GET` endpoints, documented in the OpenAPI spec generated from `routes/opds/covers.rs`: `/opds/books/{id}/cover`,
   `/opds/books/{id}/cover/thumb` (Basic auth), `/api/v1/books/{id}/cover`, `/api/v1/books/{id}/cover/thumb` (session
   cookie, device-token bearer, OIDC bearer, or Basic). Each returns the image bytes with `Cache-Control`, a strong
-  `ETag`, and `Vary`; a matching `If-None-Match` returns `304`; a missing, RLS-hidden, or coverless manifestation
-  returns `404`.
+  `ETag`, and `Vary`; a matching `If-None-Match` returns `304`; a missing manifestation, an RLS-hidden one, or one with
+  no cover returns `404`.
 - The acquisition feed (a component of the OPDS catalogue subject) links each entry to both tiers via the
   `http://opds-spec.org/image` and `http://opds-spec.org/image/thumbnail` link relations, pointing at the OPDS mount.
 - `CoverArtwork({ bookId, title, authors, className }) => ReactElement`, the client's spine-fallback component; it takes
@@ -175,11 +175,11 @@ have this gap.
 - **Size tiers.** `Full`: long edge capped at 1200 px, source format preserved. `Thumb`: long edge capped at 300 px,
   always JPEG at quality 82 (white-composited first, since JPEG carries no alpha channel).
 - **SVG hardening budgets** (`svg.rs`): input bytes capped at 4 MiB; a single embedded raster (sibling or data URI)
-  capped at 8 MiB and 16 megapixels; the cumulative decoded-pixel budget across one rasterisation capped at 64
-  megapixels, shared by both resolver paths; sibling resolutions capped at 8 per rasterisation, with a cumulative 32 MiB
+  capped at 8 MiB and 16 megapixels; the cumulative decoded-pixel budget across one rasterization capped at 64
+  megapixels, shared by both resolver paths; sibling resolutions capped at 8 per rasterization, with a cumulative 32 MiB
   sibling-byte budget; render output capped at a 1200 px long edge; path segments and node count each capped at 50,000;
   element-nesting depth capped at 48.
-- **Cache headers.** A servable cover: `Cache-Control: private, max-age=86400`, a strong `ETag`,
+- **Cache headers.** A cover the endpoints can serve: `Cache-Control: private, max-age=86400`, a strong `ETag`,
   `Vary: Authorization, Cookie`. A negative response for a cover artifact resolved but missing from disk:
   `Cache-Control: private, max-age=60`, the same `Vary`, no `ETag`. A manifestation with no cover, an archive Layer 1
   rejects, or a manifestation RLS hides: the bare `AppError::NotFound` body, with neither `Cache-Control` nor `Vary`.
@@ -195,30 +195,30 @@ have this gap.
 
 1. `serve_cover` calls `get_or_create`, which opens an RLS-scoped transaction (`db::acquire_with_rls`), looks up the
    manifestation's `file_path` and `current_file_hash`, and drops the transaction immediately after.
-2. A row RLS hides, or that does not exist, yields the same `CoverError::NoCover` as a coverless manifestation;
+2. A row RLS hides, or that does not exist, yields the same `CoverError::NoCover` as a manifestation with no cover;
    `get_or_create` cannot tell the two apart, by construction.
 3. `cached_hit` probes the cache directory for an already-encoded file at this tier (`jpg` only for `Thumb`; `jpg`,
    `png`, `webp` in order for `Full`). A hit returns immediately with no filesystem write and no archive access.
 4. A miss enters `spawn_blocking` and runs `generate_into_cache`: `extract_cover_bytes` re-validates the archive and
-   locates the cover (rasterising it first if it is SVG-declared), `resize_cover` resizes and encodes for the tier, and
+   locates the cover (rasterizing it first if it is SVG-declared), `resize_cover` resizes and encodes for the tier, and
    `CoverCache::write_atomic` writes the result under its content-addressed name.
 5. `serve_cover` compares a request's `If-None-Match` against the artifact's quoted `ETag`; a match returns `304` with
    the cache headers and no body. Otherwise it opens the cached file, derives `Content-Type` from its extension, and
    streams it with the cache headers and a `200`.
 
-**Rasterising an SVG-declared cover**, inside step 4 above, entirely before any byte reaches the resize step:
+**Rasterizing an SVG-declared cover**, inside step 4 above, entirely before any byte reaches the resize step:
 
 1. The raw bytes are capped at 4 MiB, then scanned for element-nesting depth with a flat byte loop that never itself
-   parses or recurses, before any parser touches them; nesting past 48 levels is rejected here.
+   parses or descends into the structure, before any parser touches them; nesting past 48 levels is rejected here.
 2. The bytes are checked for valid UTF-8, then parsed by `roxmltree` with `allow_dtd: false`; a DOCTYPE of any kind is
    rejected at this step, since disabling DTD processing means no entity is ever expanded.
 3. `usvg::Tree::from_xmltree` builds the render tree, consulting the hardened image-href resolver for every `<image>`
    element it encounters: each sibling ZIP entry or embedded data URI is checked against a per-image byte and megapixel
    cap and a cumulative decoded-pixel budget shared across both resolver paths, and sibling resolutions additionally
-   against a per-rasterisation count and cumulative-byte cap; a reference over any of these budgets is dropped rather
-   than resolved, so the image node renders as absent rather than the rasterisation failing outright.
+   against a per-rasterization count and cumulative-byte cap; a reference over any of these budgets is dropped rather
+   than resolved, so the image node renders as absent rather than the rasterization failing outright.
 4. `check_render_complexity` walks the built tree: every group's children, its full clip-path and mask chains, and every
-   node's paint-server and layout sub-trees. It rejects the whole rasterisation if any filter primitive is reachable, or
+   node's paint-server and layout sub-trees. It rejects the whole rasterization if any filter primitive is reachable, or
    if the total path-segment count, node count, or descent depth exceeds its budget.
 5. `resvg::render` draws into a pixmap capped at a 1200 px long edge; an all-transparent result is rejected so the case
    renders identically to an unresolvable cover, and the pixmap is otherwise PNG-encoded and returned.
@@ -234,21 +234,21 @@ never pre-warmed; a full-size cover is generated on its first request instead.
 element; four of the five also hold their own local failure state. `cover_url` is always a non-empty, server-constructed
 `/api/v1/books/{id}/cover/thumb` path for every book row the API returns; the four failure-tracking surfaces' own
 empty-string check on it is not exercised by any response shape this API's book-row endpoints return, since every such
-row's `cover_url` is unconditionally populated regardless of whether the manifestation has a servable cover. Four
-surfaces attach an `onError` handler to the `<img>` that fires on any failed load, whether a `404`, a `500`, or a
-network failure, and sets a `useState` boolean on first failure: `LibraryPage.tsx`'s `BookCard` and `BookPage.tsx`'s
-`DetailCover` fall back to the generated `CoverArtwork` spine; `BookDetailDrawer.tsx` and `LibraryTableView.tsx`'s
-`TitleCellMark` each fall back to their own title-initials `<span>` instead of `CoverArtwork`. `SeriesPage.tsx` attaches
-no `onError` handler and holds no failure state: its only conditional is whether the manifestation returned a
-`cover_url` at all, so a present `cover_url` whose image request fails renders the browser's own broken-image glyph
-rather than a fallback this subject or the page supplies. Each of the four surfaces that tracks a load failure does so
-independently, so a failure on one does not affect another.
+row's `cover_url` is unconditionally populated regardless of whether the manifestation has a cover the endpoints can
+serve. Four surfaces attach an `onError` handler to the `<img>` that fires on any failed load, whether a `404`, a `500`,
+or a network failure, and sets a `useState` boolean on first failure: `LibraryPage.tsx`'s `BookCard` and
+`BookPage.tsx`'s `DetailCover` fall back to the generated `CoverArtwork` spine; `BookDetailDrawer.tsx` and
+`LibraryTableView.tsx`'s `TitleCellMark` each fall back to their own title-initials `<span>` instead of `CoverArtwork`.
+`SeriesPage.tsx` attaches no `onError` handler and holds no failure state: its only conditional is whether the
+manifestation returned a `cover_url` at all, so a present `cover_url` whose image request fails renders the browser's
+own broken-image glyph rather than a fallback this subject or the page supplies. Each of the four surfaces that tracks a
+load failure does so independently, so a failure on one does not affect another.
 
 **A Layer 5 cover-usability check calling back into this subject**, at ingestion, in the opposite direction from every
 path above: the Design "EPUB validation and repair" describes that check, which calls this subject's `rasterize_svg`
 with the same sibling resolution serving uses, so the ingestion-time verdict and the serve-time result cannot disagree
 for the same bytes; when `rasterize_svg` fails for a reason `parses_as_svg`'s resolver-free check would also reject (a
-genuine parse or render-cost failure), that Design records a `Degraded` issue, while a rasterisation failure
+genuine parse or render-cost failure), that Design records a `Degraded` issue, while a rasterization failure
 `parses_as_svg` would accept (a blank render or an absent sibling) is treated as no usable cover, not an issue.
 
 **A writeback rewriting a manifestation's file**, in the opposite direction from the Writeback pipeline subject: it
@@ -267,13 +267,12 @@ still names.
   file could be opened, or the source EPUB itself has moved: this is a distinct `404` shape, `cover_miss_not_found()`,
   carrying `Cache-Control: private, max-age=60` and the same `Vary` as a success, so a grid of missing covers is not
   re-derived from disk on every navigation, but at a far shorter negative TTL than a real cover's day-long cache, since
-  the underlying file can reappear (a re-scan, a remounted library) with no `ETag` for the browser to revalidate
-  against.
+  the underlying file can reappear (a re-scan, a remounted library) with no `ETag` for the browser to re-check against.
 - **Every other `CoverError`** is a server error (`AppError::Internal`, `500`), never a `404`: a decode failure, an
   unsupported format, a database error, a corrupt ZIP, or any SVG hardening rejection (which the whole SVG pipeline in
   Runtime behaviour surfaces only as `Decode`). The client cannot tell this apart from a `404` by its visible behaviour,
   since its `<img onError>` fallback fires on either, but the two are distinct on the wire.
-- **A `spawn_blocking` panic** during extraction, rasterisation, or resizing is caught by the `JoinError` mapping in
+- **A `spawn_blocking` panic** during extraction, rasterization, or resizing is caught by the `JoinError` mapping in
   both `get_or_create` and `warm_one`, and surfaces as `CoverError::Decode`: a server error on the request path, a
   logged and swallowed failure on the pre-warm path.
 - **A generation race.** Two writers computing the same content-addressed cache key at the same time (a request-path
@@ -298,20 +297,20 @@ still names.
 
 ## Security and operations
 
-No SVG bytes are ever written to the cache or streamed to a client; every servable artefact this subject produces is a
+No SVG bytes are ever written to the cache or streamed to a client; every artefact this subject produces and serves is a
 raster the `image` crate's encoders wrote, so the cover route carries no stored-XSS surface regardless of what an
-uploaded EPUB's cover SVG contains. The SVG rasteriser runs over attacker-controlled XML pulled from an uploaded archive
+uploaded EPUB's cover SVG contains. The SVG rasterizer runs over attacker-controlled XML pulled from an uploaded archive
 under the repository's multi-user, internet-exposed threat model: every guard in the Runtime behaviour walkthrough
-(input-byte cap, pre-parse nesting-depth scan, disabled DTD processing, the hardened image-href resolver's per-image and
-cumulative budgets, the render-cost gate, the blank-render rejection) defends that boundary, and the resvg crate is
-built with its `text` feature compiled out, so an SVG cover relying on live `<text>` elements renders without that text
-rather than pulling a font-shaping stack into the dependency tree.
+(input-byte cap, pre-parse nesting-depth scan, disabled DTD processing, `hardened_resolver`'s per-image and cumulative
+budgets, the render-cost gate, the blank-render rejection) defends that boundary, and the resvg crate is built with its
+`text` feature compiled out, so an SVG cover relying on live `<text>` elements renders without that text rather than
+pulling a font-shaping stack into the dependency tree.
 
-`private, max-age=86400` plus `Vary: Authorization, Cookie` on a servable cover keeps a shared cache (a proxy, or a
+`private, max-age=86400` plus `Vary: Authorization, Cookie` on a cover fit to serve keeps a shared cache (a proxy, or a
 shared browser profile switching between Reverie accounts) from storing or replaying an RLS-scoped cover across a
 credential boundary; on the API mount, `Authorization` covers every credential the mount's `CurrentUser` extractor
 accepts that arrives in that header: Basic, a device-token bearer, and an OIDC bearer alike, not only Basic as the OPDS
-mount alone would suggest. A response that carries no image bytes and no `ETag` (the coverless, RLS-hidden, and
+mount alone would suggest. A response that carries no image bytes and no `ETag` (the no-cover, RLS-hidden, and
 archive-rejected cases) carries neither directive at all; without an explicit `Cache-Control`, whether and how long such
 a response is cacheable is left to each cache's own heuristic freshness calculation under RFC 9111 §4.2.2, not to
 anything this subject specifies.

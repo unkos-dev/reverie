@@ -12,14 +12,14 @@ governed-by:
 # Ingestion pipeline
 
 This Design covers how a file dropped into the watched ingestion directory becomes a manifestation in the library: the
-filesystem watcher and its debounce, the one-shot scan that discovers and filters candidate files, the per-file
+filesystem watcher and its settle window, the one-shot scan that discovers and filters candidate files, the per-file
 duplicate check, atomic SHA-256-verified copy into the library tree, the transaction that creates or updates the work
 and manifestation rows, quarantine of a file the pipeline cannot ingest, post-batch source cleanup, the Postgres
 advisory lock that serialises concurrent scans, and the admin-only HTTP trigger that starts a scan on demand.
 
 ## Purpose and boundaries
 
-This subject owns: the filesystem watcher and its debounce window (`backend/src/services/ingestion/watcher.rs`); the
+This subject owns: the filesystem watcher and its settle window (`backend/src/services/ingestion/watcher.rs`); the
 one-shot scan orchestration, including the advisory lock, the duplicate check, the per-file state machine, and the
 atomic database commit for a newly ingested file (`backend/src/services/ingestion/orchestrator.rs`); format-priority
 selection among files that share a directory and stem (`format_filter.rs`); library path template rendering, path
@@ -31,7 +31,7 @@ library (`copier.rs`); quarantine of a file the pipeline rejects (`quarantine.rs
 It does not own EPUB structural validation and repair: this pipeline calls `epub::validate_and_repair` on the file it
 has already copied into the library and branches on the returned outcome, but the five-layer check itself, its issue
 vocabulary, and its repair behaviour belong to the Design "EPUB validation and repair". It does not own cover extraction
-or rasterisation: a successful commit fires a best-effort thumbnail pre-warm on the cache the Design "Covers" owns, and
+or rasterization: a successful commit fires a best-effort thumbnail pre-warm on the cache the Design "Covers" owns, and
 this pipeline neither waits for that work nor inspects its result; this pipeline owns only the call site and the gate
 predicate that decide whether that pre-warm fires, not the pre-warm mechanism itself. It does not own the
 `works`/`manifestations` schema, the foreign-key graph, or the version-pointer pattern those tables carry, which is the
@@ -112,13 +112,13 @@ Call sites that dispatch to those owners:
 ### Component relationships
 
 - `orchestrator.rs` wires every other module together. `run_watcher` spawns `watcher::watch` as a background task and,
-  for every debounced batch it receives, calls `scan_once` without reading the batch's own paths; an inline comment in
-  the `rx.recv()` arm records the reason, that a full directory walk picks up a file that arrived after the watcher's
-  own event fired. `routes/ingestion.rs::scan` is the only other production caller of `scan_once`.
+  for every settled batch it receives, calls `scan_once` without reading the batch's own paths; an inline comment in the
+  `rx.recv()` arm records the reason, that a full directory walk picks up a file that arrived after the watcher's own
+  event fired. `routes/ingestion.rs::scan` is the only other production caller of `scan_once`.
 - `scan_once` is a thin wrapper: it acquires the advisory lock, calls `scan_once_inner`, and releases the lock
   regardless of the inner call's outcome.
-- `scan_once_inner` walks the ingestion directory with `WalkDir` (symlinks not followed), narrows the result to one file
-  per directory-and-stem group through `format_filter::select_by_priority`, drives each selected file through
+- `scan_once_inner` walks the ingestion directory with `WalkDir` (symbolic links not followed), narrows the result to
+  one file per directory-and-stem group through `format_filter::select_by_priority`, drives each selected file through
   `ingestion_job` and `process_file`, and finishes with the batch-level `cleanup::cleanup_batch` when the batch has no
   failures.
 - `process_file` is the per-file pipeline. `path_template` (a filename heuristic, template rendering, and collision
@@ -136,7 +136,7 @@ Call sites that dispatch to those owners:
 
 - The module's public surface (`backend/src/services/ingestion/mod.rs`): `ScanResult { processed, failed, skipped }`,
   `run_watcher(config: Config, pool: PgPool, cancel: CancellationToken) -> Result<(), anyhow::Error>`, and
-  `scan_once(config: &Config, pool: &PgPool) -> Result<ScanResult, anyhow::Error>`. Every other item the submodules
+  `scan_once(config: &Config, pool: &PgPool) -> Result<ScanResult, anyhow::Error>`. Every other item the child modules
   export (`copier::{hash_file, copy_verified}`, `quarantine::quarantine_file`, `cleanup::cleanup_batch`, and
   `format_filter::select_by_priority`) has no caller outside this module in production code; `path_template::render` and
   `path_template::resolve_collision` are the one exception, reused by the Writeback pipeline subject.
@@ -190,7 +190,7 @@ Call sites that dispatch to those owners:
 ## Runtime behaviour
 
 **Discovering and selecting candidates.** A scan (`scan_once`) begins by walking the whole ingestion directory with
-`WalkDir`, not following symlinks, collecting every regular file regardless of extension.
+`WalkDir`, not following symbolic links, collecting every regular file regardless of extension.
 `format_filter::select_by_priority` groups the results by parent directory and lowercase filename stem, and, within each
 group, keeps only the file whose extension both parses as a `ManifestationFormat` and ranks earliest in the
 operator-configured priority order; a file with no parseable extension, or one that loses to a higher-priority sibling
@@ -225,8 +225,8 @@ file's row:
    the ingestion hash keeps the original's; a failure to re-read it removes the library file and quarantines the
    drop-zone original like a `Quarantined` outcome. A validator that fails to run (an I/O or internal error, not a
    structural finding) stores `validation_status = failed` and still proceeds to commit, so the file is ingested and
-   served, with the failure surfaced only as a monitorable status value. A non-`epub` format leaves `validation_status`
-   at its `pending` default, since no validator exists for it.
+   served, with the failure surfaced only as a status value an operator can watch. A non-`epub` format leaves
+   `validation_status` at its `pending` default, since no validator exists for it.
 6. Any `OpfData` recovered in step 5 is extracted into `ExtractedMetadata`. If the extracted title or an author differs
    from the filename heuristic enough to render a different library path, the file is renamed on disk (with its own
    collision resolution) to the metadata-derived path; a rename failure is logged, and the heuristic path is kept rather
@@ -295,24 +295,24 @@ row is created for it.
   quarantine directory grows without bound, and only manual operator intervention reduces it, the same shape as the
   compensating control the CodeGuard deviation register records for this pipeline's cleanup containment guard (see
   Security and operations).
-- **Cleanup's containment guard.** `cleanup_batch` canonicalises both the configured ingestion root and every path it is
-  asked to touch before deleting or pruning it, and refuses anything that does not resolve as a descendant of that root,
-  including a path reached through a symlink, or a sibling directory whose name merely extends the root's as a string. A
-  canonicalisation failure on the root itself is treated as the least permissive outcome available (the guard compares
-  against the unresolved root instead), which can only cause a legitimate in-tree path to be skipped, never an
-  out-of-tree one to be admitted.
+- **Cleanup's containment guard.** `cleanup_batch` resolves both the configured ingestion root and every path it is
+  asked to touch to their real paths before deleting or pruning it, and refuses anything that does not resolve as a
+  descendant of that root, including a path reached through a symlink, or a sibling directory whose name merely extends
+  the root's as a string. A failure to resolve the root's own real path is treated as the least permissive outcome
+  available (the guard compares against the unresolved root instead), which can only cause a legitimate in-tree path to
+  be skipped, never an out-of-tree one to be admitted.
 
 ## Security and operations
 
 - **Path sanitisation is this pipeline's traversal defence for user-supplied metadata.** Every path-template
   substitution passes through `sanitize_path_component`, which replaces the characters forbidden on POSIX, Windows NTFS,
-  or common network filesystems (including `/` and `\`) with `_`, trims leading and trailing whitespace and dots, and
+  or common network file systems (including `/` and `\`) with `_`, trims leading and trailing whitespace and dots, and
   collapses repeated underscores; because `/` and `\` cannot survive substitution, a metadata field containing a
   directory-traversal sequence cannot escape the library root once its sanitised value is joined to an absolute base.
 - **Cleanup's containment guard is a CodeGuard compensating control**, recorded against this pipeline in the CodeGuard
   deviation register's ZIP-processing entry: bounding `cleanup_batch`'s deletion and pruning authority to descendants of
-  the canonicalised ingestion root, verified against both an out-of-tree symlink target and a sibling directory whose
-  name shares a string prefix with the root without being a descendant of it.
+  the resolved ingestion root, verified against both an out-of-tree symlink target and a sibling directory whose name
+  shares a string prefix with the root without being a descendant of it.
 - **Only `reverie_ingestion` holds unconditional, not per-user, access to `manifestations`.** That role's
   `manifestations_ingestion_full_access` policy (`USING (true) WITH CHECK (true)`) carries no per-request credential or
   caller-supplied role narrowing it; every write this pipeline makes over its dedicated connection reaches the table

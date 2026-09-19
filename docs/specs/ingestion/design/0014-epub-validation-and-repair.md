@@ -17,9 +17,9 @@ governed-by:
 
 This Design covers the five-layer structural check every EPUB file passes through before it is trusted: ZIP archive
 integrity read through `rawzip`, `META-INF/container.xml` and `OPF` package-document parsing, `XHTML` spine-document
-well-formedness, and cover-image decodability. It covers the shared `Issue` vocabulary those layers append to, the
-severity tiers that decide whether a finding is automatically repaired, tolerated, or fatal, and the repair pass that
-rewrites and atomically replaces an archive carrying only repairable findings.
+well-formedness, and cover-image decoding. It covers the shared `Issue` vocabulary those layers append to, the severity
+tiers that decide whether a finding is automatically repaired, tolerated, or fatal, and the repair pass that rewrites
+and atomically replaces an archive carrying only repairable findings.
 
 ## Purpose and boundaries
 
@@ -32,7 +32,7 @@ SVG cover's sibling-image path; Layer 1's ZIP integrity read and its `ZipHandle`
 (`zip_layer.rs`); Layer 2's `container.xml` parse and OPF-path discovery, including regeneration when `container.xml`
 cannot be read (`container_layer.rs`); Layer 3's OPF package-document parse into `OpfData`, the manifest, spine, Dublin
 Core fields, W3C accessibility metadata, and series metadata (`opf_layer.rs`); Layer 4's XHTML spine-document encoding
-and well-formedness checks (`xhtml_layer.rs`); Layer 5's cover-image decodability check (`cover_layer.rs`); the repair
+and well-formedness checks (`xhtml_layer.rs`); Layer 5's cover-image decoding check (`cover_layer.rs`); the repair
 orchestrator that applies every `Repaired`-severity finding and atomically replaces the source file (`repair.rs`); and
 the low-level repack helper that rebuilds a ZIP archive with the `mimetype` entry first and stored, copying every
 untouched entry verbatim (`repack.rs`).
@@ -69,10 +69,10 @@ cover-embed planning that produce those bytes belong to that subject, not this o
 Depends on: `rawzip` for Layer 1's lazy, allocation-bounded central-directory read; `flate2` for on-the-fly Deflate
 decompression during Layer 1's probes and full entry reads; the `zip` crate, built with only the
 `deflate-flate2-zlib-rs` and `time` features, for the repack write path; `quick_xml` for `container.xml`, OPF, and XHTML
-parsing; `encoding_rs` for XHTML transcoding; `image`, plus `rasterize_svg`, `looks_like_svg`, and `parses_as_svg`,
-owned by the Design "Covers", for cover decodability; and `tempfile` for the repack's atomic rename. This subject opens
-no database connection of its own; every check and repair runs against a byte buffer read from, and (on repair) written
-back to, the filesystem path the caller supplies.
+parsing; `encoding_rs` for converting XHTML to UTF-8; `image`, plus `rasterize_svg`, `looks_like_svg`, and
+`parses_as_svg`, owned by the Design "Covers", for cover decoding; and `tempfile` for the atomic rename
+`repack::with_modifications` performs. This subject opens no database connection of its own; every check and repair runs
+against a byte buffer read from, and (on repair) written back to, the filesystem path the caller supplies.
 
 Depended on by: the Design "Ingestion pipeline", which calls `validate_and_repair` once per freshly copied EPUB file and
 branches on the returned `ValidationOutcome`; the Writeback pipeline subject, which calls `validate_and_repair` twice
@@ -111,14 +111,14 @@ that understates the true count). Per entry, in order: the name must decode as U
 anything else runs against it; the name must not repeat a name already seen (case-sensitive, exact string); the entry
 must not be encrypted and must declare Stored or Deflate compression; its declared uncompressed size must not exceed
 `MAX_ENTRY_UNCOMPRESSED_BYTES`, and the running sum of declared sizes must not exceed
-`MAX_AGGREGATE_UNCOMPRESSED_BYTES`; the entry must be locatable and, when small enough, a bounded decompression probe
-confirms its actual size is consistent with what it declared. After the loop, the smallest recorded local-header offset
-across every entry must be zero (rejecting any prelude before the true first entry), and the counted total must equal
-the declared count in both directions (catching a central directory that is either longer or shorter than the end record
-claims).
+`MAX_AGGREGATE_UNCOMPRESSED_BYTES`; the entry's local header must be found and, when small enough, a bounded
+decompression probe confirms its actual size is consistent with what it declared. After the loop, the smallest recorded
+local-header offset across every entry must be zero (rejecting any prelude before the true first entry), and the counted
+total must equal the declared count in both directions (catching a central directory that is either longer or shorter
+than the end record claims).
 
 **The `mimetype` entry's OCF container rules are checked last, and only once the archive has already passed every check
-above.** A compliant archive is guaranteed to have at least one entry at offset zero by that point; the mimetype check
+above.** A compliant archive is guaranteed to have at least one entry at offset zero by that point; the `mimetype` check
 is keyed by name, not position, so that guarantee is all it needs: it first identifies the entry the central directory
 names `mimetype`, then asks whether that specific entry, by both its recorded position and its own local header's name,
 actually sits at offset zero. This is a spoofing defence as much as a position check: the position test does not merely
@@ -162,29 +162,29 @@ UTF-8, or the XML fails to parse, the function returns `None` silently: there is
 unreadable OPF, and no code path in this layer reports one. Layer 3 has no error-signal for its own parse failure at
 all, unlike Layer 4 below, which does report a malformed spine document as an issue.
 
-**Layer 4: `XHTML` (`xhtml_layer.rs`).** If the spine holds more than `MAX_SPINE_ITEMS` idrefs, the layer emits a single
-`Degraded` `SpineCapExceeded` issue and validates no spine document at all, not just the entries past the cap.
-Otherwise, each spine document is read and checked under a three-condition encoding rule: a non-UTF-8 encoding must be
-declared (XML declaration or byte-order mark), the raw bytes must fail UTF-8 parsing, and decoding under the declared
+**Layer 4: `XHTML` (`xhtml_layer.rs`).** If the spine holds more than `MAX_SPINE_ITEMS` spine references, the layer
+emits a single `Degraded` `SpineCapExceeded` issue and validates no spine document at all, not just the entries past the
+cap. Otherwise, each spine document is read and checked under a three-condition encoding rule: a non-UTF-8 encoding must
+be declared (XML declaration or byte-order mark), the raw bytes must fail UTF-8 parsing, and decoding under the declared
 encoding must succeed cleanly; only when all three hold does the layer emit a `Repaired` `EncodingMismatch` and validate
-the transcoded bytes as XML. The `detected` field this issue carries is set to the literal string `"UTF-8"`
+the bytes converted to UTF-8 as XML. The `detected` field this issue carries is set to the literal string `"UTF-8"`
 unconditionally; nothing in the layer performs encoding detection beyond the declared-encoding-versus-UTF-8-parse test
 the three-condition rule already runs. A UTF-8 parse failure without a usable declared encoding is `Degraded`
-`AmbiguousEncoding` and is not transcoded. An XML well-formedness failure on the (possibly transcoded) bytes is
+`AmbiguousEncoding` and is not converted to UTF-8. An XML well-formedness failure on the (possibly converted) bytes is
 `Degraded` `MalformedXhtml`.
 
 **Layer 5: Cover (`cover_layer.rs`).** Resolves the cover href through its own `find_cover_href`, the three-way cascade
 that chains Layer 3's `cover_href`, then Layer 3's `meta_cover_href`, then a legacy magic-id fallback (`cover-image`,
 `cover`, `Cover`, `Cover-Image`) looked up directly against the manifest; this is also the function the Design "Covers"
 calls to locate the same cover. Layer 5 then reads the entry and accepts it if it decodes as a raster image or, for an
-SVG, rasterises to a visible image through `rasterize_svg`, owned by the Design "Covers", with sibling resolution scoped
-to the same archive. A missing entry or an undecodable one is `Degraded`; a cover that parses as SVG but renders nothing
-visible (empty, or referencing an unresolved sibling) is treated the same as no cover declared, with no issue at all.
-The layer returns a plain boolean, `true` only when a cover both exists and renders at serve time, which the calling
-pipeline persists directly instead of re-deriving it on each subsequent read.
+SVG, rasterizes to a visible image through `rasterize_svg`, owned by the Design "Covers", with sibling resolution scoped
+to the same archive. A missing entry or one that cannot be decoded is `Degraded`; a cover that parses as SVG but renders
+nothing visible (empty, or referencing an unresolved sibling) is treated the same as no cover declared, with no issue at
+all. The layer returns a plain boolean, `true` only when a cover both exists and renders at serve time, which the
+calling pipeline persists directly instead of re-deriving it on each subsequent read.
 
 **Repair and repack (`repair.rs`, `repack.rs`).** `repair::repackage` collects every `Repaired`-severity issue by kind
-(broken spine idrefs, non-OPF encoding fixes, the missing-container flag and its candidate) and builds the inputs
+(broken spine references, non-OPF encoding fixes, the missing-container flag and its candidate) and builds the inputs
 `repack::with_modifications` needs: an optional OPF replacement (spine refs removed, an encoding fix applied, or both,
 chained in that order when both apply to the same entry), a map of non-OPF binary replacements for their own encoding
 fixes, and a regenerated `META-INF/container.xml` addition when the container was missing and a safe candidate was
@@ -234,10 +234,10 @@ constants in `mod.rs` or `zip_layer.rs`:
 | `MAX_ZIP_ENTRIES` | 20,000 | Central-directory entry count, checked twice: from the end record's declared count before any header is parsed, and again as a counted backstop during iteration |
 | `MAX_ENTRY_UNCOMPRESSED_BYTES` | 500 MB | One entry's declared uncompressed size |
 | `MAX_AGGREGATE_UNCOMPRESSED_BYTES` | 2 GB | The running sum of every entry's declared uncompressed size |
-| `MAX_SPINE_ITEMS` | 500 | Spine idref count; over the cap skips XHTML validation for the whole spine, not only the excess |
+| `MAX_SPINE_ITEMS` | 500 | Spine reference count; over the cap skips XHTML validation for the whole spine, not only the excess |
 | `MAX_EOCD_SEARCH_SPACE` | 65,557 bytes | How far back from the end of the file the end-of-central-directory locator searches (the fixed 22-byte record plus the format's maximum 65,535-byte comment) |
 | `MIMETYPE_CONTENT_PROBE_CAP` | 64 bytes | How much of the `mimetype` entry's content is read to check it against `application/epub+zip` |
-| the per-entry extractability probe cap | `min(declared_size + 1, 4096)` bytes | How much of an entry is decompressed during Layer 1's own lying-directory check |
+| the per-entry extraction probe cap | `min(declared_size + 1, 4096)` bytes | How much of an entry is decompressed during Layer 1's own lying-directory check |
 
 The per-entry and aggregate caps bound the *declared* size a central-directory record carries, not a verified actual
 size. Layer 1's own probe only catches a declared-size lie for an entry small enough that `declared + 1` is at most
@@ -256,9 +256,9 @@ potentially still an overall `Clean` outcome if nothing else fired).
 ## Runtime behaviour
 
 **A structurally clean EPUB.** Every Layer 1 check passes, the `mimetype` entry meets all four OCF rules, Layer 2 finds
-and reads `container.xml`, Layer 3 parses the OPF with every manifest href safe and every spine idref resolved, Layer 4
-finds no encoding or well-formedness problem within the spine cap, and Layer 5 finds a usable cover or none declared. No
-issue is recorded; the outcome is `Clean`, and the file is never touched.
+and reads `container.xml`, Layer 3 parses the OPF with every manifest href safe and every spine reference resolved,
+Layer 4 finds no encoding or well-formedness problem within the spine cap, and Layer 5 finds a usable cover or none
+declared. No issue is recorded; the outcome is `Clean`, and the file is never touched.
 
 **An EPUB whose only problem is a non-conformant `mimetype` entry.** Layer 1 records one or more `Repaired`
 `InvalidMimetype` findings (for example, the entry is Deflated and not first) and nothing else. `has_repairable` is
@@ -267,9 +267,9 @@ effective mutation is `repack::with_modifications`'s own unconditional compliant
 file is persisted atomically over the source, and a second validation pass over the same path finds no `InvalidMimetype`
 issue and an outcome of `Clean`.
 
-**An EPUB with a broken spine reference.** Layer 3 removes the dangling idref from `spine_idrefs` and records a
-`Repaired` `BrokenSpineRef`. `repair::repackage` rewrites the OPF, removing the matching `<itemref>` element (matched by
-a depth counter rather than a boolean, so a malformed OPF with nested `itemref` elements cannot prematurely clear the
+**An EPUB with a broken spine reference.** Layer 3 removes the dangling spine reference from `spine_idrefs` and records
+a `Repaired` `BrokenSpineRef`. `repair::repackage` rewrites the OPF, removing the matching `<itemref>` element (matched
+by a depth counter rather than a boolean, so a malformed OPF with nested `itemref` elements cannot prematurely clear the
 skip state), and the repacked archive is persisted atomically. If the same run's Layer 1 also found a non-conformant
 `mimetype` entry, both fixes land in the same repack.
 
@@ -299,10 +299,10 @@ the same immediate `Quarantined` result.
 
 `EpubError` has four variants. `Io` covers a filesystem read failure on the source path itself. `TempFile` covers a
 failed atomic persist during repack, reachable from `repair.rs`'s own `temp.persist(path)` call. `Xml` wraps a
-`quick_xml::Error` by `#[from]`, but no code path in the module constructs one: `repair.rs`'s own OPF rewriter
-(`rewrite_opf_remove_broken_spine`) discards every `write_event` failure with a warning instead of propagating it, and
-falls back to the original, unmodified bytes on a read failure; the variant exists in the type but nothing in the code
-produces it. `Zip` is documented as a `zip`-crate error such as a corrupt central directory, but Layer 1's own
+`quick_xml::Error` by `#[from]`, but no code path in the module constructs one: `repair.rs`'s own routine that rewrites
+the OPF (`rewrite_opf_remove_broken_spine`) discards every `write_event` failure with a warning instead of propagating
+it, and falls back to the original, unmodified bytes on a read failure; the variant exists in the type but nothing in
+the code produces it. `Zip` is documented as a `zip`-crate error such as a corrupt central directory, but Layer 1's own
 structural findings, corrupt central directory included, are always represented as `Irrecoverable` issues inside a
 successful `Ok(ValidationReport)`, never as this error variant; in the code, `Zip` surfaces from
 `repack::with_modifications`'s own use of the `zip` crate, both re-opening the source archive and from `start_file`,
@@ -315,11 +315,12 @@ A `Repaired`-severity issue that repair cannot actually apply is not always visi
 failed atomic persist), the error propagates out of `validate_and_repair` as `Err(EpubError)` rather than as a
 `ValidationReport`; the file at `path` is left completely untouched, since the failure happens before the atomic
 persist. The Design "Ingestion pipeline" treats this the same as any other validator crash: it stores
-`validation_status = failed` and still ingests the file with its original, unrepaired bytes, rather than quarantining it
-or leaving it unhandled. Separately, an `EncodingMismatch` fix on a non-OPF entry can be recorded as `Repaired` at
+`validation_status = failed` and still ingests the file with its original bytes, not repaired, rather than quarantining
+it or not handling it at all. Separately, an `EncodingMismatch` fix on a non-OPF entry can be recorded as `Repaired` at
 validation time yet silently not applied at repair time: `repackage` re-reads and re-transcodes the entry independently
 of the check that decided the fix was safe, and if that re-derivation fails for any reason, the entry is simply left out
-of the repack's binary replacements and copied through unchanged, while the outcome the caller sees is still `Repaired`.
+of the binary replacements `repackage` builds and is copied through unchanged, while the outcome the caller sees is
+still `Repaired`.
 
 A repacked archive can end up with two entries sharing the same name in at least one path: a `MissingContainer` repair
 adds a regenerated `META-INF/container.xml` as a new entry, and the raw-copy loop that carries every other source entry
