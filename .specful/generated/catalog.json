@@ -318,7 +318,10 @@
       "id": "REV-ADR-0045",
       "kind": "adr",
       "path": "docs/adr/0045-package-ingress-default-deny-controls-no-per-package-allowances.md",
-      "status": "accepted",
+      "status": "superseded",
+      "superseded-by": [
+        "REV-ADR-0050"
+      ],
       "title": "Package ingress: default-deny controls, no per-package allowances"
     },
     {
@@ -348,6 +351,16 @@
       "path": "docs/adr/0049-read-epub-archives-with-rawzip.md",
       "status": "accepted",
       "title": "Read EPUB archives with rawzip"
+    },
+    {
+      "id": "REV-ADR-0050",
+      "kind": "adr",
+      "path": "docs/adr/0050-package-ingress-global-controls-with-named-exceptions-merged-on-required-checks.md",
+      "status": "accepted",
+      "supersedes": [
+        "REV-ADR-0045"
+      ],
+      "title": "Package ingress: global controls with named exceptions, merged on required checks"
     },
     {
       "governed-by": [

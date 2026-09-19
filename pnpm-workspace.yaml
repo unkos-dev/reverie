@@ -12,7 +12,7 @@ packages:
 # symlinks to injected copies, and neither project depends on the other.
 injectWorkspacePackages: true
 
-# Install-script default-deny, per docs/adr/0045-package-ingress-default-deny-controls-no-per-package-allowances.md.
+# Install-script default-deny, per docs/adr/0050-package-ingress-global-controls-with-named-exceptions-merged-on-required-checks.md.
 # `strictDepBuilds` defaults to true and is what turns an undecided package into
 # a failed install (ERR_PNPM_IGNORED_BUILDS, exit 1) rather than a warning
 # nobody reads; `allowBuilds` records the per-package decision. A dependency

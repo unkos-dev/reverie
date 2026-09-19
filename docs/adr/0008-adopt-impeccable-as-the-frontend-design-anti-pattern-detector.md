@@ -161,6 +161,6 @@ cost, so no trial period applies. Open a superseding record if any of the follow
   [Strict lint policy: pedantic Clippy and strict frontend lint](./0002-strict-lint-policy-pedantic-clippy-and-strict-frontend-lint.md),
   a sibling enforcement layer.
 - Related decision:
-  [Package ingress default-deny](./0045-package-ingress-default-deny-controls-no-per-package-allowances.md), which
-  governs the install-script denial this record relies on.
+  [Package ingress: global controls with named exceptions, merged on required checks](./0050-package-ingress-global-controls-with-named-exceptions-merged-on-required-checks.md),
+  which governs the install-script denial this record relies on.
 - Upstream: <https://github.com/pbakaus/impeccable> (Apache-2.0, forked from Anthropic's `frontend-design` skill).

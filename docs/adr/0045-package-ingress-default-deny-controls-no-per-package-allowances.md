@@ -3,11 +3,13 @@ type: ADR
 profile-version: 1
 id: "REV-ADR-0045"
 title: "Package ingress: default-deny controls, no per-package allowances"
-status: "accepted"
+status: "superseded"
 recorded-on: "2026-09-06"
 decided-on: "2026-08-03"
 decision-makers:
   - "John Unkovich"
+superseded-by:
+  - "REV-ADR-0050"
 ---
 
 # Package ingress: default-deny controls, no per-package allowances
