@@ -619,7 +619,7 @@ worktree
 worktrees
 writeback
 xs
-yamllint
+ryl
 Zitadel
 zizmor
 Zod

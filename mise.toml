@@ -17,7 +17,6 @@ typos = "1.50.2"
 # against .vacuum.yaml.
 vacuum = "0.30.6"
 vale = "3.21.0"
-yamllint = "1.38.0"
 zizmor = "1.30.1"
 # The package manager, resolved through mise's aqua backend and so
 # checksum-verified. Two bootstraps need pnpm before any node_modules exists
@@ -46,6 +45,10 @@ pnpm = "11.27.0"
 [tools."github:quarylabs/sqruff"]
 version = "0.40.0"
 filter_bins = "sqruff"
+
+# YAML linter; reads .yamllint.yaml. Run by `just infra::ryl`.
+[tools."github:owenlamont/ryl"]
+version = "0.22.0"
 
 # Prebuilt Rust tools used by local recipes. The GitHub backend enables
 # checksum and provenance verification when upstream publishes them.

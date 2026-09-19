@@ -121,9 +121,9 @@ Git hooks are managed by lefthook and installed through the `prepare` script, so
 Install the repository-pinned hook and local-check tools with [mise](https://mise.jdx.dev/):
 
 ```sh
-mise install actionlint gitleaks hadolint just rumdl shellcheck typos vale yamllint \
+mise install actionlint gitleaks hadolint just rumdl shellcheck typos vale \
   pnpm github:nextest-rs/nextest \
-  github:quarylabs/sqruff github:unkos-dev/specful
+  github:quarylabs/sqruff github:unkos-dev/specful github:owenlamont/ryl
 ```
 
 Then install [vite-plus](https://viteplus.dev). It is a standalone binary, so an install inside the checkout does not

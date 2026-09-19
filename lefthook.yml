@@ -33,7 +33,7 @@ pre-commit:
             run: rumdl fmt {staged_files}
             stage_fixed: true
           # Covers every oxfmt-owned type except YAML (split out below so the
-          # formatter is ordered before yamllint). stage_fixed re-stages the
+          # formatter is ordered before ryl). stage_fixed re-stages the
           # rewrite, so the formatted bytes are what the commit captures.
           # --no-error-on-unmatched-pattern keeps a commit of only ignored files
           # (e.g. a regenerated backend/config.schema.json) a clean no-op.
@@ -41,13 +41,13 @@ pre-commit:
             glob: "**/*.{ts,tsx,js,jsx,mjs,cjs,mts,cts,json,jsonc,css,mdx,html,toml}"
             run: vp fmt --write --no-error-on-unmatched-pattern {staged_files}
             stage_fixed: true
-          # The `&&` orders oxfmt before yamllint within the one command, so the
+          # The `&&` orders oxfmt before ryl within the one command, so the
           # formatter always completes before the linter reads the file
           # regardless of scheduling. Second stage_fixed command, hence in the
           # piped group alongside oxfmt, never parallel with it.
           - name: yaml
             glob: "**/*.{yml,yaml}"
-            run: vp fmt --write --no-error-on-unmatched-pattern {staged_files} && yamllint {staged_files}
+            run: vp fmt --write --no-error-on-unmatched-pattern {staged_files} && ryl check {staged_files}
             stage_fixed: true
     - name: checks
       group:
