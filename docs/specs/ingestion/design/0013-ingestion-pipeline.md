@@ -41,8 +41,8 @@ Writeback pipeline subject, or the Metadata review and editing subject). It does
 grants on the tables it writes, which is the Design "Row-level security and database context". It does not own OPF
 parsing or the metadata-draft journal mechanism (`backend/src/services/metadata/extractor.rs`, `draft.rs`); this
 pipeline calls both and commits their output. Neither module is specific to ingestion by its placement in the module
-tree, and each has exactly one production caller, this pipeline: `extractor::extract` from `orchestrator.rs:487` and
-`draft::write_drafts` from `orchestrator.rs:743`.
+tree, and each has exactly one production caller, this pipeline: `extractor::extract` and `draft::write_drafts`, both
+from `orchestrator.rs`.
 
 Depends on: the `validate_and_repair` entry point the Design "EPUB validation and repair" owns, called against the
 copied library file for every `epub`-extension candidate; the Works and manifestations data model's
@@ -72,8 +72,8 @@ surface; and an administrator, through the scan trigger this subject exposes as 
 | Advisory lock id `0x5265_7665_0000_0004` | Postgres session-level advisory lock (not a Reverie table) | `orchestrator::scan_once`; acquired and released around every call |
 | A new `manifestations`/`works` row for one ingested file | `manifestations`, `works` tables | `orchestrator::commit_ingest`, the only production site that inserts a `manifestations` row |
 | `work_authors` and `authors` rows for a newly created work's extracted creators | `work_authors`, `authors` tables | `work::upgrade_stub` (via `find_or_create_author`), called from `orchestrator::commit_ingest` only when a new work stub is created and OPF metadata names at least one creator |
-| Library file at the rendered destination path | Filesystem under `library_path` | Created by `copier::copy_verified`; removed on a subsequent-step failure by three separate sites inside `process_file` |
-| Drop-zone source file and its parent directories | Filesystem under `ingestion_path` | Deleted in bulk by `cleanup::cleanup_batch` after a batch with no failures; moved individually by `quarantine::quarantine_file` on the three failure paths that quarantine |
+| Library file at the rendered destination path | Filesystem under `library_path` | Created by `copier::copy_verified`; removed on a subsequent-step failure by four separate sites inside `process_file` |
+| Drop-zone source file and its parent directories | Filesystem under `ingestion_path` | Deleted in bulk by `cleanup::cleanup_batch` after a batch with no failures; moved individually by `quarantine::quarantine_file` on the four failure paths that quarantine |
 
 No item above has more than one writer inside this subject. Two of them are shared more broadly. A `manifestations` row
 this pipeline creates is mutated afterwards by the Enrichment pipeline subject, the Writeback pipeline subject, and the
@@ -101,12 +101,13 @@ Call sites that dispatch to those owners:
   and inserts a `work_authors` row per creator (`ON CONFLICT (work_id, author_id, role) DO NOTHING`), but only on the
   branch where `commit_ingest` just created a new work stub and OPF extraction named at least one creator; a matched
   existing work, or an extraction with no creators, writes neither table.
-- Library file removal: three distinct sites inside `process_file`, each a best-effort `remove_file` logged at `warn` on
+- Library file removal: four distinct sites inside `process_file`, each a best-effort `remove_file` logged at `warn` on
   its own failure rather than propagated: an unsupported extension detected after copy, an EPUB the structural validator
-  quarantines, and a `commit_ingest` error.
+  quarantines, a repaired EPUB whose re-hash fails, and a `commit_ingest` error.
 - Source cleanup and quarantine: `cleanup_batch` runs at most once, after the whole per-file loop, gated on zero
-  failures in that batch; `quarantine_file` runs per file, at up to three sites (preparation failure, copy failure, and
-  an EPUB quarantine outcome), moving only that one file immediately rather than waiting for the batch to finish.
+  failures in that batch; `quarantine_file` runs per file, at up to four sites (preparation failure, copy failure, an
+  EPUB quarantine outcome, and a repaired EPUB whose re-hash fails), moving only that one file immediately rather than
+  waiting for the batch to finish.
 
 ### Component relationships
 
@@ -219,10 +220,13 @@ file's row:
 5. For an `epub` extension only, the copied library file, not the drop-zone original, is handed to
    `epub::validate_and_repair`, owned by the Design "EPUB validation and repair". A `Quarantined` outcome removes the
    library file and moves the drop-zone original to quarantine with a sidecar; `Repaired` and `Degraded` outcomes carry
-   accessibility metadata and parsed `OPF` data alongside their status; a validator that fails to run (an I/O or
-   internal error, not a structural finding) stores `validation_status = failed` and still proceeds to commit, so the
-   file is ingested and served, with the failure surfaced only as a monitorable status value. A non-`epub` format leaves
-   `validation_status` at its `pending` default, since no validator exists for it.
+   accessibility metadata and parsed `OPF` data alongside their status. A `Repaired` outcome also re-reads the rewritten
+   library file for its hash and size, so `current_file_hash` and `file_size_bytes` describe the repaired bytes while
+   the ingestion hash keeps the original's; a failure to re-read it removes the library file and quarantines the
+   drop-zone original like a `Quarantined` outcome. A validator that fails to run (an I/O or internal error, not a
+   structural finding) stores `validation_status = failed` and still proceeds to commit, so the file is ingested and
+   served, with the failure surfaced only as a monitorable status value. A non-`epub` format leaves `validation_status`
+   at its `pending` default, since no validator exists for it.
 6. Any `OpfData` recovered in step 5 is extracted into `ExtractedMetadata`. If the extracted title or an author differs
    from the filename heuristic enough to render a different library path, the file is renamed on disk (with its own
    collision resolution) to the metadata-derived path; a rename failure is logged, and the heuristic path is kept rather
@@ -251,10 +255,11 @@ An irrecoverable EPUB never reaches step 7: the `Quarantined` outcome from step 
 the drop-zone original to quarantine with its sidecar, and returns before `commit_ingest` runs, so no `manifestations`
 row is created for it.
 
-- **Preparation, copy, or EPUB-quarantine failure.** These three failure classes move the drop-zone source file to
-  quarantine with a JSON sidecar recording the failure reason and a timestamp; a filename collision inside the
-  quarantine directory appends a Unix-timestamp suffix rather than overwriting. Every other failure class below leaves
-  the source file exactly where the walk found it.
+- **Preparation, copy, EPUB-quarantine, or post-repair re-hash failure.** These four failure classes move the drop-zone
+  source file to quarantine with a JSON sidecar recording the failure reason and a timestamp; a filename collision
+  inside the quarantine directory appends a Unix-timestamp suffix rather than overwriting. The fourth arises when the
+  library file cannot be re-read to compute its post-repair hash; the just-repaired library file is removed as well.
+  Every other failure class below leaves the source file exactly where the walk found it.
 - **A duplicate-check query failure.** Treated as a failure of the file, not a silent pass-through: the pipeline does
   not proceed to copy a file whose duplicate status it could not determine, so a transient database error cannot disable
   deduplication for that file. The source is left in place, not quarantined.
