@@ -71,7 +71,7 @@ jobs:
       # step on top of a scan failure that already left no SARIF to retain.
       - name: Upload unfiltered SARIF
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: snyk-code-sarif-unfiltered
           path: snyk-code.sarif
@@ -243,7 +243,7 @@ jobs:
       # Same audit-trail reasoning as the Snyk Code job above.
       - name: Upload unfiltered SARIF
         if: always() && steps.image.outputs.present == 'true'
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: snyk-container-sarif-unfiltered
           path: snyk-container.sarif
