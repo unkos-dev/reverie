@@ -61,7 +61,6 @@ to the repository, because the review boundary is the privilege of the job a wor
 - Negative: cargo has no install-script control, so that control remains ecosystem-specific rather than spanning both
   stacks.
 - Negative: an ad-hoc package fetch outside the workspace install is its own decision, uncovered by these controls.
-- Negative: one CI tool resolves its own dependencies fresh on every run because its lock sidecar is not tracked.
 
 ## More information
 
