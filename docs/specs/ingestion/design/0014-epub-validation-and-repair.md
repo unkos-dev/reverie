@@ -69,10 +69,10 @@ cover-embed planning that produce those bytes belong to that subject, not this o
 Depends on: `rawzip` for Layer 1's lazy, allocation-bounded central-directory read; `flate2` for on-the-fly Deflate
 decompression during Layer 1's probes and full entry reads; the `zip` crate, built with only the
 `deflate-flate2-zlib-rs` and `time` features, for the repack write path; `quick_xml` for `container.xml`, OPF, and XHTML
-parsing; `encoding_rs` for converting XHTML to UTF-8; `image`, plus `rasterize_svg`, `looks_like_svg`, and
-`parses_as_svg`, owned by the Design "Covers", for cover decoding; and `tempfile` for the atomic rename
-`repack::with_modifications` performs. This subject opens no database connection of its own; every check and repair runs
-against a byte buffer read from, and (on repair) written back to, the filesystem path the caller supplies.
+parsing; `encoding_rs` for XHTML transcoding; `image`, plus `rasterize_svg`, `looks_like_svg`, and `parses_as_svg`,
+owned by the Design "Covers", for cover decoding; and `tempfile` for the atomic rename `repack::with_modifications`
+performs. This subject opens no database connection of its own; every check and repair runs against a byte buffer read
+from, and (on repair) written back to, the filesystem path the caller supplies.
 
 Depended on by: the Design "Ingestion pipeline", which calls `validate_and_repair` once per freshly copied EPUB file and
 branches on the returned `ValidationOutcome`; the Writeback pipeline subject, which calls `validate_and_repair` twice
@@ -167,17 +167,17 @@ emits a single `Degraded` `SpineCapExceeded` issue and validates no spine docume
 cap. Otherwise, each spine document is read and checked under a three-condition encoding rule: a non-UTF-8 encoding must
 be declared (XML declaration or byte-order mark), the raw bytes must fail UTF-8 parsing, and decoding under the declared
 encoding must succeed cleanly; only when all three hold does the layer emit a `Repaired` `EncodingMismatch` and validate
-the bytes converted to UTF-8 as XML. The `detected` field this issue carries is set to the literal string `"UTF-8"`
+the transcoded bytes as XML. The `detected` field this issue carries is set to the literal string `"UTF-8"`
 unconditionally; nothing in the layer performs encoding detection beyond the declared-encoding-versus-UTF-8-parse test
 the three-condition rule already runs. A UTF-8 parse failure without a usable declared encoding is `Degraded`
-`AmbiguousEncoding` and is not converted to UTF-8. An XML well-formedness failure on the (possibly converted) bytes is
+`AmbiguousEncoding` and is not transcoded. An XML well-formedness failure on the (possibly transcoded) bytes is
 `Degraded` `MalformedXhtml`.
 
 **Layer 5: Cover (`cover_layer.rs`).** Resolves the cover href through its own `find_cover_href`, the three-way cascade
 that chains Layer 3's `cover_href`, then Layer 3's `meta_cover_href`, then a legacy magic-id fallback (`cover-image`,
 `cover`, `Cover`, `Cover-Image`) looked up directly against the manifest; this is also the function the Design "Covers"
 calls to locate the same cover. Layer 5 then reads the entry and accepts it if it decodes as a raster image or, for an
-SVG, rasterizes to a visible image through `rasterize_svg`, owned by the Design "Covers", with sibling resolution scoped
+SVG, rasterises to a visible image through `rasterize_svg`, owned by the Design "Covers", with sibling resolution scoped
 to the same archive. A missing entry or one that cannot be decoded is `Degraded`; a cover that parses as SVG but renders
 nothing visible (empty, or referencing an unresolved sibling) is treated the same as no cover declared, with no issue at
 all. The layer returns a plain boolean, `true` only when a cover both exists and renders at serve time, which the

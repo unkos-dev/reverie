@@ -15,16 +15,16 @@ governed-by:
 # Covers
 
 This Design covers the pipeline that serves a book's cover art: detecting and extracting the cover image embedded in an
-EPUB archive, rasterizing an SVG-declared cover to PNG under a set of hardening guards, resizing into two size tiers
+EPUB archive, rasterising an SVG-declared cover to PNG under a set of hardening guards, resizing into two size tiers
 with tier-dependent encoding, caching the result on disk under a content-addressed key, serving it from two HTTP mounts
 with a strong validator and cache headers, and the client's fallback to a generated cloth-bound spine when a cover fails
 to load.
 
 ## Purpose and boundaries
 
-This subject owns: cover-byte extraction from an EPUB archive, including the fallback into SVG rasterization when the
+This subject owns: cover-byte extraction from an EPUB archive, including the fallback into SVG rasterisation when the
 raster decoder cannot read the declared cover (`backend/src/services/covers/extract.rs::extract_cover_bytes`); the
-hardened SVG-to-PNG rasterizer and every guard around it: the input-byte cap, the raw-byte nesting-depth bound, the
+hardened SVG-to-PNG rasteriser and every guard around it: the input-byte cap, the raw-byte nesting-depth bound, the
 DTD-disabled parse, the hardened image-href resolver bounding per-image and cumulative decode cost and
 sibling-resolution count, the render-cost gate rejecting filters and over-budget geometry, and the blank-render
 rejection (`backend/src/services/covers/svg.rs`); the two size tiers and their tier-dependent encoding, JPEG for
@@ -41,7 +41,7 @@ It does not own: the archive structural validation, container and OPF parsing, a
 calls into on every extraction, which belongs to the Design "EPUB validation and repair"; this subject only reuses their
 output and maps an irrecoverable structural failure to the same outcome as an archive with no cover. It does not own the
 reverse call: the Design "EPUB validation and repair" describes a cover-usability check that calls back into this
-subject's SVG rasterizer and its resolver-free parse-and-gate check to decide, at ingestion, whether a manifestation's
+subject's SVG rasteriser and its resolver-free parse-and-gate check to decide, at ingestion, whether a manifestation's
 cover renders. This subject supplies the routine, not the ingestion-time verdict built on it. It does not own the
 `has_embedded_cover` column, its ingestion-time write, or the predicate that decides whether an ingest invokes this
 subject's pre-warm mechanism: those belong to the Design "Ingestion pipeline"; this subject owns only the mechanism the
@@ -69,7 +69,7 @@ OPDS mount's runtime mount (the API mount is unconditional).
 Depended on by: the library grid, the library table view, the book detail page, the book detail drawer, and the series
 page on the client, all of which request only the thumbnail tier; OPDS reader apps, which reach both tiers through the
 acquisition feed's image and thumbnail links; the Layer 5 cover check the Design "EPUB validation and repair" describes,
-which calls this subject's rasterizer to decide cover usability at ingestion; and the Design "Ingestion pipeline", which
+which calls this subject's rasteriser to decide cover usability at ingestion; and the Design "Ingestion pipeline", which
 calls this subject's pre-warm mechanism after a successful ingest.
 
 ## Structure
@@ -106,7 +106,7 @@ have this gap.
   resolve the declared cover entry, before reading its bytes. When the raster decoder (`image::guess_format`) cannot
   read the bytes and they look like SVG (`svg::looks_like_svg`), it hands them to `svg::rasterize_svg` with a sibling
   resolver scoped to the cover's directory inside the archive (`join_sibling_path`); the Layer 5 check the Design "EPUB
-  validation and repair" describes calls `join_sibling_path` the same way, so both routes to a rasterized sibling
+  validation and repair" describes calls `join_sibling_path` the same way, so both routes to a rasterised sibling
   resolve identically.
 - `svg.rs::parse_and_gate` is the one hardened parse-and-gate routine shared by serve-time `rasterize_svg` and the
   resolver-free `parses_as_svg`, which the Layer 5 check in the Design "EPUB validation and repair" calls: input-byte
@@ -123,7 +123,7 @@ have this gap.
   encodes JPEG at quality 82; the full tier re-encodes in the input format.
 - `mod.rs::generate_into_cache` is the one synchronous extract-resize-write pipeline both writers call from inside
   `tokio::task::spawn_blocking`. `get_or_create` runs it on a cache miss reached from a request; it drops its RLS-scoped
-  transaction before entering `spawn_blocking`, so no database connection is held during extraction or rasterization.
+  transaction before entering `spawn_blocking`, so no database connection is held during extraction or rasterisation.
   `warm_one` runs it from a background task, bounded by the `WARM_LIMIT` semaphore (three concurrent permits), which
   `spawn_warm_thumb` acquires before generating; nothing in the tree closes this semaphore.
 - `routes/opds/covers.rs::serve_cover` is the one handler body both HTTP mounts share. It calls `get_or_create`,
@@ -175,8 +175,8 @@ have this gap.
 - **Size tiers.** `Full`: long edge capped at 1200 px, source format preserved. `Thumb`: long edge capped at 300 px,
   always JPEG at quality 82 (white-composited first, since JPEG carries no alpha channel).
 - **SVG hardening budgets** (`svg.rs`): input bytes capped at 4 MiB; a single embedded raster (sibling or data URI)
-  capped at 8 MiB and 16 megapixels; the cumulative decoded-pixel budget across one rasterization capped at 64
-  megapixels, shared by both resolver paths; sibling resolutions capped at 8 per rasterization, with a cumulative 32 MiB
+  capped at 8 MiB and 16 megapixels; the cumulative decoded-pixel budget across one rasterisation capped at 64
+  megapixels, shared by both resolver paths; sibling resolutions capped at 8 per rasterisation, with a cumulative 32 MiB
   sibling-byte budget; render output capped at a 1200 px long edge; path segments and node count each capped at 50,000;
   element-nesting depth capped at 48.
 - **Cache headers.** A cover the endpoints can serve: `Cache-Control: private, max-age=86400`, a strong `ETag`,
@@ -200,13 +200,13 @@ have this gap.
 3. `cached_hit` probes the cache directory for an already-encoded file at this tier (`jpg` only for `Thumb`; `jpg`,
    `png`, `webp` in order for `Full`). A hit returns immediately with no filesystem write and no archive access.
 4. A miss enters `spawn_blocking` and runs `generate_into_cache`: `extract_cover_bytes` re-validates the archive and
-   locates the cover (rasterizing it first if it is SVG-declared), `resize_cover` resizes and encodes for the tier, and
+   locates the cover (rasterising it first if it is SVG-declared), `resize_cover` resizes and encodes for the tier, and
    `CoverCache::write_atomic` writes the result under its content-addressed name.
 5. `serve_cover` compares a request's `If-None-Match` against the artifact's quoted `ETag`; a match returns `304` with
    the cache headers and no body. Otherwise it opens the cached file, derives `Content-Type` from its extension, and
    streams it with the cache headers and a `200`.
 
-**Rasterizing an SVG-declared cover**, inside step 4 above, entirely before any byte reaches the resize step:
+**Rasterising an SVG-declared cover**, inside step 4 above, entirely before any byte reaches the resize step:
 
 1. The raw bytes are capped at 4 MiB, then scanned for element-nesting depth with a flat byte loop that never itself
    parses or descends into the structure, before any parser touches them; nesting past 48 levels is rejected here.
@@ -215,10 +215,10 @@ have this gap.
 3. `usvg::Tree::from_xmltree` builds the render tree, consulting the hardened image-href resolver for every `<image>`
    element it encounters: each sibling ZIP entry or embedded data URI is checked against a per-image byte and megapixel
    cap and a cumulative decoded-pixel budget shared across both resolver paths, and sibling resolutions additionally
-   against a per-rasterization count and cumulative-byte cap; a reference over any of these budgets is dropped rather
-   than resolved, so the image node renders as absent rather than the rasterization failing outright.
+   against a per-rasterisation count and cumulative-byte cap; a reference over any of these budgets is dropped rather
+   than resolved, so the image node renders as absent rather than the rasterisation failing outright.
 4. `check_render_complexity` walks the built tree: every group's children, its full clip-path and mask chains, and every
-   node's paint-server and layout sub-trees. It rejects the whole rasterization if any filter primitive is reachable, or
+   node's paint-server and layout sub-trees. It rejects the whole rasterisation if any filter primitive is reachable, or
    if the total path-segment count, node count, or descent depth exceeds its budget.
 5. `resvg::render` draws into a pixmap capped at a 1200 px long edge; an all-transparent result is rejected so the case
    renders identically to an unresolvable cover, and the pixmap is otherwise PNG-encoded and returned.
@@ -248,7 +248,7 @@ load failure does so independently, so a failure on one does not affect another.
 path above: the Design "EPUB validation and repair" describes that check, which calls this subject's `rasterize_svg`
 with the same sibling resolution serving uses, so the ingestion-time verdict and the serve-time result cannot disagree
 for the same bytes; when `rasterize_svg` fails for a reason `parses_as_svg`'s resolver-free check would also reject (a
-genuine parse or render-cost failure), that Design records a `Degraded` issue, while a rasterization failure
+genuine parse or render-cost failure), that Design records a `Degraded` issue, while a rasterisation failure
 `parses_as_svg` would accept (a blank render or an absent sibling) is treated as no usable cover, not an issue.
 
 **A writeback rewriting a manifestation's file**, in the opposite direction from the Writeback pipeline subject: it
@@ -272,7 +272,7 @@ still names.
   unsupported format, a database error, a corrupt ZIP, or any SVG hardening rejection (which the whole SVG pipeline in
   Runtime behaviour surfaces only as `Decode`). The client cannot tell this apart from a `404` by its visible behaviour,
   since its `<img onError>` fallback fires on either, but the two are distinct on the wire.
-- **A `spawn_blocking` panic** during extraction, rasterization, or resizing is caught by the `JoinError` mapping in
+- **A `spawn_blocking` panic** during extraction, rasterisation, or resizing is caught by the `JoinError` mapping in
   both `get_or_create` and `warm_one`, and surfaces as `CoverError::Decode`: a server error on the request path, a
   logged and swallowed failure on the pre-warm path.
 - **A generation race.** Two writers computing the same content-addressed cache key at the same time (a request-path
@@ -299,7 +299,7 @@ still names.
 
 No SVG bytes are ever written to the cache or streamed to a client; every artefact this subject produces and serves is a
 raster the `image` crate's encoders wrote, so the cover route carries no stored-XSS surface regardless of what an
-uploaded EPUB's cover SVG contains. The SVG rasterizer runs over attacker-controlled XML pulled from an uploaded archive
+uploaded EPUB's cover SVG contains. The SVG rasteriser runs over attacker-controlled XML pulled from an uploaded archive
 under the repository's multi-user, internet-exposed threat model: every guard in the Runtime behaviour walkthrough
 (input-byte cap, pre-parse nesting-depth scan, disabled DTD processing, `hardened_resolver`'s per-image and cumulative
 budgets, the render-cost gate, the blank-render rejection) defends that boundary, and the resvg crate is built with its

@@ -313,6 +313,7 @@ metacharacter
 microtext
 middleware
 migrator
+mimetype
 minification
 minifier
 mintable
@@ -395,6 +396,12 @@ pullable
 px
 querystring
 Radix
+rasterisation
+rasterise
+rasterised
+rasteriser
+rasterises
+rasterising
 rasterization
 Rasterize
 rasterized
@@ -512,6 +519,7 @@ Supersession
 suppressions
 SWR
 symlink
+symlinks
 synchronizer
 tarball
 templated
@@ -531,6 +539,8 @@ tower_sessions
 tradeoff
 tradeoffs
 Traefik
+transcoded
+transcoding
 trigram
 Trivy
 TruffleHog
@@ -593,6 +603,7 @@ vendorable
 vendored
 Vercel
 verifier
+viewBox
 viewport
 virtualised
 virtualiser

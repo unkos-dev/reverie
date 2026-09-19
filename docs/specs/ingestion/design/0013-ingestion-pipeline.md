@@ -31,7 +31,7 @@ library (`copier.rs`); quarantine of a file the pipeline rejects (`quarantine.rs
 It does not own EPUB structural validation and repair: this pipeline calls `epub::validate_and_repair` on the file it
 has already copied into the library and branches on the returned outcome, but the five-layer check itself, its issue
 vocabulary, and its repair behaviour belong to the Design "EPUB validation and repair". It does not own cover extraction
-or rasterization: a successful commit fires a best-effort thumbnail pre-warm on the cache the Design "Covers" owns, and
+or rasterisation: a successful commit fires a best-effort thumbnail pre-warm on the cache the Design "Covers" owns, and
 this pipeline neither waits for that work nor inspects its result; this pipeline owns only the call site and the gate
 predicate that decide whether that pre-warm fires, not the pre-warm mechanism itself. It does not own the
 `works`/`manifestations` schema, the foreign-key graph, or the version-pointer pattern those tables carry, which is the
@@ -117,8 +117,8 @@ Call sites that dispatch to those owners:
   event fired. `routes/ingestion.rs::scan` is the only other production caller of `scan_once`.
 - `scan_once` is a thin wrapper: it acquires the advisory lock, calls `scan_once_inner`, and releases the lock
   regardless of the inner call's outcome.
-- `scan_once_inner` walks the ingestion directory with `WalkDir` (symbolic links not followed), narrows the result to
-  one file per directory-and-stem group through `format_filter::select_by_priority`, drives each selected file through
+- `scan_once_inner` walks the ingestion directory with `WalkDir` (symlinks not followed), narrows the result to one file
+  per directory-and-stem group through `format_filter::select_by_priority`, drives each selected file through
   `ingestion_job` and `process_file`, and finishes with the batch-level `cleanup::cleanup_batch` when the batch has no
   failures.
 - `process_file` is the per-file pipeline. `path_template` (a filename heuristic, template rendering, and collision
@@ -190,7 +190,7 @@ Call sites that dispatch to those owners:
 ## Runtime behaviour
 
 **Discovering and selecting candidates.** A scan (`scan_once`) begins by walking the whole ingestion directory with
-`WalkDir`, not following symbolic links, collecting every regular file regardless of extension.
+`WalkDir`, not following symlinks, collecting every regular file regardless of extension.
 `format_filter::select_by_priority` groups the results by parent directory and lowercase filename stem, and, within each
 group, keeps only the file whose extension both parses as a `ManifestationFormat` and ranks earliest in the
 operator-configured priority order; a file with no parseable extension, or one that loses to a higher-priority sibling

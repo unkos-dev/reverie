@@ -989,7 +989,7 @@
       "id": "REV-REQ-0050",
       "kind": "req",
       "path": "docs/specs/ingestion/requirements/0050-svg-cover-rasterisation-admits-no-dtd-no-external-reference-and-only-bounded-input.md",
-      "title": "SVG cover rasterization admits no DTD, no external reference and only bounded input"
+      "title": "SVG cover rasterisation admits no DTD, no external reference and only bounded input"
     }
   ]
 }

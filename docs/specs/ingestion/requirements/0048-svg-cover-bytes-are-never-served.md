@@ -13,7 +13,7 @@ governed-by:
 
 WHEN a manifestation's declared cover file is an SVG image, the cover endpoints MUST serve only a raster rendering of
 that cover, at both the full and thumbnail sizes and on both the OPDS and API mounts, and MUST NOT return SVG bytes in
-any cover response body; WHEN the cover service refuses to rasterize that SVG as hazardous, the cover endpoints MUST NOT
+any cover response body; WHEN the cover service refuses to rasterise that SVG as hazardous, the cover endpoints MUST NOT
 serve the source SVG either, returning an error response with no cover image body instead.
 
 ## Rationale

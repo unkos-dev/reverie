@@ -11,7 +11,7 @@
 - [REV-REQ-0047](requirements/0047-an-archive-with-bytes-outside-its-structure-or-a-miscounted-directory-is-refused.md): An archive with bytes outside its structure or a miscounted directory is refused
 - [REV-REQ-0048](requirements/0048-svg-cover-bytes-are-never-served.md): SVG cover bytes are never served
 - [REV-REQ-0049](requirements/0049-a-cover-response-carrying-a-validator-varies-by-credential.md): A cover response carrying a validator varies by credential
-- [REV-REQ-0050](requirements/0050-svg-cover-rasterisation-admits-no-dtd-no-external-reference-and-only-bounded-input.md): SVG cover rasterization admits no DTD, no external reference and only bounded input
+- [REV-REQ-0050](requirements/0050-svg-cover-rasterisation-admits-no-dtd-no-external-reference-and-only-bounded-input.md): SVG cover rasterisation admits no DTD, no external reference and only bounded input
 
 ## Designs
 
