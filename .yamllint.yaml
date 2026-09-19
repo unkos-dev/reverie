@@ -1,10 +1,10 @@
-# yamllint configuration.
+# YAML lint configuration, read by ryl in yamllint's format.
 #
 # Scoped to the rules that catch genuine YAML mistakes — syntax errors,
 # duplicate keys, trailing whitespace, tab indentation — while disabling the
 # stylistic rules that would fight oxfmt, the authoritative YAML formatter
 # in this repo (see the "Format check (oxfmt)" CI step in ci.yml). oxfmt
-# owns indentation, quoting, and line wrapping; yamllint is the semantic
+# owns indentation, quoting, and line wrapping; ryl is the semantic
 # backstop, not a second formatter. Wired into the `repo-lint` CI job and the
 # local pre-commit chain so both evaluate the same ruleset.
 extends: default

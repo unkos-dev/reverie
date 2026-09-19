@@ -20,10 +20,10 @@ hadolint:
 typos:
     typos
 
-# yamllint every tracked YAML file.
+# ryl every tracked YAML file.
 [group('infra')]
-yamllint:
-    git ls-files -z '*.yml' '*.yaml' | xargs -0 -r yamllint
+ryl:
+    git ls-files -z '*.yml' '*.yaml' | xargs -0 -r ryl check
 
 # --config is explicit because sqruff also auto-discovers `.sqlfluff`. That file
 # belongs to Codacy, and any key `.sqruff` leaves unset would otherwise be taken
@@ -171,7 +171,7 @@ no-plan-refs *files:
 #
 # Whole repo-lint surface (the non-JS half of CI's lint concern).
 [group('infra')]
-lint: shellcheck hadolint typos yamllint sqruff actionlint prose specful filter-sarif-unfixable-os-selftest preflight-scope-selftest cargo-locked-guard
+lint: shellcheck hadolint typos ryl sqruff actionlint prose specful filter-sarif-unfixable-os-selftest preflight-scope-selftest cargo-locked-guard
 
 # Everything left here covers local-only developer tooling, and that is now the
 # entry criterion. CI has no stake in `just doctor`, `just worktree`, or the
