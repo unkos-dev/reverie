@@ -1,14 +1,10 @@
 //! Per-file ingestion jobs produced by the import pipeline.
 //!
 //! Each job is one file's path through the
-//! `queued → running → (complete | skipped | failed)` lifecycle. Jobs
-//! are grouped by `batch_id` so the operator-facing status surface
-//! ([`crate::models::ingestion_job::find_by_batch`]) can show progress
-//! for a whole import run.
+//! `queued → running → (complete | skipped | failed)` lifecycle, grouped
+//! by `batch_id`.
 //!
-//! `status` is currently a free-form `TEXT` column; tightening it to a
-//! Postgres `ENUM` is tracked separately and would mirror the pattern
-//! used by [`crate::models::ingestion_status::IngestionStatus`].
+//! `status` is the Postgres `job_status` enum, read here as its text form.
 
 use chrono::{DateTime, Utc};
 use serde::Serialize;

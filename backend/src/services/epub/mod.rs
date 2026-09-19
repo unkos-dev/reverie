@@ -33,7 +33,7 @@ pub mod zip_layer;
 /// unrecoverable I/O or `ZIP` machinery failures reach this type.
 #[derive(Debug, thiserror::Error)]
 pub enum EpubError {
-    /// `zip` crate error (corrupt central directory, unsupported compression, etc.).
+    /// Raised only by the repack and repair paths; Layer 1 reports a corrupt archive as an `Irrecoverable` issue.
     #[error("ZIP I/O error: {0}")]
     Zip(#[from] zip::result::ZipError),
     /// Filesystem I/O error reading or writing the archive.
@@ -186,7 +186,7 @@ pub enum IssueKind {
         entry_name: String,
         /// Encoding the file declared in its prologue or meta tag.
         declared: String,
-        /// Encoding heuristic detection found in the bytes.
+        /// Always `"UTF-8"`: the check parses as UTF-8 and performs no detection.
         detected: String,
     },
     /// `XML` file has ambiguous encoding (conditions for safe transcode not met).
