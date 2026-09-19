@@ -20,7 +20,7 @@ jobs:
         with:
           persist-credentials: false
 
-      - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4
+      - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
         id: filter
         with:
           # merge_group's default base (HEAD~1) sees only the synthetic merge ref's
@@ -92,7 +92,7 @@ jobs:
       # only supplies the changed-file list; each script applies its own
       # exclusions.
       - name: Detect changed files
-        uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4
+        uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
         id: source-changed
         with:
           base: ${{ github.event.merge_group.base_sha || github.base_ref }}

@@ -20,7 +20,7 @@ jobs:
 
       # dorny's base and ref expressions are empty on a manual dispatch, so the
       # step is skipped there and the output above forces a full run instead.
-      - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4
+      - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
         id: filter
         if: github.event_name != 'workflow_dispatch'
         with:
