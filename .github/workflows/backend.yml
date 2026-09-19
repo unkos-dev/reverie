@@ -53,7 +53,7 @@ jobs:
     services:
       postgres:
         # Same digest compose.dev.yml pins, for dev/CI postgres parity.
-        image: postgres:18@sha256:10037cee1d5ebfc057cd71b3365466cf27ce8d4bd0c4f409e426fcb2b3fb12e7
+        image: postgres:18@sha256:86c951e05bf56c93d95d397747fb8820ac76cc3bedb78f43abd83eedbe3666ae
         env:
           POSTGRES_USER: reverie
           # Non-secret credential scoped to this ephemeral CI run.
@@ -275,7 +275,7 @@ jobs:
         working-directory: backend
     services:
       postgres:
-        image: postgres:18@sha256:10037cee1d5ebfc057cd71b3365466cf27ce8d4bd0c4f409e426fcb2b3fb12e7
+        image: postgres:18@sha256:86c951e05bf56c93d95d397747fb8820ac76cc3bedb78f43abd83eedbe3666ae
         env:
           POSTGRES_USER: reverie
           # Non-secret credential scoped to this ephemeral CI run.
