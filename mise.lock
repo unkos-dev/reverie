@@ -13,14 +13,6 @@ url = "https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_
 url_api = "https://api.github.com/repos/rhysd/actionlint/releases/assets/384924896"
 provenance = "github-attestations"
 
-[[tools."cargo:cargo-mutants"]]
-version = "27.1.0"
-backend = "cargo:cargo-mutants"
-specifiers = ["27.1.0"]
-
-[tools."cargo:cargo-mutants".options]
-locked = "true"
-
 [[tools."github:EmbarkStudios/cargo-deny"]]
 version = "0.20.2"
 backend = "github:EmbarkStudios/cargo-deny"
@@ -79,6 +71,19 @@ checksum = "sha256:8a377bdfdfaf46483c33cce46d3b4eb46bcec4b9557f6d0106adc85cc9266
 url = "https://github.com/quarylabs/sqruff/releases/download/v0.40.0/sqruff-linux-x86_64-musl.tar.gz"
 url_api = "https://api.github.com/repos/quarylabs/sqruff/releases/assets/514421145"
 provenance = "github-attestations"
+
+[[tools."github:sourcefrog/cargo-mutants"]]
+version = "27.1.0"
+backend = "github:sourcefrog/cargo-mutants"
+specifiers = ["27.1.0"]
+
+[tools."github:sourcefrog/cargo-mutants".options]
+version_prefix = "v"
+
+[tools."github:sourcefrog/cargo-mutants"."platforms.linux-x64"]
+checksum = "sha256:dfe6dc37d0342c891d2829b5a695aa57c2d0edecef7e7d0399a30cc6e206411e"
+url = "https://github.com/sourcefrog/cargo-mutants/releases/download/v27.1.0/cargo-mutants-x86_64-unknown-linux-gnu.tar.gz"
+url_api = "https://api.github.com/repos/sourcefrog/cargo-mutants/releases/assets/436335520"
 
 [[tools."github:unkos-dev/specful"]]
 version = "0.5.4"

@@ -74,7 +74,7 @@ jobs:
         with:
           # renovate: datasource=github-releases depName=jdx/mise extractVersion=^v(?<version>.+)$
           version: "2026.9.9"
-          install_args: mold cargo:cargo-mutants
+          install_args: mold github:sourcefrog/cargo-mutants
           add_shims_to_path: false
 
       # Exit codes 2 (missed mutants) and 3 (timeouts) are findings, not
@@ -85,7 +85,7 @@ jobs:
           shard=$(( 10#$(date -u +%V) % 8 ))
           echo "ISO week $(date -u +%V) -> shard ${shard}/8"
           rc=0
-          mise exec mold cargo:cargo-mutants -- cargo mutants --workspace --shard "${shard}/8" -- --locked --all-targets || rc=$?
+          mise exec mold github:sourcefrog/cargo-mutants -- cargo mutants --workspace --shard "${shard}/8" -- --locked --all-targets || rc=$?
           case "$rc" in
             0) echo "shard clean: every mutant caught" ;;
             2|3)
