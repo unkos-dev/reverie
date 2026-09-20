@@ -9,10 +9,11 @@ title: "Unsafe archive entry names are refused before any path use"
 
 ## Statement
 
-WHEN an entry name inside an EPUB archive contains a parent-directory component ("..") written literally or
+WHEN an entry name inside an EPUB archive contains two consecutive dots anywhere in the name, written literally or
 percent-encoded in any letter case, a backslash, a leading slash, or a leading slash written as a percent-encoding in
 any letter case, the EPUB validator MUST refuse the archive before that name is joined to a filesystem path or used to
-read the entry's data.
+read the entry's data. Two consecutive dots cover every parent-directory component and also a name such as `cover..jpg`,
+which carries no traversal but is refused all the same.
 
 ## Rationale
 
@@ -26,6 +27,8 @@ from surviving with the rest of its content still admitted to the library.
 
 - An entry name containing a literal parent-directory component ("..") causes the archive to be refused. Checked by
   `path_traversal_is_quarantined` in `backend/src/services/epub/zip_layer.rs`.
+- An entry name containing two consecutive dots that form no parent-directory component, such as `cover..jpg`, causes
+  the archive to be refused. Not checked by any automated test.
 - An entry name containing a percent-encoded parent-directory component, in either letter case, causes the archive to be
   refused. Not checked by any automated test: only the literal form is exercised by name.
 - An entry name containing a backslash causes the archive to be refused. Not checked by any automated test.

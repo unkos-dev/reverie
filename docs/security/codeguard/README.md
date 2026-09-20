@@ -167,7 +167,8 @@ function without parsing them.
 - Generated filenames for extracted content; never trust manifest-provided
   paths
 - Extracted content stored outside web root
-- EPUB parser runs on the ingestion pool with scoped RLS
+- EPUB parser runs on the ingestion pool with scoped RLS; with `DATABASE_URL_INGESTION` unset the pipeline runs as
+  the application role and cannot write at all
 - Cleanup deletion bounded to the ingestion root: `cleanup_batch` rejects any
   caller-supplied path whose canonicalised parent (files) or canonicalised self
   (directories) resolves outside the ingestion tree — directory pruning landed

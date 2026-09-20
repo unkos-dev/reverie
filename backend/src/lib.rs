@@ -285,9 +285,9 @@ pub async fn run() -> anyhow::Result<()> {
 
     if config.ingestion_dsn_defaulted {
         tracing::warn!(
-            "DATABASE_URL_INGESTION unset — the ingestion pipeline will run as the application \
-             role (DATABASE_URL) instead of the scoped reverie_ingestion role. Role separation is \
-             inactive. Set DATABASE_URL_INGESTION=<reverie_ingestion DSN> to enforce it."
+            "DATABASE_URL_INGESTION unset: the ingestion pipeline runs as the application role, \
+             which row-level security refuses to insert manifestations, so every scan will fail \
+             at commit. Set DATABASE_URL_INGESTION to the reverie_ingestion DSN."
         );
     }
 

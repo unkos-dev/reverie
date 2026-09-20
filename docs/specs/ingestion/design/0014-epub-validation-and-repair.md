@@ -108,7 +108,8 @@ rejection here, because the entry-count guard is sound only if this layer never 
 writer side would not itself have produced. The central directory is then walked as a counted iteration, refusing the
 moment the count exceeds `MAX_ZIP_ENTRIES` regardless of what the end record declared (the backstop for an end record
 that understates the true count). Per entry, in order: the name must decode as UTF-8 and pass `is_safe_path` before
-anything else runs against it; the name must not repeat a name already seen (case-sensitive, exact string); the entry
+anything else runs against it (the traversal test matches two consecutive dots anywhere in the name, so `cover..jpg`
+fails it as surely as `../x`); the name must not repeat a name already seen (case-sensitive, exact string); the entry
 must not be encrypted and must declare Stored or Deflate compression; its declared uncompressed size must not exceed
 `MAX_ENTRY_UNCOMPRESSED_BYTES`, and the running sum of declared sizes must not exceed
 `MAX_AGGREGATE_UNCOMPRESSED_BYTES`; the entry's local header must be found and, when small enough, a bounded
