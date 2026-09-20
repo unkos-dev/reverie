@@ -13,6 +13,16 @@ url = "https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_
 url_api = "https://api.github.com/repos/rhysd/actionlint/releases/assets/384924896"
 provenance = "github-attestations"
 
+[[tools."cargo:sqlx-cli"]]
+version = "0.9.0"
+backend = "cargo:sqlx-cli"
+specifiers = ["0.9.0"]
+
+[tools."cargo:sqlx-cli".options]
+default-features = "false"
+features = "postgres rustls"
+locked = "false"
+
 [[tools."github:EmbarkStudios/cargo-deny"]]
 version = "0.20.2"
 backend = "github:EmbarkStudios/cargo-deny"
