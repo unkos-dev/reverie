@@ -539,6 +539,49 @@
     },
     {
       "governed-by": [
+        "REV-ADR-0020"
+      ],
+      "id": "REV-DESIGN-0013",
+      "kind": "design",
+      "path": "docs/specs/ingestion/design/0013-ingestion-pipeline.md",
+      "satisfies": [
+        "REV-REQ-0043"
+      ],
+      "title": "Ingestion pipeline"
+    },
+    {
+      "governed-by": [
+        "REV-ADR-0049"
+      ],
+      "id": "REV-DESIGN-0014",
+      "kind": "design",
+      "path": "docs/specs/ingestion/design/0014-epub-validation-and-repair.md",
+      "satisfies": [
+        "REV-REQ-0043",
+        "REV-REQ-0044",
+        "REV-REQ-0045",
+        "REV-REQ-0046",
+        "REV-REQ-0047"
+      ],
+      "title": "EPUB validation and repair"
+    },
+    {
+      "governed-by": [
+        "REV-ADR-0024",
+        "REV-ADR-0025"
+      ],
+      "id": "REV-DESIGN-0015",
+      "kind": "design",
+      "path": "docs/specs/ingestion/design/0015-covers.md",
+      "satisfies": [
+        "REV-REQ-0048",
+        "REV-REQ-0049",
+        "REV-REQ-0050"
+      ],
+      "title": "Covers"
+    },
+    {
+      "governed-by": [
         "REV-ADR-0047"
       ],
       "id": "REV-REQ-0001",
@@ -884,6 +927,69 @@
       "kind": "req",
       "path": "docs/specs/accounts/requirements/0042-a-self-registered-account-is-an-adult-account.md",
       "title": "A self-registered account is an adult account"
+    },
+    {
+      "id": "REV-REQ-0043",
+      "kind": "req",
+      "path": "docs/specs/ingestion/requirements/0043-an-irrecoverable-epub-is-quarantined-and-gets-no-manifestation-row.md",
+      "title": "An irrecoverable EPUB is quarantined and gets no manifestation row"
+    },
+    {
+      "id": "REV-REQ-0044",
+      "kind": "req",
+      "path": "docs/specs/ingestion/requirements/0044-a-repair-leaves-the-file-fully-rewritten-or-untouched.md",
+      "title": "A repair leaves the file fully rewritten or untouched"
+    },
+    {
+      "id": "REV-REQ-0045",
+      "kind": "req",
+      "path": "docs/specs/ingestion/requirements/0045-unsafe-archive-entry-names-are-refused-before-any-path-use.md",
+      "title": "Unsafe archive entry names are refused before any path use"
+    },
+    {
+      "governed-by": [
+        "REV-ADR-0049"
+      ],
+      "id": "REV-REQ-0046",
+      "kind": "req",
+      "path": "docs/specs/ingestion/requirements/0046-an-archive-exceeding-a-resource-bound-is-refused-before-extraction.md",
+      "title": "An archive exceeding a resource bound is refused before extraction"
+    },
+    {
+      "governed-by": [
+        "REV-ADR-0049"
+      ],
+      "id": "REV-REQ-0047",
+      "kind": "req",
+      "path": "docs/specs/ingestion/requirements/0047-an-archive-with-bytes-outside-its-structure-or-a-miscounted-directory-is-refused.md",
+      "title": "An archive with bytes outside its structure or a miscounted directory is refused"
+    },
+    {
+      "governed-by": [
+        "REV-ADR-0024"
+      ],
+      "id": "REV-REQ-0048",
+      "kind": "req",
+      "path": "docs/specs/ingestion/requirements/0048-svg-cover-bytes-are-never-served.md",
+      "title": "SVG cover bytes are never served"
+    },
+    {
+      "governed-by": [
+        "REV-ADR-0025"
+      ],
+      "id": "REV-REQ-0049",
+      "kind": "req",
+      "path": "docs/specs/ingestion/requirements/0049-a-cover-response-carrying-a-validator-varies-by-credential.md",
+      "title": "A cover response carrying a validator varies by credential"
+    },
+    {
+      "governed-by": [
+        "REV-ADR-0024"
+      ],
+      "id": "REV-REQ-0050",
+      "kind": "req",
+      "path": "docs/specs/ingestion/requirements/0050-svg-cover-rasterisation-admits-no-dtd-no-external-reference-and-only-bounded-input.md",
+      "title": "SVG cover rasterisation admits no DTD, no external reference and only bounded input"
     }
   ]
 }

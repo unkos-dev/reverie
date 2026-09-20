@@ -383,14 +383,10 @@ pub struct Config {
     /// the outbound `User-Agent` to claim `OpenLibrary`'s identified
     /// 3 req/s rate-limit tier (vs. 1 req/s anonymous).
     pub operator_contact: Option<String>,
-    /// `true` when `DATABASE_URL_INGESTION` was unset/blank and
-    /// `ingestion_database_url` was defaulted to `database_url` by Gate 2
-    /// — i.e. the ingestion pipeline runs under the application role
-    /// (`reverie_app`) instead of the scoped `reverie_ingestion` role.
-    /// Not env-sourced; set by [`Config::from_figment`] and surfaced as a
-    /// startup `tracing::warn!` in [`crate::run`] (tracing is not yet live
-    /// when the fallback fires), so the role-separation collapse is
-    /// auditable rather than silent.
+    /// `true` when `DATABASE_URL_INGESTION` was blank and the ingestion DSN
+    /// fell back to `database_url`. Not env-sourced; [`crate::run`] warns at
+    /// startup because the application role cannot insert manifestations,
+    /// so every scan fails at commit.
     #[serde(skip)]
     #[schemars(skip)]
     pub ingestion_dsn_defaulted: bool,

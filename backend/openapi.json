@@ -5816,7 +5816,7 @@
           "opds"
         ],
         "summary": "Get a book's cover for OPDS",
-        "description": "Streams the full-size cover image for a manifestation as `image/jpeg` or `image/png`, with a strong `ETag` and a day-long `Cache-Control`. Requires HTTP Basic authentication.",
+        "description": "Streams the full-size cover image for a manifestation as `image/jpeg`, `image/png`, or `image/webp`, with a strong `ETag` and a day-long `Cache-Control`. Requires HTTP Basic authentication.",
         "operationId": "opds_cover",
         "parameters": [
           {
@@ -8937,7 +8937,7 @@
           "skipped": {
             "type": "integer",
             "format": "int64",
-            "description": "Files skipped (already ingested or unsupported).",
+            "description": "Files skipped as duplicates of an existing manifestation.",
             "minimum": 0
           }
         }
