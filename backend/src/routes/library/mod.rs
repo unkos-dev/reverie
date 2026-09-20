@@ -1046,7 +1046,7 @@ fn merge_external_ids(
     path = "/api/v1/books/{id}",
     operation_id = "book_detail",
     summary = "Get a book's detail",
-    description = "Returns detail for one manifestation, including work-level prose and a metadata-version summary. A manifestation hidden from the caller is reported as 404 rather than leaking its existence.",
+    description = "Returns detail for one manifestation, including work-level prose and a metadata-version summary. A manifestation hidden from the caller is reported as 404 rather than leaking its existence. A child account receives an empty pending-version list and a pending count of zero.",
     tag = "library",
     params(("id" = Uuid, Path, description = "Manifestation id")),
     security(("session_cookie" = ["read"]), ("device_token_bearer" = ["read"]), ("oidc_jwt_bearer" = ["read"]), ("opds_basic" = ["read"])),
@@ -1106,7 +1106,14 @@ async fn detail(
     let accepted_count = accepted_pointer_count(&row)
         .saturating_add(u32::try_from(junction_ids.len()).unwrap_or(u32::MAX));
     canonical_ids.extend(junction_ids);
-    let pending_versions = load_pending_versions(&mut tx, id, &canonical_ids).await?;
+    // THREAT: a child cannot act on a proposal (every metadata route refuses a
+    // child), so the detail carries none for that caller rather than exposing
+    // provider-supplied values the child-safety gate never reviewed.
+    let pending_versions = if current_user.is_child() {
+        Vec::new()
+    } else {
+        load_pending_versions(&mut tx, id, &canonical_ids).await?
+    };
     let pending = u32::try_from(pending_versions.len()).unwrap_or(u32::MAX);
 
     tx.commit()

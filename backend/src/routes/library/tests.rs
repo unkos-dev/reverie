@@ -1710,6 +1710,60 @@ async fn detail_endpoint_caps_pending_versions_at_200(pool: PgPool) {
 }
 
 #[sqlx::test(migrations = "./migrations")]
+async fn detail_endpoint_omits_pending_versions_for_child_caller(pool: PgPool) {
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let (_admin, admin_basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+    let (child_id, child_basic) =
+        test_support::db::create_child_user_and_basic_auth(&app_pool, "kid").await;
+
+    let m_id =
+        insert_book_with_author(&ingestion_pool, "kid-draft", "Shelved Tome", "Doe, Jane").await;
+    let shelf = test_support::db::create_shelf(&app_pool, child_id, "kid-shelf").await;
+    test_support::db::add_to_shelf(&app_pool, shelf, m_id).await;
+
+    sqlx::query!(
+        "INSERT INTO metadata_versions \
+            (manifestation_id, source, field_name, new_value, value_hash, match_type, \
+             status, confidence_score) \
+         VALUES ($1, 'opf', 'description', to_jsonb('a proposal'::text), \
+                 decode('00000001', 'hex'), 'title', 'pending'::metadata_review_status, 0.5)",
+        m_id,
+    )
+    .execute(&ingestion_pool)
+    .await
+    .expect("seed one pending version");
+
+    let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+
+    let response = server
+        .get(&format!("/api/v1/books/{m_id}"))
+        .add_header(AUTHORIZATION, admin_basic)
+        .await;
+    assert_eq!(response.status_code(), StatusCode::OK);
+    let body: serde_json::Value = response.json();
+    assert_eq!(
+        body["metadata_version_summary"]["pending"], 1,
+        "an adult sees the pending proposal, got {body}"
+    );
+
+    let response = server
+        .get(&format!("/api/v1/books/{m_id}"))
+        .add_header(AUTHORIZATION, child_basic)
+        .await;
+    assert_eq!(response.status_code(), StatusCode::OK);
+    let body: serde_json::Value = response.json();
+    assert_eq!(
+        body["metadata_version_summary"]["pending"], 0,
+        "a child sees no pending proposal, got {body}"
+    );
+    assert!(
+        body["metadata_versions"].as_array().unwrap().is_empty(),
+        "a child receives no pending versions, got {body}"
+    );
+}
+
+#[sqlx::test(migrations = "./migrations")]
 async fn detail_endpoint_surfaces_publisher_and_pub_date(pool: PgPool) {
     let app_pool = test_support::db::app_pool_for(&pool).await;
     let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;

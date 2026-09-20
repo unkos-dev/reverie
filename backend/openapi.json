@@ -716,7 +716,7 @@
           "library"
         ],
         "summary": "Get a book's detail",
-        "description": "Returns detail for one manifestation, including work-level prose and a metadata-version summary. A manifestation hidden from the caller is reported as 404 rather than leaking its existence.",
+        "description": "Returns detail for one manifestation, including work-level prose and a metadata-version summary. A manifestation hidden from the caller is reported as 404 rather than leaking its existence. A child account receives an empty pending-version list and a pending count of zero.",
         "operationId": "book_detail",
         "parameters": [
           {
