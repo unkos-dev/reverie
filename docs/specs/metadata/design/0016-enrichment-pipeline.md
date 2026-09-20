@@ -62,10 +62,11 @@ database context"); `crate::models::work::rematch_on_isbn_change` for the ISBN-c
 rating registry's model functions for reading and writing identifier and rating slots; `crate::services::metadata::isbn`
 and `crate::services::metadata::external_id` for ISBN parsing and canonical identifier-field addressing.
 
-Depended on by: the writeback pipeline, which drains the `writeback_jobs` rows this subject enqueues; Metadata review
-and editing, which reads and resolves the `metadata_versions` rows this subject journals and calls `field_lock.rs`'s
-write functions from its own HTTP endpoints; the identifier and rating registry's other filler (a manual edit) and its
-readers; and the book-detail and library surfaces that display `enrichment_status` and pending metadata counts.
+Depended on by: the Design "Writeback pipeline", which drains the `writeback_jobs` rows this subject enqueues; the
+Design "Metadata review and editing", which reads and resolves the `metadata_versions` rows this subject journals and
+calls `field_lock.rs`'s write functions from its own HTTP endpoints; the identifier and rating registry's other filler
+(a manual edit) and its readers; and the book-detail and library surfaces that display `enrichment_status` and pending
+metadata counts.
 
 ## Structure
 
