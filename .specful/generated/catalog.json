@@ -582,6 +582,46 @@
     },
     {
       "governed-by": [
+        "REV-ADR-0007",
+        "REV-ADR-0018"
+      ],
+      "id": "REV-DESIGN-0016",
+      "kind": "design",
+      "path": "docs/specs/metadata/design/0016-enrichment-pipeline.md",
+      "satisfies": [
+        "REV-REQ-0051",
+        "REV-REQ-0052"
+      ],
+      "title": "Enrichment pipeline"
+    },
+    {
+      "governed-by": [
+        "REV-ADR-0018",
+        "REV-ADR-0020"
+      ],
+      "id": "REV-DESIGN-0017",
+      "kind": "design",
+      "path": "docs/specs/metadata/design/0017-writeback-pipeline.md",
+      "satisfies": [
+        "REV-REQ-0052",
+        "REV-REQ-0053",
+        "REV-REQ-0054"
+      ],
+      "title": "Writeback pipeline"
+    },
+    {
+      "id": "REV-DESIGN-0018",
+      "kind": "design",
+      "path": "docs/specs/metadata/design/0018-metadata-review-and-editing.md",
+      "satisfies": [
+        "REV-REQ-0052",
+        "REV-REQ-0055",
+        "REV-REQ-0056"
+      ],
+      "title": "Metadata review and editing"
+    },
+    {
+      "governed-by": [
         "REV-ADR-0047"
       ],
       "id": "REV-REQ-0001",
@@ -990,6 +1030,51 @@
       "kind": "req",
       "path": "docs/specs/ingestion/requirements/0050-svg-cover-rasterisation-admits-no-dtd-no-external-reference-and-only-bounded-input.md",
       "title": "SVG cover rasterisation admits no DTD, no external reference and only bounded input"
+    },
+    {
+      "id": "REV-REQ-0051",
+      "kind": "req",
+      "path": "docs/specs/metadata/requirements/0051-automated-enrichment-fills-only-an-empty-unlocked-auto-fill-field.md",
+      "title": "Automated enrichment fills only an empty, unlocked, auto-fill field"
+    },
+    {
+      "governed-by": [
+        "REV-ADR-0020"
+      ],
+      "id": "REV-REQ-0052",
+      "kind": "req",
+      "path": "docs/specs/metadata/requirements/0052-a-canonical-metadata-change-enqueues-exactly-one-writeback-in-the-same-transaction.md",
+      "title": "A canonical metadata change enqueues exactly one writeback in the same transaction"
+    },
+    {
+      "governed-by": [
+        "REV-ADR-0018"
+      ],
+      "id": "REV-REQ-0053",
+      "kind": "req",
+      "path": "docs/specs/metadata/requirements/0053-at-most-one-writeback-rewrites-a-manifestation-s-file-at-a-time.md",
+      "title": "At most one writeback rewrites a manifestation's file at a time"
+    },
+    {
+      "id": "REV-REQ-0054",
+      "kind": "req",
+      "path": "docs/specs/metadata/requirements/0054-a-writeback-leaves-the-file-rewritten-and-validating-no-worse-or-untouched.md",
+      "title": "A writeback leaves the file rewritten and validating no worse, or untouched"
+    },
+    {
+      "id": "REV-REQ-0055",
+      "kind": "req",
+      "path": "docs/specs/metadata/requirements/0055-a-metadata-patch-never-removes-a-work-s-last-author.md",
+      "title": "A metadata patch never removes a work's last author"
+    },
+    {
+      "governed-by": [
+        "REV-ADR-0028"
+      ],
+      "id": "REV-REQ-0056",
+      "kind": "req",
+      "path": "docs/specs/metadata/requirements/0056-a-child-account-cannot-change-catalogue-metadata.md",
+      "title": "A child account cannot change catalogue metadata"
     }
   ]
 }

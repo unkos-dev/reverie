@@ -9,4 +9,5 @@
 - [api](api/index.md)
 - [ingestion](ingestion/index.md)
 - [library](library/index.md)
+- [metadata](metadata/index.md)
 - [security](security/index.md)

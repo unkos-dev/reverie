@@ -31,10 +31,10 @@ request body's own semantic validation; and the client-side capture and replay i
 
 It does not own the business logic of any endpoint that uses this contract: what fields
 `PATCH /api/v1/books/{id}/reading` may change and its transition-stamp rules (the Reading state subject), the per-field
-apply/journal mechanics `PATCH /api/v1/books/{id}/metadata` runs once its precondition holds (the Metadata review and
-editing subject), or shelf CRUD and its handler-enforced ownership predicate (the Shelves subject). It does not own the
-content of any one endpoint's dedicated hash-input struct beyond the contract those structs must satisfy. It does not
-own the RFC 9457 Problem Details envelope the resulting errors render into, or the status-code selection rules that
+apply/journal mechanics `PATCH /api/v1/books/{id}/metadata` runs once its precondition holds (the Design "Metadata
+review and editing"), or shelf CRUD and its handler-enforced ownership predicate (the Shelves subject). It does not own
+the content of any one endpoint's dedicated hash-input struct beyond the contract those structs must satisfy. It does
+not own the RFC 9457 Problem Details envelope the resulting errors render into, or the status-code selection rules that
 assign `400`/`412`/`428` to a failure class (Design "API error contract and OpenAPI").
 
 Depends on: RFC 9110 §8.8.3 (`entity-tag` grammar), §13.1.1 (`If-Match`), and §13.1.2 (strong comparison), and RFC 6585
@@ -43,9 +43,9 @@ Depends on: RFC 9110 §8.8.3 (`entity-tag` grammar), §13.1.1 (`If-Match`), and 
 race-free against a concurrent writer (owned by that endpoint's own subject, not restated here).
 
 Depended on by: `PATCH /api/v1/books/{id}/reading` (the Reading state subject), `PATCH /api/v1/books/{id}/metadata` (the
-Metadata review and editing subject), and `PUT /api/v1/shelves/{id}/items` (the Shelves subject) on the server side; the
-metadata edit dialog and the library table's cell-editing surface (the Library table cell editing and undo subject) on
-the client side, both of which read a captured tag through `apiFetch` rather than handling `If-Match` themselves.
+Design "Metadata review and editing"), and `PUT /api/v1/shelves/{id}/items` (the Shelves subject) on the server side;
+the metadata edit dialog and the library table's cell-editing surface (the Library table cell editing and undo subject)
+on the client side, both of which read a captured tag through `apiFetch` rather than handling `If-Match` themselves.
 
 ## Structure
 

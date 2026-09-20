@@ -36,29 +36,30 @@ vocabulary junctions' row-level-security policies added by
 It does not own row-level security or the grants that decide who may query these tables at all; that mechanism, and the
 full policy grid for the tables in this model that carry it, is the Design "Row-level security and database context". It
 does not own the role and scope checks a handler applies before it reaches this model; that is the Design "Authorization
-axes". It does not own the Ingestion pipeline subject (`backend/src/services/ingestion/`), the EPUB validation and
-repair subject (`backend/src/services/epub/`), the Enrichment pipeline subject (`backend/src/services/enrichment/`), the
-Writeback pipeline subject (`backend/src/services/writeback/`), the Metadata review and editing subject
+axes". It does not own the Design "Ingestion pipeline" (`backend/src/services/ingestion/`), the Design "EPUB validation
+and repair" (`backend/src/services/epub/`), the Design "Enrichment pipeline" (`backend/src/services/enrichment/`), the
+Design "Writeback pipeline" (`backend/src/services/writeback/`), the Design "Metadata review and editing"
 (`backend/src/routes/metadata.rs`), or the Books list query contract subject (`backend/src/routes/library/mod.rs`,
 `filters.rs`, and the shared `sort_spec.rs`/`cursor.rs` modules it imports from `backend/src/routes/`), each of which
 reads or writes this model without being part of it. It does not own the Identifier and rating registry subject's
 external identifiers and ratings (`manifestation_external_identifiers`, `manifestation_external_ratings`,
 `work_external_identifiers`, `identifier_schemes`, `rating_sources`). It does not own covers (`manifestations.cover_*`,
-`has_embedded_cover`, the Covers subject) or accessibility metadata (`manifestations.accessibility_metadata`) beyond
+`has_embedded_cover`, the Design "Covers") or accessibility metadata (`manifestations.accessibility_metadata`) beyond
 carrying them as columns.
 
-Depends on: `metadata_versions`, owned by the Metadata review and editing subject, as the target of every `*_version_id`
-and `source_version_id` pointer column in this model; Postgres's native `uuidv7()` for the default on every entity
-table's surrogate `id` column; the `pg_trgm` and `unaccent` extensions the migration installs, whose trigram operators
-and folding function back the indexes the Search and vocabulary suggest subject queries.
+Depends on: `metadata_versions`, owned by the Design "Metadata review and editing", as the target of every
+`*_version_id` and `source_version_id` pointer column in this model; Postgres's native `uuidv7()` for the default on
+every entity table's surrogate `id` column; the `pg_trgm` and `unaccent` extensions the migration installs, whose
+trigram operators and folding function back the indexes the Search and vocabulary suggest subject queries.
 
-Depended on by: the Ingestion pipeline subject and the EPUB validation and repair subject, which create `manifestations`
-rows and the `works` row each attaches to; the Enrichment pipeline subject and the Metadata review and editing subject,
-which apply canonical field values and journal them through the version pointers; the Writeback pipeline subject, which
-updates `file_path`, `current_file_hash` and `updated_at` after a successful on-disk rewrite; the Books list query
-contract subject, the OPDS catalogue subject, and the Search and vocabulary suggest subject, which read this model to
-build their responses; the Shelves subject and the Reading state subject, whose tables reference `manifestations.id`;
-and the Design "Library filter and sort state", whose sort and filter axes name columns this model owns.
+Depended on by: the Design "Ingestion pipeline" and the Design "EPUB validation and repair", which create
+`manifestations` rows and the `works` row each attaches to; the Design "Enrichment pipeline" and the Design "Metadata
+review and editing", which apply canonical field values and journal them through the version pointers; the Design
+"Writeback pipeline", which updates `file_path`, `current_file_hash` and `updated_at` after a successful on-disk
+rewrite; the Books list query contract subject, the OPDS catalogue subject, and the Search and vocabulary suggest
+subject, which read this model to build their responses; the Shelves subject and the Reading state subject, whose tables
+reference `manifestations.id`; and the Design "Library filter and sort state", whose sort and filter axes name columns
+this model owns.
 
 ## Structure
 
@@ -100,7 +101,7 @@ written by `find_or_create_series`'s caller in `backend/src/models/work.rs`. Non
 uniqueness). The three status enums (`validation_status`, `ingestion_status`, `enrichment_status`) each default to
 `pending`; this model carries them as manifestation columns, but their transition rules belong to the pipelines that
 drive them. `manifestations.ingestion_status` is the lifecycle of the manifestation row itself, once one exists;
-`ingestion_jobs`, owned by the Ingestion pipeline subject, is a separate per-file row (`job_status`: `queued`,
+`ingestion_jobs`, owned by the Design "Ingestion pipeline", is a separate per-file row (`job_status`: `queued`,
 `running`, `complete`, `failed`, `skipped`) grouped by `batch_id` for one scan, written for every scanned file including
 one skipped as a duplicate or one that fails before any manifestation row is created, so the two need not agree.
 `content_rating`, the cover columns (`cover_path`, `cover_sha256`, `cover_size_bytes`, `cover_source`,
@@ -148,16 +149,16 @@ draft exists, or a value set from a source that predates per-field versioning, c
 
 This subject has no HTTP surface of its own; every read and write reaches it through a neighbouring subject's handler or
 service. The production writers are: `backend/src/models/work.rs` (`match_existing`, `create_stub`, `upgrade_stub`), the
-Ingestion pipeline subject's entry point into this model, called from `backend/src/services/ingestion/orchestrator.rs`;
-the same file's `rematch_on_isbn_change`, consumed by the enrichment orchestrator's ISBN re-check and, in `metadata.rs`,
-by `accept_manifestation`'s accepted-ISBN-version path and `update_book_metadata`'s touched-ISBN path;
-`backend/src/routes/metadata.rs`, the manual review and edit surface, which also writes `work_authors` and the
-vocabulary junctions through `apply_contributors_patch` and `apply_vocabulary_patch`; `backend/src/services/enrichment/`
-(`orchestrator.rs`, `queue.rs`, `field_lock.rs`), which applies accepted canonical values;
-`backend/src/services/writeback/` (`orchestrator.rs`, `queue.rs`), which updates `file_path` and `current_file_hash`
-after a successful on-disk rewrite; and `backend/src/services/metadata/draft.rs`, which writes the `metadata_versions`
-rows the pointer columns name. The production readers include `backend/src/routes/library/mod.rs` and `filters.rs`, and
-the shared `backend/src/routes/sort_spec.rs` and `cursor.rs` modules they import (also used by
+entry point of the Design "Ingestion pipeline" into this model, called from
+`backend/src/services/ingestion/orchestrator.rs`; the same file's `rematch_on_isbn_change`, consumed by the enrichment
+orchestrator's ISBN re-check and, in `metadata.rs`, by `accept_manifestation`'s accepted-ISBN-version path and
+`update_book_metadata`'s touched-ISBN path; `backend/src/routes/metadata.rs`, the manual review and edit surface, which
+also writes `work_authors` and the vocabulary junctions through `apply_contributors_patch` and `apply_vocabulary_patch`;
+`backend/src/services/enrichment/` (`orchestrator.rs`, `queue.rs`, `field_lock.rs`), which applies accepted canonical
+values; `backend/src/services/writeback/` (`orchestrator.rs`, `queue.rs`), which updates `file_path` and
+`current_file_hash` after a successful on-disk rewrite; and `backend/src/services/metadata/draft.rs`, which writes the
+`metadata_versions` rows the pointer columns name. The production readers include `backend/src/routes/library/mod.rs`
+and `filters.rs`, and the shared `backend/src/routes/sort_spec.rs` and `cursor.rs` modules they import (also used by
 `backend/src/routes/shelves/mod.rs`), `backend/src/routes/series/mod.rs`, `backend/src/routes/opds/` (the OPDS catalogue
 subject), and `backend/src/routes/suggest.rs` and `backend/src/routes/library/search.rs` (vocabulary and text search).
 
@@ -203,11 +204,11 @@ subject is the column's only updater, on each successful rewrite.
 themselves wired to `metadata_versions` rows once they exist. `backend/src/models/work.rs` resolves the cycle in three
 steps: `create_stub` inserts an empty-placeholder `works` row (`title = ''`, `sort_title = ''`) so the manifestation
 insert's `work_id` foreign key has a target before any metadata is known; the manifestation and its `metadata_versions`
-draft rows are then written (by the Ingestion pipeline subject, not this model); and `upgrade_stub` runs a single
+draft rows are then written (by the Design "Ingestion pipeline", not this model); and `upgrade_stub` runs a single
 `UPDATE` against the stub, setting `title`/`sort_title`/`subtitle`/`description`/`language` and their version pointers
 together with the `work_authors` and `series_works` rows the extracted metadata implies. A work therefore always exists,
 even mid-ingestion, but can hold empty-string title and `sort_title` briefly; the sequencing that guarantees the upgrade
-follows belongs to the Ingestion pipeline subject, not this model.
+follows belongs to the Design "Ingestion pipeline", not this model.
 
 **A `works` delete cascades** to its `manifestations`, `work_authors`, `series_works`, and `work_external_identifiers`
 rows, and to `omnibus_contents` rows where it is `contained_work_id`; a `manifestations` row that names it as
@@ -238,7 +239,7 @@ rather than erroring or updating.
 **The unique constraints on `manifestations` are a database-level backstop**, independent of whatever dedup check an
 upstream caller already ran: a second `INSERT` naming a `file_path` or `ingestion_file_hash` that already exists in the
 table is rejected by the constraint before the row can be created, and the resulting `sqlx::Error` is the caller's, the
-Ingestion pipeline subject's, to interpret.
+Design "Ingestion pipeline", to interpret.
 
 ## Failure and recovery
 
@@ -253,7 +254,7 @@ A `metadata_versions` deletion never fails a constraint on this side: because ev
 is no foreign-key error to recover from, only the silent attribution loss described above. A duplicate `file_path` or
 `ingestion_file_hash` insert does fail a constraint (`unique_violation`); this model guarantees the row is never created
 twice, but does not itself define what the caller does with the resulting error; that recovery path belongs to the
-Ingestion pipeline subject.
+Design "Ingestion pipeline".
 
 `manifestations_pages_positive` and the `TIMESTAMPTZ` decode-range checks reject an out-of-range value at the database
 as a `CHECK` violation, a second layer behind whatever validation a calling handler already applied; a value that

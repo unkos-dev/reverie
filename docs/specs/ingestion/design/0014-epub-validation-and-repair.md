@@ -39,7 +39,7 @@ untouched entry verbatim (`repack.rs`).
 
 It does not own what a caller does with a `Quarantined` outcome, and the three production callers do three different
 things with it. The Design "Ingestion pipeline" removes the just-copied library file, moves the drop-zone original to
-quarantine with a sidecar, and never commits a manifestation row for it. The Writeback pipeline subject never sees a
+quarantine with a sidecar, and never commits a manifestation row for it. The Design "Writeback pipeline" never sees a
 fresh `Quarantined` outcome from a file it is writing back to (the file already carried a manifestation row and a
 non-quarantined outcome before the job started); it treats a `Quarantined` result from its own post-write validation
 call as a regression and atomically restores the pre-write bytes, leaving the existing row's `file_path` and
@@ -62,8 +62,8 @@ subject's cover layer only judges whether an embedded cover is usable at serve t
 SVG-rasterisation logic the Design "Covers" uses so the two never disagree on what counts as a usable cover, without
 itself extracting, caching, or resizing anything.
 
-It does not own the OPF and cover-image bytes a metadata rewrite produces. The Writeback pipeline subject computes those
-bytes and hands them to this subject's own repack function to fold into a fresh archive; the OPF rewrite logic and
+It does not own the OPF and cover-image bytes a metadata rewrite produces. The Design "Writeback pipeline" computes
+those bytes and hands them to this subject's own repack function to fold into a fresh archive; the OPF rewrite logic and
 cover-embed planning that produce those bytes belong to that subject, not this one.
 
 Depends on: `rawzip` for Layer 1's lazy, allocation-bounded central-directory read; `flate2` for on-the-fly Deflate
@@ -75,7 +75,7 @@ performs. This subject opens no database connection of its own; every check and 
 from, and (on repair) written back to, the filesystem path the caller supplies.
 
 Depended on by: the Design "Ingestion pipeline", which calls `validate_and_repair` once per freshly copied EPUB file and
-branches on the returned `ValidationOutcome`; the Writeback pipeline subject, which calls `validate_and_repair` twice
+branches on the returned `ValidationOutcome`; the Design "Writeback pipeline", which calls `validate_and_repair` twice
 per job (once before its own rewrite, to record a baseline outcome, and once after, to detect a regression), and which
 also calls this subject's own `repack::with_modifications` and `zip_layer::read_entry_from_bytes` directly to build and
 read its own rewritten archive, independently of `validate_and_repair`; and the Design "Covers", whose on-demand cover
@@ -203,18 +203,18 @@ documented as intended for a caller to run inside `tokio::task::spawn_blocking`.
 (every finding, in discovery order), `outcome`, `accessibility_metadata`, `opf_data`, and `has_usable_embedded_cover`
 (forced `false` alongside `None` accessibility metadata and OPF data on a `Quarantined` outcome, whether or not Layer 5
 ran). This function is not read-only: any call that finds a `Repaired`-severity issue mutates the file at `path` in
-place before returning, including the Writeback pipeline subject's second, post-write call, whose nominal purpose is
-only to check for a regression against the pre-write outcome; that call can itself trigger a repack before the caller
-hashes the file, so the hash the caller ultimately records reflects whatever this subject's own repair pass produced,
-not necessarily the exact bytes the caller's own rewrite wrote.
+place before returning, including the second, post-write call the Design "Writeback pipeline" makes, whose nominal
+purpose is only to check for a regression against the pre-write outcome; that call can itself trigger a repack before
+the caller hashes the file, so the hash the caller ultimately records reflects whatever this subject's own repair pass
+produced, not necessarily the exact bytes the caller's own rewrite wrote.
 
 Beyond the entry point, three functions are reused directly by callers outside this subject's own internal call graph:
-`zip_layer::read_entry_from_bytes` and `repack::with_modifications` are both called by the Writeback pipeline subject on
-bytes and paths it holds itself, independently of `validate_and_repair`; and `cover_layer::find_cover_href` is exported
-specifically so that cover extraction owned by the Design "Covers" locates the same cover this subject's Layer 5 checks,
-since any divergence between the two is a silent correctness hazard. `is_safe_path` is likewise called directly by
-sibling-path resolution owned by the Design "Covers", re-validating a joined path built from attacker-controlled SVG
-content rather than trusting that the path it was joined from was already safe.
+`zip_layer::read_entry_from_bytes` and `repack::with_modifications` are both called by the Design "Writeback pipeline"
+on bytes and paths it holds itself, independently of `validate_and_repair`; and `cover_layer::find_cover_href` is
+exported specifically so that cover extraction owned by the Design "Covers" locates the same cover this subject's Layer
+5 checks, since any divergence between the two is a silent correctness hazard. `is_safe_path` is likewise called
+directly by sibling-path resolution owned by the Design "Covers", re-validating a joined path built from
+attacker-controlled SVG content rather than trusting that the path it was joined from was already safe.
 
 No `ValidationReport` or `Issue` list is ever persisted as a whole. The Design "Ingestion pipeline" extracts four fields
 from the report it receives: `outcome` (mapped to the `validation_status` column), `accessibility_metadata`,

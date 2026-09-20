@@ -47,10 +47,10 @@ cover renders. This subject supplies the routine, not the ingestion-time verdict
 subject's pre-warm mechanism: those belong to the Design "Ingestion pipeline"; this subject owns only the mechanism the
 predicate calls. It does not own the writeback rewrite of `manifestations.current_file_hash`, which re-keys this
 subject's cache by changing the hash prefix every cache-key derivation reads, or the corresponding writeback-time
-refresh of `has_embedded_cover`: those belong to the Writeback pipeline subject. It does not own the
+refresh of `has_embedded_cover`: those belong to the Design "Writeback pipeline". It does not own the
 enrichment-downloaded sidecar cover at `manifestations.cover_path`, the SSRF-guarded remote-cover HTTP client, its
 download staging under `_covers/pending` and `_covers/accepted`, or its configuration surface (`REVERIE_COVER_MAX_BYTES`
-and the sibling settings in `backend/src/config/cover.rs`): those belong to the Enrichment pipeline subject; that cover
+and the sibling settings in `backend/src/config/cover.rs`): those belong to the Design "Enrichment pipeline"; that cover
 is a distinct artefact from the EPUB-embedded cover this subject serves, a boundary the module doc at the top of
 `covers/mod.rs` states directly. It does not own row-level security or the `acquire_with_rls` GUC contract this
 subject's manifestation lookup runs inside: that belongs to the Design "Row-level security and database context". It
@@ -250,7 +250,7 @@ for the same bytes; when `rasterize_svg` fails for a reason `parses_as_svg`'s re
 genuine parse or render-cost failure), that Design records a `Degraded` issue, while a rasterisation failure
 `parses_as_svg` would accept (a blank render or an absent sibling) is treated as no usable cover, not an issue.
 
-**A writeback rewriting a manifestation's file**, in the opposite direction from the Writeback pipeline subject: it
+**A writeback rewriting a manifestation's file**, in the opposite direction from the Design "Writeback pipeline": it
 recomputes `current_file_hash` from the file as written and refreshes `has_embedded_cover` from its own post-writeback
 validation. The new hash changes the cache key every subsequent request derives, so the next request for that
 manifestation misses the cache and generates fresh; nothing in this subject's own code reclaims the file the old hash
