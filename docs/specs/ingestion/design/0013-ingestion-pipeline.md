@@ -81,8 +81,8 @@ the Design "Metadata review and editing", each owning its own writes to that row
 limited to the row's creation and the canonical columns it sets from a validated or heuristic source at that moment. The
 library directory tree is similarly shared with the Design "Writeback pipeline", which renames a file after a rewrite
 using the same `path_template::render` and `resolve_collision` functions this subject defines; the two never write to
-the same manifestation's file at the same time, because a manifestation reaches the Writeback pipeline only once this
-subject's own commit has completed.
+the same manifestation's file at the same time, because a manifestation reaches the Design "Writeback pipeline" only
+once this subject's own commit has completed.
 
 Call sites that dispatch to those owners:
 

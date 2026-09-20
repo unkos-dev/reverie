@@ -19,11 +19,11 @@ file.
 
 ## Rationale
 
-The Writeback pipeline subject depends on a job appearing whenever a value it must reflect onto a file has changed; a
-reader trusts that the file on disk stays in step with the catalogue's own record. If the enqueue could commit without
-the field change, or the field change without the enqueue, the file and the catalogue would drift apart with nothing
-left to reconcile them after a crash. An external identifier is a catalogue-only fact that no file format this system
-handles carries, so a job for one would waste an attempt on a field the file has nowhere to hold.
+The writeback pipeline depends on a job appearing whenever a value it must reflect onto a file has changed; a reader
+trusts that the file on disk stays in step with the catalogue's own record. If the enqueue could commit without the
+field change, or the field change without the enqueue, the file and the catalogue would drift apart with nothing left to
+reconcile them after a crash. An external identifier is a catalogue-only fact that no file format this system handles
+carries, so a job for one would waste an attempt on a field the file has nowhere to hold.
 
 ## Acceptance criteria
 

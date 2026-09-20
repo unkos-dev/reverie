@@ -194,8 +194,8 @@ tables.
 afterwards; that holds only because no writer exists, not because any schema constraint or runtime guard enforces it. A
 test in the writeback orchestrator, `ingestion_file_hash_immutable_across_writeback_chain`, checks it.
 `current_file_hash` equals `ingestion_file_hash` on insert unless validation repaired the file during ingestion, in
-which case the initial `INSERT` already carries the hash of the rewritten file; after insert, the Writeback pipeline
-subject is the column's only updater, on each successful rewrite.
+which case the initial `INSERT` already carries the hash of the rewritten file; after insert, the Design "Writeback
+pipeline" is the column's only updater, on each successful rewrite.
 
 ## Runtime behaviour
 
@@ -280,10 +280,11 @@ the handler that reaches them. Every route handler in `backend/src/routes/metada
 (`accept_manifestation`, `reject_manifestation`, `revert_manifestation`, `lock_field`, `unlock_field`, and
 `update_book_metadata`, which reaches `work_authors` via `apply_contributors_patch` and the vocabulary junctions via
 `apply_vocabulary_patch`) calls `CurrentUser::require_not_child` before any write; the mechanism that check draws on is
-the Design "Authorization axes", not restated here. The Ingestion pipeline, Enrichment pipeline and Writeback pipeline
-writers named in "Interfaces and dependencies" reach this model over their own dedicated connection pools rather than a
-per-request credential, so no caller-supplied role or scope gates them; the pool and grant boundary that confines those
-pools to the catalogue and pipeline tables is again the Design "Row-level security and database context".
+the Design "Authorization axes", not restated here. The writers the Designs "Ingestion pipeline", "Enrichment pipeline"
+and "Writeback pipeline" own, named in "Interfaces and dependencies", reach this model over their own dedicated
+connection pools rather than a per-request credential, so no caller-supplied role or scope gates them; the pool and
+grant boundary that confines those pools to the catalogue and pipeline tables is again the Design "Row-level security
+and database context".
 
 This subject has no operational surface of its own to run, restart, or scale: it is schema, read and written entirely
 through the neighbouring subjects named above.

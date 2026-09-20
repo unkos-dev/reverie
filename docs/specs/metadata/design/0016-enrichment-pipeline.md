@@ -83,19 +83,19 @@ readers; and the book-detail and library surfaces that display `enrichment_statu
   `orchestrator::load_existing_pending`'s disagreement read
   (`WHERE manifestation_id = $1 AND field_name = $2 AND status = 'pending'`) carries no `source` filter, so an OPF row
   from ingestion can be the pending row an enrichment observation is checked against for agreement or disagreement.
-  Manual-source rows and every `status`/`resolved_at`/`resolved_by` transition are the third class, and belong to
-  Metadata review and editing.
+  Manual-source rows and every `status`/`resolved_at`/`resolved_by` transition are the third class, and belong to the
+  Design "Metadata review and editing".
 - Canonical `works`/`manifestations` columns and their `*_version_id` pointers (`title`, `description`, `language`,
   `subtitle`, `publisher`, `pub_date`, `isbn_10`, `isbn_13`, `pages`, `identifiers.*`): written by
   `orchestrator::apply_field`, gated by `policy::decide`. `content_rating` and `cover` are never written by this path
   (see Runtime behaviour).
 - `writeback_jobs` rows from an automated apply: written by `orchestrator::enqueue_writeback` (`INSERT` only, same
   transaction as the pointer move). A second, independent `enqueue_writeback` function in `routes/metadata.rs` writes
-  rows from the manual-edit path and belongs to Metadata review and editing.
+  rows from the manual-edit path and belongs to the Design "Metadata review and editing".
 - `api_cache` rows: written by `cache::write`, called only from `orchestrator::cache_all`, itself called from both the
   production run and the dry-run's fan-out.
 - `field_locks` rows: the write side is `field_lock::lock`/`unlock`, called only from `routes/metadata.rs`'s
-  `lock_field`/`unlock_field` (Metadata review and editing). This subject only reads them, through
+  `lock_field`/`unlock_field` (the Design "Metadata review and editing"). This subject only reads them, through
   `field_lock::is_locked`/`is_locked_tx`.
 
 Every item above other than `metadata_versions` has exactly one writer once the manual-edit paths are attributed to
@@ -321,8 +321,8 @@ ever dials it, and the redirect policy re-validates every hop against the same d
 following it, closing both the DNS-rebinding gap a redirect-time-only check would leave open and the case where a
 follow-on hop in a redirect chain resolves to a different, denied address. Nothing in the production path builds a
 `cover_client`; only `cover_download.rs`'s own test module constructs one. Every client carries an explicit `User-Agent`
-derived from `Config::user_agent()` (the installation's contact string, or `"unidentified"`), the convention
-REV-ADR-0007 generalised from this module.
+derived from `Config::user_agent()` (the installation's contact string, or `"unidentified"`), the convention every
+outbound client follows.
 
 A caller mints the request that eventually reaches an external provider (through `trigger`, or a manual identifier
 edit's implicit re-queue), but chooses no target: `LookupKey`s are derived server-side from the manifestation's own
