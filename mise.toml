@@ -40,6 +40,15 @@ pnpm = "11.27.0"
 # checksums for the download. A pin here would be the second declaration that
 # arrangement exists to remove.
 
+# Migration and query-cache CLI. Keep this in lockstep with the sqlx crate in
+# backend/Cargo.toml. sqlx-cli 0.9 does not publish a Cargo.lock, so its own
+# dependency tree remains the named package-ingress exception in REV-ADR-0050.
+[tools."cargo:sqlx-cli"]
+version = "0.9.0"
+default-features = false
+features = ["postgres", "rustls"]
+locked = false
+
 # SQL linter for backend/migrations, run by `just infra::sqruff`. No mise
 # registry shorthand exists, so it takes the explicit GitHub backend form.
 [tools."github:quarylabs/sqruff"]
