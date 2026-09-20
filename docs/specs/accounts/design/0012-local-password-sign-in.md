@@ -54,8 +54,8 @@ Depends on: `crate::auth::session::login` to establish the session on success; `
 `crate::models::user::User` to resolve the account; `crate::services::enrichment::http::api_client`, which supplies the
 SSRF-resistant HTTP client the breach check sends its outbound request through; `Config`'s `login_rate_per_min`,
 `login_throttle_base_secs`, `login_throttle_cap_secs`, `password_min_length`, `password_max_length`,
-`password_min_zxcvbn_score`, `password_breach_check_enabled`, `password_breach_check_url`, `trusted_client_ip_header`,
-`local_auth_enabled` and `self_registration_enabled` fields.
+`password_min_zxcvbn_score`, `password_breach_check_enabled`, `trusted_client_ip_header`, `local_auth_enabled` and
+`self_registration_enabled` fields.
 
 Depended on by: `routes/users/mod.rs`'s `create_user`, `admin_reset_password` and `change_own_password`, and
 `routes/auth.rs`'s `reset_password`, each of which calls `password_policy::enforce_from_config` before writing a
@@ -146,11 +146,10 @@ decision on the local-password side.
   local `enforce_password_policy` wrapper that maps `PolicyError` to `AppError::Validation`), and `routes/auth.rs`'s
   `reset_password`. Each caller supplies its own `user_inputs` (typically the target's email and display name) so zxcvbn
   penalises a password that echoes them.
-- The HIBP Pwned Passwords range API (`https://api.pwnedpasswords.com/range` by default, operator-overridable via
-  `password_breach_check_url`) is queried with only a 5-character SHA-1 prefix of the candidate password, and with an
-  `Add-Padding` header so the response size does not itself reveal whether the prefix had real hits. The request runs
-  against the shared client's own 10-second timeout (`crate::services::enrichment::http::api_client`); `enforce` applies
-  no timeout of its own.
+- The HIBP Pwned Passwords range API (`https://api.pwnedpasswords.com/range`, the only supported endpoint) is queried
+  with only a 5-character SHA-1 prefix of the candidate password, and with an `Add-Padding` header so the response size
+  does not itself reveal whether the prefix had real hits. The request runs against the shared client's own 10-second
+  timeout (`crate::services::enrichment::http::api_client`); `enforce` applies no timeout of its own.
 - `frontend/src/api/auth.ts`'s `loginLocal` and `register` are the client entry points; both parse their body through a
   Zod schema in `auth.schemas.ts` before sending it, and `loginLocal` calls `refreshCsrfToken()` immediately after a
   successful login so the client's cached CSRF token matches the new session.
@@ -182,10 +181,9 @@ decision on the local-password side.
 - **Configuration.** `login_rate_per_min` (default 10/min), `login_throttle_base_secs` (default 2) and
   `login_throttle_cap_secs` (default 900) shape the two throttles; `password_min_length` (default 8, validated to at
   least 8), `password_max_length` (default 256, validated to at least 64), `password_min_zxcvbn_score` (default 2),
-  `password_breach_check_enabled` (default `true`) and `password_breach_check_url` shape the policy;
-  `self_registration_enabled` (default `false`) gates `register`; `trusted_client_ip_header` (default unset) opts a
-  deployment into trusting a forwarded-for header. None of these reload at runtime; each is read once from `Config` at
-  the point of use.
+  `password_breach_check_enabled` (default `true`) shape the policy; `self_registration_enabled` (default `false`) gates
+  `register`; `trusted_client_ip_header` (default unset) opts a deployment into trusting a forwarded-for header. None of
+  these reload at runtime; each is read once from `Config` at the point of use.
 
 ## Runtime behaviour
 
@@ -297,13 +295,10 @@ per email, out of band, only through `reverie unlock-account`.
 
 `enforce_from_config` builds its breach-check HTTP client through `crate::services::enrichment::http::api_client`, which
 resolves every hostname it dials, including each redirect hop it follows, through the SSRF-filtering `ssrf_resolver`
-shared with the enrichment pipeline's `cover_client`. Unlike `cover_client`, `api_client` carries no per-redirect-hop
-URL revalidation (`cover_client`'s `validate_hop`); the case that gap leaves open, and that `cover_client` closes, is a
-redirect whose target is a bare IP address literal rather than a hostname, since a literal never triggers a resolver
-lookup at all and so is never checked against the denied-range list by this client. The breach-check URL is
-operator-configured (`password_breach_check_url`, defaulting to the public range service) and the only request content
-an outside party influences is the five-character hash prefix in the path, so reaching that case requires the operator's
-own chosen upstream to redirect to an address literal.
+shared with the enrichment pipeline's `cover_client`, and validates every redirect hop it follows by host
+(`validate_hop`), so a redirect whose target is a bare IP address literal, which never triggers a resolver lookup, is
+checked against the denied-range list before it is dialled. The breach-check URL is the public range service and the
+only request content an outside party influences is the five-character hash prefix in the path.
 
 Registration is config-gated (`self_registration_enabled`, default `false`) and the route is not mounted in the shipped
 client (`frontend/src/main.tsx` mounts no `/register` route); reaching `POST /auth/register` requires calling the API
