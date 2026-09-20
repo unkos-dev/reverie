@@ -37,6 +37,9 @@ fn limiter() -> &'static Limiter {
     })
 }
 
+/// The official `OpenLibrary` API base URL; the only supported endpoint.
+pub const DEFAULT_BASE_URL: &str = "https://openlibrary.org";
+
 /// `OpenLibrary` metadata adapter.
 ///
 /// Uses two `OpenLibrary` endpoints: the `ISBN` lookup path (`/api/books`)

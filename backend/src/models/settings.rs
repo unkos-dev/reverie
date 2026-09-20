@@ -59,13 +59,6 @@ pub struct Settings {
     #[schema(value_type = CleanupMode)]
     pub cleanup_mode: String,
 
-    /// `OpenLibrary` API base URL.
-    pub openlibrary_base_url: String,
-    /// Google Books API base URL.
-    pub googlebooks_base_url: String,
-    /// Hardcover `GraphQL` API base URL.
-    pub hardcover_base_url: String,
-
     /// Per-provider display visibility for external identifiers and ratings
     /// (`{"googlebooks": false}` hides that provider from projections).
     /// Keys are validated on write against the union of `identifier_schemes`
@@ -177,13 +170,6 @@ pub struct UpdateSettings {
     /// Post-ingestion cleanup mode.
     pub cleanup_mode: Option<CleanupMode>,
 
-    /// `OpenLibrary` API base URL.
-    pub openlibrary_base_url: Option<String>,
-    /// Google Books API base URL.
-    pub googlebooks_base_url: Option<String>,
-    /// Hardcover `GraphQL` API base URL.
-    pub hardcover_base_url: Option<String>,
-
     /// Per-provider display visibility, replacing the stored map wholesale.
     /// Values must be booleans; keys are validated against the union of
     /// `identifier_schemes` and `rating_sources`.
@@ -236,22 +222,8 @@ impl UpdateSettings {
             && self.opds_page_size.is_none()
             && self.format_priority.is_none()
             && self.cleanup_mode.is_none()
-            && self.openlibrary_base_url.is_none()
-            && self.googlebooks_base_url.is_none()
-            && self.hardcover_base_url.is_none()
             && self.provider_visibility.is_none()
     }
-}
-
-fn validate_url_field(value: Option<&String>, field_name: &str) -> Result<(), String> {
-    if let Some(v) = value {
-        let parsed =
-            url::Url::parse(v).map_err(|e| format!("{field_name} must be a valid URL: {e}"))?;
-        if !["http", "https"].contains(&parsed.scheme()) {
-            return Err(format!("{field_name} must use http or https scheme"));
-        }
-    }
-    Ok(())
 }
 
 /// Validate an [`UpdateSettings`] payload.
@@ -331,9 +303,6 @@ pub fn validate_update(req: &UpdateSettings) -> Result<(), String> {
     {
         return Err("writeback_max_attempts must be positive".into());
     }
-    validate_url_field(req.openlibrary_base_url.as_ref(), "openlibrary_base_url")?;
-    validate_url_field(req.googlebooks_base_url.as_ref(), "googlebooks_base_url")?;
-    validate_url_field(req.hardcover_base_url.as_ref(), "hardcover_base_url")?;
     if let Some(ref v) = req.provider_visibility
         && v.len() > MAX_PROVIDER_VISIBILITY_ENTRIES
     {

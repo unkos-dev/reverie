@@ -183,12 +183,6 @@ pub struct Config {
     /// `false` to skip the outbound request entirely (e.g. fully offline
     /// instances).
     pub password_breach_check_enabled: bool,
-    /// Base URL of the HIBP Pwned Passwords range API
-    /// (`REVERIE_PASSWORD_BREACH_CHECK_URL`, default
-    /// `https://api.pwnedpasswords.com/range`). Only the 5-character SHA-1
-    /// prefix is appended as a path segment (k-anonymity); the password never
-    /// leaves the process. Overridable so tests can point at a mock.
-    pub password_breach_check_url: String,
     /// Whether self-service account registration is enabled
     /// (`REVERIE_SELF_REGISTRATION_ENABLED`, default `false`). When off, the
     /// `/auth/register` endpoint returns 404. A self-registered account is
@@ -362,19 +356,10 @@ pub struct Config {
     /// after construction.
     #[validate(nested)]
     pub security: SecurityConfig,
-    /// `OpenLibrary` API base URL (`REVERIE_OPENLIBRARY_BASE_URL`,
-    /// default `https://openlibrary.org`).
-    pub openlibrary_base_url: String,
-    /// Google Books API base URL (`REVERIE_GOOGLEBOOKS_BASE_URL`,
-    /// default `https://www.googleapis.com/books/v1`).
-    pub googlebooks_base_url: String,
     /// Optional Google Books API key
     /// (`REVERIE_GOOGLEBOOKS_API_KEY`); when set, requests bypass the
     /// public anonymous quota.
     pub googlebooks_api_key: Option<String>,
-    /// Hardcover GraphQL endpoint (`REVERIE_HARDCOVER_BASE_URL`,
-    /// default `https://api.hardcover.app/v1/graphql`).
-    pub hardcover_base_url: String,
     /// Optional Hardcover bearer token
     /// (`REVERIE_HARDCOVER_API_TOKEN`); requests are skipped when
     /// unset.
@@ -828,7 +813,6 @@ impl Default for Config {
             password_max_length: 256,
             password_min_zxcvbn_score: 2,
             password_breach_check_enabled: true,
-            password_breach_check_url: "https://api.pwnedpasswords.com/range".into(),
             self_registration_enabled: false,
             recovery_pin_ttl_secs: 900,
             recovery_pin_dir: "/data/recovery-pins".into(),
@@ -863,10 +847,7 @@ impl Default for Config {
             writeback: WritebackConfig::default(),
             opds: OpdsConfig::default(),
             security: SecurityConfig::default(),
-            openlibrary_base_url: "https://openlibrary.org".into(),
-            googlebooks_base_url: "https://www.googleapis.com/books/v1".into(),
             googlebooks_api_key: None,
-            hardcover_base_url: "https://api.hardcover.app/v1/graphql".into(),
             hardcover_api_token: None,
             operator_contact: None,
             ingestion_dsn_defaulted: false,
@@ -1013,7 +994,6 @@ mod tests {
         assert_eq!(config.writeback.concurrency, 2);
         assert_eq!(config.writeback.poll_idle_secs, 5);
         assert_eq!(config.writeback.max_attempts, 10);
-        assert_eq!(config.openlibrary_base_url, "https://openlibrary.org");
         assert!(config.googlebooks_api_key.is_none());
         assert!(config.hardcover_api_token.is_none());
         assert!(config.operator_contact.is_none());

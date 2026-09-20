@@ -79,6 +79,9 @@ fn book_by_slug_query() -> String {
     query_doc("query BookBySlug($slug: String!) { books(where: { slug: { _eq: $slug } }, limit: 1)")
 }
 
+/// The official `Hardcover` `GraphQL` endpoint; the only supported target.
+pub const DEFAULT_BASE_URL: &str = "https://api.hardcover.app/v1/graphql";
+
 /// `Hardcover` metadata adapter (`GraphQL`-backed).
 ///
 /// Issues `GraphQL` queries against the `Hardcover` API to retrieve

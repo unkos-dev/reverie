@@ -280,50 +280,6 @@ async fn put_settings_empty_format_priority_returns_422(pool: PgPool) {
 }
 
 #[sqlx::test(migrations = "./migrations")]
-async fn put_settings_invalid_url_scheme_returns_422(pool: PgPool) {
-    let app_pool = test_support::db::app_pool_for(&pool).await;
-    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
-    let (_admin_id, admin_basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
-    let server = server(&app_pool, &ingestion_pool);
-
-    let r = server
-        .put("/api/v1/settings")
-        .add_header(axum::http::header::AUTHORIZATION, admin_basic)
-        .json(&serde_json::json!({"openlibrary_base_url": "file:///etc/passwd"}))
-        .await;
-    assert_eq!(r.status_code(), StatusCode::UNPROCESSABLE_ENTITY);
-
-    let body: serde_json::Value = r.json();
-    let detail = body["detail"].as_str().unwrap_or_default();
-    assert!(
-        detail.contains("http"),
-        "expected scheme error, got {detail}"
-    );
-}
-
-#[sqlx::test(migrations = "./migrations")]
-async fn put_settings_valid_url_persists(pool: PgPool) {
-    let app_pool = test_support::db::app_pool_for(&pool).await;
-    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
-    let (_admin_id, admin_basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
-    let server = server(&app_pool, &ingestion_pool);
-
-    let r = server
-        .put("/api/v1/settings")
-        .add_header(axum::http::header::AUTHORIZATION, admin_basic.clone())
-        .json(&serde_json::json!({"openlibrary_base_url": "https://custom.example.com"}))
-        .await;
-    assert_eq!(r.status_code(), StatusCode::OK);
-
-    let r2 = server
-        .get("/api/v1/settings")
-        .add_header(axum::http::header::AUTHORIZATION, admin_basic)
-        .await;
-    let body: serde_json::Value = r2.json();
-    assert_eq!(body["openlibrary_base_url"], "https://custom.example.com");
-}
-
-#[sqlx::test(migrations = "./migrations")]
 async fn put_settings_unknown_field_returns_422(pool: PgPool) {
     let app_pool = test_support::db::app_pool_for(&pool).await;
     let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;

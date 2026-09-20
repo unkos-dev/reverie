@@ -5,6 +5,7 @@
 //! canonical columns.  The caller receives an in-memory diff.
 
 use std::collections::HashMap;
+use std::sync::Arc;
 
 use serde::Serialize;
 use sqlx::PgPool;
@@ -12,9 +13,9 @@ use uuid::Uuid;
 
 use crate::config::Config;
 
-use super::orchestrator::fan_out_for_dry_run;
+use super::orchestrator::{build_sources, fan_out_for_dry_run_with_sources};
 use super::policy::{self, Decision, PolicyInputRow};
-use super::sources::SourceResult;
+use super::sources::{MetadataSource, SourceResult};
 use super::value_hash;
 
 /// The result of a dry-run enrichment pass for a single manifestation.
@@ -79,7 +80,20 @@ pub async fn preview(
     config: &Config,
     manifestation_id: Uuid,
 ) -> anyhow::Result<DryRunDiff> {
-    let (snapshot, runs) = fan_out_for_dry_run(pool, config, manifestation_id).await?;
+    let sources = build_sources(config);
+    preview_with_sources(pool, config, &sources, manifestation_id).await
+}
+
+/// [`preview`] body taking an explicit source set; see
+/// `orchestrator::run_once_with_sources` for why the seam exists.
+pub(crate) async fn preview_with_sources(
+    pool: &PgPool,
+    config: &Config,
+    sources: &[Arc<dyn MetadataSource>],
+    manifestation_id: Uuid,
+) -> anyhow::Result<DryRunDiff> {
+    let (snapshot, runs) =
+        fan_out_for_dry_run_with_sources(pool, config, sources, manifestation_id).await?;
 
     let mut would_apply = Vec::new();
     let mut would_stage = Vec::new();

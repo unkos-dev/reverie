@@ -69,10 +69,6 @@ pub const ENV_MAP: &[(&str, &str)] = &[
         "password_breach_check_enabled",
     ),
     (
-        "REVERIE_PASSWORD_BREACH_CHECK_URL",
-        "password_breach_check_url",
-    ),
-    (
         "REVERIE_SELF_REGISTRATION_ENABLED",
         "self_registration_enabled",
     ),
@@ -85,10 +81,7 @@ pub const ENV_MAP: &[(&str, &str)] = &[
     ("REVERIE_AUTO_MIGRATE", "auto_migrate"),
     ("REVERIE_FORMAT_PRIORITY", "format_priority"),
     ("REVERIE_CLEANUP_MODE", "cleanup_mode"),
-    ("REVERIE_OPENLIBRARY_BASE_URL", "openlibrary_base_url"),
-    ("REVERIE_GOOGLEBOOKS_BASE_URL", "googlebooks_base_url"),
     ("REVERIE_GOOGLEBOOKS_API_KEY", "googlebooks_api_key"),
-    ("REVERIE_HARDCOVER_BASE_URL", "hardcover_base_url"),
     ("REVERIE_HARDCOVER_API_TOKEN", "hardcover_api_token"),
     ("REVERIE_OPERATOR_CONTACT", "operator_contact"),
     // --- enrichment sub-struct ---

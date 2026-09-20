@@ -40,8 +40,10 @@ use crate::services::enrichment::lookup_key;
 use crate::services::enrichment::policy::{self, Decision, PolicyInputRow};
 use crate::services::enrichment::sources::{
     LookupCtx, LookupKey, LookupOutcome, MetadataSource, SourceError, SourceResult,
-    google_books::GoogleBooks, hardcover::Hardcover, is_fetchable_scheme,
-    open_library::OpenLibrary,
+    google_books::{self, GoogleBooks},
+    hardcover::{self, Hardcover},
+    is_fetchable_scheme,
+    open_library::{self, OpenLibrary},
 };
 use crate::services::enrichment::value_hash;
 use crate::services::metadata::external_id;
@@ -159,14 +161,14 @@ impl CanonicalState {
 /// when no token is configured.
 pub fn build_sources(config: &Config) -> Vec<Arc<dyn MetadataSource>> {
     let mut v: Vec<Arc<dyn MetadataSource>> = vec![
-        Arc::new(OpenLibrary::new(config.openlibrary_base_url.clone())),
+        Arc::new(OpenLibrary::new(open_library::DEFAULT_BASE_URL)),
         Arc::new(GoogleBooks::new(
-            config.googlebooks_base_url.clone(),
+            google_books::DEFAULT_BASE_URL,
             config.googlebooks_api_key.clone(),
         )),
     ];
     let hc = Hardcover::new(
-        config.hardcover_base_url.clone(),
+        hardcover::DEFAULT_BASE_URL,
         config.hardcover_api_token.clone(),
     );
     if hc.enabled() {
@@ -193,6 +195,18 @@ pub async fn run_once(
     config: &Config,
     manifestation_id: Uuid,
 ) -> anyhow::Result<RunOutcome> {
+    let sources = build_sources(config);
+    run_once_with_sources(pool, config, &sources, manifestation_id).await
+}
+
+/// [`run_once`] body taking an explicit source set, so tests can substitute
+/// mock-server-backed adapters without routing mock URLs through [`Config`].
+async fn run_once_with_sources(
+    pool: &PgPool,
+    config: &Config,
+    sources: &[Arc<dyn MetadataSource>],
+    manifestation_id: Uuid,
+) -> anyhow::Result<RunOutcome> {
     let snapshot = load_snapshot(pool, manifestation_id).await?;
     if snapshot.lookup_keys.is_empty() {
         info!(
@@ -209,7 +223,6 @@ pub async fn run_once(
         });
     }
 
-    let sources = build_sources(config);
     let ua = config.user_agent();
     let http = api_client(&ua);
 
@@ -220,7 +233,7 @@ pub async fn run_once(
     };
     let results = fan_out_with_fallback(
         pool,
-        &sources,
+        sources,
         &http,
         &snapshot.lookup_keys,
         Duration::from_secs(config.enrichment.fetch_budget_secs),
@@ -1317,21 +1330,23 @@ fn summarise_failure(source_id: &str, err: &SourceError) -> SourceFailure {
 }
 
 /// Helper used by `dry_run::preview` — same fan-out + cache but no journal
-/// writes and no canonical updates.
+/// writes and no canonical updates. Takes an explicit source set so tests can
+/// substitute mock-server-backed adapters without routing mock URLs through
+/// [`Config`].
 ///
 /// # Errors
 ///
 /// Returns an error if the manifestation does not exist or a database query fails.
-pub async fn fan_out_for_dry_run(
+pub(crate) async fn fan_out_for_dry_run_with_sources(
     pool: &PgPool,
     config: &Config,
+    sources: &[Arc<dyn MetadataSource>],
     manifestation_id: Uuid,
 ) -> anyhow::Result<(Snapshot, Vec<SourceRun>)> {
     let snapshot = load_snapshot(pool, manifestation_id).await?;
     if snapshot.lookup_keys.is_empty() {
         return Ok((snapshot, Vec::new()));
     }
-    let sources = build_sources(config);
     let ua = config.user_agent();
     let http = api_client(&ua);
     let ttls = CacheTtls {
@@ -1341,7 +1356,7 @@ pub async fn fan_out_for_dry_run(
     };
     let results = fan_out_with_fallback(
         pool,
-        &sources,
+        sources,
         &http,
         &snapshot.lookup_keys,
         Duration::from_secs(config.enrichment.fetch_budget_secs),
@@ -1454,12 +1469,23 @@ mod tests {
             .expect("valid test rating")
     }
 
-    fn config_with_mock_sources(
+    /// Build the enabled adapters against mock-server URIs directly, bypassing
+    /// [`build_sources`] and [`Config`]: the production endpoints are fixed
+    /// constants, so a test config has nothing to route mock URLs through.
+    fn mock_sources(
         ol_uri: &str,
         gb_uri: &str,
         hc_uri: &str,
-        hc_token: Option<&str>,
-    ) -> Config {
+        hc_token: &str,
+    ) -> Vec<Arc<dyn MetadataSource>> {
+        vec![
+            Arc::new(OpenLibrary::new(ol_uri)),
+            Arc::new(GoogleBooks::new(gb_uri, None)),
+            Arc::new(Hardcover::new(hc_uri, Some(hc_token.to_string()))),
+        ]
+    }
+
+    fn config_with_mock_sources() -> Config {
         Config {
             port: 3000,
             database_url: String::new(),
@@ -1484,7 +1510,6 @@ mod tests {
             password_max_length: 256,
             password_min_zxcvbn_score: 2,
             password_breach_check_enabled: true,
-            password_breach_check_url: "https://api.pwnedpasswords.com/range".into(),
             self_registration_enabled: false,
             recovery_pin_ttl_secs: 900,
             recovery_pin_dir: "./reverie-recovery".into(),
@@ -1532,11 +1557,8 @@ mod tests {
                 csp_html_header: None,
                 csp_api_header: None,
             },
-            openlibrary_base_url: ol_uri.into(),
-            googlebooks_base_url: gb_uri.into(),
             googlebooks_api_key: None,
-            hardcover_base_url: hc_uri.into(),
-            hardcover_api_token: hc_token.map(std::convert::Into::into),
+            hardcover_api_token: Some("test-token".into()),
             operator_contact: None,
             ingestion_dsn_defaulted: false,
         }
@@ -1727,9 +1749,12 @@ mod tests {
         mock_hardcover(&hc, json!({"data":{"books":[{"title": canon_title}]}})).await;
 
         let (_work_id, m_id) = insert_enrich_fixture(&pool, isbn, &marker).await;
-        let cfg = config_with_mock_sources(&ol.uri(), &gb.uri(), &hc.uri(), Some("test-token"));
+        let cfg = config_with_mock_sources();
+        let sources = mock_sources(&ol.uri(), &gb.uri(), &hc.uri(), "test-token");
 
-        let outcome = run_once(&pool, &cfg, m_id).await.unwrap();
+        let outcome = run_once_with_sources(&pool, &cfg, &sources, m_id)
+            .await
+            .unwrap();
         // The break-after-Apply guard inside apply_canonical_batch must
         // prevent agreeing siblings from re-applying — exactly one Apply,
         // exactly one writeback row.
@@ -1807,9 +1832,12 @@ mod tests {
         .await;
 
         let (_work_id, m_id) = insert_enrich_fixture(&pool, isbn, &marker).await;
-        let cfg = config_with_mock_sources(&ol.uri(), &gb.uri(), &hc.uri(), Some("test-token"));
+        let cfg = config_with_mock_sources();
+        let sources = mock_sources(&ol.uri(), &gb.uri(), &hc.uri(), "test-token");
 
-        let _ = run_once(&pool, &cfg, m_id).await.unwrap();
+        let _ = run_once_with_sources(&pool, &cfg, &sources, m_id)
+            .await
+            .unwrap();
 
         // Title journal rows written (all pending), but canonical empty.
         let title_rows = sqlx::query_scalar!(
@@ -1873,9 +1901,12 @@ mod tests {
         mock_hardcover(&hc, json!({"data": {"books": []}})).await;
 
         let (_work_id, m_id) = insert_enrich_fixture(&pool, isbn, &marker).await;
-        let cfg = config_with_mock_sources(&ol.uri(), &gb.uri(), &hc.uri(), Some("test-token"));
+        let cfg = config_with_mock_sources();
+        let sources = mock_sources(&ol.uri(), &gb.uri(), &hc.uri(), "test-token");
 
-        let _ = run_once(&pool, &cfg, m_id).await.unwrap();
+        let _ = run_once_with_sources(&pool, &cfg, &sources, m_id)
+            .await
+            .unwrap();
 
         let row = sqlx::query!(
             "SELECT publisher, publisher_version_id FROM manifestations WHERE id = $1",
@@ -1940,8 +1971,11 @@ mod tests {
         .await
         .unwrap();
 
-        let cfg = config_with_mock_sources(&ol.uri(), &gb.uri(), &hc.uri(), Some("test-token"));
-        let _ = run_once(&pool, &cfg, m_id).await.unwrap();
+        let cfg = config_with_mock_sources();
+        let sources = mock_sources(&ol.uri(), &gb.uri(), &hc.uri(), "test-token");
+        let _ = run_once_with_sources(&pool, &cfg, &sources, m_id)
+            .await
+            .unwrap();
 
         // Journal row for the proposed title WAS written.
         let title_rows = sqlx::query_scalar!(
@@ -2003,8 +2037,11 @@ mod tests {
         mock_hardcover(&hc, json!({"data": {"books": []}})).await;
 
         let (_work_id, m_id) = insert_enrich_fixture(&pool, isbn, &marker).await;
-        let cfg = config_with_mock_sources(&ol.uri(), &gb.uri(), &hc.uri(), Some("test-token"));
-        let _ = run_once(&pool, &cfg, m_id).await.unwrap();
+        let cfg = config_with_mock_sources();
+        let sources = mock_sources(&ol.uri(), &gb.uri(), &hc.uri(), "test-token");
+        let _ = run_once_with_sources(&pool, &cfg, &sources, m_id)
+            .await
+            .unwrap();
 
         let (canon_subtitle, subtitle_ptr) = sqlx::query!(
             "SELECT w.subtitle, w.subtitle_version_id FROM works w \
@@ -2052,8 +2089,11 @@ mod tests {
         .await
         .unwrap();
 
-        let cfg = config_with_mock_sources(&ol.uri(), &gb.uri(), &hc.uri(), Some("test-token"));
-        let _ = run_once(&pool, &cfg, m_id).await.unwrap();
+        let cfg = config_with_mock_sources();
+        let sources = mock_sources(&ol.uri(), &gb.uri(), &hc.uri(), "test-token");
+        let _ = run_once_with_sources(&pool, &cfg, &sources, m_id)
+            .await
+            .unwrap();
 
         let (canon_subtitle, subtitle_ptr) = sqlx::query!(
             "SELECT w.subtitle, w.subtitle_version_id FROM works w \
@@ -2194,7 +2234,8 @@ mod tests {
         mock_hardcover(&hc, json!({"data":{"books":[{"title": canon_title}]}})).await;
 
         let (_work_id, m_id) = insert_enrich_fixture(&pool, isbn, &marker).await;
-        let cfg = config_with_mock_sources(&ol.uri(), &gb.uri(), &hc.uri(), Some("test-token"));
+        let cfg = config_with_mock_sources();
+        let sources = mock_sources(&ol.uri(), &gb.uri(), &hc.uri(), "test-token");
 
         // Baseline counts — scoped by manifestation / lookup_key so other
         // tests' rows don't pollute.
@@ -2214,7 +2255,9 @@ mod tests {
         .await
         .unwrap();
 
-        let diff = dry_run::preview(&pool, &cfg, m_id).await.unwrap();
+        let diff = dry_run::preview_with_sources(&pool, &cfg, &sources, m_id)
+            .await
+            .unwrap();
         assert!(
             !diff.would_apply.is_empty() || !diff.would_stage.is_empty(),
             "dry_run should surface at least one proposed change"
@@ -3090,8 +3133,11 @@ mod tests {
         )
         .await;
 
-        let cfg = config_with_mock_sources(&ol.uri(), &gb.uri(), &hc.uri(), Some("test-token"));
-        let outcome = run_once(&pool, &cfg, m_id).await.unwrap();
+        let cfg = config_with_mock_sources();
+        let sources = mock_sources(&ol.uri(), &gb.uri(), &hc.uri(), "test-token");
+        let outcome = run_once_with_sources(&pool, &cfg, &sources, m_id)
+            .await
+            .unwrap();
         assert_eq!(outcome.applied, 1, "work-level id should AutoFill");
 
         let row = sqlx::query!(
@@ -3169,8 +3215,11 @@ mod tests {
         )
         .await;
 
-        let cfg = config_with_mock_sources(&ol.uri(), &gb.uri(), &hc.uri(), Some("test-token"));
-        let outcome = run_once(&pool, &cfg, m_id).await.unwrap();
+        let cfg = config_with_mock_sources();
+        let sources = mock_sources(&ol.uri(), &gb.uri(), &hc.uri(), "test-token");
+        let outcome = run_once_with_sources(&pool, &cfg, &sources, m_id)
+            .await
+            .unwrap();
         assert_eq!(outcome.applied, 0);
         assert_eq!(outcome.staged, 1, "disagreeing observation must Stage");
 
@@ -3236,8 +3285,11 @@ mod tests {
         )
         .await;
 
-        let cfg = config_with_mock_sources(&ol.uri(), &gb.uri(), &hc.uri(), Some("test-token"));
-        let outcome = run_once(&pool, &cfg, m_id).await.unwrap();
+        let cfg = config_with_mock_sources();
+        let sources = mock_sources(&ol.uri(), &gb.uri(), &hc.uri(), "test-token");
+        let outcome = run_once_with_sources(&pool, &cfg, &sources, m_id)
+            .await
+            .unwrap();
         assert_eq!(outcome.applied, 0, "disagreement must downgrade AutoFill");
         assert!(outcome.staged >= 1);
 
@@ -3279,8 +3331,11 @@ mod tests {
             .mount(&gb)
             .await;
 
-        let cfg = config_with_mock_sources(&ol.uri(), &gb.uri(), &hc.uri(), Some("test-token"));
-        let _ = run_once(&pool, &cfg, m_id).await.unwrap();
+        let cfg = config_with_mock_sources();
+        let sources = mock_sources(&ol.uri(), &gb.uri(), &hc.uri(), "test-token");
+        let _ = run_once_with_sources(&pool, &cfg, &sources, m_id)
+            .await
+            .unwrap();
 
         let row = sqlx::query!(
             "SELECT rating, rating_scale, review_count FROM manifestation_external_ratings \
@@ -3313,7 +3368,9 @@ mod tests {
             .respond_with(ResponseTemplate::new(200).set_body_json(volume(3.9, 250)))
             .mount(&gb)
             .await;
-        let _ = run_once(&pool, &cfg, m_id).await.unwrap();
+        let _ = run_once_with_sources(&pool, &cfg, &sources, m_id)
+            .await
+            .unwrap();
 
         let rows = sqlx::query!(
             "SELECT rating, review_count FROM manifestation_external_ratings \
@@ -3374,9 +3431,14 @@ mod tests {
                 .await;
         }
 
-        let cfg = config_with_mock_sources(&ol.uri(), &gb.uri(), &hc.uri(), Some("test-token"));
-        let _ = run_once(&pool, &cfg, m1).await.unwrap();
-        let _ = run_once(&pool, &cfg, m2).await.unwrap();
+        let cfg = config_with_mock_sources();
+        let sources = mock_sources(&ol.uri(), &gb.uri(), &hc.uri(), "test-token");
+        let _ = run_once_with_sources(&pool, &cfg, &sources, m1)
+            .await
+            .unwrap();
+        let _ = run_once_with_sources(&pool, &cfg, &sources, m2)
+            .await
+            .unwrap();
 
         let r1 = sqlx::query_scalar!(
             "SELECT rating FROM manifestation_external_ratings \
@@ -3435,8 +3497,11 @@ mod tests {
             .mount(&gb)
             .await;
 
-        let cfg = config_with_mock_sources(&ol.uri(), &gb.uri(), &hc.uri(), Some("test-token"));
-        let outcome = run_once(&pool, &cfg, m_id).await.unwrap();
+        let cfg = config_with_mock_sources();
+        let sources = mock_sources(&ol.uri(), &gb.uri(), &hc.uri(), "test-token");
+        let outcome = run_once_with_sources(&pool, &cfg, &sources, m_id)
+            .await
+            .unwrap();
         assert!(outcome.applied >= 1, "fallback key should produce applies");
 
         let canon_title: String = sqlx::query_scalar!(
@@ -3506,8 +3571,11 @@ mod tests {
             .mount(&gb)
             .await;
 
-        let cfg = config_with_mock_sources(&ol.uri(), &gb.uri(), &hc.uri(), Some("test-token"));
-        let _ = run_once(&pool, &cfg, m_id).await.unwrap();
+        let cfg = config_with_mock_sources();
+        let sources = mock_sources(&ol.uri(), &gb.uri(), &hc.uri(), "test-token");
+        let _ = run_once_with_sources(&pool, &cfg, &sources, m_id)
+            .await
+            .unwrap();
 
         let remaining: i64 = sqlx::query_scalar!(
             "SELECT COUNT(*) AS \"count!\" FROM manifestation_external_ratings \
@@ -3576,9 +3644,12 @@ mod tests {
             .mount(&gb)
             .await;
 
-        let cfg = config_with_mock_sources(&ol.uri(), &gb.uri(), &hc.uri(), Some("test-token"));
+        let cfg = config_with_mock_sources();
+        let sources = mock_sources(&ol.uri(), &gb.uri(), &hc.uri(), "test-token");
         for m in [over_id, negative_id] {
-            let _ = run_once(&pool, &cfg, m).await.unwrap();
+            let _ = run_once_with_sources(&pool, &cfg, &sources, m)
+                .await
+                .unwrap();
         }
 
         let remaining: i64 = sqlx::query_scalar!(
@@ -3621,8 +3692,11 @@ mod tests {
         // The native edition record carries no rating data either way.
         mock_ol_edition(&ol, "OL7353617M", json!({"title": "Dune"})).await;
 
-        let cfg = config_with_mock_sources(&ol.uri(), &gb.uri(), &hc.uri(), Some("test-token"));
-        let _ = run_once(&pool, &cfg, m_id).await.unwrap();
+        let cfg = config_with_mock_sources();
+        let sources = mock_sources(&ol.uri(), &gb.uri(), &hc.uri(), "test-token");
+        let _ = run_once_with_sources(&pool, &cfg, &sources, m_id)
+            .await
+            .unwrap();
 
         let remaining: i64 = sqlx::query_scalar!(
             "SELECT COUNT(*) AS \"count!\" FROM manifestation_external_ratings \
@@ -3678,8 +3752,12 @@ mod tests {
         mock_ol_edition(&ol, "OL111M", json!({"works": [{"key": "/works/OL111W"}]})).await;
         mock_ol_edition(&ol, "OL222M", json!({"works": [{"key": "/works/OL222W"}]})).await;
 
-        let cfg = config_with_mock_sources(&ol.uri(), &gb.uri(), &hc.uri(), Some("test-token"));
-        let (a, b) = tokio::join!(run_once(&pool, &cfg, m1), run_once(&pool, &cfg, m2));
+        let cfg = config_with_mock_sources();
+        let sources = mock_sources(&ol.uri(), &gb.uri(), &hc.uri(), "test-token");
+        let (a, b) = tokio::join!(
+            run_once_with_sources(&pool, &cfg, &sources, m1),
+            run_once_with_sources(&pool, &cfg, &sources, m2)
+        );
         let (a, b) = (a.unwrap(), b.unwrap());
         assert_eq!(
             a.applied + b.applied,

@@ -28,6 +28,10 @@ use crate::config::Config;
 /// any real hits. Padded entries carry a count of 0 and are ignored.
 const HIBP_PADDING_HEADER: &str = "Add-Padding";
 
+/// The official HIBP Pwned Passwords range API base URL; the only supported
+/// target. The 5-char SHA-1 prefix is appended as a path segment.
+pub const DEFAULT_BREACH_CHECK_URL: &str = "https://api.pwnedpasswords.com/range";
+
 /// Resolved password policy: a small owned view of the relevant [`Config`]
 /// fields so callers pass this rather than the whole config, and tests can build
 /// one directly.
@@ -56,7 +60,7 @@ impl PasswordPolicy {
             max_length: config.password_max_length,
             min_zxcvbn_score: config.password_min_zxcvbn_score,
             breach_check_enabled: config.password_breach_check_enabled,
-            breach_check_url: config.password_breach_check_url.clone(),
+            breach_check_url: DEFAULT_BREACH_CHECK_URL.into(),
         }
     }
 }
