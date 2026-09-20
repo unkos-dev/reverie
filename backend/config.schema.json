@@ -57,11 +57,6 @@
       ],
       "default": null
     },
-    "googlebooks_base_url": {
-      "description": "Google Books API base URL (`REVERIE_GOOGLEBOOKS_BASE_URL`,\ndefault `https://www.googleapis.com/books/v1`).",
-      "type": "string",
-      "default": "https://www.googleapis.com/books/v1"
-    },
     "hardcover_api_token": {
       "description": "Optional Hardcover bearer token\n(`REVERIE_HARDCOVER_API_TOKEN`); requests are skipped when\nunset.",
       "type": [
@@ -69,11 +64,6 @@
         "null"
       ],
       "default": null
-    },
-    "hardcover_base_url": {
-      "description": "Hardcover GraphQL endpoint (`REVERIE_HARDCOVER_BASE_URL`,\ndefault `https://api.hardcover.app/v1/graphql`).",
-      "type": "string",
-      "default": "https://api.hardcover.app/v1/graphql"
     },
     "ingestion_database_url": {
       "description": "Ingestion-pipeline DSN (`DATABASE_URL_INGESTION`); falls back to\n`database_url` when unset. Connections run as\n`reverie_ingestion` against the `*_ingestion_full_access` RLS\npolicies.",
@@ -153,11 +143,6 @@
       "description": "OPDS catalogue settings (mount enable, page size, realm,\n`public_url`).",
       "$ref": "#/$defs/OpdsConfig"
     },
-    "openlibrary_base_url": {
-      "description": "`OpenLibrary` API base URL (`REVERIE_OPENLIBRARY_BASE_URL`,\ndefault `https://openlibrary.org`).",
-      "type": "string",
-      "default": "https://openlibrary.org"
-    },
     "operator_contact": {
       "description": "Operator contact (`REVERIE_OPERATOR_CONTACT`); embedded into\nthe outbound `User-Agent` to claim `OpenLibrary`'s identified\n3 req/s rate-limit tier (vs. 1 req/s anonymous).",
       "type": [
@@ -170,11 +155,6 @@
       "description": "Whether the HIBP Pwned Passwords breach check runs at credential-setting\ntime (`REVERIE_PASSWORD_BREACH_CHECK_ENABLED`, default `true`). The check\nfails open: a HIBP outage never blocks account creation or login. Set\n`false` to skip the outbound request entirely (e.g. fully offline\ninstances).",
       "type": "boolean",
       "default": true
-    },
-    "password_breach_check_url": {
-      "description": "Base URL of the HIBP Pwned Passwords range API\n(`REVERIE_PASSWORD_BREACH_CHECK_URL`, default\n`https://api.pwnedpasswords.com/range`). Only the 5-character SHA-1\nprefix is appended as a path segment (k-anonymity); the password never\nleaves the process. Overridable so tests can point at a mock.",
-      "type": "string",
-      "default": "https://api.pwnedpasswords.com/range"
     },
     "password_max_length": {
       "description": "Maximum length for a local-account password, in characters\n(`REVERIE_PASSWORD_MAX_LENGTH`, default `256`). A denial-of-service cap,\nnot a composition rule: NIST SP 800-63B forbids composition rules but\npermits a length cap, and an unbounded password is a CPU-exhaustion\nvector on the unauthenticated registration path (zxcvbn and Argon2 cost\nboth grow with length). Checked before any strength or breach work.",

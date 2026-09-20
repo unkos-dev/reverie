@@ -36,7 +36,6 @@ pub fn test_config() -> Config {
         // without an outbound HIBP call; the breach path is unit-tested against a
         // wiremock loopback in auth::password_policy.
         password_breach_check_enabled: false,
-        password_breach_check_url: "https://api.pwnedpasswords.com/range".into(),
         self_registration_enabled: false,
         recovery_pin_ttl_secs: 900,
         recovery_pin_dir: "./reverie-recovery".into(),
@@ -93,10 +92,7 @@ pub fn test_config() -> Config {
                 "default-src 'none'; frame-ancestors 'none'; base-uri 'none'",
             )),
         },
-        openlibrary_base_url: "https://openlibrary.org".into(),
-        googlebooks_base_url: "https://www.googleapis.com/books/v1".into(),
         googlebooks_api_key: None,
-        hardcover_base_url: "https://api.hardcover.app/v1/graphql".into(),
         hardcover_api_token: None,
         operator_contact: None,
         ingestion_dsn_defaulted: false,
@@ -163,9 +159,6 @@ pub fn test_settings() -> std::sync::Arc<tokio::sync::RwLock<crate::models::sett
             "cbr".into(),
         ],
         cleanup_mode: "all".into(),
-        openlibrary_base_url: "https://openlibrary.org".into(),
-        googlebooks_base_url: "https://www.googleapis.com/books/v1".into(),
-        hardcover_base_url: "https://api.hardcover.app/v1/graphql".into(),
         provider_visibility: serde_json::json!({}),
         revision: 0,
         updated_at: chrono::Utc::now(),

@@ -34,9 +34,6 @@ pub async fn load(pool: &PgPool) -> Result<Settings, sqlx::Error> {
             opds_page_size,
             format_priority,
             cleanup_mode,
-            openlibrary_base_url,
-            googlebooks_base_url,
-            hardcover_base_url,
             provider_visibility,
             revision,
             updated_at
@@ -201,18 +198,6 @@ pub async fn save(pool: &PgPool, req: &UpdateSettings) -> Result<Settings, sqlx:
         separated.push("cleanup_mode = ");
         separated.push_bind_unseparated(v.as_str().to_owned());
     }
-    if let Some(ref v) = req.openlibrary_base_url {
-        separated.push("openlibrary_base_url = ");
-        separated.push_bind_unseparated(v.as_str());
-    }
-    if let Some(ref v) = req.googlebooks_base_url {
-        separated.push("googlebooks_base_url = ");
-        separated.push_bind_unseparated(v.as_str());
-    }
-    if let Some(ref v) = req.hardcover_base_url {
-        separated.push("hardcover_base_url = ");
-        separated.push_bind_unseparated(v.as_str());
-    }
     if let Some(ref v) = req.provider_visibility {
         let obj: serde_json::Map<String, serde_json::Value> = v
             .iter()
@@ -228,7 +213,7 @@ pub async fn save(pool: &PgPool, req: &UpdateSettings) -> Result<Settings, sqlx:
     separated.push("revision = revision + 1");
     separated.push("updated_at = now()");
 
-    qb.push(" WHERE id = true RETURNING enrichment_enabled, enrichment_concurrency, enrichment_poll_idle_secs, enrichment_fetch_budget_secs, cover_max_bytes, cover_download_timeout_secs, cover_min_long_edge_px, cover_redirect_limit, writeback_enabled, writeback_concurrency, writeback_poll_idle_secs, writeback_max_attempts, opds_enabled, opds_page_size, format_priority, cleanup_mode, openlibrary_base_url, googlebooks_base_url, hardcover_base_url, provider_visibility, revision, updated_at");
+    qb.push(" WHERE id = true RETURNING enrichment_enabled, enrichment_concurrency, enrichment_poll_idle_secs, enrichment_fetch_budget_secs, cover_max_bytes, cover_download_timeout_secs, cover_min_long_edge_px, cover_redirect_limit, writeback_enabled, writeback_concurrency, writeback_poll_idle_secs, writeback_max_attempts, opds_enabled, opds_page_size, format_priority, cleanup_mode, provider_visibility, revision, updated_at");
 
     qb.build_query_as::<Settings>().fetch_one(pool).await
 }
@@ -345,9 +330,6 @@ mod tests {
             opds_page_size: None,
             format_priority: None,
             cleanup_mode: None,
-            openlibrary_base_url: None,
-            googlebooks_base_url: None,
-            hardcover_base_url: None,
             provider_visibility: None,
         }
     }

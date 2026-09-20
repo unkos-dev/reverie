@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT\n            enrichment_enabled,\n            enrichment_concurrency,\n            enrichment_poll_idle_secs,\n            enrichment_fetch_budget_secs,\n            cover_max_bytes,\n            cover_download_timeout_secs,\n            cover_min_long_edge_px,\n            cover_redirect_limit,\n            writeback_enabled,\n            writeback_concurrency,\n            writeback_poll_idle_secs,\n            writeback_max_attempts,\n            opds_enabled,\n            opds_page_size,\n            format_priority,\n            cleanup_mode,\n            openlibrary_base_url,\n            googlebooks_base_url,\n            hardcover_base_url,\n            provider_visibility,\n            revision,\n            updated_at\n        FROM settings\n        WHERE id = true",
+  "query": "SELECT\n            enrichment_enabled,\n            enrichment_concurrency,\n            enrichment_poll_idle_secs,\n            enrichment_fetch_budget_secs,\n            cover_max_bytes,\n            cover_download_timeout_secs,\n            cover_min_long_edge_px,\n            cover_redirect_limit,\n            writeback_enabled,\n            writeback_concurrency,\n            writeback_poll_idle_secs,\n            writeback_max_attempts,\n            opds_enabled,\n            opds_page_size,\n            format_priority,\n            cleanup_mode,\n            provider_visibility,\n            revision,\n            updated_at\n        FROM settings\n        WHERE id = true",
   "describe": {
     "columns": [
       {
@@ -181,39 +181,6 @@
       },
       {
         "ordinal": 16,
-        "name": "openlibrary_base_url",
-        "type_info": "Text",
-        "origin": {
-          "Table": {
-            "table": "settings",
-            "name": "openlibrary_base_url"
-          }
-        }
-      },
-      {
-        "ordinal": 17,
-        "name": "googlebooks_base_url",
-        "type_info": "Text",
-        "origin": {
-          "Table": {
-            "table": "settings",
-            "name": "googlebooks_base_url"
-          }
-        }
-      },
-      {
-        "ordinal": 18,
-        "name": "hardcover_base_url",
-        "type_info": "Text",
-        "origin": {
-          "Table": {
-            "table": "settings",
-            "name": "hardcover_base_url"
-          }
-        }
-      },
-      {
-        "ordinal": 19,
         "name": "provider_visibility",
         "type_info": "Jsonb",
         "origin": {
@@ -224,7 +191,7 @@
         }
       },
       {
-        "ordinal": 20,
+        "ordinal": 17,
         "name": "revision",
         "type_info": "Int8",
         "origin": {
@@ -235,7 +202,7 @@
         }
       },
       {
-        "ordinal": 21,
+        "ordinal": 18,
         "name": "updated_at",
         "type_info": "Timestamptz",
         "origin": {
@@ -268,11 +235,8 @@
       false,
       false,
       false,
-      false,
-      false,
-      false,
       false
     ]
   },
-  "hash": "d131d65db150a852c7bd6d496613c03d146833ac7b57108b4ccba12495949f77"
+  "hash": "8ca29812128e52aed408fb79cb9b90636d32b4cfeb526935637b0fff5823b280"
 }

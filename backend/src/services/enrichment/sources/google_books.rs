@@ -32,6 +32,9 @@ fn limiter() -> &'static Limiter {
     })
 }
 
+/// The official `Google Books` API base URL; the only supported endpoint.
+pub const DEFAULT_BASE_URL: &str = "https://www.googleapis.com/books/v1";
+
 /// `Google Books` metadata adapter.
 ///
 /// Queries the `Google Books` Volumes `API` to retrieve bibliographic data.

@@ -9150,9 +9150,6 @@
           "opds_page_size",
           "format_priority",
           "cleanup_mode",
-          "openlibrary_base_url",
-          "googlebooks_base_url",
-          "hardcover_base_url",
           "provider_visibility",
           "revision",
           "updated_at"
@@ -9208,14 +9205,6 @@
             },
             "description": "Ranked format preference for ingestion (`[\"epub\",\"pdf\",…]`)."
           },
-          "googlebooks_base_url": {
-            "type": "string",
-            "description": "Google Books API base URL."
-          },
-          "hardcover_base_url": {
-            "type": "string",
-            "description": "Hardcover `GraphQL` API base URL."
-          },
           "opds_enabled": {
             "type": "boolean",
             "description": "Whether the OPDS catalogue is mounted."
@@ -9224,10 +9213,6 @@
             "type": "integer",
             "format": "int32",
             "description": "OPDS feed page size (1–500)."
-          },
-          "openlibrary_base_url": {
-            "type": "string",
-            "description": "`OpenLibrary` API base URL."
           },
           "provider_visibility": {
             "type": "object",
@@ -10088,20 +10073,6 @@
             },
             "description": "Ranked format preference for ingestion."
           },
-          "googlebooks_base_url": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "description": "Google Books API base URL."
-          },
-          "hardcover_base_url": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "description": "Hardcover `GraphQL` API base URL."
-          },
           "opds_enabled": {
             "type": [
               "boolean",
@@ -10116,13 +10087,6 @@
             ],
             "format": "int32",
             "description": "OPDS feed page size (1–500)."
-          },
-          "openlibrary_base_url": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "description": "`OpenLibrary` API base URL."
           },
           "provider_visibility": {
             "type": [
