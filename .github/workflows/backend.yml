@@ -207,10 +207,12 @@ jobs:
           add-shims-to-path: "false"
 
       # The cargo backend reads version, features and the no-lock exception from
-      # mise.toml. Running it under mold satisfies the job-level linker flags.
+      # mise.toml. It rebuilds PATH for the install, so use the system linker.
       - name: Install sqlx-cli
         working-directory: ${{ github.workspace }}
-        run: mise exec mold -- mise install --locked cargo:sqlx-cli
+        env:
+          RUSTFLAGS: ""
+        run: mise install --locked cargo:sqlx-cli
 
       - name: Unused dependencies (cargo-machete)
         run: mise exec github:bnjbvr/cargo-machete -- cargo machete
@@ -306,7 +308,9 @@ jobs:
 
       - name: Install sqlx-cli
         working-directory: ${{ github.workspace }}
-        run: mise exec mold -- mise install --locked cargo:sqlx-cli
+        env:
+          RUSTFLAGS: ""
+        run: mise install --locked cargo:sqlx-cli
 
       - name: Apply migrations
         run: mise exec cargo:sqlx-cli -- sqlx migrate run
