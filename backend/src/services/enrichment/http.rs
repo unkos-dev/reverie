@@ -2,11 +2,14 @@
 //!
 //! Provides two pre-configured [`reqwest::Client`] instances:
 //!
-//! * `api_client` — lightweight client for metadata REST/GraphQL calls.  Plain
-//!   redirect following with a 10-second timeout and a 5-hop redirect limit.
+//! * `api_client` — lightweight client for metadata REST/GraphQL calls with a
+//!   10-second timeout and a 5-hop redirect limit.
 //!
-//! * `cover_client` — client for fetching cover image URLs.  Every redirect hop
-//!   is validated against a set of denied IP ranges to prevent SSRF attacks.
+//! * `cover_client` — client for fetching cover image URLs with a configurable
+//!   redirect limit and timeout.
+//!
+//! Both validate every redirect hop against a set of denied IP ranges to
+//! prevent SSRF attacks.
 //!
 //! # Design: sync DNS in a redirect callback
 //!
@@ -23,10 +26,6 @@
 //! If this ever becomes a bottleneck, the right fix is to pre-validate the URL
 //! before handing it to reqwest (see `validate_hop`), removing the need for a
 //! callback at all.
-
-// These items are public API consumed by the enrichment pipeline.  They are not
-// called from within this binary crate yet (the orchestrator wires them up after
-// all Phase B agents complete), so dead_code is expected during integration.
 
 use std::net::{IpAddr, Ipv6Addr, SocketAddr, ToSocketAddrs};
 use std::sync::{Arc, OnceLock};
@@ -179,9 +178,9 @@ const fn to_ipv4_mapped(v6: Ipv6Addr) -> Option<std::net::Ipv4Addr> {
 
 /// Validate a single `URL` before following it as a redirect hop.
 ///
-/// Resolves the `URL`'s host via the OS DNS resolver (blocking call — see
-/// module-level design note) and checks every resolved IP against the denied
-/// ranges via [`ip_is_denied`].
+/// Checks a literal IP host directly; resolves a domain via the OS DNS
+/// resolver (blocking call — see module-level design note) and checks every
+/// resolved IP against the denied ranges via [`ip_is_denied`].
 ///
 /// Returns `Ok(())` only if at least one address resolved **and** none of them
 /// are denied.
@@ -192,27 +191,37 @@ const fn to_ipv4_mapped(v6: Ipv6Addr) -> Option<std::net::Ipv4Addr> {
 /// - [`HopError::DnsFailure`] — OS resolver returned an error or produced no addresses.
 /// - [`HopError::DenyListed`] — a resolved IP falls in a denied range.
 pub fn validate_hop(url: &reqwest::Url) -> Result<(), HopError> {
-    let host = url.host_str().ok_or(HopError::MissingHost)?;
+    use url::Host;
+
+    let domain = match url.host().ok_or(HopError::MissingHost)? {
+        Host::Ipv4(ip) => return check_ip(IpAddr::V4(ip), url),
+        Host::Ipv6(ip) => return check_ip(IpAddr::V6(ip), url),
+        Host::Domain(domain) => domain,
+    };
 
     // `to_socket_addrs` requires a port; use 0 as a placeholder.
-    let addrs = (host, 0u16)
+    let addrs = (domain, 0u16)
         .to_socket_addrs()
         .map_err(|_| HopError::DnsFailure)?;
 
     let mut found_any = false;
     for sock_addr in addrs {
         found_any = true;
-        let ip = sock_addr.ip();
-        if ip_is_denied(ip) {
-            warn!(%ip, url = %url, "SSRF: redirect to denied IP blocked");
-            return Err(HopError::DenyListed(ip));
-        }
+        check_ip(sock_addr.ip(), url)?;
     }
 
     if !found_any {
         return Err(HopError::DnsFailure);
     }
 
+    Ok(())
+}
+
+fn check_ip(ip: IpAddr, url: &reqwest::Url) -> Result<(), HopError> {
+    if ip_is_denied(ip) {
+        warn!(%ip, url = %url, "SSRF: redirect to denied IP blocked");
+        return Err(HopError::DenyListed(ip));
+    }
     Ok(())
 }
 
@@ -289,7 +298,7 @@ impl Resolve for SsrfResolver {
 /// Build a reqwest client suitable for metadata REST/GraphQL API calls.
 ///
 /// * 10-second timeout.
-/// * Maximum 5 redirect hops.
+/// * Maximum 5 redirect hops, each validated by [`validate_hop`].
 /// * Compiled with rustls TLS — no OpenSSL dependency.
 /// * Uses the [`ssrf_resolver`] so resolved IPs in denied ranges are
 ///   rejected before reqwest dials them.
@@ -306,33 +315,13 @@ impl Resolve for SsrfResolver {
 /// configured environment.
 #[must_use]
 pub fn api_client(user_agent: &str) -> reqwest::Client {
-    #[expect(
-        clippy::expect_used,
-        reason = "reqwest::Client::build() fails only for a user agent that is not a valid header value, which config load rejects before production callers reach here, or for TLS backend init; rustls is a pure-Rust backend and should not fail in any normally configured environment"
-    )]
-    #[expect(
-        clippy::disallowed_methods,
-        reason = "sanctioned UA-setting constructor the clippy.toml ban funnels callers into; .user_agent() is set on the next line"
-    )]
-    reqwest::Client::builder()
-        .user_agent(user_agent)
-        .timeout(Duration::from_secs(10))
-        .redirect(redirect::Policy::limited(5))
-        .dns_resolver(ssrf_resolver())
-        .build()
-        .expect("failed to build api_client — TLS init should not fail in this environment")
+    ssrf_client(5, Duration::from_secs(10), user_agent)
 }
 
 /// Build a reqwest client suitable for fetching cover image URLs.
 ///
 /// Identical to `api_client` but with a configurable redirect limit and
-/// timeout.  Two layers of SSRF defense are stacked:
-///
-/// 1. The [`ssrf_resolver`] filters denied IPs at DNS resolution time —
-///    closes the TOCTOU window between validation and dial.
-/// 2. The redirect policy re-validates every hop via `validate_hop` before
-///    reqwest issues the next request, so a denied hostname is rejected
-///    before any TCP connect is attempted.
+/// timeout.
 ///
 /// # Panics
 ///
@@ -342,8 +331,25 @@ pub fn api_client(user_agent: &str) -> reqwest::Client {
 /// initialisation should never fail in a normally configured environment.
 #[must_use]
 pub fn cover_client(redirect_limit: usize, timeout_secs: u64, user_agent: &str) -> reqwest::Client {
+    ssrf_client(
+        redirect_limit,
+        Duration::from_secs(timeout_secs),
+        user_agent,
+    )
+}
+
+/// Two layers of SSRF defense are stacked on every client built here:
+///
+/// 1. The [`ssrf_resolver`] filters denied IPs at DNS resolution time,
+///    closing the TOCTOU window between validation and dial.
+/// 2. The redirect policy re-validates every hop via [`validate_hop`] before
+///    reqwest issues the next request. A literal-IP host never reaches the
+///    resolver, so this layer is the only check such a hop gets.
+fn ssrf_client(redirect_limit: usize, timeout: Duration, user_agent: &str) -> reqwest::Client {
     let policy = redirect::Policy::custom(move |attempt| {
-        if attempt.previous().len() >= redirect_limit {
+        // `previous` starts with the initial request, so `>` allows exactly
+        // `redirect_limit` redirects, matching `redirect::Policy::limited`.
+        if attempt.previous().len() > redirect_limit {
             return attempt.error("too many redirects");
         }
         match validate_hop(attempt.url()) {
@@ -362,11 +368,11 @@ pub fn cover_client(redirect_limit: usize, timeout_secs: u64, user_agent: &str) 
     )]
     reqwest::Client::builder()
         .user_agent(user_agent)
-        .timeout(Duration::from_secs(timeout_secs))
+        .timeout(timeout)
         .redirect(policy)
         .dns_resolver(ssrf_resolver())
         .build()
-        .expect("failed to build cover_client — TLS init should not fail in this environment")
+        .expect("failed to build SSRF client — TLS init should not fail in this environment")
 }
 
 // ── Tests ──────────────────────────────────────────────────────────────────
@@ -516,6 +522,136 @@ mod tests {
             result.is_err(),
             "expected localhost lookup to be denied, but resolver returned Ok"
         );
+    }
+
+    /// The mock answers on loopback, so the redirect target below is the only
+    /// hop the policy sees; a literal private IP never reaches the resolver.
+    #[tokio::test]
+    async fn api_client_refuses_redirect_to_literal_private_ip() {
+        use wiremock::matchers::method;
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .respond_with(
+                ResponseTemplate::new(302).insert_header("location", "http://10.0.0.1:1/metadata"),
+            )
+            .mount(&server)
+            .await;
+
+        let err = api_client("reverie-tests/0 (http)")
+            .get(server.uri())
+            .send()
+            .await
+            .expect_err("redirect to a private literal IP must be refused");
+        assert!(
+            err.is_redirect(),
+            "expected a redirect-policy error, got {err:?}"
+        );
+        assert!(
+            format!("{err:?}").contains("DenyListed(10.0.0.1)"),
+            "expected the hop error to carry the denied IP, got {err:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn api_client_refuses_redirect_to_name_resolving_privately() {
+        use wiremock::matchers::method;
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .respond_with(
+                ResponseTemplate::new(302).insert_header("location", "http://localhost:1/metadata"),
+            )
+            .mount(&server)
+            .await;
+
+        let err = api_client("reverie-tests/0 (http)")
+            .get(server.uri())
+            .send()
+            .await
+            .expect_err("redirect to a name resolving into a denied range must be refused");
+        assert!(
+            err.is_redirect(),
+            "expected a redirect-policy error, got {err:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn redirect_limit_is_checked_before_the_hop() {
+        use wiremock::matchers::method;
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .respond_with(
+                ResponseTemplate::new(302).insert_header("location", "https://example.com/"),
+            )
+            .mount(&server)
+            .await;
+
+        let err = ssrf_client(0, Duration::from_secs(10), "reverie-tests/0 (http)")
+            .get(server.uri())
+            .send()
+            .await
+            .expect_err("a zero redirect limit must refuse the first hop");
+        assert!(
+            err.is_redirect(),
+            "expected a redirect-policy error, got {err:?}"
+        );
+        assert!(
+            format!("{err:?}").contains("too many redirects"),
+            "expected the limit error, got {err:?}"
+        );
+    }
+
+    /// With a limit of one, the first hop passes the count check and fails
+    /// on the deny list instead; a `>=` comparison would report the limit.
+    #[tokio::test]
+    async fn redirect_limit_allows_exactly_that_many_hops() {
+        use wiremock::matchers::method;
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .respond_with(
+                ResponseTemplate::new(302).insert_header("location", "http://10.0.0.1:1/"),
+            )
+            .mount(&server)
+            .await;
+
+        let err = ssrf_client(1, Duration::from_secs(10), "reverie-tests/0 (http)")
+            .get(server.uri())
+            .send()
+            .await
+            .expect_err("the hop must fail on the deny list");
+        assert!(
+            format!("{err:?}").contains("DenyListed(10.0.0.1)"),
+            "expected the deny-list error, not the limit, got {err:?}"
+        );
+    }
+
+    #[test]
+    fn validate_hop_checks_literal_ip_hosts_without_dns() {
+        let denied_v4 = reqwest::Url::parse("http://10.0.0.1:1/").unwrap();
+        assert!(matches!(
+            validate_hop(&denied_v4),
+            Err(HopError::DenyListed(ip)) if ip == v4(10, 0, 0, 1)
+        ));
+
+        let denied_v6 = reqwest::Url::parse("http://[::1]:1/").unwrap();
+        assert!(matches!(
+            validate_hop(&denied_v6),
+            Err(HopError::DenyListed(ip)) if ip == v6("::1")
+        ));
+
+        // 2001:db8::/32 is documentation space, outside every denied range.
+        let allowed_v6 = reqwest::Url::parse("http://[2001:db8::1]:1/").unwrap();
+        assert!(validate_hop(&allowed_v6).is_ok());
+
+        let allowed_v4 = reqwest::Url::parse("http://8.8.8.8/").unwrap();
+        assert!(validate_hop(&allowed_v4).is_ok());
     }
 
     // Requires outbound DNS to resolve example.com.  The Err arm below
