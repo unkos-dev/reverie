@@ -17,10 +17,6 @@ on:
 permissions:
   contents: read
 
-env:
-  # Kept in lockstep with the sqlx crate version by the checks job's guard below.
-  SQLX_CLI_VERSION: "0.9.0"
-
 jobs:
   changes:
     runs-on: ubuntu-latest
@@ -99,6 +95,7 @@ jobs:
       - name: sqlx-cli pin matches sqlx crate version
         run: |
           crate="$(yq -p toml -o yaml '.dependencies.sqlx.version // .dependencies.sqlx' Cargo.toml)"
+          cli="$(yq -p toml -o yaml '.tools."cargo:sqlx-cli".version' ../mise.toml)"
           case "$crate" in
             [0-9]*.[0-9]*) ;;
             *)
@@ -106,11 +103,11 @@ jobs:
               exit 1
               ;;
           esac
-          if [ "$crate" != "$SQLX_CLI_VERSION" ]; then
-            echo "::error file=.github/workflows/backend.yml::SQLX_CLI_VERSION ($SQLX_CLI_VERSION) != sqlx crate version ($crate in backend/Cargo.toml) — keep the cli pin in lockstep with the crate"
+          if [ "$crate" != "$cli" ]; then
+            echo "::error file=mise.toml::sqlx-cli pin ($cli) != sqlx crate version ($crate in backend/Cargo.toml) — keep the cli pin in lockstep with the crate"
             exit 1
           fi
-          echo "sqlx-cli pin ($SQLX_CLI_VERSION) matches sqlx crate ($crate)"
+          echo "sqlx-cli pin ($cli) matches sqlx crate ($crate)"
 
       # Shims stay off for the whole job: rustc links a registry dependency from
       # ~/.cargo/registry, which has no mise.toml above it for a shim to resolve
@@ -209,27 +206,19 @@ jobs:
           mise-install-args: mold github:bnjbvr/cargo-machete
           add-shims-to-path: "false"
 
-      # Keyed on version + features alone, not workspace Cargo.lock, so Renovate lock
-      # churn cannot invalidate it. Bump the key suffix if the features change.
-      - name: Cache sqlx-cli binary
-        id: cache-sqlx-cli
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: |
-            ~/.cargo/bin/sqlx
-            ~/.cargo/bin/cargo-sqlx
-          key: sqlx-cli-${{ runner.os }}-${{ runner.arch }}-${{ env.SQLX_CLI_VERSION }}-postgres-rustls
-
-      - name: Install sqlx-cli (cache miss only)
-        if: steps.cache-sqlx-cli.outputs.cache-hit != 'true'
-        # No --locked: sqlx-cli 0.9 stopped shipping Cargo.lock in its published crate.
-        run: mise exec mold -- cargo install sqlx-cli --version ${{ env.SQLX_CLI_VERSION }} --no-default-features --features rustls,postgres
+      # The cargo backend reads version, features and the no-lock exception from
+      # mise.toml. It rebuilds PATH for the install, so use the system linker.
+      - name: Install sqlx-cli
+        working-directory: ${{ github.workspace }}
+        env:
+          RUSTFLAGS: ""
+        run: mise install --locked cargo:sqlx-cli
 
       - name: Unused dependencies (cargo-machete)
         run: mise exec github:bnjbvr/cargo-machete -- cargo machete
 
       - name: Apply migrations
-        run: sqlx migrate run
+        run: mise exec cargo:sqlx-cli -- sqlx migrate run
 
       - name: Lint
         run: mise exec mold -- cargo clippy --workspace --all-targets --locked -- -D warnings
@@ -242,7 +231,7 @@ jobs:
         run: mise exec mold -- cargo doc --locked --no-deps --workspace
 
       - name: Check sqlx query cache freshness
-        run: mise exec mold -- cargo sqlx prepare --check -- --locked --tests
+        run: mise exec mold cargo:sqlx-cli -- cargo sqlx prepare --check -- --locked --tests
 
       # pg_dump runs inside the service container so its version is the server's.
       - name: Check the schema dump against the migrations
@@ -317,21 +306,14 @@ jobs:
           mise-install-args: mold github:nextest-rs/nextest
           add-shims-to-path: "false"
 
-      - name: Cache sqlx-cli binary
-        id: cache-sqlx-cli
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: |
-            ~/.cargo/bin/sqlx
-            ~/.cargo/bin/cargo-sqlx
-          key: sqlx-cli-${{ runner.os }}-${{ runner.arch }}-${{ env.SQLX_CLI_VERSION }}-postgres-rustls
-
-      - name: Install sqlx-cli (cache miss only)
-        if: steps.cache-sqlx-cli.outputs.cache-hit != 'true'
-        run: mise exec mold -- cargo install sqlx-cli --version ${{ env.SQLX_CLI_VERSION }} --no-default-features --features rustls,postgres
+      - name: Install sqlx-cli
+        working-directory: ${{ github.workspace }}
+        env:
+          RUSTFLAGS: ""
+        run: mise install --locked cargo:sqlx-cli
 
       - name: Apply migrations
-        run: sqlx migrate run
+        run: mise exec cargo:sqlx-cli -- sqlx migrate run
 
       - name: Test
         run: mise exec mold github:nextest-rs/nextest -- cargo nextest run --locked --workspace

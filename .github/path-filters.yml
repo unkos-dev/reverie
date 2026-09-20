@@ -8,6 +8,7 @@ backend:
   - "backend/**"
   - "docker/init-roles.sql"
   - "mise.toml"
+  - "mise.lock"
   - ".github/workflows/ci.yml"
   - ".github/workflows/backend.yml"
   # Not under `workflows`: a toolchain edit must trigger the backend jobs.
@@ -20,6 +21,7 @@ audit:
   - "backend/Cargo.lock"
   - "backend/deny.toml"
   - "mise.toml"
+  - "mise.lock"
   - ".github/workflows/ci.yml"
   - ".github/workflows/deps.yml"
   - ".github/actions/setup/**"
@@ -52,6 +54,7 @@ workflows:
   - ".github/actions/**"
   - ".github/zizmor.yml"
   - "mise.toml"
+  - "mise.lock"
   - ".github/path-filters.yml"
 iac:
   - "Dockerfile"
@@ -61,6 +64,7 @@ iac:
   # trivy's own pin lives here, and this job has no push fallback, so a
   # scanner bump would otherwise merge without the scan it gates ever running.
   - "mise.toml"
+  - "mise.lock"
   - ".github/workflows/ci.yml"
   - ".github/workflows/security.yml"
   - ".github/actions/setup/**"
@@ -91,6 +95,7 @@ openapi:
   # vacuum's own pin lives here, and this job has no push fallback, so a
   # linter bump would otherwise merge without the lint it gates ever running.
   - "mise.toml"
+  - "mise.lock"
   - ".github/workflows/ci.yml"
   - ".github/workflows/security.yml"
   - ".github/actions/setup/**"
