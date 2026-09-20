@@ -113,6 +113,12 @@ impl CurrentUser {
         }
     }
 
+    /// Whether the caller is a child account.
+    #[must_use]
+    pub const fn is_child(&self) -> bool {
+        self.is_child
+    }
+
     /// Floor check against the scope hierarchy (`read` < `write` < `admin`):
     /// `Ok` when this credential holds `needed` or any higher scope.
     ///

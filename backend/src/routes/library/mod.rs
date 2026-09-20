@@ -1106,7 +1106,13 @@ async fn detail(
     let accepted_count = accepted_pointer_count(&row)
         .saturating_add(u32::try_from(junction_ids.len()).unwrap_or(u32::MAX));
     canonical_ids.extend(junction_ids);
-    let pending_versions = load_pending_versions(&mut tx, id, &canonical_ids).await?;
+    // A child cannot act on a proposal (every metadata route refuses a child),
+    // so the detail carries none for that caller.
+    let pending_versions = if current_user.is_child() {
+        Vec::new()
+    } else {
+        load_pending_versions(&mut tx, id, &canonical_ids).await?
+    };
     let pending = u32::try_from(pending_versions.len()).unwrap_or(u32::MAX);
 
     tx.commit()
