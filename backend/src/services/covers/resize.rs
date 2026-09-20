@@ -5,9 +5,8 @@
 //!   covers at once, so payload size dominates. JPEG has no alpha, so any
 //!   transparency is composited over white first (most covers are opaque, but
 //!   an SVG cover that does not fill its canvas would otherwise go black).
-//!   (`image` 0.25 ships WebP *decode-only* — no encoder — so JPEG is the
-//!   lossy option available.)
-//! - **Full** → preserves the input format (JPEG → JPEG, PNG → PNG) for the
+//!   (`image` 0.25 encodes WebP losslessly only, so JPEG is the lossy option.)
+//! - **Full** → preserves the input format (JPEG, PNG, or WebP) for the
 //!   reader view where quality matters and only one cover loads at a time.
 //!
 //! Only JPEG, PNG, and WebP are accepted as *input*; GIF/BMP and any other

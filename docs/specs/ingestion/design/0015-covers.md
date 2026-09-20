@@ -94,10 +94,9 @@ the same output bytes, so the redundant write is a no-op in effect, and `write_a
 last-writer-wins on identical content as benign.
 
 `cached_hit`, the read side both writers probe before generating, narrows this: the thumbnail tier probes only the `jpg`
-extension, so a thumbnail cached under an older format-preserving policy (`png` or `webp`, from before thumbnails were
-always re-encoded to JPEG) is never read back by either writer. Such a file is neither served nor removed; a fresh `jpg`
-copy is generated and cached alongside it. The full tier probes `jpg`, `png`, and `webp` in that order, so it does not
-have this gap.
+extension, so a `png` or `webp` file at a thumbnail cache path is never read back by either writer. Such a file is
+neither served nor removed; a fresh `jpg` copy is generated and cached alongside it. The full tier probes `jpg`, `png`,
+and `webp` in that order, so it does not have this gap.
 
 ### Component relationships
 
@@ -279,9 +278,8 @@ still names.
   miss racing a pre-warm task, or two concurrent request-path misses) each run the full extract-resize-write pipeline
   and each call `write_atomic` for the same destination; this is wasted work, not a correctness risk, since the two
   writes produce identical bytes and the atomic rename leaves one intact file regardless of which finishes last.
-- **A stale pre-JPEG-policy thumbnail.** A `png` or `webp` thumbnail cached before thumbnails were always re-encoded to
-  JPEG is never matched by `cached_hit`'s `jpg`-only probe for that tier; it is neither served nor removed, and a fresh
-  `jpg` copy accumulates alongside it.
+- **A `png` or `webp` file at a thumbnail cache path.** It is never matched by `cached_hit`'s `jpg`-only probe for that
+  tier; it is neither served nor removed, and a fresh `jpg` copy accumulates alongside it.
 - **An orphaned cache file after a writeback.** A writeback that changes `current_file_hash` re-keys every subsequent
   cache lookup for that manifestation; the file cached under the old hash is not deleted by this rewrite, by
   `write_atomic`, or by any other code in the tree. The file accumulates on disk indefinitely; only an operator removing
