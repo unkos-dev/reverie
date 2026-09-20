@@ -278,7 +278,10 @@ overlapping a long-running job's completion):
    graceful-shutdown path).
 2. On the next process startup, `run` builds the writeback pool and calls `spawn_worker`, which calls
    `revert_in_progress` before it begins polling (guarded by `WritebackConfig.enabled`, as noted in Data and state).
-   Every row still `in_progress` is set back to `pending` in one `UPDATE`.
+   Every row still `in_progress` is set back to `pending` in one `UPDATE`. The revert distinguishes nothing: it treats
+   every `in_progress` row as an orphan, which is exact only while one instance runs, the deployment the governing
+   decision records. A second instance starting while the first is mid-rewrite reverts the first's live row, and a
+   pending sibling for that manifestation then passes the `NOT EXISTS` filter and the partial unique index.
 3. The row becomes eligible for `claim_next` again on the worker's first poll, subject to the retry-backoff window for
    its `attempt_count` (Failure and recovery).
 4. `queue::finish`'s webhook-before-bookkeeping ordering means the crashed attempt's terminal event, if it reached

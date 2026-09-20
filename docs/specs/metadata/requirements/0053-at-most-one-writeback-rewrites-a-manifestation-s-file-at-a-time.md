@@ -20,10 +20,12 @@ other MUST fail without starting.
 
 A manifestation's file is one physical artefact a reader may already be reading or downloading; two writeback jobs
 rewriting it at the same time would interleave two different sets of changes into the same bytes, corrupting the archive
-with nothing to indicate what happened. Depending on application logic alone to keep two overlapping worker processes,
-or two overlapping tasks within one process, from touching the same file at once is fragile against exactly the kind of
-process crash or restart durable background work must tolerate; only a constraint the database itself enforces holds
-regardless of how the workers above it behave.
+with nothing to indicate what happened. Depending on application logic alone to keep two overlapping worker tasks within
+the one running instance from touching the same file at once is fragile against exactly the kind of process crash or
+restart durable background work must tolerate; only a constraint the database itself enforces holds regardless of how
+the workers above it behave. The exclusion assumes a single running instance, as its governing decision records: an
+instance's startup recovery returns every in-progress job to pending, so a second instance starting while the first is
+mid-rewrite releases that job's exclusion.
 
 ## Acceptance criteria
 

@@ -10,9 +10,12 @@ title: "Automated enrichment fills only an empty, unlocked, auto-fill field"
 ## Statement
 
 WHEN automated enrichment applies an incoming observation to a work's or a manifestation's metadata, it MUST change a
-field's current value only if that field held no value beforehand, is not locked against automatic change, and belongs
-to the set of fields the system fills automatically; content rating MUST NOT belong to that set, so no automated
-observation ever sets or replaces the content rating, whether or not it already holds a value.
+field's current value only if that field held no value when the enrichment run read the record's state, is not locked
+against automatic change, and belongs to the set of fields the system fills automatically; content rating MUST NOT
+belong to that set, so no automated observation ever sets or replaces the content rating, whether or not it already
+holds a value. For an external-identifier field the emptiness check is repeated under the record lock at the moment of
+the change; for every other field it is the value read at the start of the run, so a value written between that read and
+the apply is not protected by this obligation.
 
 ## Rationale
 

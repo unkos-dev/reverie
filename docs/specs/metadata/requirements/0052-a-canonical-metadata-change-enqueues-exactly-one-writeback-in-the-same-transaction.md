@@ -34,8 +34,9 @@ carries, so a job for one would waste an attempt on a field the file has nowhere
   `backend/src/routes/metadata.rs`.
 - Reverting a field, whether to a specific earlier version or to no value, enqueues exactly one writeback job. Checked
   by `revert_admin_clears_field_to_null` in `backend/src/routes/metadata.rs`.
-- A manual edit enqueues exactly one writeback job per request, regardless of how many fields the request touches.
-  Checked by `patch_sets_title_and_writes_canonical` in `backend/src/routes/metadata.rs`.
+- A manual edit enqueues exactly one writeback job for each field the request changes: a single-field edit enqueues one
+  job and a two-field edit enqueues two. Checked by `patch_sets_title_and_writes_canonical` and
+  `patch_two_fields_enqueues_one_writeback_per_field` in `backend/src/routes/metadata.rs`.
 - Two independent accepts against the same manifestation enqueue two separate jobs; a new job is never collapsed into
   one already queued for the same manifestation. Checked by `double_accept_enqueues_two_jobs` in
   `backend/src/routes/metadata.rs`.

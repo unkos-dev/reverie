@@ -235,14 +235,17 @@ HTTP-triggered, one edit-triggered), not an accidental second writer of the same
 3. `apply_journal_batch` upserts one `metadata_versions` row per field observation and groups the resulting
    `(source_id, PolicyInputRow)` pairs by field name.
 4. `apply_canonical_batch` locks the manifestation row `FOR UPDATE` once, then, per field: locks the work row too when
-   the field needs a work-level identifier re-read (identifier fields only), reads whether the field is locked,
-   recomputes emptiness under that lock, and loads any pending rows from earlier runs. It then walks this run's sources
-   for that field in fan-out completion order (not a fixed provider priority): for each it computes confidence, builds
-   the disagreement set from the earlier-run pending rows plus every *other* source's observation in this same run, and
-   calls `policy::decide`. On `Decision::Apply` it calls `apply_field`, on success triggers the ISBN rematch hook when
-   the field is `isbn_10`/`isbn_13`, enqueues a writeback job for any non-identifier field, and `break`s out of the
-   per-source loop, so when multiple sources agree in the same run, whichever completed the fan-out first is the one
-   whose journal row becomes the canonical pointer, not a fixed tie-break.
+   the field needs a work-level identifier re-read (identifier fields only), reads whether the field is locked, decides
+   emptiness, and loads any pending rows from earlier runs. `canonical_empty_under_lock` re-reads the registry slot
+   under the lock for an identifier field only; for every scalar field it returns the emptiness recorded in the
+   `load_snapshot` state taken before the provider round trip, so a scalar value an operator sets between that snapshot
+   and this apply is judged empty and overwritten. It then walks this run's sources for that field in fan-out completion
+   order (not a fixed provider priority): for each it computes confidence, builds the disagreement set from the
+   earlier-run pending rows plus every *other* source's observation in this same run, and calls `policy::decide`. On
+   `Decision::Apply` it calls `apply_field`, on success triggers the ISBN rematch hook when the field is
+   `isbn_10`/`isbn_13`, enqueues a writeback job for any non-identifier field, and `break`s out of the per-source loop,
+   so when multiple sources agree in the same run, whichever completed the fan-out first is the one whose journal row
+   becomes the canonical pointer, not a fixed tie-break.
 5. The transaction commits once, carrying the journal writes, the canonical updates, the rematch outcome and every
    writeback enqueue together.
 6. `finish` (in `queue.rs`) inspects the outcome: if every enabled source failed non-terminally and nothing applied or
