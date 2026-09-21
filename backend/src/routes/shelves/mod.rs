@@ -882,8 +882,8 @@ struct ReorderItemsRequest {
 /// # Errors
 /// - [`AppError::IfMatchRequired`] (428) when the header is absent.
 /// - [`AppError::Validation`] when the header is malformed or the
-///   posted items list contains UUIDs that are not currently on the
-///   shelf.
+///   posted items list does not name every item currently on the
+///   shelf exactly once.
 /// - [`AppError::NotFound`] when the shelf is missing / not owned.
 /// - [`AppError::IfMatchMismatch`] (412) when the `ETag` does not match.
 /// - [`AppError::Internal`] on database errors.
@@ -957,10 +957,16 @@ async fn reorder_shelf_items(
         )));
     }
     let current_set: std::collections::HashSet<Uuid> = current.iter().copied().collect();
+    let mut seen: std::collections::HashSet<Uuid> = std::collections::HashSet::new();
     for item in &req.items {
         if !current_set.contains(item) {
             return Err(AppError::Validation(format!(
                 "manifestation {item} is not on this shelf"
+            )));
+        }
+        if !seen.insert(*item) {
+            return Err(AppError::Validation(format!(
+                "manifestation {item} appears more than once"
             )));
         }
     }

@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT manifestation_id FROM shelf_items WHERE shelf_id = $1 ORDER BY position LIMIT 1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "manifestation_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "shelf_items",
+            "name": "manifestation_id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "28ca08d8d208664d79f8de5b206ca6abfd0e8b3a6b4df4365dfc3926a477905b"
+}
