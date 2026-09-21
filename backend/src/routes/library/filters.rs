@@ -108,8 +108,8 @@ pub fn escape_like(raw: &str) -> String {
 /// Semantic validation of the filter params (422 on failure). Type-level
 /// failures (bad uuid, non-integer, bad date) are already rejected by serde
 /// as a 400 before this runs; this layer catches over-cap value lists,
-/// over-long text, out-of-range ratings, negative page bounds, and unknown
-/// status tokens.
+/// over-long text, out-of-range ratings, negative page bounds, inverted ranges,
+/// and unknown status tokens.
 ///
 /// # Errors
 /// Returns [`AppError::Validation`] on the first rule a param violates.
@@ -170,6 +170,28 @@ pub(super) fn validate(p: &ListParams) -> Result<(), AppError> {
                 "{param} must not be negative"
             )));
         }
+    }
+
+    if let (Some(lower), Some(upper)) = (p.pages_gte, p.pages_lte)
+        && lower > upper
+    {
+        return Err(AppError::Validation(
+            "pages_gte must not exceed pages_lte".into(),
+        ));
+    }
+    if let (Some(lower), Some(upper)) = (p.rating_gte, p.rating_lte)
+        && lower > upper
+    {
+        return Err(AppError::Validation(
+            "rating_gte must not exceed rating_lte".into(),
+        ));
+    }
+    if let (Some(lower), Some(upper)) = (p.created_at_gte, p.created_at_lte)
+        && lower > upper
+    {
+        return Err(AppError::Validation(
+            "created_at_gte must not exceed created_at_lte".into(),
+        ));
     }
 
     for (param, list) in [
@@ -870,6 +892,33 @@ mod tests {
         let mut p = params();
         p.pages_gte = Some(-1);
         assert!(matches!(validate(&p), Err(AppError::Validation(_))));
+    }
+
+    #[test]
+    fn validate_rejects_inverted_ranges_and_accepts_equal_bounds() {
+        let mut pages = params();
+        pages.pages_gte = Some(501);
+        pages.pages_lte = Some(500);
+        assert!(matches!(validate(&pages), Err(AppError::Validation(_))));
+        pages.pages_gte = Some(500);
+        assert!(validate(&pages).is_ok());
+
+        let mut rating = params();
+        rating.rating_gte = Some(5);
+        rating.rating_lte = Some(4);
+        assert!(matches!(validate(&rating), Err(AppError::Validation(_))));
+        rating.rating_gte = Some(4);
+        assert!(validate(&rating).is_ok());
+
+        let mut created_at = params();
+        created_at.created_at_gte = Some(NaiveDate::from_ymd_opt(2026, 7, 1).unwrap());
+        created_at.created_at_lte = Some(NaiveDate::from_ymd_opt(2026, 6, 30).unwrap());
+        assert!(matches!(
+            validate(&created_at),
+            Err(AppError::Validation(_))
+        ));
+        created_at.created_at_gte = Some(NaiveDate::from_ymd_opt(2026, 6, 30).unwrap());
+        assert!(validate(&created_at).is_ok());
     }
 
     #[test]

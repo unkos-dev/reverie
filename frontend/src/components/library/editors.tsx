@@ -1,11 +1,12 @@
 /**
  * Per-column filter editors for the library filter builder. Each is a
  * controlled presentational form: it reads its slice of the filter state and
- * reports edits through `onChange`, holding no state the builder does not own
- * (the text operator is the one exception, kept locally so a chosen operator
- * survives an empty value).
+ * reports edits through `onChange`. Numeric and date inputs keep only their
+ * raw drafts locally so incomplete or crossing edits do not enter URL state.
  */
 import { type ReactElement, useId, useState } from "react";
+
+import { z } from "zod";
 
 import type { SuggestKind } from "@/api";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -127,9 +128,195 @@ export function TextFilterEditor({ value, ops, onChange }: TextFilterEditorProps
   );
 }
 
-/** Strict integer parse: non-integer or empty input yields `undefined`. */
-function parseIntOrUndefined(raw: string): number | undefined {
-  return /^-?\d+$/.test(raw) ? Number(raw) : undefined;
+type BoundValue = number | string;
+type BoundSide = "lower" | "upper";
+
+const INTEGER_DRAFT = z
+  .string()
+  .regex(/^-?\d+$/)
+  .transform(Number)
+  .refine((value) => Number.isFinite(value) && Number.isInteger(value));
+
+const CALENDAR_DATE_DRAFT = z
+  .string()
+  .regex(/^\d{4}-\d{2}-\d{2}$/)
+  .refine((raw) => {
+    const [year, month, day] = raw.split("-").map(Number);
+    if (year < 1 || year > 9999) return false;
+    const date = new Date(0);
+    date.setUTCHours(0, 0, 0, 0);
+    date.setUTCFullYear(year, month - 1, day);
+    return (
+      date.getUTCFullYear() === year &&
+      date.getUTCMonth() === month - 1 &&
+      date.getUTCDate() === day
+    );
+  });
+
+function parseIntegerDraft(raw: string): number | undefined {
+  const parsed = INTEGER_DRAFT.safeParse(raw);
+  return parsed.success ? parsed.data : undefined;
+}
+
+function parseCalendarDateDraft(raw: string): string | undefined {
+  const parsed = CALENDAR_DATE_DRAFT.safeParse(raw);
+  return parsed.success ? parsed.data : undefined;
+}
+
+type DraftBoundInputProps<T extends BoundValue> = {
+  id: string;
+  label: string;
+  type: "number" | "date";
+  side: BoundSide;
+  value?: T;
+  peer?: T;
+  intrinsicMin?: T;
+  intrinsicMax?: T;
+  disabled?: boolean;
+  parse: (raw: string) => T | undefined;
+  format: (value: T) => string;
+  compare: (left: T, right: T) => number;
+  onChange: (next: T | undefined) => void;
+};
+
+function DraftBoundInput<T extends BoundValue>({
+  id,
+  label,
+  type,
+  side,
+  value,
+  peer,
+  intrinsicMin,
+  intrinsicMax,
+  disabled = false,
+  parse,
+  format,
+  compare,
+  onChange,
+}: DraftBoundInputProps<T>): ReactElement {
+  const canonical = value === undefined ? "" : format(value);
+  const [draft, setDraft] = useState(canonical);
+  const [syncedCanonical, setSyncedCanonical] = useState(canonical);
+  const [syncedDisabled, setSyncedDisabled] = useState(disabled);
+  const [lastNotifiedDraft, setLastNotifiedDraft] = useState(canonical);
+  const [badInput, setBadInput] = useState(false);
+  const [correction, setCorrection] = useState("");
+
+  if (canonical !== syncedCanonical) {
+    if (canonical !== lastNotifiedDraft) setCorrection("");
+    setSyncedCanonical(canonical);
+    setLastNotifiedDraft(canonical);
+    setBadInput(false);
+    setDraft(canonical);
+  }
+  if (disabled !== syncedDisabled) {
+    setCorrection("");
+    setSyncedDisabled(disabled);
+    setLastNotifiedDraft(disabled ? "" : canonical);
+    setBadInput(false);
+    setDraft(disabled ? "" : canonical);
+  } else if (disabled && draft !== "") {
+    setBadInput(false);
+    setDraft("");
+  }
+
+  let inputMin = intrinsicMin;
+  let inputMax = intrinsicMax;
+  if (peer !== undefined) {
+    if (side === "lower") {
+      if (inputMax === undefined || compare(peer, inputMax) < 0) inputMax = peer;
+    } else if (inputMin === undefined || compare(peer, inputMin) > 0) {
+      inputMin = peer;
+    }
+  }
+
+  function clamp(valueToClamp: T): T {
+    let result = valueToClamp;
+    if (inputMin !== undefined && compare(result, inputMin) < 0) result = inputMin;
+    if (inputMax !== undefined && compare(result, inputMax) > 0) result = inputMax;
+    return result;
+  }
+
+  function notify(next: T | undefined, nextDraft: string): void {
+    if (lastNotifiedDraft === nextDraft) return;
+    setLastNotifiedDraft(nextDraft);
+    onChange(next);
+  }
+
+  function commitDraft(): void {
+    if (badInput) {
+      setBadInput(false);
+      setLastNotifiedDraft(canonical);
+      setDraft(canonical);
+      return;
+    }
+    if (draft === "") {
+      notify(undefined, "");
+      return;
+    }
+    const parsed = parse(draft);
+    if (parsed === undefined) {
+      setLastNotifiedDraft(canonical);
+      setDraft(canonical);
+      return;
+    }
+    const legal = clamp(parsed);
+    const legalDraft = format(legal);
+    if (compare(parsed, legal) !== 0) {
+      const limit = compare(parsed, legal) < 0 ? "minimum" : "maximum";
+      setCorrection(`${label} changed to ${legalDraft}, the ${limit} allowed.`);
+      setLastNotifiedDraft(legalDraft);
+      setDraft(legalDraft);
+      onChange(legal);
+      return;
+    }
+    notify(parsed, draft);
+  }
+
+  return (
+    <div className="flex min-w-0 flex-1 flex-col gap-1">
+      <Label htmlFor={id}>{label}</Label>
+      <Input
+        id={id}
+        type={type}
+        className={type === "date" ? "px-2 text-sm" : undefined}
+        min={inputMin}
+        max={inputMax}
+        disabled={disabled}
+        value={draft}
+        aria-describedby={correction ? `${id}-correction` : undefined}
+        onChange={(event) => {
+          setCorrection("");
+          const raw = event.currentTarget.value;
+          const isBadInput = event.currentTarget.validity.badInput;
+          setDraft(raw);
+          setBadInput(isBadInput);
+          if (isBadInput) return;
+          if (raw === "") {
+            notify(undefined, "");
+            return;
+          }
+          const parsed = parse(raw);
+          if (parsed === undefined) return;
+          const legal = clamp(parsed);
+          if (compare(parsed, legal) === 0) notify(parsed, raw);
+        }}
+        onBlur={commitDraft}
+        onKeyDown={(event) => {
+          if (event.key === "Enter") commitDraft();
+          if (event.key === "Escape") {
+            setCorrection("");
+            setBadInput(false);
+            setLastNotifiedDraft(canonical);
+            setDraft(canonical);
+          }
+        }}
+      />
+      <p id={`${id}-correction`} role="status" className="text-fg-muted text-sm empty:sr-only">
+        {correction}
+      </p>
+    </div>
+  );
 }
 
 type RangeFilterEditorProps = {
@@ -151,35 +338,41 @@ export function RangeFilterEditor({
   const isEmpty = value.empty === true;
   return (
     <div className="flex flex-col gap-2">
-      <div className="flex items-end gap-2">
-        <div className="flex flex-1 flex-col gap-1">
-          <Label htmlFor={`${id}-min`}>Min</Label>
-          <Input
-            id={`${id}-min`}
-            type="number"
-            min={min}
-            max={max}
-            disabled={isEmpty}
-            value={value.gte === undefined ? "" : String(value.gte)}
-            onChange={(event) => {
-              onChange({ ...value, gte: parseIntOrUndefined(event.target.value) });
-            }}
-          />
-        </div>
-        <div className="flex flex-1 flex-col gap-1">
-          <Label htmlFor={`${id}-max`}>Max</Label>
-          <Input
-            id={`${id}-max`}
-            type="number"
-            min={min}
-            max={max}
-            disabled={isEmpty}
-            value={value.lte === undefined ? "" : String(value.lte)}
-            onChange={(event) => {
-              onChange({ ...value, lte: parseIntOrUndefined(event.target.value) });
-            }}
-          />
-        </div>
+      <div className="flex items-start gap-2">
+        <DraftBoundInput
+          id={`${id}-min`}
+          label="Min"
+          type="number"
+          side="lower"
+          value={value.gte}
+          peer={value.lte}
+          intrinsicMin={min}
+          intrinsicMax={max}
+          disabled={isEmpty}
+          parse={parseIntegerDraft}
+          format={String}
+          compare={(left, right) => left - right}
+          onChange={(gte) => {
+            onChange({ ...value, gte });
+          }}
+        />
+        <DraftBoundInput
+          id={`${id}-max`}
+          label="Max"
+          type="number"
+          side="upper"
+          value={value.lte}
+          peer={value.gte}
+          intrinsicMin={min}
+          intrinsicMax={max}
+          disabled={isEmpty}
+          parse={parseIntegerDraft}
+          format={String}
+          compare={(left, right) => left - right}
+          onChange={(lte) => {
+            onChange({ ...value, lte });
+          }}
+        />
       </div>
       {allowEmpty ? (
         <div className="flex items-center gap-2">
@@ -206,29 +399,35 @@ type DateRangeEditorProps = {
 export function DateRangeEditor({ after, before, onChange }: DateRangeEditorProps): ReactElement {
   const id = useId();
   return (
-    <div className="flex items-end gap-2">
-      <div className="flex flex-1 flex-col gap-1">
-        <Label htmlFor={`${id}-after`}>After</Label>
-        <Input
-          id={`${id}-after`}
-          type="date"
-          value={after ?? ""}
-          onChange={(event) => {
-            onChange({ after: event.target.value || undefined, before });
-          }}
-        />
-      </div>
-      <div className="flex flex-1 flex-col gap-1">
-        <Label htmlFor={`${id}-before`}>Before</Label>
-        <Input
-          id={`${id}-before`}
-          type="date"
-          value={before ?? ""}
-          onChange={(event) => {
-            onChange({ after, before: event.target.value || undefined });
-          }}
-        />
-      </div>
+    <div className="flex items-start gap-2">
+      <DraftBoundInput
+        id={`${id}-after`}
+        label="After"
+        type="date"
+        side="lower"
+        value={after}
+        peer={before}
+        parse={parseCalendarDateDraft}
+        format={(value) => value}
+        compare={(left, right) => left.localeCompare(right)}
+        onChange={(nextAfter) => {
+          onChange({ after: nextAfter, before });
+        }}
+      />
+      <DraftBoundInput
+        id={`${id}-before`}
+        label="Before"
+        type="date"
+        side="upper"
+        value={before}
+        peer={after}
+        parse={parseCalendarDateDraft}
+        format={(value) => value}
+        compare={(left, right) => left.localeCompare(right)}
+        onChange={(nextBefore) => {
+          onChange({ after, before: nextBefore });
+        }}
+      />
     </div>
   );
 }
