@@ -36,13 +36,13 @@ this pipeline neither waits for that work nor inspects its result; this pipeline
 predicate that decide whether that pre-warm fires, not the pre-warm mechanism itself. It does not own the
 `works`/`manifestations` schema, the foreign-key graph, or the version-pointer pattern those tables carry, which is the
 Design "Works and manifestations data model"; this pipeline is the only production writer of a new `manifestations` row,
-but every subsequent change to a row it created belongs to another subject (the Enrichment pipeline subject, the
-Writeback pipeline subject, or the Metadata review and editing subject). It does not own row-level security or the
-grants on the tables it writes, which is the Design "Row-level security and database context". It does not own OPF
-parsing or the metadata-draft journal mechanism (`backend/src/services/metadata/extractor.rs`, `draft.rs`); this
-pipeline calls both and commits their output. Neither module is specific to ingestion by its placement in the module
-tree, and each has exactly one production caller, this pipeline: `extractor::extract` and `draft::write_drafts`, both
-from `orchestrator.rs`.
+but every subsequent change to a row it created belongs to another subject (the Design "Enrichment pipeline", the Design
+"Writeback pipeline", or the Design "Metadata review and editing"). It does not own row-level security or the grants on
+the tables it writes, which is the Design "Row-level security and database context". It does not own OPF parsing or the
+metadata-draft journal mechanism (`backend/src/services/metadata/extractor.rs`, `draft.rs`); this pipeline calls both
+and commits their output. Neither module is specific to ingestion by its placement in the module tree, and each has
+exactly one production caller, this pipeline: `extractor::extract` and `draft::write_drafts`, both from
+`orchestrator.rs`.
 
 Depends on: the `validate_and_repair` entry point the Design "EPUB validation and repair" owns, called against the
 copied library file for every `epub`-extension candidate; the Works and manifestations data model's
@@ -54,8 +54,8 @@ session-level advisory lock keyed to a fixed integer id; and the operator-set fi
 and cleanup mode the Configuration loading subject's `Config` struct carries.
 
 Depended on by: the Design "Covers", whose thumbnail pre-warm this pipeline triggers directly from a successful commit;
-the Enrichment pipeline subject, which discovers a newly committed manifestation only because this pipeline leaves
-`enrichment_status` at its schema default rather than setting it explicitly; the Writeback pipeline subject, which
+the Design "Enrichment pipeline", which discovers a newly committed manifestation only because this pipeline leaves
+`enrichment_status` at its schema default rather than setting it explicitly; the Design "Writeback pipeline", which
 reuses this pipeline's path-template renderer and collision resolver when it relocates a file after a metadata-driven
 rewrite, and which overwrites the `has_embedded_cover` column this pipeline set at ingestion with its own post-writeback
 validation's finding; the Dashboard subject, which reads `ingestion_jobs` directly, grouping `batch_id`, `status`,
@@ -76,13 +76,13 @@ surface; and an administrator, through the scan trigger this subject exposes as 
 | Drop-zone source file and its parent directories | Filesystem under `ingestion_path` | Deleted in bulk by `cleanup::cleanup_batch` after a batch with no failures; moved individually by `quarantine::quarantine_file` on the four failure paths that quarantine |
 
 No item above has more than one writer inside this subject. Two of them are shared more broadly. A `manifestations` row
-this pipeline creates is mutated afterwards by the Enrichment pipeline subject, the Writeback pipeline subject, and the
-Metadata review and editing subject, each owning its own writes to that row; this subject's write authority is limited
-to the row's creation and the canonical columns it sets from a validated or heuristic source at that moment. The library
-directory tree is similarly shared with the Writeback pipeline subject, which renames a file after a rewrite using the
-same `path_template::render` and `resolve_collision` functions this subject defines; the two never write to the same
-manifestation's file at the same time, because a manifestation reaches the Writeback pipeline only once this subject's
-own commit has completed.
+this pipeline creates is mutated afterwards by the Design "Enrichment pipeline", the Design "Writeback pipeline", and
+the Design "Metadata review and editing", each owning its own writes to that row; this subject's write authority is
+limited to the row's creation and the canonical columns it sets from a validated or heuristic source at that moment. The
+library directory tree is similarly shared with the Design "Writeback pipeline", which renames a file after a rewrite
+using the same `path_template::render` and `resolve_collision` functions this subject defines; the two never write to
+the same manifestation's file at the same time, because a manifestation reaches the Design "Writeback pipeline" only
+once this subject's own commit has completed.
 
 Call sites that dispatch to those owners:
 
@@ -139,7 +139,7 @@ Call sites that dispatch to those owners:
   `scan_once(config: &Config, pool: &PgPool) -> Result<ScanResult, anyhow::Error>`. Every other item the child modules
   export (`copier::{hash_file, copy_verified}`, `quarantine::quarantine_file`, `cleanup::cleanup_batch`, and
   `format_filter::select_by_priority`) has no caller outside this module in production code; `path_template::render` and
-  `path_template::resolve_collision` are the one exception, reused by the Writeback pipeline subject.
+  `path_template::resolve_collision` are the one exception, reused by the Design "Writeback pipeline".
 - `run_watcher` is spawned exactly once, at startup (`crate::run` in `backend/src/lib.rs`), sharing the process-wide
   shutdown `CancellationToken` and the same drain budget as the other background workers (see Failure and recovery).
 - `scan_once` has two production callers: `run_watcher`'s per-batch trigger, and `POST /api/v1/ingestion/scan`
@@ -172,13 +172,13 @@ Call sites that dispatch to those owners:
 - **The library file-identity trio.** `file_path` (the rendered, sanitised, collision-resolved destination, relative to
   `library_path`), `ingestion_file_hash` (the source `SHA-256`, computed once and reused for both the duplicate check
   and the copy's own integrity verification), and `current_file_hash` (set equal to `ingestion_file_hash` at this
-  pipeline's insert; a different value belongs to the Writeback pipeline subject). Both `file_path` and
+  pipeline's insert; a different value belongs to the Design "Writeback pipeline"). Both `file_path` and
   `ingestion_file_hash` carry a `UNIQUE` constraint at the database, a backstop behind this pipeline's own pre-copy
   duplicate check.
 - **`has_embedded_cover`.** Set from the EPUB structural validator's cover finding for an `epub` extension; `NULL` for
   every non-`epub` format (no validator exists to check it), for a manifestation ingested before this column existed,
   and for a manifestation whose validator failed to run. The dashboard's cover-coverage metric and the Design "Covers"
-  both treat `NULL` the same as a checked-and-absent cover. The Writeback pipeline subject overwrites this column from
+  both treat `NULL` the same as a checked-and-absent cover. The Design "Writeback pipeline" overwrites this column from
   its own post-writeback EPUB validation after every writeback run whose validation produces a value
   (`UPDATE manifestations SET ... has_embedded_cover = COALESCE($3, has_embedded_cover)`), including a row that carries
   `NULL`; only a run whose post-writeback validation itself errors leaves the existing value untouched.

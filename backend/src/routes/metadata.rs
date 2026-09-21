@@ -3469,6 +3469,53 @@ mod tests {
     }
 
     #[sqlx::test(migrations = "./migrations")]
+    async fn patch_two_fields_enqueues_one_writeback_per_field(pool: sqlx::PgPool) {
+        let app_pool = test_support::db::app_pool_for(&pool).await;
+        let ing_pool = test_support::db::ingestion_pool_for(&pool).await;
+        let (_admin_id, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+        let marker = Uuid::new_v4().simple().to_string();
+        let (_work_id, m_id) =
+            test_support::db::insert_work_and_manifestation(&ing_pool, &marker).await;
+
+        let server = test_support::db::server_with_real_pools(&app_pool, &ing_pool);
+        let initial = server
+            .get(&format!("/api/v1/books/{m_id}/metadata"))
+            .add_header(AUTHORIZATION, basic.clone())
+            .await;
+        let etag = etag_value(initial.headers());
+        let response = server
+            .patch(&format!("/api/v1/books/{m_id}/metadata"))
+            .add_header(AUTHORIZATION, basic)
+            .add_header(
+                axum::http::header::IF_MATCH,
+                axum::http::HeaderValue::from_str(&etag).unwrap(),
+            )
+            .json(&serde_json::json!({
+                "title": format!("Two Field Title {marker}"),
+                "publisher": format!("Two Field Publisher {marker}"),
+            }))
+            .await;
+        assert_eq!(
+            response.status_code(),
+            StatusCode::OK,
+            "body = {}",
+            response.text()
+        );
+
+        let job_count: i64 = sqlx::query_scalar!(
+            "SELECT count(*) AS \"count!\" FROM writeback_jobs WHERE manifestation_id = $1",
+            m_id,
+        )
+        .fetch_one(&app_pool)
+        .await
+        .expect("fetch job count");
+        assert_eq!(
+            job_count, 2,
+            "a two-field edit enqueues one writeback per changed field"
+        );
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
     async fn patch_title_response_reports_previous_pointer(pool: sqlx::PgPool) {
         let app_pool = test_support::db::app_pool_for(&pool).await;
         let ing_pool = test_support::db::ingestion_pool_for(&pool).await;
