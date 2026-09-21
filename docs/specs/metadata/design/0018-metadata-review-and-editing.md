@@ -293,8 +293,8 @@ manifestation has no matching lock.
   count was greater than zero, so a manual edit may leave a stub that already has no author still without one (clearing
   it, or patching only `editor`/`translator`, both succeed); accept/revert cannot.
 - `AppError::NotFound` (`404`) for a missing or RLS-hidden manifestation or work on any route that joins one, for a
-  version id that does not belong to the manifestation or eligible sibling named in the request, for either lock route
-  when its manifestation is missing or hidden, and for `unlock` when no matching `field_locks` row exists.
+  version id that does not belong to the manifestation or eligible sibling named in the request, and for `unlock` when
+  no matching `field_locks` row exists.
 - Neither `accept_manifestation` nor `revert_manifestation` filters on the target version's `status`, and
   `reject_manifestation` does not check whether the row it is marking `rejected` is the field's current canonical
   pointer: `status` does not gate promotion. Canonical state is carried entirely by the pointer columns and junction
