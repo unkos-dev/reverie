@@ -4561,6 +4561,30 @@ async fn filter_validation_errors_400_and_422(pool: PgPool) {
         StatusCode::BAD_REQUEST
     );
 
+    for query in [
+        "pages_gte=501&pages_lte=500",
+        "rating_gte=5&rating_lte=4",
+        "created_at_gte=2026-07-01&created_at_lte=2026-06-30",
+    ] {
+        assert_eq!(
+            status_of(format!("/api/v1/books?{query}")).await,
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "inverted range should be rejected: {query}"
+        );
+    }
+
+    for query in [
+        "pages_gte=500&pages_lte=500",
+        "rating_gte=4&rating_lte=4",
+        "created_at_gte=2026-06-30&created_at_lte=2026-06-30",
+    ] {
+        assert_eq!(
+            status_of(format!("/api/v1/books?{query}")).await,
+            StatusCode::OK,
+            "equal range bounds should be accepted: {query}"
+        );
+    }
+
     // Malformed author uuid -> 400.
     assert_eq!(
         status_of("/api/v1/books?author=not-a-uuid".to_owned()).await,

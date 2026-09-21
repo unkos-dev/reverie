@@ -182,9 +182,9 @@ keystroke even though the network-visible URL and the list request do.
   (a non-browser client, or a value the client-side codec does not yet police), the server rejects the request: a
   type-level decode failure (bad UUID, non-integer, non-ISO-date) returns `400 Bad Request` via
   `AppError::MalformedQuery`, and a value that decodes but violates a semantic bound (over-cap value list, over-long
-  text, out-of-range rating, negative page bound, unrecognised status token) returns `422 Unprocessable Entity` via
-  `AppError::Validation` (`backend/src/routes/library/filters.rs::validate`). Neither path silently narrows or widens
-  the result set.
+  text, out-of-range rating, negative page bound, inverted range bounds, or unrecognised status token) returns
+  `422 Unprocessable Entity` via `AppError::Validation` (`backend/src/routes/library/filters.rs::validate`). Neither
+  path silently narrows or widens the result set.
 - **A cursor invalidated by a filter or sort change.** Every filter-slice write and the quick-search write drop `cursor`
   in the same update, because a changed condition invalidates the keyset boundary a stale cursor names. If a cursor is
   replayed against a different filter set or sort stack regardless, the server rejects it with `422` (the keyset and
