@@ -3,8 +3,8 @@
 //! Claims manifestations from the `manifestations` table using an atomic
 //! `FOR UPDATE SKIP LOCKED` CTE so multiple workers can race without double
 //! processing.  Applies an exponential-ish retry backoff and marks rows as
-//! `skipped` after `max_attempts`.  On shutdown, reverts any `in_progress`
-//! rows back to `pending` so a fresh worker can re-claim them.
+//! `skipped` after `max_attempts`.  On startup and shutdown, reverts any
+//! `in_progress` rows back to `pending` so a fresh worker can re-claim them.
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -28,13 +28,14 @@ use super::orchestrator::{self, RunOutcome};
 /// Spawn the queue worker loop.  Returns when `cancel` fires, reverting any
 /// `in_progress` row back to `pending`.
 ///
+/// Rows left `in_progress` by a prior process are reverted before the first
+/// poll so an abrupt process exit cannot strand work permanently.
+///
 /// # Errors
 ///
-/// Returns an error if any of the per-tick queue queries fail — typically a
-/// `claim_next` failure during normal polling (transient DB error, pool
-/// exhaustion) — or if the shutdown-time revert of `in_progress` rows to
-/// `pending` fails. Both failure modes exit the worker loop; the supervisor
-/// is responsible for restarts.
+/// Returns an error if startup recovery, a per-tick queue query, or shutdown
+/// recovery fails. Any failure exits the worker loop; the supervisor is
+/// responsible for restarts.
 pub async fn spawn_queue(
     pool: PgPool,
     config: Config,
@@ -45,6 +46,8 @@ pub async fn spawn_queue(
         cancel.cancelled().await;
         return Ok(());
     }
+
+    revert_in_progress(&pool).await?;
 
     let concurrency = config.enrichment.concurrency as usize;
     let semaphore = Arc::new(Semaphore::new(concurrency));
@@ -584,10 +587,75 @@ mod tests {
         }
     }
 
+    #[sqlx::test(migrations = "./migrations")]
+    async fn startup_reclaims_orphan_before_first_poll(pool: PgPool) {
+        let pool = ingestion_pool_for(&pool).await;
+        let (_work_id, m_id, _) =
+            insert_queue_fixture(&pool, EnrichmentStatus::InProgress, 1, Some(600)).await;
+
+        let (_, cooling_id, _) =
+            insert_queue_fixture(&pool, EnrichmentStatus::InProgress, 1, Some(60)).await;
+        let attempted_at = queue_row_state(&pool, cooling_id).await.attempted_at;
+        assert!(attempted_at.is_some());
+
+        let cancel = CancellationToken::new();
+        let cancel_for_worker = cancel.clone();
+        let mut config = test_config_with_max_attempts(3);
+        config.enrichment.poll_idle_secs = 3_600;
+        let handle = tokio::spawn({
+            let pool = pool.clone();
+            async move {
+                spawn_queue(pool, config, cancel_for_worker).await.unwrap();
+            }
+        });
+
+        let state = tokio::time::timeout(Duration::from_secs(30), async {
+            loop {
+                let state = queue_row_state(&pool, m_id).await;
+                if state.attempt_count >= 2 && state.status != EnrichmentStatus::InProgress {
+                    break state;
+                }
+                tokio::time::sleep(Duration::from_millis(25)).await;
+            }
+        })
+        .await
+        .expect("startup recovery should make the orphan claimable");
+
+        assert_eq!(state.status, EnrichmentStatus::Complete);
+        assert_eq!(state.attempt_count, 2);
+
+        let cooling = queue_row_state(&pool, cooling_id).await;
+        assert_eq!(cooling.status, EnrichmentStatus::Pending);
+        assert_eq!(cooling.attempt_count, 1);
+        assert_eq!(cooling.attempted_at, attempted_at);
+
+        cancel.cancel();
+        handle.await.unwrap();
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn disabled_worker_leaves_orphans_untouched(pool: PgPool) {
+        let pool = ingestion_pool_for(&pool).await;
+        let (_, m_id, _) =
+            insert_queue_fixture(&pool, EnrichmentStatus::InProgress, 1, Some(60)).await;
+        let attempted_at = queue_row_state(&pool, m_id).await.attempted_at;
+        let mut config = test_config_with_max_attempts(3);
+        config.enrichment.enabled = false;
+        let cancel = CancellationToken::new();
+        cancel.cancel();
+
+        spawn_queue(pool.clone(), config, cancel).await.unwrap();
+
+        let state = queue_row_state(&pool, m_id).await;
+        assert_eq!(state.status, EnrichmentStatus::InProgress);
+        assert_eq!(state.attempt_count, 1);
+        assert_eq!(state.attempted_at, attempted_at);
+    }
+
     struct QueueRowState {
         status: EnrichmentStatus,
         attempt_count: i32,
-        attempted_at_set: bool,
+        attempted_at: Option<chrono::DateTime<chrono::Utc>>,
         error: Option<String>,
         rerun_requested: bool,
     }
@@ -606,7 +674,7 @@ mod tests {
         QueueRowState {
             status: r.status,
             attempt_count: r.enrichment_attempt_count,
-            attempted_at_set: r.enrichment_attempted_at.is_some(),
+            attempted_at: r.enrichment_attempted_at,
             error: r.enrichment_error,
             rerun_requested: r.enrichment_rerun_requested,
         }
@@ -681,7 +749,7 @@ mod tests {
             "re-queue must clear the backoff counter"
         );
         assert!(
-            !state.attempted_at_set,
+            state.attempted_at.is_none(),
             "re-queue must null the attempt timestamp"
         );
         assert!(state.error.is_none());
@@ -761,7 +829,7 @@ mod tests {
             assert_eq!(state.status, EnrichmentStatus::Pending, "row {id}");
             assert_eq!(state.attempt_count, 0, "row {id}: backoff counter cleared");
             assert!(
-                !state.attempted_at_set,
+                state.attempted_at.is_none(),
                 "row {id}: attempt timestamp nulled"
             );
             assert!(state.error.is_none(), "row {id}: error cleared");
