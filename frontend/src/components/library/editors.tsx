@@ -200,14 +200,17 @@ function DraftBoundInput<T extends BoundValue>({
   const [syncedDisabled, setSyncedDisabled] = useState(disabled);
   const [lastNotifiedDraft, setLastNotifiedDraft] = useState(canonical);
   const [badInput, setBadInput] = useState(false);
+  const [correction, setCorrection] = useState("");
 
   if (canonical !== syncedCanonical) {
+    if (canonical !== lastNotifiedDraft) setCorrection("");
     setSyncedCanonical(canonical);
     setLastNotifiedDraft(canonical);
     setBadInput(false);
     setDraft(canonical);
   }
   if (disabled !== syncedDisabled) {
+    setCorrection("");
     setSyncedDisabled(disabled);
     setLastNotifiedDraft(disabled ? "" : canonical);
     setBadInput(false);
@@ -260,6 +263,8 @@ function DraftBoundInput<T extends BoundValue>({
     const legal = clamp(parsed);
     const legalDraft = format(legal);
     if (compare(parsed, legal) !== 0) {
+      const limit = compare(parsed, legal) < 0 ? "minimum" : "maximum";
+      setCorrection(`${label} changed to ${legalDraft}, the ${limit} allowed.`);
       setLastNotifiedDraft(legalDraft);
       setDraft(legalDraft);
       onChange(legal);
@@ -279,7 +284,9 @@ function DraftBoundInput<T extends BoundValue>({
         max={inputMax}
         disabled={disabled}
         value={draft}
+        aria-describedby={correction ? `${id}-correction` : undefined}
         onChange={(event) => {
+          setCorrection("");
           const raw = event.currentTarget.value;
           const isBadInput = event.currentTarget.validity.badInput;
           setDraft(raw);
@@ -298,12 +305,16 @@ function DraftBoundInput<T extends BoundValue>({
         onKeyDown={(event) => {
           if (event.key === "Enter") commitDraft();
           if (event.key === "Escape") {
+            setCorrection("");
             setBadInput(false);
             setLastNotifiedDraft(canonical);
             setDraft(canonical);
           }
         }}
       />
+      <p id={`${id}-correction`} role="status" className="text-fg-muted text-sm empty:sr-only">
+        {correction}
+      </p>
     </div>
   );
 }
@@ -327,7 +338,7 @@ export function RangeFilterEditor({
   const isEmpty = value.empty === true;
   return (
     <div className="flex flex-col gap-2">
-      <div className="flex items-end gap-2">
+      <div className="flex items-start gap-2">
         <DraftBoundInput
           id={`${id}-min`}
           label="Min"
@@ -388,7 +399,7 @@ type DateRangeEditorProps = {
 export function DateRangeEditor({ after, before, onChange }: DateRangeEditorProps): ReactElement {
   const id = useId();
   return (
-    <div className="flex items-end gap-2">
+    <div className="flex items-start gap-2">
       <DraftBoundInput
         id={`${id}-after`}
         label="After"

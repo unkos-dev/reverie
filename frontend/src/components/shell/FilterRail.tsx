@@ -15,8 +15,9 @@
  * URL state is canonical for filters, and each section writes only the keys
  * of its own slice (see `lib/hooks/use-library-filters`). Free-text and
  * numeric sections debounce their writes, which defers the URL update
- * without deferring the value they render, so they hold no draft to
- * reconcile. A clear affordance writes immediately, and that is what
+ * without deferring the value they render. Range inputs keep incomplete
+ * drafts locally; Escape also cancels queued numeric writes, while date
+ * writes are immediate. A clear affordance writes immediately, and that is what
  * cancels a debounced write still queued on the same keys, so a pending
  * keystroke cannot resurrect a condition the user just cleared. Nothing
  * here can disturb a sibling section, because nothing here writes a

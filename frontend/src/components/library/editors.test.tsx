@@ -115,11 +115,36 @@ describe("RangeFilterEditor", () => {
     expect(onChange).not.toHaveBeenCalled();
     fireEvent.blur(max);
     expect(onChange).toHaveBeenLastCalledWith({ gte: 300, lte: 300 });
+    expect(max).toHaveAccessibleDescription("Max changed to 300, the minimum allowed.");
+    expect(max).not.toHaveAttribute("aria-invalid", "true");
 
     const min = screen.getByLabelText("Min");
     fireEvent.change(min, { target: { value: "900" } });
     fireEvent.blur(min);
     expect(onChange).toHaveBeenLastCalledWith({ gte: 700, lte: 700 });
+    expect(min).toHaveAccessibleDescription("Min changed to 700, the maximum allowed.");
+  });
+
+  test("correction feedback survives the applied value and clears on the next edit or external reset", () => {
+    const onChange = vi.fn();
+    const { rerender } = render(<RangeFilterEditor value={{ lte: 300 }} onChange={onChange} />);
+    const min = screen.getByLabelText("Min");
+    expect(screen.getAllByRole("status").every((region) => region.textContent === "")).toBe(true);
+    fireEvent.change(min, { target: { value: "500" } });
+    expect(min).not.toHaveAccessibleDescription();
+    fireEvent.keyDown(min, { key: "Enter" });
+    rerender(<RangeFilterEditor value={{ gte: 300, lte: 300 }} onChange={onChange} />);
+    expect(min).toHaveAccessibleDescription("Min changed to 300, the maximum allowed.");
+    expect(screen.getAllByRole("status")[0]).toHaveTextContent("Min changed to 300");
+    fireEvent.blur(min);
+    expect(min).toHaveAccessibleDescription("Min changed to 300, the maximum allowed.");
+    fireEvent.change(min, { target: { value: "200" } });
+    expect(min).not.toHaveAccessibleDescription();
+    fireEvent.change(min, { target: { value: "500" } });
+    fireEvent.blur(min);
+    expect(min).toHaveAccessibleDescription();
+    rerender(<RangeFilterEditor value={{}} onChange={onChange} />);
+    expect(min).not.toHaveAccessibleDescription();
   });
 
   test("a malformed draft preserves the prior bound until blur, then blank clears it", () => {
@@ -158,11 +183,13 @@ describe("RangeFilterEditor", () => {
     fireEvent.change(min, { target: { value: "0" } });
     fireEvent.blur(min);
     expect(onChange).toHaveBeenLastCalledWith({ gte: 1 });
+    expect(min).toHaveAccessibleDescription("Min changed to 1, the minimum allowed.");
 
     const max = screen.getByLabelText("Max");
     fireEvent.change(max, { target: { value: "6" } });
     fireEvent.blur(max);
     expect(onChange).toHaveBeenLastCalledWith({ lte: 5 });
+    expect(max).toHaveAccessibleDescription("Max changed to 5, the maximum allowed.");
   });
 
   test("external clears and disabled state reset local drafts", () => {
@@ -238,6 +265,7 @@ describe("DateRangeEditor", () => {
     expect(onChange).not.toHaveBeenCalled();
     fireEvent.keyDown(after, { key: "Enter" });
     expect(onChange).toHaveBeenLastCalledWith({ after: "2026-06-30", before: "2026-06-30" });
+    expect(after).toHaveAccessibleDescription("After changed to 2026-06-30, the maximum allowed.");
 
     fireEvent.change(before, { target: { value: "2025-01-01" } });
     fireEvent.blur(before);

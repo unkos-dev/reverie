@@ -141,8 +141,9 @@ the census resolves to; every editing surface is a caller of one or the other, n
 
 1. The range editor constrains each input by its opposite bound and intrinsic limits. Valid integers pass to
    `RangeSection`, which calls `commitTyped("pages", ...)` in `FilterRail.tsx`. Incomplete or out-of-bounds text stays
-   local to the input. Blur or Enter clamps a completed value to the nearest legal bound without moving its peer;
-   malformed text restores the current value. Empty input clears that endpoint.
+   local to the input. Blur or Enter clamps a completed value to the nearest legal bound without moving its peer; an
+   associated live status describes the correction. Malformed text restores the current value. Empty input clears that
+   endpoint.
 2. `commitTyped` calls `useLibraryFilters().commitSlice` for the `pages` slice with the patch function and the delayed
    option set.
 3. `commitSlice` serialises the patched `FilterState` through `serializeFilterParams`, reads back only the `pages`
