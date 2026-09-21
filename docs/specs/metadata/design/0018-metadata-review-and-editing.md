@@ -223,7 +223,9 @@ same manifestation do not serialise against each other.
    first), vocabularies through `apply_vocabulary_patch`, contributors through `apply_contributors_patch`, and
    identifiers through `apply_identifier_patches`. Every family journals via `insert_manual_version` before it applies
    or clears, so the journal row exists even if a subsequent family in the same request fails and rolls the whole
-   transaction back.
+   transaction back. Writeback enqueue granularity differs by family: each scalar and each vocabulary field enqueues its
+   own job as it applies, `apply_contributors_patch` journals one `contributors.<role>` version per role touched but
+   calls `enqueue_writeback` once for `contributors` after its role loop, and the identifier family never enqueues.
 6. If an ISBN field was touched, `work::rematch_on_isbn_change` runs before the response is assembled.
 7. `load_book_metadata` + `hash_etag` run again, inside the same transaction, to compute the tag the response's `ETag`
    header carries; the transaction commits; the response carries the applied value, new version id, and previous version

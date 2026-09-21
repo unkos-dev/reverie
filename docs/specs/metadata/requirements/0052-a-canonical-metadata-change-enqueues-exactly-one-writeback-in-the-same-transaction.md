@@ -13,9 +13,10 @@ governed-by:
 
 WHEN a canonical metadata field on a work or a manifestation changes value, whether through an automated apply, an
 accept, a revert, or a manual edit, the system MUST enqueue exactly one writeback job for that manifestation as part of
-the same atomic change, so that the field change and the enqueue either both take effect or neither does; a change to an
-external-identifier field MUST NOT enqueue a writeback job, because an external identifier is never written back to a
-file.
+the same atomic change, so that the field change and the enqueue either both take effect or neither does; for this
+obligation a work's contributor roles together count as one field, so a manual edit that touches several roles at once
+enqueues one job; a change to an external-identifier field MUST NOT enqueue a writeback job, because an external
+identifier is never written back to a file.
 
 ## Rationale
 
@@ -34,9 +35,14 @@ carries, so a job for one would waste an attempt on a field the file has nowhere
   `backend/src/routes/metadata.rs`.
 - Reverting a field, whether to a specific earlier version or to no value, enqueues exactly one writeback job. Checked
   by `revert_admin_clears_field_to_null` in `backend/src/routes/metadata.rs`.
-- A manual edit enqueues exactly one writeback job for each field the request changes: a single-field edit enqueues one
-  job and a two-field edit enqueues two. Checked by `patch_sets_title_and_writes_canonical` and
-  `patch_two_fields_enqueues_one_writeback_per_field` in `backend/src/routes/metadata.rs`.
+- A manual edit enqueues exactly one writeback job for each scalar or vocabulary field the request changes: a
+  single-field edit enqueues one job and a two-field edit enqueues two. Checked by
+  `patch_sets_title_and_writes_canonical` and `patch_two_fields_enqueues_one_writeback_per_field` in
+  `backend/src/routes/metadata.rs`.
+- A manual edit that touches one or more contributor roles enqueues exactly one writeback job for the contributor group,
+  and one that touches none enqueues no job for it. The no-job case is checked by
+  `patch_contributors_empty_object_enqueues_no_writeback` in `backend/src/routes/metadata.rs`; no automated check
+  asserts the single-job count for a multi-role edit.
 - Two independent accepts against the same manifestation enqueue two separate jobs; a new job is never collapsed into
   one already queued for the same manifestation. Checked by `double_accept_enqueues_two_jobs` in
   `backend/src/routes/metadata.rs`.
