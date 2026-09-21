@@ -108,9 +108,11 @@ HTTP-triggered, one edit-triggered), not an accidental second writer of the same
 - `queue.rs` is the worker: `spawn_queue` runs a `tokio::select!` loop between a cancellation token and a poll interval,
   draining as many `pending`/`failed` rows as a `Semaphore`-gated concurrency limit allows on each tick via
   `claim_next`, spawning one task per claim that calls `orchestrator::run_once` and then `finish` for bookkeeping.
-  `claim_next` is one `FOR UPDATE SKIP LOCKED` CTE with the retry-backoff window folded into its `WHERE` clause as a
-  `CASE` expression (5m, 30m, 2h, 8h, then 24h): the sole, authoritative copy of that schedule. `revert_in_progress`
-  runs only when `cancel` fires.
+  Before the first poll and again on cancellation, it reverts orphaned `in_progress` rows to `pending` so a fresh
+  process can reclaim work left by an abrupt exit. `claim_next` is one `FOR UPDATE SKIP LOCKED` CTE with the
+  retry-backoff window folded into its `WHERE` clause as a `CASE` expression (5m, 30m, 2h, 8h, then 24h): the sole,
+  authoritative copy of that schedule. At process startup, `revert_in_progress` treats every `in_progress` row as
+  orphaned under the single-instance deployment decision.
 - `orchestrator.rs` is the per-manifestation flow. `load_snapshot` reads the current canonical state, the active
   identifier-registry slots and the `metadata_sources.base_priority` values, and derives the ordered `lookup_keys` list
   via `derive_lookup_keys`. `fan_out_with_fallback` tries each key in order under one shared wall-clock budget,
@@ -270,12 +272,12 @@ a projection, not a preview of a specific journal row a subsequent real run woul
   failure alongside a live result from another source still counts as `Complete`.
 - After `max_attempts` failed attempts a row moves to `Skipped` and the claim query never selects it again; nothing
   short of `trigger` or a manual identifier edit returns it to circulation.
-- A hard kill mid-run leaves the claimed row `in_progress` indefinitely: `spawn_queue` calls `revert_in_progress` only
-  on its cancellation branch, never at startup, so nothing reclaims a row whose worker died with the process. `trigger`
-  cannot release it either: its `UPDATE` only sets `enrichment_rerun_requested` when the row already reads
-  `in_progress`, leaving the status itself untouched. Only a graceful shutdown-and-restart cycle (whose shutdown path
-  runs the revert before the process exits) clears it. The Design "Writeback pipeline" describes the equivalent revert
-  running both at startup and at shutdown for that queue; this queue runs only the shutdown half.
+- A hard kill mid-run leaves the claimed row `in_progress` until the next process startup: `spawn_queue` reverts every
+  `in_progress` row to `pending` before its first poll, so a fresh worker can reclaim it. `trigger` cannot release it
+  while the process is live: its `UPDATE` only sets `enrichment_rerun_requested` when the row already reads
+  `in_progress`, leaving the status itself untouched. The cancellation path repeats the revert for a graceful shutdown.
+  As with the "Writeback pipeline" queue, this treats every in-flight row as orphaned at process startup under the
+  single-instance deployment decision.
 - `apply_field` rejects a journal value its target column cannot hold: a non-scalar JSON value for a text field, a
   non-positive `pages` value, or a `pub_date` string that fails a round-trip parse against the accepted `YYYY-MM-DD`
   spelling and a `[0001, 9999]` year bound, by returning `false` rather than applying. The journal row stays `pending`

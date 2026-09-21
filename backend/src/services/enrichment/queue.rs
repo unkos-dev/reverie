@@ -3,8 +3,8 @@
 //! Claims manifestations from the `manifestations` table using an atomic
 //! `FOR UPDATE SKIP LOCKED` CTE so multiple workers can race without double
 //! processing.  Applies an exponential-ish retry backoff and marks rows as
-//! `skipped` after `max_attempts`.  On shutdown, reverts any `in_progress`
-//! rows back to `pending` so a fresh worker can re-claim them.
+//! `skipped` after `max_attempts`.  On startup and shutdown, reverts any
+//! `in_progress` rows back to `pending` so a fresh worker can re-claim them.
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -28,13 +28,14 @@ use super::orchestrator::{self, RunOutcome};
 /// Spawn the queue worker loop.  Returns when `cancel` fires, reverting any
 /// `in_progress` row back to `pending`.
 ///
+/// Rows left `in_progress` by a prior process are reverted before the first
+/// poll so an abrupt process exit cannot strand work permanently.
+///
 /// # Errors
 ///
-/// Returns an error if any of the per-tick queue queries fail — typically a
-/// `claim_next` failure during normal polling (transient DB error, pool
-/// exhaustion) — or if the shutdown-time revert of `in_progress` rows to
-/// `pending` fails. Both failure modes exit the worker loop; the supervisor
-/// is responsible for restarts.
+/// Returns an error if startup recovery, a per-tick queue query, or shutdown
+/// recovery fails. Any failure exits the worker loop; the supervisor is
+/// responsible for restarts.
 pub async fn spawn_queue(
     pool: PgPool,
     config: Config,
@@ -45,6 +46,8 @@ pub async fn spawn_queue(
         cancel.cancelled().await;
         return Ok(());
     }
+
+    revert_in_progress(&pool).await?;
 
     let concurrency = config.enrichment.concurrency as usize;
     let semaphore = Arc::new(Semaphore::new(concurrency));
@@ -582,6 +585,42 @@ mod tests {
                 "manifestation {id} status mismatch (expected {expected:?}, got {s:?})"
             );
         }
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn startup_reclaims_orphan_before_first_poll(pool: PgPool) {
+        let pool = ingestion_pool_for(&pool).await;
+        let (_work_id, m_id, _) =
+            insert_queue_fixture(&pool, EnrichmentStatus::InProgress, 1, Some(600)).await;
+
+        let cancel = CancellationToken::new();
+        let cancel_for_worker = cancel.clone();
+        let mut config = test_config_with_max_attempts(3);
+        config.enrichment.poll_idle_secs = 3_600;
+        let handle = tokio::spawn({
+            let pool = pool.clone();
+            async move {
+                spawn_queue(pool, config, cancel_for_worker).await.unwrap();
+            }
+        });
+
+        let state = tokio::time::timeout(Duration::from_secs(2), async {
+            loop {
+                let state = queue_row_state(&pool, m_id).await;
+                if state.attempt_count >= 2 && state.status != EnrichmentStatus::InProgress {
+                    break state;
+                }
+                tokio::time::sleep(Duration::from_millis(25)).await;
+            }
+        })
+        .await
+        .expect("startup recovery should make the orphan claimable");
+
+        assert_ne!(state.status, EnrichmentStatus::InProgress);
+        assert_eq!(state.attempt_count, 2);
+
+        cancel.cancel();
+        handle.await.unwrap();
     }
 
     struct QueueRowState {
