@@ -12,6 +12,7 @@ governed-by:
   - "REV-ADR-0019"
   - "REV-ADR-0037"
   - "REV-ADR-0038"
+  - "REV-ADR-0044"
 ---
 
 # Books list query contract
@@ -128,7 +129,7 @@ minting (`select_alias`), and the value domain a cursor boundary for it must car
 "a column enters `SortColumn` only once its ordering indexes exist," specifically both an ascending and a
 `DESC NULLS LAST` composite index for a nullable column, because Postgres's default `DESC` ordering is `NULLS FIRST` and
 a backward scan of an ascending index cannot supply `NULLS LAST` on its own. `Author` (`works.first_author_sort_name`)
-and `Pages` (`manifestations.pages`) each carry both index shapes today
+and `Pages` (`manifestations.pages`) each carry both index shapes
 (`idx_works_first_author_sort_id`/`idx_works_first_author_sort_desc`,
 `idx_manifestations_pages_keyset`/`idx_manifestations_pages_keyset_desc`). `Title` and `CreatedAt` are declared
 `NOT NULL` in the schema, so each carries one composite index only (`idx_works_sort_title_id` ascending,
@@ -165,8 +166,8 @@ distinct from an empty string so a three-valued SQL comparison cannot collapse t
 (the mint path, `pub(crate)` so only server code can construct a cursor) and `SortCursor::parse_for` (the decode path)
 both call it against the same `SortSpec`, so a cursor this module mints can never be one its own decode would reject.
 Beyond that shared check, encoding is infallible in practice: `CursorError::SerializePayload` covers a key variant that
-is not among the ones `SortCursor` holds today, so every value it holds serialises without error and no code path
-returns this variant.
+is not among the ones `SortCursor` holds, so every value it holds serialises without error and no code path returns this
+variant.
 
 ### Query assembly (`library/mod.rs`)
 
