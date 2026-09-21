@@ -11,10 +11,11 @@ governed-by:
 
 ## Statement
 
-WHEN a request to a paginated list endpoint presents a cursor, the server MUST resume the page walk only if the cursor
-was minted by that same endpoint under the same sort stack and the same filter set as the request presents; a cursor
-minted by a different list endpoint, or under a different sort stack or filter set, MUST be refused with
-`422 Unprocessable Content` and MUST NOT be reinterpreted against the request's own sort or filter.
+WHEN a request to a paginated JSON list endpoint under `/api/v1/` presents a cursor, the server MUST resume the page
+walk only if the cursor was minted by that same endpoint under the same sort stack and the same filter set as the
+request presents; a cursor minted by a different list endpoint, or under a different sort stack or filter set, MUST be
+refused with `422 Unprocessable Content` and MUST NOT be reinterpreted against the request's own sort or filter. The
+OPDS catalogue feeds are outside this obligation.
 
 ## Rationale
 
@@ -37,10 +38,10 @@ cursor as the list contract this obligation protects.
   filter set that differs only in the order of a multi-valued parameter's values is the same set. Checked by
   `filter_cursor_rejects_changed_filter_and_ignores_value_order` in `backend/src/routes/library/tests.rs` and
   `rejects_filter_fingerprint_mismatch` in `backend/src/routes/cursor.rs`.
-- A cursor minted by one list endpoint and presented to another answers `422`, on every list endpoint that mints a
-  cursor. Checked by `list_endpoint_legacy_cursor_tag_returns_422` in `backend/src/routes/library/tests.rs`,
-  `shelf_items_rejects_cross_endpoint_cursor_replay` in `backend/src/routes/shelves/tests.rs`, and
-  `rejects_unknown_tag`, `shelf_rejects_foreign_tags` and `shelf_item_rejects_garbage` in
-  `backend/src/routes/cursor.rs`.
+- A cursor minted by one `/api/v1/` list endpoint and presented to another answers `422`, on each of the books list, the
+  shelf list and the shelf item list. Checked by `list_endpoint_legacy_cursor_tag_returns_422` in
+  `backend/src/routes/library/tests.rs`, `shelf_items_rejects_cross_endpoint_cursor_replay` in
+  `backend/src/routes/shelves/tests.rs`, and `rejects_unknown_tag`, `shelf_rejects_foreign_tags` and
+  `shelf_item_rejects_garbage` in `backend/src/routes/cursor.rs`.
 - A refused cursor never produces a page: the response carries no items. Checked by the same tests, each of which
   asserts the `422` status.

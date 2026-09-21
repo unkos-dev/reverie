@@ -34,8 +34,9 @@ resource ownership as an axis every mutating route enforces server-side.
   `rename_other_users_shelf_returns_404` and `delete_other_users_shelf_returns_404` in
   `backend/src/routes/shelves/tests.rs`.
 - Reading, adding to, removing from, or reordering the items of another account's shelf answers `404` and changes
-  nothing. Satisfaction is determined by reading each handler's ownership-bound lookup, which precedes every write; no
-  automated check exercises these routes against another account's shelf.
+  nothing. Checked by `get_other_users_shelf_returns_404`, `add_item_to_other_users_shelf_returns_404`,
+  `remove_item_from_other_users_shelf_returns_404` and `reorder_other_users_shelf_returns_404` in
+  `backend/src/routes/shelves/tests.rs`.
 - Filtering the books list by a shelf id returns only books on that shelf when the caller owns it, and no books
   otherwise. Checked by `list_filter_by_shelf_scoped_to_caller` in `backend/src/routes/library/tests.rs`.
 - A child account reads its own shelves. Checked by `child_can_view_own_shelves` in
