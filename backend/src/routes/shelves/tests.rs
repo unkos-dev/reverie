@@ -755,7 +755,10 @@ async fn remove_item_from_other_users_shelf_returns_404(pool: PgPool) {
     .fetch_one(&app_pool)
     .await
     .expect("fetch item count");
-    assert_eq!(count, 1, "another account's remove must not change the shelf");
+    assert_eq!(
+        count, 1,
+        "another account's remove must not change the shelf"
+    );
 }
 
 #[sqlx::test(migrations = "./migrations")]
@@ -788,7 +791,10 @@ async fn reorder_other_users_shelf_returns_404(pool: PgPool) {
     .fetch_one(&app_pool)
     .await
     .expect("fetch first item");
-    assert_eq!(first, ids[0], "another account's reorder must not change the order");
+    assert_eq!(
+        first, ids[0],
+        "another account's reorder must not change the order"
+    );
 }
 
 #[sqlx::test(migrations = "./migrations")]
