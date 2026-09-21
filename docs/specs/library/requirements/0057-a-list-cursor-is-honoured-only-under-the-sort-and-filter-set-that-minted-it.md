@@ -25,7 +25,9 @@ with nothing to tell the client it had happened, and a token from one list would
 The client depends on a refused cursor being loud, so it can restart the walk from the first page rather than render a
 page that looks complete and is not. The
 [keyset pagination decision](../../../adr/0019-keyset-pagination-as-the-default-list-contract.md) fixes the opaque
-cursor as the list contract this obligation protects.
+cursor as the list contract this obligation protects. The OPDS acquisition feeds sit outside the obligation because
+every one of them walks the same ordering and bound, so a cursor replayed across feeds starts the walk mid-list rather
+than skipping or repeating rows within it.
 
 ## Acceptance criteria
 

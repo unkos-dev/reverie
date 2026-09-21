@@ -110,8 +110,8 @@ bar's "add selection to shelf" action — all described below only as consumers,
 | `shelves.is_system` | `shelves` row | The column default (`false`); no handler ever sets it |
 | `shelf_items` row existence | `shelf_items` table | `add_shelf_item` (insert), `remove_shelf_item` (delete), `delete_shelf` through the `shelves` cascade, and a manifestation delete through the `manifestations` cascade |
 
-Every state item above has exactly one write path even where several handlers can trigger it, so ownership here is not
-in question; what a reader needs is which call reaches which write.
+No state item above has competing owners: the handlers named are its only application writers, and a cascade is the
+database acting on its own. What a reader needs is which call reaches which write.
 
 `shelves.updated_at` is written by the `shelves_set_updated_at` trigger (`BEFORE UPDATE`, running `set_updated_at()`),
 which fires on any `UPDATE` to the row regardless of which column changed. `rename_shelf` relies on the trigger alone:
@@ -127,8 +127,8 @@ relying on contiguous values.
 
 `shelf_items` row existence changes only through `add_shelf_item`'s
 `INSERT … ON CONFLICT (shelf_id, manifestation_id) DO NOTHING` (so a duplicate add is a no-op for membership) and
-`remove_shelf_item`'s `DELETE`; no other handler issues a statement against this table, though a shelf or manifestation
-delete removes its rows through the cascading foreign keys.
+`remove_shelf_item`'s `DELETE`; no other handler inserts into or deletes from this table directly, though a shelf or
+manifestation delete removes its rows through the cascading foreign keys.
 
 `shelves.is_system` deserves a direct statement: the flag, the `AppError::SystemShelfImmutable` (409) it can trigger on
 `rename_shelf` and `delete_shelf`, the `ORDER BY is_system DESC` on `list_shelves`, and the client's disabled
