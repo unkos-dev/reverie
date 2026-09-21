@@ -45,6 +45,7 @@ the table's sortable column headers, and the route loader that prefetches the fi
 | Library filter URL params (`q`, vocabulary, text, range, date, status, `series`, `shelf`) | Flat keys in the route's `URLSearchParams`, declared by `LIBRARY_PARSERS` in `frontend/src/lib/hooks/use-library-filters.ts` | `useLibraryFilters()` in that module; the `q` key also through `useQuickSearchFilter()` in the same module |
 | `cursor` URL parameter | `LIBRARY_PARSERS.cursor`, same module | `useLibraryFilters()` and `useQuickSearchFilter()`, which drop it with every filter write |
 | `view` URL parameter | `LIBRARY_PARSERS.view`, same module | `useLibraryFilters().setView` |
+| Incomplete numeric and date input text | Component-local state in the range editors | The edited input; only valid values dispatch to `useLibraryFilters()` |
 | `sort_stack` account preference | `text` column on `user_preferences`, exposed through `/auth/me/preferences`; resolved client-side in `frontend/src/pages/library/use-library-preferences.ts` | `useLibraryPreferences().setSortLevels` |
 | First-paint display-preference mirror (`density`, `hiddenColumns`, `view`, `sortStack`) | `localStorage`, one key per account, `frontend/src/pages/library/display-storage.ts` | The effect inside `useLibraryPreferences()` that calls `writeDisplayPreferences` whenever a resolved value changes |
 | Other `/auth/me/preferences` groups (`density`, `hidden_columns`, `view`) | Same `user_preferences` row and response shape as `sort_stack` | `useLibraryPreferences().setDensity`, `setHiddenColumns`, `resetColumns`, `setView` |
@@ -138,7 +139,10 @@ the census resolves to; every editing surface is a caller of one or the other, n
 
 **A filter change**, for example typing into the Pages range editor's lower bound in the rail:
 
-1. `RangeSection` calls the `pages` slice's `onChange`, which is `commitTyped("pages", ...)` in `FilterRail.tsx`.
+1. The range editor constrains each input by its opposite bound and intrinsic limits. Valid integers pass to
+   `RangeSection`, which calls `commitTyped("pages", ...)` in `FilterRail.tsx`. Incomplete or out-of-bounds text stays
+   local to the input. Blur or Enter clamps a completed value to the nearest legal bound without moving its peer;
+   malformed text restores the current value. Empty input clears that endpoint.
 2. `commitTyped` calls `useLibraryFilters().commitSlice` for the `pages` slice with the patch function and the delayed
    option set.
 3. `commitSlice` serialises the patched `FilterState` through `serializeFilterParams`, reads back only the `pages`
@@ -149,9 +153,11 @@ the census resolves to; every editing surface is a caller of one or the other, n
 5. `LibraryContent` in `LibraryPage.tsx` derives `params` from the updated search via `paramsFromSearch`, which feeds
    the `GET /api/v1/books` query key and request; a changed key triggers React Query to refetch with the new condition.
 
-Before the hold settles, the rail itself already renders the typed value: `useLibraryFilters().filters` is derived from
-the _pending_ `nuqs` values (`toSearch(values)`), not from the applied URL, so the input never appears to lag behind the
-keystroke even though the network-visible URL and the list request do.
+Before the hold settles, `useLibraryFilters().filters` reflects the _pending_ `nuqs` values (`toSearch(values)`), not
+the applied URL. Range editors additionally hold incomplete input text locally so typing a multi-digit bound never
+publishes an inverted pair. Date inputs use the same endpoint constraints and retain the date slice's immediate commit.
+External value changes reset local input text; clearing a section cancels its queued URL write, and closing the drawer
+with Escape abandons its drafts through the existing owner.
 
 **A sort change**, for example a ctrl-click on the "Pages" column header in the table view:
 
@@ -176,15 +182,15 @@ keystroke even though the network-visible URL and the list request do.
 
 - **An invalid URL filter.** The client-side codec (`routes/library-params.ts`) is tolerant by construction: a malformed
   value (a non-integer, an ill-formed date, an unrecognised status token) is dropped while parsing the URL into
-  `FilterState`, rather than surfaced as an error or sent to the server. A hand-crafted or stale URL therefore never
-  reaches the wire with a value the server would reject; the affected condition is simply absent from the filter rail
-  and from the request. If a filter value reaches the server without going through this client-side parsing regardless
-  (a non-browser client, or a value the client-side codec does not yet police), the server rejects the request: a
-  type-level decode failure (bad UUID, non-integer, non-ISO-date) returns `400 Bad Request` via
-  `AppError::MalformedQuery`, and a value that decodes but violates a semantic bound (over-cap value list, over-long
-  text, out-of-range rating, negative page bound, inverted range bounds, or unrecognised status token) returns
-  `422 Unprocessable Entity` via `AppError::Validation` (`backend/src/routes/library/filters.rs::validate`). Neither
-  path silently narrows or widens the result set.
+  `FilterState`, rather than surfaced as an error or sent to the server. This parsing is not a complete implementation
+  of server validation: a hand-crafted or stale URL can still contain a semantically invalid value. The range controls
+  prevent readers from applying invalid bounds through the editor. If an invalid filter reaches the server (through a
+  direct API request or a value the URL codec does not police), the server rejects the request: a type-level decode
+  failure (bad UUID, non-integer, non-ISO-date) returns `400 Bad Request` via `AppError::MalformedQuery`, and a value
+  that decodes but violates a semantic bound (over-cap value list, over-long text, out-of-range rating, negative page
+  bound, inverted range bounds, or unrecognised status token) returns `422 Unprocessable Entity` via
+  `AppError::Validation` (`backend/src/routes/library/filters.rs::validate`). Neither path silently narrows or widens
+  the result set.
 - **A cursor invalidated by a filter or sort change.** Every filter-slice write and the quick-search write drop `cursor`
   in the same update, because a changed condition invalidates the keyset boundary a stale cursor names. If a cursor is
   replayed against a different filter set or sort stack regardless, the server rejects it with `422` (the keyset and

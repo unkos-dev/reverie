@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, test, vi } from "vite-plus/test";
 import { NuqsAdapter, useOptimisticSearchParams } from "nuqs/adapters/react-router/v8";
@@ -1033,6 +1033,89 @@ describe("LibraryPage", () => {
   });
 
   describe("drawer close semantics and cross-surface drafts", () => {
+    test("typing a range keeps incomplete bounds out of list requests and preserves other filters", async () => {
+      const requests: URLSearchParams[] = [];
+      const book = bookFixture();
+      const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation((input) => {
+        const raw =
+          typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+        const url = new URL(raw, window.location.origin);
+        if (url.pathname === "/api/v1/books") {
+          requests.push(url.searchParams);
+          const lower = url.searchParams.get("pages_gte");
+          const upper = url.searchParams.get("pages_lte");
+          if (lower !== null && upper !== null && Number(lower) > Number(upper)) {
+            return Promise.resolve(
+              new Response(
+                JSON.stringify({
+                  type: "about:blank",
+                  title: "Invalid range",
+                  status: 422,
+                  detail: "pages_gte must not exceed pages_lte",
+                }),
+                { status: 422, headers: { "Content-Type": "application/problem+json" } },
+              ),
+            );
+          }
+          return Promise.resolve(
+            new Response(JSON.stringify({ items: [book], next_cursor: null }), {
+              headers: { "Content-Type": "application/json" },
+            }),
+          );
+        }
+        return Promise.resolve(
+          new Response(JSON.stringify({ items: [], next_cursor: null }), {
+            headers: { "Content-Type": "application/json" },
+          }),
+        );
+      });
+      try {
+        renderLibrary({
+          items: [book],
+          nextCursor: null,
+          me: meFixture(),
+          initialEntries: ["/library?pages_gte=300&title_contains=dune"],
+          cacheParams: { pages_gte: 300, title_contains: "dune" },
+        });
+        const user = userEvent.setup();
+        await user.click(await screen.findByRole("button", { name: /^Filters/ }));
+        const drawer = await screen.findByRole("dialog");
+        const pages = drawerSection(drawer, "Pages");
+        const upper = within(pages).getByRole("spinbutton", { name: "Max" });
+        await user.type(upper, "9");
+        await act(async () => {
+          await new Promise((resolve) => setTimeout(resolve, 400));
+        });
+        expect(new URLSearchParams(window.location.search).get("pages_lte")).toBeNull();
+        expect(screen.getByRole("dialog")).toBeInTheDocument();
+        await user.type(upper, "00");
+        await waitFor(() => {
+          expect(requests.some((params) => params.get("pages_lte") === "900")).toBe(true);
+        });
+        expect(upper).toHaveValue(900);
+        expect(new URLSearchParams(window.location.search).get("title_contains")).toBe("dune");
+        expect(
+          requests.every(
+            (params) => params.get("pages_lte") === null || Number(params.get("pages_lte")) >= 300,
+          ),
+        ).toBe(true);
+
+        await user.clear(upper);
+        await user.type(upper, "1");
+        await user.click(within(pages).getByRole("button", { name: "Clear Pages filters" }));
+        await act(async () => {
+          await new Promise((resolve) => setTimeout(resolve, 400));
+        });
+        const cleared = new URLSearchParams(window.location.search);
+        expect(cleared.has("pages_gte")).toBe(false);
+        expect(cleared.has("pages_lte")).toBe(false);
+        expect(cleared.get("title_contains")).toBe("dune");
+        expect(within(pages).getByRole("spinbutton", { name: "Max" })).toHaveValue(null);
+      } finally {
+        fetchSpy.mockRestore();
+      }
+    });
+
     test("a toolbar search draft survives a rail commit made from the drawer", async () => {
       renderLibrary({
         items: [bookFixture()],
@@ -1053,6 +1136,34 @@ describe("LibraryPage", () => {
       const search = screen.getByTestId("location-search").textContent;
       expect(search).toContain("status_any=reading");
       expect(searchBox()).toHaveValue("d");
+    });
+
+    test("Escape abandons a local range draft without changing the applied bounds", async () => {
+      renderLibrary({
+        items: [bookFixture()],
+        nextCursor: null,
+        initialEntries: ["/library?pages_gte=300&pages_lte=900"],
+        cacheParams: { pages_gte: 300, pages_lte: 900 },
+      });
+      await screen.findByRole("heading", { name: "Library" });
+      const user = userEvent.setup();
+      await user.click(screen.getByRole("button", { name: /^Filters/ }));
+      const pages = drawerSection(await screen.findByRole("dialog"), "Pages");
+      const upper = within(pages).getByRole("spinbutton", { name: "Max" });
+      await user.clear(upper);
+      await user.type(upper, "9");
+      await user.keyboard("{Escape}");
+      await waitFor(() => {
+        expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+      });
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 400));
+      });
+      expect(new URLSearchParams(window.location.search).get("pages_gte")).toBe("300");
+      expect(new URLSearchParams(window.location.search).get("pages_lte")).toBe("900");
+      await user.click(screen.getByRole("button", { name: /^Filters/ }));
+      const reopenedPages = drawerSection(await screen.findByRole("dialog"), "Pages");
+      expect(within(reopenedPages).getByRole("spinbutton", { name: "Max" })).toHaveValue(900);
     });
 
     test("Escape abandons a pending rail draft", async () => {

@@ -108,8 +108,8 @@ pub fn escape_like(raw: &str) -> String {
 /// Semantic validation of the filter params (422 on failure). Type-level
 /// failures (bad uuid, non-integer, bad date) are already rejected by serde
 /// as a 400 before this runs; this layer catches over-cap value lists,
-/// over-long text, out-of-range ratings, negative page bounds, and unknown
-/// status tokens.
+/// over-long text, out-of-range ratings, negative page bounds, inverted ranges,
+/// and unknown status tokens.
 ///
 /// # Errors
 /// Returns [`AppError::Validation`] on the first rule a param violates.

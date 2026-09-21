@@ -421,7 +421,7 @@ function LibraryContent(): ReactElement {
           // which cancels their pending writes. Scrim and close-button
           // closes leave them alone, so those edits still settle.
           onEscapeKeyDown={revertTypedEdits}
-          className="w-[340px] max-w-[100vw] overflow-y-auto p-6"
+          className="max-w-[100vw] overflow-y-auto p-6 data-[side=right]:w-[340px]"
         >
           <SheetHeader className="mb-2 p-0">
             <SheetTitle className="font-display text-2xl font-medium">Refine</SheetTitle>

@@ -44,5 +44,5 @@ occurs.
 - This obligation guards the value side of the suffix-operator grammar and closed column set that the typed filter
   grammar decision defines.
 - A filter value that decodes successfully but violates a semantic bound (an over-cap value list, over-long text, an
-  out-of-range rating, a negative page bound, or an unrecognised status token) is a distinct failure class, rejected
-  with `422 Unprocessable Entity` rather than `400`; that class is not part of this obligation.
+  out-of-range rating, a negative page bound, inverted range bounds, or an unrecognised status token) is a distinct
+  failure class, rejected with `422 Unprocessable Entity` rather than `400`; that class is not part of this obligation.

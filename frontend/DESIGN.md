@@ -342,6 +342,12 @@ Search, view selection and Filters share a wrapping toolbar. Table mode adds Com
 visibility controls. Filters open in a right sheet (340px, capped at viewport width) at every Library breakpoint. The
 filter and book-detail drawers occupy the same overlay slot.
 
+Range controls constrain each endpoint by the other endpoint. Number steppers and date pickers offer only values within
+that interval, including equal endpoints. Typing remains editable: an incomplete or out-of-bounds draft stays in its
+input without changing the applied filter. On blur or Enter, a completed value stops at the nearest legal bound; the
+opposite endpoint never moves. Clearing an input removes that endpoint, and Escape abandons a draft. Page counts are
+non-negative integers and ratings range from 1 to 5. The controls retain their existing paired layout and labels.
+
 The table occupies `calc(100dvh - 22rem)` with a 384px minimum height. At 899px or less it retains selection, details,
 title and added date. Comfortable rows stack authors below the title; compact rows omit that secondary line and the
 cover mark. The cover grid instead uses fluid columns with a minimum width of `clamp(170px, 10vw, 240px)`.
