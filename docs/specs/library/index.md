@@ -11,8 +11,14 @@
 - [REV-REQ-0026](requirements/0026-a-manifestation-s-ingestion-hash-never-changes.md): A manifestation's ingestion hash never changes
 - [REV-REQ-0027](requirements/0027-a-work-s-author-sort-key-tracks-its-current-first-author.md): A work's author sort key tracks its current first author
 - [REV-REQ-0028](requirements/0028-deleting-a-metadata-version-leaves-the-canonical-value-in-place.md): Deleting a metadata version leaves the canonical value in place
+- [REV-REQ-0057](requirements/0057-a-list-cursor-is-honoured-only-under-the-sort-and-filter-set-that-minted-it.md): A list cursor is honoured only under the sort and filter set that minted it
+- [REV-REQ-0058](requirements/0058-a-sort-request-naming-an-unrecognised-or-repeated-column-is-refused-before-any-query-runs.md): A sort request naming an unrecognised or repeated column is refused before any query runs
+- [REV-REQ-0059](requirements/0059-a-shelf-and-its-items-are-visible-to-and-changeable-by-their-owner-only.md): A shelf and its items are visible to and changeable by their owner only
 
 ## Designs
 
 - [REV-DESIGN-0001](design/0001-library-filter-and-sort-state.md): Library filter and sort state
 - [REV-DESIGN-0009](design/0009-works-and-manifestations-data-model.md): Works and manifestations data model
+- [REV-DESIGN-0019](design/0019-books-list-query-contract.md): Books list query contract
+- [REV-DESIGN-0020](design/0020-shelves.md): Shelves
+- [REV-DESIGN-0021](design/0021-reading-state.md): Reading state

@@ -39,7 +39,7 @@ does not own the role and scope checks a handler applies before it reaches this 
 axes". It does not own the Design "Ingestion pipeline" (`backend/src/services/ingestion/`), the Design "EPUB validation
 and repair" (`backend/src/services/epub/`), the Design "Enrichment pipeline" (`backend/src/services/enrichment/`), the
 Design "Writeback pipeline" (`backend/src/services/writeback/`), the Design "Metadata review and editing"
-(`backend/src/routes/metadata.rs`), or the Books list query contract subject (`backend/src/routes/library/mod.rs`,
+(`backend/src/routes/metadata.rs`), or the Design "Books list query contract" (`backend/src/routes/library/mod.rs`,
 `filters.rs`, and the shared `sort_spec.rs`/`cursor.rs` modules it imports from `backend/src/routes/`), each of which
 reads or writes this model without being part of it. It does not own the Identifier and rating registry subject's
 external identifiers and ratings (`manifestation_external_identifiers`, `manifestation_external_ratings`,
@@ -56,10 +56,10 @@ Depended on by: the Design "Ingestion pipeline" and the Design "EPUB validation 
 `manifestations` rows and the `works` row each attaches to; the Design "Enrichment pipeline" and the Design "Metadata
 review and editing", which apply canonical field values and journal them through the version pointers; the Design
 "Writeback pipeline", which updates `file_path`, `current_file_hash` and `updated_at` after a successful on-disk
-rewrite; the Books list query contract subject, the OPDS catalogue subject, and the Search and vocabulary suggest
-subject, which read this model to build their responses; the Shelves subject and the Reading state subject, whose tables
-reference `manifestations.id`; and the Design "Library filter and sort state", whose sort and filter axes name columns
-this model owns.
+rewrite; the Design "Books list query contract", the OPDS catalogue subject, and the Search and vocabulary suggest
+subject, which read this model to build their responses; the Design "Shelves" and the Design "Reading state", whose
+tables reference `manifestations.id`; and the Design "Library filter and sort state", whose sort and filter axes name
+columns this model owns.
 
 ## Structure
 
