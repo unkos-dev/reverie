@@ -676,7 +676,7 @@
             }
           },
           "422": {
-            "description": "Invalid cursor or too many filter values",
+            "description": "Invalid cursor or filter value, including inverted range bounds",
             "content": {
               "application/problem+json": {
                 "schema": {

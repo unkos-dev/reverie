@@ -270,9 +270,8 @@ struct BookListResponse {
 ///   unwhitelisted field, repeats a column, or exceeds
 ///   [`crate::routes::sort_spec::MAX_SORT_LEVELS`] levels.
 /// - [`AppError::Validation`] when the cursor is malformed, its
-///   embedded sort spec mismatches the requested stack, or any
-///   vocabulary filter param carries more than [`MAX_TAG_FILTERS`]
-///   values.
+///   embedded sort spec mismatches the requested stack, a filter exceeds
+///   its semantic limits, or a range's lower bound exceeds its upper bound.
 /// - [`AppError::Internal`] on database errors.
 #[expect(
     clippy::too_many_lines,
@@ -291,7 +290,7 @@ struct BookListResponse {
             headers(("Link" = String, description = "RFC 8288 next-page link; emitted with rel=\"next\" when more rows remain"))),
         (status = 400, description = "Malformed query parameter", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
-        (status = 422, description = "Invalid cursor or too many filter values", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
+        (status = 422, description = "Invalid cursor or filter value, including inverted range bounds", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
     )
 )]
 async fn list(
