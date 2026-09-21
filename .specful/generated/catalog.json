@@ -622,6 +622,53 @@
     },
     {
       "governed-by": [
+        "REV-ADR-0019",
+        "REV-ADR-0037",
+        "REV-ADR-0038",
+        "REV-ADR-0044"
+      ],
+      "id": "REV-DESIGN-0019",
+      "kind": "design",
+      "path": "docs/specs/library/design/0019-books-list-query-contract.md",
+      "satisfies": [
+        "REV-REQ-0003",
+        "REV-REQ-0057",
+        "REV-REQ-0058",
+        "REV-REQ-0059"
+      ],
+      "title": "Books list query contract"
+    },
+    {
+      "governed-by": [
+        "REV-ADR-0028",
+        "REV-ADR-0011"
+      ],
+      "id": "REV-DESIGN-0020",
+      "kind": "design",
+      "path": "docs/specs/library/design/0020-shelves.md",
+      "satisfies": [
+        "REV-REQ-0020",
+        "REV-REQ-0057",
+        "REV-REQ-0059"
+      ],
+      "title": "Shelves"
+    },
+    {
+      "governed-by": [
+        "REV-ADR-0028",
+        "REV-ADR-0011"
+      ],
+      "id": "REV-DESIGN-0021",
+      "kind": "design",
+      "path": "docs/specs/library/design/0021-reading-state.md",
+      "satisfies": [
+        "REV-REQ-0018",
+        "REV-REQ-0020"
+      ],
+      "title": "Reading state"
+    },
+    {
+      "governed-by": [
         "REV-ADR-0047"
       ],
       "id": "REV-REQ-0001",
@@ -1075,6 +1122,33 @@
       "kind": "req",
       "path": "docs/specs/metadata/requirements/0056-a-child-account-cannot-change-catalogue-metadata.md",
       "title": "A child account cannot change catalogue metadata"
+    },
+    {
+      "governed-by": [
+        "REV-ADR-0019"
+      ],
+      "id": "REV-REQ-0057",
+      "kind": "req",
+      "path": "docs/specs/library/requirements/0057-a-list-cursor-is-honoured-only-under-the-sort-and-filter-set-that-minted-it.md",
+      "title": "A list cursor is honoured only under the sort and filter set that minted it"
+    },
+    {
+      "governed-by": [
+        "REV-ADR-0037"
+      ],
+      "id": "REV-REQ-0058",
+      "kind": "req",
+      "path": "docs/specs/library/requirements/0058-a-sort-request-naming-an-unrecognised-or-repeated-column-is-refused-before-any-query-runs.md",
+      "title": "A sort request naming an unrecognised or repeated column is refused before any query runs"
+    },
+    {
+      "governed-by": [
+        "REV-ADR-0028"
+      ],
+      "id": "REV-REQ-0059",
+      "kind": "req",
+      "path": "docs/specs/library/requirements/0059-a-shelf-and-its-items-are-visible-to-and-changeable-by-their-owner-only.md",
+      "title": "A shelf and its items are visible to and changeable by their owner only"
     }
   ]
 }

@@ -61,9 +61,9 @@ editable metadata span.
 
 Depended on by: `GET /api/v1/books/{id}` (`backend/src/routes/library/mod.rs`), which reads `metadata_versions` directly
 to populate the book-detail Versions-tab payload: a dependency in the other direction from every other route this
-subject owns, and described only as an interface here, since that handler belongs to the Books list query contract
-subject. The client library table's cell-editing pipeline also targets `PATCH /api/v1/books/{id}/metadata` as one of its
-two write routes, a dependency of the Library table cell editing and undo subject on this one.
+subject owns, and described only as an interface here, since that handler belongs to the book detail subject. The client
+library table's cell-editing pipeline also targets `PATCH /api/v1/books/{id}/metadata` as one of its two write routes, a
+dependency of the Library table cell editing and undo subject on this one.
 
 ## Structure
 
