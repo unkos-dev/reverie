@@ -107,12 +107,12 @@ HTTP-triggered, one edit-triggered), not an accidental second writer of the same
 
 - `queue.rs` is the worker: `spawn_queue` runs a `tokio::select!` loop between a cancellation token and a poll interval,
   draining as many `pending`/`failed` rows as a `Semaphore`-gated concurrency limit allows on each tick via
-  `claim_next`, spawning one task per claim that calls `orchestrator::run_once` and then `finish` for bookkeeping.
-  Before the first poll and again on cancellation, it reverts orphaned `in_progress` rows to `pending` so a fresh
-  process can reclaim work left by an abrupt exit. `claim_next` is one `FOR UPDATE SKIP LOCKED` CTE with the
-  retry-backoff window folded into its `WHERE` clause as a `CASE` expression (5m, 30m, 2h, 8h, then 24h): the sole,
-  authoritative copy of that schedule. At process startup, `revert_in_progress` treats every `in_progress` row as
-  orphaned under the single-instance deployment decision.
+  `claim_next`, spawning one task per claim that calls `orchestrator::run_once` and then `finish` for bookkeeping. When
+  enrichment is enabled, before the first poll and again on cancellation, it reverts orphaned `in_progress` rows to
+  `pending` so a fresh process can reclaim work left by an abrupt exit. `claim_next` is one `FOR UPDATE SKIP LOCKED` CTE
+  with the retry-backoff window folded into its `WHERE` clause as a `CASE` expression (5m, 30m, 2h, 8h, then 24h): the
+  sole, authoritative copy of that schedule. At startup with enrichment enabled, `revert_in_progress` treats every
+  `in_progress` row as orphaned under the single-instance deployment decision.
 - `orchestrator.rs` is the per-manifestation flow. `load_snapshot` reads the current canonical state, the active
   identifier-registry slots and the `metadata_sources.base_priority` values, and derives the ordered `lookup_keys` list
   via `derive_lookup_keys`. `fan_out_with_fallback` tries each key in order under one shared wall-clock budget,
@@ -272,12 +272,19 @@ a projection, not a preview of a specific journal row a subsequent real run woul
   failure alongside a live result from another source still counts as `Complete`.
 - After `max_attempts` failed attempts a row moves to `Skipped` and the claim query never selects it again; nothing
   short of `trigger` or a manual identifier edit returns it to circulation.
-- A hard kill mid-run leaves the claimed row `in_progress` until the next process startup: `spawn_queue` reverts every
-  `in_progress` row to `pending` before its first poll, so a fresh worker can reclaim it. `trigger` cannot release it
-  while the process is live: its `UPDATE` only sets `enrichment_rerun_requested` when the row already reads
+- A hard kill mid-run leaves the claimed row `in_progress` until the next startup with enrichment enabled: `spawn_queue`
+  reverts every `in_progress` row to `pending` before its first poll, so a fresh worker can reclaim it. `trigger` cannot
+  release it while the process is live: its `UPDATE` only sets `enrichment_rerun_requested` when the row already reads
   `in_progress`, leaving the status itself untouched. The cancellation path repeats the revert for a graceful shutdown.
   As with the "Writeback pipeline" queue, this treats every in-flight row as orphaned at process startup under the
   single-instance deployment decision.
+- With `EnrichmentConfig.enabled = false`, the worker skips `revert_in_progress` entirely. An orphaned row stays
+  `in_progress` until the worker starts with enrichment enabled.
+- A task panic while the process remains alive leaves its row `in_progress`: the spawned task has no panic guard to
+  re-pend it. Startup recovery does not cover this live-process gap in the durable-job-queue ADR's required controls.
+- A run that kills the process never reaches `mark_failed`, where the `Skipped` transition evaluates `max_attempts`.
+  Repeated process crashes therefore do not exhaust the attempt limit. The preserved last-attempt timestamp and counter
+  bound retries through the claim query's backoff schedule, which reaches 24 hours and stays there.
 - `apply_field` rejects a journal value its target column cannot hold: a non-scalar JSON value for a text field, a
   non-positive `pages` value, or a `pub_date` string that fails a round-trip parse against the accepted `YYYY-MM-DD`
   spelling and a `[0001, 9999]` year bound, by returning `false` rather than applying. The journal row stays `pending`

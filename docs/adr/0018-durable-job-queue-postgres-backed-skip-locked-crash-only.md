@@ -138,7 +138,8 @@ non-trivial build that waits for the topology that justifies it.
 ## More information
 
 `backend/src/services/writeback/queue.rs` and `backend/src/services/enrichment/queue.rs` call `revert_in_progress` both
-before they start polling and on shutdown, so an orphaned row is reclaimed on the next process startup.
+before they start polling and on shutdown when enabled, so an orphaned row is reclaimed when the worker next starts with
+processing enabled.
 
 Sibling ADR: [crash-safe state](./0020-durable-crash-safe-state-in-postgres-via-atomic-transactions.md), committed-state
 durability; this ADR is its in-flight-work complement, and the boundary it notes (transactions do not cover filesystem
