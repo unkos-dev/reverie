@@ -37,24 +37,24 @@ It does not own the background flush of an applied canonical value into the on-d
 "Writeback pipeline"; this subject only enqueues a `writeback_jobs` row in the same transaction as the canonical apply
 and never touches a file. It does not own the review queue, the routes that accept, reject or revert it, the manual
 `PATCH` surface, or the HTTP `lock`/`unlock` endpoints: that is the Design "Metadata review and editing"
-(`backend/src/routes/metadata.rs`); this subject's `field_lock.rs` supplies the `lock`/`unlock` functions those
-endpoints call, but the endpoints themselves, and every manual write to `metadata_versions.status`, `resolved_at` and
-`resolved_by`, belong there. It does not own the two-level external-identifier registry or the per-provider rating
-cache: their storage model, validation and cross-surface visibility filtering
-(`backend/src/models/external_identifier.rs`, `backend/src/models/external_rating.rs`); this subject is one of two
-fillers of that registry (a manual edit through the metadata routes is the other) and calls its `get_*`/`upsert_*`
-functions without describing their internals. It does not own the FRBR data model, `works`/`manifestations` themselves,
-or the ISBN-triggered rematch algorithm (`backend/src/models/work.rs::rematch_on_isbn_change`); this subject calls that
-one hook and reacts to its outcome. It does not own the EPUB-ingestion pipeline's metadata extraction or its
-`metadata_versions` writes (`backend/src/services/metadata/draft.rs::write_drafts`, called from
-`backend/src/services/ingestion/orchestrator.rs` at ingestion time with `source = 'opf'`); those rows land in the same
-table this subject's policy engine reads, so an OPF-sourced pending row can itself be the row an enrichment observation
-is checked against for agreement or disagreement in a subsequent run (see State-writer census). It does not own
-`content_rating` as a value type (`backend/src/models/content_rating.rs`) or its child-safety consumption; this subject
-only pins the field's merge policy to `Propose` and never writes the column itself. The cover-download and staging
-module (`cover_download.rs`) has no caller outside its own test module, and `http.rs`'s `cover_client` factory is
-constructed only there. Provider cover URLs are recorded as `cover_url` observations like any other field; nothing in
-the production path fetches, downloads or stages the image such an observation points to.
+(`backend/src/routes/metadata.rs`); this subject's `field_lock.rs` supplies the lock helpers those endpoints call, but
+the endpoints themselves, and every manual write to `metadata_versions.status`, `resolved_at` and `resolved_by`, belong
+there. It does not own the two-level external-identifier registry or the per-provider rating cache: their storage model,
+validation and cross-surface visibility filtering (`backend/src/models/external_identifier.rs`,
+`backend/src/models/external_rating.rs`); this subject is one of two fillers of that registry (a manual edit through the
+metadata routes is the other) and calls its `get_*`/`upsert_*` functions without describing their internals. It does not
+own the FRBR data model, `works`/`manifestations` themselves, or the ISBN-triggered rematch algorithm
+(`backend/src/models/work.rs::rematch_on_isbn_change`); this subject calls that one hook and reacts to its outcome. It
+does not own the EPUB-ingestion pipeline's metadata extraction or its `metadata_versions` writes
+(`backend/src/services/metadata/draft.rs::write_drafts`, called from `backend/src/services/ingestion/orchestrator.rs` at
+ingestion time with `source = 'opf'`); those rows land in the same table this subject's policy engine reads, so an
+OPF-sourced pending row can itself be the row an enrichment observation is checked against for agreement or disagreement
+in a subsequent run (see State-writer census). It does not own `content_rating` as a value type
+(`backend/src/models/content_rating.rs`) or its child-safety consumption; this subject only pins the field's merge
+policy to `Propose` and never writes the column itself. The cover-download and staging module (`cover_download.rs`) has
+no caller outside its own test module, and `http.rs`'s `cover_client` factory is constructed only there. Provider cover
+URLs are recorded as `cover_url` observations like any other field; nothing in the production path fetches, downloads or
+stages the image such an observation points to.
 
 Depends on: the row-level-security mechanism and the ingestion role's unconditional policies the queue and the dry-run's
 fan-out rely on to reach `manifestations` without a per-user session context (the Design "Row-level security and
@@ -95,7 +95,7 @@ metadata counts.
   rows from the manual-edit path and belongs to the Design "Metadata review and editing".
 - `api_cache` rows: written by `cache::write`, called only from `orchestrator::cache_all`, itself called from both the
   production run and the dry-run's fan-out.
-- `field_locks` rows: the write side is `field_lock::lock`/`unlock`, called only from `routes/metadata.rs`'s
+- `field_locks` rows: the write side is `field_lock::lock_tx`/`unlock_tx`, called only from `routes/metadata.rs`'s
   `lock_field`/`unlock_field` (the Design "Metadata review and editing"). This subject only reads them, through
   `field_lock::is_locked`/`is_locked_tx`.
 
@@ -123,8 +123,9 @@ HTTP-triggered, one edit-triggered), not an accidental second writer of the same
 - `policy.rs` is a pure decision function: `default_policy(field)` maps a field name to `AutoFill`, `Propose` or `Lock`,
   and `decide(...)` applies the lock check first, then downgrades `AutoFill` to `Propose` on disagreement with any
   pending observation (from an earlier run or from another source in the same run), then dispatches on emptiness.
-- `field_lock.rs` provides the `field_locks` CRUD: `lock`/`unlock` (called by `routes/metadata.rs`'s endpoints) and
-  `is_locked`/`is_locked_tx` (called by this subject's own `apply_canonical_batch` and by `dry_run::preview`).
+- `field_lock.rs` provides the `field_locks` CRUD: pool wrappers `lock`/`unlock`, transaction-bound
+  `lock_tx`/`unlock_tx` (called by `routes/metadata.rs`'s endpoints), and `is_locked`/`is_locked_tx` (called by this
+  subject's own `apply_canonical_batch` and by `dry_run::preview`).
 - `confidence.rs`, `lookup_key.rs` and `value_hash.rs` are small pure helpers: a source/match-type/quorum scoring
   formula, ISBN and title/author key normalisation (so ISBN-10 and ISBN-13 of the same book, or title strings that
   differ only in case, whitespace or punctuation, converge on one cache key), and a canonical-JSON `SHA-256` hash that

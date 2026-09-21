@@ -94,6 +94,23 @@ pub async fn lock(
     field: &str,
     user_id: Uuid,
 ) -> sqlx::Result<()> {
+    let mut conn = pool.acquire().await?;
+    lock_tx(&mut conn, manifestation_id, entity_type, field, user_id).await
+}
+
+/// Insert a lock using an existing connection, so callers can keep the
+/// manifestation visibility check and lock mutation in one transaction.
+///
+/// # Errors
+///
+/// Returns a [`sqlx::Error`] if the insert fails.
+pub async fn lock_tx(
+    conn: &mut PgConnection,
+    manifestation_id: Uuid,
+    entity_type: EntityType,
+    field: &str,
+    user_id: Uuid,
+) -> sqlx::Result<()> {
     sqlx::query!(
         "INSERT INTO field_locks (manifestation_id, entity_type, field_name, locked_by) \
          VALUES ($1, $2, $3, $4) \
@@ -103,7 +120,7 @@ pub async fn lock(
         field,
         user_id,
     )
-    .execute(pool)
+    .execute(&mut *conn)
     .await?;
     Ok(())
 }
@@ -120,6 +137,22 @@ pub async fn unlock(
     entity_type: EntityType,
     field: &str,
 ) -> sqlx::Result<bool> {
+    let mut conn = pool.acquire().await?;
+    unlock_tx(&mut conn, manifestation_id, entity_type, field).await
+}
+
+/// Remove a lock using an existing connection, so callers can keep the
+/// manifestation visibility check and lock mutation in one transaction.
+///
+/// # Errors
+///
+/// Returns a [`sqlx::Error`] if the delete query fails.
+pub async fn unlock_tx(
+    conn: &mut PgConnection,
+    manifestation_id: Uuid,
+    entity_type: EntityType,
+    field: &str,
+) -> sqlx::Result<bool> {
     let result = sqlx::query!(
         "DELETE FROM field_locks \
          WHERE manifestation_id = $1 AND entity_type = $2 AND field_name = $3",
@@ -127,7 +160,7 @@ pub async fn unlock(
         entity_type.as_str(),
         field,
     )
-    .execute(pool)
+    .execute(&mut *conn)
     .await?;
     Ok(result.rows_affected() > 0)
 }

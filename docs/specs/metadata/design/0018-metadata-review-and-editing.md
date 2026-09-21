@@ -52,12 +52,12 @@ scope: neither `apply_version` nor `clear_field` dispatches on it, and `UpdateMe
 even though a `cover_version_id` canonical-pointer column exists on `manifestations` for another subject to fill.
 
 Depends on: `crate::db::acquire_with_rls` and the `manifestations`/`works` row-level-security policies (Design
-"Row-level security and database context") for every route except lock and unlock; `CurrentUser::require_not_child` and
-`require_scope` (Design "Authorization axes") on every route; `routes::etag::hash_etag`,
-`routes::etag::if_match_mismatch` and `routes::etag::parse_if_match` for the manual `PATCH`'s precondition;
-`services::metadata::isbn` and `services::metadata::external_id` for field-level parsing;
-`routes::library::load_genres_for_manifestations`, `routes::library::load_moods_for_manifestations` and
-`routes::library::load_tags_for_manifestations` to assemble the editable metadata span.
+"Row-level security and database context") for every route; `CurrentUser::require_not_child` and `require_scope` (Design
+"Authorization axes") on every route; `routes::etag::hash_etag`, `routes::etag::if_match_mismatch` and
+`routes::etag::parse_if_match` for the manual `PATCH`'s precondition; `services::metadata::isbn` and
+`services::metadata::external_id` for field-level parsing; `routes::library::load_genres_for_manifestations`,
+`routes::library::load_moods_for_manifestations` and `routes::library::load_tags_for_manifestations` to assemble the
+editable metadata span.
 
 Depended on by: `GET /api/v1/books/{id}` (`backend/src/routes/library/mod.rs`), which reads `metadata_versions` directly
 to populate the book-detail Versions-tab payload: a dependency in the other direction from every other route this
@@ -94,9 +94,9 @@ two write routes, a dependency of the Library table cell editing and undo subjec
   manual edit (PATCH set or clear, on any field family), and `reject_manifestation` updates a row's `status` to
   `rejected`. The enrichment orchestrator is a further writer, inserting the proposed rows this subject's
   `accept_manifestation` reads and promotes without inserting a row of its own.
-- `field_locks` rows: written only by `lock_field`/`unlock_field`, through `field_lock::{lock,unlock}`. The enrichment
-  orchestrator reads this table, via `field_lock::is_locked_tx`, to produce the flag computed in advance that its
-  automatic-apply decision consumes; neither the orchestrator nor the decision itself writes it.
+- `field_locks` rows: written only by `lock_field`/`unlock_field`, through `field_lock::{lock_tx,unlock_tx}`. The
+  enrichment orchestrator reads this table, via `field_lock::is_locked_tx`, to produce the flag computed in advance that
+  its automatic-apply decision consumes; neither the orchestrator nor the decision itself writes it.
 - `writeback_jobs`: insert-only from this subject, via `enqueue_writeback`, once per pointer-move inside the same
   transaction as the move. The Design "Writeback pipeline" owns every other writer and every reader of this table.
 - The manifestation's `enrichment_status`, `enrichment_rerun_requested`, `enrichment_attempt_count`,
@@ -112,9 +112,9 @@ took the `FOR UPDATE OF m, w` lock at the top of the handler (`accept_manifestat
 `update_book_metadata`); the enrichment orchestrator takes its own `SELECT ... FOR UPDATE` on the same row before its
 own scalar-apply writes. Both are ordinary Postgres row locks on the same physical row, so a concurrent write from
 either subject against the same manifestation or work still serialises against the other, even though the two lock
-statements are not identical. `lock_field` and `unlock_field` are the one exception in this subject: they take no row
-lock and open no transaction at all (see below), so a concurrent lock/unlock and a concurrent accept/revert/PATCH on the
-same manifestation do not serialise against each other.
+statements are not identical. `lock_field` and `unlock_field` also open an RLS-scoped transaction, lock the visible
+manifestation row, and mutate `field_locks` before committing, so a missing or hidden manifestation returns `404` and a
+concurrent manifestation deletion cannot leave the field-lock foreign-key write as an internal error.
 
 ### Component relationships
 
@@ -268,10 +268,11 @@ newly eligible would let a second worker start against the same manifestation co
 is what turns that flag into a fresh eligible row once the in-flight run finishes, since that run's lookup keys, read
 once at the start, may already be stale against the edit.
 
-**Locking a field** (`POST .../metadata/lock`) calls `field_lock::lock(&state.pool, ...)` directly: no
-`acquire_with_rls` transaction, no row lock on the manifestation, and no check that the manifestation exists beyond the
-table's own foreign key. The insert is idempotent (`ON CONFLICT DO NOTHING`); `unlock` deletes and reports `404` when
-nothing matched.
+**Locking or unlocking a field** (`POST .../metadata/lock` or `POST .../metadata/unlock`) opens an `acquire_with_rls`
+transaction, takes `SELECT id FROM manifestations WHERE id = $1 FOR UPDATE`, and returns `404` when the manifestation is
+missing or hidden by the caller's RLS policy. It then calls `field_lock::{lock_tx,unlock_tx}` on the same transaction
+before committing. Lock insertion remains idempotent (`ON CONFLICT DO NOTHING`); unlock reports `404` when the visible
+manifestation has no matching lock.
 
 ## Failure and recovery
 
@@ -292,8 +293,8 @@ nothing matched.
   count was greater than zero, so a manual edit may leave a stub that already has no author still without one (clearing
   it, or patching only `editor`/`translator`, both succeed); accept/revert cannot.
 - `AppError::NotFound` (`404`) for a missing or RLS-hidden manifestation or work on any route that joins one, for a
-  version id that does not belong to the manifestation or eligible sibling named in the request, and for `unlock` when
-  no matching `field_locks` row exists.
+  version id that does not belong to the manifestation or eligible sibling named in the request, for either lock route
+  when its manifestation is missing or hidden, and for `unlock` when no matching `field_locks` row exists.
 - Neither `accept_manifestation` nor `revert_manifestation` filters on the target version's `status`, and
   `reject_manifestation` does not check whether the row it is marking `rejected` is the field's current canonical
   pointer: `status` does not gate promotion. Canonical state is carried entirely by the pointer columns and junction
@@ -324,9 +325,9 @@ filters it there; because the `manifestations` policies already admit every row 
 this subject refuses every other caller outright, that absence of a join-side filter selects the same rows a filtered
 join would have.
 
-`lock_field` and `unlock_field` are the one pair of routes in this subject that do not open an `acquire_with_rls`
-transaction: `field_lock::{lock,unlock}` take a bare `&PgPool`, so these two routes run with no `app.current_user_id`
-session variable set and take no row lock on the manifestation, unlike every other route here.
+`lock_field` and `unlock_field` use `acquire_with_rls`, resolve the manifestation through its RLS policy, and hold its
+row lock while `field_lock::{lock_tx,unlock_tx}` mutates the unprotected `field_locks` table. The visibility check and
+mutation share one transaction, so the foreign-key write cannot race a concurrent manifestation deletion.
 
 Every field-dispatch `match` in `apply_version` and `clear_field` compares the caller-influenced field name against
 fixed string literals (or, for `identifiers.*`, against the registry's own scheme list via
