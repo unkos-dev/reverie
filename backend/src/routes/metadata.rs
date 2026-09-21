@@ -251,14 +251,14 @@ struct LockPayload {
 /// # Errors
 /// - [`AppError::Forbidden`] when the caller is a child account.
 /// - [`AppError::NotFound`] when the version row does not belong to the
-///   manifestation or is RLS-hidden.
+///   manifestation, is not pending, or is RLS-hidden.
 /// - [`AppError::Validation`] when the stored value fails field parsing.
 /// - [`AppError::Internal`] on database errors.
 #[utoipa::path(
     post,
     path = "/api/v1/manifestations/{id}/metadata/accept",
     summary = "Accept a metadata version",
-    description = "Promotes a pending metadata version to canonical for a manifestation; accepting an ISBN change may trigger a re-match against other works. Available to adult accounts only. Returns 422 if the stored value fails field parsing.",
+    description = "Promotes a pending metadata version to canonical for a manifestation; accepting an ISBN change may trigger a re-match against other works. Available to adult accounts only. Returns 404 when the version is missing, belongs to another manifestation, or is not pending; returns 422 if the stored value fails field parsing.",
     tag = "metadata",
     security(("session_cookie" = ["write"]), ("device_token_bearer" = ["write"]), ("oidc_jwt_bearer" = ["write"]), ("opds_basic" = ["write"])),
     params(("id" = Uuid, Path, description = "Manifestation id")),
@@ -267,7 +267,7 @@ struct LockPayload {
         (status = 200, description = "Version promoted to canonical; accepted ISBN changes may re-match the work"),
         (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 403, description = "Caller is a child account", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
-        (status = 404, description = "Version not found for this manifestation, or RLS-hidden", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
+        (status = 404, description = "Version not found for this manifestation, not pending, or RLS-hidden", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 422, description = "Stored value fails field parsing", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
     )
 )]
@@ -292,6 +292,7 @@ async fn accept_manifestation(
          JOIN manifestations m ON m.id = mv.manifestation_id \
          JOIN works w ON w.id = m.work_id \
          WHERE mv.id = $1 AND mv.manifestation_id = $2 \
+           AND mv.status = 'pending'::metadata_review_status \
          FOR UPDATE OF m, w",
         payload.version_id,
         manifestation_id,
@@ -3155,6 +3156,15 @@ mod tests {
                 .expect("fetch title_version_id");
         assert_eq!(pointer, Some(version_id), "version pointer not wired");
 
+        let status: String = sqlx::query_scalar!(
+            "SELECT status::text AS \"status!\" FROM metadata_versions WHERE id = $1",
+            version_id,
+        )
+        .fetch_one(&app_pool)
+        .await
+        .expect("fetch version status");
+        assert_eq!(status, "pending", "accepted rows retain pending status");
+
         // Accept must have enqueued exactly one writeback_jobs row.
         let job_count: i64 = sqlx::query_scalar!(
             "SELECT count(*) AS \"count!\" FROM writeback_jobs WHERE manifestation_id = $1",
@@ -3167,6 +3177,83 @@ mod tests {
             job_count, 1,
             "accept must enqueue exactly one writeback job; got {job_count}"
         );
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn accept_rejects_rejected_version_without_side_effects(pool: sqlx::PgPool) {
+        let app_pool = test_support::db::app_pool_for(&pool).await;
+        let ing_pool = test_support::db::ingestion_pool_for(&pool).await;
+        let (admin_id, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+        let marker = Uuid::new_v4().simple().to_string();
+        let (work_id, m_id) =
+            test_support::db::insert_work_and_manifestation(&ing_pool, &marker).await;
+        let before = sqlx::query!(
+            "SELECT title, title_version_id FROM works WHERE id = $1",
+            work_id,
+        )
+        .fetch_one(&app_pool)
+        .await
+        .expect("fetch initial canonical title");
+        let version_id = insert_version(
+            &ing_pool,
+            m_id,
+            "title",
+            serde_json::json!(format!("Rejected Title {marker}")),
+        )
+        .await;
+
+        sqlx::query!(
+            "UPDATE metadata_versions \
+             SET status = 'rejected', resolved_by = $1, resolved_at = now() \
+             WHERE id = $2",
+            admin_id,
+            version_id,
+        )
+        .execute(&ing_pool)
+        .await
+        .expect("reject version");
+
+        let server = test_support::db::server_with_real_pools(&app_pool, &ing_pool);
+        let accept = server
+            .post(&format!("/api/v1/manifestations/{m_id}/metadata/accept"))
+            .add_header(AUTHORIZATION, basic)
+            .json(&serde_json::json!({"version_id": version_id}))
+            .await;
+        test_support::assert_problem(&accept, problems::NOT_FOUND, StatusCode::NOT_FOUND);
+
+        let after = sqlx::query!(
+            "SELECT title, title_version_id FROM works WHERE id = $1",
+            work_id,
+        )
+        .fetch_one(&app_pool)
+        .await
+        .expect("fetch canonical title after rejected accept");
+        assert_eq!(
+            after.title, before.title,
+            "rejected version changed the title"
+        );
+        assert_eq!(
+            after.title_version_id, before.title_version_id,
+            "rejected version changed the title pointer"
+        );
+
+        let status: String = sqlx::query_scalar!(
+            "SELECT status::text AS \"status!\" FROM metadata_versions WHERE id = $1",
+            version_id,
+        )
+        .fetch_one(&app_pool)
+        .await
+        .expect("fetch rejected version status");
+        assert_eq!(status, "rejected");
+
+        let job_count: i64 = sqlx::query_scalar!(
+            "SELECT count(*) AS \"count!\" FROM writeback_jobs WHERE manifestation_id = $1",
+            m_id,
+        )
+        .fetch_one(&app_pool)
+        .await
+        .expect("fetch writeback job count");
+        assert_eq!(job_count, 0, "rejected accept must not enqueue writeback");
     }
 
     #[sqlx::test(migrations = "./migrations")]

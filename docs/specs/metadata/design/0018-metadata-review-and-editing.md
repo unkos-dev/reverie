@@ -233,8 +233,8 @@ same manifestation do not serialise against each other.
 
 **Accepting a pending enrichment draft (the Versions tab's Accept button) for `isbn_13`.**
 
-1. `accept_manifestation` locks the version row's manifestation and work (`FOR UPDATE OF m, w`) in the same query that
-   fetches the row, `404` if the version id does not belong to that manifestation.
+1. `accept_manifestation` selects only a `pending` version for the requested manifestation and locks the manifestation
+   and work (`FOR UPDATE OF m, w`) in the same query. A missing, mismatched, or non-pending version returns `404`.
 2. `apply_version` rejects the row outright if its `new_value` is JSON `null` (a manual-clear audit row, never a draft
    eligible for promotion), `422`. Otherwise it normalises the string, runs the `isbn_13` `UPDATE ... RETURNING`, and
    swaps the pointer.
@@ -257,7 +257,8 @@ revert-to-version copies the targeted `metadata_versions` row's value onto the c
 `*_version_id` (or the junction rows' `source_version_id`) to that row's id, whatever that row's own `status` reads;
 revert-to-null sets both the canonical column and its pointer to `NULL`. Neither branch changes any `metadata_versions`
 row's `status`, so the version that was canonical before the revert, and every other pending or rejected draft for the
-field, stays in the journal unchanged and remains available to a subsequent accept or revert.
+field, stays in the journal unchanged. Pending drafts remain available to a subsequent accept or revert; rejected drafts
+remain available to a subsequent revert.
 
 **A manual identifier edit while enrichment is `in_progress`, for the same manifestation.**
 
@@ -294,11 +295,11 @@ nothing matched.
 - `AppError::NotFound` (`404`) for a missing or RLS-hidden manifestation or work on any route that joins one, for a
   version id that does not belong to the manifestation or eligible sibling named in the request, and for `unlock` when
   no matching `field_locks` row exists.
-- Neither `accept_manifestation` nor `revert_manifestation` filters on the target version's `status`, and
-  `reject_manifestation` does not check whether the row it is marking `rejected` is the field's current canonical
-  pointer: `status` does not gate promotion. Canonical state is carried entirely by the pointer columns and junction
-  `source_version_id`s, never by this enum, so a pointer can reference a `metadata_versions` row whose `status` reads
-  `rejected`.
+- `accept_manifestation` filters the target version at `status = 'pending'`; `revert_manifestation` accepts a target
+  version at either status so it can restore a prior journal entry. `reject_manifestation` does not check whether the
+  row it is marking `rejected` is the field's current canonical pointer. Canonical state is carried entirely by the
+  pointer columns and junction `source_version_id`s, never by this enum, so a pointer can reference a
+  `metadata_versions` row whose `status` reads `rejected`.
 - A `field_locks` row constrains only the enrichment policy engine's automatic apply decision; the manual `PATCH`
   surface in this subject never reads `field_locks`, so a manual edit overwrites a locked field the same as an unlocked
   one.
