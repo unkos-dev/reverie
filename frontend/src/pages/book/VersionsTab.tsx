@@ -234,6 +234,7 @@ function PendingRow({ manifestationId, field, row }: PendingRowProps): ReactElem
     },
     onError: (err: unknown) => {
       console.error("[VersionsTab.acceptVersion] mutation failed", err);
+      void invalidate();
       toast.error(formatError(err));
     },
   });

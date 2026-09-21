@@ -233,14 +233,20 @@ same manifestation do not serialise against each other.
 
 **Accepting a pending enrichment draft (the Versions tab's Accept button) for `isbn_13`.**
 
-1. `accept_manifestation` selects only a `pending` version for the requested manifestation and locks the manifestation
-   and work (`FOR UPDATE OF m, w`) in the same query. A missing, mismatched, or non-pending version returns `404`.
-2. `apply_version` rejects the row outright if its `new_value` is JSON `null` (a manual-clear audit row, never a draft
+1. Accept and reject open Read Committed RLS transactions and acquire a transaction advisory lock keyed by the version
+   ID in the metadata-review namespace before accessing the version. Acceptance reads eligibility in a subsequent
+   statement, so a rejection committed while it waits is visible. The lock lasts through commit or rollback; it
+   serialises these two endpoints for one version, not metadata updates generally.
+2. `accept_manifestation` selects only a `pending` version for the requested manifestation and locks the manifestation
+   and work (`FOR UPDATE OF m, w`) in the same query. A missing, mismatched, or non-pending version returns `404`: none
+   identifies an eligible draft for this operation. The Versions tab refreshes book details after failed acceptance to
+   reconcile stale drafts.
+3. `apply_version` rejects the row outright if its `new_value` is JSON `null` (a manual-clear audit row, never a draft
    eligible for promotion), `422`. Otherwise it normalises the string, runs the `isbn_13` `UPDATE ... RETURNING`, and
    swaps the pointer.
-3. Because the field is an ISBN, `work::rematch_on_isbn_change` runs before commit: accepting an ISBN draft can regroup
+4. Because the field is an ISBN, `work::rematch_on_isbn_change` runs before commit: accepting an ISBN draft can regroup
    the manifestation under a different work.
-4. `enqueue_writeback` inserts a `writeback_jobs` row in the same transaction the pointer moved in.
+5. `enqueue_writeback` inserts a `writeback_jobs` row in the same transaction the pointer moved in.
 
 **Reverting a field, to a specific version versus to null.**
 

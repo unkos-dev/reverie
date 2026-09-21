@@ -1,14 +1,19 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, test } from "vite-plus/test";
+import { describe, expect, test, vi } from "vite-plus/test";
 import { RouterProvider, createMemoryRouter, type RouteObject } from "react-router";
 import type { ReactElement } from "react";
 
-import type { BookDetail } from "@/api";
+import { acceptVersion, getBook, ApiError, type BookDetail } from "@/api";
 import { queryKeys } from "@/lib/query/keys";
 
 import { BookPage } from "./BookPage";
+
+vi.mock("@/api", async (importOriginal) => {
+  const original = await importOriginal<Record<string, unknown>>();
+  return { ...original, acceptVersion: vi.fn(), getBook: vi.fn() };
+});
 
 function bookFixture(overrides: Partial<BookDetail> = {}): BookDetail {
   return {
@@ -123,6 +128,44 @@ describe("BookPage", () => {
     // Manual edit button is always present.
     expect(within(panel).getByRole("button", { name: /edit metadata/i })).toBeInTheDocument();
   });
+
+  test.each(["success", "rejected"])(
+    "refreshes the draft list after %s acceptance",
+    async (outcome) => {
+      const user = userEvent.setup();
+      const book = bookFixture({
+        metadata_version_summary: { pending: 1, accepted: 0 },
+        metadata_versions: [
+          {
+            id: "v-1",
+            field_name: "title",
+            source: "openlibrary",
+            new_value: "Alt Title",
+            status: "pending",
+            confidence_score: 0.91,
+            match_type: "isbn",
+            observation_count: 1,
+          },
+        ],
+      });
+      vi.mocked(getBook).mockResolvedValue(bookFixture());
+      if (outcome === "success") {
+        vi.mocked(acceptVersion).mockResolvedValue(undefined);
+      } else {
+        vi.mocked(acceptVersion).mockRejectedValue(
+          new ApiError(404, null, "Not Found", "Draft is no longer available"),
+        );
+      }
+      renderBook(book);
+      await user.click(await screen.findByRole("tab", { name: /versions/i }));
+      expect(screen.getByText("Alt Title")).toBeInTheDocument();
+      await user.click(screen.getByRole("button", { name: /accept/i }));
+      await waitFor(() => {
+        expect(screen.queryByText("Alt Title")).not.toBeInTheDocument();
+      });
+      expect(screen.queryByRole("button", { name: /accept/i })).not.toBeInTheDocument();
+    },
+  );
 
   test("falls back to italic placeholder when description is null", async () => {
     renderBook(bookFixture({ description: null }));
