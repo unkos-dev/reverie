@@ -687,6 +687,111 @@ async fn reorder_rejects_repeated_item(pool: PgPool) {
 }
 
 #[sqlx::test(migrations = "./migrations")]
+async fn get_other_users_shelf_returns_404(pool: PgPool) {
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let (_a_id, _a_basic, a_shelf, _ids) =
+        make_owner_shelf_and_books(&pool, &app_pool, &ingestion_pool, "get-owner", 1).await;
+    let (_b_id, b_basic) =
+        test_support::db::create_adult_and_basic_auth(&app_pool, "get-other").await;
+    let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+
+    let r = server
+        .get(&format!("/api/v1/shelves/{a_shelf}"))
+        .add_header(auth(&b_basic).0, auth(&b_basic).1)
+        .await;
+    test_support::assert_problem(&r, problems::NOT_FOUND, StatusCode::NOT_FOUND);
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn add_item_to_other_users_shelf_returns_404(pool: PgPool) {
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let (_a_id, _a_basic, a_shelf, _ids) =
+        make_owner_shelf_and_books(&pool, &app_pool, &ingestion_pool, "add-owner", 1).await;
+    let (_b_id, b_basic) =
+        test_support::db::create_adult_and_basic_auth(&app_pool, "add-other").await;
+    let (_w, b_visible) =
+        test_support::db::insert_work_and_manifestation(&ingestion_pool, "add-other-book").await;
+    let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+
+    let r = server
+        .post(&format!("/api/v1/shelves/{a_shelf}/items"))
+        .add_header(auth(&b_basic).0, auth(&b_basic).1)
+        .json(&json!({"manifestation_id": b_visible}))
+        .await;
+    test_support::assert_problem(&r, problems::NOT_FOUND, StatusCode::NOT_FOUND);
+
+    let count: i64 = sqlx::query_scalar!(
+        "SELECT count(*) AS \"count!\" FROM shelf_items WHERE shelf_id = $1",
+        a_shelf,
+    )
+    .fetch_one(&app_pool)
+    .await
+    .expect("fetch item count");
+    assert_eq!(count, 1, "another account's add must not change the shelf");
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn remove_item_from_other_users_shelf_returns_404(pool: PgPool) {
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let (_a_id, _a_basic, a_shelf, ids) =
+        make_owner_shelf_and_books(&pool, &app_pool, &ingestion_pool, "remove-owner", 1).await;
+    let (_b_id, b_basic) =
+        test_support::db::create_adult_and_basic_auth(&app_pool, "remove-other").await;
+    let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+
+    let r = server
+        .delete(&format!("/api/v1/shelves/{a_shelf}/items/{}", ids[0]))
+        .add_header(auth(&b_basic).0, auth(&b_basic).1)
+        .await;
+    test_support::assert_problem(&r, problems::NOT_FOUND, StatusCode::NOT_FOUND);
+
+    let count: i64 = sqlx::query_scalar!(
+        "SELECT count(*) AS \"count!\" FROM shelf_items WHERE shelf_id = $1",
+        a_shelf,
+    )
+    .fetch_one(&app_pool)
+    .await
+    .expect("fetch item count");
+    assert_eq!(count, 1, "another account's remove must not change the shelf");
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn reorder_other_users_shelf_returns_404(pool: PgPool) {
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let (_a_id, a_basic, a_shelf, ids) =
+        make_owner_shelf_and_books(&pool, &app_pool, &ingestion_pool, "reorder-owner", 2).await;
+    let (_b_id, b_basic) =
+        test_support::db::create_adult_and_basic_auth(&app_pool, "reorder-other").await;
+    let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+    let initial = server
+        .get(&format!("/api/v1/shelves/{a_shelf}"))
+        .add_header(auth(&a_basic).0.clone(), auth(&a_basic).1.clone())
+        .await;
+    let etag = etag_value(initial.headers());
+
+    let r = server
+        .put(&format!("/api/v1/shelves/{a_shelf}/items"))
+        .add_header(auth(&b_basic).0, auth(&b_basic).1)
+        .add_header(header::IF_MATCH, HeaderValue::from_str(&etag).unwrap())
+        .json(&json!({"items": [ids[1], ids[0]]}))
+        .await;
+    test_support::assert_problem(&r, problems::NOT_FOUND, StatusCode::NOT_FOUND);
+
+    let first: Uuid = sqlx::query_scalar!(
+        "SELECT manifestation_id FROM shelf_items WHERE shelf_id = $1 ORDER BY position LIMIT 1",
+        a_shelf,
+    )
+    .fetch_one(&app_pool)
+    .await
+    .expect("fetch first item");
+    assert_eq!(first, ids[0], "another account's reorder must not change the order");
+}
+
+#[sqlx::test(migrations = "./migrations")]
 async fn reorder_with_non_quoted_if_match_returns_422(pool: PgPool) {
     let app_pool = test_support::db::app_pool_for(&pool).await;
     let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
