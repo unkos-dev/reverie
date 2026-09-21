@@ -649,6 +649,44 @@ async fn reorder_rejects_partial_list(pool: PgPool) {
 }
 
 #[sqlx::test(migrations = "./migrations")]
+async fn reorder_rejects_repeated_item(pool: PgPool) {
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let (_uid, basic, shelf_id, ids) =
+        make_owner_shelf_and_books(&pool, &app_pool, &ingestion_pool, "repeat", 2).await;
+    let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+    let initial = server
+        .get(&format!("/api/v1/shelves/{shelf_id}"))
+        .add_header(auth(&basic).0.clone(), auth(&basic).1.clone())
+        .await;
+    let etag = etag_value(initial.headers());
+
+    let r = server
+        .put(&format!("/api/v1/shelves/{shelf_id}/items"))
+        .add_header(auth(&basic).0.clone(), auth(&basic).1.clone())
+        .add_header(header::IF_MATCH, HeaderValue::from_str(&etag).unwrap())
+        .json(&json!({"items": [ids[0], ids[0]]}))
+        .await;
+    test_support::assert_problem(&r, problems::VALIDATION, StatusCode::UNPROCESSABLE_ENTITY);
+
+    let positions: Vec<(Uuid, i32)> = sqlx::query!(
+        "SELECT manifestation_id, position FROM shelf_items WHERE shelf_id = $1 ORDER BY position",
+        shelf_id,
+    )
+    .fetch_all(&app_pool)
+    .await
+    .expect("fetch positions")
+    .into_iter()
+    .map(|row| (row.manifestation_id, row.position))
+    .collect();
+    assert_eq!(
+        positions,
+        vec![(ids[0], 0), (ids[1], 1)],
+        "a refused reorder leaves every position untouched"
+    );
+}
+
+#[sqlx::test(migrations = "./migrations")]
 async fn reorder_with_non_quoted_if_match_returns_422(pool: PgPool) {
     let app_pool = test_support::db::app_pool_for(&pool).await;
     let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;

@@ -957,10 +957,16 @@ async fn reorder_shelf_items(
         )));
     }
     let current_set: std::collections::HashSet<Uuid> = current.iter().copied().collect();
+    let mut seen: std::collections::HashSet<Uuid> = std::collections::HashSet::new();
     for item in &req.items {
         if !current_set.contains(item) {
             return Err(AppError::Validation(format!(
                 "manifestation {item} is not on this shelf"
+            )));
+        }
+        if !seen.insert(*item) {
+            return Err(AppError::Validation(format!(
+                "manifestation {item} appears more than once"
             )));
         }
     }
