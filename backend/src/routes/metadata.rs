@@ -247,14 +247,14 @@ struct LockPayload {
 /// # Errors
 /// - [`AppError::Forbidden`] when the caller is a child account.
 /// - [`AppError::NotFound`] when the version row does not belong to the
-///   manifestation, is not pending, or is RLS-hidden.
+///   manifestation, is already rejected, or is RLS-hidden.
 /// - [`AppError::Validation`] when the stored value fails field parsing.
 /// - [`AppError::Internal`] on database errors.
 #[utoipa::path(
     post,
     path = "/api/v1/manifestations/{id}/metadata/accept",
     summary = "Accept a metadata version",
-    description = "Promotes a pending metadata version to canonical for a manifestation; accepting an ISBN change may trigger a re-match against other works. Available to adult accounts only. Returns 404 when the version is missing, belongs to another manifestation, or is not pending; returns 422 if the stored value fails field parsing.",
+    description = "Promotes a pending metadata version to canonical for a manifestation. Acceptance leaves review status pending; repeated acceptance is allowed and enqueues another writeback job for file-backed fields. Accepting an ISBN change may trigger a re-match against other works. Available to adult accounts only. Returns 404 when the version is missing, belongs to another manifestation, or is already rejected; returns 422 if the stored value fails field parsing.",
     tag = "metadata",
     security(("session_cookie" = ["write"]), ("device_token_bearer" = ["write"]), ("oidc_jwt_bearer" = ["write"]), ("opds_basic" = ["write"])),
     params(("id" = Uuid, Path, description = "Manifestation id")),
@@ -263,7 +263,7 @@ struct LockPayload {
         (status = 200, description = "Version promoted to canonical; accepted ISBN changes may re-match the work"),
         (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 403, description = "Caller is a child account", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
-        (status = 404, description = "Version not found for this manifestation, not pending, or RLS-hidden", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
+        (status = 404, description = "Version not found for this manifestation, already rejected, or RLS-hidden", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 422, description = "Stored value fails field parsing", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
     )
 )]

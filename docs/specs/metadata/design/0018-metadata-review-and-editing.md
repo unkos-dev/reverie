@@ -236,11 +236,13 @@ same manifestation do not serialise against each other.
 1. Accept and reject open Read Committed RLS transactions and acquire a transaction advisory lock keyed by the version
    ID in the metadata-review namespace before accessing the version. Acceptance reads eligibility in a subsequent
    statement, so a rejection committed while it waits is visible. The lock lasts through commit or rollback; it
-   serialises these two endpoints for one version, not metadata updates generally.
+   serialises these two endpoints for one version, not metadata updates generally. If acceptance commits first,
+   subsequent rejection still succeeds without undoing the canonical value or its queued writeback.
 2. `accept_manifestation` selects only a `pending` version for the requested manifestation and locks the manifestation
-   and work (`FOR UPDATE OF m, w`) in the same query. A missing, mismatched, or non-pending version returns `404`: none
-   identifies an eligible draft for this operation. The Versions tab refreshes book details after failed acceptance to
-   reconcile stale drafts.
+   and work (`FOR UPDATE OF m, w`) in the same query. A missing, mismatched, or already-rejected version returns `404`:
+   none identifies an eligible draft for this operation. The Versions tab refreshes book details after failed acceptance
+   to reconcile stale drafts. Acceptance leaves review status `pending`; canonical pointers record promotion. Repeated
+   acceptance remains allowed and enqueues another writeback job for file-backed fields.
 3. `apply_version` rejects the row outright if its `new_value` is JSON `null` (a manual-clear audit row, never a draft
    eligible for promotion), `422`. Otherwise it normalises the string, runs the `isbn_13` `UPDATE ... RETURNING`, and
    swaps the pointer.
