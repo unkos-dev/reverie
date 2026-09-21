@@ -131,7 +131,7 @@ conflict detection.
   module's own doc comment states this is deliberate: reading state is self-scoped personal data a child account manages
   for itself, not shared-library curation.
 - **`notes`.** Accepts up to 10,000 characters on the wire and in the client's `UpdateReadingFields` type, but no
-  editing surface in the client writes it today; the only client mutation paths are the status and rating editors.
+  editing surface in the client writes it; the only client mutation paths are the status and rating editors.
 - **`progress_pct`.** Has no direct client write path: the only non-null value the API can ever produce is `100.0`,
   stamped when a patch sets `status` to `finished`. No code path in `apply_patch` sets it to any other non-null value,
   and none clears a set value back to `null`.
