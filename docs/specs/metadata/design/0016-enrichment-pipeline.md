@@ -123,9 +123,9 @@ HTTP-triggered, one edit-triggered), not an accidental second writer of the same
 - `policy.rs` is a pure decision function: `default_policy(field)` maps a field name to `AutoFill`, `Propose` or `Lock`,
   and `decide(...)` applies the lock check first, then downgrades `AutoFill` to `Propose` on disagreement with any
   pending observation (from an earlier run or from another source in the same run), then dispatches on emptiness.
-- `field_lock.rs` provides the `field_locks` CRUD: pool wrappers `lock`/`unlock`, transaction-bound
-  `lock_tx`/`unlock_tx` (called by `routes/metadata.rs`'s endpoints), and `is_locked`/`is_locked_tx` (called by this
-  subject's own `apply_canonical_batch` and by `dry_run::preview`).
+- `field_lock.rs` provides connection-based `lock_tx`/`unlock_tx`, called within the metadata endpoints'
+  visibility-checked transactions. `is_locked`/`is_locked_tx` read locks for `dry_run::preview` and
+  `apply_canonical_batch` respectively.
 - `confidence.rs`, `lookup_key.rs` and `value_hash.rs` are small pure helpers: a source/match-type/quorum scoring
   formula, ISBN and title/author key normalisation (so ISBN-10 and ISBN-13 of the same book, or title strings that
   differ only in case, whitespace or punctuation, converge on one cache key), and a canonical-JSON `SHA-256` hash that
