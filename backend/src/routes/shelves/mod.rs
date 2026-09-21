@@ -882,8 +882,8 @@ struct ReorderItemsRequest {
 /// # Errors
 /// - [`AppError::IfMatchRequired`] (428) when the header is absent.
 /// - [`AppError::Validation`] when the header is malformed or the
-///   posted items list contains UUIDs that are not currently on the
-///   shelf.
+///   posted items list does not name every item currently on the
+///   shelf exactly once.
 /// - [`AppError::NotFound`] when the shelf is missing / not owned.
 /// - [`AppError::IfMatchMismatch`] (412) when the `ETag` does not match.
 /// - [`AppError::Internal`] on database errors.
