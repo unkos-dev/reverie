@@ -20,7 +20,7 @@ This Design covers the server half of `GET /api/v1/books`: the typed per-column 
 decode-versus-validation split, the whitelisted multi-level sort stack, the tagged opaque cursor family that binds a
 page boundary to the exact sort stack and filter set it was minted under, and the dynamic query this all assembles. The
 client half — how the browser represents, writes and round-trips this same state — is a separate subject, the Design
-"Library filter and sort state", which names this one as the backend contract it targets and disclaims owning any of it.
+"Library filter and sort state", which disclaims owning any of the server-side contract this Design describes.
 
 ## Purpose and boundaries
 

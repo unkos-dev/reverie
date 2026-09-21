@@ -940,8 +940,8 @@ async fn reorder_shelf_items(
         return Err(AppError::IfMatchMismatch);
     }
 
-    // Refuse a list whose length or membership differs from the shelf's
-    // current items; a same-length list that repeats one member passes.
+    // Refuse partial reorders so the operator either sees the full
+    // new order or none of it.
     let current: Vec<Uuid> = sqlx::query_scalar!(
         "SELECT manifestation_id FROM shelf_items WHERE shelf_id = $1",
         id,

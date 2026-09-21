@@ -5,6 +5,7 @@ id: "REV-DESIGN-0020"
 title: "Shelves"
 satisfies:
   - "REV-REQ-0020"
+  - "REV-REQ-0057"
   - "REV-REQ-0059"
 governed-by:
   - "REV-ADR-0028"
@@ -270,13 +271,14 @@ a concurrent write lands mid-walk (see Failure and recovery for what a client do
   unquoted value, or an RFC 3339 timestamp that does not parse, with `AppError::Validation` (422). The Design
   "Conditional requests and optimistic concurrency" owns this parser, its divergence from the shared module's `400`, and
   the set of malformed forms each one checks for.
-- **Partial or foreign reorder set.** A posted item list whose length does not match the shelf's current item count, or
-  that names an id not on the shelf, returns `AppError::Validation` (422) before any `UPDATE` runs; the
-  length-and-membership check happens inside the same transaction as the `FOR UPDATE` lock, so nothing is rewritten if
-  the check fails. The check is length equality plus per-element membership, so a posted list that repeats one current
-  id in place of another current id passes both checks; the following `UPDATE … FROM unnest(...)` then leaves the
-  omitted item's position unchanged and gives the repeated id one of its two supplied positions, and the request answers
-  `204`. The client builds the posted list from the shelf's own current items, so it never sends a list shaped this way.
+- **Partial, foreign or repeated reorder set.** A posted item list whose length does not match the shelf's current item
+  count, that names an id not on the shelf, or that names one id more than once, returns `AppError::Validation` (422)
+  before any `UPDATE` runs; the length, membership and repetition checks happen inside the same transaction as the
+  `FOR UPDATE` lock, so nothing is rewritten if any check fails. Together the three checks prove the posted list is a
+  permutation of the shelf's current items.
+- **Cursor from another list.** `ShelfCursor::parse` and `ShelfItemCursor::parse` accept only their own tag (`sh`, `si`)
+  and refuse a cursor minted by the books list or by the other shelf list with `AppError::Validation` (422), so a cursor
+  never positions a walk in a list it was not cut from.
 - **A child probing shelf existence via manifestation ids.** Covered in Runtime behaviour: the RLS-scoped probe in
   `add_shelf_item` and the ownership check both resolve to the same `AppError::NotFound`, so a child cannot distinguish
   "no such shelf" from "shelf is yours but that manifestation isn't visible to you".
@@ -295,13 +297,16 @@ a concurrent write lands mid-walk (see Failure and recovery for what a client do
 
 Ownership of a `shelves` or `shelf_items` row is enforced entirely by the `WHERE user_id = $current_user` (or the
 equivalent join through `shelves`) predicate each handler writes into its own query, because neither table carries a
-row-level-security policy. This is a documented, deliberate divergence from the pattern the Design "Row-level security
-and database context" covers for most other per-user tables. There is no database-level fallback if one of these
-predicates is dropped: the `reverie_app` role's grant on both tables is unconditional, so a query missing its ownership
-clause would compile, run, and return rows across every account. The `add_shelf_item` row-level-security probe is the
-one place this subject touches that mechanism, and only to prevent an existence-probing attack against manifestation
-visibility, never to scope the shelf itself. This is the ownership axis REV-ADR-0028 assigns to the data layer, enforced
-by this subject on every route regardless of the additional role gate three of them apply.
+row-level-security policy. Not every statement repeats the predicate: the shelf `DELETE`, the reorder `UPDATE` and the
+`updated_at` bump in the item handlers run against the id alone, and inherit ownership from the ownership-bound
+`SELECT ... FOR UPDATE` that precedes them in the same transaction. This is a documented, deliberate divergence from the
+pattern the Design "Row-level security and database context" covers for most other per-user tables. There is no
+database-level fallback if one of these predicates is dropped: the `reverie_app` role's grant on both tables is
+unconditional, so a query missing its ownership clause would compile, run, and return rows across every account. The
+`add_shelf_item` row-level-security probe is the one place this subject touches that mechanism, and only to prevent an
+existence-probing attack against manifestation visibility, never to scope the shelf itself. This is the ownership axis
+REV-ADR-0028 assigns to the data layer, enforced by this subject on every route regardless of the additional role gate
+three of them apply.
 
 Read access to a shelf and its items requires no more than the operation's declared `read` scope and no role check
 beyond ownership: a child account can view its own shelves and items. Adding, removing, and reordering items likewise
