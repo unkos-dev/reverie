@@ -493,6 +493,8 @@ async fn revert_manifestation(
 ///
 /// # Errors
 /// - [`AppError::Forbidden`] when the caller is a child account.
+/// - [`AppError::NotFound`] when the manifestation is missing or hidden by
+///   RLS for the current user.
 /// - [`AppError::Validation`] when `entity_type` is not `work` /
 ///   `manifestation`.
 /// - [`AppError::Internal`] on database errors.
@@ -509,6 +511,7 @@ async fn revert_manifestation(
         (status = 201, description = "Lock recorded (idempotent)"),
         (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 403, description = "Caller is a child account", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
+        (status = 404, description = "Manifestation missing or RLS-hidden (existence-not-leaked)", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 422, description = "Unknown entity_type", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
     )
 )]
@@ -521,8 +524,12 @@ async fn lock_field(
     current_user.require_scope(Scope::Write)?;
     current_user.require_not_child()?;
     let entity = parse_entity(&payload.entity_type)?;
-    field_lock::lock(
-        &state.pool,
+    let mut tx = db::acquire_with_rls(&state.pool, current_user.user_id)
+        .await
+        .map_err(|e| AppError::Internal(e.into()))?;
+    lock_visible_manifestation(&mut tx, manifestation_id).await?;
+    field_lock::lock_tx(
+        &mut tx,
         manifestation_id,
         entity,
         &payload.field_name,
@@ -530,6 +537,9 @@ async fn lock_field(
     )
     .await
     .map_err(|e| AppError::Internal(e.into()))?;
+    tx.commit()
+        .await
+        .map_err(|e| AppError::Internal(e.into()))?;
     Ok(StatusCode::CREATED)
 }
 
@@ -538,7 +548,8 @@ async fn lock_field(
 ///
 /// # Errors
 /// - [`AppError::Forbidden`] when the caller is a child account.
-/// - [`AppError::NotFound`] when no matching lock exists.
+/// - [`AppError::NotFound`] when the manifestation is missing or hidden by
+///   RLS for the current user, or when no matching lock exists.
 /// - [`AppError::Validation`] when `entity_type` is not `work` /
 ///   `manifestation`.
 /// - [`AppError::Internal`] on database errors.
@@ -555,7 +566,7 @@ async fn lock_field(
         (status = 200, description = "Lock removed"),
         (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 403, description = "Caller is a child account", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
-        (status = 404, description = "No matching lock", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
+        (status = 404, description = "Manifestation missing or RLS-hidden, or no matching lock", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 422, description = "Unknown entity_type", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
     )
 )]
@@ -568,13 +579,36 @@ async fn unlock_field(
     current_user.require_scope(Scope::Write)?;
     current_user.require_not_child()?;
     let entity = parse_entity(&payload.entity_type)?;
-    let removed = field_lock::unlock(&state.pool, manifestation_id, entity, &payload.field_name)
+    let mut tx = db::acquire_with_rls(&state.pool, current_user.user_id)
+        .await
+        .map_err(|e| AppError::Internal(e.into()))?;
+    lock_visible_manifestation(&mut tx, manifestation_id).await?;
+    let removed = field_lock::unlock_tx(&mut tx, manifestation_id, entity, &payload.field_name)
         .await
         .map_err(|e| AppError::Internal(e.into()))?;
     if !removed {
         return Err(AppError::NotFound);
     }
+    tx.commit()
+        .await
+        .map_err(|e| AppError::Internal(e.into()))?;
     Ok(StatusCode::OK)
+}
+
+/// Resolve a manifestation through the caller's RLS context and hold its row
+/// lock while a field lock mutation runs.
+async fn lock_visible_manifestation(
+    tx: &mut Transaction<'_, Postgres>,
+    manifestation_id: Uuid,
+) -> Result<(), AppError> {
+    let visible = sqlx::query_scalar!(
+        "SELECT id FROM manifestations WHERE id = $1 FOR UPDATE",
+        manifestation_id,
+    )
+    .fetch_optional(&mut **tx)
+    .await
+    .map_err(|e| AppError::Internal(e.into()))?;
+    visible.ok_or(AppError::NotFound).map(|_| ())
 }
 
 /// Whether `field_name`'s canonical pointer lives on the shared `works`
@@ -6816,7 +6850,7 @@ mod tests {
         let etag = etag_value(initial.headers());
         let patch_response = server
             .patch(&format!("/api/v1/books/{m_id}/metadata"))
-            .add_header(AUTHORIZATION, basic)
+            .add_header(AUTHORIZATION, basic.clone())
             .add_header(
                 axum::http::header::IF_MATCH,
                 axum::http::HeaderValue::from_str(&etag).unwrap(),
@@ -6839,6 +6873,57 @@ mod tests {
         .await
         .expect("fetch content_rating");
         assert_eq!(rating, Some(ContentRating::Mature));
+
+        let unlock_response = server
+            .post(&format!("/api/v1/manifestations/{m_id}/metadata/unlock"))
+            .add_header(AUTHORIZATION, basic.clone())
+            .json(&serde_json::json!({
+                "field_name": "content_rating",
+                "entity_type": "manifestation",
+            }))
+            .await;
+        assert_eq!(unlock_response.status_code(), StatusCode::OK);
+
+        let second_unlock_response = server
+            .post(&format!("/api/v1/manifestations/{m_id}/metadata/unlock"))
+            .add_header(AUTHORIZATION, basic)
+            .json(&serde_json::json!({
+                "field_name": "content_rating",
+                "entity_type": "manifestation",
+            }))
+            .await;
+        assert_eq!(second_unlock_response.status_code(), StatusCode::NOT_FOUND);
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn lock_and_unlock_missing_manifestation_return_404(pool: sqlx::PgPool) {
+        let app_pool = test_support::db::app_pool_for(&pool).await;
+        let ing_pool = test_support::db::ingestion_pool_for(&pool).await;
+        let (_admin_id, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+        let missing_id = Uuid::new_v4();
+        let server = test_support::db::server_with_real_pools(&app_pool, &ing_pool);
+        let payload = serde_json::json!({
+            "field_name": "title",
+            "entity_type": "work",
+        });
+
+        let lock_response = server
+            .post(&format!(
+                "/api/v1/manifestations/{missing_id}/metadata/lock"
+            ))
+            .add_header(AUTHORIZATION, basic.clone())
+            .json(&payload)
+            .await;
+        assert_eq!(lock_response.status_code(), StatusCode::NOT_FOUND);
+
+        let unlock_response = server
+            .post(&format!(
+                "/api/v1/manifestations/{missing_id}/metadata/unlock"
+            ))
+            .add_header(AUTHORIZATION, basic)
+            .json(&payload)
+            .await;
+        assert_eq!(unlock_response.status_code(), StatusCode::NOT_FOUND);
     }
 
     #[sqlx::test(migrations = "./migrations")]

@@ -78,17 +78,15 @@ pub async fn is_locked_tx(
     Ok(hit.is_some())
 }
 
-/// Insert a lock row for `(manifestation_id, entity_type, field)`, recording the
-/// user who set the lock in `locked_by`.
+/// Insert a lock on the caller's connection; duplicate locks are ignored.
 ///
-/// Idempotent: a duplicate lock on the same triple is silently ignored (`ON CONFLICT DO NOTHING`).
+/// The caller owns the manifestation visibility check and transaction.
 ///
 /// # Errors
 ///
-/// Returns a [`sqlx::Error`] if the insert fails for any reason other than a
-/// duplicate-key conflict.
-pub async fn lock(
-    pool: &PgPool,
+/// Returns a [`sqlx::Error`] if the insert fails.
+pub async fn lock_tx(
+    conn: &mut PgConnection,
     manifestation_id: Uuid,
     entity_type: EntityType,
     field: &str,
@@ -103,19 +101,20 @@ pub async fn lock(
         field,
         user_id,
     )
-    .execute(pool)
+    .execute(&mut *conn)
     .await?;
     Ok(())
 }
 
-/// Remove a lock. Returns `true` if a row was deleted, `false` if none
-/// existed (callers may surface 404).
+/// Remove a lock on the caller's connection, returning whether a row was deleted.
+///
+/// The caller owns the manifestation visibility check and transaction.
 ///
 /// # Errors
 ///
 /// Returns a [`sqlx::Error`] if the delete query fails.
-pub async fn unlock(
-    pool: &PgPool,
+pub async fn unlock_tx(
+    conn: &mut PgConnection,
     manifestation_id: Uuid,
     entity_type: EntityType,
     field: &str,
@@ -127,7 +126,7 @@ pub async fn unlock(
         entity_type.as_str(),
         field,
     )
-    .execute(pool)
+    .execute(&mut *conn)
     .await?;
     Ok(result.rows_affected() > 0)
 }
@@ -181,6 +180,7 @@ mod tests {
 
         let (_work_id, m_id) = setup_fixture(&ingestion).await;
         let user_id = a_user(&app).await;
+        let mut conn = app.acquire().await.unwrap();
 
         assert!(
             !is_locked(&app, m_id, EntityType::Work, "title")
@@ -188,7 +188,7 @@ mod tests {
                 .unwrap()
         );
 
-        lock(&app, m_id, EntityType::Work, "title", user_id)
+        lock_tx(&mut conn, m_id, EntityType::Work, "title", user_id)
             .await
             .unwrap();
         assert!(
@@ -197,11 +197,13 @@ mod tests {
                 .unwrap()
         );
 
-        lock(&app, m_id, EntityType::Work, "title", user_id)
+        lock_tx(&mut conn, m_id, EntityType::Work, "title", user_id)
             .await
             .unwrap();
 
-        let removed = unlock(&app, m_id, EntityType::Work, "title").await.unwrap();
+        let removed = unlock_tx(&mut conn, m_id, EntityType::Work, "title")
+            .await
+            .unwrap();
         assert!(removed);
         assert!(
             !is_locked(&app, m_id, EntityType::Work, "title")
@@ -209,7 +211,9 @@ mod tests {
                 .unwrap()
         );
 
-        let removed = unlock(&app, m_id, EntityType::Work, "title").await.unwrap();
+        let removed = unlock_tx(&mut conn, m_id, EntityType::Work, "title")
+            .await
+            .unwrap();
         assert!(!removed, "second unlock should report no-op");
     }
 }

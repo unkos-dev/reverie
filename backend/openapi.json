@@ -2188,6 +2188,16 @@
               }
             }
           },
+          "404": {
+            "description": "Manifestation missing or RLS-hidden (existence-not-leaked)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
           "422": {
             "description": "Unknown entity_type",
             "content": {
@@ -2466,7 +2476,7 @@
             }
           },
           "404": {
-            "description": "No matching lock",
+            "description": "Manifestation missing or RLS-hidden, or no matching lock",
             "content": {
               "application/problem+json": {
                 "schema": {
