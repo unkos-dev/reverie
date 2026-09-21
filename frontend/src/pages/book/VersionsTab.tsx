@@ -234,7 +234,12 @@ function PendingRow({ manifestationId, field, row }: PendingRowProps): ReactElem
     },
     onError: (err: unknown) => {
       console.error("[VersionsTab.acceptVersion] mutation failed", err);
-      toast.error(formatError(err));
+      void invalidate();
+      toast.error(
+        err instanceof ApiError && err.status === 404
+          ? "This draft is no longer available to accept."
+          : formatError(err),
+      );
     },
   });
   const rejectMutation = useMutation({

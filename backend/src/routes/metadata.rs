@@ -45,14 +45,10 @@ use crate::state::AppState;
 /// # Invariants
 /// - Every handler requires an authenticated non-child user
 ///   (`CurrentUser::require_not_child`).
-/// - Reads and writes acquire a connection via `db::acquire_with_rls`
-///   so RLS policies see `app.current_user_id` for the caller.
-/// - Write paths open a transaction, take `SELECT ... FOR UPDATE` on
-///   the owning manifestation/work row, apply the change, and commit.
-///
-/// Why: the row-level lock serialises concurrent reviewers against the
-/// same entity so accept/reject/revert can't race with each other or
-/// with re-enrichment writes that mutate the same metadata row.
+/// - RLS transactions establish `app.current_user_id` for the caller.
+/// - Accept and reject acquire the same transaction advisory lock before
+///   accessing a version, using Read Committed for the subsequent eligibility read.
+/// - Canonical writes retain manifestation/work row locks.
 pub fn router() -> OpenApiRouter<AppState> {
     OpenApiRouter::new()
         .routes(routes!(get_manifestation_metadata))
@@ -251,14 +247,14 @@ struct LockPayload {
 /// # Errors
 /// - [`AppError::Forbidden`] when the caller is a child account.
 /// - [`AppError::NotFound`] when the version row does not belong to the
-///   manifestation or is RLS-hidden.
+///   manifestation, is already rejected, or is RLS-hidden.
 /// - [`AppError::Validation`] when the stored value fails field parsing.
 /// - [`AppError::Internal`] on database errors.
 #[utoipa::path(
     post,
     path = "/api/v1/manifestations/{id}/metadata/accept",
     summary = "Accept a metadata version",
-    description = "Promotes a pending metadata version to canonical for a manifestation; accepting an ISBN change may trigger a re-match against other works. Available to adult accounts only. Returns 422 if the stored value fails field parsing.",
+    description = "Promotes a pending metadata version to canonical for a manifestation. Acceptance leaves review status pending; repeated acceptance is allowed and enqueues another writeback job for file-backed fields. Accepting an ISBN change may trigger a re-match against other works. Available to adult accounts only. Returns 404 when the version is missing, belongs to another manifestation, or is already rejected; returns 422 if the stored value fails field parsing.",
     tag = "metadata",
     security(("session_cookie" = ["write"]), ("device_token_bearer" = ["write"]), ("oidc_jwt_bearer" = ["write"]), ("opds_basic" = ["write"])),
     params(("id" = Uuid, Path, description = "Manifestation id")),
@@ -267,7 +263,7 @@ struct LockPayload {
         (status = 200, description = "Version promoted to canonical; accepted ISBN changes may re-match the work"),
         (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 403, description = "Caller is a child account", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
-        (status = 404, description = "Version not found for this manifestation, or RLS-hidden", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
+        (status = 404, description = "Version not found for this manifestation, already rejected, or RLS-hidden", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 422, description = "Stored value fails field parsing", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
     )
 )]
@@ -280,9 +276,11 @@ async fn accept_manifestation(
     current_user.require_scope(Scope::Write)?;
     current_user.require_not_child()?;
 
-    let mut tx = db::acquire_with_rls(&state.pool, current_user.user_id)
+    let mut tx = db::acquire_with_rls_read_committed(&state.pool, current_user.user_id)
         .await
         .map_err(|e| AppError::Internal(e.into()))?;
+
+    lock_version_review(&mut tx, payload.version_id).await?;
 
     let row = sqlx::query!(
         "SELECT mv.id, mv.field_name, \
@@ -292,6 +290,7 @@ async fn accept_manifestation(
          JOIN manifestations m ON m.id = mv.manifestation_id \
          JOIN works w ON w.id = m.work_id \
          WHERE mv.id = $1 AND mv.manifestation_id = $2 \
+           AND mv.status = 'pending'::metadata_review_status \
          FOR UPDATE OF m, w",
         payload.version_id,
         manifestation_id,
@@ -331,6 +330,24 @@ async fn accept_manifestation(
     Ok(StatusCode::OK)
 }
 
+const VERSION_REVIEW_LOCK_NAMESPACE: i32 = 0x4d45_5441;
+
+async fn lock_version_review(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    version_id: Uuid,
+) -> Result<(), AppError> {
+    let key = version_id.to_string();
+    sqlx::query!(
+        "SELECT pg_advisory_xact_lock($1, hashtext($2))",
+        VERSION_REVIEW_LOCK_NAMESPACE,
+        key,
+    )
+    .execute(&mut **tx)
+    .await
+    .map_err(|e| AppError::Internal(e.into()))?;
+    Ok(())
+}
+
 /// `POST /api/v1/manifestations/{id}/metadata/reject` — mark a pending
 /// metadata version as rejected.
 ///
@@ -364,9 +381,11 @@ async fn reject_manifestation(
     current_user.require_scope(Scope::Write)?;
     current_user.require_not_child()?;
 
-    let mut tx = db::acquire_with_rls(&state.pool, current_user.user_id)
+    let mut tx = db::acquire_with_rls_read_committed(&state.pool, current_user.user_id)
         .await
         .map_err(|e| AppError::Internal(e.into()))?;
+
+    lock_version_review(&mut tx, payload.version_id).await?;
 
     let rows = sqlx::query!(
         "UPDATE metadata_versions \
@@ -3189,6 +3208,15 @@ mod tests {
                 .expect("fetch title_version_id");
         assert_eq!(pointer, Some(version_id), "version pointer not wired");
 
+        let status: String = sqlx::query_scalar!(
+            "SELECT status::text AS \"status!\" FROM metadata_versions WHERE id = $1",
+            version_id,
+        )
+        .fetch_one(&app_pool)
+        .await
+        .expect("fetch version status");
+        assert_eq!(status, "pending", "accepted rows retain pending status");
+
         // Accept must have enqueued exactly one writeback_jobs row.
         let job_count: i64 = sqlx::query_scalar!(
             "SELECT count(*) AS \"count!\" FROM writeback_jobs WHERE manifestation_id = $1",
@@ -3201,6 +3229,272 @@ mod tests {
             job_count, 1,
             "accept must enqueue exactly one writeback job; got {job_count}"
         );
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn accept_rejects_rejected_version_without_side_effects(pool: sqlx::PgPool) {
+        let app_pool = test_support::db::app_pool_for(&pool).await;
+        let ing_pool = test_support::db::ingestion_pool_for(&pool).await;
+        let (admin_id, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+        let marker = Uuid::new_v4().simple().to_string();
+        let (work_id, m_id) =
+            test_support::db::insert_work_and_manifestation(&ing_pool, &marker).await;
+        let before = sqlx::query!(
+            "SELECT title, title_version_id FROM works WHERE id = $1",
+            work_id,
+        )
+        .fetch_one(&app_pool)
+        .await
+        .expect("fetch initial canonical title");
+        let version_id = insert_version(
+            &ing_pool,
+            m_id,
+            "title",
+            serde_json::json!(format!("Rejected Title {marker}")),
+        )
+        .await;
+
+        sqlx::query!(
+            "UPDATE metadata_versions \
+             SET status = 'rejected', resolved_by = $1, resolved_at = now() \
+             WHERE id = $2",
+            admin_id,
+            version_id,
+        )
+        .execute(&ing_pool)
+        .await
+        .expect("reject version");
+
+        let server = test_support::db::server_with_real_pools(&app_pool, &ing_pool);
+        let accept = server
+            .post(&format!("/api/v1/manifestations/{m_id}/metadata/accept"))
+            .add_header(AUTHORIZATION, basic)
+            .json(&serde_json::json!({"version_id": version_id}))
+            .await;
+        test_support::assert_problem(&accept, problems::NOT_FOUND, StatusCode::NOT_FOUND);
+
+        let after = sqlx::query!(
+            "SELECT title, title_version_id FROM works WHERE id = $1",
+            work_id,
+        )
+        .fetch_one(&app_pool)
+        .await
+        .expect("fetch canonical title after rejected accept");
+        assert_eq!(
+            after.title, before.title,
+            "rejected version changed the title"
+        );
+        assert_eq!(
+            after.title_version_id, before.title_version_id,
+            "rejected version changed the title pointer"
+        );
+
+        let status: String = sqlx::query_scalar!(
+            "SELECT status::text AS \"status!\" FROM metadata_versions WHERE id = $1",
+            version_id,
+        )
+        .fetch_one(&app_pool)
+        .await
+        .expect("fetch rejected version status");
+        assert_eq!(status, "rejected");
+
+        let job_count: i64 = sqlx::query_scalar!(
+            "SELECT count(*) AS \"count!\" FROM writeback_jobs WHERE manifestation_id = $1",
+            m_id,
+        )
+        .fetch_one(&app_pool)
+        .await
+        .expect("fetch writeback job count");
+        assert_eq!(job_count, 0, "rejected accept must not enqueue writeback");
+    }
+
+    async fn wait_for_blocked_metadata_query(pool: &sqlx::PgPool, query_prefix: &str) {
+        tokio::time::timeout(std::time::Duration::from_secs(30), async {
+            loop {
+                let blocked = sqlx::query_scalar!(
+                    "SELECT EXISTS (SELECT 1 FROM pg_stat_activity \
+                     WHERE datname = current_database() AND query LIKE $1 \
+                     AND cardinality(pg_blocking_pids(pid)) > 0) AS \"blocked!\"",
+                    query_prefix,
+                )
+                .fetch_one(pool)
+                .await
+                .unwrap();
+                if blocked {
+                    return;
+                }
+                tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .expect("request should reach its database lock");
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn accept_waits_for_concurrent_rejection(pool: sqlx::PgPool) {
+        let app_pool = test_support::db::app_pool_for(&pool).await;
+        let ing_pool = test_support::db::ingestion_pool_for(&pool).await;
+        let (_, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+        let marker = Uuid::new_v4().simple().to_string();
+        let (work_id, m_id) =
+            test_support::db::insert_work_and_manifestation(&ing_pool, &marker).await;
+        let version_id =
+            insert_version(&ing_pool, m_id, "title", serde_json::json!("Rejected")).await;
+        let before = sqlx::query!(
+            "SELECT title, title_version_id FROM works WHERE id = $1",
+            work_id
+        )
+        .fetch_one(&app_pool)
+        .await
+        .unwrap();
+        let mut barrier = pool.begin().await.unwrap();
+        sqlx::query!("LOCK TABLE metadata_versions IN SHARE MODE")
+            .execute(&mut *barrier)
+            .await
+            .unwrap();
+        let server = test_support::db::server_with_real_pools(&app_pool, &ing_pool);
+        let reject_basic = basic.clone();
+        let mut rejection = tokio::spawn(async move {
+            server
+                .post(&format!("/api/v1/manifestations/{m_id}/metadata/reject"))
+                .add_header(AUTHORIZATION, reject_basic)
+                .json(&serde_json::json!({"version_id": version_id}))
+                .await
+        });
+        tokio::select! {
+            response = &mut rejection => panic!("reject bypassed barrier: {:?}", response.unwrap().status_code()),
+            () = wait_for_blocked_metadata_query(&pool, "UPDATE metadata_versions SET status = 'rejected'%") => {}
+        }
+        let server = test_support::db::server_with_real_pools(&app_pool, &ing_pool);
+        let mut acceptance = tokio::spawn(async move {
+            server
+                .post(&format!("/api/v1/manifestations/{m_id}/metadata/accept"))
+                .add_header(AUTHORIZATION, basic)
+                .json(&serde_json::json!({"version_id": version_id}))
+                .await
+        });
+        tokio::select! {
+            response = &mut acceptance => panic!("accept finished before rejection committed: {:?}", response.unwrap().status_code()),
+            () = wait_for_blocked_metadata_query(&pool, "SELECT pg_advisory_xact_lock%") => {}
+        }
+        barrier.commit().await.unwrap();
+        assert_eq!(rejection.await.unwrap().status_code(), StatusCode::OK);
+        let response = acceptance.await.unwrap();
+        test_support::assert_problem(&response, problems::NOT_FOUND, StatusCode::NOT_FOUND);
+        let after = sqlx::query!(
+            "SELECT title, title_version_id FROM works WHERE id = $1",
+            work_id
+        )
+        .fetch_one(&app_pool)
+        .await
+        .unwrap();
+        assert_eq!(after.title, before.title);
+        assert_eq!(after.title_version_id, before.title_version_id);
+        let jobs = sqlx::query_scalar!(
+            "SELECT count(*) AS \"count!\" FROM writeback_jobs WHERE manifestation_id = $1",
+            m_id,
+        )
+        .fetch_one(&app_pool)
+        .await
+        .unwrap();
+        assert_eq!(jobs, 0);
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn reject_waits_for_concurrent_acceptance(pool: sqlx::PgPool) {
+        let app_pool = test_support::db::app_pool_for(&pool).await;
+        let ing_pool = test_support::db::ingestion_pool_for(&pool).await;
+        let (_, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+        let marker = Uuid::new_v4().simple().to_string();
+        let (work_id, m_id) =
+            test_support::db::insert_work_and_manifestation(&ing_pool, &marker).await;
+        let version_id =
+            insert_version(&ing_pool, m_id, "title", serde_json::json!("Accepted")).await;
+        let mut writeback_barrier = pool.begin().await.unwrap();
+        sqlx::query!("LOCK TABLE writeback_jobs IN SHARE MODE")
+            .execute(&mut *writeback_barrier)
+            .await
+            .unwrap();
+        let server = test_support::db::server_with_real_pools(&app_pool, &ing_pool);
+        let accept_basic = basic.clone();
+        let mut acceptance = tokio::spawn(async move {
+            server
+                .post(&format!("/api/v1/manifestations/{m_id}/metadata/accept"))
+                .add_header(AUTHORIZATION, accept_basic)
+                .json(&serde_json::json!({"version_id": version_id}))
+                .await
+        });
+        tokio::select! {
+            response = &mut acceptance => panic!("accept bypassed writeback barrier: {:?}", response.unwrap().status_code()),
+            () = wait_for_blocked_metadata_query(&pool, "INSERT INTO writeback_jobs%") => {}
+        }
+        let server = test_support::db::server_with_real_pools(&app_pool, &ing_pool);
+        let mut rejection = tokio::spawn(async move {
+            server
+                .post(&format!("/api/v1/manifestations/{m_id}/metadata/reject"))
+                .add_header(AUTHORIZATION, basic)
+                .json(&serde_json::json!({"version_id": version_id}))
+                .await
+        });
+        tokio::select! {
+            response = &mut rejection => panic!("reject finished before acceptance committed: {:?}", response.unwrap().status_code()),
+            () = wait_for_blocked_metadata_query(&pool, "SELECT pg_advisory_xact_lock%") => {}
+        }
+        writeback_barrier.commit().await.unwrap();
+        assert_eq!(acceptance.await.unwrap().status_code(), StatusCode::OK);
+        assert_eq!(rejection.await.unwrap().status_code(), StatusCode::OK);
+        let canonical = sqlx::query!(
+            "SELECT title, title_version_id FROM works WHERE id = $1",
+            work_id
+        )
+        .fetch_one(&app_pool)
+        .await
+        .unwrap();
+        assert_eq!(canonical.title, "Accepted");
+        assert_eq!(canonical.title_version_id, Some(version_id));
+        let status = sqlx::query_scalar!(
+            "SELECT status::text AS \"status!\" FROM metadata_versions WHERE id = $1",
+            version_id,
+        )
+        .fetch_one(&app_pool)
+        .await
+        .unwrap();
+        assert_eq!(status, "rejected");
+        let jobs = sqlx::query_scalar!(
+            "SELECT count(*) AS \"count!\" FROM writeback_jobs WHERE manifestation_id = $1",
+            m_id,
+        )
+        .fetch_one(&app_pool)
+        .await
+        .unwrap();
+        assert_eq!(jobs, 1);
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn failed_accept_releases_review_lock(pool: sqlx::PgPool) {
+        let app_pool = test_support::db::app_pool_for(&pool).await;
+        let ing_pool = test_support::db::ingestion_pool_for(&pool).await;
+        let (_, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+        let marker = Uuid::new_v4().simple().to_string();
+        let (_, m_id) = test_support::db::insert_work_and_manifestation(&ing_pool, &marker).await;
+        let version_id = insert_version(&ing_pool, m_id, "title", serde_json::Value::Null).await;
+        let server = test_support::db::server_with_real_pools(&app_pool, &ing_pool);
+        let response = server
+            .post(&format!("/api/v1/manifestations/{m_id}/metadata/accept"))
+            .add_header(AUTHORIZATION, basic.clone())
+            .json(&serde_json::json!({"version_id": version_id}))
+            .await;
+        assert_eq!(response.status_code(), StatusCode::UNPROCESSABLE_ENTITY);
+        let response = tokio::time::timeout(std::time::Duration::from_secs(30), async {
+            server
+                .post(&format!("/api/v1/manifestations/{m_id}/metadata/reject"))
+                .add_header(AUTHORIZATION, basic)
+                .json(&serde_json::json!({"version_id": version_id}))
+                .await
+        })
+        .await
+        .expect("failed acceptance must release its lock");
+        assert_eq!(response.status_code(), StatusCode::OK);
     }
 
     #[sqlx::test(migrations = "./migrations")]

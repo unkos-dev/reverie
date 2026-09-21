@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE metadata_versions SET status = 'rejected', resolved_by = $1, resolved_at = now() WHERE id = $2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "eb0a48fdc164a485b7a8ff5084ee6cb4d3bc2a5c7e1134a9e870c568625323a7"
+}

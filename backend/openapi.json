@@ -2041,7 +2041,7 @@
           "metadata"
         ],
         "summary": "Accept a metadata version",
-        "description": "Promotes a pending metadata version to canonical for a manifestation; accepting an ISBN change may trigger a re-match against other works. Available to adult accounts only. Returns 422 if the stored value fails field parsing.",
+        "description": "Promotes a pending metadata version to canonical for a manifestation. Acceptance leaves review status pending; repeated acceptance is allowed and enqueues another writeback job for file-backed fields. Accepting an ISBN change may trigger a re-match against other works. Available to adult accounts only. Returns 404 when the version is missing, belongs to another manifestation, or is already rejected; returns 422 if the stored value fails field parsing.",
         "operationId": "accept_manifestation",
         "parameters": [
           {
@@ -2090,7 +2090,7 @@
             }
           },
           "404": {
-            "description": "Version not found for this manifestation, or RLS-hidden",
+            "description": "Version not found for this manifestation, already rejected, or RLS-hidden",
             "content": {
               "application/problem+json": {
                 "schema": {

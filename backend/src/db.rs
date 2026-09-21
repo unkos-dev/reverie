@@ -109,7 +109,36 @@ pub async fn acquire_with_rls(
     pool: &PgPool,
     user_id: uuid::Uuid,
 ) -> Result<sqlx::Transaction<'_, sqlx::Postgres>, sqlx::Error> {
+    acquire_with_rls_inner(pool, user_id, RlsIsolation::Inherited).await
+}
+
+/// Opens an RLS transaction whose statements see changes committed while waiting for locks.
+///
+/// # Errors
+/// Returns database errors from transaction setup.
+pub async fn acquire_with_rls_read_committed(
+    pool: &PgPool,
+    user_id: uuid::Uuid,
+) -> Result<sqlx::Transaction<'_, sqlx::Postgres>, sqlx::Error> {
+    acquire_with_rls_inner(pool, user_id, RlsIsolation::ReadCommitted).await
+}
+
+enum RlsIsolation {
+    Inherited,
+    ReadCommitted,
+}
+
+async fn acquire_with_rls_inner(
+    pool: &PgPool,
+    user_id: uuid::Uuid,
+    isolation: RlsIsolation,
+) -> Result<sqlx::Transaction<'_, sqlx::Postgres>, sqlx::Error> {
     let mut tx = pool.begin().await?;
+    if matches!(isolation, RlsIsolation::ReadCommitted) {
+        sqlx::query("SET TRANSACTION ISOLATION LEVEL READ COMMITTED")
+            .execute(&mut *tx)
+            .await?;
+    }
     sqlx::query("SELECT set_config('app.current_user_id', $1::text, true)")
         .bind(user_id.to_string())
         .execute(&mut *tx)
@@ -730,6 +759,43 @@ mod tests {
 
         assert_eq!(row.0, user_id.to_string());
         tx.rollback().await.unwrap();
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn read_committed_rls_overrides_default_without_leaking(pool: PgPool) {
+        let isolated = sqlx::postgres::PgPoolOptions::new()
+            .max_connections(1)
+            .after_connect(|conn, _| {
+                Box::pin(async move {
+                    sqlx::query("SET default_transaction_isolation = 'repeatable read'")
+                        .execute(conn)
+                        .await?;
+                    Ok(())
+                })
+            })
+            .connect_with((*pool.connect_options()).clone())
+            .await
+            .unwrap();
+        let user_id = uuid::Uuid::new_v4();
+        let mut tx = acquire_with_rls_read_committed(&isolated, user_id)
+            .await
+            .unwrap();
+        let settings: (String, String) = sqlx::query_as(
+            "SELECT current_setting('transaction_isolation'), current_setting('app.current_user_id')"
+        ).fetch_one(&mut *tx).await.unwrap();
+        assert_eq!(settings, ("read committed".to_owned(), user_id.to_string()));
+        tx.rollback().await.unwrap();
+        let settings: (String, String) = sqlx::query_as(
+            "SELECT current_setting('transaction_isolation'), current_setting('app.current_user_id')"
+        ).fetch_one(&isolated).await.unwrap();
+        assert_eq!(settings, ("repeatable read".to_owned(), String::new()));
+        let mut inherited = acquire_with_rls(&isolated, user_id).await.unwrap();
+        let isolation: String = sqlx::query_scalar("SHOW transaction_isolation")
+            .fetch_one(&mut *inherited)
+            .await
+            .unwrap();
+        assert_eq!(isolation, "repeatable read");
+        inherited.commit().await.unwrap();
     }
 
     // --- Unit tests ---
