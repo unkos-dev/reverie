@@ -16,12 +16,14 @@ regardless of whether `DATABASE_URL_MIGRATION` is present in the process environ
 
 ## Rationale
 
-Every pool Reverie opens, and the startup branch that decides whether to migrate or merely verify, reads the loaded
-configuration rather than the environment. A configuration that carried the migration DSN while automatic migration was
-off would hand the schema-changing identity to paths that had no reason to receive it, and would do so silently, because
-no later step re-reads the flag to check. Applying the flag after deserialisation, on every load, is what keeps the two
-from depending on operator memory: exporting `DATABASE_URL_MIGRATION` so the separate migrate step can use it does not
-also put it into the configuration the server runs on.
+Every pool Reverie opens, and the startup branch that decides whether to migrate or merely verify, read the loaded
+configuration rather than the environment. Clearing the field prevents the server's configuration and its clones from
+retaining an unused migration credential. The startup selector independently checks `auto_migrate` before using that
+field, so this obligation bounds what the process holds rather than what it does with it.
+
+Applying the flag after deserialisation, on every load, is what makes that hold whether or not the operator remembers to
+omit the variable: exporting `DATABASE_URL_MIGRATION` so the separate migrate step can use it does not also put it into
+the configuration the server runs on.
 
 ## Acceptance criteria
 
