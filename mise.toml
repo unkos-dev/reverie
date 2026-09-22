@@ -16,7 +16,7 @@ typos = "1.50.2"
 # OpenAPI linter for the generated spec, run by the openapi-policy CI job
 # against .vacuum.yaml.
 vacuum = "0.30.6"
-vale = "3.21.0"
+vale = "3.22.0"
 zizmor = "1.30.1"
 # The package manager, resolved through mise's aqua backend and so
 # checksum-verified. Two bootstraps need pnpm before any node_modules exists
