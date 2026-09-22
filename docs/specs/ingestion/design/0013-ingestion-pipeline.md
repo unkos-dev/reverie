@@ -51,7 +51,7 @@ copied library file for every `epub`-extension candidate; the Works and manifest
 check; the metadata extractor and draft writer that turn a validated `OpfData` (or a heuristic fallback) into the
 `ExtractedMetadata` and `metadata_versions` rows this pipeline's transaction points its canonical columns at; a Postgres
 session-level advisory lock keyed to a fixed integer id; and the operator-set filesystem paths, format-priority order,
-and cleanup mode the Configuration loading subject's `Config` struct carries.
+and cleanup mode carried by the `Config` the Design "Configuration loading" assembles.
 
 Depended on by: the Design "Covers", whose thumbnail pre-warm this pipeline triggers directly from a successful commit;
 the Design "Enrichment pipeline", which discovers a newly committed manifestation only because this pipeline leaves
@@ -140,8 +140,9 @@ Call sites that dispatch to those owners:
   export (`copier::{hash_file, copy_verified}`, `quarantine::quarantine_file`, `cleanup::cleanup_batch`, and
   `format_filter::select_by_priority`) has no caller outside this module in production code; `path_template::render` and
   `path_template::resolve_collision` are the one exception, reused by the Design "Writeback pipeline".
-- `run_watcher` is spawned exactly once, at startup (`crate::run` in `backend/src/lib.rs`), sharing the process-wide
-  shutdown `CancellationToken` and the same drain budget as the other background workers (see Failure and recovery).
+- `run_watcher` is spawned exactly once, at startup by `crate::run` (`backend/src/lib.rs`), the subject of the Design
+  "Application runtime: startup, workers, and shutdown", sharing the process-wide shutdown `CancellationToken` and the
+  same drain budget as the other background workers (see Failure and recovery).
 - `scan_once` has two production callers: `run_watcher`'s per-batch trigger, and `POST /api/v1/ingestion/scan`
   (`routes/ingestion.rs::scan`), gated by `CurrentUser::require_scope(Scope::Admin)` and `require_admin`. The route's
   response (`ScanResponse`: `processed`, `failed`, `skipped`) carries no batch identifier, so nothing outside this
@@ -284,13 +285,14 @@ row is created for it.
   does not change what a subsequent scan does. The Dashboard subject reads `ingestion_jobs` directly, though: it groups
   jobs by `batch_id` and counts them by `status`, and nulls a batch's `ended_at` while any of its jobs sit at `queued`
   or `running`, so a stuck `running` row keeps that batch showing as in progress with no end time, indefinitely.
-- **Shutdown mid-scan.** The filesystem watcher and every other background worker share one 30-second drain budget after
-  the HTTP server stops; the watcher's own event loop checks the shutdown signal only between batches, not inside a
-  `scan_once` call already under way, so a scan in progress keeps running to completion or to the shared budget's
-  expiry, whichever comes first. A worker still running past that budget is aborted at its next suspension point, which
-  can land inside a file copy or an open `commit_ingest` transaction; an uncommitted transaction contributes nothing on
-  abort, consistent with the atomic-commit sequence described above, but a copy already renamed into place before that
-  point is not itself rolled back.
+- **Shutdown mid-scan.** The filesystem watcher and every other background worker share the one 30-second drain budget
+  the Design "Application runtime: startup, workers, and shutdown" owns, applied after the HTTP server stops; the
+  watcher's own event loop checks the shutdown signal only between batches, not inside a `scan_once` call already under
+  way, so a scan in progress keeps running to completion or to the shared budget's expiry, whichever comes first. A
+  worker still running past that budget is aborted at its next suspension point, which can land inside a file copy or an
+  open `commit_ingest` transaction; an uncommitted transaction contributes nothing on abort, consistent with the
+  atomic-commit sequence described above, but a copy already renamed into place before that point is not itself rolled
+  back.
 - **Quarantine and its sidecars.** Nothing in this pipeline removes a quarantined file or its sidecar once written; the
   quarantine directory grows without bound, and only manual operator intervention reduces it, the same shape as the
   compensating control the CodeGuard deviation register records for this pipeline's cleanup containment guard (see

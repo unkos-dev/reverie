@@ -313,8 +313,7 @@ Read access to a shelf and its items requires no more than the operation's decla
 beyond ownership: a child account can view its own shelves and items. Adding, removing, and reordering items likewise
 carry no `require_not_child` gate, so a child can organise the membership and order of shelves it owns. Creating,
 renaming, and deleting a shelf are adult-only (`require_not_child`), so a child cannot create a new shelf or remove or
-rename an existing one, including one it did not create itself but that was created for it (a shelf's `user_id` is fixed
-at creation and never reassigned).
+rename an existing one (a shelf's `user_id` is fixed at creation and never reassigned).
 
 Not applicable: this subject exposes no operational surface of its own beyond the endpoints already described — no
 service to run, restart, or scale independently of the backend as a whole.

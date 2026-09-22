@@ -669,6 +669,46 @@
     },
     {
       "governed-by": [
+        "REV-ADR-0023"
+      ],
+      "id": "REV-DESIGN-0022",
+      "kind": "design",
+      "path": "docs/specs/operations/design/0022-configuration-loading.md",
+      "satisfies": [
+        "REV-REQ-0060",
+        "REV-REQ-0061",
+        "REV-REQ-0064"
+      ],
+      "title": "Configuration loading"
+    },
+    {
+      "governed-by": [
+        "REV-ADR-0014"
+      ],
+      "id": "REV-DESIGN-0023",
+      "kind": "design",
+      "path": "docs/specs/operations/design/0023-database-migration-model.md",
+      "satisfies": [
+        "REV-REQ-0062",
+        "REV-REQ-0063",
+        "REV-REQ-0064"
+      ],
+      "title": "Database migration model"
+    },
+    {
+      "governed-by": [
+        "REV-ADR-0021"
+      ],
+      "id": "REV-DESIGN-0024",
+      "kind": "design",
+      "path": "docs/specs/operations/design/0024-application-runtime-startup-workers-and-shutdown.md",
+      "satisfies": [
+        "REV-REQ-0064"
+      ],
+      "title": "Application runtime: startup, workers, and shutdown"
+    },
+    {
+      "governed-by": [
         "REV-ADR-0047"
       ],
       "id": "REV-REQ-0001",
@@ -1149,6 +1189,48 @@
       "kind": "req",
       "path": "docs/specs/library/requirements/0059-a-shelf-and-its-items-are-visible-to-and-changeable-by-their-owner-only.md",
       "title": "A shelf and its items are visible to and changeable by their owner only"
+    },
+    {
+      "id": "REV-REQ-0060",
+      "kind": "req",
+      "path": "docs/specs/operations/requirements/0060-a-configuration-failure-names-the-setting-never-its-value.md",
+      "title": "A configuration failure names the setting, never its value"
+    },
+    {
+      "governed-by": [
+        "REV-ADR-0023"
+      ],
+      "id": "REV-REQ-0061",
+      "kind": "req",
+      "path": "docs/specs/operations/requirements/0061-a-generated-configuration-artefact-carries-no-credential-value.md",
+      "title": "A generated configuration artefact carries no credential value"
+    },
+    {
+      "governed-by": [
+        "REV-ADR-0014"
+      ],
+      "id": "REV-REQ-0062",
+      "kind": "req",
+      "path": "docs/specs/operations/requirements/0062-a-failed-migration-batch-leaves-the-schema-as-it-was.md",
+      "title": "A failed migration batch leaves the schema as it was"
+    },
+    {
+      "governed-by": [
+        "REV-ADR-0014"
+      ],
+      "id": "REV-REQ-0063",
+      "kind": "req",
+      "path": "docs/specs/operations/requirements/0063-a-database-whose-applied-migrations-differ-from-the-embedded-set-refuses-startup.md",
+      "title": "A database whose applied migrations differ from the embedded set refuses startup"
+    },
+    {
+      "governed-by": [
+        "REV-ADR-0014"
+      ],
+      "id": "REV-REQ-0064",
+      "kind": "req",
+      "path": "docs/specs/operations/requirements/0064-the-serving-process-holds-no-schema-changing-credential.md",
+      "title": "The serving process holds no schema-changing credential"
     }
   ]
 }
