@@ -690,8 +690,7 @@
       "path": "docs/specs/operations/design/0023-database-migration-model.md",
       "satisfies": [
         "REV-REQ-0062",
-        "REV-REQ-0063",
-        "REV-REQ-0064"
+        "REV-REQ-0063"
       ],
       "title": "Database migration model"
     },
@@ -1229,8 +1228,8 @@
       ],
       "id": "REV-REQ-0064",
       "kind": "req",
-      "path": "docs/specs/operations/requirements/0064-the-serving-process-holds-no-schema-changing-credential.md",
-      "title": "The serving process holds no schema-changing credential"
+      "path": "docs/specs/operations/requirements/0064-automatic-migration-off-leaves-the-migration-dsn-unset.md",
+      "title": "Automatic migration off leaves the migration DSN unset"
     }
   ]
 }

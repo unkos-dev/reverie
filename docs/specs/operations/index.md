@@ -8,7 +8,7 @@
 - [REV-REQ-0061](requirements/0061-a-generated-configuration-artefact-carries-no-credential-value.md): A generated configuration artefact carries no credential value
 - [REV-REQ-0062](requirements/0062-a-failed-migration-batch-leaves-the-schema-as-it-was.md): A failed migration batch leaves the schema as it was
 - [REV-REQ-0063](requirements/0063-a-database-whose-applied-migrations-differ-from-the-embedded-set-refuses-startup.md): A database whose applied migrations differ from the embedded set refuses startup
-- [REV-REQ-0064](requirements/0064-the-serving-process-holds-no-schema-changing-credential.md): The serving process holds no schema-changing credential
+- [REV-REQ-0064](requirements/0064-automatic-migration-off-leaves-the-migration-dsn-unset.md): Automatic migration off leaves the migration DSN unset
 
 ## Designs
 

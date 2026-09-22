@@ -6,7 +6,6 @@ title: "Database migration model"
 satisfies:
   - "REV-REQ-0062"
   - "REV-REQ-0063"
-  - "REV-REQ-0064"
 governed-by:
   - "REV-ADR-0014"
 ---
@@ -131,7 +130,7 @@ applied-but-unembedded version is `MigrationError::SchemaAhead`, an embedded-but
 - **Auto-migrate at startup** (`apply_or_verify_schema` in `backend/src/lib.rs`, called from `run()` once the
   `reverie_app` pool exists) takes this branch only when `Config::auto_migrate` is true, in which case it requires
   `Config::migration_database_url` to be `Some` and calls the same `db::run_migrations`. When `auto_migrate` is false —
-  the shipped default — it calls `verify_schema_current` on the `reverie_app` pool instead, never touching
+  the default path — it calls `verify_schema_current` on the `reverie_app` pool instead, never touching
   `run_migrations`. Where this step falls in `run()`'s full startup sequence, relative to worker spawn and the listening
   socket, belongs to "Application runtime".
 - **The `#[sqlx::test]` harness** applies migrations through neither of the above. The attribute macro (from the pinned
@@ -202,7 +201,7 @@ ever ships — if a new `TIMESTAMPTZ` column has no matching constraint.
 - `docker/compose.staging.yml`'s `reverie-migrate` service waits on `reverie-postgres` reporting `service_healthy`, and
   the `reverie` service in turn waits on `reverie-migrate` reporting `service_completed_successfully`; that pair of
   `depends_on` conditions is the compose-level contract that makes `docker compose pull && up -d` a correct one-command
-  upgrade in the shipped topology.
+  upgrade in the repository-provided Compose topology.
 
 ## Data and state
 
@@ -226,7 +225,7 @@ ever ships — if a new `TIMESTAMPTZ` column has no matching constraint.
 
 ## Runtime behaviour
 
-**The shipped default: `reverie migrate` then `verify_schema_current`.**
+**The default path: `reverie migrate` then `verify_schema_current`.**
 
 1. `docker compose pull && docker compose up -d` starts `reverie-postgres`, waits for it to report healthy, then starts
    `reverie-migrate` with `DATABASE_URL_MIGRATION` from `.env.migrate` alone.
@@ -278,9 +277,12 @@ and its siblings against the same per-test database.
   is untouched.
 - **`MigrationError::LockTimeout`**: the advisory lock was not acquired within ten attempts. The message reports that
   another instance may be migrating; nothing was attempted, and no lock is held to release.
-- **`MigrationError::BatchFailed`**: a transactional migration's SQL, or a tracking insert inside the batch, failed. The
-  whole batch rolled back — the database is exactly as it was before the run started, so recovery is pinning the
-  previous image tag and restarting.
+- **`MigrationError::BatchFailed`**: a transactional migration's SQL, a tracking insert inside the batch, or the
+  `COMMIT` itself failed. The first two roll the batch back, leaving the database exactly as it was before the run
+  started. The third does not settle the question: a `COMMIT` that reaches the server and succeeds but whose
+  acknowledgement never arrives returns this same variant, and the batch is applied. Recovery therefore begins by
+  reconnecting and reading `_sqlx_migrations`. Pinning the previous image tag is right only once the batch's versions
+  are absent from it, because a batch that did commit meets that older image as `SchemaAhead` and refuses to start.
 - **`MigrationError::NoTxFailed`**: a `-- no-transaction` migration's SQL failed after the batch already committed. Any
   transactional migrations in this run are already applied and cannot be un-applied by pinning the old tag; the operator
   must fix the failing SQL and re-deploy.
@@ -312,13 +314,18 @@ and its siblings against the same per-test database.
 
 ## Security and operations
 
-On the shipped default topology (`REVERIE_AUTO_MIGRATE` unset), the long-lived `reverie` process never holds
-`DATABASE_URL_MIGRATION`: `docker/compose.staging.yml` scopes that variable to the one-shot `reverie-migrate` service's
-`env_file: .env.migrate` alone, and the configuration loader forces `Config::migration_database_url` to `None` whenever
-`auto_migrate` is false even if the variable happens to be present in the process environment. Setting
-`REVERIE_AUTO_MIGRATE=true` is the one way to change this: the long-lived process then holds the `reverie_migrator`
-credential for its entire run, which is the explicit trade-off documented for operators with no orchestration to
-sequence a separate migrate step.
+Two separate guarantees keep the `reverie_migrator` credential away from request serving, and they hold over different
+things. The repository-provided Compose topology keeps it out of the environment: `docker/compose.staging.yml` scopes
+`DATABASE_URL_MIGRATION` to the one-shot `reverie-migrate` service's `env_file: .env.migrate` alone, so the long-lived
+`reverie` service's environment never carries it. The configuration loader keeps it out of the `Config`: it forces
+`Config::migration_database_url` to `None` whenever `auto_migrate` is false, so the DSN reaches no pool and no startup
+branch even on a load where the variable is present.
+
+Neither guarantee substitutes for the other. The loader controls the configuration, not the environment, so an operator
+who sets `DATABASE_URL_MIGRATION` on the serving service leaves that credential readable in the process environment
+whatever the flag says; what the flag decides is whether the process uses it. Setting `REVERIE_AUTO_MIGRATE=true` is
+what makes it used: the long-lived process then holds the `reverie_migrator` credential for its entire run, the explicit
+trade-off for an operator with no orchestration to sequence a separate migrate step.
 
 `reverie_migrator`'s least-privilege posture is proved by two tests independent of each other:
 `migrator_role_is_least_privilege` reads `pg_roles` and asserts the role is not `rolsuper`, `rolcreaterole`, or

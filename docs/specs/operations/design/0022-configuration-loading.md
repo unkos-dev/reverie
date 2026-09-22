@@ -239,11 +239,12 @@ schema-emitted default for a secret-bearing field is checked against real creden
 `config_schema_has_no_secret_default_values`); the other three (the three DSN fields) are safe only because their
 defaults are `String::new()`, not because a test confirms it.
 
-Gate 1 is the mechanism that keeps the long-lived server process from holding a schema-management credential during
-request serving on the default (out-of-band migration) topology: forcing `migration_database_url` to `None` whenever
-`auto_migrate` is false runs on every load, not only when the operator remembers to omit the variable, so an operator
-who exports `DATABASE_URL_MIGRATION` for convenience without also setting `REVERIE_AUTO_MIGRATE=true` does not thereby
-grant the server process that credential.
+Gate 1 keeps the migration DSN out of the `Config` the server runs on: forcing `migration_database_url` to `None`
+whenever `auto_migrate` is false runs on every load, not only when the operator remembers to omit the variable, so an
+operator who exports `DATABASE_URL_MIGRATION` for convenience without also setting `REVERIE_AUTO_MIGRATE=true` does not
+thereby put that credential into the configuration every pool and startup branch reads. The gate does not reach the
+process environment, which this pipeline never modifies: the variable stays where the operator put it, and keeping it
+off the serving process is a property of the deployment rather than of this subject.
 
 ## More information
 
