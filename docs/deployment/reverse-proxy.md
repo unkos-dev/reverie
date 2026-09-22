@@ -124,7 +124,7 @@ legacy `application/csp-report` and modern `application/reports+json`.
 
 ### Generic webhook
 
-Any HTTPS endpoint that accepts unauthenticated POSTs works. The body will be one of:
+Any HTTPS endpoint that accepts unauthenticated `POST` requests works. The body will be one of:
 
 - `application/csp-report`: legacy `report-uri` payload (single object).
 - `application/reports+json`: Reporting API payload (array of report objects, each with `type: "csp-violation"` and a
