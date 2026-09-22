@@ -337,7 +337,7 @@ advisory lock still serialises against any migration that is concurrently in fli
 
 ## More information
 
-- [Database migrations](../../../../docs/deployment/database-migrations.md): the operator-facing guide for running
+- [Database migrations](../../../../docs/deployment/database-migrations.md): the operator-facing runbook for running
   migrations across bare `docker run`, compose, and the auto-migrate opt-in.
 - "Row-level security and database context": its database-role table names `reverie_migrator`'s privileges alongside the
   RLS-scoped roles.

@@ -35,7 +35,9 @@ content of the CSP headers `run` finalises, or the frontend-dist validation it c
 (`backend/src/auth/oidc.rs`, `backend/src/auth/jwt.rs`); or the identity mechanics behind the `bootstrap`,
 `reset-password` and `unlock-account` subcommands, which this subject only dispatches to (`backend/src/models/user.rs`,
 `backend/src/auth/recovery.rs`, `backend/src/models/login_throttle.rs`). It does not own the builder or frontend stages
-of `Dockerfile`, only the `runtime` stage that consumes their output.
+of `Dockerfile`, only the `runtime` stage that consumes their output. It does not own cross-instance coordination,
+because there is none to own: `run` performs no leader election, node discovery or peer handshake, and every instance of
+the process spawns the same five workers and serves the same routes.
 
 Depends on: `config::Config` for every setting `run` reads; `db::init_pool`, `db::init_writeback_pool`,
 `db::run_migrations` and `db::verify_schema_current` for every database connection it opens;

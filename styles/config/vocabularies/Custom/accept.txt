@@ -433,6 +433,7 @@ relitigated
 relitigating
 renderable
 renderer
+renderers
 Renovate
 reorderable
 repo
@@ -454,6 +455,7 @@ rollout
 rollup
 roundtrip
 ruleset
+runbook
 runnable
 rustdoc
 rustup

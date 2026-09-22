@@ -23,7 +23,7 @@ configuration reference and `backend/config.schema.json` from the same schema.
 This subject owns the mechanism that gets a variable from the environment into a typed, validated field of `Config`: the
 custom `figment::Provider` (`EnvProvider` in `backend/src/config/provider.rs`), the `ENV_MAP` registry it and the
 reference generator both read, `Config::from_figment`'s six post-deserialise gates, the `ConfigError` shape and its
-var-name and secret-scrubbing behaviour, and `reference_markdown`/`config_schema_json`, the two functions that turn the
+var-name and secret-scrubbing behaviour, and `reference_markdown`/`config_schema_json`, the two renderers that turn the
 same `schemars` schema into the committed configuration reference and JSON Schema artifacts. It does not own the meaning
 or defaults of any individual domain's fields (enrichment, cover, writeback, OPDS, security headers, password policy,
 OIDC): those belong to the subjects that consume them, and this Design names the consuming code paths without restating
@@ -103,10 +103,10 @@ A fifth required-together rule exists outside this list-and-loop pattern entirel
 
 `reference.rs` and the `config_schema_json` function in `backend/src/lib.rs` both start from the same
 `schemars::schema_for!(Config)` value, so a field's doc comment, default and range constraint are declared once and
-consumed by both output paths rather than duplicated: `reference_markdown` walks `ENV_MAP` and, for each variable,
-resolves its dotted path to a schema node (descending through `$ref`-linked sub-struct definitions at each segment) to
-render the Markdown table row; `config_schema_json` serialises the schema directly. `backend/tests/gen_config_ref.rs`
-and `backend/tests/gen_config_schema.rs` are the drift gates comparing a fresh render against the committed
+consumed by two renderers rather than duplicated: `reference_markdown` walks `ENV_MAP` and, for each variable, resolves
+its dotted path to a schema node (descending through `$ref`-linked sub-struct definitions at each segment) to render the
+Markdown table row; `config_schema_json` serialises the schema directly. `backend/tests/gen_config_ref.rs` and
+`backend/tests/gen_config_schema.rs` are the drift gates comparing a fresh render against the committed
 `website/src/content/docs/reference/configuration.mdx` and `backend/config.schema.json`.
 
 ## Interfaces and dependencies
