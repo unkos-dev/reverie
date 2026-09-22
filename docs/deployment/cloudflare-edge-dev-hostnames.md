@@ -22,7 +22,8 @@ The tag looks like:
 ></script>
 ```
 
-The beacon script loads from `static.cloudflareinsights.com` and POSTs telemetry back to `cloudflareinsights.com`.
+The beacon script loads from `static.cloudflareinsights.com` and sends telemetry by `POST` back to
+`cloudflareinsights.com`.
 
 ## Why the dev CSP allowlists the beacon origins
 
