@@ -67,7 +67,9 @@ provisions its database through the harness path this subject documents.
 ### The `reverie_migrator` identity
 
 `docker/init-roles.sql` creates `reverie_migrator WITH LOGIN PASSWORD :'mig_pw' NOSUPERUSER NOCREATEROLE NOBYPASSRLS`,
-alongside the three RLS-scoped roles the neighbouring Design owns. The script grants it `CONNECT` on the database and,
+alongside the three RLS-scoped roles the neighbouring Design owns. Its password comes from the
+`REVERIE_MIGRATOR_PASSWORD` environment variable, which `docker/compose.staging.yml` passes only to the
+`reverie-postgres` service, where the script runs on first boot. The script grants it `CONNECT` on the database and,
 separately, `USAGE, CREATE ON SCHEMA public` — both are load-bearing: database-level `CREATE` alone lets it run
 `CREATE SCHEMA tower_sessions` (the initial migration's own statement), but PostgreSQL 15 removed the implicit `CREATE`
 on schema `public` from `PUBLIC`, so the schema-level grant is what lets it create tables and trusted extensions inside
@@ -337,10 +339,10 @@ from the RLS policies those tables carry, since none sets `FORCE ROW LEVEL SECUR
 context" covers that consequence for the roles that matter at request time.
 
 Bypassing the `depends_on` ordering compose applies — for example, restarting only the `reverie` container without a
-preceding successful `reverie-migrate` run — opens a version-skew window that this subject's two independent defences
-narrow but do not eliminate at the instant of the restart: `verify_schema_current`'s fail-closed refusal on
-`SchemaBehind` still runs (the app refuses to serve rather than running against a schema it does not expect), and the
-advisory lock still serialises against any migration that is concurrently in flight.
+preceding successful `reverie-migrate` run — opens a version-skew window that `verify_schema_current`'s fail-closed
+refusal on `SchemaBehind` narrows but does not eliminate at the instant of the restart: the app refuses to serve rather
+than running against a schema it does not expect. That check takes no advisory lock, so it can run while a migration is
+in flight; the lock serialises only migration runners against each other.
 
 ## More information
 

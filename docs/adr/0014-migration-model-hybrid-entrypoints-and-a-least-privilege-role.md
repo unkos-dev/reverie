@@ -61,11 +61,7 @@ failure story.
 ### Identity
 
 Chosen option: **dedicated `reverie_migrator` role**, because it isolates schema management from the cluster superuser
-at no cost to migration content. `init-roles.sql` provisions a non-superuser role, created
-`NOSUPERUSER NOCREATEROLE NOBYPASSRLS`, that owns the schema objects (created by it on the initial migration) with
-`CREATE` on the database: sufficient for the trusted extensions and all DDL. `DATABASE_URL_MIGRATION` uses this role,
-sourced from a `REVERIE_MIGRATOR_PASSWORD` secret. The bootstrap superuser is used only by first-boot `init-roles.sql`
-and never appears in any application or migration container environment thereafter.
+at no cost to migration content.
 
 Cluster superuser was rejected: it places the highest-privilege credential in a long-lived process for no functional
 gain. Reusing a runtime role was rejected: it collapses the privilege separation the architecture relies on.
@@ -73,12 +69,7 @@ gain. Reusing a runtime role was rejected: it collapses the privilege separation
 ### Invocation
 
 Chosen option: **hybrid invocation**, because it keeps compose upgrades one command while still giving bare `docker run`
-operators an escape hatch. Both entrypoints delegate to one `db::run_migrations`. The shipped
-`docker/compose.staging.yml` runs a one-shot `reverie-migrate` service, with the app gated by
-`depends_on: { reverie-migrate: { condition: service_completed_successfully } }`. In this default topology the app
-container holds no DDL credentials: `DATABASE_URL_MIGRATION` is set only on the short-lived migrate service. The compose
-upgrade path stays one command: `docker compose pull && docker compose up -d` runs the migrate service to completion,
-then the app.
+operators an escape hatch.
 
 The opt-in `REVERIE_AUTO_MIGRATE=true` flag restores single-process behaviour for bare `docker run` operators not using
 the shipped compose, who then accept carrying the (non-superuser) migration credential in the app environ.
@@ -87,8 +78,8 @@ In-process-only was rejected: it forces migration credentials into the long-live
 This is the shape the earlier always-on auto-migrate decision took. Out-of-band-only was rejected: it leaves
 bare-`docker run` operators with a mandatory two-step upgrade and no escape hatch; the opt-in flag avoids that cheaply.
 
-Even when it does not migrate, the app's startup retains the schema-ahead and checksum read check described below, so an
-app older than the database refuses to serve with a clear message instead of cryptic SQL errors.
+Even when it does not migrate, the app's startup retains the schema-ahead read check described below, so an app older
+than the database refuses to serve with a clear message instead of cryptic SQL errors.
 
 ### Transaction semantics
 
@@ -110,49 +101,14 @@ respectively (see Pros and cons of the options).
 ### Schema-version safety
 
 Chosen option: **schema-ahead detection**, extended to a bidirectional check plus a checksum comparison, because a
-one-directional check only catches half of the operator errors this model creates. On startup the runner compares the
-binary's embedded migration list against `_sqlx_migrations`; if the database holds rows unknown to the binary, startup
-fails with a clear "schema is newer than this application: upgrade the image or roll back the database" message. It also
-verifies each applied migration's stored checksum against the embedded file's SHA-384 hash, failing on mismatch and
-naming the offending version.
+one-directional check only catches half of the operator errors this model creates.
 
 In the out-of-band default (`REVERIE_AUTO_MIGRATE=false`) the application does not migrate, so at startup it instead
 runs a read-only schema check that is fail-closed in both directions: it refuses to serve when the database is ahead of
 the binary, and when the binary is ahead of the database, which is an operator who deployed a new image but has not yet
 run `reverie migrate`. The schema-behind direction is the more common operator error and, left undetected, surfaces as
 scattered runtime SQL failures against missing columns rather than a single legible startup refusal; the bare
-`docker run` path has no compose gating, so this check is the only backstop there. It also reports a never-migrated
-database (no migration history) as a distinct "not initialized" error rather than a raw missing-relation failure. The
-check is read-only (`SELECT` on `_sqlx_migrations`) and holds no migration credential.
-
-### Connection and concurrency
-
-The runner opens an ephemeral pool (max one connection), migrates, then drops it before runtime pools initialise, so the
-migration identity holds no connection during request serving. Concurrent starts are serialised by a PostgreSQL advisory
-lock matching sqlx's internal lock ID, acquired via `pg_try_advisory_lock` in a bounded retry loop (about 30 seconds)
-rather than a blocking `pg_advisory_lock`; failure to acquire fails startup with a clear error. The ephemeral connection
-sets `lock_timeout=30s` to bound heavyweight lock waits, an interim default pending a project-wide database lock and
-timeout strategy.
-
-### Logging
-
-Interim levels pending project-wide logging conventions:
-
-| Scenario | Level | Message |
-| -------- | ----- | ------- |
-| No pending migrations | DEBUG | `database schema is up to date` |
-| Migrations applied | INFO | `applied {n} pending migrations ({elapsed}ms)` |
-| Individual migration applying | DEBUG | `applying migration {version} ({name})` |
-| Schema ahead of binary | ERROR | `database schema is newer than this application version` plus recovery guidance |
-| Schema behind binary (out-of-band app start) | ERROR | `database schema is older than this application — run reverie migrate` plus recovery guidance |
-| Never-migrated database (no migration history) | ERROR | `database is not initialized (no migration history) — run reverie migrate first` |
-| Batch migration failure | ERROR | `migration batch failed: {error}` plus batch recovery guidance |
-| No-tx migration SQL failure | ERROR | `no-transaction migration failed: {version} ({name})` plus no-tx recovery |
-| No-tx tracking INSERT failure | ERROR | `no-transaction migration {version} ({name}) applied but tracking failed` |
-
-Recovery guidance distinguishes batch failure ("pin the previous image tag: database is untouched"), no-tx SQL failure
-("transactional migrations already committed; fix forward"), and no-tx tracking failure ("the migration IS applied; do
-not revert, manually insert the tracking row").
+`docker run` path has no compose gating, so this check is the only backstop there.
 
 ### Consequences
 
@@ -220,14 +176,8 @@ Related ADR:
 
 Related ADR: Adopt tower-sessions-sqlx-store for Postgres-backed sessions (retired; history holds the record).
 
-Bare `docker run` operators either run the image with the `migrate` argument (wait for exit, then run the server) or set
-`REVERIE_AUTO_MIGRATE=true`. The shipped compose handles this automatically.
-
 Semver and release notes: pre-v1.0 the schema is freely mutable. Post-v1.0, additive migrations are MINOR and
 destructive ones MAJOR; the migration runs transparently either way, and the changelog communicates impact.
-
-`start_period`: while migrating, the container is "starting"; operators using `HEALTHCHECK` must set `start_period` to
-cover migration duration, and data-backfill migrations should document expected duration in release notes.
 
 Revisit conditions:
 
