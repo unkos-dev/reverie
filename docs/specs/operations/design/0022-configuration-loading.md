@@ -236,8 +236,9 @@ field in `SECRET_FIELDS` carries a `#[validate(...)]` attribute, so that unguard
 reach; a `#[validate(...)]` attribute on one would not be scrubbed by anything this pipeline does. Separately, the
 schema-emitted default for a secret-bearing field is checked against real credential leakage by only three of the six
 `SECRET_FIELDS` entries (`oidc_client_secret`, `googlebooks_api_key`, `hardcover_api_token`, asserted in
-`config_schema_has_no_secret_default_values`); the other three (the three DSN fields) are safe only because their
-defaults are `String::new()`, not because a test confirms it.
+`config_schema_has_no_secret_default_values`); the other three, the DSN fields, are safe only through their defaults,
+not because a test confirms it: `database_url` and `ingestion_database_url` default to an empty string, and
+`migration_database_url`, which is optional, to `None`.
 
 Gate 1 keeps the migration DSN out of the `Config` the server runs on: forcing `migration_database_url` to `None`
 whenever `auto_migrate` is false runs on every load, not only when the operator remembers to omit the variable, so an
