@@ -26,12 +26,15 @@ while the old image is still available to pin.
 ## Acceptance criteria
 
 - With automatic migration disabled and the database recording a migration version the binary does not embed, startup
-  fails and no request is served.
+  fails and no request is served. Checked by `verify_schema_current_detects_ahead` in `backend/src/db.rs`; that no
+  request is served is determined by reading `run` in `backend/src/lib.rs`, which verifies the schema before it binds
+  the listener.
 - With automatic migration disabled and the binary embedding a migration version the database does not record, startup
-  fails and no request is served.
+  fails and no request is served. Checked by `verify_schema_current_detects_behind` in `backend/src/db.rs`; that no
+  request is served is determined by reading `run` in `backend/src/lib.rs`, which verifies the schema before it binds
+  the listener.
 - With automatic migration disabled against a database that has never been migrated, startup fails reporting that the
   database is not initialised, rather than propagating the missing-relation error the absent tracking table would
   otherwise raise. Checked by `verify_schema_current_table_absent_is_not_initialized` in `backend/src/db.rs`.
-- With automatic migration disabled and the two sets matching exactly, startup proceeds.
-- With automatic migration enabled, a database behind the binary is not a refusal: it is the pending set that run
-  applies. That path lies outside this obligation, which binds only the disabled default.
+- With automatic migration disabled and the two sets matching exactly, startup proceeds. Checked by
+  `apply_or_verify_flag_off_verifies_ok` in `backend/src/lib.rs`.

@@ -29,7 +29,7 @@ SQL and least certain which migrations landed.
 - After a batch in which one migration fails, the applied-migration record holds no row for any migration in that batch,
   including the ones whose SQL succeeded before the failure. Checked by `batch_failure_rolls_back_tracking_rows` in
   `backend/src/db.rs`.
-- After that same failure, none of the schema objects the batch would have created exists.
-- A `-- no-transaction` migration that fails after the batch has committed leaves the committed batch applied and
-  recorded. That is the obligation's boundary, not a violation of it, and the operator's recovery in that case is to fix
-  the failing SQL and deploy again rather than to roll back.
+- After that same failure, none of the schema objects the batch would have created exists. Determined by inducing a
+  failure partway through a batch and confirming that none of the objects created by the batch's earlier migrations
+  exists; no automated test does this, since `batch_failure_rolls_back_tracking_rows` asserts only the applied-migration
+  record.

@@ -30,8 +30,6 @@ put it into the configuration the server runs on.
 - With automatic migration disabled and `DATABASE_URL_MIGRATION` set in the process environment, the loaded
   configuration leaves `migration_database_url` unset. Checked by `migration_url_nulled_when_auto_migrate_off` in
   `backend/src/config/mod.rs`.
-- With automatic migration disabled, startup takes the read-only verification branch and reads `migration_database_url`
-  at no point. Checked by `apply_or_verify_flag_off_takes_verify_branch` in `backend/src/lib.rs`.
-- With automatic migration enabled, the field is required: a load that cannot supply it fails rather than starting. That
-  is the boundary this obligation does not bind. Checked by `auto_migrate_blank_migration_url_is_missing_var` in
+- With automatic migration disabled and `DATABASE_URL_MIGRATION` set to an empty value, the loaded configuration leaves
+  `migration_database_url` unset. Checked by `from_env_empty_migration_url_treated_as_none_when_auto_migrate_off` in
   `backend/src/config/mod.rs`.

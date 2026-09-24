@@ -32,5 +32,3 @@ been shared the credential is already out.
   validation path inspects the credential-carrying set, so satisfaction rests instead on no credential-carrying setting
   declaring a validation rule; that is determined by reading the field declarations in `backend/src/config/mod.rs` and
   `backend/src/config/security.rs`. No automated check covers this criterion.
-- A failure on a setting that carries no credential may quote the value the environment supplied, and doing so is not a
-  violation. The obligation's boundary is the credential-carrying set, not configuration failures in general.

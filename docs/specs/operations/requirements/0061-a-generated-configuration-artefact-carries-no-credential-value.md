@@ -28,10 +28,12 @@ and no step between those two events looks like disclosure to a reviewer.
 
 - `backend/config.schema.json`, as committed, emits for each credential-carrying setting a default that is either an
   empty string or null: an empty string for `database_url`, `ingestion_database_url` and `oidc_client_secret`, null for
-  `migration_database_url`, `googlebooks_api_key` and `hardcover_api_token`.
-- The committed configuration reference leaves the default column empty for every one of those six settings, describing
-  each by name, type and whether it is required.
-- `config_schema_has_no_secret_default_values` in `backend/src/config/mod.rs` asserts the schema criterion for three of
-  the six: `oidc_client_secret`, `googlebooks_api_key` and `hardcover_api_token`. The other three satisfy it through the
-  empty string their `Default` implementation sets, which no assertion covers, so a change to one of those three
-  defaults is caught by inspecting the regenerated artefact and by nothing else.
+  `migration_database_url`, `googlebooks_api_key` and `hardcover_api_token`. Checked for `oidc_client_secret`,
+  `googlebooks_api_key` and `hardcover_api_token` by `config_schema_has_no_secret_default_values` in
+  `backend/src/config/mod.rs`, which reads the generated schema that `config_schema_matches_committed_artifact` in
+  `backend/tests/gen_config_schema.rs` holds equal to the committed file; the other three are determined by inspecting
+  the committed file.
+- The committed configuration reference leaves the default column empty for every one of those six settings. Checked for
+  `OIDC_CLIENT_SECRET` by `required_and_secret_vars_render_correctly` in `backend/tests/gen_config_ref.rs`, which
+  renders the reference that `config_reference_matches_committed_artifact` in the same file holds equal to the committed
+  file; the other five are determined by inspecting the committed file.
