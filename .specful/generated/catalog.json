@@ -701,9 +701,6 @@
       "id": "REV-DESIGN-0024",
       "kind": "design",
       "path": "docs/specs/operations/design/0024-application-runtime-startup-workers-and-shutdown.md",
-      "satisfies": [
-        "REV-REQ-0064"
-      ],
       "title": "Application runtime: startup, workers, and shutdown"
     },
     {

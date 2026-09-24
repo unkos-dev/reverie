@@ -27,8 +27,9 @@ SQL and least certain which migrations landed.
 ## Acceptance criteria
 
 - After a batch in which one migration fails, the applied-migration record holds no row for any migration in that batch,
-  including the ones whose SQL succeeded before the failure. Checked by `batch_failure_rolls_back_tracking_rows` in
-  `backend/src/db.rs`.
+  including the ones whose SQL succeeded before the failure. Determined by inducing a failure after at least one
+  migration in the batch has succeeded and reading the applied-migration record; no automated test does this, since
+  `batch_failure_rolls_back_tracking_rows` fails the batch at its first migration, before any tracking row is written.
 - After that same failure, none of the schema objects the batch would have created exists. Determined by inducing a
   failure partway through a batch and confirming that none of the objects created by the batch's earlier migrations
   exists; no automated test does this, since `batch_failure_rolls_back_tracking_rows` asserts only the applied-migration

@@ -3,8 +3,6 @@ type: DESIGN
 profile-version: 1
 id: "REV-DESIGN-0024"
 title: "Application runtime: startup, workers, and shutdown"
-satisfies:
-  - "REV-REQ-0064"
 governed-by:
   - "REV-ADR-0021"
 ---
@@ -112,10 +110,11 @@ no-op. No worker, and no other part of this subject, calls `.cancel()`; every wo
 ## Interfaces and dependencies
 
 - The CLI surface `parse_command` accepts is the only interface `main.rs` exposes: no argument (`Serve`), or exactly one
-  of `migrate`, `print-config-schema`, `bootstrap`, `reset-password <email>`, `unlock-account <email>`. Each subcommand
-  other than `Serve` reads only what its own task needs directly from the environment or a minimally built `Config`,
-  rather than the full startup path: `run_migrate` reads only `DATABASE_URL_MIGRATION`, deliberately bypassing
-  `Config::from_env` so a migration-only invocation never holds the OIDC secret or the application DSN.
+  of `migrate`, `print-config-schema`, `bootstrap`, `reset-password <email>`, `unlock-account <email>`. `migrate` and
+  `print-config-schema` load no `Config`: `run_migrate` reads only `DATABASE_URL_MIGRATION`, deliberately bypassing
+  `Config::from_env` so a migration-only invocation never holds the OIDC secret or the application DSN, and
+  `print_config_schema` only renders the schema. `bootstrap`, `reset-password` and `unlock-account` each load the full
+  configuration through `Config::from_env`, so each must pass the same configuration validation the server does.
 - `GET /health` and `GET /health/ready` are the two HTTP interfaces this subject owns directly, documented in the
   generated OpenAPI spec via `#[utoipa::path]` annotations that the `routes!` macro compile-checks. Every other route
   reachable through `build_router` belongs to the subject that owns that route.
@@ -222,9 +221,12 @@ is never reached.
 - **Any startup step failing before the first spawn.** Every fallible step returns an `Err` that `main.rs` surfaces as a
   non-zero process exit: configuration load, an API or HTML CSP string that fails to parse as a valid header value,
   frontend-dist validation, tracing-subscriber installation, any of the three pool opens (application, ingestion,
-  writeback), OIDC discovery, JWT-validator construction, the TCP listener bind, reading the bound address back from the
-  listener, or `axum::serve` itself. Because none of these runs after the first `tokio::spawn`, none of them can leave a
-  worker running with nothing left to drain it.
+  writeback), the schema apply-or-verify step, the administrator bootstrap from the environment seed, OIDC discovery,
+  JWT-validator construction, the initial settings load, the login limiter's rate conversion, the TCP listener bind, or
+  reading the bound address back from the listener. Because none of these runs after the first `tokio::spawn`, none of
+  them can leave a worker running with nothing left to drain it. `axum::serve` also returns its error to `main.rs`, but
+  it runs after the workers are spawned; that path is the unclean shutdown in Runtime behaviour, where the workers are
+  drained before `run` returns.
 - **CLI dispatch of an unrecognised or malformed subcommand.** A single unknown token, or an unexpected trailing
   argument after a recognised one, is rejected with a message naming the bad token or the expected usage, rather than
   falling through to `Serve`; both directions are pinned by `parse_command_maps_args_rejects_unknown_and_trailing`.
@@ -249,14 +251,14 @@ is never reached.
 
 ## Security and operations
 
-The default schema-management path (`auto_migrate` unset or `false`) never puts a migration-capable database credential
-into the `Config` this subject builds. Configuration loading forces `config.migration_database_url` to `None` whenever
-`auto_migrate` is `false` (covered by that subject, not restated here), and `apply_or_verify_schema`'s default branch
-calls `db::verify_schema_current` against the application pool only, never reading `migration_database_url` at all; the
-opt-in branch is the only code path in this subject that does. Both directions are pinned by tests
-(`apply_or_verify_flag_off_takes_verify_branch`, `apply_or_verify_flag_on_takes_migrate_branch`), so an inverted branch
-condition fails the suite rather than shipping silently. The repository-provided Compose topology keeps the migration
-credential entirely on the out-of-band `reverie migrate` path.
+When `auto_migrate` is unset or `false`, `run` never reads the migration DSN. Configuration loading forces
+`config.migration_database_url` to `None` whenever `auto_migrate` is `false` (covered by that subject, not restated
+here), and `apply_or_verify_schema`'s default branch calls `db::verify_schema_current` against the application pool
+only, never reading `migration_database_url` at all; the opt-in branch is the only code path in this subject that does.
+Both directions are pinned by tests (`apply_or_verify_flag_off_takes_verify_branch`,
+`apply_or_verify_flag_on_takes_migrate_branch`), so an inverted branch condition fails the suite rather than shipping
+silently. The repository-provided Compose topology keeps the migration credential entirely on the out-of-band
+`reverie migrate` path.
 
 The writeback pool's every connection sets the `app.system_context` GUC that the `manifestations_*_system`
 row-level-security policies key on (owned by the row-level-security subject, not restated here); this subject's own
