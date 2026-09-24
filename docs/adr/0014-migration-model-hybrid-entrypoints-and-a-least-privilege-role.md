@@ -125,8 +125,8 @@ scattered runtime SQL failures against missing columns rather than a single legi
 - Negative: two invocation paths exist over one runner, which is more surface than a single always-on path.
 - Negative: the custom runner couples to sqlx's `_sqlx_migrations` schema and must be re-verified on sqlx bumps.
 - Negative: a version-skew window exists if `depends_on` ordering is bypassed (a manual "restart just the app");
-  mitigated by the advisory lock, the bidirectional schema-divergence check, and backward-compatible migration
-  discipline.
+  mitigated by the bidirectional schema-divergence check and backward-compatible migration discipline. The advisory lock
+  serialises only migration runners, so the startup version check can run while a migration is in flight.
 - Negative: object ownership belongs to `reverie_migrator`; this is automatic only on a fresh database, and an existing
   database with objects owned by another role needs a one-time `REASSIGN OWNED` or a recreate.
 
