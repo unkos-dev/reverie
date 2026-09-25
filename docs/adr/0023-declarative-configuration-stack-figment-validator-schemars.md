@@ -75,6 +75,11 @@ Figment owns layered configuration loading, serde owns typed deserialisation, va
 validation, and schemars derives the configuration schema and reference. Together they keep the configuration structs as
 the source of truth.
 
+Figment was chosen over config-rs because its errors retain the key path and source, and it can remap environment names
+that do not follow struct nesting. Config-rs's underscore-based nesting conflicts with snake_case field names. Validator
+was chosen over `garde` because wider adoption offered a stronger scrutiny signal for security-relevant configuration,
+despite the latter's cleaner cross-field API.
+
 ### Consequences
 
 - Positive: each variable's name, type, default, and required-ness is declared once on the field; the reference
