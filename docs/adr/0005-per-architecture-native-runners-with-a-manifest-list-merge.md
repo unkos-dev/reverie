@@ -55,25 +55,8 @@ Chosen option: **native runners per architecture, merged into a manifest list**,
 every build, keeps the `main`-push arm64 build and the `v*`-tag release boundary fully native, and lets wall-clock time
 on tag pushes drop to the slower of the two per-architecture builds instead of their sum.
 
-The publish workflow builds each architecture on a native runner and merges a manifest list as a final step:
-
-- A `prepare-matrix` job emits the build matrix as JSON based on `github.ref_type`: a tag push includes both
-  `build (amd64)` on `ubuntu-latest` and `build (arm64)` on `ubuntu-24.04-arm`; a `main` push includes only the arm64
-  leg, whose sole consumer is the arm64 staging host. A job-level `if:` cannot read the `matrix` context, so the
-  per-trigger filter lives in the matrix shape rather than as a job gate.
-- Each `build` job uses `docker/build-push-action` with `push-by-digest=true` and `name-canonical=true`, sets
-  `provenance: mode=max` and `sbom: true`, emits OCI labels via `docker/metadata-action` at build time (labels cannot be
-  back-filled onto an already-pushed image config), and uploads its digest as a workflow artifact.
-- A single `merge` job depending on `build` downloads the digest artifacts, computes tags with `docker/metadata-action`
-  (tags are a property of the final manifest list, not the per-arch images), and assembles the manifest with
-  `docker buildx imagetools create`.
-- `docker/setup-qemu-action` is removed; both legs of the release boundary (`v*` tag) build natively.
-- The tag set, the `concurrency` group keyed on `github.ref`, and the sha-prefix gating from the earlier record are
-  preserved.
-
-The two-channel publication policy from the earlier record remains in force: a `main`-branch push emits `:main` and
-`:sha-<7>`; a `v*`-tag push emits `:vX.Y.Z` and `:X.Y`; `:latest` remains deliberately unassigned until the first semver
-release. Only the build-execution shape changes.
+The release build uses native amd64 and arm64 runners before publishing a manifest list. Main-branch staging builds only
+arm64. The existing publication channels remain unchanged.
 
 ### Consequences
 
@@ -81,14 +64,10 @@ release. Only the build-execution shape changes.
   parallel on native runners.
 - Positive: the `main`-push arm64 build runs natively rather than under QEMU emulation, eliminating the 30-minute-plus
   baseline and making the staging image cadence acceptable.
-- Positive: `docker/setup-qemu-action` and its `binfmt_misc` fragility are gone from the workflow; the per-trigger
-  filter moves from a workflow-step shell expression to a matrix-shape expression emitted by the `prepare-matrix` job.
 - Positive: the release boundary (`v*` tag) is fully native on both architectures, so self-hosters pulling a versioned
   tag receive images built without emulation on either leg.
 - Positive: `provenance: mode=max` and `sbom: true` on each per-arch build carry through `imagetools create` onto the
   resulting manifest list, keeping a path to future image signing open.
-- Negative: digests cross the `build`/`merge` job boundary as workflow artifacts, since the two jobs do not share a
-  workspace; this is the canonical pattern but adds upload and download steps.
 - Negative: four jobs run per publish instead of one (`prepare-matrix`, one or two `build` jobs, `merge`); total
   runner-minutes on tag pushes stay close to the QEMU baseline, since the arm64 leg dominates either way.
 - Negative: the workflow depends on continued GitHub free-tier ARM64 runner availability; a pricing or capacity change
@@ -134,24 +113,6 @@ release. Only the build-execution shape changes.
 This record replaces the build-shape decision of the earlier record, Decouple staging Docker image publication from
 semver release tags (retired; history holds the record). That record's two-channel publication policy and its decision
 to leave `:latest` unassigned remain in force here.
-
-### Publication-channel alternatives
-
-These were the alternatives considered when the two-channel publication policy was set:
-
-- Kick release-please early to force a first semver release: rejected, it burns the first semver tag on a scaffolding
-  release with no functional milestone behind it, which is permanent low-signal noise in the changelog.
-- Manual local `docker build && docker push`: rejected, it breaks the invariant that every published image is
-  reproducible from a workflow run and a commit SHA, and it would need maintainer credentials with package-write scope
-  outside GitHub Actions OIDC.
-- Auto-assign `:latest` to `main` HEAD: rejected, `:latest` is a contract meaning "the most recent stable release", and
-  pointing it at an unreleased build breaks that contract for the most natural pull command a new user types.
-- A separate staging workflow file: rejected, it duplicates the whole pipeline (login, metadata, buildx setup,
-  build-push) for what is a one-line trigger difference, and doubles the action-version upgrade path to track.
-- A `workflow_dispatch` manual button as the primary trigger: rejected, it defeats CI-driven deploy automation by gating
-  staging image production on a maintainer clicking a button.
-- A different registry for staging (Docker Hub, ECR, a separate GHCR namespace): rejected, it adds infrastructure
-  (credentials, retention policies, audit scope) for no benefit over hosting both channels as tags in one package.
 
 Related:
 [Single-image distribution with central CSP enforcement](./0003-single-image-distribution-with-central-csp-enforcement.md),

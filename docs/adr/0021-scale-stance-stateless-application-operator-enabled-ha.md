@@ -50,26 +50,9 @@ Chosen option: **stateless, operator-enabled scale-out**, because it unlocks sca
 of one architectural property Reverie wants regardless, while keeping the maintained surface bounded to a library
 manager rather than a distributed-systems runtime.
 
-The application is stateless. All durable state lives in Postgres
-([crash-safe state ADR](./0020-durable-crash-safe-state-in-postgres-via-atomic-transactions.md)), sessions included
-([first-party session layer ADR](./0015-first-party-session-layer-on-the-tower-sessions-core.md)), so no instance holds
-authoritative in-memory state and no sticky-session affinity is required. An operator can therefore run multiple app
-instances behind their own load balancer, or a standby, all pointing at one Postgres, which they may make highly
-available by their own means.
-
-Reverie owns no distributed infrastructure: no first-party leader election, node discovery, clustering, failover
-orchestration, or distributed work scheduler. Background workers are designed durable, not distributed
-([durable job queue ADR](./0018-durable-job-queue-postgres-backed-skip-locked-crash-only.md)).
-
-Single-instance is the supported default; multi-instance is operator-owned. When an operator scales out, they own the
-load balancer, the Postgres HA, and the connection-budget sizing this decision defers to the pooling ADR: instance count
-multiplied by pool size against one Postgres.
-
-This stance requires a small standing guardrail: features must stay safe under concurrent instances even though one is
-the default. Startup migration is advisory-locked so two instances cannot double-migrate
-([migration model ADR](./0014-migration-model-hybrid-entrypoints-and-a-least-privilege-role.md)), and job claim is
-concurrency-safe ([durable job queue ADR](./0018-durable-job-queue-postgres-backed-skip-locked-crash-only.md)). These
-guardrails keep scale-out from being precluded; they are not first-party HA.
+One instance is the supported default. Operators may run multiple stateless application instances and own the load
+balancer, database availability, and capacity planning. Reverie does not take ownership of leader election, clustering,
+or failover orchestration.
 
 ### Consequences
 

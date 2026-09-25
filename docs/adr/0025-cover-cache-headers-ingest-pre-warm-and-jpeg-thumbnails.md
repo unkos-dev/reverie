@@ -55,44 +55,25 @@ roughly 100 KB PNG where a JPEG of the same 300 px thumb is roughly 15 KB.
 
 ## Decision outcome
 
-Chosen option: **Cacheable private headers with a strong ETag**, because it lets repeat grid views serve from the
-browser cache while a matching `If-None-Match` still gets a cheap `304` after the cache lapses, without exposing an
-RLS-scoped cover to a shared cache. Covers serve `Cache-Control: private, max-age=86400` with a strong `ETag` of
-`"{current_file_hash[..16]}-{size}"`, and the handler answers a matching `If-None-Match` with `304 Not Modified`.
-`private` keeps a shared proxy or CDN from storing a cover, and `Vary: Authorization, Cookie` partitions the per-user
-private cache so a shared browser cannot replay an RLS-scoped cover across an account switch, since covers are
-RLS-visibility-scoped and the same URL can be a `200` for one user and a `404` for another. `max-age` serves repeat
-views from the browser cache with no request; once it lapses the `ETag` drives a cheap revalidation. Immutable
-long-lived caching is rejected because the cover URL is not hash-addressed: a writeback changes content at the same URL,
-so `immutable` would pin a stale cover for the whole `max-age` window. The `ETag`, which is itself derived from the file
-hash, gives correct revalidation after a writeback instead.
+Chosen option: **cacheable private headers with a strong ETag**, because repeat views can reuse covers without placing
+user-scoped content in a shared cache.
 
-Chosen option: **Pre-warm thumbnails at ingest**, because it turns the first grid view into a warm hit instead of a cold
-generation on the request path. `process_file` fires a concurrency-bounded, best-effort background task that generates
-the thumbnail for each newly-ingested EPUB. Warming is detached, so the synchronous scan returns immediately; it is
-bounded by a process semaphore, so there is no thundering herd on the blocking pool; and it never fails ingest.
-Full-size covers stay lazy, since the reader view loads one at a time.
+Chosen option: **pre-warm thumbnails at ingest**, because the first grid view should not generate them on the request
+path. Full-size covers remain lazy.
 
-Chosen option: **JPEG-only thumbnails**, because JPEG shrinks a thumbnail payload far more than the source format that
-WebP, the alpha-preserving alternative, cannot yet provide. The thumbnail tier always encodes to JPEG at quality 82; the
-full tier preserves the source format. Since JPEG has no alpha, transparency is composited over white first; a bare
-channel-drop would render the transparent regions of a non-canvas-filling SVG cover black. WebP would preserve alpha
-directly, but `image` 0.25 has no WebP encoder.
+Chosen option: **JPEG-only thumbnails**, because they reduce payload size. Transparent source regions are composited
+before encoding.
 
 ### Consequences
 
 - Positive: repeat grid views serve from the browser cache; cold first views are eliminated by warming; thumbnail
   payloads shrink by roughly 6 to 8 times.
-- Positive: moving generation into `spawn_blocking`, on both the warm path and the lazy get-or-create miss path, removes
-  image work from the async runtime thread, closing a latent blocking-IO bug.
 - Positive: the shared-browser cross-user replay threat, a cached RLS-scoped cover served to a different account after a
   switch on the same browser, is closed by `Vary: Authorization, Cookie`, which partitions the private cache by
   credential. Credentials are stable within a session, so per-session caching is preserved while the cross-user replay
   is blocked.
 - Negative: a writeback within the `max-age` window shows a stale cover for up to a day. This is accepted because covers
   change rarely (enrichment), and the `ETag` makes it self-correct on the next revalidation.
-- Negative: cache entries written before this decision keep their old encoding until their hash changes, so the change
-  is not retroactive.
 
 ## Pros and cons of the options
 

@@ -71,26 +71,14 @@ Chosen option: **Full declarative stack**, because it makes the config struct th
 which resolves the configuration-reference generator soundly and removes the class of hand-rolled drift the imperative
 reader invites. The stack:
 
-- `figment`: layered loading (struct defaults to environment), nested-struct deserialization, and an in-memory provider
-  for hermetic tests, replacing the closure-based test seam. Chosen over `config` (config-rs): figment carries richer
-  error metadata (key path plus source), maps cleanly to the var-named `ConfigError` requirement, and its per-key
-  `.map()` gives a flexible escape hatch for the awkward env-name mappings; config-rs's `_`-separator nesting collides
-  with snake_case field names and offers less remapping.
-- `serde`: typed deserialization into the config structs (already in tree).
-- `validator`: declarative range checks plus framework-hosted custom and cross-field validators (conditional-required,
-  header-injection), with field-attributed error aggregation. Chosen over `garde`: on a security-relevant surface,
-  breadth of deployment is the stronger scrutiny signal than release recency, and `validator` has roughly ten times the
-  adoption of `garde` (about 9M vs about 0.8M recent downloads) in a stable problem domain where a quiet release cadence
-  reads as mature rather than abandoned. `garde` has the cleaner cross-field API and more recent releases, but fewer
-  independent eyes.
-- `schemars`: `JsonSchema` derive on the config structs, scoped to the config crate; the configuration reference and a
-  reusable JSON Schema artifact are rendered from it. Chosen, scoped to the config crate, over reusing utoipa or a
-  custom harvester: a custom harvester would either reintroduce the brittle `syn` source-walk this decision exists to
-  eliminate or require owning a bespoke proc-macro, and reusing utoipa (the API-side OpenAPI emitter) for config is
-  off-label, awkward to introspect, and would couple the config refactor's sequencing to the docs effort. `schemars` is
-  the purpose-built struct-to-JSON-Schema tool, keeps config self-contained, and yields a reusable JSON Schema artifact.
+Figment owns layered configuration loading, serde owns typed deserialisation, validator owns declarative and cross-field
+validation, and schemars derives the configuration schema and reference. Together they keep the configuration structs as
+the source of truth.
 
-Crate versions are pinned in `backend/Cargo.toml` at implementation time and pass the `cargo audit` gate.
+Figment was chosen over config-rs because its errors retain the key path and source, and it can remap environment names
+that do not follow struct nesting. Config-rs's underscore-based nesting conflicts with snake_case field names. Validator
+was chosen over `garde` because wider adoption offered a stronger scrutiny signal for security-relevant configuration,
+despite the latter's cleaner cross-field API.
 
 ### Consequences
 
@@ -100,13 +88,6 @@ Crate versions are pinned in `backend/Cargo.toml` at implementation time and pas
   improvement over fail-fast `if`-ladders on a surface that includes a security-relevant injection check.
 - Positive: figment's layering leaves the door open to optional config-file support later without another rewrite
   (enabled, not pursued here).
-- Positive: the configuration becomes a `backend/src/config/` module with one file per subsystem struct, replacing a
-  roughly 1370-line monolith; the split falls out of the declarative shapes along the existing sub-struct seams.
-- Positive: the environment-variable-name-to-nested-struct mapping is carried by a small custom `figment::Provider`
-  (`EnvProvider`, around 60 lines) with an in-memory `from_pairs` constructor, which keeps config tests parallel-safe
-  without mutating process env; stock `figment::Env` is process-env-only and cannot do this without `Jail`'s global-env
-  lock and the `getenv`/`setenv` race. The map doubles as the introspectable var-to-field registry the reference
-  generator consumes.
 - Positive: the operator env-var surface stays deliberately mixed, bare ecosystem-canonical names (`DATABASE_URL`,
   `OIDC_*`, `RUST_LOG`) alongside `REVERIE_`-namespaced app-specific knobs, matching mature self-hosted peers.
   Regularising every var to mirror the struct nesting (for example `__`-separated, `REVERIE_OPDS__PUBLIC_URL`) would let
@@ -119,20 +100,6 @@ Crate versions are pinned in `backend/Cargo.toml` at implementation time and pas
   role-scoped DSN separation, and conditional-required migration credentials. Secrets are represented by name/shape only
   in every emitted artifact, including the schemars JSON Schema, which must never carry a default value for a
   secret-bearing field.
-- Negative: the declarative path deserializes `migration_database_url` from `DATABASE_URL_MIGRATION` unconditionally
-  whenever it is set; the `auto_migrate` gate must be reapplied as a post-deserialize step, else the long-lived server
-  re-acquires the migrator credential in memory that
-  [Migration model: hybrid entrypoints and a least-privilege role](./0014-migration-model-hybrid-entrypoints-and-a-least-privilege-role.md)
-  deliberately eliminated.
-- Negative (smaller than feared): some of `from_source`'s complexity survives as custom code in new shapes: the
-  `REVERIE_LOG_LEVEL` > `RUST_LOG` > `"info"` cascade, the conditional-required migration DSN, and the ingestion-DSN
-  fallback (all post-deserialize), plus two custom field deserializers, `format_priority` (bare CSV to `Vec<enum>`) and
-  `csp_report_endpoint` (raw-string injection guard). Prototyping established that figment does not coerce `Str` to
-  `num`/`bool` from a raw-string provider on its own; its `Env` provider parses each value via `Value`'s `FromStr`
-  first. Mirroring that parse in `EnvProvider` makes numeric coercion native and the strict-bool contract (only
-  lowercase `true`/`false`, rejecting `1`/`yes`) native too, so the per-field bool/number deserializers first
-  anticipated are unnecessary; enum, `url::Url`, and `PathBuf` deserialize natively. The surviving custom surface is
-  therefore narrower than a hand-rolled reader's, concentrated on the two non-standard fields.
 - Negative (accepted): developer environments keyed on the current env-var layout may need adjustment; acceptable
   pre-v1.0, where no external env-var contract exists.
 

@@ -43,31 +43,8 @@ different hook path and matches globs with a different engine.
 Chosen option: **lefthook as the sole hook runner**, because it is a single polyglot binary with declarative,
 parallel-capable configuration, and it removes the Node-only staged-file layer that lint-staged added.
 
-- The glob engine is pinned to doublestar. The prior matcher treated a slashless pattern as a basename match at any
-  depth and treated `**` as zero or more directories, so `backend/src/**/*.rs` covered `backend/src/main.rs`. lefthook
-  defaults to an engine that matches slashless patterns at the root only and treats `**` as one or more directories,
-  which would skip a file sitting directly under a base directory. The config sets `glob_matcher: doublestar` and writes
-  every slashless pattern as `**/*.ext`, restoring basename-anywhere matching.
-- Formatter output is re-staged through `stage_fixed`. lint-staged re-staged rewritten files; lefthook does so only when
-  a command opts in. Both oxfmt commands set `stage_fixed`, so a staged unformatted file commits as its formatted bytes.
-- The two formatter commands run sequentially, apart from the readers. `stage_fixed` re-stages by calling `git add`
-  after the command, and lefthook does not coordinate the git index across commands. Running both staging commands at
-  once would race the index lock and abort otherwise-valid commits. The two formatter commands therefore form a
-  sequential group, kept separate from a parallel read-only group. The same split keeps a formatter from rewriting a
-  file while a reader validates the pre-format bytes.
-- The secret scan runs in the parallel read-only group, alongside the formatters rather than strictly ahead of them. The
-  formatters only rewrite files on disk and create no commit, so any secret-scan finding still aborts the commit before
-  it exists.
-- pre-commit gains the frontend linters. The prior pre-commit ran neither oxlint nor stylelint; both ran only in
-  continuous integration. The hook now runs both on staged frontend files. oxlint is type-aware and loads the whole
-  project graph, so the hook reports type-aware findings on staged files only: a pre-existing type-aware error in an
-  untouched file does not block the commit, and the whole-project lint in continuous integration remains the full
-  backstop. The type-aware engine is pinned to an exact version.
-- Install detects the stale hook path. husky pointed `core.hooksPath` at its dispatch directory; lefthook installs shims
-  into `.git/hooks`, and the `prepare` script runs the install on every dependency install. An existing clone still
-  carries the stale local `core.hooksPath`. lefthook detects the conflict and refuses to install with explicit guidance,
-  so a contributor clears the setting once rather than discovering silently dead hooks. A fresh clone carries no such
-  setting and installs cleanly.
+Lefthook owns the repository hooks, with matching semantics that cover nested files, formatter changes staged before
+commit, and read-only checks run without index races. Frontend linting is included in the local hook surface.
 
 ### Consequences
 

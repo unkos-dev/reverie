@@ -56,41 +56,9 @@ Chosen option: **Restart-bounded reclaim**, because within a single instance a r
 an orphan, so reclaim is exact with no lease to tune, and it reuses the already-crash-safe Postgres store instead of
 adding new infrastructure.
 
-An instance is one app process (the deployment unit); a worker is one of the N concurrent job-running tasks inside it
-(`enrichment.concurrency`, a semaphore-gated pool). Reclaim exactness rests on the instance boundary, not on worker
-count.
-
-- Jobs are Postgres rows claimed with `FOR UPDATE SKIP LOCKED`, so concurrent workers never grab the same job. This is
-  the concurrency-safe primitive the
-  [scale-stance ADR](./0021-scale-stance-stateless-application-operator-enabled-ha.md) names as a "don't preclude scale"
-  guardrail. Mutual exclusion of one `in_progress` row per work-unit is enforced by a partial unique index.
-- Crash recovery is restart-bounded. At instance startup, once per process boot, before the worker pool begins claiming,
-  orphaned `in_progress` rows are reverted to `pending` and re-claimed. Because every worker lives inside the one
-  instance, a crash kills them all together, so a restart proves any `in_progress` row is an orphan regardless of how
-  many workers were running; reclaim is exact and needs no timeout to tune.
-- Live-worker job death is closed by point fixes, not a lease. A worker task that dies while the instance stays alive
-  (panic or hang) is the one case startup-revert misses, and in a pool it is the common individual failure, not
-  whole-process death. Hangs are bounded by per-job timeouts, which is already a project-wide invariant (enrichment has
-  a fetch budget), so a hang becomes a caught error that completes the job's bookkeeping. A task panic re-pends the row
-  via a guard on the spawned task. Both are required, not optional, for this option to be complete.
-- Handlers are idempotent. Because reclaim re-runs a job that may have partially executed, every handler must be safe to
-  run again. File-mutating jobs (writeback: OPF rewrite, cover embed, path rename) are not transactional with their
-  Postgres row; the crash-safe-state ADR's transaction guarantee does not extend to filesystem writes, so each must
-  document its re-run safety (write-to-temp-then-rename, or a per-work-unit guard), not merely be labelled idempotent.
-- Workers are crash-only. Correctness never depends on a graceful shutdown having run. A SIGTERM drain (stop claiming,
-  finish in-flight work) is an optimisation that avoids needless re-runs on a planned restart (politeness, not
-  correctness).
-- No distribution. Durability and mutual exclusion come from Postgres; there is no external broker, distributed
-  scheduler, or cross-node coordination. Parallelism is a pool of N workers within the instance against the one queue.
-
-Deferred: lease or visibility-timeout reclaim is the multi-instance lift, not part of the default. The moment an
-operator runs multiple instances (enabled, not owned, by the
-[scale-stance ADR](./0021-scale-stance-stateless-application-operator-enabled-ha.md); no leader election means each
-instance runs its own worker pool), restart-bounded reclaim becomes unsafe: one instance booting would re-pend a peer's
-still-running job. That topology, and only that topology, needs wall-clock leases plus heartbeat renewal to avoid
-double-running long jobs. Adopting it now would buy nothing for the single-instance default and would add a double-run
-hazard for long writeback jobs (a fixed lease expiring while the holder is still mutating an EPUB), so it is a
-non-trivial build that waits for the topology that justifies it.
+Jobs are durable Postgres rows claimed with SKIP LOCKED. An instance restart reclaims its orphaned in-progress jobs;
+handlers must tolerate replay, and a live worker failure must not strand a job. A lease-based multi-instance queue is
+deferred until that topology is adopted.
 
 ### Consequences
 
@@ -136,10 +104,6 @@ non-trivial build that waits for the topology that justifies it.
 - Negative: a crash loses in-flight and queued work, the failure this decision exists to remove.
 
 ## More information
-
-`backend/src/services/writeback/queue.rs` and `backend/src/services/enrichment/queue.rs` call `revert_in_progress` both
-before they start polling and on shutdown when enabled, so an orphaned row is reclaimed when the worker next starts with
-processing enabled.
 
 Sibling ADR: [crash-safe state](./0020-durable-crash-safe-state-in-postgres-via-atomic-transactions.md), committed-state
 durability; this ADR is its in-flight-work complement, and the boundary it notes (transactions do not cover filesystem

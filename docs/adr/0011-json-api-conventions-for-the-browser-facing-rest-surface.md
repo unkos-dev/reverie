@@ -49,189 +49,33 @@ drift. What set of wire-shape conventions should the JSON API surface adopt befo
 
 ## Decision outcome
 
-Chosen option: **a fixed convention set for the browser-facing JSON surface**, because each convention is an IETF,
-OWASP, or W3C standard, and fixing them before the first handler lands keeps the backend and the frontend
-`frontend/src/api/` client on one shared shape.
+Chosen option: **a fixed convention set for the browser-facing JSON surface**, because standards anchor the wire and
+security choices, while fixing the whole set before the first handler lands keeps the backend and the frontend client on
+one shared shape.
 
-Field naming uses `snake_case` (for example `cover_url`, `next_cursor`, `created_at`). Reverie's `User` struct
-(`backend/src/models/user.rs`) already emits `snake_case` because Rust struct fields are `snake_case` by convention and
-serde's default behaviour is round-trip-preserving with no `#[serde(rename_all)]`. RFC 8259 (the JSON spec) is
-naming-agnostic; the de-facto convention across modern public APIs is mixed (Stripe and Slack use `snake_case`; GitHub
-mixes `snake_case` body fields with `camelCase` GraphQL). Reverie picks `snake_case` for one reason that overrides
-convention preference: it removes a per-struct serde attribute that would otherwise be the load-bearing line in every
-handler. The cost is one `eslint-plugin-camelcase` carve-out on the frontend's API client surface.
-
-Timestamps serialise as RFC 3339 strings (for example `"2026-05-22T13:42:00.123Z"`). Two invariants follow from Postgres
-normalising `timestamptz` to UTC. Values are `Z`-terminated, never a numeric offset. Sub-second digits are emitted only
-when non-zero, so consumers must accept variable fractional precision rather than a fixed width. Which datetime crate
-the backend uses, and therefore what makes a DTO field carry this shape, is a separate decision recorded in
-[chrono is the first-party datetime crate](./0046-chrono-is-the-first-party-datetime-crate.md); this convention governs
-the wire format only. The RFC 3339 shape matches the existing OPDS Atom feed (Atom's `<updated>` and `<published>` use
-the same shape per RFC 4287 §3.3), so the two surfaces stay consistent for any operator who reads both.
-
-Errors emit `application/problem+json` per RFC 9457 (formerly RFC 7807; same wire format, `application/problem+json`
-unchanged) with the following body shape:
-
-```json
-{
-  "type": "https://reverie.example/probs/<problem-slug>",
-  "title": "<short human-readable summary>",
-  "status": 422,
-  "detail": "<longer explanation, may include instance-specific info>",
-  "instance": "/api/v1/books/abc-123"
-}
-```
-
-`type` is a stable URI per error variant, assembled from the slugs in `backend/src/error/problems.rs`. Per RFC 9457
-§3.1.1 the URI identifies the problem type and does not need to dereference at first; Reverie registers concrete URIs as
-the deployment story matures, and `reverie.example` is a placeholder host until that decision lands. As RFC 9457 §3.1.3
-specifies, `title` is the short human-readable summary for that problem type. It stays stable when one problem type can
-carry more than one HTTP status. `status` mirrors the HTTP status code. `detail` is the caller-visible message.
-`instance` is the request path (RFC 9457 §3.1 makes this optional but recommended; Reverie always includes it for
-debuggability). The `Content-Type` is `application/problem+json`, not `application/json`, which signals to RFC
-9457-aware clients that the body is a Problem Details document and not a domain object with an `error` field: this
-matters for `fetch().then(res => res.json())` flows that branch on shape. `instance` is the request path; `AppError` is
-a value, not a request-coupled construct, so the path is captured by a `problem_instance_layer` tower middleware
-(`backend/src/error/instance.rs`) that stores the request path into a `tokio::task_local!` slot on request entry, and
-`AppError::into_response` reads from that task-local. The middleware mounts on the outermost composite router, wrapping
-matched API routes and the composite fallback, so that reserved-prefix typos (`/api/v1/__nope__`, `/auth/__nope__`)
-carry the `instance` field too. The slot is `None` outside an HTTP request (for example, unit tests calling
-`AppError::Validation(...).into_response()` directly), in which case `instance` is omitted from the body, which RFC 9457
-§3.1 permits.
-
-Status codes are assigned by failure class, per the definitions in RFC 9110 §15.5. §15.5.1 (400 Bad Request) covers a
-request the server cannot or will not process due to a client error in the request's own grammar, and the failure
-classes at the decode boundary map here by the part of the request that failed. A query parameter that will not
-deserialise is `AppError::MalformedQuery` (`malformed-query`). A path parameter that will not deserialise is
-`AppError::MalformedPath` (`malformed-path`). A JSON body the extractor refuses is `AppError::InvalidRequestBody`
-(`invalid-request-body`), which keeps the status of the rejection class rather than flattening to one code: 400 when the
-bytes are not valid JSON, 413 when the body exceeds the limit, 415 when the content type is missing or not JSON, and 422
-when the body parses but its fields or types do not match. Header failures are mapped by `AppError::MalformedHeader`
-with problem type `malformed-header`: this covers both malformed header field syntax and a syntactically valid header
-form the API refuses by policy (an `If-Match` wildcard, an entity-tag list, or a repeated header instance), the latter
-under §15.5.1's broader "cannot or will not process the request due to a client error" clause rather than a grammar
-violation as such. RFC 9110 defines "content" as the message body, so 422 Unprocessable Content (RFC 9110 §15.5.21)
-stays scoped to the body, and it carries two cases. A body that parsed but did not fit the target type is
-`invalid-request-body`, decided before the handler runs. A body that parsed cleanly and then failed the handler's own
-rules (unknown or invalid field values, business-rule rejections) is `AppError::Validation` (`validation`), decided
-after extraction. Semantic codes are reserved for well-formed requests that fail against current server state rather
-than against their own shape: 404 for existence (including the deliberate 404-over-403 ownership convention below), 405
-Method Not Allowed (RFC 9110 §15.5.6) when the target resource exists but does not support the request's method, emitted
-as problem details with the `Allow` header intact, 409 for conflict, 412 Precondition Failed when a precondition
-evaluates false (RFC 9110 §13.1), and 428 Precondition Required when a required precondition is missing entirely (RFC
-6585 §3). Any new error path is checked against two tests before it picks a status code. The recovery-guidance test: a
-status code whose standard recovery action cannot succeed for that input is the wrong code. The motivating shape is an
-`If-Match` header that is syntactically malformed (not a well-formed entity-tag): a 412's implied recovery (refresh the
-tag and retry) can never succeed against a grammar error, since no refreshed tag will ever parse, so that failure
-belongs in 400, because the defect is in the request's own grammar, not its instructions. The closed-domain test: input
-or stored data that is valid within its own domain (a database enum variant, a schema-legal document) must never surface
-as 500, because internal errors are reserved for genuine invariant violations, not for values the domain already accepts
-as legitimate members. The deliberate, documented exceptions to these tests stand: the schema-drift decode boundary in
-the library module intentionally fails loudly, and the existence-hiding 404s below are a security choice, not drift.
-
-Nullable fields serialise as `null`, never omitted. TypeScript consumers read `field: T | null` (always present,
-sometimes null), not `field?: T` (sometimes absent, sometimes the value). The distinction matters: `field?: T` collapses
-"field absent" and "field present with `undefined`" into the same shape, which breaks JSON Merge Patch (RFC 7396)
-semantics, where `{"field": null}` means "clear" and `{}` means "leave unchanged". Reverie's model structs already
-follow this pattern, with no `skip_serializing_if` on a nullable field anywhere.
-
-`/api/v1/books` and every list endpoint paginates with cursors, not offsets. Cursors are opaque base64url payloads
-carrying the sort key(s) plus a tiebreaker; see the multi-column sort stack ADR
-(./0037-multi-column-sort-stack-on-the-keyset-list-contract.md) for the current cursor shape. Pagination model is not
-IETF-specified; modern consensus across GitHub, Stripe, Slack, and Twitter v2 is cursor-based for one reason: cursors
-are stable under concurrent inserts. Reverie's enrichment pipeline writes asynchronously to `manifestations`, so offset
-pagination would shift the page boundary mid-scroll. Cursors are also O(log N) per page at scale; offsets degrade as the
-table grows, and Reverie targets 50K+ library sizes.
-
-Every paginated response includes an RFC 8288 `Link` header with `rel="next"` (and `rel="prev"`, `rel="first"` when
-applicable), for example `Link: </api/v1/books?cursor=eyJ0eXAi...>; rel="next"`, plus a `next_cursor: string | null`
-field in the JSON body. The Link header is the IETF-canonical pagination signal: it matches OPDS Atom's
-`<link rel="next">` and is the shape GitHub, Stripe, and the JSON-API spec all converge on. The body field exists
-because `fetch()` does not auto-parse Link headers and the frontend's react-query infinite-query helper consumes a body
-field with less ceremony than a parsed Link header. The two are guaranteed to carry the same information; either is
-sufficient.
-
-`SameSite=Lax` cookies alone are insufficient per the OWASP CSRF prevention cheat sheet. Reverie adopts the OWASP
-synchronizer-token pattern. On session creation in `routes/auth.rs::callback`, the backend generates a 32-byte random
-token (`rand::fill`, `backend/src/auth/token.rs`), base64url-encoded, stored under `csrf_token` in the session. The
-token is surfaced to the browser via the existing `GET /auth/me` JSON response (already called on mount in the
-frontend's `ThemeProvider`), which carries a `csrf_token: String` field. A tower middleware layer, `csrf_required`
-(`backend/src/security/csrf.rs`), mounts on every non-safe-verb (POST/PUT/PATCH/DELETE) request under `/api/v1/*`. The
-middleware reads `X-CSRF-Token` from request headers; if absent it returns 428 with `type: ".../csrf-missing"`; if
-present but it does not match the session value under constant-time compare (`subtle::ConstantTimeEq`), it returns 403
-with `type: ".../csrf-mismatch"`. The layer wraps the matched route, so a session-authenticated mutation without a valid
-token receives the CSRF problem before any route-level status is decided, including 405 for an unsupported method and
-404 for a missing row. The token rotates on privilege change (when `session_version` increments). `POST /auth/logout` is
-exempt: logging out destroys the session and therefore the token, so a logged-out user has no session to attach a token
-to. `SameSite=Lax`, the CSP API layer, and the Bearer token requirement for older API surfaces all remain in place as
-belt-and-braces alongside the synchronizer token, which is the primary CSRF defence for browser cookie-authed
-operations.
-
-When a request targets a resource the user lacks row-level-security visibility on (`GET /api/v1/books/{id}` where the
-manifestation row is filtered out), the handler returns 404 Not Found, not 403 Forbidden. This is OWASP
-defence-in-depth: 403 confirms the resource exists, which is information disclosure. Under `acquire_with_rls`, the row
-is invisible to the query, so the existing zero-rows to `AppError::NotFound` mapping produces the correct shape with no
-special handling. `GET /api/v1/works/{id}` is an edge case: the `works` table has no row-level security, so the handler
-explicitly gates on whether the user can see at least one `manifestation` for the work, returning 404 when zero are
-visible; this is tested explicitly for child accounts.
-
-`PATCH` endpoints accept RFC 7396 JSON Merge Patch bodies. A missing key means "leave unchanged"; an explicit `null`
-means "clear". Server-side decoding uses `serde_with::rust::double_option` for sparse-update plumbing:
-
-```rust
-#[serde(default, with = "::serde_with::rust::double_option")]
-pub field: Option<Option<T>>, // None = absent, Some(None) = null/clear, Some(Some(v)) = set
-```
-
-`PATCH /api/v1/books/{id}/metadata` uses this convention, which defaults forward for any future PATCH surface. JSON
-Merge Patch is the standard sparse-update format; library support exists across every client language Reverie is likely
-to care about, and RFC 7396 is explicitly limited to merging object trees (no array merging), which is what Reverie
-needs.
-
-Every new or changed endpoint that accepts a PATCH exposes a `GET` at the same URI returning the same representation,
-field for field, so a read-modify-write flow and any HTTP precondition layered on top of it both target one resource
-instead of two shapes that can drift apart. The action-style endpoints under the enrichment review queue (accept,
-reject, revert, lock/unlock) are the documented exception: they are verbs, not resource state, and have no matching
-representation to read back. The pre-existing user admin surface (`PATCH /api/v1/users/{id}` and its role, child-status,
-and account-status PUT verbs, whose only read-back is the paginated users list) and `PATCH /api/v1/auth/me/theme`
-predate this convention and do not yet conform to it; both are tracked for retrofit rather than exempted.
-
-Optimistic-concurrency endpoints (shelf reorder, future metadata writes that need ETag protection) require an `If-Match`
-header. Absent, the response is 428 Precondition Required with `type: ".../if-match-required"`. Mismatch is 412
-Precondition Failed with `type: ".../if-match-mismatch"`. The ETag value is computed by the handler, typically a hash of
-the resource state or its `updated_at`.
-
-`Accept: application/json` is the default for the API surface. Errors emit `application/problem+json`. OPDS routes
-remain on `application/atom+xml`, which is out of scope for this convention set. There is no `Accept` header parsing
-yet; the API defaults to JSON unconditionally on `/api/v1/*` paths. If a future client needs content negotiation, the
-handler picks it up at that point.
+The conventions choose snake_case fields, RFC 3339 UTC timestamps, RFC 9457 Problem Details, failure-class HTTP status
+codes, explicit nulls, cursor pagination with Link headers, synchronizer-token CSRF protection for cookie-authenticated
+mutations, existence-hiding 404 responses, JSON Merge Patch, matching GET representations for resource PATCH endpoints,
+and If-Match preconditions where optimistic concurrency is required. These are the selected API contracts; handler and
+middleware wiring is outside this decision record.
 
 ### Consequences
 
-- Positive: every convention is an IETF or OWASP standard. New contributors and external integrators find every shape
-  decision already grounded in a public spec; reviewer ceremony around "why this shape" collapses.
+- Positive: the wire and security choices use public standards where they fit, while local conventions are explicit
+  enough for backend and frontend contributors to share one contract.
 - Positive: the frontend `frontend/src/api/` client and backend handlers share one shape definition: `snake_case`, RFC
   9457 body, RFC 8288 pagination, RFC 7396 patches. Cross-cutting drift between backend and frontend types is
   structurally bounded.
-- Positive: the move from `{"error": "<msg>"}` to RFC 9457 is the only inherited-divergence-to-standard move; it is
-  surgical, a single `IntoResponse` implementation plus a `test_support` helper.
 - Positive: adopting the synchronizer token during the greenfield phase is cheap. Retrofitting after production
   cookie-authed mutation traffic existed would be a months-long rollout.
-- Negative: the RFC 9457 envelope breaks every existing test that asserts `body["error"]`. An `assert_problem` test
-  helper collapses the diff, but the change still touches several existing test files (auth, ingestion, enrichment,
-  metadata, tokens).
 - Negative: `next_cursor` plus the Link header duplicate the same signal; the redundancy is worth it for the JS-client
   ergonomics win and is documented as deliberate.
-- Negative: the `instance` field requires a tokio task-local plus a tower middleware, roughly 30 lines of code including
-  tests, an acceptable cost for RFC 9457 conformance and request-path debuggability.
-- Negative: `csrf_token` adds one field to the `/auth/me` response, a small shape diff in `backend/src/models/user.rs`,
-  consumed by the frontend via a module-level setter with no other API surface change.
 
 ## Pros and cons of the options
 
 ### A fixed convention set for the browser-facing JSON surface
 
-- Positive: every convention traces to an IETF, OWASP, or W3C standard rather than a first-party invention.
+- Positive: established standards govern the error, pagination, patch, timestamp, and CSRF choices.
 - Positive: backend and frontend share one shape definition, so contract drift across the wire boundary is structurally
   bounded.
 - Negative: adopting several conventions at once (RFC 9457, the synchronizer token) touches existing tests and existing
@@ -288,17 +132,6 @@ handler picks it up at that point.
   `error/problems.rs` swaps the prefix, because the URIs are stable in their slugs.
 
 ## More information
-
-The RFC 9457 envelope governs every error a handler or its extractors raise on the JSON API surface (`/api/v1/*`), so a
-request that fails before the handler body runs still answers in `application/problem+json` rather than axum's
-plaintext. Query parameters go through `Result<Query<T>, QueryRejection>` (`axum_extra`) and `?`-propagate (`type`
-`.../malformed-query`, HTTP 400). Path parameters go through the crate's `ApiPath` wrapper (`type` `.../malformed-path`,
-HTTP 400). JSON bodies go through `ApiJson`, which keeps the status axum assigns the rejection class (`type`
-`.../invalid-request-body`; HTTP 400 for invalid JSON, 413 for an oversized body, 415 for a missing or wrong content
-type, 422 for a body whose fields or types do not match). A response replaced above the handler stack falls outside this
-decision: the session layer answers a failed session save with an empty 500 of its own. OPDS query handlers, out of
-scope per the content-negotiation convention above, return the same `problem+json` on a malformed query via their
-existing `Result<_, AppError>` path, not by this decision.
 
 IETF specs cited: RFC 9457 (Problem Details, formerly RFC 7807), RFC 8288 (Web Linking / Link header), RFC 7396 (JSON
 Merge Patch), RFC 9110 §12 (content negotiation), RFC 9110 §13.1 (`If-Match`), RFC 3339 (date format), RFC 8259 (JSON).

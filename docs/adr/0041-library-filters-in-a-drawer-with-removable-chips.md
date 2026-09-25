@@ -52,14 +52,8 @@ Chosen option: **filters in a right-side drawer with removable chips**, because 
 condition, stops charging the collection a permanent column of width, and works identically for the cover grid and the
 table since it is keyed to the one query both projections share.
 
-Active filters render as chips built from the same summary projection the rail's read-only masthead summary used, except
-each chip now carries its own removal patch, plus a clear-all affordance. The filter drawer renders at every width
-rather than only below a breakpoint, and it shares one overlay slot with the book-detail drawer opened from the table's
-details column: the two are mutually exclusive by construction, share one scrim, share Escape handling, and return focus
-to whichever control opened them. Closing the drawer distinguishes how it closed: Escape abandons any pending filter
-drafts, while the scrim or the close button applies them. Search moves out of the filter surface entirely into a
-view-neutral toolbar shared by both projections, alongside the grid/table switcher and the Filters trigger; the view
-switcher changes which projection renders, never the underlying query.
+The drawer is the filter editing surface at every width; removable chips expose active conditions outside it. Search
+remains available in a shared toolbar, and the filter and book-detail drawers share an overlay slot.
 
 ### Consequences
 

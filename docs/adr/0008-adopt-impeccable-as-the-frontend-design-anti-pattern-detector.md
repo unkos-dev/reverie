@@ -69,34 +69,11 @@ than imposing its own taste.
 This decision governs the dependency itself; the skill side (the full impeccable command surface) is a separate
 decision, to be made once the detector has earned its keep.
 
-`impeccable` runs in static-scan mode only, as `impeccable detect src`, operating on file content. The pre-commit hook
-runs a full scan whenever a staged path under `frontend/src/` has a `.ts`, `.tsx`, `.html`, or `.css` extension, through
-the same command the frontend CI job runs, so the local and CI checks agree. Both sides run advisory (the pre-commit
-hook with `|| true`, CI with `continue-on-error: true`) until the three deferred `bg-black` findings are addressed.
-Renovate tracks the package through the existing `config:recommended` extension; impeccable is past v1.0, so its patch
-and minor bumps auto-merge under the stable-dependency rule rather than the pre-v1.0 manual-review rule; a major bump
-still waits for review.
-
-The install-script default-deny in `pnpm-workspace.yaml` denies puppeteer's install script, so the postinstall Chromium
-fetch never runs. impeccable's static path never invokes the puppeteer code path, which is reached only through the
-dynamically imported, URL-only `detectUrl()` function.
-
-`impeccable` ships `jsdom` (required, for static-scan HTML parsing), `marked` (required transitively, for impeccable's
-skill surface), and `puppeteer` (optional, used only by `detectUrl()`; dynamically imported, so top-level imports never
-reach it). Denying the install script drops the postinstall Chromium fetch without removing the puppeteer JavaScript
-itself; a URL-scan would still fail at `launch()` for want of a browser rather than at the import.
-
-Alternatives weighed for the Chromium download and rejected: `npm ci --omit=optional` (breaks `@tailwindcss/oxide`'s
-platform-binary optional dependencies), a `PUPPETEER_SKIP_DOWNLOAD` environment variable scoped to CI only (leaves the
-download firing on every developer's local install), and baking Chromium into the development environment image (doesn't
-solve GitHub-hosted CI runners, introduces a puppeteer-versus-system-Chromium drift, and pays the cost for a feature
-that isn't run).
+Only static source scanning is in scope; URL scanning and the skill command surface are separate choices.
 
 ### Consequences
 
 - Positive: frontend anti-patterns are surfaced deterministically on every commit and every pull request.
-- Positive: the three `bg-black` findings are visible in CI logs on every frontend pull request until the deferred fix
-  lands, creating pressure to address them on the first modal, dialog, or sheet change.
 - Positive: the CI signal is independent of LLM availability, running on `ubuntu-latest` in under two seconds.
 - Positive: the install-script default-deny keeps the Chromium fetch out of a clean install and preserves install time.
 - Negative: one more devDependency plus its transitive packages.

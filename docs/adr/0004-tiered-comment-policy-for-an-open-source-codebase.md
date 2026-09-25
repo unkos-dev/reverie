@@ -97,33 +97,6 @@ test name is the spec, and a docstring restating it is noise. `test_support/` mo
 helper's purpose is non-obvious; the helpers themselves stay bare unless they encode a WHY a future reader would not
 infer.
 
-Backend enforcement is a ratchet built on splitting the crate into a library plus a thin binary entry point:
-`missing_docs` and the clippy doc lints fire only on items reachable from outside the crate, and a bin-only crate leaves
-every `pub` item crate-internal to the lint, so the lint stays silent without the split. `#![deny(missing_docs)]` sits
-at the library crate root; a module not yet carrying its docstrings is exempted by its own `#![allow(missing_docs)]`,
-and removing that attribute is the graduation point, after which any undocumented `pub` item in that module fails the
-build. The ratchet is monotonic: once a module's allow is removed it cannot regress without a visible diff. Modules
-graduate in audience-criticality order, authentication and security code first, and each graduation lands its docstrings
-and its allow removal together; a module created after the ratchet starts authors its docstrings at creation rather than
-shipping a fresh allow. `cargo doc -- -D rustdoc::broken_intra_doc_links` runs in continuous integration independently
-of the docstring policy, closing broken cross-references in existing documentation. `clippy::missing_errors_doc`,
-allow-listed by the strict lint policy while the crate was binary-only, is re-enabled once the per-module backfill
-completes, so the `# Errors` section becomes machine-checked; the application-crate rationale for allowing it does not
-survive the library split.
-
-The initial documentation backfill is authored by short-lived subagents dispatched per module, reading this record and
-the project's agent instructions, each returning a per-module diff the maintainer reviews before it lands. Automated
-docstring generation from a third-party code review tool is not the primary mechanism for that backfill: its quality has
-been inconsistent, in one case clipping an existing WHY-comment mid-sentence, and running it on every change would
-inflate review noise during backfill. That tool may still be used ad hoc on individual changes long-term, configured to
-defer to this policy's shape, with its output reviewed and edited by the maintainer before landing.
-
-On the frontend, JSDoc plays the Tier 1 role that `///` and `//!` play in Rust, but the mechanical enforcement floor for
-it is gone: the project replaced its ESLint-based toolchain with oxlint, which has no native docstring-presence rule,
-and dropped `eslint-plugin-jsdoc` along with the rest of the ESLint plugin ecosystem rather than keep a single plugin
-alive through a compatibility bridge. Frontend Tier 1 presence is therefore a reviewed convention rather than a lint
-gate; the tier definitions themselves, and the backend `#![deny(missing_docs)]` floor, are unchanged by that.
-
 ### Consequences
 
 - Positive: security auditors are served directly. Explicit threat-model annotations on security-critical code let an

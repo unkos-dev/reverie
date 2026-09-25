@@ -50,24 +50,6 @@ Chosen option: **single Docker image, backend-served frontend, CSP enforced cent
 CSP enforcement at one point, preserves same-origin for the auth flow without a reverse proxy, and matches the
 `docker run` install path the self-hosting audience expects.
 
-Concretely:
-
-- Build: a single multi-stage `Dockerfile` produces one image. The Vite build emits `dist/` (including
-  `csp-hashes.json`) into the frontend stage, the Rust build produces `reverie-api`, and the runtime stage copies both:
-  frontend dist into `/srv/frontend`, binary into `/usr/local/bin`.
-- Runtime: the backend reads `REVERIE_FRONTEND_DIST_PATH` at startup, validates the directory and the `csp-hashes.json`
-  sidecar (exits non-zero if either is missing or malformed), and mounts the SPA-fallback router. All HTTP traffic, API
-  and frontend, terminates at the same Axum listener on `:3000`.
-- Security headers: the CSP HTML header is emitted by `backend/src/security/headers.rs` using the hashes loaded from the
-  sidecar. There is one CSP enforcement point in the stack.
-- Distribution to self-hosters: `docker run -p 3000:3000 -e ... ghcr.io/unkos-dev/reverie:vX.Y.Z` is the supported
-  install path, with no reverse proxy and no multi-container compose stack required for the minimal install.
-- Dev-time iteration: Vite's dev server runs separately on `:5173` with HMR, and forwards `/api`, `/auth`, and `/opds`
-  to the backend on `:3000`. The backend's static serving is bypassed entirely in dev; same-origin is preserved by
-  Vite's proxy instead.
-- Visibility from outside the workspace is solved separately, by tunnelling the Vite dev server, not by image rebuilds;
-  active-dev visibility is decoupled from the image-distribution decision.
-
 ### Consequences
 
 - Positive: single CSP enforcement point. The hash sidecar pattern ensures policy and assets are built together and
@@ -94,8 +76,6 @@ Concretely:
 - Negative: the build-time sidecar contract (`csp-hashes.json`) is an invariant the test suite must protect. If a
   frontend refactor drops the plugin or changes its schema, the backend fails startup with a non-zero exit. Mitigated by
   the tests in `frontend/vite-plugins/__tests__/csp-hash.test.ts` and by startup validation that fails fast and loud.
-- Positive: the active-dev iteration loop is unaffected by the image-distribution decision, since it runs Vite and
-  `cargo watch` directly in the workspace; the image only matters for staging and production deploys.
 
 ## Pros and cons of the options
 

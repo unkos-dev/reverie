@@ -55,19 +55,8 @@ Chosen option: **project convention, enforced by code review**, because the alte
 codebase justifies: a shared builder adds a project-internal abstraction the two client shapes do not need, and a
 compile-time lint has no off-the-shelf implementation to build on.
 
-Every outbound HTTP client in Reverie's production code sets an explicit User-Agent header. Clients with no
-operator-configurable identity available at construction time, namely OIDC discovery and OIDC token exchange, set the
-floor `reverie/<CARGO_PKG_VERSION>` via `concat!("reverie/", env!("CARGO_PKG_VERSION"))` on the `ClientBuilder`. Clients
-that hit third-party metadata APIs (Google Books, Hardcover, Open Library) append the operator-configured contact string
-from `config.user_agent()`, in the form `reverie/<version> (+<contact_url_or_email>)`. A `reqwest` client with no
-`.user_agent(...)` call, which sends no `User-Agent` header at all, does not appear in production code; the only
-remaining bare `reqwest::Client::new()` call sites target wiremock on loopback under `#[cfg(test)]`, where the exemption
-holds because wiremock does not score User-Agents and the test surface is not exposed to WAF rules.
-
-This record captures the convention. Per-site enforcement was by code review at the decision; the escalation condition
-it set (a second lapse) has since fired, and the `disallowed-methods` entries in `backend/clippy.toml` now back the
-convention by banning the bare `reqwest` constructors. The OIDC module carries the constraint in its top-of-file `//!`
-docs so a future reader meets it without first finding this record.
+Production outbound HTTP clients send an explicit User-Agent. Where operator contact is available, it accompanies the
+application identity; otherwise the application name and version provide the floor.
 
 ### Consequences
 
@@ -108,9 +97,3 @@ docs so a future reader meets it without first finding this record.
 
 - Negative: pushes the burden onto every operator, and this was not the first substrate-edge-case failure of this kind
   in Reverie's deploy path.
-
-## More information
-
-Implementation sites: `backend/src/auth/oidc.rs` (the fixed clients), `backend/src/services/enrichment/http.rs` (the
-pre-existing conformant clients and the pattern source for the provider-courtesy User-Agent shape), and
-`backend/src/config/mod.rs::user_agent` (the operator-contact User-Agent composition used by the enrichment clients).

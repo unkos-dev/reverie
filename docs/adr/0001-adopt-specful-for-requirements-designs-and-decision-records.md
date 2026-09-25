@@ -46,9 +46,6 @@ loses its shape or its links, while the artifacts themselves stay Markdown with 
 search reads. The first corpus is one subsystem, the library filter and sort state, rather than a sweep of the codebase;
 a partially documented repository is a valid state under the convention.
 
-Every decision record lives under `docs/adr/` in the profile. The records that predated it were reviewed one by one and
-re-recorded, or retired where they no longer earned their place; the previous `adr/` directory no longer exists.
-
 ### Consequences
 
 - Positive: a requirement, its design, and its governing decision link to one another, and `specful trace` shows the
@@ -59,8 +56,6 @@ re-recorded, or retired where they no longer earned their place; the previous `a
 - Negative: the tool is pre-1.0 and the repository is its first adopter, so profile changes arrive with release notes
   and conversion steps rather than being absorbed silently; the mise pin holds the version until the maintainer moves
   it.
-- Negative: two lint configurations changed to accommodate the artifact shape: the formatter ignores the generated
-  catalog, and markdownlint no longer counts a frontmatter title as a second top-level heading.
 
 ## Pros and cons of the options
 

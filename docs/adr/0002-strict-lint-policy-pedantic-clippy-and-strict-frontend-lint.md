@@ -55,28 +55,9 @@ Chosen option: **enable strict lint tiers on both stacks**, because review-only 
 violations reach `main.rs` undetected, and a machine-enforced floor gives fast local feedback while narrowing the
 style-level territory available to AI-assisted review.
 
-On the backend, `backend/Cargo.toml` carries a `[lints.clippy]` table: the `clippy::pedantic` and `clippy::nursery`
-groups as `warn`, and the project-specific hard rules from `backend/CLAUDE.md` as `deny`: `unwrap_used`, `expect_used`,
-`let_underscore_must_use`, `print_stdout`, `print_stderr`, `dbg_macro`, `undocumented_unsafe_blocks`. `todo` and
-`unimplemented` stay `warn`, allowed during development and visible at PR time. Third-party APIs the project bans
-outright become `disallowed-methods` / `disallowed-types` entries in `backend/clippy.toml`, each carrying its reason; a
-ban whose subject is a resolved path belongs there, while a ban a text search can express belongs in
-`scripts/backend-guards.sh`, which runs before any toolchain install and is correspondingly cheaper. Four pedantic lints
-are allow-listed because they target library API hygiene rather than application correctness: `module_name_repetitions`
-(renaming `WritebackOrchestrator` to `Orchestrator` would make re-exports ambiguous and break IDE jump-to-definition),
-`missing_errors_doc` and `missing_panics_doc` (the `# Errors` / `# Panics` boilerplate duplicates what `thiserror`
-already types, with near-zero reader value in an application crate), and `must_use_candidate` (near-zero value where
-call sites are internal). Tokio, ripgrep, rust-analyzer, axum, sqlx, hyper, and tower all allow-list the same lints.
-Test code is excluded from the strictest deny rules through a crate-root `#![cfg_attr(test, allow(...))]`, matching
-`backend/CLAUDE.md`'s "tests may use them freely" clause.
-
-On the frontend, the same strict tier applies: type-aware strict linting, stable and unique list keys with no
-array-index keys, `import type` separated from value imports, no `enum`, and no inline style objects in JSX, each mapped
-from a `frontend/CLAUDE.md` rule to a lint rule. The frontend lint engine is oxlint (see
-[Adopt oxlint](./0030-adopt-oxlint-replacing-the-eslint-toolchain.md) for that engine decision).
-
-Both stacks already gated CI on their respective lint commands; the strict tier needed no further CI change beyond the
-configuration itself.
+The backend enables pedantic and nursery warnings and denies the project-specific safety and debugging lints. The
+frontend enables type-aware strict linting and the agreed React and TypeScript rules. Targeted exemptions remain
+available where a rule does not fit application code.
 
 ### Consequences
 

@@ -62,70 +62,10 @@ Reload mechanism:
 Chosen option: **single-row typed table storage, database-beats-env precedence, and LISTEN/NOTIFY reload**, because
 together they give a strongly-typed, UI-first settings surface without precluding multi-worker deployment.
 
-### Storage: single-row typed table
-
-Chosen option: **single-row typed table**, because Reverie has a known, finite set of settings. Schema enforces types at
-the database level. One `SELECT *` loads everything into a `sqlx::FromRow` struct. Adding a new setting is a small
-migration (`ALTER TABLE ADD COLUMN ... DEFAULT ...`) that runs automatically on startup, matching the
-strongly-typed-everywhere philosophy.
-
-Key-value table rejected because type validation would live entirely in application code, it does not use sqlx
-compile-time checks, it tempts schemaless drift, and it is not idiomatic for this codebase.
-
-### Precedence: DB beats env (UI-first)
-
-Chosen option: **DB beats env (UI-first)**, because Reverie's audience manages the application via browser UI. If an
-operator sets a value on the settings page, that value must take effect; an invisible env var silently overriding it is
-surprising and frustrating. Env vars provide the initial seed (migration `DEFAULT` values come from env at first boot
-via a seed step), but once persisted, the DB value is authoritative.
-
-Env-beats-DB rejected because, while canonical under twelve-factor principles, it optimises for the wrong audience.
-Kubernetes operators who pin settings via env can omit those fields from the UI (the restart-required classification
-handles this naturally). Self-hosting operators using Docker Compose or bare metal expect the UI to be authoritative.
-
-Seed behaviour: on first startup (empty `settings` row), the migration inserts defaults. A one-time seed function in
-`backend/src/services/settings.rs` populates columns from current env values where the column is still at its migration
-default. This gives env vars first-boot authority without ongoing override semantics.
-
-### Reload: LISTEN/NOTIFY + local RwLock cache
-
-Chosen option: **LISTEN/NOTIFY + local RwLock cache**, because this is the PostgREST/Hasura pattern, proven at scale,
-with zero per-request database cost, instant propagation to all connected processes, and readiness for multi-worker
-deployment without code changes.
-
-Shape:
-
-1. Startup: `SELECT * FROM settings` populates an `Arc<RwLock<Settings>>` in `AppState`.
-2. A background task issues `LISTEN settings_changed`; on notification it re-`SELECT`s and updates the `RwLock`.
-3. The `PUT` handler writes the DB and issues `NOTIFY settings_changed` in the same transaction.
-4. Readers use `state.settings.read().await`, at zero database cost per request.
-5. A fallback periodic poll every 60 seconds catches lost notifications, since PostgreSQL `NOTIFY` delivery is not
-   transactional and a connection drop loses pending notifications.
-
-RwLock-only rejected because it is stale in multi-process deployments. Periodic-poll-only rejected because it adds
-unnecessary staleness, up to the poll interval, when LISTEN/NOTIFY is trivial to add alongside it.
-
-### Field classification
-
-All settings are hot-reloadable except four groups of infrastructure fields that require a process restart:
-
-| Field | Why restart-required |
-| ----- | -------------------- |
-| `port` | Requires a `TcpListener` rebind; `axum::serve` does not support a hot swap. |
-| `database_url` | Requires pool reconstruction and drain coordination. |
-| `oidc_issuer_url`, `oidc_client_id`, `oidc_client_secret`, `oidc_redirect_uri` | Requires OIDC re-discovery (async HTTP) and a client rebuild. |
-| `library_path` | Workers read this from settings each cycle and could hot-reload it, but a path change mid-scan risks partial state; restart is safer. |
-
-All other fields (enrichment, cover, writeback, OPDS, format priority, cleanup mode, API base URLs, operator contact)
-are hot-reloadable. Workers and handlers read from the `RwLock` on each request or job cycle.
-
-The `PUT` response includes a `restart_required: bool` flag when the request mutates any restart-required field, and the
-frontend surfaces a restart-required badge.
-
-This ADR covers system and admin settings only. Per-user settings (reading preferences, display density, default sort,
-notification preferences) are a separate concern, architecturally compatible with the decisions above: a separate
-`user_settings` table keyed by `user_id`, a separate self-service endpoint rather than an admin-gated one, and the same
-LISTEN/NOTIFY and `RwLock` pattern with a per-user cache shape instead of a single struct.
+The settings use one typed database row because the set is finite and schema-checked. Database values take precedence
+after the initial environment seed because operators edit settings in the UI. LISTEN/NOTIFY propagates changes to
+process-local caches, with polling as a recovery fallback. Infrastructure settings that cannot safely change in a
+running process require a restart.
 
 ### Consequences
 

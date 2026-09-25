@@ -45,23 +45,8 @@ empirically. With the Prettier options mapped, oxfmt reformats one file, `backen
 file byte identical. Markdown, MDX, YAML, CSS, JSON, and HTML all match Prettier's output, so no type needs a
 retained-Prettier fallback. The split option is rejected. Keeping Prettier is rejected by the toolchain direction.
 
-The forcing details resolved as follows.
-
-- Options come from the Prettier config, mapped by `oxfmt --migrate prettier` and now held in the root `vite.config.ts`
-  fmt block: `semi`, double quotes, trailing commas everywhere, a 100-column print width, two-space indent, preserved
-  prose wrapping, and Unix line endings. `proseWrap` and `endOfLine` map directly in this oxfmt version, so neither
-  relies on `.editorconfig`.
-- The ignore set lives in that same fmt block as `ignorePatterns`, root-relative, including `CHANGELOG.md` and the
-  drift-gated generated files that a reflow would corrupt.
-- TOML formatting is new coverage. Prettier has no TOML parser, so the four `.toml` files never passed through the old
-  gate. oxfmt formats TOML, and only `Cargo.toml` drifts: it wraps one over-long dependency array and drops the
-  hand-aligned columns on three lines. Keeping the four config files on one formatter beats excluding them or adding a
-  second TOML formatter for so small a surface.
-- Package-key sorting stays off. oxfmt's `sortPackageJson` defaults on; Prettier never reordered keys, so the migrated
-  config disables it to hold parity.
-- The local glob widens to match the CI gate. The old lint-staged glob skipped `.mjs`, `.html`, `.mdx`, `.jsonc`, and
-  `.toml`, which the whole-tree `--check` still gates, so an edit to one of those could pass pre-commit and fail CI. The
-  oxfmt glob covers every type oxfmt formats.
+The formatter covers the file types Prettier owned and adds TOML. The accepted difference in Cargo.toml formatting does
+not justify a second formatter. Package-key sorting remains off.
 
 ### Consequences
 

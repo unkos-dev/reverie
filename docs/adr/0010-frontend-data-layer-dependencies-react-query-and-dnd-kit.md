@@ -48,30 +48,8 @@ Chosen option: **React Query with its devtools, and dnd-kit**, because together 
 deduplication, mutation-driven cache invalidation, a runtime cache inspector, and keyboard-accessible drag-to-reorder,
 without hand-rolling any of the three.
 
-`@tanstack/react-query@^5` is pinned under `dependencies` in `frontend/package.json`, registered via a `QueryClient`
-singleton in `frontend/src/lib/query/client.ts`, and mounted via `QueryClientProvider` in `frontend/src/main.tsx`. It
-was chosen over hand-rolled `fetch` plus `useState` plus `useEffect` because it gives request deduplication across
-components that read the same resource, because a mutation can invalidate a query key and every reader of that key
-refetches automatically, because `useSuspenseQuery` integrates with React 19 Suspense without a bespoke loading-state
-machine in every component, and because React Router v7 data-mode loaders can call `queryClient.prefetchQuery` so the
-cache is already warm when a component mounts, an officially documented react-router pattern rather than a community
-workaround. Version 5 specifically, because v4 is in maintenance mode and the global error-handler pattern the
-auth-redirect wiring needs, an `onError` callback on `QueryCache`, requires v5: v4 placed the handler on
-`defaultOptions.queries.onError`, which v5 removed.
-
-`@tanstack/react-query-devtools@^5`, matching the runtime version, is pinned under `devDependencies` and mounted via a
-dynamic, `import.meta.env.DEV`-gated import in `main.tsx`. The gated import costs zero bytes in the production bundle,
-since Vite tree-shakes it, and around 120KB on the dev bundle. Because query-cache state is the most cross-cutting state
-in the app, being able to inspect cache entries by key at runtime is the difference between a short debug and a long one
-when invalidation is wrong; devtools is the TanStack-maintained inspector and no third-party tool covers the same
-surface.
-
-`@dnd-kit/sortable` is pinned under `dependencies` alongside `@dnd-kit/core` (a transitive dependency pinned directly so
-version bumps surface at install) and `@dnd-kit/utilities` (CSS-transform helpers). It serves the shelf-item reorder UI:
-dragging rows to reorder, backed by a server-side `PUT` to a shelf's item-order endpoint with an optimistic update and
-rollback on an RFC 9110 `If-Match` precondition failure (412). Chosen over react-dnd because dnd-kit is the actively
-maintained successor, supports React 19, has zero external dependencies beyond peer React, and has built-in keyboard
-accessibility; react-dnd needs an HTML5 or Touch backend wrapper that does not ship keyboard support by default.
+React Query owns server-state caching and mutation invalidation, its devtools inspect that cache during development, and
+dnd-kit handles accessible drag-to-reorder.
 
 ### Consequences
 

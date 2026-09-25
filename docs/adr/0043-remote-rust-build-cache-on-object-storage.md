@@ -60,22 +60,9 @@ making the common runs slower than the tarball already makes them?
 Chosen option: **Add `kache` backed by S3-compatible object storage, keeping the tarball cache for the registry only**,
 because it is the only option that addresses granularity and the quota together while leaving a one-step revert.
 
-`kache` is a content-addressed `rustc` wrapper already used for local builds. It keys each compilation on the compiler
-version, the crate source, its dependencies' content hashes, and the normalised flags, so a bumped dependency
-invalidates that crate and its dependents rather than the graph. The store lives in a Cloudflare R2 bucket, which has no
-repository quota and no egress charge.
-
-The two caches divide cleanly rather than overlapping. `Swatinem/rust-cache` drops to `cache-targets: false` and carries
-only the registry, which is small enough to sit inside the quota comfortably. `kache` owns compiled artifacts.
-
-Write access is gated on the default branch. Pull request runs receive object-read credentials and run with the remote
-in read-only mode; only pushes to `main` receive read-write credentials. This mirrors the reasoning already recorded on
-the container build's cache scopes, where a pull-request-controlled write into a scope a privileged job later reads is
-treated as a poisoning surface.
-
-The rollout starts with `Backend checks`, the job with the largest non-instrumented compile. Coverage stays on the
-tarball cache for now because `-C instrument-coverage` puts it in a separate key space, so including it would roughly
-double the stored artifacts for a compile phase that is a minority of that job's runtime.
+Kache owns compiled Rust artifacts in object storage; the existing tarball cache retains registry data only. Pull
+requests receive read-only remote cache access, while writes are limited to the default branch to protect the shared
+cache from pull request writes.
 
 ### Consequences
 

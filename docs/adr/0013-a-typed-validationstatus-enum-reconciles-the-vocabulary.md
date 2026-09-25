@@ -64,23 +64,8 @@ database schema, the Rust DTO layer, and the frontend interface.
 Chosen option: **rename the Postgres value `valid` to `clean`**, because it eliminates the storage-to-domain drift at
 its root, names the value set correctly, and costs a one-time pre-release migration rather than a permanent mislabel.
 
-The Postgres enum value is renamed in place (`ALTER TYPE ... RENAME VALUE`), keeping `pending`, `repaired`, and
-`degraded`, and `quarantined` is not added. The canonical vocabulary across the database, the Rust DTO layer, and the
-wire becomes `pending | clean | repaired | degraded`, surfaced through a new `ValidationStatus` `sqlx::Type` enum
-(`backend/src/models/validation_status.rs`) following the existing enum pattern.
-
-`valid`, `repaired`, and `degraded` are all stored-and-usable outcomes. Labelling one of them `valid` implies the other
-two are invalid; they are not, a repaired or degraded file is still ingested, stored, and served. `clean` names the
-actual distinction: no issues found, as opposed to had issues and auto-repaired (`repaired`) or has issues and tolerated
-(`degraded`). The three are points on one quality tier, not one valid state plus two error states.
-
-Renaming to `clean` also makes the orchestrator mapping an identity (`Clean` maps to `"clean"`), eliminating the
-translation seam that produced the drift, and realigns the stored string with `ValidationOutcome`, the only place
-validation semantics are decided.
-
-The operator-facing explanation of these states is deferred to documentation work rather than built ad hoc; the
-dev-facing `docs/schema.md` reference is corrected at the same time, because the rename makes its current listing wrong.
-Operator-facing documentation carries the rationale, not just the values.
+The shared vocabulary is pending, clean, repaired, and degraded. Clean means no issues found; repaired and degraded
+remain usable outcomes. Quarantined is not added.
 
 ### Consequences
 

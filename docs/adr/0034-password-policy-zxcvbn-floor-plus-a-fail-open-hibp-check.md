@@ -52,12 +52,9 @@ Chosen option: **zxcvbn floor plus HIBP, fail-open**, behind a single `enforce` 
 and breach exposure per current standards while keeping the breach check advisory rather than load bearing, so an
 offline or degraded instance still functions.
 
-Every credential-setting path calls one function that applies, in order: a length floor and a maximum cap (the cap is a
-denial-of-service guard, checked before any scoring or hashing, not a composition rule); a zxcvbn strength score (0..=4)
-with the account's own email and display name fed in as context words; and an HIBP Pwned Passwords range query using
-k-anonymity, so only a 5-character SHA-1 prefix ever leaves the instance. The breach check is fail-open: any network,
-timeout, or non-success response from HIBP is treated as "not found" so the password is allowed on strength alone. Two
-dependencies are added: `zxcvbn` for scoring and `sha1` for the k-anonymity prefix.
+The policy combines a length floor and denial-of-service cap, a zxcvbn strength score, and an HIBP range query that
+discloses only a short hash prefix. Network failure leaves the breach check advisory and does not block a password that
+passes local checks.
 
 ### Consequences
 

@@ -49,27 +49,9 @@ Chosen option: **Standards-first, hook-based integration**, because it keeps Rev
 lets each axis reuse a tool the operator already runs, at the cost of a turnkey experience for an operator who runs none
 of those tools.
 
-For each axis where Reverie meets the operator's ecosystem, the chosen design exposes an open standard where one fits,
-or an outbound hook where none does, and leaves the consuming infrastructure to the operator's existing tooling:
-
-- Catalog and reading: an OPDS feed, consumed by any OPDS-capable e-reader. Reverie does not build a reader client.
-- Identity: OIDC plus forward-auth headers, consumed by the operator's identity provider. Reverie does not build an SSO
-  or user-directory product.
-- Metrics: an open, scrape-friendly metrics interface, consumed by the operator's existing metrics stack. Reverie does
-  not bundle a metrics store or dashboards.
-- Logs: structured logs to stdout, consumed by the operator's log aggregator. Reverie does not bundle log storage.
-- Eventing: an outbound hook, consumed by the operator's automation. Reverie does not build an in-app notification or
-  automation engine.
-
-OPDS and OIDC plus forward-auth are the two axes already built this way today.
-
-The rule generalises to any future integration surface: prefer an existing open standard; if none fits, an outbound
-hook; bundling a consuming service is the last resort and needs its own decision record justifying why no standard or
-hook suffices.
-
-This record governs how Reverie exposes itself to the operator's ecosystem. It does not cover inbound metadata
-enrichment (Reverie consuming upstream APIs such as OpenLibrary or Google Books for cataloguing), which is a separate
-concern with its own architecture.
+Reverie exposes open standards where they fit and outbound hooks otherwise. It leaves e-readers, identity providers,
+metrics stores, log aggregation, and automation services to operator tooling. Bundling a consuming service would require
+a separate decision.
 
 ### Consequences
 

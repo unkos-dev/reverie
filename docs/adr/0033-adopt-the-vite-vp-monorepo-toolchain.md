@@ -44,25 +44,8 @@ configuration unified in a root `vite.config.ts`. The forces are convergence (on
 Chosen option: **Vite+ monorepo**, because it gives the workspace one toolchain and one config home while preserving
 parity with the prior lint, format, build, and test behaviour.
 
-The forcing details resolved as follows.
-
-- **One root `vite.config.ts` owns fmt and lint.** The `fmt` block is the sole oxfmt config and formats the whole tree
-  (root-relative ignores); the `lint` block holds the frontend rules with every override scoped to `frontend/**`. The
-  standalone `oxfmt` dependency, `.oxfmtrc.json`, and the per-package fmt block are gone. `frontend/vite.config.ts`
-  keeps only build, server, and test config.
-- **A pnpm workspace.** `pnpm-workspace.yaml` declares the projects, one lockfile, and a catalog that holds each shared
-  pin once. Overrides live beside the catalog and apply across the workspace, so pins consolidate in one file; astro
-  runs on vp's `@voidzero-dev/vite-plus-core` fork, so a single `vite` override serves every project. The layout is
-  isolated rather than hoisted: each project gets its own `node_modules` linking into a shared virtual store.
-- **tsgo is the sole typechecker.** `vp lint` runs the type-aware pass over the same app and node scope `tsc -b`
-  covered, so the separate `tsc -b` build step is removed. Because a missing type-aware engine exits zero silently, a
-  test asserts the pass fires on a known type-aware violation.
-- **vp is a global binary plus a `vite-plus` root devDependency.** The config loader resolves `vite-plus` from the
-  project `node_modules`, so the root config needs it as a dependency even though the binary is global. vp downloads the
-  package manager named by `packageManager` in the root `package.json`, which is what keeps every invocation on the
-  declared pnpm.
-- **CI bootstraps vp via `voidzero-dev/setup-vp` (SHA-pinned) and one root `vp install`.** The `just` recipes that
-  define each gate are unchanged.
+The workspace uses one root toolchain configuration, one pnpm lockfile and catalog, and tsgo for TypeScript checking.
+The change retains the existing lint, format, build, and test gates.
 
 ### Consequences
 

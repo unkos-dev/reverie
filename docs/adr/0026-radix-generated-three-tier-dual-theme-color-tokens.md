@@ -49,24 +49,8 @@ matched light and dark 12-step scales from the same anchors, with per-step roles
 so AA is structural and the two themes cannot drift, and its output is plain CSS custom properties, vendored as a static
 file, so there is no runtime dependency and nothing to fetch.
 
-The three tiers:
-
-1. **Primitives (Tier 1)**: `--sand-*` (neutral), `--gold-*` (accent), and `--danger-*` (state) 12-step scales, plus
-   alpha, P3, contrast, and a `--bg` page token, generated for both themes and vendored verbatim as
-   `frontend/src/styles/themes/primitives.generated.css`. Raw hex lives only here; regenerated, never hand-edited.
-2. **Semantic (Tier 2)**: reverie role names (`--canvas`, `--surface`, `--border`, `--fg`, `--accent`, `--danger`, …)
-   plus the shadcn aliases, each resolving to a Tier 1 step via `var()`. No raw color. The mapping is theme-constant;
-   the primitive layer does the light/dark switch.
-3. **Atmosphere (Tier 3)**: `--atm-*` art-directed constants (gilt, ember, sheen, vellum, cloth). A sealed parallel
-   namespace: UI chrome resolves color through Tier 2 only and never reads `--atm-*`.
-
-Components reference Tier 2; Tier 2 references Tier 1; raw color is Tier 1 (plus a small, named set of exceptions such
-as the ink modal scrim). The shadcn alias layer re-skins automatically because it already routes through the semantic
-tokens.
-
-Stylelint's `color-no-hex` rule confines raw hex to the generated primitive file and the atmosphere file, and bans it
-from the semantic file; a contract test asserts every semantic token resolves to an existing primitive and that
-role-pair contrasts meet their AA floor.
+The chosen contract has generated light and dark primitive scales, semantic role tokens for interface components, and a
+separate sealed atmosphere palette. Components consume semantic roles; decorative colours do not become state colours.
 
 ### Consequences
 

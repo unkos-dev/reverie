@@ -94,9 +94,6 @@ module was unregistered), which the requirement set needs; and AG Grid's install
 react-data-grid's (a tiebreak input only). AG Grid's advantage is theming, where its grid follows dark mode out of the
 box, while react-data-grid needs an explicit dark-mode token bridge.
 
-Production grid usage goes through the local `GridAdapter` contract; no vendor grid is imported outside a binding that
-satisfies it.
-
 ### Consequences
 
 - Positive: the verdict criteria are pre-registered, so the choice rests on budgets set before any candidate's numbers
@@ -143,10 +140,6 @@ endpoint shape is
 [JSON API conventions for the browser-facing REST surface](./0011-json-api-conventions-for-the-browser-facing-rest-surface.md)
 and
 [API versioning by URL path with OpenAPI as the contract](./0016-api-versioning-by-url-path-with-openapi-as-the-contract.md).
-
-The local contract this decision names `GridAdapter` is implemented in the codebase as `GridBinding`
-(`frontend/src/lib/grid/types.ts`, `frontend/src/lib/grid/ReactDataGridBinding.tsx`); react-data-grid is a current
-`frontend/package.json` dependency.
 
 Revisit trigger: if the chosen grid later breaks its API or stalls maintenance such that an upgrade becomes infeasible,
 reopen the choice with a fresh ADR that supersedes this one.

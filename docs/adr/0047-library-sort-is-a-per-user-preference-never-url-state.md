@@ -61,21 +61,9 @@ Chosen option: **One layer, client-resolved**, because every prior defect traced
 the same value, and this option gives every surface a single resolution while keeping the wire contract of the
 multi-column sort ADR unchanged.
 
-The decision:
-
-- Sort is a per-user preference with a single source of truth. The stored `sort_stack` is the reader's override; `null`
-  means inherit the installation default. Every sort gesture writes the preference directly through one intent handler.
-  Nothing infers intent from URL diffs.
-- The client resolves and sends the sort explicitly. The effective sort is resolved once per page (override, else
-  installation default) and every consumer reads that one resolution. The list request carries the override explicitly
-  when one exists and omits the parameter when inheriting, so an inheriting reader's query key equals the loader's
-  URL-derived seed key, and the installation default is never serialized into a request it would not change.
-- The URL never carries sort. The `?sort=` parameter is retired from the library surface; a stale parameter in an old
-  bookmark is inert, consistent with how the filter codec already treats dead parameters.
-- There is no unsorted state. A keyset-paginated library always has a total order, so the controls stop promising
-  otherwise. Header clicks toggle ascending and descending only. The stack editor allows add, remove, reorder, and flip;
-  removing the last level and the explicit reset both write `null` and visibly transition to the installation stack. The
-  effective order is displayed truthfully everywhere, including when it is the inherited default.
+Sort is a per-user preference, with a stored override or an inherited installation default. The client resolves the
+effective sort once for all library views. The library URL does not carry sort state, and a keyset-paginated view never
+presents an unsorted state.
 
 ### Consequences
 

@@ -62,35 +62,9 @@ Chosen option: **V1 + S1**, because path versioning is the most discoverable and
 clients, and a code-first generated OpenAPI 3.1 document is the single source of truth that keeps the reference
 zero-drift and gives third-party clients something to codegen against.
 
-- The JSON data API is served under `/api/v1`. The major version lives in the URL path: discoverable, proxy- and
-  cache-friendly, and free of content-negotiation machinery. Backward-compatible (additive) changes evolve `v1` in
-  place; a future incompatible generation mounts as `/api/v2` _alongside_ `v1` rather than breaking it. Pre-1.0 the
-  contract may still tighten within `v1` under the project's `0.x` instability allowance, but the path version is the
-  unit in which breaking _generations_ are expressed. This shifts the mount prefix the
-  [JSON API conventions ADR](./0011-json-api-conventions-for-the-browser-facing-rest-surface.md) assumed (`/api/books`
-  -> `/api/v1/books`) without changing any shape it fixed.
-- Operational and standard-protocol paths stay unversioned. `/health`, `/health/ready`, the `/auth` flow, and the
-  `/opds` feed are not part of the versioned data API: liveness and auth are operational, and OPDS is versioned by its
-  own specification.
-- The API contract is an OpenAPI 3.1 document generated code-first from the handlers, as the single source of truth. It
-  feeds the generated API reference and the CI docs gate. A hand-written spec is rejected: it is a second source of
-  truth that drifts from the code, exactly what the generated reference exists to prevent.
-
-  The version is **3.1, not 3.2**, on three grounds. The code-first generator this would use (utoipa, the dominant
-  axum-native option) emits 3.1, its `OpenApiVersion` enum has a single `3.1.0` variant, so pinning the contract to 3.2
-  would pin it to an unreleased upstream capability, the same wait-on-upstream trap the
-  [first-party session layer ADR](./0015-first-party-session-layer-on-the-tower-sessions-core.md) refused. 3.2's
-  additions (querystring object schemas, Server-Sent Events metadata, JSON Lines streaming) describe surfaces Reverie
-  does not have: its API is plain JSON REST with no streaming. And 3.1's JSON Schema 2020-12 alignment is the better fit
-  for the RFC 7807 / merge-patch shapes the
-  [JSON API conventions ADR](./0011-json-api-conventions-for-the-browser-facing-rest-surface.md) already fixed.
-
-The shapes the spec describes are those already fixed by the
-[JSON API conventions ADR](./0011-json-api-conventions-for-the-browser-facing-rest-surface.md) and are not restated
-here, including the RFC 9457 error envelope.
-
-The generator choice (annotation-driven extraction versus another approach), the spec-to-reference renderer, and the CI
-gate wiring are implementation concerns, not decided here.
+The browser-facing data API uses a major version in its URL path, with incompatible generations mounted alongside the
+earlier version. Operational, authentication, and OPDS paths remain outside that versioned surface. OpenAPI 3.1 is
+generated from the implementation as the contract and reference source; a hand-written second contract is rejected.
 
 ### Consequences
 

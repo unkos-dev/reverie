@@ -55,41 +55,9 @@ Chosen option: **GitHub Actions cache backend with cargo-chef layering**, becaus
 rebuild on both the dependency and application layers while keeping the cache pattern portable to any
 buildkit-compatible builder.
 
-The Docker publish workflow uses GitHub Actions cache (`type=gha`) as the buildkit cache backend, with a cargo-chef
-four-stage Dockerfile ensuring dependency compilation lands in a dedicated cacheable layer.
-
-`docker/build-push-action` carries a `cache-from` and a `cache-to` input, both `type=gha` and both scoped by the matrix
-architecture, with `mode=max` added to `cache-to`:
-
-```yaml
-cache-from: type=gha,scope=buildcache-<arch>
-cache-to: type=gha,scope=buildcache-<arch>,mode=max
-```
-
-`mode=max` exports intermediate layers so partial-hit scenarios still benefit, and the scope key partitions the amd64
-and arm64 caches. The scope key is branch-agnostic by design: each run writes cache entries under its own ref and reads
-from that ref's entries first, falling back read-only to the base ref (typically main). Embedding the branch name in the
-scope would defeat that base-ref fallback and force every branch to start cold.
-
-The backend section of the Dockerfile splits into a `chef` stage (a shared base with a pinned, locked cargo-chef
-install), a `planner` stage (emits `recipe.json`), a `cooker` stage (compiles dependencies only, from `recipe.json`),
-and a `backend-builder` stage (the real build atop the warm dependency layer). The cooker layer is the cache target: a
-warm hit skips the dependency compilation when `Cargo.lock` is unchanged.
-
-`pnpm fetch` populates the frontend package store from the lockfile before the frontend build and SBOM stages diverge,
-in an ordinary Dockerfile layer rather than a buildkit cache mount. Both stages inherit that store, and the frozen
-offline install consumes it. The dependency layer is therefore complete when restored from the GHA cache and remains
-valid even though an ephemeral builder holds no cache-mount state. The build invocation disables pnpm's automatic
-dependency repair only after the explicit frozen offline install has already succeeded, so source-layer timestamps
-cannot trigger an unscoped install.
-
-Post-build steps emit the runner's local buildkit content-store usage and a summary pointer directing operators to the
-build-and-push step log for per-stage cache-hit lines. Deeper observability, such as a scheduled inventory of the
-persistent GHA cache pool or build traces, is a revisit condition; the persistent pool can be inspected on demand
-through the GitHub API.
-
-A `workflow_dispatch` trigger was added permanently, under the same write-permission boundary as a push to main, to
-allow ad-hoc rebuilds and feature-branch verification of workflow changes that would not otherwise run.
+The cache uses per-architecture GitHub Actions cache scopes with intermediate layers exported. Cargo-chef separates
+dependency compilation from application compilation, and the frontend package store is populated from the lockfile
+before the build stages diverge.
 
 ### Consequences
 
@@ -105,8 +73,6 @@ allow ad-hoc rebuilds and feature-branch verification of workflow changes that w
   architecture, still reuses what it can.
 - Positive: per-arch scope isolation means the amd64 and arm64 caches do not compete for entries; eviction is local to
   each architecture's pool.
-- Positive: the `workflow_dispatch` trigger adds a manual entry point under the same write-permission boundary as
-  push-to-main, with no new privilege-escalation path.
 - Negative: cargo-chef adds a pinned build-time dependency; a version bump requires a lockstep update across the shared
   `chef` base.
 - Negative: chef-layer rebuild cost recurs on base-image churn. When the pinned Rust base image ships a patch update,
