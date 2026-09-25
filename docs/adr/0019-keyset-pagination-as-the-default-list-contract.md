@@ -54,25 +54,8 @@ Chosen option: **Keyset pagination by default, with a capped single page as a ju
 every list by construction, reuses the cursor mechanism already fixed for the browser JSON surface, and keeps the
 resource-exhaustion surface a multi-user exposed instance presents from growing with library or user size.
 
-No unbounded queries: no list query may return a row count that grows without bound. Every list is bounded by
-construction, either by keyset pagination or by a single page with a hard `LIMIT` cap. There are no `LIMIT`-less scans.
-
-Keyset pagination is the default: any set whose size grows with library or user size (catalog, search, OPDS acquisition
-feeds, future admin lists) is keyset-paginated using the mechanism the
-[JSON API conventions ADR](./0011-json-api-conventions-for-the-browser-facing-rest-surface.md) already fixed (opaque
-base64url cursor, `Link` header plus body `next_cursor`). Offset is rejected for the reasons in that ADR.
-
-A capped single page is the justified exception, not an omission: a list with a known small natural ceiling, for example
-a single series' editions, may return whole on one page, but only as a deliberate decision and only with a defensive
-`LIMIT` so it is bounded by construction rather than by assumption (the OPDS series-editions feed already does this). A
-list whose size grows with library or user count does not qualify: `/api/shelves`, `/api/users`, `GET /api/shelves/{id}`
-items, and the OPDS authors- and series-navigation feeds returned uncapped sets at the time of this decision.
-
-Accepted tradeoffs, eyes open: keyset gives up two things the project consciously forgoes, cheap random access (no "jump
-to page N", only next/prev from a cursor) and an exact total inline. A total count, where needed, is a separate
-approximate or cached query, never an exact `COUNT(*)` on the hot path. Every sort axis must encode its sort key in the
-cursor plus a stable tiebreaker to keep pagination total, already lived in the title and author sorts, which carry an id
-tiebreaker and, for author, a NULL-bucket sub-tag so no row is dropped at a page boundary.
+Growing lists use keyset pagination. A naturally small list may use one hard-capped page. Random page access and an
+exact count on the hot path are accepted losses of that choice.
 
 ### Consequences
 

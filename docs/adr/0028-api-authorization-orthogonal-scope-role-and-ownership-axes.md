@@ -69,72 +69,11 @@ Chosen option: **three orthogonal axes (scope, role and child status, ownership)
 `jsonwebtoken` and `jwks_client_rs` for resource-server JWT validation**, because it keeps capability, identity, and
 ownership separable while resting resource-server validation on maintained crates compatible with axum 0.8.
 
-API authorization is expressed on three orthogonal axes, kept distinct and all enforced server-side:
-
-1. **Scope is credential capability.** A typed enum: `read` (safe methods), `write` (mutations), `admin` (administrative
-   endpoints). This is delegated-capability authorization in the OAuth sense (RFC 6749 section 3.3): it bounds what a
-   given credential may do, independent of who holds it.
-2. **Role and child status are identity gating.** The administrative surface, the existing not-child restriction, and
-   content-visibility filtering are enforced from the user's role and child flag, server-side, regardless of the
-   credential's scope.
-3. **Ownership is the resource axis.** A caller acts only on rows they own, enforced at the data layer (row-level
-   security and ownership predicates), not in the handler-level capability check.
-
-These axes are independent: a request must satisfy all three to succeed. Scope answers "may this credential perform
-writes at all"; role and child status answer "is this caller permitted to reach the administrative or adult-only
-surface"; ownership answers "is this specific row theirs to touch". Collapsing them into scopes alone would force child
-restrictions and administrative gating to be re-encoded as scopes, losing the clean separation between a credential's
-delegated capability and the identity behind it.
-
-**Scope representation.** Scopes are a typed enum (`read`, `write`, `admin`) persisted as an array of the Postgres
-`scope` enum on the credential. Within the scope axis the three values compose as a hierarchy, `read < write < admin`: a
-higher scope subsumes every lower one, so an endpoint gates on the least scope it requires and any credential holding
-that scope or higher clears it. `read` is the floor, so every valid credential carries at least `read` and a scopeless
-credential is rejected at authentication. Sessions derive their scope set from the user's role (an interactive login
-gets the full capability its role allows). Tokens carry explicit scopes, bounded by the user's role ceiling.
-
-**Role-to-scope ceiling.** Administrator unlocks the `admin` scope; `read` and `write` are available to all roles. A
-child account holds `read` and `write` scope so it can manage its own settings and shelves. Child restrictions come from
-the role and not-child gates and from ownership, never from withholding scope. Scope bounds capability; it is not the
-mechanism for age gating. A token may only request scopes its owner's role permits, so a non-administrator cannot mint
-an `admin`-scoped token.
-
-**Scoped tokens.** The existing device tokens evolve rather than a new credential type being introduced: a `scopes`
-column on `device_tokens` defaults to `read`. Existing tokens become read-only by default, which is the safe direction
-for a capability that did not exist before. This narrows any token that previously issued writes, acceptable pre-release
-where migrations consolidate and no external client is pinned to the prior unscoped behaviour. The token's hashing
-(SHA-256 of a 256-bit random value, constant-time compared) is unchanged: that is correct for a high-entropy random
-token and orthogonal to scope.
-
-**Token transport.** HTTP Basic remains for reader and OPDS clients (compatibility). New scoped personal tokens and
-resource-server JWTs use Bearer. All transports resolve through the same extractor to the same in-process identity and
-the same scope set, so authorization logic downstream is transport agnostic.
-
-**Unified credential format and indexed resolution.** The plaintext credential is `{prefix}{token_id}.{secret}` for
-Bearer and `{prefix}{token_id}:{secret}` for Basic, split into a username/password pair on the same delimiter.
-`token_id` is the device token's own row id, so both transports resolve through one indexed lookup by id. This replaces
-the prior per-user scan over hashed secrets and the constant-time comparison that scan needed to stay safe. A token also
-carries an optional expiry (`expires_at`); the same lookup excludes an expired, non-revoked token exactly as it excludes
-a revoked one, so expiry sits alongside revocation as a first-class exclusion, not a check bolted on afterward.
-
-**Resource-server validation (the RFC 9068 profile).** Inbound JWT access tokens issued by a configured IdP are
-validated with `jsonwebtoken` for the underlying signature, expiry, and not-before checks, and `jwks_client_rs` (built
-on `jsonwebtoken`) for a cached, rotating key set fetched from the configured issuer. Those libraries do not enforce the
-issuer claim and check the audience only when one is passed, so a first-party wrapper enforces the issuer and always
-passes the audience, and pins the algorithm from the trusted key (the JWK) rather than the token header, so a token
-cannot downgrade or switch the verification algorithm. The key-set URL is never taken from token content: no `jku` or
-`x5u` header is followed. The JWKS URL comes from configuration or OIDC discovery only. `jwt-authorizer` is rejected: it
-is unmaintained since 2024 and pins axum 0.7 against the project's axum 0.8 (`backend/Cargo.toml`, `axum = "0.8.9"`),
-which would either block the build or force a downgrade of the framework. Hand-rolling JWKS fetch and verification is
-rejected as security-critical code that the two maintained crates already cover.
-
-**OpenAPI representation.** Scopes are modelled first-class in the generated OpenAPI contract: security schemes and
-per-operation scope requirements, so the administrative surface is described in the spec rather than discovered through
-a runtime `403`. This replaces the interim representation in which the administrative surface existed only as documented
-`403` responses. The shapes and version prefix fixed by
-[JSON API conventions](./0011-json-api-conventions-for-the-browser-facing-rest-surface.md) and
-[API versioning and OpenAPI](./0016-api-versioning-by-url-path-with-openapi-as-the-contract.md) are unchanged; this
-decision adds the authorization model that contract now carries.
+Scope expresses credential capability, role and child status express identity restrictions, and ownership governs the
+target resource. All three checks apply server-side. Scopes form a read, write, admin hierarchy bounded by the holder’s
+role; child restrictions do not become scope restrictions. Existing device tokens gain scoped capability, while Basic
+remains for reader compatibility and new tokens and JWTs use Bearer. JWT validation uses maintained signature and JWKS
+libraries with first-party issuer, audience, algorithm, and key-source checks.
 
 ### Consequences
 

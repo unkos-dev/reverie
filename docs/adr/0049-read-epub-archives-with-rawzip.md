@@ -64,13 +64,6 @@ this decision covers only the read side.
 
 - Positive: the entry-count cap runs as a counted iteration that stops at the limit, with no per-entry allocation ahead
   of the cap.
-- Positive: every ambiguity the crate's own locator tolerates rather than rejecting, such as a comment that ends before
-  the end of the file or a directory-offset error deferred until iteration, is treated as an outright rejection in Layer
-  1, so a crafted file cannot use the locator's leniency to slip past the cap.
-- Positive: EPUB containers may declare only Stored and Deflate compression; Layer 1 now enforces that restriction
-  directly, where it previously accepted whatever the `zip` crate happened to be able to decode.
-- Positive: `zip` is compiled with only Deflate and timestamp support, since an OCF container may use no other
-  compression method and no encryption.
 - Negative: two ZIP-reading crates now sit in the dependency tree, `rawzip` for reads and `zip` for writes, until `zip`
   is retired from repack.
 - Negative: `rawzip` is maintained by one person. The risk is offset by its empty dependency list, its
@@ -103,9 +96,3 @@ this decision covers only the read side.
 ### Wait for `zip` upstream
 
 - Negative: the relevant upstream issues are open with no committed fix, and the entry-count gap is exploitable today.
-
-## More information
-
-The write side still constructs archives with `zip`'s `ZipWriter`, copying untouched entries verbatim on a raw-copy path
-and building the crate with only the features writing needs; full retirement of the crate is a longer-term direction,
-not a commitment made by this decision.

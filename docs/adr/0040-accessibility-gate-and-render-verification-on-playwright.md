@@ -48,30 +48,9 @@ Chosen option: **`@playwright/test` + `@axe-core/playwright` for the CI gate, wi
 render-verification tool**, retiring `agent-browser`, because Playwright resolves both original grounds for the CDP
 runner.
 
-- **ARM64.** Playwright officially supports linux-arm64 and installs a linux-arm64 Chromium build
-  (chrome-headless-shell, falling back to full Chromium on arm64), so the chromedriver / Chrome-for-Testing gap that
-  blocked `@axe-core/cli` never applied to Playwright. The gate reproduces locally on ARM64 with
-  `vp exec playwright install chromium` then `just js::a11y`, no browser substitution required.
-- **Stack consolidation.** The consolidation argument now points the other way. When the prior decision was made,
-  `agent-browser` was the standardised verification binary and Playwright would have been the second stack. Playwright
-  is now the standard automation stack; keeping `agent-browser` is what maintains a second one.
-
-Concretely:
-
-- **Automated gate.** The CI `a11y` job runs `@axe-core/playwright` against `/forgot-password`, using the full WCAG 2.2
-  AA tag set (`wcag2a`, `wcag2aa`, `wcag21a`, `wcag21aa`, `wcag22aa`). Playwright's `webServer` owns the dev-server
-  lifecycle. It fails on any violation outside the documented allowlist and is frontend-conditional. Locally:
-  `just js::a11y`. The scan originally covered a dev-only design showcase; it was moved onto a real route so the gate
-  judges what users receive.
-- **Allowlist unchanged.** The accepted carve-outs and the role-keyed matching that expresses them are unchanged:
-  violations from axe are filtered through the same first-party `allowlist.mjs` (matching on element role read from node
-  HTML, not background colour), and every entry carries an inline rationale.
-- **Render verification.** Interactive "verify by render" checks move to `playwright-mcp` on the dev box. This is a tool
-  choice for local verification, not a gate.
-- **Manual audit cadence.** Unchanged: a manual accessibility pass runs at every release tag and before any net-new view
-  ships. Axe catches contrast, accessible names, roles, and structural rules; the manual audit owns what axe cannot:
-  keyboard navigation order, screen-reader semantics, focus management in dialogs/overlays, and the motion budget under
-  `prefers-reduced-motion`.
+The automated accessibility gate uses Playwright with axe against a product route and the WCAG 2.2 AA rules. Interactive
+render verification uses Playwright, while manual audits retain responsibility for keyboard, screen-reader, focus, and
+motion behaviour that axe cannot establish.
 
 ### Consequences
 

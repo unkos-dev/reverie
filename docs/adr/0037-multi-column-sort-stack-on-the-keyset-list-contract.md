@@ -53,25 +53,9 @@ Chosen option: **JSON:API sort syntax over a whitelist, versioned opaque cursor*
 shape the frontend grid already emits and the project's existing JSON:API convention, reuses the existing opaque-cursor
 mechanism, and lets a hard server-side whitelist keep every orderable column injection-safe and index-backed at once.
 
-- **Sort is JSON:API syntax.** `?sort=author,-created_at`: comma-separated fields, a leading `-` reverses that level to
-  descending, order of appearance sets priority. An absent parameter means `-created_at`, the established recency
-  default.
-- **Orderable columns are a hard server-side whitelist.** Only `title`, `author`, `created_at`, and `pages` are
-  sortable. Client field names resolve through a closed enum before any SQL is assembled; an unwhitelisted field is a
-  400, never an interpolated identifier. A column enters the whitelist only together with its ordering indexes in the
-  same migration, so "sortable" and "index-backed" cannot drift apart.
-- **Nullable columns order NULLS LAST in both directions.** Unknown values sink to the tail whether the axis is
-  ascending or descending, because surfacing the page-less or author-less stubs first is useless. Postgres orders
-  descending as NULLS FIRST by default, so each nullable orderable column carries an explicit `DESC NULLS LAST`
-  composite index; the cursor cascade carries an explicit `OR IS NULL` branch in both directions so the null bucket is
-  never dropped.
-- **The stack is capped at three levels; duplicate columns are rejected.** Both limits are enforced server-side and
-  return 400. Three levels covers real curation without unbounded cursor growth.
-- **The cursor is a versioned opaque payload.** It stays a base64url string of a tag plus a JSON body carrying the
-  canonical sort spec, one typed boundary value per level, and the manifestation-id tiebreaker that keeps any stack
-  total. A cursor names the key space it was minted for: replayed against a different sort it is rejected with 422
-  rather than paging a mismatched ordering. The manifestation id alone is the tiebreaker, which is unique and all
-  totality needs.
+The sort parameter uses comma-separated fields with a leading minus for descending order. A closed server-side whitelist
+bounds sortable columns; nullable values sort last, duplicate columns are rejected, and the stack is capped. The opaque
+cursor records the sort specification and boundary values so replay under a different sort fails.
 
 ### Consequences
 

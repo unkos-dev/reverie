@@ -59,33 +59,6 @@ grammar one scalable home while keeping active state visible in every mode witho
 surface. The known cost was accepted: removing a single condition took two clicks (open the rail, untick or clear the
 section) instead of one click on a chip.
 
-The shape of the decision:
-
-- **The filter rail was the sole filter editing surface in all view modes.** It carried a quick-search input at the top
-  (writing the same quick-search filter the toolbar offered), one collapsible section per filterable field: the existing
-  facet sections (series and author) plus inline section editors for the typed grammar (page-count range, rating range,
-  added-date range, status, tags, genres, moods, and title, subtitle, and ISBN text operators), reusing the per-column
-  editors the table view already shipped. Per-family any/all/none match modes stayed. Active values were highlighted in
-  their section, and each section had a clear affordance.
-- **The rail gained a sort section.** The multi-sort stack (add, remove, reorder, direction) was edited in the rail. The
-  table view kept header click and ctrl-click as the primary sort gesture; the rail section was the sort home for grid
-  and list and the full-stack editor everywhere. Table-header sorting was the one deliberate exception to the rail's
-  ownership of edit gestures.
-- **The masthead carried a compact always-visible summary.** A short active-filter readout (for example "Author (1) ·
-  Pages ≥ 300") plus a rail show/hide toggle with an active-filter badge, rendered in every view mode. The summary was
-  read-only; editing happened in the rail.
-- **The rail could fully collapse at desktop widths.** At the existing rail breakpoint (≥1280px) the rail collapsed; the
-  masthead summary and badge kept the state visible and one click from editable. Below the breakpoint the existing sheet
-  pattern was unchanged.
-- **The quick-search input replaced the rail's command-palette trigger.** The command palette stayed reachable through
-  its global shortcut and was a navigation surface, not a filtering one.
-- **Shelf became a rail facet section.** This also gave the table view a shelf surface, which it never had.
-- **Superseded components were deleted, not kept in parallel.** The table toolbar (quick search, popover builder, chip
-  row), the sort-chip bar, the masthead sort-preset menu, the masthead filter chips, and the masthead shelf picker were
-  all removed. The "(all editions)" suffix on work-scoped table column headers moved into a header tooltip.
-- **Facet counts stayed deferred.** Sections shipped without counts until the aggregation endpoints existed; the rail
-  structure did not wait for them.
-
 ### Consequences
 
 - Positive: one surface knew the whole grammar: a new filterable field was wired once, and every view mode got it at

@@ -44,28 +44,9 @@ information. Which crates should serve those three needs?
 Chosen option: **`axum-extra` query feature, `serde_with`, and `subtle`**, because each is the smallest addition that
 meets one of the three needs, and two of the three were already dependencies before this decision.
 
-`axum-extra`'s existing entry in `backend/Cargo.toml` gains the `"query"` feature, alongside the `"cookie"` feature it
-already carried, at the version already pinned to match the `axum` line in use. `axum_extra::extract::Query` decodes a
-repeated query key into a `Vec`, which the built-in `axum::Query` (backed by `serde_urlencoded`) does not. Because
-`axum-extra` is already compiled into the tree, enabling the feature costs no new dependency, unlike adding `serde_qs`
-as a sibling top-level crate for substantially the same surface.
-
-`serde_with` becomes a new top-level dependency, with its default features disabled and only `"std"` enabled: the helper
-this decision needs, `serde_with::rust::double_option`, does not require the `"macros"` feature or the proc-macro crate
-it pulls in. A `PATCH` handler that implements Merge Patch semantics annotates each optional field with
-`#[serde(default, with = "::serde_with::rust::double_option")]`, which distinguishes the three states a Merge Patch
-field can take: absent from the body decodes to `None` and leaves the field unchanged; present as `null` decodes to
-`Some(None)` and clears the field; present with a value decodes to `Some(Some(value))` and sets it. Bare
-`Option<Option<T>>` cannot make this distinction under serde's default decoding, and `serde_with::rust::double_option`
-is the established serde-ecosystem helper for it, so a per-field hand-rolled `Visitor` is not worth writing.
-
-`subtle` was already in the tree as the constant-time comparison used to verify a device token's hash; this decision
-documents its second, non-test consumer: a CSRF check compares the incoming header token to the session-stored token via
-`subtle::ConstantTimeEq`, so the comparison takes the same wall-clock time regardless of where the two byte slices first
-differ. There is no constant-time compare in the standard library; the textbook hand-rolled equivalent, folding an
-XOR-and-OR across zipped byte slices, is exactly what `subtle::ConstantTimeEq` already provides, with the addition of an
-optimisation barrier that stops LLVM from rewriting the fold into an early-exit comparison. Reverie applies this defence
-to every comparison of a presented secret against a stored one; the device-token verifier is the existing precedent.
+The axum-extra query feature handles repeated query keys, serde_with handles the three Merge Patch field states, and
+subtle handles comparisons of presented secrets. The selected features avoid unnecessary new dependencies and
+hand-written security code.
 
 ### Consequences
 

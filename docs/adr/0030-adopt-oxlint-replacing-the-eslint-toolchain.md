@@ -51,30 +51,9 @@ Chosen option: **oxlint, native rules only, with config-driven type-aware via `o
 the full removal of ESLint while preserving every enforcement that is a genuine industry standard. The JS-plugin bridge
 option is rejected because it fails the full-removal driver; staying on ESLint is rejected by the toolchain direction.
 
-The three forcing decisions resolved as follows.
-
-- **Cardinal `as`-cast ban** (`typescript/consistent-type-assertions` with `objectLiteralTypeAssertions: never`) is a
-  native oxlint rule and fires standalone, without type information. It needs no type-aware support, so the migration's
-  main risk did not materialise.
-- **Fetch centralisation** (`no-restricted-globals` and `no-restricted-properties`) is native.
-- **The `strictTypeChecked` class** (`no-floating-promises`, `no-unsafe-*`) is retained through type-aware
-  (`oxlint-tsgolint`), enabled now rather than deferred, because tsgolint is the `typescript-go` engine and adopting it
-  early reduces the later compiler-migration delta.
-- **The React baseline** is the native react plugin (`rules-of-hooks`, `exhaustive-deps`, `only-export-components`) plus
-  the security and correctness rules that have native equivalents (`no-danger`, `jsx-no-script-url`, `no-find-dom-node`,
-  `jsx-key`, and the rest of that set). The official `react/react-compiler` diagnostic is enabled so new code is written
-  compiler-safe ahead of turning on the compiler transform.
-- **Docstring-presence enforcement is dropped.** `require-jsdoc` was deprecated out of ESLint core in 2018 and appears
-  in no typescript-eslint preset; machine-requiring a docblock on every export pressures authors toward boilerplate that
-  restates the type signature. Existing docstrings stay as a reviewed convention, and `eslint-plugin-jsdoc` is removed.
-  An earlier, now-retired decision had enforced docstring presence on frontend exports through `eslint-plugin-jsdoc`;
-  that enforcement is what this decision drops.
-- **The `@eslint-react` opinionated layer is dropped.** Its rules are either dead by construction (the codebase is
-  function-component only, so the class-component rules cannot fire) or backstopped (the `AbortController` cleanup
-  convention, the React runtime, and native `exhaustive-deps`). The official React-lint baseline, `rules-of-hooks` and
-  `exhaustive-deps`, is preserved natively.
-- **The enum ban** moves off the linter to the type checker (`erasableSyntaxOnly`, already set). CSS hex stays on
-  stylelint.
+The native rules retain the type-aware safety checks, fetch centralisation, and React correctness baseline.
+Docstring-presence enforcement and the opinionated React plugin layer are dropped; the enum restriction remains with the
+type checker. These are deliberate changes to the lint policy, not replacements hidden behind a compatibility bridge.
 
 ### Consequences
 

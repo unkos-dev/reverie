@@ -56,34 +56,9 @@ the API rather than introducing a second filter shape, it parses through native 
 bracket or expression parser to build or harden, and the closed column set plus parameter-bound values make injection
 unrepresentable by construction.
 
-One URL parameter expresses one column condition, and the operator is a suffix token on the column name: `_contains`,
-`_eq`, `_ne`, and `_empty` for text; `_gte`, `_lte`, and `_empty` for numbers; `_gte` and `_lte` for dates; `_any` and
-`_none` for enums and authors.
-
-Text matching is case-insensitive and accent-sensitive. It uses `ILIKE` with backslash-escaped wildcards, matching the
-behaviour of the existing search and suggest endpoints, so a filter and a search over the same field agree on what
-counts as a match.
-
-Quick search (`q`) is a filter, not ranked search. It narrows the current result set within the active sort order (a
-full-text OR title-trigram match with no relevance ranking) because a rank cannot ride keyset pagination: a relevance
-score is neither stable nor unique across pages, so it cannot serve as a cursor key. Ranked search stays a separate
-endpoint that jumps to a single book; the grid quick search narrows the table in place. The two surfaces are a
-deliberate split, one for finding a book and one for refining a view.
-
-The status filter admits an `unread` pseudo-value. Alongside the real status names, `unread` matches the absence of a
-set status, because a reading-state row can exist carrying only a rating. So `unread` means "no row with a status set",
-not "no row at all", and the filter cannot silently drop a rated-but-unread book.
-
-Every input is typed, capped, and bound. Each value is typed at the boundary, length-capped, and count-capped; every
-value is parameter-bound; and column names never come from client input, since the suffix parameters are a closed set.
-Injection is unrepresentable by construction, the same stance as the sort whitelist.
-
-The cursor carries a filter fingerprint. The keyset cursor records a fingerprint of the active filter set, so a cursor
-replayed after the filters changed is rejected rather than paging a boundary computed under the old filters. This moves
-what was a client-side convention (drop the cursor when filters change) to server-side enforcement.
-
-Filter parameters resolve through a closed set of typed fields; only fixed column expressions reach the query builder,
-and every value is bound.
+The chosen grammar uses one typed parameter per column condition and a closed set of suffix operators. Quick search
+narrows the current ordered list rather than ranking results. Inputs are bounded and parameter-bound, and a cursor is
+tied to the active filter set.
 
 ### Consequences
 

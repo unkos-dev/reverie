@@ -57,13 +57,8 @@ goes stale. A reason-bearing `#[allow]` documents intent but still rots silently
 suppression forces bad decomposition on idiom-mandated code, the same miscalibration this repo rejected for the
 duplication gate.
 
-Two `[lints.clippy]` entries in `backend/Cargo.toml` enforce it: `allow_attributes = "deny"` and
-`allow_attributes_without_reason = "deny"` (the latter also covers reason-less `#[expect]`).
-
-One escape hatch exists: a lint that legitimately fires in only one `cfg` cannot be an unconditional `#[expect]`,
-because the expectation is unfulfilled in the other configuration. Those sites use
-`#[cfg_attr(test, allow(..., reason = "..."))]` (the crate root does this for `unwrap_used`-family lints in test
-builds). `cfg_attr`-gated allows are the only sanctioned `allow` form.
+A lint that only fires under one configuration may use a configuration-gated allow with a reason. Unconditional allows
+and stale expectations are rejected.
 
 ### Consequences
 

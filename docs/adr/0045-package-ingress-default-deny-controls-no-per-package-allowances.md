@@ -77,18 +77,11 @@ Entries take the shape the tooling can police, following
 a version-pinned allow entry is the `#[allow]` of package policy, documenting intent while rotting silently.
 `allowBuilds` keys its entries by package name, so a decision cannot quietly stop matching when a version range moves.
 
-No package is allowed to run an install script. Six packages in the tree declare one, three of them `fsevents` builds
-that install on macOS alone. Of the remainder, esbuild and lefthook ship their real binaries as platform
-`optionalDependencies` and both run correctly with every script blocked, and puppeteer's script fetches a browser for a
-URL-scanning path this repo never invokes. All three are denied by name.
-
 ### Consequences
 
 - Positive: no entry is keyed on a version the repo does not own, so a lockfile refresh can no longer void the policy.
 - Positive: a dependency that starts shipping an install script fails the install instead of running, or being skipped
   with nobody the wiser.
-- Positive: the image build is untouched by this decision: it copies the manifests and lockfile alone, and every install
-  it runs passes `--ignore-scripts`.
 - Negative: a one-off `vp dlx <tool>` fetches a package this policy has not ruled on. It runs outside the workspace
   install, so `allowBuilds` does not cover it; treat an ad-hoc fetch as its own decision.
 - Negative: a Renovate refresh introducing a script-bearing package turns that pull request red until someone rules on

@@ -68,16 +68,8 @@ count on the auth path from four crates to one: the healthy one. `tower-sessions
 line; `axum-login` and `tower-sessions-sqlx-store` are deleted; Reverie reimplements the thin slice it uses as
 first-party code.
 
-`axum-login` is replaced by session login / logout helpers on `tower_sessions::Session` (login: `cycle_id()` then
-persist `user_id` and `session_version`; logout: `flush()`), per-request user rehydration folded into the existing
-`CurrentUser` extractor (read session, then `user_id`, then load user, then compare `session_version` for invalidation),
-and a direct call to the existing OIDC upsert from the `/auth/callback` handler. `tower-sessions-sqlx-store` is replaced
-by a first-party `SessionStore` + `ExpiredDeletion` implementation against the unchanged `tower_sessions.session` table.
-
-The session-table schema, its RLS-exemption, the role grants (`reverie_app` DML; `reverie_readonly` column-scoped
-`SELECT (expiry_date)`, because the `id` column holds the credential the session cookie carries; `reverie_ingestion`
-none), and the `expiry_date` index remain in force: the first-party store targets the identical table, so the data-layer
-decisions from the earlier tower-sessions-sqlx-store decision carry forward.
+The first-party layer owns session login and logout, current-user rehydration, and persistence against the existing
+session table. The maintained tower-sessions core remains the session primitive.
 
 ### Consequences
 
@@ -89,8 +81,6 @@ decisions from the earlier tower-sessions-sqlx-store decision carry forward.
   code rather than indirection through axum-login's auth-hash machinery.
 - Positive: no additional migration: the session table's schema and grants are unchanged, since the first-party store
   targets the same table.
-- Positive: `backend/Cargo.toml` carries no `axum-login` or `tower-sessions-sqlx-store` entry; only `tower-sessions`
-  remains on the auth-critical path.
 - Negative: Reverie now owns the per-request session lifecycle and the store's serialization / expiry semantics. This is
   security-critical code; correctness rests on the existing HTTP-layer auth tests plus the store's restart-survival and
   expired-not-returned contract tests.

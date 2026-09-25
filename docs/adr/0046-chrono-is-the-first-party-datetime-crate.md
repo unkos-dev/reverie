@@ -58,28 +58,15 @@ deserialises from it without any field attribute, so the defect class that shipp
 rather than becoming better policed. `DateTime<Utc>` also encodes UTC in its type parameter, which turns the storage
 invariant into something the compiler checks.
 
-The integration cost of this choice is zero. The database layer maps `DateTime<Utc>` to `timestamptz` natively, and the
-OpenAPI generator maps it to `string` / `date-time` natively. Both are first-party features of those crates, so nothing
-is wrapped, adapted, or hand-maintained.
-
-`time` is not removed. Three third-party signatures accept its types and no others: the session layer's inactivity
-expiry, the cookie builder's `max_age`, and the session record whose expiry field the session store persists. Those
-sites keep `time`, and the last one converts explicitly at the point where the value reaches the database. The value
-gates session expiry, so the conversion refuses an unrepresentable instant rather than rounding or truncating one.
-First-party code uses `chrono`; the `time` types are entered as `disallowed-types` in the clippy configuration, and the
-three third-party boundaries carry scoped `#[expect]` attributes naming the API that forces each one.
+First-party datetime fields use chrono. Time remains at third-party API boundaries that require it, with explicit
+conversion rather than a second first-party datetime convention.
 
 ### Consequences
 
 - Positive: a datetime field added to a serialised struct is correct on the wire with no attribute, no review checklist,
   and no guard to forget.
-- Positive: the per-field RFC 3339 adapters are deleted outright, which removes the thing that had to be remembered.
 - Positive: `DateTime<Utc>` makes a non-UTC instant in a model, DTO, or signature a compile error rather than a
   convention violation.
-- Positive: formatting a timestamp becomes infallible, which removes two error variants and two `Result` returns from
-  the pagination cursors that existed only to carry a formatting failure that cannot occur.
-- Positive: both crates already executed on production request paths before this decision and still do. Neither one
-  entered or left the dependency graph.
 - Negative: `time` remains in the tree at three boundaries, so two datetime crates coexist and a contributor must know
   which applies where. A compiler lint is what keeps that boundary from spreading.
 - Negative: explicit RFC 3339 formatting has a trap: the crate's plain `to_rfc3339` writes a `+00:00` offset, while
