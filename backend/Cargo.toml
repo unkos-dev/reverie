@@ -123,7 +123,7 @@ percent-encoding = "2.3.2"
 # `string`/`uuid`. utoipa-axum's `OpenApiRouter` makes a handler routed without
 # `#[utoipa::path]` a compile error.
 utoipa = { version = "5.5", features = ["axum_extras", "chrono", "uuid"] }
-utoipa-axum = "0.2"
+utoipa-axum = "0.3"
 uuid = { version = "1.23.4", features = ["v4", "serde"] }
 walkdir = "2.5.0"
 # An EPUB container (OCF 4.3.2) allows only Stored and Deflate, and forbids
