@@ -190,14 +190,14 @@ url = "https://github.com/koalaman/shellcheck/releases/download/v0.11.0/shellche
 url_api = "https://api.github.com/repos/koalaman/shellcheck/releases/assets/279056942"
 
 [[tools.snyk]]
-version = "v1.1307.3"
+version = "v1.1307.4"
 backend = "aqua:snyk/cli"
-specifiers = ["v1.1307.3"]
+specifiers = ["v1.1307.4"]
 
 [tools.snyk."platforms.linux-x64"]
-checksum = "sha256:36fd42eab22ca275bddd2a67c83b51efc358dc2c29dcf53f7a98d3797c93c621"
-url = "https://github.com/snyk/cli/releases/download/v1.1307.3/snyk-linux"
-url_api = "https://api.github.com/repos/snyk/cli/releases/assets/572131476"
+checksum = "sha256:b0baee4fa4d7d11b7df927a1046cf8137a8a89fafac8101a45c3c0e0777ddc35"
+url = "https://github.com/snyk/cli/releases/download/v1.1307.4/snyk-linux"
+url_api = "https://api.github.com/repos/snyk/cli/releases/assets/584104972"
 
 [[tools.trivy]]
 version = "0.74.0"
