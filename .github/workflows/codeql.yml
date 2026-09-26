@@ -186,7 +186,7 @@ jobs:
 
       - name: Remote build cache (kache)
         if: env.R2_CONFIGURED == 'true'
-        uses: kunobi-ninja/kache-action@d71ab254aa8c20bdfa2dc38856611f5e78678cc6 # main
+        uses: kunobi-ninja/kache-action@ad7317540dcdd71c904f7a60a87b620a0c0e67ed # main
         with:
           # renovate: datasource=github-releases depName=kunobi-ninja/kache extractVersion=^v(?<version>.+)$
           version: "0.26.3"
