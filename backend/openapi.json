@@ -7300,11 +7300,11 @@
           "content_rating": {
             "oneOf": [
               {
-                "type": "null"
-              },
-              {
                 "$ref": "#/components/schemas/ContentRating",
                 "description": "Audience-suitability rating (`manifestations.content_rating`);\n`None` when unrated."
+              },
+              {
+                "type": "null"
               }
             ]
           },
@@ -7429,11 +7429,11 @@
           "series": {
             "oneOf": [
               {
-                "type": "null"
-              },
-              {
                 "$ref": "#/components/schemas/SeriesRef",
                 "description": "Series membership; `None` when the work isn't on a series."
+              },
+              {
+                "type": "null"
               }
             ]
           },
@@ -7523,11 +7523,11 @@
           "content_rating": {
             "oneOf": [
               {
-                "type": "null"
-              },
-              {
                 "$ref": "#/components/schemas/ContentRating",
                 "description": "Audience-suitability rating (`manifestations.content_rating`);\n`None` when unrated."
+              },
+              {
+                "type": "null"
               }
             ]
           },
@@ -7606,22 +7606,22 @@
           "reading_state": {
             "oneOf": [
               {
-                "type": "null"
-              },
-              {
                 "$ref": "#/components/schemas/ReadingStateSummary",
                 "description": "Caller's reading state for this book; `None` when unread (no\n`reading_state` row). Batch-loaded alongside `authors`."
+              },
+              {
+                "type": "null"
               }
             ]
           },
           "series": {
             "oneOf": [
               {
-                "type": "null"
-              },
-              {
                 "$ref": "#/components/schemas/SeriesRef",
                 "description": "Series membership; `None` when the work isn't on a series."
+              },
+              {
+                "type": "null"
               }
             ]
           },
@@ -7670,11 +7670,11 @@
           "content_rating": {
             "oneOf": [
               {
-                "type": "null"
-              },
-              {
                 "$ref": "#/components/schemas/ContentRating",
                 "description": "Content rating tier; `null` when unset."
+              },
+              {
+                "type": "null"
               }
             ]
           },
@@ -8575,11 +8575,11 @@
           "density": {
             "oneOf": [
               {
-                "type": "null"
-              },
-              {
                 "$ref": "#/components/schemas/LibraryDensity",
                 "description": "Chosen row density; `null` to inherit."
+              },
+              {
+                "type": "null"
               }
             ]
           },
@@ -8603,11 +8603,11 @@
           "view": {
             "oneOf": [
               {
-                "type": "null"
-              },
-              {
                 "$ref": "#/components/schemas/LibraryView",
                 "description": "Chosen library view; `null` to inherit."
+              },
+              {
+                "type": "null"
               }
             ]
           }
@@ -8747,11 +8747,11 @@
           "status": {
             "oneOf": [
               {
-                "type": "null"
-              },
-              {
                 "$ref": "#/components/schemas/ReadingStatus",
                 "description": "`reading_state.status`; `None` means unread (no row, or row with a\nnull status)."
+              },
+              {
+                "type": "null"
               }
             ]
           }
@@ -8796,11 +8796,11 @@
           "status": {
             "oneOf": [
               {
-                "type": "null"
-              },
-              {
                 "$ref": "#/components/schemas/ReadingStatus",
                 "description": "`reading_state.status`."
+              },
+              {
+                "type": "null"
               }
             ]
           }
@@ -9731,22 +9731,22 @@
           "content_rating": {
             "oneOf": [
               {
-                "type": "null"
-              },
-              {
                 "$ref": "#/components/schemas/ContentRating",
                 "description": "New content rating tier. Absent = unchanged; `null` clears."
+              },
+              {
+                "type": "null"
               }
             ]
           },
           "contributors": {
             "oneOf": [
               {
-                "type": "null"
-              },
-              {
                 "$ref": "#/components/schemas/ContributorsPatch",
                 "description": "Per-role contributor replace/clear. Absent = unchanged; `null` clears\nauthor, editor, and translator together (pure RFC 7396 member removal).\nHandled separately from the other fields — not part of [`Self::populated`]."
+              },
+              {
+                "type": "null"
               }
             ]
           },
@@ -9911,11 +9911,11 @@
           "density": {
             "oneOf": [
               {
-                "type": "null"
-              },
-              {
                 "$ref": "#/components/schemas/LibraryDensity",
                 "description": "Row density. Absent = unchanged; `null` resets to the default."
+              },
+              {
+                "type": "null"
               }
             ]
           },
@@ -9939,11 +9939,11 @@
           "view": {
             "oneOf": [
               {
-                "type": "null"
-              },
-              {
                 "$ref": "#/components/schemas/LibraryView",
                 "description": "Library view. Absent = unchanged; `null` resets to the default."
+              },
+              {
+                "type": "null"
               }
             ]
           }
@@ -9972,11 +9972,11 @@
           "status": {
             "oneOf": [
               {
-                "type": "null"
-              },
-              {
                 "$ref": "#/components/schemas/ReadingStatus",
                 "description": "New status. Absent = unchanged; `null` clears. Transition stamps\nfire only when this field is present with a non-null value, so\nabsent and `null` both leave every timestamp untouched."
+              },
+              {
+                "type": "null"
               }
             ]
           }
@@ -10002,11 +10002,11 @@
           "cleanup_mode": {
             "oneOf": [
               {
-                "type": "null"
-              },
-              {
                 "$ref": "#/components/schemas/CleanupMode",
                 "description": "Post-ingestion cleanup mode."
+              },
+              {
+                "type": "null"
               }
             ]
           },
@@ -10300,11 +10300,11 @@
           "series": {
             "oneOf": [
               {
-                "type": "null"
-              },
-              {
                 "$ref": "#/components/schemas/SeriesRef",
                 "description": "Series membership; `None` when the work isn't on a series."
+              },
+              {
+                "type": "null"
               }
             ]
           },
