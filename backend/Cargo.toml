@@ -122,7 +122,7 @@ percent-encoding = "2.3.2"
 # features map those types into the schema as `string`/`date-time` and
 # `string`/`uuid`. utoipa-axum's `OpenApiRouter` makes a handler routed without
 # `#[utoipa::path]` a compile error.
-utoipa = { version = "5.5", features = ["axum_extras", "chrono", "uuid"] }
+utoipa = { version = "6.0", features = ["axum_extras", "chrono", "uuid"] }
 utoipa-axum = "0.2"
 uuid = { version = "1.23.4", features = ["v4", "serde"] }
 walkdir = "2.5.0"
