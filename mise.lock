@@ -169,14 +169,14 @@ url_api = "https://api.github.com/repos/pnpm/pnpm/releases/assets/577602576"
 provenance = "github-attestations"
 
 [[tools.rumdl]]
-version = "v0.2.76"
+version = "v0.2.77"
 backend = "aqua:rvben/rumdl"
-specifiers = ["v0.2.76"]
+specifiers = ["v0.2.77"]
 
 [tools.rumdl."platforms.linux-x64"]
-checksum = "sha256:90a8589a34cdc9aa50c9cf9a2b1e41837afe16bb11b2a7ace2e05dfb56a51176"
-url = "https://github.com/rvben/rumdl/releases/download/v0.2.76/rumdl-v0.2.76-x86_64-unknown-linux-gnu.tar.gz"
-url_api = "https://api.github.com/repos/rvben/rumdl/releases/assets/583329282"
+checksum = "sha256:cbe5cea929fbb58b64bb428a464b069f3fe12645545adedc8932e738c8bbe862"
+url = "https://github.com/rvben/rumdl/releases/download/v0.2.77/rumdl-v0.2.77-x86_64-unknown-linux-gnu.tar.gz"
+url_api = "https://api.github.com/repos/rvben/rumdl/releases/assets/583859172"
 provenance = "github-attestations"
 
 [[tools.shellcheck]]
