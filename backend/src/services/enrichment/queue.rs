@@ -108,7 +108,10 @@ where
                         })
                         .catch_unwind()
                         .await
-                        .unwrap_or_else(|_| Err(anyhow::anyhow!("enrichment task panicked")));
+                        .unwrap_or_else(|payload| {
+                            warn!(%id, panic_message = ?panic_message(payload.as_ref()), "enrichment task panicked");
+                            Err(anyhow::anyhow!("enrichment task panicked"))
+                        });
                         if let Err(e) = finish(&pool, &cfg, id, attempt_count, result).await {
                             warn!(error = %e, %id, "queue: finish bookkeeping failed");
                         }
@@ -117,6 +120,17 @@ where
             }
         }
     }
+}
+
+fn panic_message(payload: &(dyn std::any::Any + Send)) -> String {
+    payload
+        .downcast_ref::<&str>()
+        .copied()
+        .or_else(|| payload.downcast_ref::<String>().map(String::as_str))
+        .unwrap_or("non-string panic payload")
+        .chars()
+        .filter(|character| !character.is_control())
+        .collect()
 }
 
 /// Atomic claim: pick the oldest eligible row and flip it to `in_progress`.
@@ -675,6 +689,18 @@ mod tests {
         assert_eq!(state.status, EnrichmentStatus::InProgress);
         assert_eq!(state.attempt_count, 1);
         assert_eq!(state.attempted_at, attempted_at);
+    }
+
+    #[test]
+    fn panic_diagnostics_preserve_string_payloads() {
+        assert_eq!(panic_message(&"borrowed panic"), "borrowed panic");
+        assert_eq!(panic_message(&String::from("owned panic")), "owned panic");
+    }
+
+    #[test]
+    fn panic_diagnostics_strip_control_characters_and_handle_other_payloads() {
+        assert_eq!(panic_message(&"first\r\n\t\u{1b}second"), "firstsecond");
+        assert_eq!(panic_message(&42_u32), "non-string panic payload");
     }
 
     #[sqlx::test(migrations = "./migrations")]
