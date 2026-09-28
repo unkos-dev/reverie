@@ -107,6 +107,11 @@ describe("LeftRail — primary navigation", () => {
       "/library",
     );
   });
+
+  test("sizes the rail lockup for the fine-slot glyph", () => {
+    renderRail();
+    expect(screen.getByRole("img", { name: "Reverie" })).toHaveStyle({ fontSize: "20px" });
+  });
 });
 
 describe("LeftRail — shelves", () => {

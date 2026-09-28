@@ -499,6 +499,11 @@ The canonical brand expression — glyph (the Slot) + wordmark, inline, at `src/
 inline-literal `#0E0D0A` / `#E8E0D0` rather than design tokens so it renders correctly even before the theme tree
 resolves.
 
+Both glyph variants use the exact canonical paths inline, with a `4 4 24 24` viewBox that removes their transparent
+inset. The visible block is 1.40em, the gap is 0.48em and the wordmark left padding is 0.32em. The thicker favicon
+variant applies below a 24px visible block size. Inline styling and SVG artwork keep the whole lockup independent of
+theme CSS and glyph requests; tests enforce exact parity with the shipped assets.
+
 Three forms ranked by canonicality: (1) lockup with glyph — canonical; (2) glyph alone — favicons, very compressed
 contexts; (3) wordmark alone — only when neither fits (footer microtext, plain-text email signatures). Never use the
 wordmark alone as a primary mark.
@@ -520,9 +525,9 @@ weight, one of them is actually destructive (route to alert-dialog) or the surfa
 **The No-Bottom-Nav Rule.** Mobile nav is a sheet, not a bottom bar. Bottom-nav reads consumer-app; Reverie's mobile
 presence is a complement to the desktop archive, not a standalone mobile app.
 
-**The Lockup-As-Brand-Carrier Rule.** The Lockup component is invariant. It uses inline hex values, not theme tokens,
-and must render correctly before the theme tree resolves. Do not theme it; do not re-style its parts; do not use its
-glyph or wordmark separately as decorative elements.
+**The Lockup-As-Brand-Carrier Rule.** The Lockup component is invariant. It uses inline styles, hex values and canonical
+SVG paths, and must render correctly before the theme tree resolves. Do not theme it; do not re-style its parts; do not
+use its glyph or wordmark separately as decorative elements.
 
 ## Do's and Don'ts
 

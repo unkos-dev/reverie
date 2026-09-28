@@ -207,6 +207,11 @@ import { Lockup } from "@/components/Lockup";
 <Lockup size={28} theme="dark" />;
 ```
 
-The Lockup intentionally inlines `#C9A961` / `#0E0D0A` / `#E8E0D0` as constants (philosophy §11C invariant; the Lockup
-must render correctly even before `themes/index.css` resolves, e.g. on the OIDC error page). It is the documented
-exemption to the hex-literal ban.
+The glyph inlines the exact paths from the shipped Slot SVG assets, with the favicon variant below a 24px visible glyph
+size. The `4 4 24 24` viewBox frames the visible block without the assets' transparent inset: the block is 1.40em, the
+gap is 0.48em, and the wordmark left padding is 0.32em, all relative to the wordmark type size. Tests enforce exact path
+and attribute parity with both canonical assets.
+
+The whole lockup uses inline styling and SVG artwork (philosophy §11C invariant; it must render correctly even before
+`themes/index.css` resolves, e.g. on the OIDC error page). It is the documented exemption to the inline-style and
+hex-literal bans. The glyph retains `#C9A961`; the wordmark uses `#0E0D0A` / `#E8E0D0`.

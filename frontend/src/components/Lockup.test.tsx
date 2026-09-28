@@ -1,6 +1,8 @@
 import { describe, it, expect } from "vite-plus/test";
 import { render, screen } from "@testing-library/react";
 import { Lockup } from "./Lockup";
+import slotFaviconSvg from "../../public/brand/glyph/slot-favicon.svg?raw";
+import slotSvg from "../../public/brand/glyph/slot.svg?raw";
 
 describe("Lockup", () => {
   it("renders the wordmark text", () => {
@@ -14,30 +16,31 @@ describe("Lockup", () => {
     expect(lockup).toBeInTheDocument();
   });
 
-  it("hides the inline glyph SVG from assistive tech (the parent has the label)", () => {
+  it("hides the canonical glyph asset from assistive tech (the parent has the label)", () => {
     const { container } = render(<Lockup />);
     const glyph = container.querySelector("svg");
     expect(glyph).not.toBeNull();
     expect(glyph).toHaveAttribute("aria-hidden", "true");
   });
 
-  it("renders the locked Slot construction inside the inline glyph", () => {
-    const { container } = render(<Lockup />);
-    const glyph = container.querySelector("svg");
-    expect(glyph).toHaveAttribute("viewBox", "0 0 32 32");
-    const rects = glyph?.querySelectorAll("rect");
-    expect(rects?.length).toBe(2);
-    expect(rects?.[0]).toHaveAttribute("x", "4");
-    expect(rects?.[0]).toHaveAttribute("y", "4");
-    expect(rects?.[0]).toHaveAttribute("width", "24");
-    expect(rects?.[0]).toHaveAttribute("height", "24");
-    expect(rects?.[0]).toHaveAttribute("fill", "#C9A961");
-    expect(rects?.[1]).toHaveAttribute("x", "8");
-    expect(rects?.[1]).toHaveAttribute("y", "17");
-    expect(rects?.[1]).toHaveAttribute("width", "16");
-    expect(rects?.[1]).toHaveAttribute("height", "2");
-    expect(rects?.[1]).toHaveAttribute("fill", "#0E0D0A");
-  });
+  it.each([
+    { size: 17, artwork: slotFaviconSvg },
+    { size: 18, artwork: slotSvg },
+  ])(
+    "inlines the exact canonical knockout at the $size px variant boundary",
+    ({ size, artwork }) => {
+      const { container } = render(<Lockup size={size} />);
+      const paths = container.querySelectorAll("svg path");
+      const canonical = new DOMParser().parseFromString(artwork, "image/svg+xml");
+      const canonicalPath = canonical.querySelector("path");
+      expect(paths).toHaveLength(1);
+      const path = container.querySelector("svg path");
+      if (canonicalPath === null || path === null) throw new Error("Missing glyph path");
+      const attributes = (element: Element): Record<string, string> =>
+        Object.fromEntries(Array.from(element.attributes, ({ name, value }) => [name, value]));
+      expect(attributes(path)).toEqual(attributes(canonicalPath));
+    },
+  );
 
   it("uses cream wordmark on dark theme (default)", () => {
     render(<Lockup />);
@@ -51,11 +54,25 @@ describe("Lockup", () => {
     expect(word).toHaveStyle({ color: "rgb(14, 13, 10)" }); // #0E0D0A
   });
 
-  it("scales glyph to 0.95 × size", () => {
+  it("sizes the glyph and wordmark gap from the wordmark type size", () => {
     const { container } = render(<Lockup size={40} />);
+    expect(container.firstElementChild).toHaveStyle({ fontSize: "40px", gap: "0.48em" });
+    const word = screen.getByText("Reverie");
+    expect(word.style.paddingLeft).toBe("0.32em");
+    expect(word.style.letterSpacing).toBe("0.32em");
+  });
+
+  it.each([
+    { size: 13, blockSize: 18.2 },
+    { size: 20, blockSize: 28 },
+    { size: 32, blockSize: 44.8 },
+  ])("frames the visible canonical block at $size px type", ({ size, blockSize }) => {
+    const { container } = render(<Lockup size={size} />);
     const glyph = container.querySelector("svg");
-    expect(glyph).toHaveAttribute("width", "38"); // 40 * 0.95
-    expect(glyph).toHaveAttribute("height", "38");
+    expect(glyph).not.toBeNull();
+    expect(Number(glyph?.getAttribute("width"))).toBeCloseTo(blockSize);
+    expect(Number(glyph?.getAttribute("height"))).toBeCloseTo(blockSize);
+    expect(glyph).toHaveAttribute("viewBox", "4 4 24 24");
   });
 
   it("forwards className to the lockup element", () => {
