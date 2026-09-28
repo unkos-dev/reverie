@@ -80,6 +80,12 @@
       "minimumReleaseAge": null
     },
     {
+      "description": "Automerge mise tool patch and minor updates after required checks pass and the release-age hold has elapsed.",
+      "matchManagers": ["mise"],
+      "matchUpdateTypes": ["patch", "minor"],
+      "automerge": true
+    },
+    {
       "description": "Automerge stable cargo and npm patch updates; keep pre-1.0 updates manual.",
       "matchManagers": ["cargo", "npm"],
       "matchUpdateTypes": ["patch"],
