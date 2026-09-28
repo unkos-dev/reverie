@@ -281,8 +281,15 @@ a projection, not a preview of a specific journal row a subsequent real run woul
   single-instance deployment decision.
 - With `EnrichmentConfig.enabled = false`, the worker skips `revert_in_progress` entirely. An orphaned row stays
   `in_progress` until the worker starts with enrichment enabled.
-- A task panic while the process remains alive leaves its row `in_progress`: the spawned task has no panic guard to
-  re-pend it. Startup recovery does not cover this live-process gap in the durable-job-queue ADR's required controls.
+- Each claimed run has a panic guard. An unwinding panic becomes a failed outcome with the fixed error
+  `enrichment task panicked`; `finish` applies the usual retry backoff and attempt cap. A rerun requested during the run
+  takes precedence, resetting the row to immediately eligible `pending`. The task retains its semaphore permit until
+  bookkeeping finishes, then releases it so the worker can process other work. Bookkeeping failures are logged with the
+  manifestation identifier; if the database update fails, the row remains `in_progress` until restart recovery.
+- Panic recovery requires unwinding; a build using `panic = "abort"` terminates the process and relies on startup
+  recovery. String panic payloads are logged with the manifestation identifier after control characters are removed;
+  non-string payloads use a fixed diagnostic. The database error remains fixed. The source fan-out has a fetch budget,
+  but the queue does not impose a timeout on the whole run, so a stalled run can retain its claim until restart.
 - A run that kills the process never reaches `mark_failed`, where the `Skipped` transition evaluates `max_attempts`.
   Repeated process crashes therefore do not exhaust the attempt limit. The preserved last-attempt timestamp and counter
   bound retries through the claim query's backoff schedule, which reaches 24 hours and stays there.
