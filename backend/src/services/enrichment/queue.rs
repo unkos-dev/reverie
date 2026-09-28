@@ -6,9 +6,12 @@
 //! `skipped` after `max_attempts`.  On startup and shutdown, reverts any
 //! `in_progress` rows back to `pending` so a fresh worker can re-claim them.
 
+use std::future::Future;
+use std::panic::AssertUnwindSafe;
 use std::sync::Arc;
 use std::time::Duration;
 
+use futures::FutureExt;
 use sqlx::PgPool;
 use tokio::sync::Semaphore;
 use tokio::time::Interval;
@@ -41,6 +44,22 @@ pub async fn spawn_queue(
     config: Config,
     cancel: CancellationToken,
 ) -> anyhow::Result<()> {
+    queue_with_runner(pool, config, cancel, |pool, config, id| async move {
+        orchestrator::run_once(&pool, &config, id).await
+    })
+    .await
+}
+
+async fn queue_with_runner<R, F>(
+    pool: PgPool,
+    config: Config,
+    cancel: CancellationToken,
+    run: R,
+) -> anyhow::Result<()>
+where
+    R: Fn(PgPool, Config, Uuid) -> F + Clone + Send + Sync + 'static,
+    F: Future<Output = anyhow::Result<RunOutcome>> + Send,
+{
     if !config.enrichment.enabled {
         info!("enrichment queue disabled by config");
         cancel.cancelled().await;
@@ -81,9 +100,15 @@ pub async fn spawn_queue(
                     };
                     let pool = pool.clone();
                     let cfg = config.clone();
+                    let run = run.clone();
                     tokio::spawn(async move {
                         let _p = permit;
-                        let result = orchestrator::run_once(&pool, &cfg, id).await;
+                        let result = AssertUnwindSafe(async {
+                            run(pool.clone(), cfg.clone(), id).await
+                        })
+                        .catch_unwind()
+                        .await
+                        .unwrap_or_else(|_| Err(anyhow::anyhow!("enrichment task panicked")));
                         if let Err(e) = finish(&pool, &cfg, id, attempt_count, result).await {
                             warn!(error = %e, %id, "queue: finish bookkeeping failed");
                         }
@@ -650,6 +675,115 @@ mod tests {
         assert_eq!(state.status, EnrichmentStatus::InProgress);
         assert_eq!(state.attempt_count, 1);
         assert_eq!(state.attempted_at, attempted_at);
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn panic_recovers_claim_and_worker_processes_other_work(pool: PgPool) {
+        let pool = ingestion_pool_for(&pool).await;
+        let (_, panic_id, _) =
+            insert_queue_fixture(&pool, EnrichmentStatus::Pending, 0, None).await;
+        let mut config = test_config_with_max_attempts(3);
+        config.enrichment.concurrency = 1;
+        config.enrichment.poll_idle_secs = 1;
+        let cancel = CancellationToken::new();
+        let worker = tokio::spawn(queue_with_runner(
+            pool.clone(),
+            config,
+            cancel.clone(),
+            move |pool, config, id| async move {
+                if id == panic_id {
+                    tokio::task::yield_now().await;
+                    panic!("injected enrichment panic");
+                }
+                orchestrator::run_once(&pool, &config, id).await
+            },
+        ));
+
+        let recovered = wait_for_queue_status(&pool, panic_id, EnrichmentStatus::Failed).await;
+        assert_eq!(recovered.attempt_count, 1);
+        assert!(recovered.attempted_at.is_some());
+        assert_eq!(recovered.error.as_deref(), Some("enrichment task panicked"));
+        assert!(!recovered.rerun_requested);
+        assert!(claim_next(&pool).await.unwrap().is_none());
+
+        let (_, other_id, _) =
+            insert_queue_fixture(&pool, EnrichmentStatus::Pending, 0, None).await;
+        let completed = wait_for_queue_status(&pool, other_id, EnrichmentStatus::Complete).await;
+        assert_eq!(completed.attempt_count, 1);
+        assert_eq!(
+            queue_row_state(&pool, panic_id).await.status,
+            EnrichmentStatus::Failed
+        );
+        cancel.cancel();
+        worker.await.unwrap().unwrap();
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn panic_at_attempt_cap_skips_claim(pool: PgPool) {
+        panic_at_attempt_cap(&pool, false).await;
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn panic_preserves_mid_run_rerun_at_attempt_cap(pool: PgPool) {
+        panic_at_attempt_cap(&pool, true).await;
+    }
+
+    async fn panic_at_attempt_cap(pool: &PgPool, request_rerun: bool) {
+        let pool = ingestion_pool_for(pool).await;
+        let (_, id, _) =
+            insert_queue_fixture(&pool, EnrichmentStatus::Failed, 2, Some(7_201)).await;
+        let mut config = test_config_with_max_attempts(3);
+        config.enrichment.poll_idle_secs = 3_600;
+        let cancel = CancellationToken::new();
+        let worker = tokio::spawn(queue_with_runner(
+            pool.clone(),
+            config,
+            cancel.clone(),
+            move |pool, _config, _id| async move {
+                if request_rerun {
+                    set_rerun_requested(&pool, id).await;
+                }
+                panic!("injected enrichment panic");
+            },
+        ));
+        let expected = if request_rerun {
+            EnrichmentStatus::Pending
+        } else {
+            EnrichmentStatus::Skipped
+        };
+        let recovered = wait_for_queue_status(&pool, id, expected).await;
+        assert!(!recovered.rerun_requested);
+        if request_rerun {
+            assert_eq!(recovered.attempt_count, 0);
+            assert!(recovered.attempted_at.is_none());
+            assert!(recovered.error.is_none());
+            assert_eq!(claim_next(&pool).await.unwrap(), Some((id, 1)));
+        } else {
+            assert_eq!(recovered.attempt_count, 3);
+            assert!(recovered.attempted_at.is_some());
+            assert_eq!(recovered.error.as_deref(), Some("enrichment task panicked"));
+            assert!(claim_next(&pool).await.unwrap().is_none());
+        }
+        cancel.cancel();
+        worker.await.unwrap().unwrap();
+    }
+
+    async fn wait_for_queue_status(
+        pool: &PgPool,
+        id: Uuid,
+        expected: EnrichmentStatus,
+    ) -> QueueRowState {
+        tokio::time::timeout(Duration::from_secs(10), async {
+            loop {
+                let state = queue_row_state(pool, id).await;
+                if state.status == expected {
+                    break state;
+                }
+                tokio::time::sleep(Duration::from_millis(25)).await;
+            }
+        })
+        .await
+        .expect("queue should reach the expected status without restarting")
     }
 
     struct QueueRowState {
