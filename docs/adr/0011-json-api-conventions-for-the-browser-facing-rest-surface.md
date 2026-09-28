@@ -58,8 +58,8 @@ The conventions for the REST surface are:
 - **Field naming:** `snake_case` fields (avoids a per-struct serialization attribute on every handler).
 - **Timestamps:** RFC 3339 UTC timestamps (matches the OPDS Atom feed for format consistency).
 - **Errors:** RFC 9457 Problem Details and failure-class HTTP status codes.
-- **Nulls:** Explicit nulls in responses rather than omitted fields (a consistent read shape), separate from the
-  "absent" versus "clear" distinction required for JSON Merge Patch requests.
+- **Nulls:** Explicit nulls were chosen to give clients a consistent read shape and support the intended
+  read-modify-write workflow with JSON Merge Patch.
 - **Pagination:** Cursor pagination with `next_cursor` and RFC 8288 `Link` headers, including `rel="prev"` and
   `rel="first"` when applicable.
 - **CSRF:** Synchronizer-token CSRF protection for cookie-authenticated mutations.
