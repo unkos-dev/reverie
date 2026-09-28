@@ -104,7 +104,7 @@ jobs:
         run: |
           set -euo pipefail
           rc=0
-          snyk test --debug --org=reverie --all-projects --dev \
+          snyk test --org=reverie --all-projects --dev \
             --sarif-file-output=snyk-oss.sarif || rc=$?
           if [ "$rc" -gt 1 ]; then exit "$rc"; fi
 
