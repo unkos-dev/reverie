@@ -143,10 +143,11 @@
       "automerge": false
     },
     {
-      "description": "Keep the SQLx library and migration CLI compatible.",
-      "matchDepNames": ["sqlx", "sqlx-cli"],
+      "description": "Keep SQLx library and migration CLI updates together for manual compatibility review; sqlx-cli installs without a dependency lockfile.",
+      "matchDepNames": ["sqlx", "sqlx-cli", "cargo:sqlx-cli"],
       "matchUpdateTypes": ["minor", "patch"],
-      "groupName": "sqlx"
+      "groupName": "sqlx",
+      "automerge": false
     },
     {
       "description": "Group compatible Astro documentation packages.",
