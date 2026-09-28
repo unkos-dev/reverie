@@ -85,9 +85,13 @@ first-party session, so identity gating and ownership stay enforced once.
 
 A user may hold local credentials and external-provider identities, all resolving to one first-party session. External
 subjects are namespaced by issuer. Local passwords use Argon2id; random device tokens retain their separate hashing
-path. The chosen model also provides first-administrator bootstrap, host-verified password recovery, verified-email
-account linking, optional self-registration, synchronizer-token CSRF protection, password-strength and breach checks,
-and throttled login without permanent lockout.
+path. The chosen model also provides first-administrator bootstrap, host-verified password recovery, optional
+self-registration, synchronizer-token CSRF protection, password-strength and breach checks, and throttled login without
+permanent lockout.
+
+Account linking relies on email uniqueness per instance: an OIDC login auto-links to an existing local account only when
+the asserted email is verified; otherwise an administrator links the account manually. For configuration, OIDC becomes
+optional, and secrets accept a file-based variant in addition to environment variables.
 
 ### Consequences
 
