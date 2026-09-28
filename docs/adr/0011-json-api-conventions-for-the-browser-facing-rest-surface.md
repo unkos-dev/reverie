@@ -53,11 +53,23 @@ Chosen option: **a fixed convention set for the browser-facing JSON surface**, b
 security choices, while fixing the whole set before the first handler lands keeps the backend and the frontend client on
 one shared shape.
 
-The conventions choose snake_case fields, RFC 3339 UTC timestamps, RFC 9457 Problem Details, failure-class HTTP status
-codes, explicit nulls, cursor pagination with Link headers, synchronizer-token CSRF protection for cookie-authenticated
-mutations, existence-hiding 404 responses, JSON Merge Patch, matching GET representations for resource PATCH endpoints,
-and If-Match preconditions where optimistic concurrency is required. These are the selected API contracts; handler and
-middleware wiring is outside this decision record.
+The conventions for the REST surface are:
+
+- **Field naming:** `snake_case` fields (avoids a per-struct serialization attribute on every handler).
+- **Timestamps:** RFC 3339 UTC timestamps (matches the OPDS Atom feed for format consistency).
+- **Errors:** RFC 9457 Problem Details and failure-class HTTP status codes.
+- **Nulls:** Explicit nulls in responses rather than omitted fields (a consistent read shape), separate from the
+  "absent" versus "clear" distinction required for JSON Merge Patch requests.
+- **Pagination:** Cursor pagination with `next_cursor` and RFC 8288 `Link` headers, including `rel="prev"` and
+  `rel="first"` when applicable.
+- **CSRF:** Synchronizer-token CSRF protection for cookie-authenticated mutations.
+- **Not Found:** Existence-hiding 404 responses over 403s for resources outside the caller's visibility (OWASP
+  defence-in-depth against resource existence disclosure).
+- **Mutations:** JSON Merge Patch for partial updates, with matching GET representations for resource PATCH endpoints
+  (ensures read-modify-write flows target one shape), and `If-Match` preconditions where optimistic concurrency is
+  required.
+
+These are the selected API contracts; handler and middleware wiring is outside this decision record.
 
 ### Consequences
 
