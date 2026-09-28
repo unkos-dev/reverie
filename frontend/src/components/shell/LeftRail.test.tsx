@@ -110,10 +110,7 @@ describe("LeftRail — primary navigation", () => {
 
   test("sizes the rail lockup for the fine-slot glyph", () => {
     renderRail();
-    expect(screen.getByRole("img", { name: "Reverie" }).querySelector("img")).toHaveAttribute(
-      "src",
-      "/brand/glyph/slot.svg",
-    );
+    expect(screen.getByRole("img", { name: "Reverie" })).toHaveStyle({ fontSize: "20px" });
   });
 });
 

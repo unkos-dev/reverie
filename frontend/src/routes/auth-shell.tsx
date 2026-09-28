@@ -15,11 +15,9 @@ type AuthShellProps = {
  * Full-page chrome shared by the pre-auth screens (login / setup /
  * forgot-password). These routes mount as siblings of the app-shell
  * root, so they render without the rail / utility strip and without the
- * `useSessionRecovery` redirect funnel. The brand `Lockup` styles its
- * wordmark inline, so the wordmark shows even before the theme CSS
- * resolves; its tint follows the effective theme. The glyph beside it is
- * fetched from the shipped brand assets and can be absent on a surface
- * that paints without them.
+ * `useSessionRecovery` redirect funnel. The brand `Lockup` uses inline
+ * styles and canonical SVG paths so the whole mark renders before the
+ * theme CSS resolves; its wordmark tint follows the effective theme.
  */
 export function AuthShell({ title, description, children, footer }: AuthShellProps): ReactElement {
   const { effective } = useTheme();

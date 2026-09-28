@@ -1,6 +1,6 @@
 {
   "schemaVersion": 2,
-  "generatedAt": "2026-09-09T15:28:01.982993+00:00",
+  "generatedAt": "2026-09-28T17:06:16+00:00",
   "title": "Design System: Reverie",
   "extensions": {
     "colorMeta": {
@@ -1057,7 +1057,7 @@
       },
       {
         "name": "The Lockup-As-Brand-Carrier Rule",
-        "body": "The Lockup component is invariant. It uses inline hex values, not theme tokens, and must render correctly before the theme tree resolves. Do not theme it; do not re-style its parts; do not use its glyph or wordmark separately as decorative elements.",
+        "body": "The Lockup component is invariant. It uses inline styles, hex values and canonical SVG paths, and must render correctly before the theme tree resolves. Do not theme it; do not re-style its parts; do not use its glyph or wordmark separately as decorative elements.",
         "section": "components"
       }
     ],

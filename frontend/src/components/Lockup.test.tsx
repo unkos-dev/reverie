@@ -18,39 +18,29 @@ describe("Lockup", () => {
 
   it("hides the canonical glyph asset from assistive tech (the parent has the label)", () => {
     const { container } = render(<Lockup />);
-    const glyph = container.querySelector("img");
+    const glyph = container.querySelector("svg");
     expect(glyph).not.toBeNull();
     expect(glyph).toHaveAttribute("aria-hidden", "true");
   });
 
-  it("uses the canonical standard Slot asset", () => {
-    const { container } = render(<Lockup />);
-    expect(container.querySelector("img")).toHaveAttribute("src", "/brand/glyph/slot.svg");
-  });
-
-  it("uses the canonical thick-slot asset when the glyph renders below 24px", () => {
-    const { container } = render(<Lockup size={13} />);
-    expect(container.querySelector("img")).toHaveAttribute("src", "/brand/glyph/slot-favicon.svg");
-  });
-
-  it("switches variant on the rendered glyph size, not the wordmark size", () => {
-    const thick = render(<Lockup size={17} />);
-    expect(thick.container.querySelector("img")).toHaveAttribute(
-      "src",
-      "/brand/glyph/slot-favicon.svg",
-    );
-
-    const standard = render(<Lockup size={18} />);
-    expect(standard.container.querySelector("img")).toHaveAttribute("src", "/brand/glyph/slot.svg");
-  });
-
-  it("ships knockout artwork for both glyph sources", () => {
-    for (const svg of [slotSvg, slotFaviconSvg]) {
-      expect(svg).toContain('fill-rule="evenodd"');
-      expect(svg).toContain('fill="#C9A961"');
-      expect(svg).not.toContain("<rect");
-    }
-  });
+  it.each([
+    { size: 17, artwork: slotFaviconSvg },
+    { size: 18, artwork: slotSvg },
+  ])(
+    "inlines the exact canonical knockout at the $size px variant boundary",
+    ({ size, artwork }) => {
+      const { container } = render(<Lockup size={size} />);
+      const paths = container.querySelectorAll("svg path");
+      const canonical = new DOMParser().parseFromString(artwork, "image/svg+xml");
+      const canonicalPath = canonical.querySelector("path");
+      expect(paths).toHaveLength(1);
+      const path = container.querySelector("svg path");
+      if (canonicalPath === null || path === null) throw new Error("Missing glyph path");
+      const attributes = (element: Element): Record<string, string> =>
+        Object.fromEntries(Array.from(element.attributes, ({ name, value }) => [name, value]));
+      expect(attributes(path)).toEqual(attributes(canonicalPath));
+    },
+  );
 
   it("uses cream wordmark on dark theme (default)", () => {
     render(<Lockup />);
@@ -67,47 +57,22 @@ describe("Lockup", () => {
   it("sizes the glyph and wordmark gap from the wordmark type size", () => {
     const { container } = render(<Lockup size={40} />);
     expect(container.firstElementChild).toHaveStyle({ fontSize: "40px", gap: "0.48em" });
-    expect(container.querySelector("img")?.parentElement).toHaveStyle({
-      width: "56px",
-      height: "56px",
-    });
+    const word = screen.getByText("Reverie");
+    expect(word.style.paddingLeft).toBe("0.32em");
+    expect(word.style.letterSpacing).toBe("0.32em");
   });
 
   it.each([
-    { size: 13, blockSize: 18.2, artwork: slotFaviconSvg },
-    { size: 20, blockSize: 28, artwork: slotSvg },
-    { size: 32, blockSize: 44.8, artwork: slotSvg },
-  ])("frames the visible canonical block at $size px type", ({ size, blockSize, artwork }) => {
+    { size: 13, blockSize: 18.2 },
+    { size: 20, blockSize: 28 },
+    { size: 32, blockSize: 44.8 },
+  ])("frames the visible canonical block at $size px type", ({ size, blockSize }) => {
     const { container } = render(<Lockup size={size} />);
-    const image = container.querySelector("img");
-    expect(image).not.toBeNull();
-    if (image === null) throw new Error("Missing glyph image");
-    const frame = image.parentElement;
-    expect(frame).toHaveStyle({
-      width: `${String(blockSize)}px`,
-      height: `${String(blockSize)}px`,
-    });
-    expect(frame).toHaveClass(
-      "inline-flex",
-      "flex-none",
-      "items-center",
-      "justify-center",
-      "overflow-hidden",
-    );
-    const svg = new DOMParser().parseFromString(artwork, "image/svg+xml");
-    const gridWidth = Number(svg.documentElement.getAttribute("viewBox")?.split(" ")[2]);
-    const blockWidth = Number(
-      svg
-        .querySelector("path")
-        ?.getAttribute("d")
-        ?.match(/h(\d+)/)?.[1],
-    );
-    expect(gridWidth).toBeGreaterThan(blockWidth);
-    expect(blockWidth).toBeGreaterThan(0);
-    expect((Number.parseFloat(image.style.width) / 100) * (blockWidth / gridWidth)).toBeCloseTo(1);
-    expect(image.style.height).toBe(image.style.width);
-    expect(image).toHaveStyle({ flex: "none" });
-    expect(image).toHaveClass("max-w-none");
+    const glyph = container.querySelector("svg");
+    expect(glyph).not.toBeNull();
+    expect(Number(glyph?.getAttribute("width"))).toBeCloseTo(blockSize);
+    expect(Number(glyph?.getAttribute("height"))).toBeCloseTo(blockSize);
+    expect(glyph).toHaveAttribute("viewBox", "4 4 24 24");
   });
 
   it("forwards className to the lockup element", () => {
