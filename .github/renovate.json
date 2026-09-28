@@ -81,7 +81,7 @@
     },
     {
       "description": "Automerge mise executable patch and minor updates after required checks pass and the release-age hold has elapsed.",
-      "matchManagers": ["custom.regex"],
+      "matchManagers": ["custom.regex", "github-actions"],
       "matchDepNames": ["jdx/mise"],
       "matchUpdateTypes": ["patch", "minor"],
       "automerge": true
