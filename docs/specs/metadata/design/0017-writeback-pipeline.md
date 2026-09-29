@@ -212,9 +212,9 @@ has no live input to act on outside its own tests.
   attempted.
 - **The on-disk `EPUB` file.** Its bytes are mutated only through `path_rename::commit` (temp file, same directory,
   atomic rename) or `path_rename::move_existing` (existing file to a new location, same-filesystem rename, or a
-  copy-fsync-unlink fallback across file systems); see Security and operations for what each helper's cross-filesystem
-  path does and does not verify. The one exception, the cover sidecar's bare rename, is noted in the state-writer census
-  above.
+  copy-fsync-verify-unlink fallback across file systems); both cross-filesystem paths verify the persisted bytes against
+  the source before removing the original. The one exception, the cover sidecar's bare rename, is noted in the
+  state-writer census above.
 - **`WritebackConfig`.** `enabled` (default `true`) gates whether `spawn_worker` ever claims a job; when `false`, the
   worker parks on the cancellation token and returns without calling `revert_in_progress`, so rows already `pending` or
   `failed` simply accumulate unclaimed, and a row left `in_progress` by an earlier run stays `in_progress`; only
@@ -361,8 +361,12 @@ same-filesystem rename, so the directory-entry update survives a power loss even
 atomic for visibility. Crossing a filesystem boundary (`EXDEV`) inside `commit` falls back to a copy into a temporary
 file in the destination's own directory, an `fsync` of that temporary file before persisting it, and a post-copy
 `SHA-256` comparison against the source bytes before returning. `move_existing`'s own cross-filesystem fallback copies
-through a temporary file in the destination's directory, `fsync`s it, persists it, and removes the source, without an
-equivalent post-copy comparison.
+through a temporary file in the destination's directory, `fsync`s it, and persists it through `commit`. It then compares
+the final destination's `SHA-256` against the source bytes before removing the source and flushing its parent directory.
+An unreadable destination or a hash mismatch returns an error while preserving the original source; the persisted
+destination remains available for diagnosis. The relocation regression tests inject `CrossesDevices` at the rename
+boundary to execute this fallback with real file writes, including destination corruption after commit and before
+verification.
 
 This subject is one of the two attachment points for the ingestion-and-writeback row-level-security exemption the Design
 "Row-level security and database context" owns generally; the other is the ingestion pool's unconditional policies,

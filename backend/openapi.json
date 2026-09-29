@@ -7808,7 +7808,7 @@
       },
       "CleanupMode": {
         "type": "string",
-        "description": "Post-ingestion cleanup behaviour selector for the watcher's\n\"after a successful batch\" hook.\n\nWire format (JSON, DB `text` column): lowercase string, one of\n`\"all\"` | `\"ingested\"` | `\"none\"`.\n\nDeliberately NOT `#[non_exhaustive]`: the ingestion watcher matches it\nexhaustively, so adding a variant is a compile error at the match site\nrather than a silent fall-through, the same property the `Command` enum\nrelies on.",
+        "description": "Source cleanup eligibility after a scan's per-file outcomes are recorded.\n\nWire format (JSON, DB `text` column): lowercase string, one of\n`\"all\"` | `\"ingested\"` | `\"none\"`.\n\nDeliberately NOT `#[non_exhaustive]`: the ingestion watcher matches it\nexhaustively, so adding a variant is a compile error at the match site\nrather than a silent fall-through, the same property the `Command` enum\nrelies on.",
         "enum": [
           "all",
           "ingested",
