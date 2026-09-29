@@ -94,7 +94,7 @@ sqlx-check:
 # DB: regenerate the sqlx offline query cache from the live schema.
 [group('rust')]
 sqlx-prepare:
-    DATABASE_URL="${REVERIE_DEV_DB_URL:-postgres:///reverie_dev?host=${XDG_STATE_HOME:-$HOME/.local/state}/reverie/pgsock&user=reverie&password=reverie}" cargo sqlx prepare -- --locked --tests
+    RUSTC_WRAPPER= DATABASE_URL="${REVERIE_DEV_DB_URL:-postgres:///reverie_dev?host=${XDG_STATE_HOME:-$HOME/.local/state}/reverie/pgsock&user=reverie&password=reverie}" cargo sqlx prepare -- --locked --tests
 
 # Migrates a scratch database on the dev cluster, never reverie_dev, and runs
 # pg_dump inside the Postgres container, so it needs docker access.
