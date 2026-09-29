@@ -133,10 +133,6 @@ pub async fn scan_once(config: &Config, pool: &PgPool) -> Result<ScanResult, any
     result
 }
 
-#[expect(
-    clippy::too_many_lines,
-    reason = "scan_once_inner orchestrates the full ingestion pipeline: walk → dedup → copy → DB; the steps have data dependencies that make splitting into helpers awkward without additional Arc-sharing"
-)]
 async fn scan_once_inner(config: &Config, pool: &PgPool) -> Result<ScanResult, anyhow::Error> {
     let ingestion_path = PathBuf::from(&config.ingestion_path);
     let library_path = PathBuf::from(&config.library_path);
