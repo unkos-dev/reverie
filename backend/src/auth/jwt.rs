@@ -289,7 +289,8 @@ pub async fn init_jwt_validator(
             &transport.oauth_client(),
         )
         .await
-        .map_err(|e| anyhow::anyhow!("resource-server JWKS discovery failed: {e}"))?;
+        .map_err(|error| transport.discovery_error(error))
+        .context("resource-server JWKS discovery failed")?;
         (
             metadata.jwks_uri().url().clone(),
             "discovery document jwks_uri",

@@ -324,7 +324,7 @@ pub async fn run() -> anyhow::Result<()> {
         Some(std::sync::Arc::new(
             auth::oidc::init_oidc_client(&config, transport)
                 .await
-                .map_err(|e| anyhow::anyhow!("failed to initialize OIDC client: {e}"))?,
+                .context("failed to initialize OIDC client")?,
         ))
     } else {
         None
@@ -340,7 +340,7 @@ pub async fn run() -> anyhow::Result<()> {
         Some(std::sync::Arc::new(
             auth::jwt::init_jwt_validator(&config, transport)
                 .await
-                .map_err(|e| anyhow::anyhow!("failed to initialize JWT validator: {e}"))?,
+                .context("failed to initialize JWT validator")?,
         ))
     } else {
         None

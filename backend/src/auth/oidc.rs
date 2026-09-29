@@ -126,6 +126,28 @@ impl OidcTransport {
         self.http.clone()
     }
 
+    pub(crate) fn discovery_error(
+        &self,
+        error: openidconnect::DiscoveryError<openidconnect::HttpClientError<reqwest::Error>>,
+    ) -> anyhow::Error {
+        match error {
+            openidconnect::DiscoveryError::Request(openidconnect::HttpClientError::Reqwest(
+                error,
+            )) => {
+                let endpoint_error = error.url().and_then(|url| {
+                    self.check_endpoint(OidcEndpoint::Jwks, "discovery document jwks_uri", url)
+                        .err()
+                });
+                let error = anyhow::Error::new(error.without_url());
+                match endpoint_error {
+                    Some(context) => error.context(context),
+                    None => error,
+                }
+            }
+            error => anyhow::Error::new(error),
+        }
+    }
+
     /// Validate an endpoint and name its configuration or discovery source on failure.
     ///
     /// # Errors
@@ -240,7 +262,8 @@ pub async fn init_oidc_client(config: &Config, transport: &OidcTransport) -> Res
         RedirectUrl::new(config.oidc_redirect_uri.clone()).context("invalid OIDC_REDIRECT_URI")?;
     let metadata = CoreProviderMetadata::discover_async(issuer, &transport.oauth_client())
         .await
-        .map_err(|e| anyhow::anyhow!("OIDC discovery failed: {e}"))?;
+        .map_err(|error| transport.discovery_error(error))
+        .context("OIDC discovery failed")?;
     transport.check_endpoint(
         OidcEndpoint::Authorization,
         "discovery document authorization_endpoint",
@@ -550,6 +573,16 @@ mod tests {
             )
             .await;
             assert_eq!(result.is_ok(), succeeds);
+            if let Err(error) = result {
+                let error = transport
+                    .discovery_error(error)
+                    .context("OIDC discovery failed")
+                    .context("failed to initialize OIDC client");
+                let diagnostic = format!("{error:#}");
+                assert!(diagnostic.contains("discovery document jwks_uri must use https"));
+                assert!(diagnostic.contains("builder error"));
+                assert!(!diagnostic.contains(&server.uri()));
+            }
         }
     }
 }
