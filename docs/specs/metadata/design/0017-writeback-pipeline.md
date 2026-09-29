@@ -363,10 +363,12 @@ file in the destination's own directory, an `fsync` of that temporary file befor
 `SHA-256` comparison against the source bytes before returning. `move_existing`'s own cross-filesystem fallback copies
 through a temporary file in the destination's directory, `fsync`s it, and persists it through `commit`. It then compares
 the final destination's `SHA-256` against the source bytes before removing the source and flushing its parent directory.
-An unreadable destination or a hash mismatch returns an error while preserving the original source; the persisted
-destination remains available for diagnosis. The relocation regression tests inject `CrossesDevices` at the rename
-boundary to execute this fallback with real file writes, including destination corruption after commit and before
-verification.
+An unreadable destination or a hash mismatch preserves the original source and removes the persisted destination before
+returning the verification error. Removal is best effort: a failure is logged with the destination path, and the
+original verification error is returned. Successful removal flushes the destination's parent directory. The relocation
+regression tests inject `CrossesDevices` at the rename boundary to execute this fallback with real file writes,
+including destination corruption after commit, a verification read error and a retry that keeps the rendered destination
+name.
 
 This subject is one of the two attachment points for the ingestion-and-writeback row-level-security exemption the Design
 "Row-level security and database context" owns generally; the other is the ingestion pool's unconditional policies,

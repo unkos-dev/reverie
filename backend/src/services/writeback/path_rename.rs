@@ -144,6 +144,8 @@ fn exdev_fallback(temp: NamedTempFile, dest: &Path) -> Result<(), WritebackError
 /// - Any error returned by `commit` during the cross-FS fallback path.
 /// - `WritebackError::Persist("post-copy hash mismatch")` — the persisted
 ///   destination does not match the source bytes; the source remains untouched.
+///
+/// Verification failure removes the destination on a best-effort basis and logs any removal error.
 pub fn move_existing(src: &Path, dest: &Path) -> Result<(), WritebackError> {
     move_existing_with(src, dest, |src, dest| std::fs::rename(src, dest), commit)
 }
@@ -180,9 +182,25 @@ fn move_existing_with(
     std::fs::write(temp.path(), &bytes)?;
     std::fs::File::open(temp.path())?.sync_all()?;
     persist(temp, dest)?;
-    let dest_bytes = std::fs::read(dest)?;
-    if Sha256::digest(&dest_bytes) != Sha256::digest(&bytes) {
-        return Err(WritebackError::Persist("post-copy hash mismatch".into()));
+    let verification = std::fs::read(dest)
+        .map_err(WritebackError::Io)
+        .and_then(|dest_bytes| {
+            if Sha256::digest(&dest_bytes) == Sha256::digest(&bytes) {
+                Ok(())
+            } else {
+                Err(WritebackError::Persist("post-copy hash mismatch".into()))
+            }
+        });
+    if let Err(verification_error) = verification {
+        match std::fs::remove_file(dest) {
+            Ok(()) => fsync_parent_dir(dest),
+            Err(error) => tracing::error!(
+                ?dest,
+                %error,
+                "writeback: could not remove destination after failed relocation verification"
+            ),
+        }
+        return Err(verification_error);
     }
     std::fs::remove_file(src)?;
     // The `remove_file` of `src` is a directory-metadata change; flush
@@ -301,7 +319,7 @@ mod tests {
     }
 
     #[test]
-    fn move_existing_cross_fs_hash_mismatch_preserves_source() {
+    fn move_existing_cross_fs_hash_mismatch_preserves_source_and_retry_path() {
         let dir = tempfile::tempdir().unwrap();
         let src = dir.path().join("orig.epub");
         let dest = dir.path().join("new.epub");
@@ -322,8 +340,48 @@ mod tests {
             matches!(result, Err(WritebackError::Persist(ref reason)) if reason == "post-copy hash mismatch")
         );
         assert_eq!(std::fs::read(&src).unwrap(), b"PAYLOAD");
-        assert_eq!(std::fs::read(&dest).unwrap(), b"CORRUPTED");
-        assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 2);
+        assert!(!dest.exists());
+        assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 1);
+
+        let retry_dest =
+            crate::services::ingestion::path_template::resolve_collision(&dest).unwrap();
+        assert_eq!(retry_dest, dest);
+        move_existing_with(
+            &src,
+            &retry_dest,
+            |_, _| Err(std::io::Error::from(std::io::ErrorKind::CrossesDevices)),
+            commit,
+        )
+        .unwrap();
+        assert!(!src.exists());
+        assert_eq!(std::fs::read(&dest).unwrap(), b"PAYLOAD");
+        assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 1);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn move_existing_cross_fs_verification_read_error_preserves_source() {
+        let dir = tempfile::tempdir().unwrap();
+        let src = dir.path().join("orig.epub");
+        let dest = dir.path().join("new.epub");
+        std::fs::write(&src, b"PAYLOAD").unwrap();
+
+        let result = move_existing_with(
+            &src,
+            &dest,
+            |_, _| Err(std::io::Error::from(std::io::ErrorKind::CrossesDevices)),
+            |temp, dest| {
+                commit(temp, dest)?;
+                std::fs::remove_file(dest)?;
+                std::os::unix::fs::symlink(dest, dest)?;
+                Ok(())
+            },
+        );
+
+        assert!(matches!(result, Err(WritebackError::Io(_))));
+        assert_eq!(std::fs::read(&src).unwrap(), b"PAYLOAD");
+        assert!(std::fs::symlink_metadata(&dest).is_err());
+        assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 1);
     }
 
     /// Exercise the EXDEV branch by invoking it directly.  Real cross-FS
