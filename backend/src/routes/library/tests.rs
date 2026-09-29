@@ -32,7 +32,7 @@ fn server_with_page_size(app_pool: &PgPool, ingestion_pool: &PgPool, page_size: 
         pool: app_pool.clone(),
         ingestion_pool: ingestion_pool.clone(),
         config,
-        oidc_client: Some(test_support::test_oidc_client()),
+        oidc: Some(std::sync::Arc::new(test_support::test_oidc_runtime())),
         jwt_validator: None,
         login_limiter: test_support::test_login_limiter(),
         settings: test_support::test_settings(),

@@ -64,7 +64,8 @@ jwks_client_rs = { version = "0.6.2", default-features = false, features = [
   "rust_crypto",
 ] }
 notify = "8.2.0"
-openidconnect = { version = "4.0.1", features = ["reqwest"] }
+oauth2-reqwest = "=0.1.0-alpha.3"
+openidconnect = { version = "4.0.1", default-features = false }
 quick-xml = "0.42.0"
 rand = "0.10.1"
 # Reads ZIP central directories lazily with no per-entry allocation, so the
