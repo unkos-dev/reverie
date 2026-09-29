@@ -11,9 +11,8 @@ title: "Automated enrichment fills only an empty, unlocked, auto-fill field"
 
 WHEN automated enrichment applies an incoming observation to a work's or a manifestation's metadata, it MUST change a
 field's current value only if that field holds no value at the moment of application, is not locked against automatic
-change, and belongs to the set of fields the system fills automatically. The emptiness decision and canonical write MUST
-share a transaction holding the relevant manifestation and work row locks. Content rating MUST NOT belong to the
-auto-fill set, so no automated observation ever sets or replaces it, whether or not it already holds a value.
+change, and belongs to the set of fields the system fills automatically. Content rating MUST NOT belong to the auto-fill
+set, so no automated observation ever sets or replaces it, whether or not it already holds a value.
 
 ## Rationale
 
