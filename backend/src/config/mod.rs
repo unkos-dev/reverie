@@ -214,6 +214,9 @@ pub struct Config {
     /// Private HTTPS providers are supported. TLS uses the platform trust store
     /// through `rustls-platform-verifier`; a private CA must be installed in the
     /// container or host trust store.
+    ///
+    /// THREAT: a malicious or compromised issuer can supply attacker-controlled
+    /// signing keys used to verify ID tokens, enabling identity forgery.
     pub oidc_issuer_url: String,
     /// OIDC client id (`OIDC_CLIENT_ID`, required when OIDC is configured).
     pub oidc_client_id: String,
@@ -259,7 +262,7 @@ pub struct Config {
     /// trust attacker-controlled JWKS, enabling access-token forgery (the
     /// same operator-level threat documented on `oidc_issuer_url`). It carries
     /// the same transport constraints: `https`, no query, no fragment, checked
-    /// before the discovery request is made.
+    /// at startup even when an explicit JWKS override is supplied.
     pub resource_server_issuer: String,
     /// Expected `aud` claim for resource-server JWT validation
     /// (`REVERIE_RESOURCE_SERVER_AUDIENCE`). Required together with
