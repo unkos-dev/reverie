@@ -145,7 +145,7 @@ fn exdev_fallback(temp: NamedTempFile, dest: &Path) -> Result<(), WritebackError
 /// - `WritebackError::Persist("post-copy hash mismatch")` — the persisted
 ///   destination does not match the source bytes; the source remains untouched.
 ///
-/// Verification failure removes the destination on a best-effort basis and logs any removal error.
+/// Verification failure preserves the source and logs the unverified destination.
 pub fn move_existing(src: &Path, dest: &Path) -> Result<(), WritebackError> {
     move_existing_with(src, dest, |src, dest| std::fs::rename(src, dest), commit)
 }
@@ -192,14 +192,11 @@ fn move_existing_with(
             }
         });
     if let Err(verification_error) = verification {
-        match std::fs::remove_file(dest) {
-            Ok(()) => fsync_parent_dir(dest),
-            Err(error) => tracing::error!(
-                ?dest,
-                %error,
-                "writeback: could not remove destination after failed relocation verification"
-            ),
-        }
+        tracing::error!(
+            ?dest,
+            error = %verification_error,
+            "writeback: relocation destination failed verification"
+        );
         return Err(verification_error);
     }
     std::fs::remove_file(src)?;
@@ -319,7 +316,7 @@ mod tests {
     }
 
     #[test]
-    fn move_existing_cross_fs_hash_mismatch_preserves_source_and_retry_path() {
+    fn move_existing_cross_fs_hash_mismatch_preserves_source_and_destination() {
         let dir = tempfile::tempdir().unwrap();
         let src = dir.path().join("orig.epub");
         let dest = dir.path().join("new.epub");
@@ -340,12 +337,12 @@ mod tests {
             matches!(result, Err(WritebackError::Persist(ref reason)) if reason == "post-copy hash mismatch")
         );
         assert_eq!(std::fs::read(&src).unwrap(), b"PAYLOAD");
-        assert!(!dest.exists());
-        assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 1);
+        assert_eq!(std::fs::read(&dest).unwrap(), b"CORRUPTED");
+        assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 2);
 
         let retry_dest =
             crate::services::ingestion::path_template::resolve_collision(&dest).unwrap();
-        assert_eq!(retry_dest, dest);
+        assert_eq!(retry_dest, dir.path().join("new (2).epub"));
         move_existing_with(
             &src,
             &retry_dest,
@@ -354,8 +351,9 @@ mod tests {
         )
         .unwrap();
         assert!(!src.exists());
-        assert_eq!(std::fs::read(&dest).unwrap(), b"PAYLOAD");
-        assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 1);
+        assert_eq!(std::fs::read(&dest).unwrap(), b"CORRUPTED");
+        assert_eq!(std::fs::read(&retry_dest).unwrap(), b"PAYLOAD");
+        assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 2);
     }
 
     #[cfg(unix)]
@@ -380,8 +378,13 @@ mod tests {
 
         assert!(matches!(result, Err(WritebackError::Io(_))));
         assert_eq!(std::fs::read(&src).unwrap(), b"PAYLOAD");
-        assert!(std::fs::symlink_metadata(&dest).is_err());
-        assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 1);
+        assert!(
+            std::fs::symlink_metadata(&dest)
+                .unwrap()
+                .file_type()
+                .is_symlink()
+        );
+        assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 2);
     }
 
     /// Exercise the EXDEV branch by invoking it directly.  Real cross-FS
