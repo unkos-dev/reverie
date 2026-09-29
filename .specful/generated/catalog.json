@@ -705,6 +705,15 @@
     },
     {
       "governed-by": [
+        "REV-ADR-0007"
+      ],
+      "id": "REV-DESIGN-0025",
+      "kind": "design",
+      "path": "docs/specs/accounts/design/0025-oidc-outbound-transport.md",
+      "title": "OIDC outbound transport"
+    },
+    {
+      "governed-by": [
         "REV-ADR-0047"
       ],
       "id": "REV-REQ-0001",

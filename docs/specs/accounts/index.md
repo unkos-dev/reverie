@@ -24,3 +24,4 @@
 - [REV-DESIGN-0010](design/0010-request-authentication.md): Request authentication
 - [REV-DESIGN-0011](design/0011-sessions.md): Sessions
 - [REV-DESIGN-0012](design/0012-local-password-sign-in.md): Local password sign-in
+- [REV-DESIGN-0025](design/0025-oidc-outbound-transport.md): OIDC outbound transport

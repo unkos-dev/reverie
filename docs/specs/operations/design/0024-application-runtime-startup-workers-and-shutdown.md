@@ -172,7 +172,8 @@ no-op. No worker, and no other part of this subject, calls `.cancel()`; every wo
    interactive runtime pairs the discovered client with that transport when `config.oidc_configured()` is true,
    otherwise `AppState.oidc` stays `None`. The resource-server JWT validator is constructed independently when
    `config.resource_server_configured()` is true, using the same transport. A configured role without a transport fails
-   startup.
+   startup. [OIDC outbound transport](../../accounts/design/0025-oidc-outbound-transport.md) describes the shared client
+   policy and request paths.
 8. `db::init_pool` opens the ingestion pool; `services::settings::load` reads the initial settings row; the login rate
    limiter is built from `config.login_rate_per_min`.
 9. `AppState` is assembled and `build_router` is called on a clone of it.
