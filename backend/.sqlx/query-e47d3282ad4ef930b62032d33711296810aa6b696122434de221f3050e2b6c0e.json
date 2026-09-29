@@ -1,0 +1,54 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT mv.field_name, mv.new_value, mv.status::text AS \"status!\", (mv.id IN (w.title_version_id, w.subtitle_version_id, w.description_version_id, w.language_version_id, m.publisher_version_id, m.pub_date_version_id, m.pages_version_id, m.isbn_10_version_id, m.isbn_13_version_id)) AS canonical FROM metadata_versions mv JOIN manifestations m ON m.id = mv.manifestation_id JOIN works w ON w.id = m.work_id WHERE m.id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "field_name",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "metadata_versions",
+            "name": "field_name"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "new_value",
+        "type_info": "Jsonb",
+        "origin": {
+          "Table": {
+            "table": "metadata_versions",
+            "name": "new_value"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "status!",
+        "type_info": "Text",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 3,
+        "name": "canonical",
+        "type_info": "Bool",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      null,
+      null
+    ]
+  },
+  "hash": "e47d3282ad4ef930b62032d33711296810aa6b696122434de221f3050e2b6c0e"
+}

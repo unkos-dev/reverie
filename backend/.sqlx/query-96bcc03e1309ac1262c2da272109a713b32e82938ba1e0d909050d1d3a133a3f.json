@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT jsonb_build_object( 'work', to_jsonb(w), 'manifestation', to_jsonb(m), 'versions', (SELECT coalesce(jsonb_agg(to_jsonb(v) ORDER BY v.id), '[]') FROM metadata_versions v WHERE v.manifestation_id = m.id), 'locks', (SELECT coalesce(jsonb_agg(to_jsonb(l) ORDER BY l.entity_type, l.field_name), '[]') FROM field_locks l WHERE l.manifestation_id = m.id), 'jobs', (SELECT coalesce(jsonb_agg(to_jsonb(j) ORDER BY j.id), '[]') FROM writeback_jobs j WHERE j.manifestation_id = m.id) ) AS \"state!\" FROM manifestations m JOIN works w ON w.id = m.work_id WHERE m.id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "state!",
+        "type_info": "Jsonb",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "96bcc03e1309ac1262c2da272109a713b32e82938ba1e0d909050d1d3a133a3f"
+}

@@ -10,12 +10,9 @@ title: "Automated enrichment fills only an empty, unlocked, auto-fill field"
 ## Statement
 
 WHEN automated enrichment applies an incoming observation to a work's or a manifestation's metadata, it MUST change a
-field's current value only if that field held no value when the enrichment run read the record's state, is not locked
-against automatic change, and belongs to the set of fields the system fills automatically; content rating MUST NOT
-belong to that set, so no automated observation ever sets or replaces the content rating, whether or not it already
-holds a value. For an external-identifier field the emptiness check is repeated under the record lock at the moment of
-the change; for every other field it is the value read at the start of the run, so a value written between that read and
-the apply is not protected by this obligation.
+field's current value only if that field holds no value at the moment of application, is not locked against automatic
+change, and belongs to the set of fields the system fills automatically. Content rating MUST NOT belong to the auto-fill
+set, so no automated observation ever sets or replaces it, whether or not it already holds a value.
 
 ## Rationale
 
@@ -29,6 +26,9 @@ source silently set the value the child-safety enforcement depends on.
 
 - A field that already carries a value is not overwritten by an incoming observation; the observation is staged for
   review instead. Checked by `autofill_canonical_already_set_stages` in `backend/src/services/enrichment/policy.rs`.
+- A scalar value committed while provider requests are running survives the automated apply; the incoming observation
+  stays pending for review, does not become the canonical pointer, and enqueues no writeback. Checked by
+  `scalar_edits_during_provider_round_trip_survive_and_stage` in `backend/src/services/enrichment/orchestrator.rs`.
 - A field whose default handling is to stage for review, rather than fill automatically, is always staged, never applied
   directly, even when it holds no value. Checked by `propose_field_always_stages` in
   `backend/src/services/enrichment/policy.rs`.
@@ -40,4 +40,5 @@ source silently set the value the child-safety enforcement depends on.
   content rating today, so this criterion holds vacuously against every source that exists and constrains any source
   added to the system afterward.
 - An unlocked field that holds no value and belongs to the set the system fills automatically is filled by the incoming
-  observation. Checked by `autofill_empty_canonical_applies` in `backend/src/services/enrichment/policy.rs`.
+  observation. Checked by `autofill_empty_canonical_applies` in `backend/src/services/enrichment/policy.rs` and
+  `scalar_empty_fields_fill_after_provider_round_trip` in `backend/src/services/enrichment/orchestrator.rs`.

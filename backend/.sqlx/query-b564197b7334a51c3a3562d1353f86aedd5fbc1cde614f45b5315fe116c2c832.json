@@ -1,0 +1,76 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT publisher, pub_date, pages, isbn_10, isbn_13 FROM manifestations WHERE id = $1 FOR UPDATE",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "publisher",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "manifestations",
+            "name": "publisher"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "pub_date",
+        "type_info": "Date",
+        "origin": {
+          "Table": {
+            "table": "manifestations",
+            "name": "pub_date"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "pages",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "manifestations",
+            "name": "pages"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "isbn_10",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "manifestations",
+            "name": "isbn_10"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "isbn_13",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "manifestations",
+            "name": "isbn_13"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      true,
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "hash": "b564197b7334a51c3a3562d1353f86aedd5fbc1cde614f45b5315fe116c2c832"
+}

@@ -89,7 +89,11 @@ metadata counts.
 - Canonical `works`/`manifestations` columns and their `*_version_id` pointers (`title`, `description`, `language`,
   `subtitle`, `publisher`, `pub_date`, `isbn_10`, `isbn_13`, `pages`, `identifiers.*`): written by
   `orchestrator::apply_field`, gated by `policy::decide`. `content_rating` and `cover` are never written by this path
-  (see Runtime behaviour).
+  (see Runtime behaviour). Manual PATCH, accept and revert are the other canonical writers, through
+  `routes/metadata.rs`'s apply/clear helpers and identifier registry calls. Ingestion initialises work columns through
+  `work::{create_stub,upgrade_stub}` and manifestation columns through its insert and upgrade paths; OPF drafts supply
+  their journal pointers. Canonical updates serialise on the owning row; enrichment locks the manifestation before the
+  work and keeps its emptiness read and apply in that transaction.
 - `writeback_jobs` rows from an automated apply: written by `orchestrator::enqueue_writeback` (`INSERT` only, same
   transaction as the pointer move). A second, independent `enqueue_writeback` function in `routes/metadata.rs` writes
   rows from the manual-edit path and belongs to the Design "Metadata review and editing".
@@ -99,9 +103,8 @@ metadata counts.
   `lock_field`/`unlock_field` (the Design "Metadata review and editing"). This subject only reads them, through
   `field_lock::is_locked`/`is_locked_tx`.
 
-Every item above other than `metadata_versions` has exactly one writer once the manual-edit paths are attributed to
-their owning Design; the two identical re-queue call sites for `enrichment_rerun_requested` are a deliberate pair (one
-HTTP-triggered, one edit-triggered), not an accidental second writer of the same intent.
+Canonical columns, the journal and queue state have multiple writers as listed above. Database transactions and row
+locks arbitrate canonical writes. The two re-queue call sites share the same claim-preserving update.
 
 ### Component relationships
 
@@ -118,10 +121,10 @@ HTTP-triggered, one edit-triggered), not an accidental second writer of the same
   via `derive_lookup_keys`. `fan_out_with_fallback` tries each key in order under one shared wall-clock budget,
   delegating to `fan_out` (a `FuturesUnordered` join with a `sleep` deadline) and to `cache_all` after each attempt.
   `run_once` then opens one transaction: `apply_journal_batch` upserts a `metadata_versions` row per field observation
-  and buckets rows by field; `apply_canonical_batch` locks the manifestation row, then per field locks the work row when
-  the field needs a work-level identifier re-read, computes confidence, calls `policy::decide`, and on `Decision::Apply`
-  calls `apply_field`, the ISBN rematch hook and `enqueue_writeback`; `upsert_ratings` routes rating signals straight to
-  the ratings cache outside the journal.
+  and buckets rows by field; `apply_canonical_batch` locks and rereads the manifestation scalars, then locks and rereads
+  the work scalars when any observation is work-scoped. It computes confidence, calls `policy::decide`, and on
+  `Decision::Apply` calls `apply_field`, the ISBN rematch hook and `enqueue_writeback`; `upsert_ratings` routes rating
+  signals straight to the ratings cache outside the journal.
 - `policy.rs` is a pure decision function: `default_policy(field)` maps a field name to `AutoFill`, `Propose` or `Lock`,
   and `decide(...)` applies the lock check first, then downgrades `AutoFill` to `Propose` on disagreement with any
   pending observation (from an earlier run or from another source in the same run), then dispatches on emptiness.
@@ -237,18 +240,18 @@ HTTP-triggered, one edit-triggered), not an accidental second writer of the same
    is tried; a hit stops the fallback chain.
 3. `apply_journal_batch` upserts one `metadata_versions` row per field observation and groups the resulting
    `(source_id, PolicyInputRow)` pairs by field name.
-4. `apply_canonical_batch` locks the manifestation row `FOR UPDATE` once, then, per field: locks the work row too when
-   the field needs a work-level identifier re-read (identifier fields only), reads whether the field is locked, decides
-   emptiness, and loads any pending rows from earlier runs. `canonical_empty_under_lock` re-reads the registry slot
-   under the lock for an identifier field only; for every scalar field it returns the emptiness recorded in the
-   `load_snapshot` state taken before the provider round trip, so a scalar value an operator sets between that snapshot
-   and this apply is judged empty and overwritten. It then walks this run's sources for that field in fan-out completion
-   order (not a fixed provider priority): for each it computes confidence, builds the disagreement set from the
-   earlier-run pending rows plus every *other* source's observation in this same run, and calls `policy::decide`. On
-   `Decision::Apply` it calls `apply_field`, on success triggers the ISBN rematch hook when the field is
-   `isbn_10`/`isbn_13`, enqueues a writeback job for any non-identifier field, and `break`s out of the per-source loop,
-   so when multiple sources agree in the same run, whichever completed the fan-out first is the one whose journal row
-   becomes the canonical pointer, not a fixed tie-break.
+4. `apply_canonical_batch` locks the manifestation row `FOR UPDATE` and rereads its scalar values, then locks and
+   rereads the work row when any observation is work-scoped. Scalar reads are batched per owning row. The locks remain
+   held through commit, protecting both the emptiness decision and subsequent apply. `canonical_empty_under_lock` uses
+   these current scalar values and rereads identifier registry slots under the corresponding locks. An intervening
+   committed value causes the observation to stage for review. Field-lock, disagreement and auto-fill policies retain
+   their precedence. Provider requests finish before this transaction opens. It walks this run's sources for each field
+   in fan-out completion order (not a fixed provider priority): for each it computes confidence, builds the disagreement
+   set from the earlier-run pending rows plus every *other* source's observation in this same run, and calls
+   `policy::decide`. On `Decision::Apply` it calls `apply_field`, on success triggers the ISBN rematch hook when the
+   field is `isbn_10`/`isbn_13`, enqueues a writeback job for any non-identifier field, and `break`s out of the
+   per-source loop, so when multiple sources agree in the same run, whichever completed the fan-out first is the one
+   whose journal row becomes the canonical pointer, not a fixed tie-break.
 5. The transaction commits once, carrying the journal writes, the canonical updates, the rematch outcome and every
    writeback enqueue together.
 6. `finish` (in `queue.rs`) inspects the outcome: if every enabled source failed non-terminally and nothing applied or

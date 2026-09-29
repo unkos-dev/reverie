@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE works SET title = 'Operator title', subtitle = 'Operator subtitle', description = 'Operator description', language = 'fr' WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "583b2b91406c5fb1031bc810d14209d1bed2ec0825689f986411eb38dfb08dbd"
+}

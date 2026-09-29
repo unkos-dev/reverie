@@ -112,9 +112,11 @@ took the `FOR UPDATE OF m, w` lock at the top of the handler (`accept_manifestat
 `update_book_metadata`); the enrichment orchestrator takes its own `SELECT ... FOR UPDATE` on the same row before its
 own scalar-apply writes. Both are ordinary Postgres row locks on the same physical row, so a concurrent write from
 either subject against the same manifestation or work still serialises against the other, even though the two lock
-statements are not identical. `lock_field` and `unlock_field` also open an RLS-scoped transaction, lock the visible
-manifestation row, and mutate `field_locks` before committing, so a missing or hidden manifestation returns `404` and a
-concurrent manifestation deletion cannot leave the field-lock foreign-key write as an internal error.
+statements are not identical. Enrichment rereads canonical scalars under those locks before deciding whether to apply; a
+value committed during its provider requests stages the observation instead of being overwritten. `lock_field` and
+`unlock_field` also open an RLS-scoped transaction, lock the visible manifestation row, and mutate `field_locks` before
+committing, so a missing or hidden manifestation returns `404` and a concurrent manifestation deletion cannot leave the
+field-lock foreign-key write as an internal error.
 
 ### Component relationships
 
@@ -324,6 +326,12 @@ cannot reach any of this subject's routes that mutate it regardless of the scope
 caller with `Forbidden` before a handler writes anything; the three review-queue `GET`s refuse a child caller on the
 same basis, and the book-detail read outside this subject returns a child caller an empty pending list rather than the
 proposals it cannot act on.
+
+The five `*_child_account_forbidden_without_writes` tests cover accept, reject, revert, lock and unlock with
+write-scoped child credentials. Each compares the complete canonical records, metadata journal, field locks and
+writeback jobs before and after the 403 response, then exercises the same request as a non-administrator adult and
+checks its state change. Fixtures include a child-visible manifestation, populated canonical metadata, pending proposals
+and an existing field lock.
 
 `metadata_versions` and `field_locks` carry no row-level-security policy of their own: neither table appears in either
 migration that enables row-level security. This subject's visibility rests on two things instead: `require_not_child` on

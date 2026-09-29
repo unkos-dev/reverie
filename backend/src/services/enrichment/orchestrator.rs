@@ -364,33 +364,50 @@ async fn apply_journal_batch(
     Ok((per_field, failures))
 }
 
-/// Compute the Apply-vs-Stage emptiness input for one field.
-///
-/// For identifier fields the decision must be made against the registry's
-/// *current* state, not the pre-fan-out snapshot. Work-level slots are
-/// shared across sibling manifestations, so the work row is locked FOR
-/// UPDATE *before* the decision and the slot re-read under that lock: a
-/// concurrent run on a sibling then serialises here and sees the winner's
-/// value, flipping its own decision from Apply to Stage instead of
-/// clobbering. A lock taken later (inside the write) could only serialise
-/// the write, not change an already-made decision. Manifestation-level
-/// slots race the manual PATCH path rather than sibling runs; their re-read
-/// relies on the manifestation row lock [`apply_canonical_batch`] takes at
-/// entry, which every manual write path also contends on. Non-identifier
-/// fields keep the snapshot-based check.
+async fn load_scalar_canonical_under_lock(
+    tx: &mut Transaction<'_, Postgres>,
+    snapshot: &Snapshot,
+    per_field: &PerFieldRows,
+) -> sqlx::Result<CanonicalState> {
+    let row = sqlx::query!(
+        "SELECT publisher, pub_date, pages, isbn_10, isbn_13 \
+         FROM manifestations WHERE id = $1 FOR UPDATE",
+        snapshot.manifestation_id,
+    )
+    .fetch_one(&mut **tx)
+    .await?;
+    let mut canonical = CanonicalState {
+        publisher: row.publisher,
+        pub_date: row.pub_date.map(|date| date.to_string()),
+        pages: row.pages,
+        isbn_10: row.isbn_10,
+        isbn_13: row.isbn_13,
+        ..CanonicalState::default()
+    };
+    if per_field.keys().any(|field| is_work_field(field)) {
+        let row = sqlx::query!(
+            "SELECT title, subtitle, description, language FROM works WHERE id = $1 FOR UPDATE",
+            snapshot.work_id,
+        )
+        .fetch_one(&mut **tx)
+        .await?;
+        canonical.title = Some(row.title);
+        canonical.subtitle = row.subtitle;
+        canonical.description = row.description;
+        canonical.language = row.language;
+    }
+    Ok(canonical)
+}
+
+/// The caller holds manifestation-before-work locks through the decision and apply.
 async fn canonical_empty_under_lock(
     tx: &mut Transaction<'_, Postgres>,
     snapshot: &Snapshot,
+    canonical: &CanonicalState,
     field: &str,
 ) -> anyhow::Result<bool> {
     match external_id::parse_canonical_field(field) {
         Ok((IdentifierLevel::Work, scheme)) => {
-            sqlx::query!(
-                "SELECT id FROM works WHERE id = $1 FOR UPDATE",
-                snapshot.work_id,
-            )
-            .fetch_optional(&mut **tx)
-            .await?;
             Ok(get_work_identifier(&mut **tx, snapshot.work_id, scheme)
                 .await?
                 .is_none())
@@ -402,7 +419,7 @@ async fn canonical_empty_under_lock(
                     .is_none(),
             )
         }
-        Err(_) => Ok(snapshot.canonical.is_empty_for(field)),
+        Err(_) => Ok(canonical.is_empty_for(field)),
     }
 }
 
@@ -417,24 +434,7 @@ async fn apply_canonical_batch(
     let manifestation_id = snapshot.manifestation_id;
     let mut outcome = CanonicalBatchOutcome::default();
 
-    // Lock the owning manifestation row before any decision. Two jobs: the
-    // manual write paths (PATCH/accept/revert) lock this row at handler
-    // entry, so manifestation-level identifier emptiness is decided against
-    // their committed edits instead of clobbering an operator value that
-    // landed mid-run; and taking the manifestation lock before any work-row
-    // lock matches the manual paths' acquisition order (manifestation, then
-    // work), keeping the two sides deadlock-free regardless of per-field
-    // iteration order below. A fresh journal INSERT earlier in this
-    // transaction incidentally serialises with the manual paths through the
-    // FK check's KEY SHARE on this row, but a repeat observation takes the
-    // journal upsert's DO UPDATE arm, which locks no parent row — this
-    // explicit lock is the only guarantee that holds on both paths.
-    sqlx::query!(
-        "SELECT id FROM manifestations WHERE id = $1 FOR UPDATE",
-        manifestation_id,
-    )
-    .fetch_optional(&mut **tx)
-    .await?;
+    let canonical = load_scalar_canonical_under_lock(tx, snapshot, per_field).await?;
 
     for (field, rows) in per_field {
         let entity = if is_work_field(field) {
@@ -444,7 +444,7 @@ async fn apply_canonical_batch(
         };
         let locked = field_lock::is_locked_tx(tx, manifestation_id, entity, field).await?;
 
-        let canonical_empty = canonical_empty_under_lock(tx, snapshot, field).await?;
+        let canonical_empty = canonical_empty_under_lock(tx, snapshot, &canonical, field).await?;
 
         // Existing pending rows from prior runs (other value_hashes),
         // loaded after the work-row lock so identifier disagreement is
@@ -3942,5 +3942,214 @@ mod tests {
         .await
         .unwrap();
         assert_eq!(pending, 1, "the provider value stays pending for review");
+    }
+
+    struct PausedScalarSource {
+        started: Arc<tokio::sync::Notify>,
+        resume: Arc<tokio::sync::Notify>,
+    }
+
+    #[async_trait::async_trait]
+    impl MetadataSource for PausedScalarSource {
+        fn id(&self) -> &'static str {
+            "googlebooks"
+        }
+        fn enabled(&self) -> bool {
+            true
+        }
+        async fn lookup(
+            &self,
+            _ctx: &LookupCtx<'_>,
+            _key: &LookupKey,
+        ) -> Result<LookupOutcome, SourceError> {
+            self.started.notify_one();
+            self.resume.notified().await;
+            Ok(LookupOutcome {
+                fields: [
+                    ("title", json!("Provider title")),
+                    ("subtitle", json!("Provider subtitle")),
+                    ("description", json!("Provider description")),
+                    ("language", json!("en")),
+                    ("publisher", json!("Provider publisher")),
+                    ("pub_date", json!("2026-01-01")),
+                    ("pages", json!(200)),
+                    ("isbn_10", json!("0451524934")),
+                    ("isbn_13", json!("9780451524935")),
+                ]
+                .into_iter()
+                .map(|(field, raw_value)| SourceResult {
+                    field_name: field.into(),
+                    raw_value,
+                    match_type: "isbn".into(),
+                })
+                .collect(),
+                ..LookupOutcome::default()
+            })
+        }
+    }
+
+    async fn scalar_run_with_intervening_edit(pool: &PgPool, edit: bool) {
+        let ing = ingestion_pool_for(pool).await;
+        let marker = Uuid::new_v4().simple().to_string();
+        let (work_id, m_id) = insert_enrich_fixture(&ing, "9780451524935", &marker).await;
+        sqlx::query!(
+            "UPDATE manifestations SET isbn_13 = NULL WHERE id = $1",
+            m_id
+        )
+        .execute(&ing)
+        .await
+        .unwrap();
+        upsert_manifestation_identifier(
+            &mut *ing.acquire().await.unwrap(),
+            m_id,
+            "googlebooks",
+            "fixtureVolume",
+            None,
+        )
+        .await
+        .unwrap();
+        let started = Arc::new(tokio::sync::Notify::new());
+        let resume = Arc::new(tokio::sync::Notify::new());
+        let source: Arc<dyn MetadataSource> = Arc::new(PausedScalarSource {
+            started: Arc::clone(&started),
+            resume: Arc::clone(&resume),
+        });
+        let run_pool = ing.clone();
+        let run = tokio::spawn(async move {
+            run_once_with_sources(&run_pool, &config_with_mock_sources(), &[source], m_id)
+                .await
+                .unwrap()
+        });
+        tokio::time::timeout(Duration::from_secs(5), started.notified())
+            .await
+            .unwrap();
+        if edit {
+            let mut tx = ing.begin().await.unwrap();
+            sqlx::query!(
+                "SELECT id FROM manifestations WHERE id = $1 FOR UPDATE",
+                m_id
+            )
+            .fetch_one(&mut *tx)
+            .await
+            .unwrap();
+            sqlx::query!(
+                "UPDATE works SET title = 'Operator title', subtitle = 'Operator subtitle', \
+                 description = 'Operator description', language = 'fr' WHERE id = $1",
+                work_id,
+            )
+            .execute(&mut *tx)
+            .await
+            .unwrap();
+            sqlx::query!(
+                "UPDATE manifestations SET publisher = 'Operator publisher', \
+                 pub_date = '2025-01-01', pages = 300, isbn_10 = '0306406152', \
+                 isbn_13 = '9780306406157' WHERE id = $1",
+                m_id,
+            )
+            .execute(&mut *tx)
+            .await
+            .unwrap();
+            tx.commit().await.unwrap();
+        }
+        resume.notify_one();
+        let outcome = run.await.unwrap();
+        assert_eq!(outcome.applied, if edit { 0 } else { 8 });
+        assert_eq!(outcome.staged, if edit { 9 } else { 1 });
+        assert_scalar_run_state(&ing, m_id, edit).await;
+    }
+
+    async fn assert_scalar_run_state(ing: &PgPool, m_id: Uuid, edit: bool) {
+        let current = load_snapshot(ing, m_id).await.unwrap().canonical;
+        assert_eq!(
+            current.title.as_deref(),
+            Some(if edit {
+                "Operator title"
+            } else {
+                "Provider title"
+            })
+        );
+        assert_eq!(
+            current.subtitle.as_deref(),
+            Some(if edit {
+                "Operator subtitle"
+            } else {
+                "Provider subtitle"
+            })
+        );
+        assert_eq!(
+            current.language.as_deref(),
+            Some(if edit { "fr" } else { "en" })
+        );
+        assert_eq!(
+            current.description.as_deref(),
+            if edit {
+                Some("Operator description")
+            } else {
+                None
+            }
+        );
+        assert_eq!(
+            current.publisher.as_deref(),
+            Some(if edit {
+                "Operator publisher"
+            } else {
+                "Provider publisher"
+            })
+        );
+        assert_eq!(
+            current.pub_date.as_deref(),
+            Some(if edit { "2025-01-01" } else { "2026-01-01" })
+        );
+        assert_eq!(current.pages, Some(if edit { 300 } else { 200 }));
+        assert_eq!(
+            current.isbn_10.as_deref(),
+            Some(if edit { "0306406152" } else { "0451524934" })
+        );
+        assert_eq!(
+            current.isbn_13.as_deref(),
+            Some(if edit {
+                "9780306406157"
+            } else {
+                "9780451524935"
+            })
+        );
+        let rows = sqlx::query!(
+            "SELECT mv.field_name, mv.new_value, mv.status::text AS \"status!\", \
+             (mv.id IN (w.title_version_id, w.subtitle_version_id, w.description_version_id, \
+              w.language_version_id, m.publisher_version_id, m.pub_date_version_id, \
+              m.pages_version_id, m.isbn_10_version_id, m.isbn_13_version_id)) AS canonical \
+             FROM metadata_versions mv JOIN manifestations m ON m.id = mv.manifestation_id \
+             JOIN works w ON w.id = m.work_id WHERE m.id = $1",
+            m_id,
+        )
+        .fetch_all(ing)
+        .await
+        .unwrap();
+        assert_eq!(rows.len(), 9);
+        for row in rows {
+            assert_eq!(row.status, "pending");
+            assert_eq!(
+                row.canonical.unwrap_or(false),
+                !edit && row.field_name != "description"
+            );
+        }
+        let jobs = sqlx::query_scalar!(
+            "SELECT count(*) AS \"count!\" FROM writeback_jobs WHERE manifestation_id = $1",
+            m_id,
+        )
+        .fetch_one(ing)
+        .await
+        .unwrap();
+        assert_eq!(jobs, if edit { 0 } else { 8 });
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn scalar_empty_fields_fill_after_provider_round_trip(pool: PgPool) {
+        scalar_run_with_intervening_edit(&pool, false).await;
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn scalar_edits_during_provider_round_trip_survive_and_stage(pool: PgPool) {
+        scalar_run_with_intervening_edit(&pool, true).await;
     }
 }
