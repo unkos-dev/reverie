@@ -129,7 +129,7 @@ no-op. No worker, and no other part of this subject, calls `.cancel()`; every wo
 
 - **`AppState`** (`backend/src/state.rs`) is built exactly once in `run`, after every fallible setup step has succeeded,
   and is `Clone` for cheap distribution to handlers and workers: `pool` and `ingestion_pool` are `Arc`-backed `PgPool`s;
-  `config` is owned, cloned data; `oidc_client` and `jwt_validator` are `Option`s, `None` on an instance that has not
+  `config` is owned, cloned data; `oidc` and `jwt_validator` are `Option<Arc<_>>`s, `None` on an instance that has not
   configured the corresponding identity mode; `login_limiter` is an `Arc<LoginLimiter>`; `last_settings_reload` is an
   `Arc<RwLock<..>>` handle written only by the settings worker, not by this subject; `settings` is likewise an
   `Arc<RwLock<..>>` handle, but it has a second writer outside this subject — the `PUT /api/v1/settings` route handler
@@ -168,9 +168,11 @@ no-op. No worker, and no other part of this subject, calls `.cancel()`; every wo
    a second, redundant check — before calling `db::run_migrations` against it. Either branch's failure stops startup.
 6. `seed_admin_if_configured` creates the first administrator from `REVERIE_BOOTSTRAP_*` when configured and no
    administrator yet exists; it is a no-op otherwise.
-7. The OIDC client is constructed when `config.oidc_configured()` is true, otherwise `AppState.oidc_client` stays
-   `None`. The resource-server JWT validator is constructed independently when `config.resource_server_configured()` is
-   true.
+7. One bounded HTTPS OIDC transport is built when either identity mode is configured; local-only mode builds none. The
+   interactive runtime pairs the discovered client with that transport when `config.oidc_configured()` is true,
+   otherwise `AppState.oidc` stays `None`. The resource-server JWT validator is constructed independently when
+   `config.resource_server_configured()` is true, using the same transport. A configured role without a transport fails
+   startup.
 8. `db::init_pool` opens the ingestion pool; `services::settings::load` reads the initial settings row; the login rate
    limiter is built from `config.login_rate_per_min`.
 9. `AppState` is assembled and `build_router` is called on a clone of it.

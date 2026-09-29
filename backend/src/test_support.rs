@@ -128,6 +128,13 @@ pub fn test_oidc_client() -> OidcClient {
     .set_redirect_uri(RedirectUrl::new("http://localhost:3000/auth/callback".into()).unwrap())
 }
 
+pub fn test_oidc_runtime() -> crate::auth::oidc::OidcRuntime {
+    crate::auth::oidc::OidcRuntime::new(
+        test_oidc_client(),
+        crate::auth::oidc::OidcTransport::for_tests(),
+    )
+}
+
 pub fn test_login_limiter() -> std::sync::Arc<crate::auth::rate_limit::LoginLimiter> {
     // A high per-minute quota so fixtures are never throttled by the limiter.
     crate::auth::rate_limit::build_login_limiter(std::num::NonZeroU32::new(1000).expect("nonzero"))
@@ -170,7 +177,7 @@ pub fn test_state() -> AppState {
         pool: sqlx::PgPool::connect_lazy("postgres://invalid").unwrap(),
         ingestion_pool: sqlx::PgPool::connect_lazy("postgres://invalid").unwrap(),
         config: test_config(),
-        oidc_client: Some(test_oidc_client()),
+        oidc: Some(std::sync::Arc::new(test_oidc_runtime())),
         jwt_validator: None,
         login_limiter: test_login_limiter(),
         settings: test_settings(),
@@ -499,7 +506,7 @@ pub mod db {
             pool: app_pool.clone(),
             ingestion_pool: ingestion_pool.clone(),
             config: super::test_config(),
-            oidc_client: Some(super::test_oidc_client()),
+            oidc: Some(std::sync::Arc::new(super::test_oidc_runtime())),
             jwt_validator: None,
             login_limiter: super::test_login_limiter(),
             settings: super::test_settings(),
@@ -531,15 +538,18 @@ pub mod db {
         config.resource_server_audience = audience.to_string();
         config.resource_server_jwks_url = mock.resource_server_jwks_url();
         config.resource_server_require_at_jwt = require_at_jwt;
-        let validator = crate::auth::jwt::init_jwt_validator(&config)
-            .await
-            .expect("build JwtValidator against the mock resource-server JWKS");
+        let validator = crate::auth::jwt::init_jwt_validator(
+            &config,
+            &crate::auth::oidc::OidcTransport::for_tests(),
+        )
+        .await
+        .expect("build JwtValidator against the mock resource-server JWKS");
 
         let state = AppState {
             pool: app_pool.clone(),
             ingestion_pool: ingestion_pool.clone(),
             config,
-            oidc_client: Some(super::test_oidc_client()),
+            oidc: Some(std::sync::Arc::new(super::test_oidc_runtime())),
             jwt_validator: Some(std::sync::Arc::new(validator)),
             login_limiter: super::test_login_limiter(),
             settings: super::test_settings(),
@@ -563,7 +573,7 @@ pub mod db {
             pool: app_pool.clone(),
             ingestion_pool: ingestion_pool.clone(),
             config,
-            oidc_client: Some(super::test_oidc_client()),
+            oidc: Some(std::sync::Arc::new(super::test_oidc_runtime())),
             jwt_validator: None,
             login_limiter: super::test_login_limiter(),
             settings: super::test_settings(),
@@ -592,7 +602,7 @@ pub mod db {
             pool: app_pool.clone(),
             ingestion_pool: ingestion_pool.clone(),
             config,
-            oidc_client: Some(super::test_oidc_client()),
+            oidc: Some(std::sync::Arc::new(super::test_oidc_runtime())),
             jwt_validator: None,
             login_limiter: crate::auth::rate_limit::build_login_limiter(
                 std::num::NonZeroU32::new(per_min).expect("per_min must be non-zero"),
@@ -631,7 +641,7 @@ pub mod db {
             pool: app_pool.clone(),
             ingestion_pool: ingestion_pool.clone(),
             config,
-            oidc_client: Some(super::test_oidc_client()),
+            oidc: Some(std::sync::Arc::new(super::test_oidc_runtime())),
             jwt_validator: None,
             login_limiter: super::test_login_limiter(),
             settings: super::test_settings(),
@@ -657,7 +667,7 @@ pub mod db {
             pool: app_pool.clone(),
             ingestion_pool: ingestion_pool.clone(),
             config,
-            oidc_client: Some(super::test_oidc_client()),
+            oidc: Some(std::sync::Arc::new(super::test_oidc_runtime())),
             jwt_validator: None,
             login_limiter: super::test_login_limiter(),
             settings: super::test_settings(),
@@ -690,7 +700,7 @@ pub mod db {
             pool: app_pool.clone(),
             ingestion_pool: ingestion_pool.clone(),
             config,
-            oidc_client: Some(super::test_oidc_client()),
+            oidc: Some(std::sync::Arc::new(super::test_oidc_runtime())),
             jwt_validator: None,
             login_limiter: super::test_login_limiter(),
             settings: super::test_settings(),
@@ -1263,6 +1273,44 @@ pub mod oidc_mock {
             Mock::given(method("GET"))
                 .and(path("/resource-server-jwks"))
                 .respond_with(ResponseTemplate::new(200).set_body_json(body))
+                .mount(&self.server)
+                .await;
+        }
+
+        /// Pair the mock client with a loopback test transport.
+        pub fn runtime(&self, redirect_uri: &str) -> crate::auth::oidc::OidcRuntime {
+            crate::auth::oidc::OidcRuntime::new(
+                self.client(redirect_uri),
+                crate::auth::oidc::OidcTransport::for_tests(),
+            )
+        }
+
+        /// Serve discovery metadata for the mock provider.
+        pub async fn mount_discovery(&self) {
+            self.mount_discovery_with_token_endpoint(&format!("{}/token", self.issuer))
+                .await;
+        }
+
+        /// Serve discovery metadata with a chosen token endpoint.
+        pub async fn mount_discovery_with_token_endpoint(&self, token_endpoint: &str) {
+            self.mount_discovery_with_jwks_uri(token_endpoint, &format!("{}/jwks", self.issuer))
+                .await;
+        }
+
+        /// Serve discovery with a chosen token endpoint and signing-key URL.
+        pub async fn mount_discovery_with_jwks_uri(&self, token_endpoint: &str, jwks_uri: &str) {
+            let document = serde_json::json!({
+                "issuer": self.issuer,
+                "authorization_endpoint": format!("{}/auth", self.issuer),
+                "token_endpoint": token_endpoint,
+                "jwks_uri": jwks_uri,
+                "response_types_supported": ["code"],
+                "subject_types_supported": ["public"],
+                "id_token_signing_alg_values_supported": ["RS256"],
+            });
+            Mock::given(method("GET"))
+                .and(path("/.well-known/openid-configuration"))
+                .respond_with(ResponseTemplate::new(200).set_body_json(document))
                 .mount(&self.server)
                 .await;
         }

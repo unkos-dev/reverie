@@ -199,21 +199,21 @@ pub struct Config {
     /// operator to read and relay (`REVERIE_RECOVERY_PIN_DIR`, default
     /// `/data/recovery-pins`). Per-user files keep concurrent recoveries from
     /// colliding. MUST be outside any web-served directory; the database stores
-    /// only the PIN's Argon2id hash.
+    /// only an Argon2id hash of the PIN.
     pub recovery_pin_dir: String,
     /// Optional forwarded-for header to trust for the client IP behind a reverse
     /// proxy (`REVERIE_TRUSTED_CLIENT_IP_HEADER`, e.g. `X-Forwarded-For`). Unset
     /// by default: the TCP peer is used. An unauthenticated forwarded header is
     /// attacker-spoofable, so it is honoured only when an operator names it.
     pub trusted_client_ip_header: Option<String>,
-    /// OIDC issuer URL (`OIDC_ISSUER_URL`): the trust seam for the OIDC
-    /// authentication path. OIDC is enabled iff this is set; when
-    /// present, the other three `OIDC_*` fields become required together. The
-    /// boundary control
-    /// is `reqwest`'s TLS validation against the bundled
-    /// webpki/Mozilla root store (`reqwest` is built with the
-    /// `rustls` feature, which uses `webpki-roots`, not OS system
-    /// roots).
+    /// OIDC issuer URL (`OIDC_ISSUER_URL`). Setting it requires the other three
+    /// `OIDC_*` fields together. Every outbound OIDC request uses a shared client
+    /// with 5-second connect and 10-second total timeouts, no redirects, and HTTPS
+    /// enforced by the transport. Issuers permit neither queries nor fragments;
+    /// authorization, token and JWKS URLs permit queries but reject fragments.
+    /// Private HTTPS providers are supported. TLS uses the platform trust store
+    /// through `rustls-platform-verifier`; a private CA must be installed in the
+    /// container or host trust store.
     pub oidc_issuer_url: String,
     /// OIDC client id (`OIDC_CLIENT_ID`, required when OIDC is configured).
     pub oidc_client_id: String,
@@ -257,7 +257,9 @@ pub struct Config {
     /// never from a claim inside an incoming token. An operator pointing
     /// this at a malicious or compromised issuer can induce Reverie to
     /// trust attacker-controlled JWKS, enabling access-token forgery (the
-    /// same operator-level threat documented on `oidc_issuer_url`).
+    /// same operator-level threat documented on `oidc_issuer_url`). It carries
+    /// the same transport constraints: `https`, no query, no fragment, checked
+    /// before the discovery request is made.
     pub resource_server_issuer: String,
     /// Expected `aud` claim for resource-server JWT validation
     /// (`REVERIE_RESOURCE_SERVER_AUDIENCE`). Required together with
@@ -285,9 +287,13 @@ pub struct Config {
     /// process lifetime and is never read from an incoming token (RFC 8725
     /// §3.9/§3.10: `jku`/`x5u` header values are never followed).
     ///
-    /// Fetches against the resolved endpoint carry explicit connect and
-    /// request timeouts and never follow redirects (the configured URL
-    /// must be the final endpoint); resolved keys are cached in-process. Missing
+    /// The resolved endpoint must use `https`, whether it came from this
+    /// override or from discovery; startup fails otherwise.
+    ///
+    /// Fetches against it run over the shared OIDC transport, so they carry
+    /// explicit connect and request timeouts and never follow redirects (the
+    /// configured URL must be the final endpoint); resolved keys are cached
+    /// in-process. Missing
     /// keys are NOT negatively cached: each Bearer credential naming an
     /// unknown `kid` triggers a fresh JWKS fetch, so a flood of such
     /// credentials drives outbound fetches to the `IdP` roughly 1:1. On an

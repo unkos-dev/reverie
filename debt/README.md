@@ -161,6 +161,5 @@ by definition active debt, the roadmap reads the directory as-is: no status filt
   lifts when forwarded-IP trust is bound to an allow-listed reverse-proxy CIDR
 - [Publisher and pub_date missing from metadata edit UI](2026-05-26-publisher-pubdate-ui-gap.md): adopted from 11c;
   BookDetail doesn't carry those columns yet; lifts when API + UI extended
-- [Two reqwest majors in the dependency tree](2026-08-05-reqwest-dual-pin.md): recognised 2026-05-29; openidconnect 4
-  pulls oauth2 5, whose bundled reqwest feature pins reqwest 0.12 beside the tree's 0.13; lifts when a first-party
-  AsyncHttpClient adapter over 0.13 replaces that feature, or upstream ships an oauth2-reqwest supporting 0.13
+- [OIDC transport adapter pre-release pin](2026-08-14-oauth2-reqwest-prerelease-pin.md): one shared reqwest 0.13 pool
+  requires the exact-pinned upstream adapter; lifts when a stable compatible adapter is available
