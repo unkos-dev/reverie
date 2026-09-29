@@ -4133,6 +4133,178 @@ mod tests {
         );
     }
 
+    async fn review_mutation_state(pool: &sqlx::PgPool, m_id: Uuid) -> serde_json::Value {
+        sqlx::query_scalar!(
+            "SELECT jsonb_build_object( \
+                'work', to_jsonb(w), 'manifestation', to_jsonb(m), \
+                'versions', (SELECT coalesce(jsonb_agg(to_jsonb(v) ORDER BY v.id), '[]') \
+                             FROM metadata_versions v WHERE v.manifestation_id = m.id), \
+                'locks', (SELECT coalesce(jsonb_agg(to_jsonb(l) ORDER BY l.entity_type, l.field_name), '[]') \
+                          FROM field_locks l WHERE l.manifestation_id = m.id), \
+                'jobs', (SELECT coalesce(jsonb_agg(to_jsonb(j) ORDER BY j.id), '[]') \
+                         FROM writeback_jobs j WHERE j.manifestation_id = m.id) \
+             ) AS \"state!\" \
+             FROM manifestations m JOIN works w ON w.id = m.work_id WHERE m.id = $1",
+            m_id,
+        )
+        .fetch_one(pool)
+        .await
+        .unwrap()
+    }
+
+    async fn child_review_request_preserves_state(pool: &sqlx::PgPool, action: &str) {
+        let app = test_support::db::app_pool_for(pool).await;
+        let ing = test_support::db::ingestion_pool_for(pool).await;
+        let (child_id, child_auth) =
+            test_support::db::create_child_user_and_basic_auth(&app, action).await;
+        let (adult_id, adult_auth) =
+            test_support::db::create_adult_and_basic_auth(&app, action).await;
+        let marker = Uuid::new_v4().simple().to_string();
+        let (work_id, m_id) = test_support::db::insert_work_and_manifestation(&ing, &marker).await;
+        let shelf = test_support::db::create_shelf(&app, child_id, action).await;
+        test_support::db::add_to_shelf(&app, shelf, m_id).await;
+        let prior =
+            insert_version(&ing, m_id, "subtitle", serde_json::json!("Prior subtitle")).await;
+        let proposal = insert_version(
+            &ing,
+            m_id,
+            "subtitle",
+            serde_json::json!("Proposed subtitle"),
+        )
+        .await;
+        sqlx::query!(
+            "UPDATE works SET subtitle = 'Prior subtitle', subtitle_version_id = $1 WHERE id = $2",
+            prior,
+            work_id
+        )
+        .execute(&ing)
+        .await
+        .unwrap();
+        let mut tx = app.begin().await.unwrap();
+        crate::services::enrichment::field_lock::lock_tx(
+            &mut tx,
+            m_id,
+            crate::services::enrichment::field_lock::EntityType::Work,
+            "subtitle",
+            adult_id,
+        )
+        .await
+        .unwrap();
+        tx.commit().await.unwrap();
+        let payload = match action {
+            "accept" | "reject" => serde_json::json!({"version_id": proposal}),
+            "revert" => serde_json::json!({"field_name": "subtitle", "version_id": null}),
+            "lock" => {
+                serde_json::json!({"entity_type": "manifestation", "field_name": "publisher"})
+            }
+            "unlock" => serde_json::json!({"entity_type": "work", "field_name": "subtitle"}),
+            _ => panic!("unknown review action"),
+        };
+        let before = review_mutation_state(pool, m_id).await;
+        let server = test_support::db::server_with_real_pools(&app, &ing);
+        let url = format!("/api/v1/manifestations/{m_id}/metadata/{action}");
+        let response = server
+            .post(&url)
+            .add_header(AUTHORIZATION, child_auth.clone())
+            .json(&payload)
+            .await;
+        assert_eq!(
+            response.status_code(),
+            StatusCode::FORBIDDEN,
+            "{}",
+            response.text()
+        );
+        assert_eq!(review_mutation_state(pool, m_id).await, before);
+        if action == "revert" {
+            let response = server
+                .post(&url)
+                .add_header(AUTHORIZATION, child_auth)
+                .json(&serde_json::json!({"field_name": "subtitle", "version_id": proposal}))
+                .await;
+            assert_eq!(response.status_code(), StatusCode::FORBIDDEN);
+            assert_eq!(review_mutation_state(pool, m_id).await, before);
+        }
+        let response = server
+            .post(&url)
+            .add_header(AUTHORIZATION, adult_auth)
+            .json(&payload)
+            .await;
+        assert_eq!(
+            response.status_code(),
+            if action == "lock" {
+                StatusCode::CREATED
+            } else {
+                StatusCode::OK
+            },
+            "{}",
+            response.text()
+        );
+        let after = review_mutation_state(pool, m_id).await;
+        assert_adult_review_change(action, &before, &after, proposal, adult_id);
+    }
+
+    fn assert_adult_review_change(
+        action: &str,
+        before: &serde_json::Value,
+        after: &serde_json::Value,
+        proposal: Uuid,
+        adult_id: Uuid,
+    ) {
+        match action {
+            "accept" => {
+                assert_eq!(after["work"]["subtitle"], "Proposed subtitle");
+                assert_eq!(after["work"]["subtitle_version_id"], proposal.to_string());
+                assert_eq!(after["jobs"].as_array().unwrap().len(), 1);
+            }
+            "reject" => {
+                let version = after["versions"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .find(|v| v["id"] == proposal.to_string())
+                    .unwrap();
+                assert_eq!(version["status"], "rejected");
+                assert_eq!(version["resolved_by"], adult_id.to_string());
+                assert!(!version["resolved_at"].is_null());
+                assert_eq!(after["work"], before["work"]);
+                assert_eq!(after["jobs"], before["jobs"]);
+            }
+            "revert" => {
+                assert!(after["work"]["subtitle"].is_null());
+                assert!(after["work"]["subtitle_version_id"].is_null());
+                assert_eq!(after["jobs"].as_array().unwrap().len(), 1);
+            }
+            "lock" => assert_eq!(after["locks"].as_array().unwrap().len(), 2),
+            "unlock" => assert_eq!(after["locks"], serde_json::json!([])),
+            _ => unreachable!(),
+        }
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn accept_child_account_forbidden_without_writes(pool: sqlx::PgPool) {
+        child_review_request_preserves_state(&pool, "accept").await;
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn reject_child_account_forbidden_without_writes(pool: sqlx::PgPool) {
+        child_review_request_preserves_state(&pool, "reject").await;
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn revert_child_account_forbidden_without_writes(pool: sqlx::PgPool) {
+        child_review_request_preserves_state(&pool, "revert").await;
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn lock_child_account_forbidden_without_writes(pool: sqlx::PgPool) {
+        child_review_request_preserves_state(&pool, "lock").await;
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn unlock_child_account_forbidden_without_writes(pool: sqlx::PgPool) {
+        child_review_request_preserves_state(&pool, "unlock").await;
+    }
+
     #[sqlx::test(migrations = "./migrations")]
     async fn patch_child_account_forbidden(pool: sqlx::PgPool) {
         let app_pool = test_support::db::app_pool_for(&pool).await;

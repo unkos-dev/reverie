@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE manifestations SET publisher = 'Operator publisher', pub_date = '2025-01-01', pages = 300, isbn_10 = '0306406152', isbn_13 = '9780306406157' WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "3ba2fa19ad299158f79c0742973a408232e72e0f948899dcf7cd6033195f411c"
+}
