@@ -31,7 +31,7 @@
  */
 import { useQuery } from "@tanstack/react-query";
 import { ArrowDown, ArrowUp, ChevronDown, ChevronUp, X } from "lucide-react";
-import { useEffect, useState, type ReactElement, type ReactNode } from "react";
+import { useEffect, useId, useState, type ReactElement, type ReactNode } from "react";
 
 import { listShelves, MAX_SORT_LEVELS, SORT_FIELDS, type Shelf, type SortLevelParam } from "@/api";
 import { Button } from "@/components/ui/button";
@@ -286,10 +286,12 @@ type RailSectionProps = {
 };
 
 /**
- * One collapsible rail section. Open state is uncontrolled after mount (the
- * initial value is captured once), so a filter edit re-rendering the rail
- * never snaps a section the user toggled; a section that mounts with active
- * conditions starts open.
+ * One collapsible rail section. Open state follows only the disclosure
+ * control after mount (the initial value is captured once), so a filter edit
+ * re-rendering the rail never snaps a section the user toggled; a section
+ * that mounts with active conditions starts open. The clear control is the
+ * disclosure's sibling, never its descendant, so each is exposed and
+ * operated on its own.
  */
 function RailSection({
   title,
@@ -299,39 +301,60 @@ function RailSection({
   clearAriaLabel,
   children,
 }: Readonly<RailSectionProps>): ReactElement {
-  const [initialOpen] = useState(activeCount > 0);
+  const [open, setOpen] = useState(activeCount > 0);
+  const contentId = useId();
   const active = activeCount > 0;
+  // `hidden="until-found"` keeps collapsed text reachable by the browser's
+  // find-in-page, which fires `beforematch` on a hit. React renders `hidden`
+  // as a boolean and has no `beforematch` prop, so both are set on the node.
+  const syncCollapsed = (content: HTMLDivElement): (() => void) => {
+    if (open) content.removeAttribute("hidden");
+    else content.setAttribute("hidden", "until-found");
+    const expand = (): void => {
+      setOpen(true);
+    };
+    content.addEventListener("beforematch", expand);
+    return () => {
+      content.removeEventListener("beforematch", expand);
+    };
+  };
   return (
-    <details open={initialOpen}>
-      <summary
-        className={`flex cursor-pointer select-none items-center gap-2 font-mono text-xs uppercase tracking-[0.14em] ${
-          active ? "text-accent" : "text-fg-muted"
-        }`}
-      >
-        <span>{title}</span>
-        {active ? (
-          <span className="bg-accent-soft text-fg rounded-full px-1.5 py-0.5 text-[0.65rem] leading-none">
-            {activeCount}
-          </span>
-        ) : null}
+    <section>
+      <div className="flex items-center gap-2">
+        <button
+          type="button"
+          aria-expanded={open}
+          aria-controls={contentId}
+          onClick={() => {
+            setOpen((current) => !current);
+          }}
+          className={`flex flex-1 cursor-pointer select-none items-center gap-2 self-stretch text-left font-mono text-xs uppercase tracking-[0.14em] ${
+            active ? "text-accent" : "text-fg-muted"
+          }`}
+        >
+          <span>{title}</span>
+          {active ? (
+            <span className="bg-accent-soft text-fg rounded-full px-1.5 py-0.5 text-[0.65rem] leading-none">
+              {activeCount}
+            </span>
+          ) : null}
+        </button>
         {active ? (
           <button
             type="button"
             aria-label={clearAriaLabel ?? `Clear ${title} filters`}
-            onClick={(event) => {
-              // A summary click toggles the disclosure; clearing must not.
-              event.preventDefault();
-              event.stopPropagation();
-              onClear();
-            }}
-            className="text-fg-muted hover:text-fg focus-visible:ring-accent ml-auto flex min-h-6 items-center rounded-sm px-2 font-mono text-xs uppercase tracking-wide transition-colors focus-visible:outline-none focus-visible:ring-2"
+            onClick={onClear}
+            className="text-fg-muted hover:text-fg focus-visible:ring-accent flex min-h-6 items-center rounded-sm px-2 font-mono text-xs uppercase tracking-wide transition-colors focus-visible:outline-none focus-visible:ring-2"
           >
             {clearLabel}
           </button>
         ) : null}
-      </summary>
-      <div className="mt-2">{children}</div>
-    </details>
+      </div>
+      {/* Collapsed content stays mounted: the range editors hold drafts locally. */}
+      <div id={contentId} ref={syncCollapsed} className={open ? "mt-2" : undefined}>
+        {children}
+      </div>
+    </section>
   );
 }
 
