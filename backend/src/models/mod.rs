@@ -44,6 +44,8 @@ pub mod series;
 pub mod settings;
 /// Response DTOs for the shelves CRUD API (`/api/v1/shelves*`).
 pub mod shelf;
+/// Persistent identity of each configured managed library.
+pub mod storage_library;
 /// Closed value set for the `theme_preference` Postgres `ENUM`.
 pub mod theme_preference;
 /// User accounts and OIDC-driven upsert flow.

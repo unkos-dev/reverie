@@ -485,6 +485,9 @@
       "title": "CSRF protection"
     },
     {
+      "governed-by": [
+        "REV-ADR-0051"
+      ],
       "id": "REV-DESIGN-0009",
       "kind": "design",
       "path": "docs/specs/library/design/0009-works-and-manifestations-data-model.md",
@@ -492,7 +495,8 @@
         "REV-REQ-0025",
         "REV-REQ-0026",
         "REV-REQ-0027",
-        "REV-REQ-0028"
+        "REV-REQ-0028",
+        "REV-REQ-0065"
       ],
       "title": "Works and manifestations data model"
     },
@@ -676,7 +680,8 @@
     },
     {
       "governed-by": [
-        "REV-ADR-0023"
+        "REV-ADR-0023",
+        "REV-ADR-0051"
       ],
       "id": "REV-DESIGN-0022",
       "kind": "design",
@@ -684,7 +689,8 @@
       "satisfies": [
         "REV-REQ-0060",
         "REV-REQ-0061",
-        "REV-REQ-0064"
+        "REV-REQ-0064",
+        "REV-REQ-0066"
       ],
       "title": "Configuration loading"
     },
@@ -709,6 +715,9 @@
       "id": "REV-DESIGN-0024",
       "kind": "design",
       "path": "docs/specs/operations/design/0024-application-runtime-startup-workers-and-shutdown.md",
+      "satisfies": [
+        "REV-REQ-0066"
+      ],
       "title": "Application runtime: startup, workers, and shutdown"
     },
     {
@@ -1244,6 +1253,24 @@
       "kind": "req",
       "path": "docs/specs/operations/requirements/0064-automatic-migration-off-leaves-the-migration-dsn-unset.md",
       "title": "Automatic migration off leaves the migration DSN unset"
+    },
+    {
+      "governed-by": [
+        "REV-ADR-0051"
+      ],
+      "id": "REV-REQ-0065",
+      "kind": "req",
+      "path": "docs/specs/library/requirements/0065-a-managed-file-location-identifies-its-library-and-a-relative-path.md",
+      "title": "A managed file location identifies its library and a relative path"
+    },
+    {
+      "governed-by": [
+        "REV-ADR-0051"
+      ],
+      "id": "REV-REQ-0066",
+      "kind": "req",
+      "path": "docs/specs/operations/requirements/0066-required-storage-directories-are-available-before-serving.md",
+      "title": "Required storage directories are available before serving"
     }
   ]
 }

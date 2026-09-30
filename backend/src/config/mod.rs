@@ -24,10 +24,13 @@
 mod cover;
 mod enrichment;
 mod opds;
+mod path;
 mod provider;
 mod reference;
 mod security;
 mod writeback;
+
+pub use path::AbsoluteRootPath;
 
 pub use cover::CoverConfig;
 pub use enrichment::EnrichmentConfig;
@@ -115,16 +118,17 @@ pub struct Config {
     /// against this DSN run as `reverie_app`; user-facing queries acquire
     /// transactions through [`crate::db::acquire_with_rls`].
     pub database_url: String,
-    /// Filesystem root for persisted manifestation files
-    /// (`REVERIE_LIBRARY_PATH`, default `/data/library`). The OPDS download
-    /// handler canonicalises file paths against this root.
-    pub library_path: String,
-    /// Watched ingestion drop directory (`REVERIE_INGESTION_PATH`,
-    /// default `/data/ingestion`). The watcher consumes files from here.
-    pub ingestion_path: String,
-    /// Failed-ingestion quarantine directory
-    /// (`REVERIE_QUARANTINE_PATH`, default `/data/quarantine`).
-    pub quarantine_path: String,
+    /// Absolute root for managed manifestation files (`REVERIE_LIBRARY_PATH`,
+    /// default `/data/library`). Must exist before server startup; OPDS opens
+    /// recorded relative locations through its pinned directory capability.
+    pub library_path: AbsoluteRootPath,
+    /// Absolute ingestion drop directory (`REVERIE_INGESTION_PATH`,
+    /// default `/data/ingestion`). Must exist before server startup.
+    pub ingestion_path: AbsoluteRootPath,
+    /// Absolute failed-ingestion quarantine directory
+    /// (`REVERIE_QUARANTINE_PATH`, default `/data/quarantine`). Must exist
+    /// before server startup.
+    pub quarantine_path: AbsoluteRootPath,
     /// Log-filter directive resolved from the environment with cascading
     /// precedence: `REVERIE_LOG_LEVEL` > `RUST_LOG` > `"info"`. The
     /// `REVERIE_*` operator namespace wins on conflict so staging docs
@@ -807,13 +811,14 @@ fn join_path(prefix: &str, field: &str) -> String {
 
 impl Default for Config {
     fn default() -> Self {
+        let [library_path, ingestion_path, quarantine_path] = AbsoluteRootPath::defaults();
         Self {
             port: 3000,
             // REQUIRED — empty sentinel; reviewer handles MissingVar (GOTCHA-REQUIRED).
             database_url: String::new(),
-            library_path: "/data/library".into(),
-            ingestion_path: "/data/ingestion".into(),
-            quarantine_path: "/data/quarantine".into(),
+            library_path,
+            ingestion_path,
+            quarantine_path,
             log_level: "info".into(),
             db_max_connections: 10,
             login_rate_per_min: 10,
@@ -868,6 +873,50 @@ impl Default for Config {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn library_storage_config_absolute_defaults() {
+        let config = cfg_from(BASE_VARS).unwrap();
+        assert_eq!(config.library_path.as_str(), "/data/library");
+        assert_eq!(config.ingestion_path.as_str(), "/data/ingestion");
+        assert_eq!(config.quarantine_path.as_str(), "/data/quarantine");
+    }
+
+    #[test]
+    fn library_storage_config_empty_and_relative_rejected() {
+        for var in [
+            "REVERIE_LIBRARY_PATH",
+            "REVERIE_INGESTION_PATH",
+            "REVERIE_QUARANTINE_PATH",
+        ] {
+            for value in ["", "library", "./library", "../library"] {
+                let error = cfg_from_owned(&with_overrides(&[(var, value)])).unwrap_err();
+                assert!(matches!(error, ConfigError::Invalid { var: ref name, .. } if name == var));
+            }
+        }
+    }
+
+    #[test]
+    fn library_storage_config_unavailable_absolute_root_parses() {
+        let tmp = tempfile::tempdir().unwrap();
+        let unavailable = tmp.path().join("not-provisioned");
+        let config = cfg_from_owned(&with_overrides(&[(
+            "REVERIE_LIBRARY_PATH",
+            unavailable.to_str().unwrap(),
+        )]))
+        .unwrap();
+        assert_eq!(config.library_path.as_path(), unavailable);
+        assert!(!unavailable.exists());
+        let schema = serde_json::to_value(schemars::schema_for!(Config)).unwrap();
+        for (field, default) in [
+            ("library_path", "/data/library"),
+            ("ingestion_path", "/data/ingestion"),
+            ("quarantine_path", "/data/quarantine"),
+        ] {
+            assert_eq!(schema["properties"][field]["type"], "string");
+            assert_eq!(schema["properties"][field]["default"], default);
+        }
+    }
 
     /// Build a `Config` through the figment pipeline from in-memory env pairs:
     /// the process-env-free, parallel-safe test seam (GOTCHA-TESTSEAM); never
@@ -967,9 +1016,9 @@ mod tests {
         let config = cfg_from(BASE_VARS).unwrap();
         assert_eq!(config.port, 3000);
         assert_eq!(config.database_url, "postgres://test@localhost/reverie_dev");
-        assert_eq!(config.library_path, "/data/library");
-        assert_eq!(config.ingestion_path, "/data/ingestion");
-        assert_eq!(config.quarantine_path, "/data/quarantine");
+        assert_eq!(config.library_path.as_str(), "/data/library");
+        assert_eq!(config.ingestion_path.as_str(), "/data/ingestion");
+        assert_eq!(config.quarantine_path.as_str(), "/data/quarantine");
         assert_eq!(config.recovery_pin_dir, "/data/recovery-pins");
         // BASE_VARS exports DATABASE_URL_MIGRATION but leaves REVERIE_AUTO_MIGRATE
         // unset (off), so the DSN is intentionally NOT carried into Config.
@@ -1050,7 +1099,7 @@ mod tests {
             config.database_url,
             "postgres://custom@localhost/reverie_dev"
         );
-        assert_eq!(config.library_path, "/data/library");
+        assert_eq!(config.library_path.as_str(), "/data/library");
         assert_eq!(config.log_level, "debug");
     }
 

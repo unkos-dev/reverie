@@ -43,7 +43,7 @@ fn cover_cache_root(library_path: &str) -> PathBuf {
 }
 
 fn cache_root(state: &AppState) -> PathBuf {
-    cover_cache_root(&state.config.library_path)
+    cover_cache_root(state.config.library_path.as_str())
 }
 
 const fn ext_for_format(fmt: image::ImageFormat) -> &'static str {

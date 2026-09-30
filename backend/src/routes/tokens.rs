@@ -345,9 +345,7 @@ mod tests {
         let state = crate::state::AppState {
             pool: pool.clone(),
             ingestion_pool: pool.clone(),
-            library_files: crate::services::files::LibraryFiles::new(
-                test_support::test_config().library_path,
-            ),
+            library_files: crate::test_support::test_library_files(),
             config: test_support::test_config(),
             oidc: Some(std::sync::Arc::new(test_support::test_oidc_runtime())),
             jwt_validator: None,

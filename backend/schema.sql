@@ -605,6 +605,19 @@ CREATE TABLE public.instance_bootstrap (
 ALTER TABLE public.instance_bootstrap OWNER TO reverie_migrator;
 
 --
+-- Name: libraries; Type: TABLE; Schema: public; Owner: reverie_migrator
+--
+
+CREATE TABLE public.libraries (
+    id uuid DEFAULT uuidv7() NOT NULL,
+    configuration_key text NOT NULL,
+    CONSTRAINT libraries_configuration_key_check CHECK ((configuration_key <> ''::text))
+);
+
+
+ALTER TABLE public.libraries OWNER TO reverie_migrator;
+
+--
 -- Name: local_credentials; Type: TABLE; Schema: public; Owner: reverie_migrator
 --
 
@@ -751,9 +764,11 @@ CREATE TABLE public.manifestations (
     content_rating_version_id uuid,
     enrichment_rerun_requested boolean DEFAULT false NOT NULL,
     has_embedded_cover boolean,
+    library_id uuid NOT NULL,
     CONSTRAINT manifestations_created_at_ts_decode_range CHECK (((created_at >= '0001-01-01 00:00:00+00'::timestamp with time zone) AND (created_at < '10000-01-01 00:00:00+00'::timestamp with time zone))),
     CONSTRAINT manifestations_enrichment_attempted_at_ts_decode_range CHECK (((enrichment_attempted_at >= '0001-01-01 00:00:00+00'::timestamp with time zone) AND (enrichment_attempted_at < '10000-01-01 00:00:00+00'::timestamp with time zone))),
     CONSTRAINT manifestations_pages_positive CHECK (((pages IS NULL) OR (pages > 0))),
+    CONSTRAINT manifestations_relative_file_path_check CHECK (((file_path <> ''::text) AND ("left"(file_path, 1) <> '/'::text) AND ("right"(file_path, 1) <> '/'::text) AND (file_path !~~ '%//%'::text) AND (strpos(file_path, chr(92)) = 0) AND (file_path !~ '^[A-Za-z]:'::text) AND (file_path !~ '(^|/)[.]{1,2}(/|$)'::text))),
     CONSTRAINT manifestations_updated_at_ts_decode_range CHECK (((updated_at >= '0001-01-01 00:00:00+00'::timestamp with time zone) AND (updated_at < '10000-01-01 00:00:00+00'::timestamp with time zone)))
 );
 
@@ -1410,6 +1425,22 @@ ALTER TABLE ONLY public.instance_bootstrap
 
 
 --
+-- Name: libraries libraries_configuration_key_key; Type: CONSTRAINT; Schema: public; Owner: reverie_migrator
+--
+
+ALTER TABLE ONLY public.libraries
+    ADD CONSTRAINT libraries_configuration_key_key UNIQUE (configuration_key);
+
+
+--
+-- Name: libraries libraries_pkey; Type: CONSTRAINT; Schema: public; Owner: reverie_migrator
+--
+
+ALTER TABLE ONLY public.libraries
+    ADD CONSTRAINT libraries_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: local_credentials local_credentials_pkey; Type: CONSTRAINT; Schema: public; Owner: reverie_migrator
 --
 
@@ -1474,11 +1505,11 @@ ALTER TABLE ONLY public.manifestations
 
 
 --
--- Name: manifestations manifestations_file_path_key; Type: CONSTRAINT; Schema: public; Owner: reverie_migrator
+-- Name: manifestations manifestations_library_file_path_key; Type: CONSTRAINT; Schema: public; Owner: reverie_migrator
 --
 
 ALTER TABLE ONLY public.manifestations
-    ADD CONSTRAINT manifestations_file_path_key UNIQUE (file_path);
+    ADD CONSTRAINT manifestations_library_file_path_key UNIQUE (library_id, file_path);
 
 
 --
@@ -2542,6 +2573,14 @@ ALTER TABLE ONLY public.manifestations
 
 
 --
+-- Name: manifestations manifestations_library_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: reverie_migrator
+--
+
+ALTER TABLE ONLY public.manifestations
+    ADD CONSTRAINT manifestations_library_id_fkey FOREIGN KEY (library_id) REFERENCES public.libraries(id) ON DELETE RESTRICT;
+
+
+--
 -- Name: manifestations manifestations_pages_version_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: reverie_migrator
 --
 
@@ -3337,6 +3376,15 @@ GRANT SELECT ON TABLE public.ingestion_jobs TO reverie_readonly;
 --
 
 GRANT SELECT,INSERT ON TABLE public.instance_bootstrap TO reverie_app;
+
+
+--
+-- Name: TABLE libraries; Type: ACL; Schema: public; Owner: reverie_migrator
+--
+
+GRANT SELECT ON TABLE public.libraries TO reverie_app;
+GRANT SELECT ON TABLE public.libraries TO reverie_ingestion;
+GRANT SELECT ON TABLE public.libraries TO reverie_readonly;
 
 
 --

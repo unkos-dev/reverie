@@ -8,13 +8,48 @@ use crate::config::{
 use crate::models::manifestation_format::ManifestationFormat;
 use crate::state::AppState;
 
+pub fn test_library_files() -> crate::services::files::LibraryFiles {
+    let config = test_config();
+    test_library_files_at(
+        &config.library_path,
+        crate::models::storage_library::LibraryId::from_uuid(uuid::Uuid::new_v4()),
+    )
+}
+
+pub fn test_library_files_at(
+    library: &crate::config::AbsoluteRootPath,
+    id: crate::models::storage_library::LibraryId,
+) -> crate::services::files::LibraryFiles {
+    let staging = tempfile::tempdir().unwrap();
+    let ingestion = staging.path().join("ingestion");
+    let quarantine = staging.path().join("quarantine");
+    std::fs::create_dir(&ingestion).unwrap();
+    std::fs::create_dir(&quarantine).unwrap();
+    let mut fixtures = vec![staging];
+    let library = if library.as_str() == "/data/library" {
+        let fixture = tempfile::tempdir().unwrap();
+        let path = fixture.path().to_str().unwrap().parse().unwrap();
+        fixtures.push(fixture);
+        path
+    } else {
+        library.clone()
+    };
+    crate::services::files::LibraryFiles::open(
+        [(id, library)],
+        &ingestion.to_str().unwrap().parse().unwrap(),
+        &quarantine.to_str().unwrap().parse().unwrap(),
+    )
+    .unwrap()
+    .with_fixtures(fixtures)
+}
+
 pub fn test_config() -> Config {
     Config {
         port: 3000,
         database_url: String::new(),
-        library_path: String::new(),
-        ingestion_path: String::new(),
-        quarantine_path: String::new(),
+        library_path: crate::config::Config::default().library_path,
+        ingestion_path: crate::config::Config::default().ingestion_path,
+        quarantine_path: crate::config::Config::default().quarantine_path,
         log_level: "info".into(),
         db_max_connections: 10,
         oidc_issuer_url: String::new(),
@@ -176,7 +211,7 @@ pub fn test_state() -> AppState {
     AppState {
         pool: sqlx::PgPool::connect_lazy("postgres://invalid").unwrap(),
         ingestion_pool: sqlx::PgPool::connect_lazy("postgres://invalid").unwrap(),
-        library_files: crate::services::files::LibraryFiles::new(test_config().library_path),
+        library_files: crate::test_support::test_library_files(),
         config: test_config(),
         oidc: Some(std::sync::Arc::new(test_oidc_runtime())),
         jwt_validator: None,
@@ -506,9 +541,7 @@ pub mod db {
         let state = AppState {
             pool: app_pool.clone(),
             ingestion_pool: ingestion_pool.clone(),
-            library_files: crate::services::files::LibraryFiles::new(
-                super::test_config().library_path,
-            ),
+            library_files: crate::test_support::test_library_files(),
             config: super::test_config(),
             oidc: Some(std::sync::Arc::new(super::test_oidc_runtime())),
             jwt_validator: None,
@@ -552,7 +585,10 @@ pub mod db {
         let state = AppState {
             pool: app_pool.clone(),
             ingestion_pool: ingestion_pool.clone(),
-            library_files: crate::services::files::LibraryFiles::new(config.library_path.clone()),
+            library_files: crate::test_support::test_library_files_at(
+                &config.library_path,
+                crate::models::storage_library::LibraryId::from_uuid(uuid::Uuid::new_v4()),
+            ),
             config,
             oidc: Some(std::sync::Arc::new(super::test_oidc_runtime())),
             jwt_validator: Some(std::sync::Arc::new(validator)),
@@ -577,7 +613,10 @@ pub mod db {
         let state = AppState {
             pool: app_pool.clone(),
             ingestion_pool: ingestion_pool.clone(),
-            library_files: crate::services::files::LibraryFiles::new(config.library_path.clone()),
+            library_files: crate::test_support::test_library_files_at(
+                &config.library_path,
+                crate::models::storage_library::LibraryId::from_uuid(uuid::Uuid::new_v4()),
+            ),
             config,
             oidc: Some(std::sync::Arc::new(super::test_oidc_runtime())),
             jwt_validator: None,
@@ -607,7 +646,10 @@ pub mod db {
         let state = AppState {
             pool: app_pool.clone(),
             ingestion_pool: ingestion_pool.clone(),
-            library_files: crate::services::files::LibraryFiles::new(config.library_path.clone()),
+            library_files: crate::test_support::test_library_files_at(
+                &config.library_path,
+                crate::models::storage_library::LibraryId::from_uuid(uuid::Uuid::new_v4()),
+            ),
             config,
             oidc: Some(std::sync::Arc::new(super::test_oidc_runtime())),
             jwt_validator: None,
@@ -628,7 +670,7 @@ pub mod db {
     /// `library_path` is the absolute path to a real directory (usually a
     /// `tempfile::TempDir`) — the download handler opens
     /// `file_path` through this root's library capability.
-    pub fn server_with_opds_enabled(
+    pub async fn server_with_opds_enabled(
         app_pool: &PgPool,
         ingestion_pool: &PgPool,
         library_path: &std::path::Path,
@@ -637,7 +679,7 @@ pub mod db {
         use crate::state::AppState;
 
         let mut config = super::test_config();
-        config.library_path = library_path.to_string_lossy().into_owned();
+        config.library_path = library_path.to_str().unwrap().parse().unwrap();
         config.opds = OpdsConfig {
             enabled: true,
             page_size: 50,
@@ -647,7 +689,12 @@ pub mod db {
         let state = AppState {
             pool: app_pool.clone(),
             ingestion_pool: ingestion_pool.clone(),
-            library_files: crate::services::files::LibraryFiles::new(config.library_path.clone()),
+            library_files: crate::test_support::test_library_files_at(
+                &config.library_path,
+                crate::models::storage_library::default_library_id(app_pool)
+                    .await
+                    .unwrap(),
+            ),
             config,
             oidc: Some(std::sync::Arc::new(super::test_oidc_runtime())),
             jwt_validator: None,
@@ -674,7 +721,10 @@ pub mod db {
         let state = AppState {
             pool: app_pool.clone(),
             ingestion_pool: ingestion_pool.clone(),
-            library_files: crate::services::files::LibraryFiles::new(config.library_path.clone()),
+            library_files: crate::test_support::test_library_files_at(
+                &config.library_path,
+                crate::models::storage_library::LibraryId::from_uuid(uuid::Uuid::new_v4()),
+            ),
             config,
             oidc: Some(std::sync::Arc::new(super::test_oidc_runtime())),
             jwt_validator: None,
@@ -688,7 +738,7 @@ pub mod db {
 
     /// Same as [`server_with_opds_enabled`] but with a caller-chosen
     /// `opds.page_size` for navigation-feed pagination-walk tests.
-    pub fn server_with_opds_page_size(
+    pub async fn server_with_opds_page_size(
         app_pool: &PgPool,
         ingestion_pool: &PgPool,
         library_path: &std::path::Path,
@@ -698,7 +748,7 @@ pub mod db {
         use crate::state::AppState;
 
         let mut config = super::test_config();
-        config.library_path = library_path.to_string_lossy().into_owned();
+        config.library_path = library_path.to_str().unwrap().parse().unwrap();
         config.opds = OpdsConfig {
             enabled: true,
             page_size,
@@ -708,7 +758,12 @@ pub mod db {
         let state = AppState {
             pool: app_pool.clone(),
             ingestion_pool: ingestion_pool.clone(),
-            library_files: crate::services::files::LibraryFiles::new(config.library_path.clone()),
+            library_files: crate::test_support::test_library_files_at(
+                &config.library_path,
+                crate::models::storage_library::default_library_id(app_pool)
+                    .await
+                    .unwrap(),
+            ),
             config,
             oidc: Some(std::sync::Arc::new(super::test_oidc_runtime())),
             jwt_validator: None,
@@ -732,13 +787,13 @@ pub mod db {
         .fetch_one(ingestion_pool)
         .await
         .expect("insert work");
-        let file_path = format!("/tmp/admin-test-{marker}.epub");
+        let file_path = format!("fixtures/admin-test-{marker}.epub");
         let file_hash = format!("admin-test-hash-{marker}");
         let m_id: Uuid = sqlx::query_scalar!(
             "INSERT INTO manifestations \
-                (work_id, format, file_path, ingestion_file_hash, current_file_hash, \
+                (library_id, work_id, format, file_path, ingestion_file_hash, current_file_hash, \
                  file_size_bytes, ingestion_status, validation_status) \
-             VALUES ($1, 'epub'::manifestation_format, $2, $3, $3, 1000, \
+             VALUES ((SELECT id FROM libraries WHERE configuration_key = 'default'), $1, 'epub'::manifestation_format, $2, $3, $3, 1000, \
                      'complete'::ingestion_status, 'clean'::validation_status) \
              RETURNING id",
             work_id,

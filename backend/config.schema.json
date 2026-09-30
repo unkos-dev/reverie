@@ -71,12 +71,12 @@
       "default": ""
     },
     "ingestion_path": {
-      "description": "Watched ingestion drop directory (`REVERIE_INGESTION_PATH`,\ndefault `/data/ingestion`). The watcher consumes files from here.",
+      "description": "Absolute ingestion drop directory (`REVERIE_INGESTION_PATH`,\ndefault `/data/ingestion`). Must exist before server startup.",
       "type": "string",
       "default": "/data/ingestion"
     },
     "library_path": {
-      "description": "Filesystem root for persisted manifestation files\n(`REVERIE_LIBRARY_PATH`, default `/data/library`). The OPDS download\nhandler canonicalises file paths against this root.",
+      "description": "Absolute root for managed manifestation files (`REVERIE_LIBRARY_PATH`,\ndefault `/data/library`). Must exist before server startup; OPDS opens\nrecorded relative locations through its pinned directory capability.",
       "type": "string",
       "default": "/data/library"
     },
@@ -187,7 +187,7 @@
       "minimum": 0
     },
     "quarantine_path": {
-      "description": "Failed-ingestion quarantine directory\n(`REVERIE_QUARANTINE_PATH`, default `/data/quarantine`).",
+      "description": "Absolute failed-ingestion quarantine directory\n(`REVERIE_QUARANTINE_PATH`, default `/data/quarantine`). Must exist\nbefore server startup.",
       "type": "string",
       "default": "/data/quarantine"
     },

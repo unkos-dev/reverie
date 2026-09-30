@@ -20,6 +20,11 @@ index, the worker and the dedicated database pool it runs on, the `OPF` rewrite 
 helpers, post-writeback validation with rollback of the original bytes, and the table that suppresses duplicate terminal
 events.
 
+Writeback still interprets manifestation paths as ambient paths and persists full relocation destinations. These
+interfaces do not satisfy the required library-relative location contract. The
+[pipeline limitation](../../../../debt/2026-09-30-library-location-pipelines-incomplete.md) blocks successful writeback
+from these records; the mechanisms below remain implemented but do not establish end-to-end operation.
+
 ## Purpose and boundaries
 
 This subject owns everything between a canonical-pointer move landing in Postgres and the corresponding `EPUB` file on

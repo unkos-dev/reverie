@@ -421,7 +421,7 @@ async fn path_rename_step(
     src_path: PathBuf,
     pool: &PgPool,
 ) -> Result<PathBuf, WritebackError> {
-    let Some(candidate) = render_target_path(snap, &config.library_path, &src_path)? else {
+    let Some(candidate) = render_target_path(snap, config.library_path.as_str(), &src_path)? else {
         return Ok(src_path);
     };
 
@@ -710,9 +710,9 @@ mod tests {
         Config {
             port: 3000,
             database_url: String::new(),
-            library_path: String::new(),
-            ingestion_path: String::new(),
-            quarantine_path: String::new(),
+            library_path: crate::config::Config::default().library_path,
+            ingestion_path: crate::config::Config::default().ingestion_path,
+            quarantine_path: crate::config::Config::default().quarantine_path,
             log_level: "info".into(),
             db_max_connections: 5,
             oidc_issuer_url: String::new(),
@@ -850,6 +850,11 @@ mod tests {
         file_path: &str,
         ingestion_hash: &str,
     ) -> (Uuid, Uuid) {
+        let file_path = std::path::Path::new(file_path)
+            .file_name()
+            .unwrap()
+            .to_str()
+            .unwrap();
         let title = format!("WbFixture-{marker}");
         let work_id = sqlx::query_scalar!(
             "INSERT INTO works (title, sort_title) VALUES ($1, $1) RETURNING id",
@@ -863,9 +868,9 @@ mod tests {
             // leak into the enrichment queue's claim_next under parallel
             // test execution (the column defaults to 'pending').
             "INSERT INTO manifestations \
-               (work_id, format, file_path, ingestion_file_hash, current_file_hash, \
+               (library_id, work_id, format, file_path, ingestion_file_hash, current_file_hash, \
                 file_size_bytes, ingestion_status, validation_status, enrichment_status) \
-             VALUES ($1, 'epub'::manifestation_format, $2, $3, $3, 1000, \
+             VALUES ((SELECT id FROM libraries WHERE configuration_key = 'default'), $1, 'epub'::manifestation_format, $2, $3, $3, 1000, \
                      'complete'::ingestion_status, 'clean'::validation_status, \
                      'complete'::enrichment_status) \
              RETURNING id",
@@ -1099,7 +1104,7 @@ mod tests {
 
         // Use a config with the lib_dir as library_path so path-rename engages.
         let mut cfg = test_config();
-        cfg.library_path = library_root.clone();
+        cfg.library_path = library_root.parse().unwrap();
 
         let outcome = run_once(&app_pool, &cfg, job_id).await.unwrap();
         assert!(
@@ -1130,7 +1135,14 @@ mod tests {
         .fetch_one(&app_pool)
         .await
         .unwrap();
-        assert_eq!(row.file_path, expected_new.to_str().unwrap());
+        assert_eq!(
+            row.file_path,
+            expected_new
+                .strip_prefix(&library_root)
+                .unwrap()
+                .to_str()
+                .unwrap()
+        );
         assert_ne!(row.current_file_hash, original_hash);
     }
 
@@ -1473,7 +1485,7 @@ mod tests {
         .unwrap();
 
         let mut cfg = test_config();
-        cfg.library_path = library_root.clone();
+        cfg.library_path = library_root.parse().unwrap();
         let outcome = run_once(&app_pool, &cfg, job_id).await.unwrap();
         assert!(
             matches!(outcome, RunOutcome::Success { .. }),
@@ -1506,7 +1518,11 @@ mod tests {
                 .unwrap();
         assert_eq!(
             db_path,
-            expected_collision_path.to_str().unwrap(),
+            expected_collision_path
+                .strip_prefix(&library_root)
+                .unwrap()
+                .to_str()
+                .unwrap(),
             "DB file_path must record the collision-suffixed path"
         );
     }
