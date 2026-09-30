@@ -31,6 +31,7 @@ fn server_with_page_size(app_pool: &PgPool, ingestion_pool: &PgPool, page_size: 
     let state = AppState {
         pool: app_pool.clone(),
         ingestion_pool: ingestion_pool.clone(),
+        library_files: crate::services::files::LibraryFiles::new(config.library_path.clone()),
         config,
         oidc: Some(std::sync::Arc::new(test_support::test_oidc_runtime())),
         jwt_validator: None,

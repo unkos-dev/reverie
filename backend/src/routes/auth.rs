@@ -1383,6 +1383,9 @@ mod tests {
         let state = AppState {
             pool: app_pool.clone(),
             ingestion_pool,
+            library_files: crate::services::files::LibraryFiles::new(
+                test_support::test_config().library_path,
+            ),
             config: test_support::test_config(),
             oidc,
             jwt_validator: None,
@@ -1577,6 +1580,9 @@ mod tests {
         let state = AppState {
             pool: app_pool.clone(),
             ingestion_pool,
+            library_files: crate::services::files::LibraryFiles::new(
+                test_support::test_config().library_path,
+            ),
             config: test_support::test_config(),
             oidc,
             jwt_validator: None,
@@ -1728,6 +1734,9 @@ mod tests {
         let state = AppState {
             pool: app_pool.clone(),
             ingestion_pool,
+            library_files: crate::services::files::LibraryFiles::new(
+                test_support::test_config().library_path,
+            ),
             config: test_support::test_config(),
             oidc,
             jwt_validator: None,
@@ -1849,6 +1858,9 @@ mod tests {
         let state = AppState {
             pool: app_pool.clone(),
             ingestion_pool,
+            library_files: crate::services::files::LibraryFiles::new(
+                test_support::test_config().library_path,
+            ),
             config: test_support::test_config(),
             oidc,
             jwt_validator: None,
@@ -1967,6 +1979,9 @@ mod tests {
         let state = AppState {
             pool: app_pool.clone(),
             ingestion_pool,
+            library_files: crate::services::files::LibraryFiles::new(
+                test_support::test_config().library_path,
+            ),
             config: test_support::test_config(),
             oidc,
             jwt_validator: None,

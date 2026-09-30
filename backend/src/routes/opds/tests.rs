@@ -528,6 +528,145 @@ async fn download_streams_and_path_traversal_403(pool: PgPool) {
     assert_eq!(response.status_code(), StatusCode::NOT_FOUND);
 }
 
+enum DownloadTarget {
+    Regular,
+    RelativeLink,
+    AbsoluteLink,
+    OutsideLink,
+    Missing,
+    LinkLoop,
+}
+
+async fn assert_capability_download(pool: PgPool, target: DownloadTarget, status: StatusCode) {
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let (_admin, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+    let library = tempfile::tempdir().unwrap();
+    let outside = tempfile::tempdir().unwrap();
+    let (_, manifestation, _, path) =
+        insert_epub_manifestation(&ingestion_pool, library.path(), "capability", "Linked Book")
+            .await;
+    let expected = std::fs::read(&path).unwrap();
+    match target {
+        DownloadTarget::Regular => {}
+        DownloadTarget::RelativeLink | DownloadTarget::AbsoluteLink => {
+            let destination = path.with_file_name("target.epub");
+            std::fs::rename(&path, &destination).unwrap();
+            let link = match target {
+                DownloadTarget::RelativeLink => std::path::PathBuf::from("target.epub"),
+                _ => destination,
+            };
+            std::os::unix::fs::symlink(link, &path).unwrap();
+        }
+        DownloadTarget::OutsideLink => {
+            let destination = outside.path().join("outside.epub");
+            std::fs::write(&destination, b"outside bytes").unwrap();
+            std::fs::remove_file(&path).unwrap();
+            std::os::unix::fs::symlink(destination, &path).unwrap();
+        }
+        DownloadTarget::Missing => std::fs::remove_file(&path).unwrap(),
+        DownloadTarget::LinkLoop => {
+            std::fs::remove_file(&path).unwrap();
+            std::os::unix::fs::symlink(&path, &path).unwrap();
+        }
+    }
+    let server =
+        test_support::db::server_with_opds_enabled(&app_pool, &ingestion_pool, library.path());
+    let response = server
+        .get(&format!("/opds/books/{manifestation}/file"))
+        .add_header(AUTHORIZATION, basic)
+        .await;
+    assert_eq!(response.status_code(), status);
+    if status == StatusCode::OK {
+        assert_eq!(response.as_bytes().as_ref(), expected);
+        assert_eq!(
+            response.headers()[axum::http::header::CONTENT_LENGTH],
+            expected.len().to_string()
+        );
+    } else {
+        assert!(!response.text().contains("outside bytes"));
+        assert!(!response.text().contains(path.to_str().unwrap()));
+        if status == StatusCode::INTERNAL_SERVER_ERROR {
+            assert_eq!(
+                response.json::<serde_json::Value>()["detail"],
+                "An internal error occurred."
+            );
+        }
+    }
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn capability_download_regular_bytes_and_length(pool: PgPool) {
+    assert_capability_download(pool, DownloadTarget::Regular, StatusCode::OK).await;
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn capability_download_relative_link_inside(pool: PgPool) {
+    assert_capability_download(pool, DownloadTarget::RelativeLink, StatusCode::OK).await;
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn capability_download_absolute_link_inside(pool: PgPool) {
+    assert_capability_download(pool, DownloadTarget::AbsoluteLink, StatusCode::OK).await;
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn capability_download_outside_link_forbidden(pool: PgPool) {
+    assert_capability_download(pool, DownloadTarget::OutsideLink, StatusCode::FORBIDDEN).await;
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn capability_download_missing_target_not_found(pool: PgPool) {
+    assert_capability_download(pool, DownloadTarget::Missing, StatusCode::NOT_FOUND).await;
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn capability_download_io_error_is_generic(pool: PgPool) {
+    assert_capability_download(
+        pool,
+        DownloadTarget::LinkLoop,
+        StatusCode::INTERNAL_SERVER_ERROR,
+    )
+    .await;
+}
+
+#[tokio::test]
+async fn capability_download_permission_denied_is_generic() {
+    use crate::services::files::LibraryFileError;
+    use axum::response::IntoResponse;
+
+    let error = LibraryFileError::Io(std::io::Error::new(
+        std::io::ErrorKind::PermissionDenied,
+        "private filesystem detail",
+    ));
+    let response = super::download::download_error(error).into_response();
+    assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
+    let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let problem: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+    assert_eq!(problem["detail"], "An internal error occurred.");
+    assert!(!String::from_utf8_lossy(&bytes).contains("private filesystem detail"));
+}
+
+#[tokio::test]
+async fn capability_download_opened_handle_survives_path_replacement() {
+    let library = tempfile::tempdir().unwrap();
+    let path = library.path().join("book.epub");
+    std::fs::write(&path, b"original bytes").unwrap();
+    let files = crate::services::files::LibraryFiles::new(library.path());
+    let opened = files.open_download(&path).await.unwrap();
+    let replacement = library.path().join("replacement.epub");
+    std::fs::write(&replacement, b"replacement with a different length").unwrap();
+    std::fs::rename(replacement, &path).unwrap();
+    let response = super::download::stream_download(opened, "Book", Uuid::new_v4()).unwrap();
+    assert_eq!(response.headers()[axum::http::header::CONTENT_LENGTH], "14");
+    let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    assert_eq!(bytes, b"original bytes".as_slice());
+}
+
 // ── Test 32: cover cache populates and serves ───────────────────────────
 
 #[sqlx::test(migrations = "./migrations")]

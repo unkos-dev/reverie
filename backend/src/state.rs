@@ -21,6 +21,7 @@ use crate::auth::oidc::OidcRuntime;
 use crate::auth::rate_limit::LoginLimiter;
 use crate::config::Config;
 use crate::models::settings::Settings;
+use crate::services::files::LibraryFiles;
 
 /// Cloneable handle to every dependency a request handler or background
 /// task needs. Constructed once at startup; threaded through Axum via
@@ -39,6 +40,8 @@ pub struct AppState {
     /// CSP `HeaderValue`s on `config.security` (built in `run` before this
     /// state is constructed).
     pub config: Config,
+    /// Library filesystem authority, acquired lazily after an authorised lookup.
+    pub library_files: LibraryFiles,
     /// Interactive OIDC runtime: the pre-discovered client (issuer metadata +
     /// JWKS) paired with the bounded transport that discovered it, or `None`
     /// when OIDC is not configured (local-only instance). Discovery happens
