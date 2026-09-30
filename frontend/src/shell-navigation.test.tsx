@@ -300,10 +300,12 @@ describe("filter rail — param-write to component-refetch seam", () => {
     expect(await screen.findByRole("link", { name: /Guards! Guards!/ })).toBeInTheDocument();
 
     // The rail lives in a right-side drawer now: open it from the toolbar,
-    // then select the Discworld checkbox inside it.
+    // expand the collapsed Series section, then select the Discworld
+    // checkbox inside it.
     const filtersButton = screen.getByRole("button", { name: /^Filters/ });
     expect(filtersButton).toHaveAttribute("aria-controls", "library-filter-drawer");
     await user.click(filtersButton);
+    await user.click(await screen.findByRole("button", { name: "Series", expanded: false }));
     await user.click(await screen.findByRole("checkbox", { name: "Discworld" }));
     await waitFor(
       () => {
