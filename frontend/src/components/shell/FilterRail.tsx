@@ -314,7 +314,7 @@ function RailSection({
           onClick={() => {
             setOpen((current) => !current);
           }}
-          className={`focus-visible:ring-accent flex flex-1 cursor-pointer select-none items-center gap-2 rounded-sm text-left font-mono text-xs uppercase tracking-[0.14em] focus-visible:outline-none focus-visible:ring-2 ${
+          className={`flex flex-1 cursor-pointer select-none items-center gap-2 text-left font-mono text-xs uppercase tracking-[0.14em] ${
             active ? "text-accent" : "text-fg-muted"
           }`}
         >
