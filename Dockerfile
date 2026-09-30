@@ -69,7 +69,7 @@ RUN cargo auditable build --release --locked
 # because `pnpm runtime set node -g` with no version installs the latest
 # release and silently ignores the declaration. `pnpm pkg get` needs no Node of
 # its own, so it works before any runtime exists.
-FROM ghcr.io/pnpm/pnpm:11@sha256:bd86021547da55efa37df44cef23c8b0c14ea198e8bb173a5c373a46e0e3c006 AS js-toolchain
+FROM ghcr.io/pnpm/pnpm:11@sha256:b646ee1ec9f720a0659047861f4390ca30523492b5c3bf2ea6c5a8162401aeb2 AS js-toolchain
 WORKDIR /build
 # pnpm resolves the workspace graph from the root manifests plus every project
 # manifest, and reads its own version from packageManager, so no line below can
