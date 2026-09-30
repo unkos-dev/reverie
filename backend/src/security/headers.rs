@@ -349,6 +349,7 @@ mod tests {
         let state = crate::state::AppState {
             pool: sqlx::PgPool::connect_lazy("postgres://invalid").unwrap(),
             ingestion_pool: sqlx::PgPool::connect_lazy("postgres://invalid").unwrap(),
+            library_files: crate::services::files::LibraryFiles::new(config.library_path.clone()),
             config,
             oidc: Some(std::sync::Arc::new(test_support::test_oidc_runtime())),
             jwt_validator: None,

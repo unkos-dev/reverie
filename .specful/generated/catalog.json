@@ -363,6 +363,13 @@
       "title": "Package ingress: global controls with named exceptions, merged on required checks"
     },
     {
+      "id": "REV-ADR-0051",
+      "kind": "adr",
+      "path": "docs/adr/0051-capability-based-file-i-o-and-validated-publication.md",
+      "status": "proposed",
+      "title": "Capability-based file I/O and validated publication"
+    },
+    {
       "governed-by": [
         "REV-ADR-0041",
         "REV-ADR-0047"
@@ -696,7 +703,8 @@
     },
     {
       "governed-by": [
-        "REV-ADR-0021"
+        "REV-ADR-0021",
+        "REV-ADR-0051"
       ],
       "id": "REV-DESIGN-0024",
       "kind": "design",

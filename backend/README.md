@@ -129,6 +129,23 @@ policies. The `vite-plugins/csp-hash.ts` script hashes the inline `fouc.js` scri
 - **Timeouts.** Configure a timeout for every request, connection pool acquire, database statement, and outbound HTTP
   call.
 
+## Managed library files
+
+Reverie owns writes and reorganisation inside `REVERIE_LIBRARY_PATH`. Coordinate external tools with the application, or
+pause it before they change managed files. Relocating the root, replacing its directory or changing its mount requires a
+coordinated restart: an opened capability identifies the original directory object and does not follow a replacement
+path into another library.
+
+OPDS acquires the library capability lazily after an authorised database lookup. Successful acquisition is shared for
+the process lifetime; failed acquisition is retried on a later access. An unavailable root introduces no new startup
+requirement, and an empty root never falls back to the current directory.
+
+Stored absolute file paths remain supported, including relative and absolute symlink targets resolving inside the
+library. Path resolution classifies the target; the actual open uses a relative target through the pinned directory. The
+opened file supplies both Content-Length and streamed bytes. Established escapes return 403, missing files return 404,
+and other failures, including ambiguous I/O denial, return generic 500 responses. Ingestion and writeback retain their
+existing file access and publication mechanisms.
+
 ## Project Structure
 
 ```text

@@ -367,6 +367,7 @@ pub async fn run() -> anyhow::Result<()> {
     let state = AppState {
         pool,
         ingestion_pool,
+        library_files: crate::services::files::LibraryFiles::new(config.library_path.clone()),
         config: config.clone(),
         oidc,
         jwt_validator,

@@ -5,6 +5,7 @@ id: "REV-DESIGN-0024"
 title: "Application runtime: startup, workers, and shutdown"
 governed-by:
   - "REV-ADR-0021"
+  - "REV-ADR-0051"
 ---
 
 # Application runtime: startup, workers, and shutdown
@@ -78,6 +79,9 @@ directly rather than assembling its own `AppState` and calling `build_router`.
 - `backend/src/state.rs::AppState` is the `Clone` handle `run` builds once and threads into the router, the request
   handlers and (via per-task clones of its constituent fields) the background workers. Its fields are documented in Data
   and state below.
+- `backend/src/services/files.rs::LibraryFiles` retains the configured library root and shares a successfully opened
+  `cap_std::fs::Dir` across AppState clones. Its lazy acquisition is independent of startup and occurs only after an
+  authorised download lookup.
 - `backend/src/routes/health.rs` supplies `GET /health` (liveness: always `200 ok`) and `GET /health/ready` (readiness:
   pings the application pool with `SELECT 1`, returning `200 ok` or a `503` Problem Details body). Both are outside
   `/api/v1` and carry an explicit empty `security(())` OpenAPI annotation, opting out of the document-level
@@ -96,9 +100,10 @@ directly rather than assembling its own `AppState` and calling `build_router`.
 
 ### State-writer census
 
-The only piece of shared, mutable runtime-coordination state this subject owns is the shutdown `CancellationToken`
-created in `run`. Every other field `run` builds (`AppState`, the two pool handles, the OIDC and JWT clients) is written
-once at construction and never mutated again through this subject's own code.
+This subject owns the shutdown `CancellationToken` created in `run` and the lazy library root held by `LibraryFiles`.
+The library root has one successful writer: `LibraryFiles::root`, through `tokio::sync::OnceCell::get_or_try_init`.
+Concurrent callers share that initialisation; a failed attempt leaves the cell empty for retry, and success is immutable
+for the lifetime of all AppState clones. Other dependencies are written once at construction.
 
 The token is a local binding in `run`, cloned once per worker and once more into `shutdown_signal`. Two call sites write
 its cancelled flag: `shutdown_signal` (on `ctrl_c()` or SIGTERM) and `run` itself, unconditionally, immediately after
@@ -129,12 +134,12 @@ no-op. No worker, and no other part of this subject, calls `.cancel()`; every wo
 
 - **`AppState`** (`backend/src/state.rs`) is built exactly once in `run`, after every fallible setup step has succeeded,
   and is `Clone` for cheap distribution to handlers and workers: `pool` and `ingestion_pool` are `Arc`-backed `PgPool`s;
-  `config` is owned, cloned data; `oidc` and `jwt_validator` are `Option<Arc<_>>`s, `None` on an instance that has not
-  configured the corresponding identity mode; `login_limiter` is an `Arc<LoginLimiter>`; `last_settings_reload` is an
-  `Arc<RwLock<..>>` handle written only by the settings worker, not by this subject; `settings` is likewise an
-  `Arc<RwLock<..>>` handle, but it has a second writer outside this subject — the `PUT /api/v1/settings` route handler
-  also writes it directly, as an immediate local-cache update guarded by `apply_if_newer`'s revision check — so neither
-  writer belongs to this subject, but there is more than one.
+  `config` is owned, cloned data; `library_files` is a cheap shared `LibraryFiles` handle; `oidc` and `jwt_validator`
+  are `Option<Arc<_>>`s, `None` on an instance that has not configured the corresponding identity mode; `login_limiter`
+  is an `Arc<LoginLimiter>`; `last_settings_reload` is an `Arc<RwLock<..>>` handle written only by the settings worker,
+  not by this subject; `settings` is likewise an `Arc<RwLock<..>>` handle, but it has a second writer outside this
+  subject — the `PUT /api/v1/settings` route handler also writes it directly, as an immediate local-cache update guarded
+  by `apply_if_newer`'s revision check — so neither writer belongs to this subject, but there is more than one.
 - **The writeback pool** (`backend/src/db.rs::init_writeback_pool`) is built after `AppState` and is deliberately not
   one of its fields: it is handed directly to the writeback worker's `tokio::spawn` closure and nowhere else. No request
   handler receives it, because no request handler receives anything not reachable through `AppState`.
@@ -176,7 +181,8 @@ no-op. No worker, and no other part of this subject, calls `.cancel()`; every wo
    policy and request paths.
 8. `db::init_pool` opens the ingestion pool; `services::settings::load` reads the initial settings row; the login rate
    limiter is built from `config.login_rate_per_min`.
-9. `AppState` is assembled and `build_router` is called on a clone of it.
+9. `AppState` is assembled with `LibraryFiles` retaining `config.library_path` without filesystem access, and
+   `build_router` is called on a clone of it.
 10. `db::init_writeback_pool` opens the writeback pool, and the TCP listener is bound. One more fallible call follows
     immediately: `listener.local_addr()` is read back to log the bound address. Nothing has been spawned yet at this
     point, so an early return from any of these steps cannot leak a running task.
@@ -184,6 +190,12 @@ no-op. No worker, and no other part of this subject, calls `.cancel()`; every wo
     ingestion watcher, the enrichment queue, the session sweep, then the writeback worker. Each receives its own clone
     of the token and (where relevant) its own clone of the pools and configuration it needs.
 12. `axum::serve` begins accepting connections, wrapped in `with_graceful_shutdown(shutdown_signal(...))`.
+
+**An authorised OPDS download:** the handler first accepts its database/RLS lookup, then calls
+`LibraryFiles::open_download`. Root acquisition, path classification, contained opening and handle metadata run in
+`spawn_blocking`. A successful root is cached. Classification supports relative and absolute links resolving inside the
+library; the resulting relative target is opened through the pinned directory. `tokio::fs::File::from_std` supplies
+ReaderStream with that same file, and its metadata supplies Content-Length.
 
 **A graceful shutdown**, triggered by SIGTERM or Ctrl+C while serving:
 
@@ -230,6 +242,10 @@ is never reached.
   them can leave a worker running with nothing left to drain it. `axum::serve` also returns its error to `main.rs`, but
   it runs after the workers are spawned; that path is the unclean shutdown in Runtime behaviour, where the workers are
   drained before `run` returns.
+- **Library root acquisition or download access failing.** An unavailable root adds no startup requirement. Failed
+  acquisition leaves the cell uninitialised for a later access. Empty roots are refused rather than opening the current
+  directory. Established escapes map to 403, missing files to 404, and other I/O or blocking-task failures to generic
+  500 responses. PermissionDenied from the contained open is ambiguous and maps to 500 rather than an inferred escape.
 - **CLI dispatch of an unrecognised or malformed subcommand.** A single unknown token, or an unexpected trailing
   argument after a recognised one, is rejected with a message naming the bad token or the expected usage, rather than
   falling through to `Serve`; both directions are pinned by `parse_command_maps_args_rejects_unknown_and_trailing`.
@@ -253,6 +269,11 @@ is never reached.
   logged and the worker is left for the Tokio runtime to tear down when the process itself exits.
 
 ## Security and operations
+
+Reverie owns managed-library writes and reorganisation. External tools coordinate or pause the application before
+changing managed files. An opened root remains tied to its directory object; replacing or relocating the configured root
+requires a coordinated restart. Downloads use the capability after authorisation, and never reopen an ambient path for
+streaming. Existing ingestion and writeback workers retain their own filesystem interfaces.
 
 When `auto_migrate` is unset or `false`, `run` never reads the migration DSN. Configuration loading forces
 `config.migration_database_url` to `None` whenever `auto_migrate` is `false` (covered by that subject, not restated

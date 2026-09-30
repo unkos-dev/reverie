@@ -176,6 +176,7 @@ pub fn test_state() -> AppState {
     AppState {
         pool: sqlx::PgPool::connect_lazy("postgres://invalid").unwrap(),
         ingestion_pool: sqlx::PgPool::connect_lazy("postgres://invalid").unwrap(),
+        library_files: crate::services::files::LibraryFiles::new(test_config().library_path),
         config: test_config(),
         oidc: Some(std::sync::Arc::new(test_oidc_runtime())),
         jwt_validator: None,
@@ -505,6 +506,9 @@ pub mod db {
         let state = AppState {
             pool: app_pool.clone(),
             ingestion_pool: ingestion_pool.clone(),
+            library_files: crate::services::files::LibraryFiles::new(
+                super::test_config().library_path,
+            ),
             config: super::test_config(),
             oidc: Some(std::sync::Arc::new(super::test_oidc_runtime())),
             jwt_validator: None,
@@ -548,6 +552,7 @@ pub mod db {
         let state = AppState {
             pool: app_pool.clone(),
             ingestion_pool: ingestion_pool.clone(),
+            library_files: crate::services::files::LibraryFiles::new(config.library_path.clone()),
             config,
             oidc: Some(std::sync::Arc::new(super::test_oidc_runtime())),
             jwt_validator: Some(std::sync::Arc::new(validator)),
@@ -572,6 +577,7 @@ pub mod db {
         let state = AppState {
             pool: app_pool.clone(),
             ingestion_pool: ingestion_pool.clone(),
+            library_files: crate::services::files::LibraryFiles::new(config.library_path.clone()),
             config,
             oidc: Some(std::sync::Arc::new(super::test_oidc_runtime())),
             jwt_validator: None,
@@ -601,6 +607,7 @@ pub mod db {
         let state = AppState {
             pool: app_pool.clone(),
             ingestion_pool: ingestion_pool.clone(),
+            library_files: crate::services::files::LibraryFiles::new(config.library_path.clone()),
             config,
             oidc: Some(std::sync::Arc::new(super::test_oidc_runtime())),
             jwt_validator: None,
@@ -619,8 +626,8 @@ pub mod db {
     /// `opds.enabled = false` to match ordinary route tests.
     ///
     /// `library_path` is the absolute path to a real directory (usually a
-    /// `tempfile::TempDir`) — the download handler's canonicalisation guard
-    /// resolves `file_path` against this root.
+    /// `tempfile::TempDir`) — the download handler opens
+    /// `file_path` through this root's library capability.
     pub fn server_with_opds_enabled(
         app_pool: &PgPool,
         ingestion_pool: &PgPool,
@@ -640,6 +647,7 @@ pub mod db {
         let state = AppState {
             pool: app_pool.clone(),
             ingestion_pool: ingestion_pool.clone(),
+            library_files: crate::services::files::LibraryFiles::new(config.library_path.clone()),
             config,
             oidc: Some(std::sync::Arc::new(super::test_oidc_runtime())),
             jwt_validator: None,
@@ -666,6 +674,7 @@ pub mod db {
         let state = AppState {
             pool: app_pool.clone(),
             ingestion_pool: ingestion_pool.clone(),
+            library_files: crate::services::files::LibraryFiles::new(config.library_path.clone()),
             config,
             oidc: Some(std::sync::Arc::new(super::test_oidc_runtime())),
             jwt_validator: None,
@@ -699,6 +708,7 @@ pub mod db {
         let state = AppState {
             pool: app_pool.clone(),
             ingestion_pool: ingestion_pool.clone(),
+            library_files: crate::services::files::LibraryFiles::new(config.library_path.clone()),
             config,
             oidc: Some(std::sync::Arc::new(super::test_oidc_runtime())),
             jwt_validator: None,

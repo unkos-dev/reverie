@@ -5936,7 +5936,7 @@
           "opds"
         ],
         "summary": "Download an EPUB",
-        "description": "Streams the EPUB file for a manifestation, with a `Content-Disposition: attachment` header carrying a title-derived filename. Requires HTTP Basic authentication. Returns 403 if the file's on-disk path escapes the configured library root.",
+        "description": "Streams one opened EPUB file for a manifestation, with Content-Length from that handle and a `Content-Disposition: attachment` header carrying a title-derived filename. Requires HTTP Basic authentication. Relative and absolute links resolving inside the library are supported. Established escapes return 403, missing files return 404, and other filesystem failures return a generic 500.",
         "operationId": "download_epub",
         "parameters": [
           {
@@ -5979,6 +5979,16 @@
           },
           "404": {
             "description": "Manifestation missing, RLS-hidden, or file absent on disk",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error; filesystem and database details are hidden",
             "content": {
               "application/problem+json": {
                 "schema": {
