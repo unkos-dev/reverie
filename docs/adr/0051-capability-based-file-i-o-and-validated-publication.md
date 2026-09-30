@@ -17,13 +17,13 @@ Managed-library reads and writes select filesystem objects independently of the 
 check followed by another open leaves a lookup gap: replacing the directory entry can select a different object.
 Rewriting a live EPUB before validating its result also exposes readers to a candidate that may need restoration.
 
-The decision covers authority over managed files and how complete replacements reach their destination. Database
-ownership, authentication and archive resource limits retain their existing contracts.
+The decision covers persistent library ownership, authority over managed files and how complete replacements reach their
+destination. Authentication, row-level security and archive resource limits retain their existing contracts.
 
 ## Decision drivers
 
 - Download metadata and bytes describe one opened file, even across directory-entry replacement.
-- Existing absolute database paths and links resolving inside the library remain usable.
+- Recorded locations identify their owning library; links resolving inside that library remain usable.
 - Reverie owns managed-library writes and reorganisation; external tools coordinate their changes with it.
 - EPUB candidates can be rejected while the original bytes remain untouched.
 - Maintained filesystem primitives reduce the replacement and recovery code Reverie owns.
@@ -40,15 +40,25 @@ ownership, authentication and archive resource limits retain their existing cont
 Chosen option: **opened directory capabilities with validated candidate publication through maintained crates**, because
 it assigns filesystem authority to a workflow and separates building a replacement from exposing it to readers.
 
-Use a concrete `LibraryFiles` boundary with cap-std, preserving stored absolute paths through a compatibility adapter.
-The adapter resolves paths for classification and derives a relative target; the opened directory grants authority for
-the actual open. Root acquisition is lazy and caches success only, so an unavailable library introduces no new startup
-failure. Opened roots identify directory objects; external relocation or replacement requires a coordinated restart.
+Use persistent library identities and record each actual file location relative to its owning library. Deployment
+configuration supplies absolute roots independently of those identities. Metadata and naming policies propose
+destinations; they do not reinterpret recorded locations. This permits independent libraries without committing to an
+administration interface or organisation syntax.
 
-For writer adoption, select cap-std-ext for durable replacement and cap-tempfile for temporary ownership and cache
-publication. Build, repair, finish, flush and validate an independent candidate before publishing it once; hash the
-finalised candidate rather than write calls that a random-access archive writer may later revise. Durable EPUB
-replacement syncs the file and parent directory; rebuildable caches use atomic publication without forced sync.
+Use a concrete `LibraryFiles` boundary with cap-std. Open provisioned library, ingestion and quarantine roots before
+serving or starting workers, then keep the identity-to-root bindings immutable. Classification supports internal symlink
+targets; only the selected opened directory grants authority for the file operation. Opened roots identify directory
+objects, so external relocation or replacement requires a coordinated restart. Directory existence cannot establish that
+the intended filesystem is mounted; deployment ordering remains an operator responsibility.
+
+The development catalogue is disposable and can be rebuilt and re-ingested. No conversion, legacy location reader or
+temporary writer adapter is part of this decision. Startup never resets the database.
+
+For writer adoption, prefer cap-std-ext for durable replacement and cap-tempfile for temporary ownership and cache
+publication, subject to qualification of permission preservation and errors after publication. Build, repair, finish,
+flush and validate an independent candidate before publishing it once; hash the finalised candidate rather than write
+calls that a random-access archive writer may later revise. Durable EPUB replacement syncs the file and parent
+directory; rebuildable caches use atomic publication without forced sync.
 
 Keep blocking filesystem and archive work off request threads, within the workflow's concurrency bounds. Preserve
 existing queue and database compensation ownership: filesystem publication and a Postgres transaction are separate
@@ -61,7 +71,9 @@ policy rather than a blind rollback. Atomic replacement does not supply no-overw
 - Positive: candidate validation can reject a rewrite without changing the original file.
 - Positive: maintained crates own contained resolution and replacement mechanics.
 - Negative: absolute-link compatibility still needs ambient classification before contained opening.
-- Negative: pinned roots require operator coordination when storage is relocated or replaced.
+- Negative: provisioned roots and mount ordering are startup prerequisites; pinned roots require coordinated shutdown
+  when storage is unmounted, relocated or replaced.
+- Negative: a disposable catalogue rebuild loses development rows; partial pipeline delivery cannot be released.
 - Negative: additional dependencies and separate filesystem/database failure handling remain maintenance costs.
 
 ## Pros and cons of the options

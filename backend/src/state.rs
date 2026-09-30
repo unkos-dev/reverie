@@ -40,7 +40,7 @@ pub struct AppState {
     /// CSP `HeaderValue`s on `config.security` (built in `run` before this
     /// state is constructed).
     pub config: Config,
-    /// Library filesystem authority, acquired lazily after an authorised lookup.
+    /// Immutable library and staging authority acquired before serving.
     pub library_files: LibraryFiles,
     /// Interactive OIDC runtime: the pre-discovered client (issuer metadata +
     /// JWKS) paired with the bounded transport that discovered it, or `None`

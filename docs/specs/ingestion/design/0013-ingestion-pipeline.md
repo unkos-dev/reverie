@@ -17,6 +17,12 @@ duplicate check, atomic SHA-256-verified copy into the library tree, the transac
 and manifestation rows, quarantine of a file the pipeline cannot ingest, post-batch source cleanup, the Postgres
 advisory lock that serialises concurrent scans, and the admin-only HTTP trigger that starts a scan on demand.
 
+Initial ingestion does not yet satisfy the required library-relative location contract: `commit_ingest` omits
+`library_id` and supplies a full path. The
+[pipeline limitation](../../../../debt/2026-09-30-library-location-pipelines-incomplete.md) blocks successful ingestion
+under the current schema. The mechanisms below describe the implemented pipeline; they do not establish end-to-end
+operation.
+
 ## Purpose and boundaries
 
 This subject owns: the filesystem watcher and its settle window (`backend/src/services/ingestion/watcher.rs`); the
@@ -47,11 +53,11 @@ exactly one production caller, this pipeline: `extractor::extract` and `draft::w
 Depends on: the `validate_and_repair` entry point the Design "EPUB validation and repair" owns, called against the
 copied library file for every `epub`-extension candidate; the Works and manifestations data model's
 `work::match_existing`, `work::create_stub`, and `work::upgrade_stub`, and the unique constraints on
-`manifestations.file_path` and `ingestion_file_hash` as a database-level backstop behind this pipeline's own duplicate
-check; the metadata extractor and draft writer that turn a validated `OpfData` (or a heuristic fallback) into the
-`ExtractedMetadata` and `metadata_versions` rows this pipeline's transaction points its canonical columns at; a Postgres
-session-level advisory lock keyed to a fixed integer id; and the operator-set filesystem paths, format-priority order,
-and cleanup mode carried by the `Config` the Design "Configuration loading" assembles.
+`manifestations.(library_id, file_path)` and `ingestion_file_hash` as a database-level backstop behind this pipeline's
+own duplicate check; the metadata extractor and draft writer that turn a validated `OpfData` (or a heuristic fallback)
+into the `ExtractedMetadata` and `metadata_versions` rows this pipeline's transaction points its canonical columns at; a
+Postgres session-level advisory lock keyed to a fixed integer id; and the operator-set filesystem paths, format-priority
+order, and cleanup mode carried by the `Config` the Design "Configuration loading" assembles.
 
 Depended on by: the Design "Covers", whose thumbnail pre-warm this pipeline triggers directly from a successful commit;
 the Design "Enrichment pipeline", which discovers a newly committed manifestation only because this pipeline leaves

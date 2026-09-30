@@ -9,6 +9,7 @@
 - [REV-REQ-0062](requirements/0062-a-failed-migration-batch-leaves-the-schema-as-it-was.md): A failed migration batch leaves the schema as it was
 - [REV-REQ-0063](requirements/0063-a-database-whose-applied-migrations-differ-from-the-embedded-set-refuses-startup.md): A database whose applied migrations differ from the embedded set refuses startup
 - [REV-REQ-0064](requirements/0064-automatic-migration-off-leaves-the-migration-dsn-unset.md): Automatic migration off leaves the migration DSN unset
+- [REV-REQ-0066](requirements/0066-required-storage-directories-are-available-before-serving.md): Required storage directories are available before serving
 
 ## Designs
 

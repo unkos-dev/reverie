@@ -14,6 +14,7 @@
 - [REV-REQ-0057](requirements/0057-a-list-cursor-is-honoured-only-under-the-sort-and-filter-set-that-minted-it.md): A list cursor is honoured only under the sort and filter set that minted it
 - [REV-REQ-0058](requirements/0058-a-sort-request-naming-an-unrecognised-or-repeated-column-is-refused-before-any-query-runs.md): A sort request naming an unrecognised or repeated column is refused before any query runs
 - [REV-REQ-0059](requirements/0059-a-shelf-and-its-items-are-visible-to-and-changeable-by-their-owner-only.md): A shelf and its items are visible to and changeable by their owner only
+- [REV-REQ-0065](requirements/0065-a-managed-file-location-identifies-its-library-and-a-relative-path.md): A managed file location identifies its library and a relative path
 
 ## Designs
 

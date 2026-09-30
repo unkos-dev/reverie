@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "INSERT INTO manifestations (work_id, format, file_path, ingestion_file_hash, current_file_hash, file_size_bytes, ingestion_status, validation_status, has_embedded_cover, cover_path) VALUES ($1, ($2::text)::manifestation_format, $3, $4, $4, $5, 'complete'::ingestion_status, ($6::text)::validation_status, $7, $8) RETURNING id",
+  "query": "INSERT INTO manifestations (library_id, work_id, format, file_path, ingestion_file_hash, current_file_hash, file_size_bytes, ingestion_status, validation_status, has_embedded_cover, cover_path) VALUES ((SELECT id FROM libraries WHERE configuration_key = 'default'), $1, ($2::text)::manifestation_format, $3, $4, $4, $5, 'complete'::ingestion_status, ($6::text)::validation_status, $7, $8) RETURNING id",
   "describe": {
     "columns": [
       {
@@ -31,5 +31,5 @@
       false
     ]
   },
-  "hash": "6130d7b974d7ad2e5e279ad4f5b78c78936d2015af583c87cce2c2807986d23c"
+  "hash": "963b01b10dccf0ec045d307f5bd9fc20c71d436591150ecb6b99079bc2c81b42"
 }

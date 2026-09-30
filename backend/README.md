@@ -136,15 +136,29 @@ pause it before they change managed files. Relocating the root, replacing its di
 coordinated restart: an opened capability identifies the original directory object and does not follow a replacement
 path into another library.
 
-OPDS acquires the library capability lazily after an authorised database lookup. Successful acquisition is shared for
-the process lifetime; failed acquisition is retried on a later access. An unavailable root introduces no new startup
-requirement, and an empty root never falls back to the current directory.
+`REVERIE_LIBRARY_PATH`, `REVERIE_INGESTION_PATH` and `REVERIE_QUARANTINE_PATH` must be absolute paths to provisioned
+directories. Mount the intended volumes before starting Reverie. The server opens all three roots before admin
+bootstrap, workers or requests; empty, relative, missing and non-directory roots fail startup. It does not create these
+directories or retry acquisition during requests. The `reverie migrate` command does not require storage roots. Stop
+Reverie before removing a mount, since its open directory handles can keep a mount busy. Directory existence alone does
+not establish that the intended volume is mounted.
 
-Stored absolute file paths remain supported, including relative and absolute symlink targets resolving inside the
-library. Path resolution classifies the target; the actual open uses a relative target through the pinned directory. The
-opened file supplies both Content-Length and streamed bytes. Established escapes return 403, missing files return 404,
-and other failures, including ambiguous I/O denial, return generic 500 responses. Ingestion and writeback retain their
-existing file access and publication mechanisms.
+Each manifestation records a library identity and a canonical path relative to that library. Startup binds the seeded
+`default` identity to `REVERIE_LIBRARY_PATH`; downloads select that immutable binding, and unknown identities never fall
+back. Changing metadata or a future organisation policy does not change the recorded file location. Relative and
+absolute symlink targets resolving inside the owning library remain supported. Path resolution classifies the target;
+the actual open uses a relative target through the pinned directory. The opened file supplies both Content-Length and
+streamed bytes. Established escapes return 403, missing files return 404, and other failures, including unknown library
+identities and ambiguous I/O denial, return generic 500 responses.
+
+This foundation is a draft checkpoint. Initial ingestion does not yet supply the required library identity, while
+writeback and cover operations still interpret stored paths through their previous filesystem interfaces. These
+[pipeline limitations](../debt/2026-09-30-library-location-pipelines-incomplete.md) prevent end-to-end use and release
+readiness. Their tests remain active.
+
+Development catalogues are disposable. Resolve the owned development database before using `just db-reset`, then run
+`just db-migrate`. Re-ingest from source copies after the producer pipelines support the location contract. No automatic
+reset, preserving upgrade or legacy-path fallback is provided.
 
 ## Project Structure
 

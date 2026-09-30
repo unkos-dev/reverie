@@ -6,8 +6,6 @@
 //! capability; the opened handle supplies both metadata and streamed bytes.
 //! Relative and absolute links resolving inside the library remain supported.
 
-use std::path::Path;
-
 use axum::body::Body;
 use axum::extract::State;
 use axum::http::{StatusCode, header};
@@ -23,7 +21,8 @@ use crate::auth::basic_only::BasicOnly;
 use crate::db;
 use crate::error::AppError;
 use crate::extract::ApiPath;
-use crate::services::files::{LibraryFileError, OpenedLibraryFile};
+use crate::models::storage_library::LibraryId;
+use crate::services::files::{LibraryFileError, LibraryLocation, OpenedLibraryFile};
 use crate::state::AppState;
 
 use super::feed::EPUB_MIME;
@@ -72,7 +71,7 @@ async fn download_epub(
         .map_err(|e| AppError::Internal(e.into()))?;
 
     let row = sqlx::query!(
-        "SELECT m.file_path, w.title FROM manifestations m \
+        "SELECT m.library_id, m.file_path, w.title FROM manifestations m \
          JOIN works w ON w.id = m.work_id \
          WHERE m.id = $1",
         manifestation_id,
@@ -82,13 +81,16 @@ async fn download_epub(
     .map_err(|e| AppError::Internal(e.into()))?;
 
     let row = row.ok_or(AppError::NotFound)?;
-    let file_path = row.file_path;
+    let location = LibraryLocation {
+        library_id: LibraryId::from_uuid(row.library_id),
+        path: row.file_path.parse().map_err(download_error)?,
+    };
     let title = row.title;
     drop(tx);
 
     let opened = state
         .library_files
-        .open_download(Path::new(&file_path))
+        .open_download(&location)
         .await
         .map_err(download_error)?;
     stream_download(opened, &title, manifestation_id)
