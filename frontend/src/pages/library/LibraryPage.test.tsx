@@ -244,13 +244,16 @@ function searchBox(): HTMLElement {
 }
 
 /** A rail section inside the open filter drawer, found by its title
- *  (several sections share inner control labels). */
+ *  (several sections share inner control labels) and expanded if collapsed,
+ *  because collapsed content is hidden from queries. */
 function drawerSection(drawer: HTMLElement, title: string): HTMLElement {
   const section = within(drawer)
     .getAllByText(title)
     .map((node) => node.closest("section"))
     .find((candidate): candidate is HTMLElement => candidate !== null);
   if (section === undefined) throw new Error(`no drawer section titled ${title}`);
+  const disclosure = section.querySelector("button[aria-expanded='false']");
+  if (disclosure !== null) fireEvent.click(disclosure);
   return section;
 }
 
@@ -333,6 +336,7 @@ describe("LibraryPage", () => {
     const user = userEvent.setup();
     await user.click(await screen.findByRole("button", { name: /^Filters/ }));
     const drawer = await screen.findByRole("dialog");
+    drawerSection(drawer, "Series");
     expect(within(drawer).getAllByRole("checkbox", { name: "Discworld" })).toHaveLength(1);
   });
 
@@ -1128,6 +1132,7 @@ describe("LibraryPage", () => {
       await user.type(searchBox(), "d");
       await user.click(screen.getByRole("button", { name: /^Filters/ }));
       const drawer = await screen.findByRole("dialog");
+      drawerSection(drawer, "Status");
       await user.click(within(drawer).getByRole("checkbox", { name: "Reading" }));
       await user.keyboard("{Escape}");
       await waitFor(() => {

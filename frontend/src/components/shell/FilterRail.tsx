@@ -304,6 +304,20 @@ function RailSection({
   const [open, setOpen] = useState(activeCount > 0);
   const contentId = useId();
   const active = activeCount > 0;
+  // `hidden="until-found"` keeps collapsed text reachable by the browser's
+  // find-in-page, which fires `beforematch` on a hit. React renders `hidden`
+  // as a boolean and has no `beforematch` prop, so both are set on the node.
+  const syncCollapsed = (content: HTMLDivElement): (() => void) => {
+    if (open) content.removeAttribute("hidden");
+    else content.setAttribute("hidden", "until-found");
+    const expand = (): void => {
+      setOpen(true);
+    };
+    content.addEventListener("beforematch", expand);
+    return () => {
+      content.removeEventListener("beforematch", expand);
+    };
+  };
   return (
     <section>
       <div className="flex items-center gap-2">
@@ -337,7 +351,7 @@ function RailSection({
         ) : null}
       </div>
       {/* Collapsed content stays mounted: the range editors hold drafts locally. */}
-      <div id={contentId} className={open ? "mt-2" : "hidden"}>
+      <div id={contentId} ref={syncCollapsed} className={open ? "mt-2" : undefined}>
         {children}
       </div>
     </section>

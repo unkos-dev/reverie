@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { NuqsAdapter } from "nuqs/adapters/react-router/v8";
 import { useState, type ReactElement } from "react";
@@ -136,6 +136,15 @@ function disclosureOf(section: HTMLElement): HTMLElement {
   return control;
 }
 
+/** Collapsed content is hidden from queries, so a test that works inside an
+ *  inactive section expands it first, as a reader would. */
+function openSection(title: string): HTMLElement {
+  const section = sectionByTitle(title);
+  const disclosure = disclosureOf(section);
+  if (disclosure.getAttribute("aria-expanded") === "false") fireEvent.click(disclosure);
+  return section;
+}
+
 beforeEach(() => {
   mockFetchByUrl();
   sortChanges = [];
@@ -148,6 +157,7 @@ afterEach(() => {
 describe("FilterRail series facet", () => {
   test("selecting a series sets ?series= with single-select semantics", async () => {
     renderRail();
+    openSection("Series");
     const user = userEvent.setup();
     await user.click(screen.getByRole("checkbox", { name: "Discworld" }));
     await waitFor(() => {
@@ -181,6 +191,7 @@ describe("FilterRail series facet", () => {
 describe("FilterRail shelf facet", () => {
   test("lists shelves from the API and picking one writes ?shelf=", async () => {
     renderRail("/library?cursor=abc");
+    openSection("Shelf");
     const user = userEvent.setup();
     await user.click(await screen.findByRole("checkbox", { name: "Wishlist" }));
     await waitFor(() => {
@@ -203,6 +214,7 @@ describe("FilterRail shelf facet", () => {
 describe("FilterRail status section", () => {
   test("checking a status writes status_any immediately", async () => {
     renderRail();
+    openSection("Status");
     const user = userEvent.setup();
     await user.click(screen.getByRole("checkbox", { name: "Reading" }));
     await waitFor(() => {
@@ -226,7 +238,7 @@ describe("FilterRail typed sections", () => {
   test("title text commits title_contains after the debounce", async () => {
     renderRail();
     const user = userEvent.setup();
-    const title = sectionByTitle("Title");
+    const title = openSection("Title");
     await user.type(within(title).getByRole("textbox", { name: "Filter value" }), "dune");
     await debounceSettled();
     await waitFor(() => {
@@ -240,7 +252,7 @@ describe("FilterRail typed sections", () => {
     // character would land against the previous word.
     renderRail();
     const user = userEvent.setup();
-    const title = sectionByTitle("Title");
+    const title = openSection("Title");
     const input = within(title).getByRole("textbox", { name: "Filter value" });
     await user.type(input, "the sea");
     expect(input).toHaveValue("the sea");
@@ -264,7 +276,7 @@ describe("FilterRail typed sections", () => {
   test("pages min commits pages_gte after the debounce", async () => {
     renderRail();
     const user = userEvent.setup();
-    const pages = sectionByTitle("Pages");
+    const pages = openSection("Pages");
     await user.type(within(pages).getByRole("spinbutton", { name: "Min" }), "300");
     await debounceSettled();
     await waitFor(() => {
@@ -275,9 +287,9 @@ describe("FilterRail typed sections", () => {
   test("a debounced commit in one section preserves another section's pending draft", async () => {
     renderRail();
     const user = userEvent.setup();
-    const pages = sectionByTitle("Pages");
+    const pages = openSection("Pages");
     await user.type(within(pages).getByRole("spinbutton", { name: "Min" }), "300");
-    const title = sectionByTitle("Title");
+    const title = openSection("Title");
     const titleInput = within(title).getByRole("textbox", { name: "Filter value" });
     await user.type(titleInput, "sea");
     await debounceSettled();
@@ -292,7 +304,8 @@ describe("FilterRail typed sections", () => {
   test("an immediate commit elsewhere preserves a pending typed draft", async () => {
     renderRail();
     const user = userEvent.setup();
-    const title = sectionByTitle("Title");
+    const title = openSection("Title");
+    openSection("Series");
     const titleInput = within(title).getByRole("textbox", { name: "Filter value" });
     await user.type(titleInput, "sea");
     await user.click(screen.getByRole("checkbox", { name: "Discworld" }));
@@ -356,10 +369,22 @@ describe("FilterRail section state", () => {
     disclosure.focus();
     await user.keyboard("{Enter}");
     expect(disclosure).toHaveAttribute("aria-expanded", "false");
-    expect(content).toHaveClass("hidden");
+    expect(content).toHaveAttribute("hidden", "until-found");
     await user.keyboard(" ");
     expect(disclosure).toHaveAttribute("aria-expanded", "true");
-    expect(content).not.toHaveClass("hidden");
+    expect(content).not.toHaveAttribute("hidden");
+  });
+
+  test("a find-in-page match inside a collapsed section expands it", () => {
+    renderRail();
+    const title = sectionByTitle("Title");
+    const disclosure = disclosureOf(title);
+    const content = document.getElementById(disclosure.getAttribute("aria-controls") ?? "");
+    if (content === null) throw new Error("disclosure controls no content");
+    expect(content).toHaveAttribute("hidden", "until-found");
+    fireEvent(content, new Event("beforematch"));
+    expect(disclosure).toHaveAttribute("aria-expanded", "true");
+    expect(content).not.toHaveAttribute("hidden");
   });
 
   test("Tab moves from the disclosure to its clear control", async () => {
@@ -424,6 +449,7 @@ describe("FilterRail section state", () => {
 describe("FilterRail sort section", () => {
   test("adding a field appends a level to the effective stack", async () => {
     renderRail();
+    openSection("Sort");
     const user = userEvent.setup();
     await user.click(screen.getByRole("combobox", { name: "Add sort field" }));
     await user.click(screen.getByRole("option", { name: "Title" }));
@@ -502,6 +528,7 @@ describe("FilterRail sort section", () => {
 
   test("the last inherited level's remove control is disabled, never a dead press", () => {
     renderRail();
+    openSection("Sort");
     // Removing it would dispatch a reset to the state already showing, a
     // press that visibly does nothing; direction and reorder stay live.
     expect(screen.getByRole("button", { name: "Remove Added from sort" })).toBeDisabled();
@@ -515,6 +542,7 @@ describe("FilterRail sort section", () => {
 
   test("editing an inherited level materialises it as the reader's override", async () => {
     renderRail();
+    openSection("Sort");
     const user = userEvent.setup();
     await user.click(screen.getByRole("button", { name: /Change Added sort direction/ }));
     await waitFor(() => {
