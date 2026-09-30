@@ -243,15 +243,15 @@ function searchBox(): HTMLElement {
   return screen.getByRole("searchbox", { name: "Search your library" });
 }
 
-/** A rail section's `<details>` inside the open filter drawer, found by its
- *  summary title (several sections share inner control labels). */
+/** A rail section inside the open filter drawer, found by its title
+ *  (several sections share inner control labels). */
 function drawerSection(drawer: HTMLElement, title: string): HTMLElement {
-  const details = within(drawer)
+  const section = within(drawer)
     .getAllByText(title)
-    .map((node) => node.closest("details"))
-    .find((candidate): candidate is HTMLDetailsElement => candidate !== null);
-  if (details === undefined) throw new Error(`no drawer section titled ${title}`);
-  return details;
+    .map((node) => node.closest("section"))
+    .find((candidate): candidate is HTMLElement => candidate !== null);
+  if (section === undefined) throw new Error(`no drawer section titled ${title}`);
+  return section;
 }
 
 describe("LibraryPage", () => {

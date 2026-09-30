@@ -122,12 +122,18 @@ async function debounceSettled(): Promise<void> {
 
 function sectionByTitle(title: string): HTMLElement {
   const rail = screen.getByRole("complementary", { name: "Filters" });
-  const details = within(rail)
+  const section = within(rail)
     .getAllByText(title)
-    .map((node) => node.closest("details"))
-    .find((candidate): candidate is HTMLDetailsElement => candidate !== null);
-  if (details === undefined) throw new Error(`no section titled ${title}`);
-  return details;
+    .map((node) => node.closest("section"))
+    .find((candidate): candidate is HTMLElement => candidate !== null);
+  if (section === undefined) throw new Error(`no section titled ${title}`);
+  return section;
+}
+
+function disclosureOf(section: HTMLElement): HTMLElement {
+  const control = section.querySelector<HTMLElement>("button[aria-expanded]");
+  if (control === null) throw new Error("section has no disclosure control");
+  return control;
 }
 
 beforeEach(() => {
@@ -320,23 +326,97 @@ describe("FilterRail section state", () => {
   test("a section with active conditions mounts open, with a count badge", () => {
     renderRail("/library?pages_gte=300&pages_lte=900");
     const pages = sectionByTitle("Pages");
-    expect(pages).toHaveAttribute("open");
+    expect(disclosureOf(pages)).toHaveAttribute("aria-expanded", "true");
     expect(within(pages).getByText("2")).toBeInTheDocument();
   });
 
   test("an inactive section mounts collapsed and shows no badge or clear control", () => {
     renderRail();
     const title = sectionByTitle("Title");
-    expect(title).not.toHaveAttribute("open");
+    expect(disclosureOf(title)).toHaveAttribute("aria-expanded", "false");
     expect(
       within(title).queryByRole("button", { name: "Clear Title filters" }),
     ).not.toBeInTheDocument();
   });
 
+  test("the clear control is a sibling of the disclosure, never nested in it", () => {
+    renderRail("/library?pages_gte=300");
+    const pages = sectionByTitle("Pages");
+    const clear = within(pages).getByRole("button", { name: "Clear Pages filters" });
+    expect(disclosureOf(pages)).not.toContainElement(clear);
+    expect(pages.querySelector("summary")).toBeNull();
+  });
+
+  test("Enter and Space toggle the disclosure from the keyboard", async () => {
+    renderRail("/library?pages_gte=300");
+    const user = userEvent.setup();
+    const pages = sectionByTitle("Pages");
+    const disclosure = disclosureOf(pages);
+    const content = document.getElementById(disclosure.getAttribute("aria-controls") ?? "");
+    disclosure.focus();
+    await user.keyboard("{Enter}");
+    expect(disclosure).toHaveAttribute("aria-expanded", "false");
+    expect(content).toHaveClass("hidden");
+    await user.keyboard(" ");
+    expect(disclosure).toHaveAttribute("aria-expanded", "true");
+    expect(content).not.toHaveClass("hidden");
+  });
+
+  test("Tab moves from the disclosure to its clear control", async () => {
+    renderRail("/library?pages_gte=300");
+    const user = userEvent.setup();
+    const pages = sectionByTitle("Pages");
+    disclosureOf(pages).focus();
+    await user.tab();
+    expect(within(pages).getByRole("button", { name: "Clear Pages filters" })).toHaveFocus();
+  });
+
+  test("clearing from the keyboard leaves the disclosure state alone", async () => {
+    renderRail("/library?pages_gte=300");
+    const user = userEvent.setup();
+    const pages = sectionByTitle("Pages");
+    within(pages).getByRole("button", { name: "Clear Pages filters" }).focus();
+    await user.keyboard("{Enter}");
+    await waitFor(() => {
+      expect(currentSearch().get("pages_gte")).toBeNull();
+    });
+    expect(disclosureOf(pages)).toHaveAttribute("aria-expanded", "true");
+  });
+
+  test("clearing a collapsed section does not expand it", async () => {
+    renderRail("/library?pages_gte=300");
+    const user = userEvent.setup();
+    const pages = sectionByTitle("Pages");
+    await user.click(disclosureOf(pages));
+    await user.click(within(pages).getByRole("button", { name: "Clear Pages filters" }));
+    await waitFor(() => {
+      expect(currentSearch().get("pages_gte")).toBeNull();
+    });
+    expect(disclosureOf(pages)).toHaveAttribute("aria-expanded", "false");
+  });
+
+  test("a keyboard clear on a collapsed section cancels its pending draft", async () => {
+    renderRail("/library?pages_lte=900");
+    const user = userEvent.setup();
+    const pages = sectionByTitle("Pages");
+    const min = within(pages).getByRole("spinbutton", { name: "Min" });
+    await user.type(min, "300");
+    disclosureOf(pages).focus();
+    await user.keyboard("{Enter}");
+    await user.tab();
+    await user.keyboard(" ");
+    await debounceSettled();
+    const search = currentSearch();
+    expect(search.get("pages_gte")).toBeNull();
+    expect(search.get("pages_lte")).toBeNull();
+    expect(disclosureOf(pages)).toHaveAttribute("aria-expanded", "false");
+    expect(min).toHaveValue(null);
+  });
+
   test("vocabulary sections badge the token count from every mode", () => {
     renderRail("/library?tag_any=fantasy&tag_any=magic&tag_none=grimdark");
     const tags = sectionByTitle("Tags");
-    expect(tags).toHaveAttribute("open");
+    expect(disclosureOf(tags)).toHaveAttribute("aria-expanded", "true");
     expect(within(tags).getByText("3")).toBeInTheDocument();
   });
 });
@@ -414,8 +494,8 @@ describe("FilterRail sort section", () => {
   test("an inherited stack reads as at rest: no badge, no reset control", () => {
     renderRail();
     const sort = sectionByTitle("Sort");
-    // The summary row is bare: no count badge, no reset control.
-    expect(sort.querySelector("summary")?.textContent).toBe("Sort");
+    // The header row is bare: no count badge, no reset control.
+    expect(disclosureOf(sort).parentElement?.textContent).toBe("Sort");
     // The effective stack still renders: the library is never unsorted.
     expect(within(sort).getByText("Added")).toBeInTheDocument();
   });
