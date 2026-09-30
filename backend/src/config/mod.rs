@@ -344,8 +344,9 @@ pub struct Config {
     /// incoming work has multiple candidates.
     #[serde(deserialize_with = "de_format_priority")]
     pub format_priority: Vec<ManifestationFormat>,
-    /// Post-ingestion cleanup behaviour (`REVERIE_CLEANUP_MODE`,
-    /// default `all`). See [`CleanupMode`] for variant semantics.
+    /// Source cleanup (`REVERIE_CLEANUP_MODE`, default `all`):
+    /// completed/skipped selections (`ingested`), also their same-group siblings
+    /// (`all`), or disabled (`none`); independent of failure/quarantine handling.
     pub cleanup_mode: CleanupMode,
     /// Metadata enrichment knobs (concurrency, cache TTLs, etc.).
     #[validate(nested)]
@@ -386,8 +387,7 @@ pub struct Config {
     pub ingestion_dsn_defaulted: bool,
 }
 
-/// Post-ingestion cleanup behaviour selector for the watcher's
-/// "after a successful batch" hook.
+/// Source cleanup eligibility after a scan's per-file outcomes are recorded.
 ///
 /// Wire format (JSON, DB `text` column): lowercase string, one of
 /// `"all"` | `"ingested"` | `"none"`.
@@ -409,11 +409,12 @@ pub struct Config {
 )]
 #[serde(rename_all = "lowercase")]
 pub enum CleanupMode {
-    /// Delete all files in the ingestion directory after a successful batch.
+    /// Delete completed and skipped selected files and their siblings in the
+    /// same directory with the same case-insensitive filename stem.
     All,
-    /// Delete only files that were actually ingested (selected by format priority).
+    /// Delete only format-selected files whose jobs completed or were skipped.
     Ingested,
-    /// Never delete source files; the user handles cleanup manually.
+    /// Disable source cleanup; failure and quarantine handling still applies.
     None,
 }
 

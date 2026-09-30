@@ -10,7 +10,7 @@
       "default": false
     },
     "cleanup_mode": {
-      "description": "Post-ingestion cleanup behaviour (`REVERIE_CLEANUP_MODE`,\ndefault `all`). See [`CleanupMode`] for variant semantics.",
+      "description": "Source cleanup (`REVERIE_CLEANUP_MODE`, default `all`):\ncompleted/skipped selections (`ingested`), also their same-group siblings\n(`all`), or disabled (`none`); independent of failure/quarantine handling.",
       "$ref": "#/$defs/CleanupMode",
       "default": "all"
     },
@@ -247,20 +247,20 @@
   },
   "$defs": {
     "CleanupMode": {
-      "description": "Post-ingestion cleanup behaviour selector for the watcher's\n\"after a successful batch\" hook.\n\nWire format (JSON, DB `text` column): lowercase string, one of\n`\"all\"` | `\"ingested\"` | `\"none\"`.\n\nDeliberately NOT `#[non_exhaustive]`: the ingestion watcher matches it\nexhaustively, so adding a variant is a compile error at the match site\nrather than a silent fall-through, the same property the `Command` enum\nrelies on.",
+      "description": "Source cleanup eligibility after a scan's per-file outcomes are recorded.\n\nWire format (JSON, DB `text` column): lowercase string, one of\n`\"all\"` | `\"ingested\"` | `\"none\"`.\n\nDeliberately NOT `#[non_exhaustive]`: the ingestion watcher matches it\nexhaustively, so adding a variant is a compile error at the match site\nrather than a silent fall-through, the same property the `Command` enum\nrelies on.",
       "oneOf": [
         {
-          "description": "Delete all files in the ingestion directory after a successful batch.",
+          "description": "Delete completed and skipped selected files and their siblings in the\nsame directory with the same case-insensitive filename stem.",
           "type": "string",
           "const": "all"
         },
         {
-          "description": "Delete only files that were actually ingested (selected by format priority).",
+          "description": "Delete only format-selected files whose jobs completed or were skipped.",
           "type": "string",
           "const": "ingested"
         },
         {
-          "description": "Never delete source files; the user handles cleanup manually.",
+          "description": "Disable source cleanup; failure and quarantine handling still applies.",
           "type": "string",
           "const": "none"
         }

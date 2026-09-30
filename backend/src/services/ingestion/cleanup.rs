@@ -1,10 +1,41 @@
 //! Post-ingestion cleanup: remove processed source files and prune empty directories.
 //!
-//! Cleanup runs only after a batch completes with zero failures, so source files
-//! are preserved whenever any ingest step errors. The ingestion root is never
-//! deleted — it is the sentinel that bounds upward directory removal.
+//! Cleanup follows completed and skipped file outcomes under the configured mode.
+//! Failed groups retain their sources and siblings outside existing quarantine handling.
+//! The ingestion root bounds directory removal and is never deleted.
 
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
+
+use crate::config::CleanupMode;
+
+pub(super) fn eligible_paths(
+    mode: CleanupMode,
+    successful: &[PathBuf],
+    all_source_files: &[PathBuf],
+) -> Vec<PathBuf> {
+    match mode {
+        CleanupMode::None => Vec::new(),
+        CleanupMode::Ingested => successful.to_vec(),
+        CleanupMode::All => {
+            let groups: HashSet<_> = successful
+                .iter()
+                .filter_map(|path| {
+                    Some((path.parent(), path.file_stem()?.to_str()?.to_lowercase()))
+                })
+                .collect();
+            all_source_files
+                .iter()
+                .filter(|path| {
+                    path.file_stem()
+                        .and_then(|stem| stem.to_str())
+                        .is_some_and(|stem| groups.contains(&(path.parent(), stem.to_lowercase())))
+                })
+                .cloned()
+                .collect()
+        }
+    }
+}
 
 /// Counts of filesystem objects removed during a cleanup pass.
 #[derive(Debug)]
@@ -15,7 +46,7 @@ pub struct CleanupResult {
     pub removed_dirs: usize,
 }
 
-/// Delete source files after a successful batch, then prune empty parent directories.
+/// Delete eligible source files, then prune empty parent directories.
 ///
 /// `ingestion_root` bounds both file deletion and directory removal: only paths
 /// resolving inside the ingestion tree are touched, and the root itself is never
@@ -135,6 +166,57 @@ pub fn cleanup_batch(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn cleanup_modes_preserve_failed_and_unselected_groups() {
+        for mode in [CleanupMode::None, CleanupMode::Ingested, CleanupMode::All] {
+            let root = tempfile::tempdir().unwrap();
+            let names = [
+                "completed.epub",
+                "COMPLETED.pdf",
+                "skipped.epub",
+                "skipped.pdf",
+                "failed.epub",
+                "failed.pdf",
+                "unselected.txt",
+            ];
+            let paths: Vec<_> = names.iter().map(|name| root.path().join(name)).collect();
+            for path in &paths {
+                std::fs::write(path, b"keep unless eligible").unwrap();
+            }
+            let successful = vec![paths[0].clone(), paths[2].clone()];
+            let eligible = eligible_paths(mode, &successful, &paths);
+            let result = cleanup_batch(&eligible, root.path()).unwrap();
+
+            let expected_count = match mode {
+                CleanupMode::None => 0,
+                CleanupMode::Ingested => 2,
+                CleanupMode::All => 4,
+            };
+            assert_eq!(result.removed_files, expected_count);
+            for index in [0, 2] {
+                assert_eq!(paths[index].exists(), mode == CleanupMode::None);
+            }
+            for index in [1, 3] {
+                assert_eq!(paths[index].exists(), mode != CleanupMode::All);
+            }
+            for path in &paths[4..] {
+                assert_eq!(std::fs::read(path).unwrap(), b"keep unless eligible");
+            }
+            assert!(root.path().exists());
+        }
+    }
+
+    #[test]
+    fn cleanup_all_with_no_successful_group_preserves_every_file() {
+        let root = tempfile::tempdir().unwrap();
+        let source = root.path().join("failed.epub");
+        std::fs::write(&source, b"keep failed source").unwrap();
+        let eligible = eligible_paths(CleanupMode::All, &[], std::slice::from_ref(&source));
+        let result = cleanup_batch(&eligible, root.path()).unwrap();
+        assert_eq!(result.removed_files, 0);
+        assert_eq!(std::fs::read(source).unwrap(), b"keep failed source");
+    }
 
     #[test]
     fn cleanup_removes_files_and_empty_dirs() {

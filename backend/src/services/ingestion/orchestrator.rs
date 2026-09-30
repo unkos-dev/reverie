@@ -6,7 +6,7 @@ use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 use walkdir::WalkDir;
 
-use crate::config::{CleanupMode, Config};
+use crate::config::Config;
 use crate::models::ingestion_status::IngestionStatus;
 use crate::models::manifestation_format::ManifestationFormat;
 use crate::models::validation_status::ValidationStatus;
@@ -133,10 +133,6 @@ pub async fn scan_once(config: &Config, pool: &PgPool) -> Result<ScanResult, any
     result
 }
 
-#[expect(
-    clippy::too_many_lines,
-    reason = "scan_once_inner orchestrates the full ingestion pipeline: walk → dedup → copy → DB; the steps have data dependencies that make splitting into helpers awkward without additional Arc-sharing"
-)]
 async fn scan_once_inner(config: &Config, pool: &PgPool) -> Result<ScanResult, anyhow::Error> {
     let ingestion_path = PathBuf::from(&config.ingestion_path);
     let library_path = PathBuf::from(&config.library_path);
@@ -194,6 +190,7 @@ async fn scan_once_inner(config: &Config, pool: &PgPool) -> Result<ScanResult, a
     let mut processed = 0usize;
     let mut failed = 0usize;
     let mut skipped = 0usize;
+    let mut successful = Vec::new();
 
     for source in &selected {
         let source_str = source.display().to_string();
@@ -204,10 +201,12 @@ async fn scan_once_inner(config: &Config, pool: &PgPool) -> Result<ScanResult, a
             ProcessResult::Complete => {
                 ingestion_job::mark_complete(pool, job.id).await?;
                 processed += 1;
+                successful.push(source.clone());
             }
             ProcessResult::Skipped => {
                 ingestion_job::mark_skipped(pool, job.id).await?;
                 skipped += 1;
+                successful.push(source.clone());
             }
             ProcessResult::Failed(reason) => {
                 ingestion_job::mark_failed(pool, job.id, &reason).await?;
@@ -216,13 +215,9 @@ async fn scan_once_inner(config: &Config, pool: &PgPool) -> Result<ScanResult, a
         }
     }
 
-    // Cleanup only if ALL jobs succeeded or were skipped (none failed)
-    if failed == 0 && config.cleanup_mode != CleanupMode::None {
-        let cleanup_files = match config.cleanup_mode {
-            CleanupMode::All => all_source_files.clone(),
-            CleanupMode::Ingested => selected.clone(),
-            CleanupMode::None => unreachable!(),
-        };
+    let cleanup_files =
+        cleanup::eligible_paths(config.cleanup_mode, &successful, &all_source_files);
+    if !cleanup_files.is_empty() {
         let ingestion_path_clone = config.ingestion_path.clone();
         tokio::task::spawn_blocking(move || {
             let ingestion_root = PathBuf::from(&ingestion_path_clone);
@@ -240,11 +235,6 @@ async fn scan_once_inner(config: &Config, pool: &PgPool) -> Result<ScanResult, a
             }
         })
         .await?;
-    } else if failed > 0 {
-        tracing::warn!(
-            failed,
-            "skipping cleanup because {failed} job(s) failed — source files preserved"
-        );
     }
 
     Ok(ScanResult {
@@ -1703,6 +1693,97 @@ mod tests {
         let r2 = scan_once(&config, &pool).await.unwrap();
         assert_eq!(r2.skipped, 1, "second scan: expected skipped=1");
         assert_eq!(r2.processed, 0);
+    }
+
+    async fn mixed_cleanup_batch(pool: PgPool, mode: CleanupMode, quarantine_available: bool) {
+        let pool = ingestion_pool_for(&pool).await;
+        let (ingestion, library, quarantine, mut config) = scan_env();
+        let skipped = ingestion.path().join("Author - Skipped.pdf");
+        std::fs::write(&skipped, b"already ingested").unwrap();
+        let first = scan_once(&config, &pool).await.unwrap();
+        assert_eq!(first.processed, 1);
+
+        let completed = ingestion.path().join("Author - Completed.pdf");
+        let failed = ingestion.path().join("Author - Failed.epub");
+        let completed_sibling = ingestion.path().join("AUTHOR - COMPLETED.txt");
+        let skipped_sibling = ingestion.path().join("Author - Skipped.txt");
+        let failed_sibling = ingestion.path().join("Author - Failed.pdf");
+        let unrelated = ingestion.path().join("unrelated.txt");
+        let other_dir = ingestion.path().join("other");
+        std::fs::create_dir(&other_dir).unwrap();
+        let other_group = other_dir.join("Author - Completed.txt");
+        for (path, bytes) in [
+            (&completed, b"new book".as_slice()),
+            (&failed, b"not a zip archive".as_slice()),
+            (&completed_sibling, b"completed sibling".as_slice()),
+            (&skipped_sibling, b"skipped sibling".as_slice()),
+            (&failed_sibling, b"failed sibling".as_slice()),
+            (&unrelated, b"unrelated".as_slice()),
+            (&other_group, b"another directory".as_slice()),
+        ] {
+            std::fs::write(path, bytes).unwrap();
+        }
+        config.cleanup_mode = mode;
+        if !quarantine_available {
+            let blocked = quarantine.path().join("blocked");
+            std::fs::write(&blocked, b"not a directory").unwrap();
+            config.quarantine_path = blocked.display().to_string();
+        }
+
+        let result = scan_once(&config, &pool).await.unwrap();
+        assert_eq!(result.processed, 1);
+        assert_eq!(result.skipped, 1);
+        assert_eq!(result.failed, 1);
+        assert_eq!(completed.exists(), mode == CleanupMode::None);
+        assert_eq!(skipped.exists(), mode == CleanupMode::None);
+        assert_eq!(completed_sibling.exists(), mode != CleanupMode::All);
+        assert_eq!(skipped_sibling.exists(), mode != CleanupMode::All);
+        assert!(failed_sibling.exists());
+        assert!(unrelated.exists());
+        assert!(other_group.exists());
+        if quarantine_available {
+            assert!(!failed.exists());
+            assert_eq!(
+                std::fs::read(quarantine.path().join("Author - Failed.epub")).unwrap(),
+                b"not a zip archive"
+            );
+            assert!(
+                quarantine
+                    .path()
+                    .join("Author - Failed.epub.quarantine.json")
+                    .exists()
+            );
+        } else {
+            assert_eq!(std::fs::read(&failed).unwrap(), b"not a zip archive");
+        }
+        assert_eq!(
+            std::fs::read(library.path().join("Author/Completed.pdf")).unwrap(),
+            b"new book"
+        );
+        assert_eq!(
+            std::fs::read(library.path().join("Author/Skipped.pdf")).unwrap(),
+            b"already ingested"
+        );
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn scan_once_mixed_cleanup_none(pool: PgPool) {
+        mixed_cleanup_batch(pool, CleanupMode::None, true).await;
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn scan_once_mixed_cleanup_ingested(pool: PgPool) {
+        mixed_cleanup_batch(pool, CleanupMode::Ingested, true).await;
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn scan_once_mixed_cleanup_all(pool: PgPool) {
+        mixed_cleanup_batch(pool, CleanupMode::All, true).await;
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn scan_once_mixed_cleanup_all_preserves_unquarantined_source(pool: PgPool) {
+        mixed_cleanup_batch(pool, CleanupMode::All, false).await;
     }
 
     // ── Task 30: ingest-invariant DB tests ────────────────────────────────

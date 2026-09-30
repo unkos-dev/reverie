@@ -125,7 +125,7 @@ fn exdev_fallback(temp: NamedTempFile, dest: &Path) -> Result<(), WritebackError
 }
 
 /// Move an existing on-disk file to `dest`.  Same-FS → atomic rename.
-/// Cross-FS (`EXDEV`) → tempfile-in-dest-dir + persist + unlink-original.
+/// Cross-FS (`EXDEV`) → tempfile-in-dest-dir + persist + verify + unlink-original.
 ///
 /// This is the "rename a file already on disk" sibling of `commit`
 /// (which takes a `NamedTempFile`).  Used by the orchestrator's
@@ -138,12 +138,25 @@ fn exdev_fallback(temp: NamedTempFile, dest: &Path) -> Result<(), WritebackError
 /// # Errors
 ///
 /// - `WritebackError::Io` — `std::fs::rename` returned an error that is not
-///   `EXDEV`; or an I/O error occurred during the cross-FS copy or fsync.
+///   `EXDEV`; or the cross-FS copy, fsync, verification read, or source removal failed.
 /// - `WritebackError::Persist("dest has no parent dir")` — `dest` has no
 ///   parent component (bare filename passed as destination).
 /// - Any error returned by `commit` during the cross-FS fallback path.
+/// - `WritebackError::Persist("post-copy hash mismatch")` — the persisted
+///   destination does not match the source bytes; the source remains untouched.
+///
+/// Verification failure preserves the source and logs the unverified destination.
 pub fn move_existing(src: &Path, dest: &Path) -> Result<(), WritebackError> {
-    match std::fs::rename(src, dest) {
+    move_existing_with(src, dest, |src, dest| std::fs::rename(src, dest), commit)
+}
+
+fn move_existing_with(
+    src: &Path,
+    dest: &Path,
+    rename: impl FnOnce(&Path, &Path) -> std::io::Result<()>,
+    persist: impl FnOnce(NamedTempFile, &Path) -> Result<(), WritebackError>,
+) -> Result<(), WritebackError> {
+    match rename(src, dest) {
         Ok(()) => {
             fsync_parent_dir(dest);
             // When `src` and `dest` share a parent the two fsyncs collapse
@@ -168,7 +181,24 @@ pub fn move_existing(src: &Path, dest: &Path) -> Result<(), WritebackError> {
     let temp = NamedTempFile::new_in(parent)?;
     std::fs::write(temp.path(), &bytes)?;
     std::fs::File::open(temp.path())?.sync_all()?;
-    commit(temp, dest)?;
+    persist(temp, dest)?;
+    let verification = std::fs::read(dest)
+        .map_err(WritebackError::Io)
+        .and_then(|dest_bytes| {
+            if Sha256::digest(&dest_bytes) == Sha256::digest(&bytes) {
+                Ok(())
+            } else {
+                Err(WritebackError::Persist("post-copy hash mismatch".into()))
+            }
+        });
+    if let Err(verification_error) = verification {
+        tracing::error!(
+            ?dest,
+            error = %verification_error,
+            "writeback: relocation destination failed verification"
+        );
+        return Err(verification_error);
+    }
     std::fs::remove_file(src)?;
     // The `remove_file` of `src` is a directory-metadata change; flush
     // `src`'s parent so the unlink is durable.  `dest`'s parent was
@@ -263,6 +293,98 @@ mod tests {
         assert!(!src.exists(), "source must be unlinked after move");
         assert!(dest.exists(), "dest must exist after move");
         assert_eq!(std::fs::read(&dest).unwrap(), b"PAYLOAD");
+    }
+
+    #[test]
+    fn move_existing_cross_fs_relocates_verified_bytes() {
+        let dir = tempfile::tempdir().unwrap();
+        let src = dir.path().join("orig.epub");
+        let dest = dir.path().join("new.epub");
+        std::fs::write(&src, b"PAYLOAD").unwrap();
+
+        move_existing_with(
+            &src,
+            &dest,
+            |_, _| Err(std::io::Error::from(std::io::ErrorKind::CrossesDevices)),
+            commit,
+        )
+        .unwrap();
+
+        assert!(!src.exists());
+        assert_eq!(std::fs::read(&dest).unwrap(), b"PAYLOAD");
+        assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 1);
+    }
+
+    #[test]
+    fn move_existing_cross_fs_hash_mismatch_preserves_source_and_destination() {
+        let dir = tempfile::tempdir().unwrap();
+        let src = dir.path().join("orig.epub");
+        let dest = dir.path().join("new.epub");
+        std::fs::write(&src, b"PAYLOAD").unwrap();
+
+        let result = move_existing_with(
+            &src,
+            &dest,
+            |_, _| Err(std::io::Error::from(std::io::ErrorKind::CrossesDevices)),
+            |temp, dest| {
+                commit(temp, dest)?;
+                std::fs::write(dest, b"CORRUPTED")?;
+                Ok(())
+            },
+        );
+
+        assert!(
+            matches!(result, Err(WritebackError::Persist(ref reason)) if reason == "post-copy hash mismatch")
+        );
+        assert_eq!(std::fs::read(&src).unwrap(), b"PAYLOAD");
+        assert_eq!(std::fs::read(&dest).unwrap(), b"CORRUPTED");
+        assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 2);
+
+        let retry_dest =
+            crate::services::ingestion::path_template::resolve_collision(&dest).unwrap();
+        assert_eq!(retry_dest, dir.path().join("new (2).epub"));
+        move_existing_with(
+            &src,
+            &retry_dest,
+            |_, _| Err(std::io::Error::from(std::io::ErrorKind::CrossesDevices)),
+            commit,
+        )
+        .unwrap();
+        assert!(!src.exists());
+        assert_eq!(std::fs::read(&dest).unwrap(), b"CORRUPTED");
+        assert_eq!(std::fs::read(&retry_dest).unwrap(), b"PAYLOAD");
+        assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 2);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn move_existing_cross_fs_verification_read_error_preserves_source() {
+        let dir = tempfile::tempdir().unwrap();
+        let src = dir.path().join("orig.epub");
+        let dest = dir.path().join("new.epub");
+        std::fs::write(&src, b"PAYLOAD").unwrap();
+
+        let result = move_existing_with(
+            &src,
+            &dest,
+            |_, _| Err(std::io::Error::from(std::io::ErrorKind::CrossesDevices)),
+            |temp, dest| {
+                commit(temp, dest)?;
+                std::fs::remove_file(dest)?;
+                std::os::unix::fs::symlink(dest, dest)?;
+                Ok(())
+            },
+        );
+
+        assert!(matches!(result, Err(WritebackError::Io(_))));
+        assert_eq!(std::fs::read(&src).unwrap(), b"PAYLOAD");
+        assert!(
+            std::fs::symlink_metadata(&dest)
+                .unwrap()
+                .file_type()
+                .is_symlink()
+        );
+        assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 2);
     }
 
     /// Exercise the EXDEV branch by invoking it directly.  Real cross-FS

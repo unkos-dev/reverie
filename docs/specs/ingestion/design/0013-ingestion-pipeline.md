@@ -73,7 +73,7 @@ surface; and an administrator, through the scan trigger this subject exposes as 
 | A new `manifestations`/`works` row for one ingested file | `manifestations`, `works` tables | `orchestrator::commit_ingest`, the only production site that inserts a `manifestations` row |
 | `work_authors` and `authors` rows for a newly created work's extracted creators | `work_authors`, `authors` tables | `work::upgrade_stub` (via `find_or_create_author`), called from `orchestrator::commit_ingest` only when a new work stub is created and OPF metadata names at least one creator |
 | Library file at the rendered destination path | Filesystem under `library_path` | Created by `copier::copy_verified`; removed on a subsequent-step failure by four separate sites inside `process_file` |
-| Drop-zone source file and its parent directories | Filesystem under `ingestion_path` | Deleted in bulk by `cleanup::cleanup_batch` after a batch with no failures; moved individually by `quarantine::quarantine_file` on the four failure paths that quarantine |
+| Drop-zone source file and its parent directories | Filesystem under `ingestion_path` | Deleted by `cleanup::cleanup_batch` for eligible sources and siblings; moved by `quarantine::quarantine_file` on per-file failures |
 
 No item above has more than one writer inside this subject. Two of them are shared more broadly. A `manifestations` row
 this pipeline creates is mutated afterwards by the Design "Enrichment pipeline", the Design "Writeback pipeline", and
@@ -104,10 +104,10 @@ Call sites that dispatch to those owners:
 - Library file removal: four distinct sites inside `process_file`, each a best-effort `remove_file` logged at `warn` on
   its own failure rather than propagated: an unsupported extension detected after copy, an EPUB the structural validator
   quarantines, a repaired EPUB whose re-hash fails, and a `commit_ingest` error.
-- Source cleanup and quarantine: `cleanup_batch` runs at most once, after the whole per-file loop, gated on zero
-  failures in that batch; `quarantine_file` runs per file, at up to four sites (preparation failure, copy failure, an
-  EPUB quarantine outcome, and a repaired EPUB whose re-hash fails), moving only that one file immediately rather than
-  waiting for the batch to finish.
+- Source cleanup and quarantine: `cleanup_batch` runs at most once, after the whole per-file loop, for files eligible
+  under the configured mode based on completed and skipped outcomes; `quarantine_file` runs per file, at up to four
+  sites (preparation failure, copy failure, an EPUB quarantine outcome, and a repaired EPUB whose re-hash fails), moving
+  only that one file immediately rather than waiting for the batch to finish.
 
 ### Component relationships
 
@@ -119,8 +119,8 @@ Call sites that dispatch to those owners:
   regardless of the inner call's outcome.
 - `scan_once_inner` walks the ingestion directory with `WalkDir` (symlinks not followed), narrows the result to one file
   per directory-and-stem group through `format_filter::select_by_priority`, drives each selected file through
-  `ingestion_job` and `process_file`, and finishes with the batch-level `cleanup::cleanup_batch` when the batch has no
-  failures.
+  `ingestion_job` and `process_file`, and finishes with `cleanup::cleanup_batch` for eligible sources and siblings under
+  the configured mode.
 - `process_file` is the per-file pipeline. `path_template` (a filename heuristic, template rendering, and collision
   resolution) and `copier` (hashing, then a hash-verified copy) run first; the duplicate check against `manifestations`
   sits between the hash and the copy; `epub::validate_and_repair`, owned by the Design "EPUB validation and repair",
@@ -137,9 +137,10 @@ Call sites that dispatch to those owners:
 - The module's public surface (`backend/src/services/ingestion/mod.rs`): `ScanResult { processed, failed, skipped }`,
   `run_watcher(config: Config, pool: PgPool, cancel: CancellationToken) -> Result<(), anyhow::Error>`, and
   `scan_once(config: &Config, pool: &PgPool) -> Result<ScanResult, anyhow::Error>`. Every other item the child modules
-  export (`copier::{hash_file, copy_verified}`, `quarantine::quarantine_file`, `cleanup::cleanup_batch`, and
-  `format_filter::select_by_priority`) has no caller outside this module in production code; `path_template::render` and
-  `path_template::resolve_collision` are the one exception, reused by the Design "Writeback pipeline".
+  export (`copier::{hash_file, copy_verified}`, `quarantine::quarantine_file`,
+  `cleanup::{eligible_paths, cleanup_batch}`, and `format_filter::select_by_priority`) has no caller outside this module
+  in production code; `path_template::render` and `path_template::resolve_collision` are the one exception, reused by
+  the Design "Writeback pipeline".
 - `run_watcher` is spawned exactly once, at startup by `crate::run` (`backend/src/lib.rs`), the subject of the Design
   "Application runtime: startup, workers, and shutdown", sharing the process-wide shutdown `CancellationToken` and the
   same drain budget as the other background workers (see Failure and recovery).
@@ -243,12 +244,19 @@ file's row:
    embedded cover, a cover thumbnail pre-warm is fired on the cache the Design "Covers" owns, keyed by the manifestation
    id and the copy's verified hash; this pipeline does not wait for it.
 
-**Cleanup, once every selected file in the batch has reached a terminal outcome.** If no file in the batch failed, and
-the operator-configured cleanup mode is not `none`, the drop-zone files are deleted: every file the initial walk found,
-under the `all` mode, or every file the format-priority selection chose, under the `ingested` mode, which still includes
-a file the duplicate check skipped, since the selection list predates that check. Any file failing in a batch leaves
-every source file in the batch untouched, selected or not, so a subsequent scan attempt can re-process the files that
-did not fail alongside the ones that did.
+**Cleanup, once every selected file in the batch has reached a terminal outcome.** The orchestrator records a source as
+eligible only after its job is marked complete or skipped. Under `ingested`, cleanup deletes those selected sources,
+including files the duplicate check skipped without copying. Under `all`, it also deletes siblings omitted by format
+selection from the initial walk that share an eligible source's parent directory and lowercase filename stem. A matching
+stem in another directory is a separate group. Files in failed groups or groups with no selected file remain untouched
+by cleanup, even when another group succeeds; existing failure handling can still move a failed source to quarantine.
+Under `none`, source cleanup is disabled while quarantine handling continues. Empty parent directories are pruned within
+the existing containment bound.
+
+The mixed-outcome scan tests exercise all three modes with completed, duplicate-skipped and quarantined jobs,
+case-insensitive siblings, unrelated files and matching stems in different directories. Cleanup tests also cover failed
+sources left in place and the containment checks for external paths, sibling-prefix directories and parents reached
+through symlinks.
 
 ## Failure and recovery
 
