@@ -85,9 +85,19 @@ first-party session, so identity gating and ownership stay enforced once.
 
 A user may hold local credentials and external-provider identities, all resolving to one first-party session. External
 subjects are namespaced by issuer. Local passwords use Argon2id; random device tokens retain their separate hashing
-path. The chosen model also provides first-administrator bootstrap, host-verified password recovery, optional
-self-registration, synchronizer-token CSRF protection, password-strength and breach checks, and throttled login without
-permanent lockout.
+path. The chosen model also provides synchronizer-token CSRF protection, password-strength and breach checks, and
+throttled login without permanent lockout.
+
+First-run setup creates the first administrator, and its uninitialised check is that no administrator exists. The same
+check reopens setup automatically whenever no administrator remains. An empty `users` table was rejected as the gate
+because non-administrator accounts can exist before initial setup or after every administrator is removed, so an
+empty-table check would fail to reopen setup in exactly the recovery case it is meant to cover.
+
+Password recovery uses a single-use, short-lived PIN written to a server-side file, which proves host access, with a CLI
+command as the fallback when the UI cannot serve.
+
+Administrators create accounts. Self-registration is optional and off by default. Child accounts are
+administrator-created only: neither self-registration nor an OIDC login produces one.
 
 Account linking relies on email uniqueness per instance: an OIDC login auto-links to an existing local account only when
 the asserted email is verified; otherwise an administrator links the account manually. For configuration, OIDC becomes
