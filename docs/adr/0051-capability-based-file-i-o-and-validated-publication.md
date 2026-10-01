@@ -17,6 +17,10 @@ Managed-library reads and writes select filesystem objects independently of the 
 check followed by another open leaves a lookup gap: replacing the directory entry can select a different object.
 Rewriting a live EPUB before validating its result also exposes readers to a candidate that may need restoration.
 
+A library may reside on a NAS separate from the container host. Destination probing cannot reserve a name, and mounted
+storage differs in its support for no-replace rename. The storage decision needs refusal at the relocation commit
+without restricting libraries to local disks.
+
 The decision covers persistent library ownership, authority over managed files and how complete replacements reach their
 destination. Authentication, row-level security and archive resource limits retain their existing contracts.
 
@@ -28,10 +32,12 @@ destination. Authentication, row-level security and archive resource limits reta
 - EPUB candidates can be rejected while the original bytes remain untouched.
 - Maintained filesystem primitives reduce the replacement and recovery code Reverie owns.
 - Durable EPUBs and rebuildable cover caches have different synchronisation needs.
+- NAS library roots need relocation through operations the mounted filesystem supports.
 
 ## Considered options
 
 - Opened directory capabilities with validated candidate publication through maintained crates.
+- Opened capabilities with no-replace rename as the sole relocation primitive.
 - Retain canonical path guards and separate path-based filesystem operations.
 - Retain raw `tempfile` life cycles and maintain publication, synchronisation and recovery in Reverie.
 
@@ -65,6 +71,22 @@ existing queue and database compensation ownership: filesystem publication and a
 operations. A failure after rename can leave published bytes with unconfirmed durability, requiring an explicit error
 policy rather than a blind rollback. Atomic replacement does not supply no-overwrite destination selection.
 
+Choose `rustix` no-replace rename on opened parents and base names for relocation, with cap-std hard links only when
+rename reports EINVAL or ENOSYS. This preserves refusal on occupied names while supporting storage whose rename flags
+are unavailable. The link path syncs the destination parent before source removal and syncs the source parent
+afterwards. Permission, collision and ambiguous network errors retain their failure meaning rather than selecting a
+different commit operation.
+
+For EXDEV, choose cap-tempfile ownership on the actual destination filesystem, with replacing materialisation confined
+to an exclusively owned staging directory and no-overwrite publication to the final name. Preserve bounded copying and
+independent destination verification before removing the original source. These maintained primitives avoid another
+direct `procfs` dependency or a storage-provider abstraction.
+
+Linux container storage needs contained file access, atomic content replacement, useful sync/error semantics and either
+no-replace rename or hard links for relocation. Unsupported operations preserve the source and report failure. This
+operations contract does not promise compatibility with every NFS or SMB server. Mount ordering remains the operator's
+responsibility. A successful sync after a reported failure does not prove that failed writes became durable.
+
 ### Consequences
 
 - Positive: a download's handle supplies both metadata and bytes, and contained opening closes the path lookup gap.
@@ -75,6 +97,9 @@ policy rather than a blind rollback. Atomic replacement does not supply no-overw
   when storage is unmounted, relocated or replaced.
 - Negative: a disposable catalogue rebuild loses development rows; partial pipeline delivery cannot be released.
 - Negative: additional dependencies and separate filesystem/database failure handling remain maintenance costs.
+- Negative: hard-link relocation can leave two names after interruption or removal failure; claim reset alone cannot
+  reconcile the interval between relocation and SQL location bookkeeping.
+- Negative: abrupt exit can leave bare UUID staging directories visible on a NAS share; no scavenging is provided.
 
 ## Pros and cons of the options
 
@@ -94,12 +119,22 @@ policy rather than a blind rollback. Atomic replacement does not supply no-overw
 - Negative: Reverie owns the surrounding sync, publication and rollback mechanics; path-based reopen adds another
   lookup.
 
+### Opened capabilities with no-replace rename as the sole relocation primitive
+
+- Positive: one atomic relocation operation avoids an interrupted two-name state.
+- Negative: storage lacking support for the rename flag cannot relocate files even when it supports contained hard
+  links.
+
 ## More information
 
-OPDS downloads apply the capability boundary. Writer migration is a separate delivery; this record states the selected
-publication direction without claiming those callers already use it.
+OPDS downloads and writeback relocation apply the capability boundary. Initial ingestion and cover-cache publication
+remain incomplete. No representative NAS behaviour or server flush guarantee is established by source inspection or
+injected error-code tests.
 
 - [cap-std capability model](https://github.com/bytecodealliance/cap-std/blob/v4.0.3/README.md).
 - [cap-std-ext replacement implementation](https://github.com/coreos/cap-std-ext/blob/v5.1.2/src/dirext.rs).
 - [cap-tempfile ownership and replacement](https://github.com/bytecodealliance/cap-std/blob/v4.0.3/cap-tempfile/src/tempfile.rs).
 - [NamedTempFile persistence](https://docs.rs/tempfile/3.27.0/tempfile/struct.NamedTempFile.html).
+- [No-replace rename API](https://docs.rs/rustix/1.1.5/rustix/fs/fn.renameat_with.html).
+- [Linux rename semantics](https://man7.org/linux/man-pages/man2/rename.2.html).
+- [Linux hard-link semantics](https://man7.org/linux/man-pages/man2/link.2.html).

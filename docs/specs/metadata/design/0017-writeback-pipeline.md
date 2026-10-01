@@ -10,6 +10,7 @@ satisfies:
 governed-by:
   - "REV-ADR-0018"
   - "REV-ADR-0020"
+  - "REV-ADR-0051"
 ---
 
 # Writeback pipeline
@@ -253,6 +254,39 @@ success, `move_cover_sidecar` promotes the sidecar from `_covers/pending/` to `_
 described in the state-writer census; a failure there is logged and does not affect the job's outcome. As Interfaces and
 dependencies notes, no enqueue call site reaches this shape in a running system: this paragraph describes what the code
 does when a `'cover'`-reason row and a `cover_path` exist, the state this module's own tests construct directly.
+
+### No-overwrite relocation
+
+Numeric suffix probing selects a proposed destination after the accepted-content UPDATE. The final commit enforces
+refusal independently of that probe: an occupied file or dangling link is never replaced. Missing destination
+directories are created through contained operations, with each new entry's owning parent synced before relocation.
+
+`path_rename` passes actual opened parent directories and individual base names to
+`rustix::fs::renameat_with(NOREPLACE)`. Only EINVAL or ENOSYS enables the cap-std hard-link fallback. EEXIST, permission
+errors and ambiguous network errors fail without a replacing fallback. EXDEV from the source move enables bounded
+copying.
+
+The hard-link path creates the destination, syncs its parent, removes the source, then syncs the source parent. Link or
+destination-sync failure retains the source. A failed source removal can leave both names; neither is removed as
+compensation for that failure. Successful removal followed by source-parent sync failure returns a visible relocation
+with uncertain durability, so the orchestrator records the destination and fails the job.
+
+EXDEV copying creates an owned cap-tempfile directory inside the actual opened destination parent, including a parent on
+a nested mount. It copies with a 64 KiB buffer and checks the copied hash. The candidate is synced and materialised at a
+fixed basename by `TempFile::replace` only inside that owned directory. Publication to the final name uses the same
+no-overwrite helper. An independent hash of the published destination must match before the original source is removed.
+Refusal, failed sync, corruption or an unreadable destination preserves the original. Normal completion explicitly
+closes the staging directory; cleanup errors propagate or are logged alongside the primary failure.
+
+After a failure leaves the destination visible and the source location recorded, each retry selects a new numeric
+suffix, so repeated failures can accumulate duplicate names without automatic reconciliation.
+
+Abrupt exit may leave bare UUID staging directories visible on a NAS share; no cleanup sweep runs. Mounted storage needs
+contained access, atomic content replacement, useful sync/error semantics and either no-replace rename or hard links for
+relocation. A successful sync after a reported failure does not prove that failed writes became durable. Filesystem and
+SQL updates remain separate: an interruption between relocation and the location UPDATE is not automatically reconciled.
+Claim reset alone does not close that gap. SQL-failure move-back remains under the same claim and permit, and also
+refuses occupied destinations.
 
 **Two workers claim the same manifestation concurrently** (two jobs queued for one manifestation, or the poll interval
 overlapping a long-running job's completion):
