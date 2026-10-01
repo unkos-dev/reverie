@@ -40,6 +40,8 @@ destination. Authentication, row-level security and archive resource limits reta
 - Opened capabilities with no-replace rename as the sole relocation primitive.
 - Retain canonical path guards and separate path-based filesystem operations.
 - Retain raw `tempfile` life cycles and maintain publication, synchronisation and recovery in Reverie.
+- Manifestation-local forward relocation recovery under the existing job claim.
+- Filesystem move-back compensation after failed location bookkeeping.
 
 ## Decision outcome
 
@@ -67,9 +69,9 @@ calls that a random-access archive writer may later revise. Durable EPUB replace
 directory; rebuildable caches use atomic publication without forced sync.
 
 Keep blocking filesystem and archive work off request threads, within the workflow's concurrency bounds. Preserve
-existing queue and database compensation ownership: filesystem publication and a Postgres transaction are separate
-operations. A failure after rename can leave published bytes with unconfirmed durability, requiring an explicit error
-policy rather than a blind rollback. Atomic replacement does not supply no-overwrite destination selection.
+existing queue and database ownership: filesystem publication and a Postgres transaction are separate operations. A
+failure after rename can leave published bytes with unconfirmed durability, requiring an explicit error policy rather
+than a blind rollback. Atomic replacement does not supply no-overwrite destination selection.
 
 Choose `rustix` no-replace rename on opened parents and base names for relocation, with cap-std hard links only when
 rename reports EINVAL or ENOSYS. This preserves refusal on occupied names while supporting storage whose rename flags
@@ -87,6 +89,25 @@ no-replace rename or hard links for relocation. Unsupported operations preserve 
 operations contract does not promise compatibility with every NFS or SMB server. Mount ordering remains the operator's
 responsibility. A successful sync after a reported failure does not prove that failed writes became durable.
 
+Choose manifestation-local forward relocation recovery because a recorded pair survives interruption without depending
+on the originating job's remaining attempts. Accepted content evidence and exact relocation names share one existing
+UPDATE before movement; final location and intent clearing share one UPDATE afterwards. A visible move with uncertain
+sync records its destination while retaining intent. Move-back cannot restore a single atomic filesystem/database
+outcome and can itself fail or collide, so failure retains evidence for forward reconciliation instead.
+
+Recovery verifies both recorded names under the current manifestation claim before another rewrite. It adopts verified
+destination bytes, removes only a verified source and preserves foreign or externally changed files. Confirmed permanent
+loss or change clears the corresponding intent with terminal job bookkeeping in one transaction owned by queue::finish;
+otherwise clearing after a separate terminal write would release exclusion too early. Unreadable evidence or unfinished
+filesystem/SQL recovery retains intent. Ordinary jobs reload and continue; bounded relocation-only carriers recover
+intents whose original jobs exhausted their attempts without publishing content again.
+
+A startup and five-minute bounded sweep inside the existing enabled worker supplies carriers; five-minute intent retry
+spacing limits scheduling opportunities, not operation duration. This choice claims relocation replay safety only.
+Cover-sidecar replay, temporary-file scavenging and complete writeback replay remain outside it. Successful re-sync
+permits finalisation after a reported sync failure under a weaker guarantee, without proving that failed writes reached
+durable storage or adding a third persisted error state.
+
 ### Consequences
 
 - Positive: a download's handle supplies both metadata and bytes, and contained opening closes the path lookup gap.
@@ -97,8 +118,10 @@ responsibility. A successful sync after a reported failure does not prove that f
   when storage is unmounted, relocated or replaced.
 - Negative: a disposable catalogue rebuild loses development rows; partial pipeline delivery cannot be released.
 - Negative: additional dependencies and separate filesystem/database failure handling remain maintenance costs.
-- Negative: hard-link relocation can leave two names after interruption or removal failure; claim reset alone cannot
-  reconcile the interval between relocation and SQL location bookkeeping.
+- Negative: hard-link relocation can leave two names after interruption or removal failure; recovery requires readable
+  size/hash evidence and successful filesystem and SQL finalisation.
+- Negative: reported sync errors retain a weaker durability guarantee even after successful re-sync; a bounded sweep and
+  queue backlog can delay recovery beyond five minutes.
 - Negative: abrupt exit can leave bare UUID staging directories visible on a NAS share; no scavenging is provided.
 
 ## Pros and cons of the options
@@ -124,6 +147,17 @@ responsibility. A successful sync after a reported failure does not prove that f
 - Positive: one atomic relocation operation avoids an interrupted two-name state.
 - Negative: storage lacking support for the rename flag cannot relocate files even when it supports contained hard
   links.
+
+### Manifestation-local forward relocation recovery
+
+- Positive: exact names and existing content evidence survive interruption, under the existing database claim.
+- Negative: unreadable storage keeps intent open; verification and periodic carrier scheduling remain application work.
+
+### Filesystem move-back compensation
+
+- Positive: a successful move-back restores the location the row already names.
+- Negative: interruption can skip compensation, and a failed or colliding move-back leaves no durable reconciliation
+  owner. It cannot make filesystem and SQL operations atomic.
 
 ## More information
 

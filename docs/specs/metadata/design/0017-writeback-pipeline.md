@@ -73,25 +73,26 @@ purges.
 
 | State item | Writer(s) |
 | ---------- | --------- |
-| `writeback_jobs` row creation | Two sites, both named `enqueue_writeback` (below) |
-| `writeback_jobs` status/attempt columns | `claim_next`, the three `mark_*` functions, `revert_in_progress` |
+| `writeback_jobs` row creation | Metadata/enrichment enqueue transactions; bounded relocation sweep |
+| `writeback_jobs` status/attempt columns | `claim_next`, `finish`, the three `mark_*` functions, `revert_in_progress` |
 | `manifestations.current_file_hash`/`.has_embedded_cover`/`.file_size_bytes` | `orchestrator::run_once`'s post-publication `UPDATE`, before relocation (ingestion also writes `current_file_hash`, once, at row creation) |
-| `manifestations.file_path` | `orchestrator::path_rename_step` |
+| `manifestations.file_path` and paired relocation paths | Claimed orchestration and recovery; terminal clearing by `queue::finish` |
 | `webhook_event_dedupe` rows | `events::dispatch`, called only from `queue::finish` |
 | The on-disk `EPUB` file's bytes | `epub::repack::publish` / `path_rename::move_existing` (orchestrator only) |
 
 The two enqueue sites are `enqueue_writeback` in `backend/src/routes/metadata.rs` (manual accept, revert, and `PATCH`,
 inside the caller's `acquire_with_rls` transaction on the request pool) and `enqueue_writeback` in
 `backend/src/services/enrichment/orchestrator.rs` (auto-apply, inside a transaction on the ingestion pool). Each row's
-`reason` is `CHECK`-constrained to `'metadata'` or `'cover'`. `writeback_jobs.status` moves
+`reason` is `CHECK`-constrained to `'metadata'`, `'cover'` or `'relocation'`. `writeback_jobs.status` moves
 `pending → in_progress → {complete, failed, skipped}`; `queue::claim_next` is the only writer of `in_progress`,
 `revert_in_progress` the only writer that moves a row back to `pending`, and `mark_complete`/`mark_skipped`/
-`mark_failed` the only writers of the three terminal states. `manifestations.current_file_hash` and
-`.has_embedded_cover` and `.file_size_bytes` come from accepted candidate evidence; `manifestations.file_path` is
-rewritten only when the rendered library path differs from the current one. `webhook_event_dedupe` holds one row per
-`(job_id, outcome)` event id, written once on first delivery and refreshed only when a subsequent dispatch of that same
-id is itself delivered past the TTL; a dispatch suppressed as a duplicate returns before touching the table at all. The
-on-disk `EPUB` file's bytes are mutated only through an atomic commit, never in place, as described below.
+`mark_failed` and transactional terminal finalisation the writers of the three terminal states.
+`manifestations.current_file_hash` and `.has_embedded_cover` and `.file_size_bytes` come from accepted candidate
+evidence; `manifestations.file_path` records the actual location after relocation or recovery. `webhook_event_dedupe`
+holds one row per `(job_id, outcome)` event id, written once on first delivery and refreshed only when a subsequent
+dispatch of that same id is itself delivered past the TTL; a dispatch suppressed as a duplicate returns before touching
+the table at all. The on-disk `EPUB` file's bytes are mutated only through an atomic commit, never in place, as
+described below.
 
 `writeback_jobs` and `webhook_event_dedupe` carry no row-level-security policy: neither table appears in an
 `ALTER TABLE ... ENABLE ROW LEVEL SECURITY` statement in the migrations, so what scopes which database role may touch
@@ -121,7 +122,8 @@ has no live input to act on outside its own tests.
   (`load_snapshot`), skips early for an unsupported format or a missing file, rewrites the `OPF`
   (`opf_rewrite::transform`), optionally plans a cover embed (`cover_embed::plan_embed`), repacks
   (`epub::repack::with_modifications`), publishes the accepted candidate (`epub::repack::publish`), renders a checked
-  relative destination (`path_rename_step`, `render_target_path`), and writes the accepted hash, cover flag and size.
+  relative destination (`select_destination`, `render_target_path`), and writes the accepted hash, cover flag, size and
+  relocation intent. `reconcile` settles an open intent before any rewrite and reloads the snapshot for continuation.
   ZIP, filesystem and sidecar phases run in `spawn_blocking`; SQL stays on the async job.
 - `backend/src/services/writeback/opf_rewrite.rs` (`transform`) is a pure function: given `OPF` bytes and a `Target`
   struct naming the desired per-field values, it streams the source through `quick_xml` events, replaces the targeted
@@ -135,8 +137,8 @@ has no live input to act on outside its own tests.
   becomes orphaned in the archive, an accepted trade-off with nothing reclaiming it afterwards), or is inserted where no
   cover existed. It returns `OPF`-relative paths; the orchestrator translates them to `ZIP`-absolute paths by joining
   with the `OPF`'s own directory before passing them to the repack helper.
-- `backend/src/services/writeback/path_rename.rs` opens actual source/destination parents, uses contained `Dir::rename`
-  and falls back only on EXDEV. The fallback streams through a 64 KiB buffer into `cap-tempfile`, verifies the published
+- `backend/src/services/writeback/path_rename.rs` opens actual source/destination parents, uses no-replace rename and
+  falls back only on EXDEV. The fallback streams through a 64 KiB buffer into `cap-tempfile`, verifies the published
   destination independently and then removes the source.
 - `backend/src/services/writeback/events.rs` (`dispatch`, `event_id`) is the terminal-event duplicate-suppression gate
   described in Runtime behaviour and Failure and recovery.
@@ -166,16 +168,16 @@ has no live input to act on outside its own tests.
   (`services::enrichment::policy`) defaults `"cover_url"`, the only cover-shaped field any source emits, to `Propose`,
   which resolves to `Decision::Stage`, never `Decision::Apply`, and no source emits a field literally named `"cover"`,
   the one name `default_policy` marks `AutoFill`. Every `writeback_jobs` row a running system creates today therefore
-  carries `reason = 'metadata'`; the cover-reason branch of this pipeline (`cover_embed::plan_embed`,
-  `move_cover_sidecar`) is exercised only by this module's own tests, which insert a `'cover'`-reason row and a
-  `cover_path` value directly.
+  carries `reason = 'metadata'` when created by those canonical-edit call sites; the sweep also creates relocation
+  carriers. The cover-reason branch of this pipeline (`cover_embed::plan_embed`, `move_cover_sidecar`) is exercised only
+  by this module's own tests, which insert a `'cover'`-reason row and a `cover_path` value directly.
 - **Opened EPUB interfaces.** `epub::inspect(File)` returns the admitted source and pure baseline report. `RepairPlan`
   applies OPF repairs before `opf_rewrite::transform`. `with_modifications` writes repair, metadata and cover changes
   into one file-backed candidate. `repack::publish` validates final bytes, compares unresolved severity, and returns
   final report/hash/size only after durable replacement.
-- **`services::ingestion::path_template::{render, DEFAULT_TEMPLATE}`** is reused for `path_rename_step`'s post-writeback
-  file relocation, rendering the same template the Design "Ingestion pipeline" renders at ingestion time, from the job's
-  `Title`/`Author` variables.
+- **`services::ingestion::path_template::{render, DEFAULT_TEMPLATE}`** is reused for post-writeback file relocation,
+  rendering the same template the Design "Ingestion pipeline" renders at ingestion time, from the job's `Title`/`Author`
+  variables.
 - **`db::init_writeback_pool(database_url, max_connections) -> Result<PgPool, sqlx::Error>`** is the pool constructor;
   every connection it opens runs `SELECT set_config('app.system_context', 'writeback', false)` once, in `after_connect`,
   before the pool hands it out.
@@ -186,12 +188,12 @@ has no live input to act on outside its own tests.
 
 ## Data and state
 
-- **`writeback_jobs`.** One row per enqueue. `reason` is a `CHECK`-constrained `text` column (`'metadata'` or
-  `'cover'`); `status` is the `writeback_status` enum (`pending`, `in_progress`, `complete`, `failed`, `skipped`).
-  `attempt_count` and `last_attempted_at` drive the retry backoff described in Runtime behaviour. The partial unique
-  index `idx_writeback_jobs_in_progress_unique` on `(manifestation_id) WHERE status = 'in_progress'` is the sole
-  correctness guarantee behind "at most one in-flight job per manifestation"; nothing in application code enforces it
-  independently.
+- **`writeback_jobs`.** One row per enqueue. `reason` is a `CHECK`-constrained `text` column (`'metadata'` or `'cover'`
+  or `'relocation'`); `status` is the `writeback_status` enum (`pending`, `in_progress`, `complete`, `failed`,
+  `skipped`). `attempt_count` and `last_attempted_at` drive the retry backoff described in Runtime behaviour. The
+  partial unique index `idx_writeback_jobs_in_progress_unique` on `(manifestation_id) WHERE status = 'in_progress'` is
+  the sole correctness guarantee behind "at most one in-flight job per manifestation"; nothing in application code
+  enforces it independently.
 - **`webhook_event_dedupe`.** `(event_id, seen_at)`, primary-keyed on `event_id`. `event_id` is the stable string
   `writeback:{job_id}:{outcome}`; `seen_at` is written on first delivery and refreshed only on a subsequent delivery of
   that same id, through its `ON CONFLICT DO UPDATE`. A call suppressed as a duplicate returns before reaching that
@@ -201,9 +203,16 @@ has no live input to act on outside its own tests.
   creation, using accepted repair evidence when available. Writeback is their other writer: it stores the accepted
   candidate hash, handle-derived size and cover flag in one async SQL update. Neither writer changes the immutable
   `ingestion_file_hash` after insertion.
-- **`manifestations.file_path`.** Rewritten by `path_rename_step` only when `config.library_path` is non-empty and the
-  rendered path differs from the job's current `file_path`. The location retains its `LibraryId` and a checked
-  `RelativeFilePath`. Async SQL records a visible move; on SQL failure the same claim attempts contained move-back.
+- **`manifestations.file_path`.** Normal relocation runs only when `config.library_path` is non-empty and the rendered
+  path differs from the job's current `file_path`. The location retains its `LibraryId` and a checked
+  `RelativeFilePath`. Async SQL records the actual destination; failed SQL retains intent for forward recovery.
+  Reconciliation records the verified destination or restores the recorded source when a foreign destination prevents
+  movement.
+- **Paired relocation paths.** Nullable `relocation_source_path` and `relocation_destination_path` share the checked
+  relative-path grammar and a both-or-neither constraint. The accepted-content UPDATE stores both names with current
+  hash and size before movement. Those values remain the recovery evidence until the pair is cleared. A partial index on
+  manifestation id covers open intent. Ordinary finalisation clears the pair with the location UPDATE; permanent
+  evidence clears it with terminal job bookkeeping in `queue::finish`'s transaction.
 - **The on-disk `EPUB` file.** `epub::repack::publish` replaces its bytes using a finished, validated candidate.
   `path_rename::move_existing` relocates it beneath the owning library through same-filesystem rename or a bounded
   copy-sync-verify-unlink fallback on EXDEV. The cover sidecar's bare rename remains a separate, best-effort mutation.
@@ -229,8 +238,10 @@ has no live input to act on outside its own tests.
 3. A `tokio::spawn`ed task calls `orchestrator::run_once` on the writeback pool. `load_snapshot` joins `writeback_jobs`,
    `manifestations`, and `works` for the canonical field values, then runs a second query joining `work_authors` and
    `authors` for the primary author's sort name.
-4. For an EPUB, the job opens its typed `LibraryId` and `RelativeFilePath` through `LibraryFiles`. Unknown identities
-   fail without fallback; a missing file skips the job.
+4. The claim reconciles any open relocation intent before rewriting, then reloads its snapshot. A relocation carrier
+   completes without a rewrite or cover mutation, even when another job already settled its intent. For an EPUB, the
+   ordinary job opens its typed `LibraryId` and `RelativeFilePath` through `LibraryFiles`. Unknown identities fail
+   without fallback; a missing file skips the job.
 5. A bounded blocking phase checks the source without repair, applies existing OPF repairs and metadata changes, and
    plans any requested cover embed.
 6. The same phase writes and finishes one candidate inside `repack::publish`. Pure candidate validation rejects
@@ -238,12 +249,12 @@ has no live input to act on outside its own tests.
    Successfully applied repair remains separate from degraded findings; equal degraded severity stays admissible.
 7. The callback hashes and measures final candidate bytes. The maintained operation syncs, replaces the source basename
    and syncs its actual opened parent. Uncertainty returns a failure before relocation or row-success bookkeeping.
-8. Async SQL writes the returned hash, size and cover flag, preserving `ingestion_file_hash`. This content evidence
-   remains current if optional relocation fails.
-9. A blocking phase renders a checked relative destination in the same library, probes numeric collision suffixes and
-   performs a contained move. Async SQL records its actual relative location; a failed path update attempts contained
-   move-back under the same claim and permit. A visible relocation with unconfirmed directory durability records its
-   location but fails the job.
+8. A blocking phase selects the exact checked collision destination. Async SQL writes the returned hash, size, cover
+   flag and relocation pair, preserving `ingestion_file_hash`. A selection error still permits recording accepted
+   content evidence without intent, then fails before movement. This evidence remains current if relocation fails.
+9. A blocking phase prepares destination parents and performs the contained no-overwrite move. Async SQL records its
+   actual relative location and clears intent in one UPDATE. A visible relocation with unconfirmed directory durability
+   records the destination but retains intent and fails. SQL failure retains intent without moving bytes back.
 10. `queue::finish` calls `events::dispatch` with a `Complete` terminal event (delivered as a `tracing::info!` emit and
     recorded in `webhook_event_dedupe`), then `mark_complete` sets `status = 'complete'` and clears `error`.
 
@@ -257,8 +268,8 @@ does when a `'cover'`-reason row and a `cover_path` exist, the state this module
 
 ### No-overwrite relocation
 
-Numeric suffix probing selects a proposed destination after the accepted-content UPDATE. The final commit enforces
-refusal independently of that probe: an occupied file or dangling link is never replaced. Missing destination
+Numeric suffix probing selects a proposed destination before the accepted-content UPDATE stores intent. The final commit
+enforces refusal independently of that probe: an occupied file or dangling link is never replaced. Missing destination
 directories are created through contained operations, with each new entry's owning parent synced before relocation.
 
 `path_rename` passes actual opened parent directories and individual base names to
@@ -278,15 +289,49 @@ no-overwrite helper. An independent hash of the published destination must match
 Refusal, failed sync, corruption or an unreadable destination preserves the original. Normal completion explicitly
 closes the staging directory; cleanup errors propagate or are logged alongside the primary failure.
 
-After a failure leaves the destination visible and the source location recorded, each retry selects a new numeric
-suffix, so repeated failures can accumulate duplicate names without automatic reconciliation.
+### Relocation recovery
+
+Every claim reconciles the exact stored names under the owning library capability before any content rewrite. Size and
+SHA-256 distinguish verified bytes from readable mismatch; only confirmed NotFound is absence. Unreadable evidence
+retains intent and fails before any recovery mutation, taking precedence over loss or adoption.
+
+| Source     | Destination       | Action                                                                           |
+| ---------- | ----------------- | -------------------------------------------------------------------------------- |
+| Verified   | Absent            | Resume the recorded no-overwrite move                                            |
+| Absent     | Verified          | Sync parents, adopt destination and clear intent                                 |
+| Verified   | Verified          | Sync destination parent, remove verified source, sync source parent and finalise |
+| Verified   | Foreign           | Restore recorded source and clear intent atomically, then fail                   |
+| Absent     | Absent            | Terminal `file_missing`                                                          |
+| Absent     | Foreign           | Terminal `file_missing: lost; destination occupied`                              |
+| Changed    | Absent or foreign | Terminal `source changed externally`                                             |
+| Changed    | Verified          | Preserve changed source; sync parents and adopt destination                      |
+| Unreadable | Any               | Retain intent and retry                                                          |
+| Any        | Unreadable        | Retain intent and retry                                                          |
+
+Recovery never removes foreign destination bytes or changed source bytes. Filesystem sync, removal and SQL failures
+retain intent. A row naming the destination with an open pair is valid: recovery checks any remaining source and retries
+parent sync before clearing. A successful later sync permits finalisation under a weaker guarantee; it cannot prove that
+previously failed writes became durable. Failure text is stored on the job and logged; successful completion clears the
+job error.
+
+Permanent diagnoses return to `queue::finish`, which locks the in-progress job, clears the corresponding pair and
+records Skipped with the diagnosis in one transaction. Claim exclusion remains until commit; a failed transaction
+retains intent and the claim for startup recovery. The existing `writeback_failed` event carries the stored reason and
+stable identity. Ordinary metadata and cover jobs reload after recovery and continue their own edit. Relocation carriers
+perform only reconciliation and completion, with reason `relocation`; they emit no metadata event or cover mutation.
+
+After startup claim reset and every five minutes, the enabled worker selects at most 100 open intents through the
+partial index and inserts relocation carriers only where no pending, failed or in-progress job exists. Exhausted jobs
+and their attempt counts remain. Each inserted carrier excludes its manifestation from later batches, allowing the next
+sweep to reach remaining eligible rows. This is a database sweep inside the same worker, not a filesystem scan or
+another worker. Open intents can exceed worker concurrency. When disabled, the worker performs neither claims nor
+sweeps.
 
 Abrupt exit may leave bare UUID staging directories visible on a NAS share; no cleanup sweep runs. Mounted storage needs
 contained access, atomic content replacement, useful sync/error semantics and either no-replace rename or hard links for
 relocation. A successful sync after a reported failure does not prove that failed writes became durable. Filesystem and
-SQL updates remain separate: an interruption between relocation and the location UPDATE is not automatically reconciled.
-Claim reset alone does not close that gap. SQL-failure move-back remains under the same claim and permit, and also
-refuses occupied destinations.
+SQL updates remain separate. The paired intent reconciles relocation interruptions under the manifestation claim;
+cover-sidecar replay and complete writeback replay safety are outside this mechanism.
 
 **Two workers claim the same manifestation concurrently** (two jobs queued for one manifestation, or the poll interval
 overlapping a long-running job's completion):
@@ -318,9 +363,9 @@ overlapping a long-running job's completion):
 
 ## Failure and recovery
 
-- **Unsupported format or missing file.** A job whose manifestation's format is not `Epub`, or whose `file_path` does
-  not exist on disk, terminates as `RunOutcome::Skipped` before any read or mutation; `queue::finish` routes this
-  straight to `mark_skipped`, bypassing the retry budget entirely.
+- **Unsupported format or missing file.** After reconciling any open intent, a job whose manifestation's format is not
+  `Epub`, or whose `file_path` does not exist on disk, terminates as `RunOutcome::Skipped` before content mutation;
+  `queue::finish` routes this straight to `mark_skipped`, bypassing the retry budget entirely.
 - **`JobNotFound`.** When the `writeback_jobs` row has vanished by the time `run_once` tries to load it (a `CASCADE`
   from a deleted manifestation, or manual row deletion), `load_snapshot` returns `Err(WritebackError::JobNotFound)`.
   `queue::finish` treats this the same as the format/missing-file case: straight to `mark_skipped`, since there is no
@@ -337,8 +382,8 @@ overlapping a long-running job's completion):
 - **Retry backoff and exhaustion.** `mark_failed` compares `attempt_count` against `WritebackConfig.max_attempts`
   (default `10`): below the threshold the row becomes `failed` and is retried once its backoff window elapses; at or
   above it the row becomes `skipped`, a terminal exhaustion label logged at `warn!`. The claim `CTE`'s backoff window
-  escalates by `attempt_count`: no wait at `0`, `5` minutes at `1`, `30` minutes at `2`, `2` hours at `3`, `8` hours at
-  `4`, and `24` hours from `5` onward.
+  uses five minutes while manifestation intent is open. Otherwise it escalates by `attempt_count`: no wait at `0`, `5`
+  minutes at `1`, `30` minutes at `2`, `2` hours at `3`, `8` hours at `4`, and `24` hours from `5` onward.
 - **A per-job task panic while the process stays alive.** `spawn_worker`'s tracked job body carries no panic guard, and
   `run_once` runs under no per-job timeout. If the spawned task panics, dropping its semaphore permit still frees a
   concurrency slot, but the claimed row itself stays `in_progress`: nothing inside a live process reclaims it. Only a
@@ -349,10 +394,9 @@ overlapping a long-running job's completion):
   evidence remains stale until a successful retry. `run_once` logs this divergence at `error!` with the attempted hash
   and recorded path, and returns `Err(WritebackError::Db)`, which `queue::finish` routes through `mark_failed` for
   another attempt.
-- **Path-rename database update failure.** If `path_rename_step`'s `UPDATE manifestations SET file_path` fails after the
-  file has already moved on disk, the step attempts a compensating move back to the original location. If that
-  compensating move also fails, the divergence between the on-disk location and the database's `file_path` is logged at
-  `error!`; nothing reconciles it automatically afterwards.
+- **Location update failure.** The claimed job retains its exact pair and fails without compensation. A later claim
+  verifies those names before rewriting. Successful final location bookkeeping clears intent atomically, so a lost SQL
+  acknowledgement needs no separate persisted recovery state.
 - **Terminal-event double dispatch.** `queue::finish` emits the terminal webhook event before the `mark_*` bookkeeping
   `UPDATE`, deliberately: a transient database failure on the bookkeeping write must not silently drop the event. The
   cost is that a bookkeeping failure followed by a crash-recovery re-run re-fires the same `(job_id, outcome)` event;

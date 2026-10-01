@@ -1,0 +1,12 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "WITH eligible AS (\n            SELECT m.id FROM manifestations m\n            WHERE m.relocation_source_path IS NOT NULL\n              AND NOT EXISTS (\n                SELECT 1 FROM writeback_jobs wj\n                WHERE wj.manifestation_id = m.id\n                  AND wj.status IN ('pending', 'failed', 'in_progress')\n              )\n            ORDER BY m.id LIMIT 100\n            FOR UPDATE OF m SKIP LOCKED\n        )\n        INSERT INTO writeback_jobs (manifestation_id, reason)\n        SELECT id, 'relocation' FROM eligible",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": []
+  },
+  "hash": "13fbb1540c98a0fe6d7ac4455ca667e57d4352a3cbbfd4fa5d8abcf8e4100efe"
+}

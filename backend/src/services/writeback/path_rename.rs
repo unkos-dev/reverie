@@ -20,6 +20,95 @@ pub enum MoveResult {
     VisibleUncertain(std::io::Error),
 }
 
+pub(super) enum Recovery {
+    Destination,
+    VisibleUncertain(std::io::Error),
+    SourceOccupied,
+    Terminal(&'static str),
+}
+
+enum Evidence {
+    Verified,
+    Absent,
+    Changed,
+}
+
+fn evidence(
+    root: &Dir,
+    path: &RelativeFilePath,
+    hash: &str,
+    size: i64,
+) -> Result<Evidence, WritebackError> {
+    let mut file = match root.open(path.as_path()) {
+        Ok(file) => file.into_std(),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(Evidence::Absent),
+        Err(error) => return Err(error.into()),
+    };
+    let metadata = file.metadata()?;
+    if !metadata.is_file() {
+        return Err(std::io::Error::other("relocation evidence is not a regular file").into());
+    }
+    let actual_hash = hash_file(&mut file)?;
+    Ok(
+        if i128::from(metadata.len()) == i128::from(size) && actual_hash == hash {
+            Evidence::Verified
+        } else {
+            Evidence::Changed
+        },
+    )
+}
+
+pub(super) fn recover(
+    root: &Dir,
+    source: &RelativeFilePath,
+    destination: &RelativeFilePath,
+    hash: &str,
+    size: i64,
+) -> Result<Recovery, WritebackError> {
+    recover_with(root, source, destination, hash, size, sync_directory)
+}
+
+fn recover_with(
+    root: &Dir,
+    source: &RelativeFilePath,
+    destination: &RelativeFilePath,
+    hash: &str,
+    size: i64,
+    sync: impl Fn(&Dir) -> std::io::Result<()>,
+) -> Result<Recovery, WritebackError> {
+    let source_evidence = evidence(root, source, hash, size);
+    let destination_evidence = evidence(root, destination, hash, size);
+    let source_evidence = source_evidence?;
+    let destination_evidence = destination_evidence?;
+    match (source_evidence, destination_evidence) {
+        (Evidence::Verified, Evidence::Absent) => {
+            prepare_destination(root, destination)?;
+            match move_existing(root, source, destination, hash)? {
+                MoveResult::Durable => Ok(Recovery::Destination),
+                MoveResult::VisibleUncertain(error) => Ok(Recovery::VisibleUncertain(error)),
+            }
+        }
+        (source_evidence, Evidence::Verified) => {
+            let (destination_parent, _) = parent(root, destination)?;
+            let (source_parent, source_name) = parent(root, source)?;
+            sync(&destination_parent)?;
+            if matches!(source_evidence, Evidence::Verified) && source != destination {
+                source_parent.remove_file(source_name)?;
+            }
+            sync(&source_parent)?;
+            Ok(Recovery::Destination)
+        }
+        (Evidence::Verified, Evidence::Changed) => Ok(Recovery::SourceOccupied),
+        (Evidence::Absent, Evidence::Absent) => Ok(Recovery::Terminal("file_missing")),
+        (Evidence::Absent, Evidence::Changed) => Ok(Recovery::Terminal(
+            "file_missing: lost; destination occupied",
+        )),
+        (Evidence::Changed, Evidence::Absent | Evidence::Changed) => {
+            Ok(Recovery::Terminal("source changed externally"))
+        }
+    }
+}
+
 /// Open the actual parent of a checked relative location.
 ///
 /// # Errors
@@ -255,6 +344,171 @@ pub fn normalise_relative(p: &Path) -> Result<PathBuf, WritebackError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn relocation_recovery_source_only_resumes_exact_destination() {
+        let (_dir, root, source, destination, hash) = fixture();
+        assert!(matches!(
+            recover(&root, &source, &destination, &hash, 7).unwrap(),
+            Recovery::Destination
+        ));
+        assert!(!root.exists(source.as_path()));
+        assert_eq!(root.read(destination.as_path()).unwrap(), b"PAYLOAD");
+    }
+
+    #[test]
+    fn relocation_recovery_destination_only_adopts_verified_bytes() {
+        let (_dir, root, source, destination, hash) = fixture();
+        move_existing(&root, &source, &destination, &hash).unwrap();
+        assert!(matches!(
+            recover(&root, &source, &destination, &hash, 7).unwrap(),
+            Recovery::Destination
+        ));
+        assert_eq!(root.read(destination.as_path()).unwrap(), b"PAYLOAD");
+    }
+
+    #[test]
+    fn relocation_recovery_two_verified_names_remove_source_after_destination_sync() {
+        let (_dir, root, source, destination, hash) = fixture();
+        root.hard_link(source.as_path(), &root, destination.as_path())
+            .unwrap();
+        let syncs = std::cell::Cell::new(0);
+        let recovered = recover_with(&root, &source, &destination, &hash, 7, |directory| {
+            if syncs.get() == 0 {
+                assert_eq!(root.read(source.as_path()).unwrap(), b"PAYLOAD");
+            } else {
+                assert!(!root.exists(source.as_path()));
+            }
+            assert_eq!(root.read(destination.as_path()).unwrap(), b"PAYLOAD");
+            syncs.set(syncs.get() + 1);
+            sync_directory(directory)
+        })
+        .unwrap();
+        assert!(matches!(recovered, Recovery::Destination));
+        assert_eq!(syncs.get(), 2);
+    }
+
+    #[test]
+    fn relocation_recovery_foreign_destination_preserves_both_files() {
+        let (_dir, root, source, destination, hash) = fixture();
+        root.write(destination.as_path(), b"FOREIGN").unwrap();
+        assert!(matches!(
+            recover(&root, &source, &destination, &hash, 7).unwrap(),
+            Recovery::SourceOccupied
+        ));
+        assert_eq!(root.read(source.as_path()).unwrap(), b"PAYLOAD");
+        assert_eq!(root.read(destination.as_path()).unwrap(), b"FOREIGN");
+    }
+
+    #[test]
+    fn relocation_recovery_permanent_missing_and_changed_diagnoses() {
+        for (source_bytes, destination_bytes, diagnosis) in [
+            (None, None, "file_missing"),
+            (
+                None,
+                Some(b"FOREIGN".as_slice()),
+                "file_missing: lost; destination occupied",
+            ),
+            (
+                Some(b"CHANGED".as_slice()),
+                None,
+                "source changed externally",
+            ),
+            (
+                Some(b"CHANGED".as_slice()),
+                Some(b"FOREIGN".as_slice()),
+                "source changed externally",
+            ),
+        ] {
+            let (_dir, root, source, destination, hash) = fixture();
+            root.remove_file(source.as_path()).unwrap();
+            if let Some(bytes) = source_bytes {
+                root.write(source.as_path(), bytes).unwrap();
+            }
+            if let Some(bytes) = destination_bytes {
+                root.write(destination.as_path(), bytes).unwrap();
+            }
+            assert!(
+                matches!(recover(&root, &source, &destination, &hash, 7).unwrap(), Recovery::Terminal(actual) if actual == diagnosis)
+            );
+            if let Some(bytes) = source_bytes {
+                assert_eq!(root.read(source.as_path()).unwrap(), bytes);
+            }
+            if let Some(bytes) = destination_bytes {
+                assert_eq!(root.read(destination.as_path()).unwrap(), bytes);
+            }
+        }
+    }
+
+    #[test]
+    fn relocation_recovery_changed_source_kept_with_verified_destination() {
+        let (_dir, root, source, destination, hash) = fixture();
+        root.write(destination.as_path(), b"PAYLOAD").unwrap();
+        root.write(source.as_path(), b"CHANGED").unwrap();
+        assert!(matches!(
+            recover(&root, &source, &destination, &hash, 7).unwrap(),
+            Recovery::Destination
+        ));
+        assert_eq!(root.read(source.as_path()).unwrap(), b"CHANGED");
+        assert_eq!(root.read(destination.as_path()).unwrap(), b"PAYLOAD");
+    }
+
+    #[test]
+    fn relocation_recovery_unreadable_evidence_precedes_loss_or_adoption() {
+        for unreadable_source in [true, false] {
+            let (_dir, root, source, destination, hash) = fixture();
+            root.remove_file(source.as_path()).unwrap();
+            if unreadable_source {
+                root.create_dir(source.as_path()).unwrap();
+                root.write(destination.as_path(), b"PAYLOAD").unwrap();
+            } else {
+                root.create_dir(destination.as_path()).unwrap();
+            }
+            assert!(matches!(
+                recover(&root, &source, &destination, &hash, 7),
+                Err(WritebackError::Io(_))
+            ));
+            if unreadable_source {
+                assert_eq!(root.read(destination.as_path()).unwrap(), b"PAYLOAD");
+            }
+        }
+    }
+
+    #[test]
+    fn relocation_recovery_sync_failure_preserves_evidence_and_can_resume() {
+        for failing_sync in [0, 1] {
+            let (_dir, root, source, destination, hash) = fixture();
+            root.hard_link(source.as_path(), &root, destination.as_path())
+                .unwrap();
+            let syncs = std::cell::Cell::new(0);
+            let result = recover_with(&root, &source, &destination, &hash, 7, |directory| {
+                let count = syncs.get();
+                syncs.set(count + 1);
+                if count == failing_sync {
+                    Err(std::io::Error::other("reported sync failure"))
+                } else {
+                    sync_directory(directory)
+                }
+            });
+            assert!(matches!(result, Err(WritebackError::Io(_))));
+            assert_eq!(root.exists(source.as_path()), failing_sync == 0);
+            assert_eq!(root.read(destination.as_path()).unwrap(), b"PAYLOAD");
+            assert!(matches!(
+                recover(&root, &source, &destination, &hash, 7).unwrap(),
+                Recovery::Destination
+            ));
+        }
+    }
+
+    #[test]
+    fn relocation_recovery_size_mismatch_is_changed_even_with_matching_hash() {
+        let (_dir, root, source, destination, hash) = fixture();
+        assert!(matches!(
+            recover(&root, &source, &destination, &hash, 8).unwrap(),
+            Recovery::Terminal("source changed externally")
+        ));
+        assert_eq!(root.read(source.as_path()).unwrap(), b"PAYLOAD");
+    }
 
     fn fixture() -> (
         tempfile::TempDir,

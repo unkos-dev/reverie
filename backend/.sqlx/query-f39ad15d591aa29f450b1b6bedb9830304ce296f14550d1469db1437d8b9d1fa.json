@@ -1,0 +1,38 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "WITH eligible AS (\n             SELECT wj.id, wj.attempt_count\n             FROM writeback_jobs wj\n             JOIN manifestations m ON m.id = wj.manifestation_id\n             WHERE wj.status IN ('pending', 'failed')\n               AND NOT EXISTS (\n                 SELECT 1 FROM writeback_jobs other\n                 WHERE other.manifestation_id = wj.manifestation_id\n                   AND other.status = 'in_progress'\n               )\n               AND (\n                 wj.last_attempted_at IS NULL\n                 OR wj.last_attempted_at <\n                      now() - (\n                        CASE\n                          WHEN m.relocation_source_path IS NOT NULL THEN INTERVAL '5 minutes'\n                          WHEN wj.attempt_count <= 0 THEN INTERVAL '0 minutes'\n                          WHEN wj.attempt_count = 1 THEN INTERVAL '5 minutes'\n                          WHEN wj.attempt_count = 2 THEN INTERVAL '30 minutes'\n                          WHEN wj.attempt_count = 3 THEN INTERVAL '2 hours'\n                          WHEN wj.attempt_count = 4 THEN INTERVAL '8 hours'\n                          ELSE INTERVAL '24 hours'\n                        END\n                      )\n               )\n             ORDER BY wj.last_attempted_at NULLS FIRST, wj.created_at\n             LIMIT 1\n             FOR UPDATE OF wj SKIP LOCKED\n           )\n           UPDATE writeback_jobs wj\n              SET status = 'in_progress',\n                  last_attempted_at = now(),\n                  attempt_count = wj.attempt_count + 1\n             FROM eligible\n            WHERE wj.id = eligible.id\n           RETURNING wj.id, wj.attempt_count",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "writeback_jobs",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "attempt_count",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "writeback_jobs",
+            "name": "attempt_count"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "f39ad15d591aa29f450b1b6bedb9830304ce296f14550d1469db1437d8b9d1fa"
+}

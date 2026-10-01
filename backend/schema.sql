@@ -765,10 +765,15 @@ CREATE TABLE public.manifestations (
     enrichment_rerun_requested boolean DEFAULT false NOT NULL,
     has_embedded_cover boolean,
     library_id uuid NOT NULL,
+    relocation_source_path text,
+    relocation_destination_path text,
     CONSTRAINT manifestations_created_at_ts_decode_range CHECK (((created_at >= '0001-01-01 00:00:00+00'::timestamp with time zone) AND (created_at < '10000-01-01 00:00:00+00'::timestamp with time zone))),
     CONSTRAINT manifestations_enrichment_attempted_at_ts_decode_range CHECK (((enrichment_attempted_at >= '0001-01-01 00:00:00+00'::timestamp with time zone) AND (enrichment_attempted_at < '10000-01-01 00:00:00+00'::timestamp with time zone))),
     CONSTRAINT manifestations_pages_positive CHECK (((pages IS NULL) OR (pages > 0))),
     CONSTRAINT manifestations_relative_file_path_check CHECK (((file_path <> ''::text) AND ("left"(file_path, 1) <> '/'::text) AND ("right"(file_path, 1) <> '/'::text) AND (file_path !~~ '%//%'::text) AND (strpos(file_path, chr(92)) = 0) AND (file_path !~ '^[A-Za-z]:'::text) AND (file_path !~ '(^|/)[.]{1,2}(/|$)'::text))),
+    CONSTRAINT manifestations_relocation_destination_check CHECK (((relocation_destination_path <> ''::text) AND (relocation_destination_path !~ '(^/|/$|//|\\|^[A-Za-z]:|(^|/)[.]{1,2}(/|$))'::text))),
+    CONSTRAINT manifestations_relocation_pair_check CHECK (((relocation_source_path IS NULL) = (relocation_destination_path IS NULL))),
+    CONSTRAINT manifestations_relocation_source_check CHECK (((relocation_source_path <> ''::text) AND (relocation_source_path !~ '(^/|/$|//|\\|^[A-Za-z]:|(^|/)[.]{1,2}(/|$))'::text))),
     CONSTRAINT manifestations_updated_at_ts_decode_range CHECK (((updated_at >= '0001-01-01 00:00:00+00'::timestamp with time zone) AND (updated_at < '10000-01-01 00:00:00+00'::timestamp with time zone)))
 );
 
@@ -1295,7 +1300,7 @@ CREATE TABLE public.writeback_jobs (
     CONSTRAINT writeback_jobs_completed_at_ts_decode_range CHECK (((completed_at >= '0001-01-01 00:00:00+00'::timestamp with time zone) AND (completed_at < '10000-01-01 00:00:00+00'::timestamp with time zone))),
     CONSTRAINT writeback_jobs_created_at_ts_decode_range CHECK (((created_at >= '0001-01-01 00:00:00+00'::timestamp with time zone) AND (created_at < '10000-01-01 00:00:00+00'::timestamp with time zone))),
     CONSTRAINT writeback_jobs_last_attempted_at_ts_decode_range CHECK (((last_attempted_at >= '0001-01-01 00:00:00+00'::timestamp with time zone) AND (last_attempted_at < '10000-01-01 00:00:00+00'::timestamp with time zone))),
-    CONSTRAINT writeback_jobs_reason_chk CHECK ((reason = ANY (ARRAY['metadata'::text, 'cover'::text])))
+    CONSTRAINT writeback_jobs_reason_chk CHECK ((reason = ANY (ARRAY['metadata'::text, 'cover'::text, 'relocation'::text])))
 );
 
 
@@ -1952,6 +1957,13 @@ CREATE INDEX idx_manifestations_publisher_version_id ON public.manifestations US
 --
 
 CREATE INDEX idx_manifestations_recent_keyset ON public.manifestations USING btree (created_at DESC, id DESC);
+
+
+--
+-- Name: idx_manifestations_relocation_intent; Type: INDEX; Schema: public; Owner: reverie_migrator
+--
+
+CREATE INDEX idx_manifestations_relocation_intent ON public.manifestations USING btree (id) WHERE (relocation_source_path IS NOT NULL);
 
 
 --

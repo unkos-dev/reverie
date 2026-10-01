@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE manifestations SET file_path = $1, relocation_source_path = NULL, relocation_destination_path = NULL WHERE id = $2 AND relocation_source_path = $3 AND relocation_destination_path = $4",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Uuid",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "3273c0be62f007ec3156eda8925dd1f2fb2916ab45e76a0d0a4db0c196dde3f8"
+}

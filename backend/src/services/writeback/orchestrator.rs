@@ -2,7 +2,7 @@
 //!
 //! Loads a typed library-relative snapshot, composes entry repairs with metadata
 //! and cover changes, and publishes only an accepted candidate. Relocation and
-//! SQL compensation remain owned by the same claimed job.
+//! forward recovery remain owned by the same claimed job.
 //!
 //! Blocking filesystem phases retain the concurrency permit. SQL stays async;
 //! the queue owns terminal bookkeeping and events.
@@ -46,12 +46,20 @@ use super::path_rename;
 
 /// Terminal outcome of a single `run_once` call.
 ///
-/// Three arms, one per
-/// terminal DB transition the queue performs — illegal combinations
-/// (success without a hash, skipped with an error, etc.) are structurally
-/// unrepresentable.
+/// Permanent relocation diagnoses retain their intent until queue finalisation.
 #[derive(Debug)]
 pub enum RunOutcome {
+    /// Confirmed relocation loss or external change requiring atomic finalisation.
+    RelocationTerminal {
+        /// The manifestation whose evidence was checked.
+        manifestation_id: Uuid,
+        /// The claimed job's stored reason.
+        reason: String,
+        /// The exact pair to clear while retaining claim exclusion.
+        intent: RelocationIntent,
+        /// Diagnosis recorded with the skipped job.
+        diagnosis: String,
+    },
     /// Writeback completed cleanly.  `current_file_hash` is the new
     /// on-disk `SHA-256`; the queue emits `writeback_complete` with it.
     Success {
@@ -85,11 +93,23 @@ pub enum RunOutcome {
     },
 }
 
+/// Checked relocation names within a manifestation's owning library.
+#[derive(Clone, Debug)]
+pub struct RelocationIntent {
+    /// Recorded source before relocation.
+    pub source: RelativeFilePath,
+    /// Exact selected destination.
+    pub destination: RelativeFilePath,
+}
+
 struct JobSnapshot {
     manifestation_id: Uuid,
     reason: String,
     file_path: RelativeFilePath,
     library_id: LibraryId,
+    current_file_hash: String,
+    file_size_bytes: i64,
+    relocation: Option<RelocationIntent>,
     format: ManifestationFormat,
     cover_path: Option<String>,
     title: Option<String>,
@@ -116,9 +136,22 @@ pub async fn run_once(
     job_id: Uuid,
     permit: Arc<OwnedSemaphorePermit>,
 ) -> Result<RunOutcome, WritebackError> {
-    let snap = Arc::new(load_snapshot(pool, job_id).await?);
+    let mut snap = Arc::new(load_snapshot(pool, job_id).await?);
+    if let Some(outcome) = reconcile(pool, files, &snap, Arc::clone(&permit)).await? {
+        return Ok(outcome);
+    }
+    if snap.relocation.is_some() {
+        snap = Arc::new(load_snapshot(pool, job_id).await?);
+    }
     let manifestation_id = snap.manifestation_id;
     let reason = snap.reason.clone();
+    if reason == "relocation" {
+        return Ok(RunOutcome::Success {
+            manifestation_id,
+            reason,
+            current_file_hash: snap.current_file_hash.clone(),
+        });
+    }
     if snap.format != ManifestationFormat::Epub {
         return Ok(RunOutcome::Skipped {
             manifestation_id,
@@ -143,16 +176,26 @@ pub async fn run_once(
     let post_has_cover = published.report.has_usable_embedded_cover;
     let size = i64::try_from(published.size)
         .map_err(|error| WritebackError::Persist(error.to_string()))?;
+    let destination = select_destination(&snap, config, files, Arc::clone(&permit)).await;
+    let selected = destination.as_ref().map_or(None, Option::as_ref);
     if let Err(error) = sqlx::query!(
-        "UPDATE manifestations SET current_file_hash = $1, has_embedded_cover = $3, file_size_bytes = $4 WHERE id = $2",
+        "UPDATE manifestations SET current_file_hash = $1, has_embedded_cover = $3, file_size_bytes = $4, relocation_source_path = $5, relocation_destination_path = $6 WHERE id = $2",
         new_hash, manifestation_id, post_has_cover, size,
+        selected.map(|_| snap.file_path.as_str()), selected.map(RelativeFilePath::as_str),
     ).execute(pool).await {
         tracing::error!(error = %error, %manifestation_id, final_path = snap.file_path.as_str(), attempted_hash = %new_hash,
             "writeback hash UPDATE failed after publication; a retry must reconcile");
         return Err(error.into());
     }
-    let (_, durability_error) =
-        path_rename_step(&snap, config, files, pool, &new_hash, Arc::clone(&permit)).await?;
+    let durability_error = if let Some(destination) = destination? {
+        let intent = RelocationIntent {
+            source: snap.file_path.clone(),
+            destination,
+        };
+        relocate(pool, files, &snap, &intent, &new_hash, Arc::clone(&permit)).await?
+    } else {
+        None
+    };
     if let Some(error) = durability_error {
         return Ok(RunOutcome::Failed {
             manifestation_id,
@@ -284,70 +327,151 @@ fn rewrite(
     }
 }
 
-async fn path_rename_step(
+async fn select_destination(
     snap: &JobSnapshot,
     config: &Config,
     files: &LibraryFiles,
-    pool: &PgPool,
-    hash: &str,
     permit: Arc<OwnedSemaphorePermit>,
-) -> Result<(RelativeFilePath, Option<std::io::Error>), WritebackError> {
+) -> Result<Option<RelativeFilePath>, WritebackError> {
     let Some(candidate) =
         render_target_path(snap, config.library_path.as_str(), snap.file_path.as_path())?
     else {
-        return Ok((snap.file_path.clone(), None));
+        return Ok(None);
     };
     let candidate: RelativeFilePath = candidate
         .to_str()
         .ok_or_else(|| WritebackError::Persist("non-UTF8 template path".into()))?
         .parse()?;
     let phase_files = files.clone();
-    let source = snap.file_path.clone();
     let library_id = snap.library_id;
-    let hash_owned = hash.to_owned();
-    let (destination, movement) = blocking_phase(Arc::clone(&permit), move || {
+    blocking_phase(permit, move || {
         let root = phase_files.library(library_id)?;
-        let destination = resolve_collision(root, &candidate)?;
-        path_rename::prepare_destination(root, &destination)?;
-        let movement = path_rename::move_existing(root, &source, &destination, &hash_owned)?;
-        Ok((destination, movement))
+        Ok(Some(resolve_collision(root, &candidate)?))
+    })
+    .await
+}
+
+async fn relocate(
+    pool: &PgPool,
+    files: &LibraryFiles,
+    snap: &JobSnapshot,
+    intent: &RelocationIntent,
+    hash: &str,
+    permit: Arc<OwnedSemaphorePermit>,
+) -> Result<Option<std::io::Error>, WritebackError> {
+    let phase_files = files.clone();
+    let phase_intent = intent.clone();
+    let library_id = snap.library_id;
+    let hash = hash.to_owned();
+    let movement = blocking_phase(permit, move || {
+        let root = phase_files.library(library_id)?;
+        path_rename::prepare_destination(root, &phase_intent.destination)?;
+        path_rename::move_existing(root, &phase_intent.source, &phase_intent.destination, &hash)
     })
     .await?;
-    let update = sqlx::query!(
-        "UPDATE manifestations SET file_path = $1 WHERE id = $2",
-        destination.as_str(),
-        snap.manifestation_id
-    )
-    .execute(pool)
-    .await;
-    if let Err(error) = update {
-        let phase_files = files.clone();
-        let from = destination.clone();
-        let to = snap.file_path.clone();
-        let hash = hash.to_owned();
-        let compensation = blocking_phase(permit, move || {
-            path_rename::move_existing(phase_files.library(library_id)?, &from, &to, &hash)
-        })
-        .await;
-        match compensation {
-            Ok(path_rename::MoveResult::Durable) => {}
-            Ok(path_rename::MoveResult::VisibleUncertain(sync)) => {
-                tracing::error!(error = %sync, "compensating move-back visible with unconfirmed durability");
-            }
-            Err(compensation) => {
-                tracing::error!(error = %compensation, database_error = %error, "location UPDATE and compensating move-back failed");
-            }
+    record_movement(pool, snap.manifestation_id, intent, movement).await
+}
+
+async fn record_movement(
+    pool: &PgPool,
+    manifestation_id: Uuid,
+    intent: &RelocationIntent,
+    movement: path_rename::MoveResult,
+) -> Result<Option<std::io::Error>, WritebackError> {
+    match movement {
+        path_rename::MoveResult::Durable => {
+            finalise_location(pool, manifestation_id, intent, &intent.destination).await?;
+            Ok(None)
         }
-        return Err(error.into());
-    }
-    let durability_error = match movement {
-        path_rename::MoveResult::Durable => None,
         path_rename::MoveResult::VisibleUncertain(error) => {
-            tracing::error!(%error, location = destination.as_str(), "relocation visible with unconfirmed durability");
-            Some(error)
+            tracing::error!(%error, location = intent.destination.as_str(), "relocation visible with unconfirmed durability");
+            let update = sqlx::query!(
+                "UPDATE manifestations SET file_path = $1 WHERE id = $2 AND relocation_source_path = $3 AND relocation_destination_path = $1",
+                intent.destination.as_str(), manifestation_id, intent.source.as_str(),
+            ).execute(pool).await?;
+            if update.rows_affected() != 1 {
+                return Err(sqlx::Error::RowNotFound.into());
+            }
+            Ok(Some(error))
         }
+    }
+}
+
+async fn finalise_location(
+    pool: &PgPool,
+    manifestation_id: Uuid,
+    intent: &RelocationIntent,
+    location: &RelativeFilePath,
+) -> Result<(), WritebackError> {
+    let update = sqlx::query!(
+        "UPDATE manifestations SET file_path = $1, relocation_source_path = NULL, relocation_destination_path = NULL WHERE id = $2 AND relocation_source_path = $3 AND relocation_destination_path = $4",
+        location.as_str(), manifestation_id, intent.source.as_str(), intent.destination.as_str(),
+    ).execute(pool).await?;
+    if update.rows_affected() != 1 {
+        return Err(sqlx::Error::RowNotFound.into());
+    }
+    Ok(())
+}
+
+async fn reconcile(
+    pool: &PgPool,
+    files: &LibraryFiles,
+    snap: &JobSnapshot,
+    permit: Arc<OwnedSemaphorePermit>,
+) -> Result<Option<RunOutcome>, WritebackError> {
+    let Some(intent) = &snap.relocation else {
+        return Ok(None);
     };
-    Ok((destination, durability_error))
+    let phase_files = files.clone();
+    let phase_intent = intent.clone();
+    let hash = snap.current_file_hash.clone();
+    let size = snap.file_size_bytes;
+    let library_id = snap.library_id;
+    let recovery = blocking_phase(permit, move || {
+        path_rename::recover(
+            phase_files.library(library_id)?,
+            &phase_intent.source,
+            &phase_intent.destination,
+            &hash,
+            size,
+        )
+    })
+    .await?;
+    match recovery {
+        path_rename::Recovery::VisibleUncertain(error) => {
+            let diagnosis = format!("relocation durability uncertain: {error}");
+            record_movement(
+                pool,
+                snap.manifestation_id,
+                intent,
+                path_rename::MoveResult::VisibleUncertain(error),
+            )
+            .await?;
+            Ok(Some(RunOutcome::Failed {
+                manifestation_id: snap.manifestation_id,
+                reason: snap.reason.clone(),
+                error: diagnosis,
+            }))
+        }
+        path_rename::Recovery::Destination => {
+            finalise_location(pool, snap.manifestation_id, intent, &intent.destination).await?;
+            Ok(None)
+        }
+        path_rename::Recovery::SourceOccupied => {
+            finalise_location(pool, snap.manifestation_id, intent, &intent.source).await?;
+            Ok(Some(RunOutcome::Failed {
+                manifestation_id: snap.manifestation_id,
+                reason: snap.reason.clone(),
+                error: "relocation destination occupied; source restored".into(),
+            }))
+        }
+        path_rename::Recovery::Terminal(diagnosis) => Ok(Some(RunOutcome::RelocationTerminal {
+            manifestation_id: snap.manifestation_id,
+            reason: snap.reason.clone(),
+            intent: intent.clone(),
+            diagnosis: diagnosis.into(),
+        })),
+    }
 }
 
 fn resolve_collision(
@@ -427,7 +551,8 @@ fn render_target_path(
 async fn load_snapshot(pool: &PgPool, job_id: Uuid) -> Result<JobSnapshot, WritebackError> {
     let row = sqlx::query!(
         r#"SELECT wj.manifestation_id, wj.reason,
-                  m.work_id, m.library_id, m.file_path,
+                  m.work_id, m.library_id, m.file_path, m.current_file_hash, m.file_size_bytes,
+                  m.relocation_source_path, m.relocation_destination_path,
                   m.format AS "format: ManifestationFormat",
                   m.cover_path,
                   m.publisher, m.pub_date, m.isbn_10, m.isbn_13,
@@ -459,6 +584,16 @@ async fn load_snapshot(pool: &PgPool, job_id: Uuid) -> Result<JobSnapshot, Write
         reason: row.reason,
         file_path: row.file_path.parse()?,
         library_id: LibraryId::from_uuid(row.library_id),
+        current_file_hash: row.current_file_hash,
+        file_size_bytes: row.file_size_bytes,
+        relocation: match (row.relocation_source_path, row.relocation_destination_path) {
+            (Some(source), Some(destination)) => Some(RelocationIntent {
+                source: source.parse()?,
+                destination: destination.parse()?,
+            }),
+            (None, None) => None,
+            _ => return Err(WritebackError::Persist("unpaired relocation intent".into())),
+        },
         format: row.format,
         cover_path: row.cover_path,
         title: Some(row.title),
@@ -970,64 +1105,334 @@ mod tests {
     }
 
     #[sqlx::test(migrations = "./migrations")]
-    async fn bounded_writeback_location_sql_failure_compensates_within_library(pool: PgPool) {
+    async fn bounded_writeback_location_sql_failure_retains_forward_intent(pool: PgPool) {
         let app = writeback_pool_for(&pool).await;
         let ing = ingestion_pool_for(&pool).await;
         let (dir, path) = make_fixture_epub("Original");
-        let (_, id) = insert_fixture(&ing, "compensate", path.to_str().unwrap(), "original").await;
-        let job = sqlx::query_scalar!("INSERT INTO writeback_jobs (manifestation_id, reason) VALUES ($1, 'metadata') RETURNING id", id).fetch_one(&ing).await.unwrap();
-        let snap = load_snapshot(&app, job).await.unwrap();
+        let (_, id) = insert_fixture(&ing, "forward", path.to_str().unwrap(), "original").await;
+        let job = sqlx::query_scalar!(
+            "INSERT INTO writeback_jobs (manifestation_id, reason) VALUES ($1, $2) RETURNING id",
+            id,
+            "metadata"
+        )
+        .fetch_one(&ing)
+        .await
+        .unwrap();
+        let mut snap = load_snapshot(&app, job).await.unwrap();
         let root = dir.path().to_str().unwrap().parse().unwrap();
         let files = crate::test_support::test_library_files_at(&root, snap.library_id);
         let published = rewrite(&snap, &files).unwrap().unwrap();
         let accepted_bytes = std::fs::read(&path).unwrap();
+        let intent = RelocationIntent {
+            source: snap.file_path.clone(),
+            destination: "relocated.epub".parse().unwrap(),
+        };
+        sqlx::query!("UPDATE manifestations SET current_file_hash = $1, file_size_bytes = $2, relocation_source_path = $3, relocation_destination_path = $4 WHERE id = $5",
+            published.hash, i64::try_from(published.size).unwrap(), intent.source.as_str(), intent.destination.as_str(), id).execute(&app).await.unwrap();
+        snap = load_snapshot(&app, job).await.unwrap();
         app.close().await;
-        let result = path_rename_step(
-            &snap,
-            &test_config(dir.path()).0,
-            &files,
+        let result = relocate(
             &app,
+            &files,
+            &snap,
+            &intent,
             &published.hash,
-            Arc::new(
-                Arc::new(tokio::sync::Semaphore::new(1))
-                    .acquire_owned()
-                    .await
-                    .unwrap(),
-            ),
+            fixture_permit().await,
         )
         .await;
         assert!(matches!(
             result,
             Err(WritebackError::Db(sqlx::Error::PoolClosed))
         ));
-        assert_eq!(std::fs::read(&path).unwrap(), accepted_bytes);
-        assert!(path.exists());
+        assert!(!path.exists());
         assert_eq!(
-            epub::validate(std::fs::File::open(&path).unwrap())
-                .unwrap()
-                .outcome,
-            epub::ValidationOutcome::Clean
+            std::fs::read(dir.path().join("relocated.epub")).unwrap(),
+            accepted_bytes
         );
-        let row = sqlx::query!(
-            "SELECT file_path, current_file_hash FROM manifestations WHERE id = $1",
-            id
-        )
-        .fetch_one(&ing)
-        .await
-        .unwrap();
+        let wb = writeback_pool_for(&pool).await;
+        let row = sqlx::query!("SELECT file_path, relocation_source_path, relocation_destination_path FROM manifestations WHERE id = $1", id).fetch_one(&wb).await.unwrap();
         assert_eq!(row.file_path, "fixture.epub");
-        assert_eq!(row.current_file_hash, "original");
-        let mut source = std::fs::File::open(&path).unwrap();
-        assert_ne!(
-            repack::hash_file(&mut source).unwrap(),
-            row.current_file_hash
+        assert_eq!(row.relocation_source_path.as_deref(), Some("fixture.epub"));
+        assert_eq!(
+            row.relocation_destination_path.as_deref(),
+            Some("relocated.epub")
         );
         assert!(
-            !dir.path()
-                .join("Unknown/WbFixture-compensate.epub")
-                .exists()
+            reconcile(&wb, &files, &snap, fixture_permit().await)
+                .await
+                .unwrap()
+                .is_none()
+        );
+        let row = sqlx::query!("SELECT file_path, relocation_source_path, current_file_hash FROM manifestations WHERE id = $1", id).fetch_one(&wb).await.unwrap();
+        assert_eq!(row.file_path, "relocated.epub");
+        assert!(row.relocation_source_path.is_none());
+        assert_eq!(row.current_file_hash, published.hash);
+    }
+
+    async fn fixture_permit() -> Arc<OwnedSemaphorePermit> {
+        Arc::new(
+            Arc::new(tokio::sync::Semaphore::new(1))
+                .acquire_owned()
+                .await
+                .unwrap(),
+        )
+    }
+
+    async fn recovery_fixture(
+        pool: &PgPool,
+        reason: &str,
+    ) -> (tempfile::TempDir, LibraryFiles, Uuid, JobSnapshot) {
+        let ing = ingestion_pool_for(pool).await;
+        let wb = writeback_pool_for(pool).await;
+        let (dir, path) = make_fixture_epub("Original");
+        let bytes = std::fs::read(&path).unwrap();
+        let hash = initial_hex_sha256(&bytes);
+        let (_, id) = insert_fixture(&ing, "recovery", path.to_str().unwrap(), &hash).await;
+        sqlx::query!("UPDATE manifestations SET file_size_bytes = $2, relocation_source_path = file_path, relocation_destination_path = $3 WHERE id = $1", id, i64::try_from(bytes.len()).unwrap(), "recovered.epub").execute(&wb).await.unwrap();
+        let job = sqlx::query_scalar!("INSERT INTO writeback_jobs (manifestation_id, reason, status) VALUES ($1, $2, $3::text::writeback_status) RETURNING id", id, reason, "in_progress").fetch_one(&ing).await.unwrap();
+        let snap = load_snapshot(&wb, job).await.unwrap();
+        let root = dir.path().to_str().unwrap().parse().unwrap();
+        let files = crate::test_support::test_library_files_at(&root, snap.library_id);
+        (dir, files, job, snap)
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn relocation_recovery_carrier_relocates_without_rewriting_or_cover_mutation(
+        pool: PgPool,
+    ) {
+        let wb = writeback_pool_for(&pool).await;
+        let (dir, files, job, snap) = recovery_fixture(&pool, "relocation").await;
+        let original = std::fs::read(dir.path().join("fixture.epub")).unwrap();
+        let sidecar = dir.path().join("_covers/pending/cover.png");
+        std::fs::create_dir_all(sidecar.parent().unwrap()).unwrap();
+        std::fs::write(&sidecar, b"sidecar must remain pending").unwrap();
+        sqlx::query!(
+            "UPDATE manifestations SET cover_path = $2 WHERE id = $1",
+            snap.manifestation_id,
+            sidecar.to_str().unwrap()
+        )
+        .execute(&wb)
+        .await
+        .unwrap();
+        for _ in 0..2 {
+            let outcome = run_once(
+                &wb,
+                &test_config(dir.path()).0,
+                &files,
+                job,
+                fixture_permit().await,
+            )
+            .await
+            .unwrap();
+            assert!(
+                matches!(outcome, RunOutcome::Success { reason, current_file_hash, .. } if reason == "relocation" && current_file_hash == snap.current_file_hash)
+            );
+            let fresh = load_snapshot(&wb, job).await.unwrap();
+            assert_eq!(fresh.file_path.as_str(), "recovered.epub");
+            assert!(fresh.relocation.is_none());
+            assert_eq!(
+                std::fs::read(dir.path().join("recovered.epub")).unwrap(),
+                original
+            );
+            assert!(sidecar.exists());
+        }
+    }
+
+    async fn continuation_fixture(pool: PgPool, reason: &str) {
+        let wb = writeback_pool_for(&pool).await;
+        let (dir, files, job, snap) = recovery_fixture(&pool, reason).await;
+        let intent = snap.relocation.as_ref().unwrap();
+        path_rename::move_existing(
+            files.library(snap.library_id).unwrap(),
+            &intent.source,
+            &intent.destination,
+            &snap.current_file_hash,
+        )
+        .unwrap();
+        sqlx::query!("UPDATE works SET title = $2 WHERE id = (SELECT work_id FROM manifestations WHERE id = $1)", snap.manifestation_id, "Newer sibling edit").execute(&wb).await.unwrap();
+        if reason == "cover" {
+            let sidecar = dir.path().join("_covers/pending/cover.png");
+            std::fs::create_dir_all(sidecar.parent().unwrap()).unwrap();
+            let img = image::DynamicImage::new_rgb8(10, 10);
+            let mut png = std::io::Cursor::new(Vec::new());
+            img.write_to(&mut png, image::ImageFormat::Png).unwrap();
+            std::fs::write(&sidecar, png.into_inner()).unwrap();
+            sqlx::query!(
+                "UPDATE manifestations SET cover_path = $2 WHERE id = $1",
+                snap.manifestation_id,
+                sidecar.to_str().unwrap()
+            )
+            .execute(&wb)
+            .await
+            .unwrap();
+        }
+        let outcome = run_once(
+            &wb,
+            &test_config(dir.path()).0,
+            &files,
+            job,
+            fixture_permit().await,
+        )
+        .await
+        .unwrap();
+        assert!(matches!(outcome, RunOutcome::Success { reason: actual, .. } if actual == reason));
+        let fresh = load_snapshot(&wb, job).await.unwrap();
+        assert!(fresh.relocation.is_none());
+        let bytes = files
+            .library(fresh.library_id)
+            .unwrap()
+            .read(fresh.file_path.as_path())
+            .unwrap();
+        let opf = zip_layer::read_entry_from_bytes(&bytes, "OEBPS/package.opf").unwrap();
+        assert!(
+            String::from_utf8(opf)
+                .unwrap()
+                .contains("Newer sibling edit")
+        );
+        if reason == "cover" {
+            assert!(dir.path().join("_covers/accepted/cover.png").exists());
+            assert!(
+                epub::validate(
+                    std::fs::File::open(dir.path().join(fresh.file_path.as_path())).unwrap()
+                )
+                .unwrap()
+                .has_usable_embedded_cover
+            );
+        }
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn relocation_recovery_newer_metadata_job_reloads_and_continues(pool: PgPool) {
+        continuation_fixture(pool, "metadata").await;
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn relocation_recovery_newer_cover_job_reloads_and_continues(pool: PgPool) {
+        continuation_fixture(pool, "cover").await;
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn relocation_recovery_foreign_destination_restores_source_and_fails(pool: PgPool) {
+        let wb = writeback_pool_for(&pool).await;
+        let (dir, files, job, snap) = recovery_fixture(&pool, "metadata").await;
+        std::fs::write(dir.path().join("recovered.epub"), b"FOREIGN").unwrap();
+        sqlx::query!(
+            "UPDATE manifestations SET file_path = $2 WHERE id = $1",
+            snap.manifestation_id,
+            "recovered.epub"
+        )
+        .execute(&wb)
+        .await
+        .unwrap();
+        let outcome = run_once(
+            &wb,
+            &test_config(dir.path()).0,
+            &files,
+            job,
+            fixture_permit().await,
+        )
+        .await
+        .unwrap();
+        assert!(matches!(outcome, RunOutcome::Failed { .. }));
+        let fresh = load_snapshot(&wb, job).await.unwrap();
+        assert_eq!(fresh.file_path.as_str(), "fixture.epub");
+        assert!(fresh.relocation.is_none());
+        assert_eq!(fresh.current_file_hash, snap.current_file_hash);
+        assert_eq!(
+            std::fs::read(dir.path().join("recovered.epub")).unwrap(),
+            b"FOREIGN"
         );
     }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn relocation_recovery_visible_uncertainty_records_destination_and_retains_intent(
+        pool: PgPool,
+    ) {
+        let wb = writeback_pool_for(&pool).await;
+        let (dir, files, job, snap) = recovery_fixture(&pool, "relocation").await;
+        let intent = snap.relocation.as_ref().unwrap();
+        path_rename::move_existing(
+            files.library(snap.library_id).unwrap(),
+            &intent.source,
+            &intent.destination,
+            &snap.current_file_hash,
+        )
+        .unwrap();
+        let error = record_movement(
+            &wb,
+            snap.manifestation_id,
+            intent,
+            path_rename::MoveResult::VisibleUncertain(std::io::Error::other(
+                "reported sync failure",
+            )),
+        )
+        .await
+        .unwrap();
+        assert!(error.is_some());
+        let retained = load_snapshot(&wb, job).await.unwrap();
+        assert_eq!(retained.file_path.as_str(), "recovered.epub");
+        assert!(retained.relocation.is_some());
+        assert!(!dir.path().join("fixture.epub").exists());
+        assert!(
+            reconcile(&wb, &files, &retained, fixture_permit().await)
+                .await
+                .unwrap()
+                .is_none()
+        );
+        assert!(load_snapshot(&wb, job).await.unwrap().relocation.is_none());
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn relocation_recovery_sql_failure_retains_intent_before_adoption(pool: PgPool) {
+        let wb = writeback_pool_for(&pool).await;
+        let (dir, files, job, snap) = recovery_fixture(&pool, "relocation").await;
+        let intent = snap.relocation.as_ref().unwrap();
+        path_rename::move_existing(
+            files.library(snap.library_id).unwrap(),
+            &intent.source,
+            &intent.destination,
+            &snap.current_file_hash,
+        )
+        .unwrap();
+        wb.close().await;
+        assert!(matches!(
+            reconcile(&wb, &files, &snap, fixture_permit().await).await,
+            Err(WritebackError::Db(sqlx::Error::PoolClosed))
+        ));
+        let fresh_pool = writeback_pool_for(&pool).await;
+        assert!(
+            load_snapshot(&fresh_pool, job)
+                .await
+                .unwrap()
+                .relocation
+                .is_some()
+        );
+        assert!(dir.path().join("recovered.epub").exists());
+        assert!(!dir.path().join("fixture.epub").exists());
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn relocation_recovery_unreadable_retains_intent_without_rewrite(pool: PgPool) {
+        let wb = writeback_pool_for(&pool).await;
+        let (dir, files, job, snap) = recovery_fixture(&pool, "metadata").await;
+        std::fs::remove_file(dir.path().join("fixture.epub")).unwrap();
+        std::fs::create_dir(dir.path().join("fixture.epub")).unwrap();
+        assert!(matches!(
+            run_once(
+                &wb,
+                &test_config(dir.path()).0,
+                &files,
+                job,
+                fixture_permit().await
+            )
+            .await,
+            Err(WritebackError::Io(_))
+        ));
+        let fresh = load_snapshot(&wb, job).await.unwrap();
+        assert!(fresh.relocation.is_some());
+        assert_eq!(fresh.current_file_hash, snap.current_file_hash);
+    }
+
     /// Task 16 + Task 24: full `run_once` on a fixture EPUB whose OPF lives
     /// at `OEBPS/package.opf` (not the default `content.opf`).  Verifies:
     /// - the non-default OPF is discovered via `META-INF/container.xml`
@@ -1721,6 +2126,9 @@ mod tests {
             reason: "metadata".into(),
             file_path: "fixture.epub".parse().unwrap(),
             library_id: LibraryId::from_uuid(Uuid::nil()),
+            current_file_hash: String::new(),
+            file_size_bytes: 0,
+            relocation: None,
             format: ManifestationFormat::Epub,
             cover_path: None,
             title: title.map(std::string::ToString::to_string),
