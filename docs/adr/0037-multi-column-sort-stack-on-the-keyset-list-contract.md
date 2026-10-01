@@ -54,8 +54,10 @@ shape the frontend grid already emits and the project's existing JSON:API conven
 mechanism, and lets a hard server-side whitelist keep every orderable column injection-safe and index-backed at once.
 
 The sort parameter uses comma-separated fields with a leading minus for descending order. A closed server-side whitelist
-bounds sortable columns; nullable values sort last, duplicate columns are rejected, and the stack is capped. The opaque
-cursor records the sort specification and boundary values so replay under a different sort fails.
+bounds sortable columns. Nullable columns order NULLS LAST in both directions, because books with an unknown author or
+page count should not lead the results when an axis is reversed. Duplicate columns are rejected, and the stack is capped
+at three levels, which covers real curation without unbounded cursor growth. The opaque cursor records the sort
+specification and boundary values so replay under a different sort fails.
 
 ### Consequences
 
@@ -99,6 +101,9 @@ cursor records the sort specification and boundary values so replay under a diff
   extends; it priced in "each sort axis is real work", and this record is the multi-axis instance of that price.
 - [JSON API conventions](./0011-json-api-conventions-for-the-browser-facing-rest-surface.md): the opaque-cursor
   mechanism and JSON:API stance this reuses.
+- [Library sort is a per-user preference, never URL state](./0047-library-sort-is-a-per-user-preference-never-url-state.md):
+  the later decision that moves the library's sort stack out of the URL into a per-user preference, revising the
+  URL-state driver here while leaving this record's wire sort contract unchanged.
 - Revisit trigger: if resource naming standardises on an explicit field-selection grammar across the API, reconcile this
   sort syntax with it in a new record. If a deep multi-level stack over a filtered set shows the planner misestimating
   an incremental sort at scale, weigh a covering index or a per-query planner knob rather than widening the whitelist.
