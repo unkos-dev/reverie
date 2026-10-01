@@ -230,8 +230,11 @@ file's row:
    removes the library copy and moves the drop-zone original to quarantine with a sidecar. A completed repair returns
    its final report, hash and size; the caller reuses that evidence for `current_file_hash` and `file_size_bytes`,
    retaining the original ingestion hash. Successful repair status remains separate from unresolved degraded issues.
-   Validator errors retain `validation_status = failed` and ingestion continues. Non-EPUB files keep `pending`
-   validation status.
+   Publication uncertainty reopens the copied relative location through its library capability and measures its actual
+   hash and size. These values describe the stored bytes; the accepted candidate's hash does not establish that
+   replacement occurred. Validation remains `failed`, and the ingestion hash remains unchanged. An unreadable uncertain
+   file fails ingestion before persistence or source cleanup. Other validator errors retain `validation_status = failed`
+   and ingestion continues. Non-EPUB files keep `pending` validation status.
 6. Any `OpfData` recovered in step 5 is extracted into `ExtractedMetadata`. If the extracted title or an author differs
    from the filename heuristic enough to render a different library path, the file is renamed on disk (with its own
    collision resolution) to the metadata-derived path; a rename failure is logged, and the heuristic path is kept rather

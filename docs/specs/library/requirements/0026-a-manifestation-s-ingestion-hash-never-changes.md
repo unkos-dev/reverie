@@ -20,5 +20,6 @@ rewrite is measured against through `current_file_hash`.
 
 - After a manifestation's file is rewritten more than once by the writeback pipeline, `ingestion_file_hash` still holds
   the value recorded at ingestion while `current_file_hash` reflects each rewrite. Checked by
-  `ingestion_file_hash_immutable_across_writeback_chain` in `backend/src/services/writeback/orchestrator.rs`. No schema
-  constraint or runtime guard enforces this; the test is the check.
+  `bounded_writeback_ingestion_file_hash_immutable_across_writeback_chain` in
+  `backend/src/services/writeback/orchestrator.rs`. No schema constraint or runtime guard enforces this; the test is the
+  check.
