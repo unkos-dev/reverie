@@ -74,7 +74,7 @@ purges.
 | ---------- | --------- |
 | `writeback_jobs` row creation | Two sites, both named `enqueue_writeback` (below) |
 | `writeback_jobs` status/attempt columns | `claim_next`, the three `mark_*` functions, `revert_in_progress` |
-| `manifestations.current_file_hash`/`.has_embedded_cover`/`.file_size_bytes` | `orchestrator::run_once`'s closing `UPDATE` (ingestion also writes `current_file_hash`, once, at row creation) |
+| `manifestations.current_file_hash`/`.has_embedded_cover`/`.file_size_bytes` | `orchestrator::run_once`'s post-publication `UPDATE`, before relocation (ingestion also writes `current_file_hash`, once, at row creation) |
 | `manifestations.file_path` | `orchestrator::path_rename_step` |
 | `webhook_event_dedupe` rows | `events::dispatch`, called only from `queue::finish` |
 | The on-disk `EPUB` file's bytes | `epub::repack::publish` / `path_rename::move_existing` (orchestrator only) |
@@ -237,11 +237,12 @@ has no live input to act on outside its own tests.
    Successfully applied repair remains separate from degraded findings; equal degraded severity stays admissible.
 7. The callback hashes and measures final candidate bytes. The maintained operation syncs, replaces the source basename
    and syncs its actual opened parent. Uncertainty returns a failure before relocation or row-success bookkeeping.
-8. A blocking phase renders a checked relative destination in the same library, probes numeric collision suffixes and
+8. Async SQL writes the returned hash, size and cover flag, preserving `ingestion_file_hash`. This content evidence
+   remains current if optional relocation fails.
+9. A blocking phase renders a checked relative destination in the same library, probes numeric collision suffixes and
    performs a contained move. Async SQL records its actual relative location; a failed path update attempts contained
-   move-back under the same claim and permit.
-9. Async SQL writes the returned hash, size and cover flag, preserving `ingestion_file_hash`. A visible relocation with
-   unconfirmed directory durability records its location but fails the job before this success update.
+   move-back under the same claim and permit. A visible relocation with unconfirmed directory durability records its
+   location but fails the job.
 10. `queue::finish` calls `events::dispatch` with a `Complete` terminal event (delivered as a `tracing::info!` emit and
     recorded in `webhook_event_dedupe`), then `mark_complete` sets `status = 'complete'` and clears `error`.
 
@@ -309,11 +310,11 @@ overlapping a long-running job's completion):
   concurrency slot, but the claimed row itself stays `in_progress`: nothing inside a live process reclaims it. Only a
   process restart (crash or an intentional restart) or a graceful shutdown, which call `revert_in_progress` only after
   live jobs have ended, frees the row again.
-- **`current_file_hash` update failure after a successful on-disk commit.** If the final `UPDATE manifestations` fails,
-  the file has already been rewritten and (where applicable) relocated; `file_path` is correct, but `current_file_hash`
-  stays at its pre-writeback value; a subsequent successful run recomputes it. `run_once` logs this divergence at
-  `error!` with the attempted hash and the final path, and returns `Err(WritebackError::Db)`, which `queue::finish`
-  routes through `mark_failed` for another attempt.
+- **Content metadata update failure after publication.** If the `UPDATE manifestations` for hash, size and cover flag
+  fails, the file has already been rewritten at its recorded location. Relocation does not run, and stored content
+  evidence remains stale until a successful retry. `run_once` logs this divergence at `error!` with the attempted hash
+  and recorded path, and returns `Err(WritebackError::Db)`, which `queue::finish` routes through `mark_failed` for
+  another attempt.
 - **Path-rename database update failure.** If `path_rename_step`'s `UPDATE manifestations SET file_path` fails after the
   file has already moved on disk, the step attempts a compensating move back to the original location. If that
   compensating move also fails, the divergence between the on-disk location and the database's `file_path` is logged at

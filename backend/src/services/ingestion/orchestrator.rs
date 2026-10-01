@@ -288,6 +288,30 @@ fn run_validator(
     epub::validate_and_repair(file, &parent, &basename)
 }
 
+struct IngestionValidation {
+    result: Result<epub::Validated, epub::EpubError>,
+    current: Option<(String, u64)>,
+}
+
+fn reconcile_validation(
+    files: &LibraryFiles,
+    library_id: LibraryId,
+    path: &crate::services::files::RelativeFilePath,
+    result: Result<epub::Validated, epub::EpubError>,
+) -> Result<IngestionValidation, epub::EpubError> {
+    let current = if matches!(&result, Err(epub::EpubError::PublicationUncertain { .. })) {
+        let root = files
+            .library(library_id)
+            .map_err(|error| epub::EpubError::Io(std::io::Error::other(error)))?;
+        let mut file = root.open(path.as_path())?.into_std();
+        let hash = epub::repack::hash_file(&mut file)?;
+        Some((hash, file.metadata()?.len()))
+    } else {
+        None
+    };
+    Ok(IngestionValidation { result, current })
+}
+
 #[expect(
     clippy::too_many_lines,
     reason = "process_file executes a sequential 8-step ingest pipeline (hash, dedup, copy, validate, rename, DB commit) where each step needs output from the previous; decomposing further requires passing a large context struct between helpers"
@@ -415,8 +439,6 @@ async fn process_file(
     // validator for another format ships later, its files are already in
     // the truthful pre-validation state.
     //
-    // A Repaired outcome rewrites the library file, so only that arm replaces
-    // the copy's hash and size.
     let mut current_hash = copy_result.sha256.clone();
     let mut current_size = copy_result.file_size;
     let (validation_status, accessibility_metadata, opf_data, has_embedded_cover): (
@@ -443,11 +465,30 @@ async fn process_file(
                 Ok(path) => path,
                 Err(error) => return ProcessResult::Failed(error),
             };
-            tokio::task::spawn_blocking(move || run_validator(&files, library_id, &relative)).await
+            tokio::task::spawn_blocking(move || {
+                let result = run_validator(&files, library_id, &relative);
+                reconcile_validation(&files, library_id, &relative, result)
+            })
+            .await
         };
+        let validation = match validation {
+            Ok(Ok(validation)) => validation,
+            Ok(Err(error)) => {
+                return ProcessResult::Failed(format!(
+                    "publication reconciliation failed: {error}"
+                ));
+            }
+            Err(error) => {
+                return ProcessResult::Failed(format!("spawn_blocking panicked: {error}"));
+            }
+        };
+        if let Some((hash, size)) = validation.current {
+            current_hash = hash;
+            current_size = size;
+        }
 
-        match validation {
-            Ok(Ok(validated)) => {
+        match validation.result {
+            Ok(validated) => {
                 if let Some((hash, size)) = validated.rewritten {
                     current_hash = hash;
                     current_size = size;
@@ -498,17 +539,10 @@ async fn process_file(
                     }
                 }
             }
-            Ok(Err(e)) => {
-                // The validator itself failed to run (IO error, internal
-                // crash) — nothing is known about the file's structural
-                // quality, so don't borrow `degraded` ("validator ran,
-                // found tolerable issues"). `failed` is the monitorable
-                // validator-crash state; the file is still
-                // ingested and served.
+            Err(e) => {
                 tracing::warn!(error = %e, "epub validation error; storing validation_status=failed");
                 (ValidationStatus::Failed, None, None, None)
             }
-            Err(e) => return ProcessResult::Failed(format!("spawn_blocking panicked: {e}")),
         }
     } else {
         (ValidationStatus::Pending, None, None, None)
@@ -874,6 +908,75 @@ async fn quarantine_async(source: &Path, quarantine_path: &Path, reason: &str) {
 )]
 mod tests {
     use super::*;
+
+    #[test]
+    fn candidate_publication_ingestion_uncertainty_reconciles_actual_bytes() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().to_str().unwrap().parse().unwrap();
+        let library_id = crate::models::storage_library::LibraryId::from_uuid(uuid::Uuid::new_v4());
+        let files = crate::test_support::test_library_files_at(&root, library_id);
+        let relative = "stored.epub".parse().unwrap();
+        let path = dir.path().join("stored.epub");
+        std::fs::write(&path, b"accepted candidate").unwrap();
+        let accepted_hash = super::copier::hash_file(&path).unwrap();
+        for bytes in [b"original".as_slice(), b"accepted candidate".as_slice()] {
+            std::fs::write(&path, bytes).unwrap();
+            let result = super::reconcile_validation(
+                &files,
+                library_id,
+                &relative,
+                Err(super::epub::EpubError::PublicationUncertain {
+                    hash: accepted_hash.clone(),
+                    error: Box::new(super::epub::EpubError::Io(std::io::Error::other(
+                        "uncertain",
+                    ))),
+                }),
+            )
+            .unwrap();
+            assert!(matches!(
+                result.result,
+                Err(super::epub::EpubError::PublicationUncertain { .. })
+            ));
+            assert_eq!(
+                result.current,
+                Some((super::copier::hash_file(&path).unwrap(), bytes.len() as u64))
+            );
+            assert_eq!(std::fs::read(&path).unwrap(), bytes);
+        }
+    }
+
+    #[test]
+    fn candidate_publication_ingestion_reconciliation_rejects_unreadable_uncertain_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().to_str().unwrap().parse().unwrap();
+        let library_id = crate::models::storage_library::LibraryId::from_uuid(uuid::Uuid::new_v4());
+        let files = crate::test_support::test_library_files_at(&root, library_id);
+        let relative = "missing.epub".parse().unwrap();
+        let result = super::reconcile_validation(
+            &files,
+            library_id,
+            &relative,
+            Err(super::epub::EpubError::PublicationUncertain {
+                hash: "candidate".into(),
+                error: Box::new(super::epub::EpubError::Io(std::io::Error::other(
+                    "uncertain",
+                ))),
+            }),
+        );
+        assert!(matches!(result, Err(super::epub::EpubError::Io(_))));
+        let result = super::reconcile_validation(
+            &files,
+            library_id,
+            &relative,
+            Err(super::epub::EpubError::Io(std::io::Error::other(
+                "validation",
+            ))),
+        )
+        .unwrap();
+        assert!(result.current.is_none());
+        assert!(matches!(result.result, Err(super::epub::EpubError::Io(_))));
+    }
+
     async fn scan_once(config: &Config, pool: &PgPool) -> Result<ScanResult, anyhow::Error> {
         let id = crate::models::storage_library::default_library_id(pool).await?;
         let files = LibraryFiles::open(

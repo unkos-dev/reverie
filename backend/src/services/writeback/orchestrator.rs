@@ -139,22 +139,6 @@ pub async fn run_once(
             skip_reason: format!("file_missing: {}", snap.file_path.as_str()),
         });
     };
-    let (final_path, durability_error) = path_rename_step(
-        &snap,
-        config,
-        files,
-        pool,
-        &published.hash,
-        Arc::clone(&permit),
-    )
-    .await?;
-    if let Some(error) = durability_error {
-        return Ok(RunOutcome::Failed {
-            manifestation_id,
-            reason,
-            error: format!("relocation durability uncertain: {error}"),
-        });
-    }
     let new_hash = published.hash;
     let post_has_cover = published.report.has_usable_embedded_cover;
     let size = i64::try_from(published.size)
@@ -163,9 +147,18 @@ pub async fn run_once(
         "UPDATE manifestations SET current_file_hash = $1, has_embedded_cover = $3, file_size_bytes = $4 WHERE id = $2",
         new_hash, manifestation_id, post_has_cover, size,
     ).execute(pool).await {
-        tracing::error!(error = %error, %manifestation_id, final_path = final_path.as_str(), attempted_hash = %new_hash,
+        tracing::error!(error = %error, %manifestation_id, final_path = snap.file_path.as_str(), attempted_hash = %new_hash,
             "writeback hash UPDATE failed after publication; a retry must reconcile");
         return Err(error.into());
+    }
+    let (_, durability_error) =
+        path_rename_step(&snap, config, files, pool, &new_hash, Arc::clone(&permit)).await?;
+    if let Some(error) = durability_error {
+        return Ok(RunOutcome::Failed {
+            manifestation_id,
+            reason,
+            error: format!("relocation durability uncertain: {error}"),
+        });
     }
     if reason == "cover"
         && let Some(pending) = &snap.cover_path
@@ -943,6 +936,43 @@ mod tests {
             std::fs::read(second.path().join(row.file_path)).unwrap(),
             final_bytes
         );
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn bounded_writeback_relocation_failure_preserves_published_metadata(pool: PgPool) {
+        let app = writeback_pool_for(&pool).await;
+        let ing = ingestion_pool_for(&pool).await;
+        let (dir, path) = make_fixture_epub("Original");
+        let original_hash = initial_hex_sha256(&std::fs::read(&path).unwrap());
+        let (work_id, id) =
+            insert_fixture(&ing, "overlong", path.to_str().unwrap(), &original_hash).await;
+        let title = "é".repeat(150);
+        sqlx::query!("UPDATE works SET title = $1 WHERE id = $2", title, work_id)
+            .execute(&ing)
+            .await
+            .unwrap();
+        let job = sqlx::query_scalar!("INSERT INTO writeback_jobs (manifestation_id, reason) VALUES ($1, 'metadata') RETURNING id", id).fetch_one(&ing).await.unwrap();
+        for _ in 0..2 {
+            let result = run_fixture(&app, &test_config(dir.path()).0, job, dir.path()).await;
+            assert!(matches!(result, Err(WritebackError::Io(_))));
+            let bytes = std::fs::read(&path).unwrap();
+            let row = sqlx::query!("SELECT library_id, file_path, current_file_hash, ingestion_file_hash, file_size_bytes FROM manifestations WHERE id = $1", id).fetch_one(&app).await.unwrap();
+            assert_eq!(row.file_path, "fixture.epub");
+            assert_eq!(row.current_file_hash, initial_hex_sha256(&bytes));
+            assert_ne!(row.current_file_hash, original_hash);
+            assert_eq!(row.ingestion_file_hash, original_hash);
+            assert_eq!(row.file_size_bytes, i64::try_from(bytes.len()).unwrap());
+            let has_cover = sqlx::query_scalar!(
+                "SELECT has_embedded_cover FROM manifestations WHERE id = $1",
+                id,
+            )
+            .fetch_one(&app)
+            .await
+            .unwrap();
+            assert_eq!(has_cover, Some(false));
+            let opf = zip_layer::read_entry_from_bytes(&bytes, "OEBPS/package.opf").unwrap();
+            assert!(String::from_utf8(opf).unwrap().contains(&title));
+        }
     }
 
     #[sqlx::test(migrations = "./migrations")]

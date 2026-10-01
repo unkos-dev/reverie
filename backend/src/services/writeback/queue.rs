@@ -626,9 +626,8 @@ mod tests {
         let (entered_tx, mut entered_rx) = tokio::sync::mpsc::channel(1);
         let (draining_tx, draining_rx) = tokio::sync::oneshot::channel();
         let cancel = CancellationToken::new();
-        let mut config = test_config_with_max_attempts(3);
+        let (mut config, files) = test_config_with_max_attempts(3);
         config.writeback.concurrency = 1;
-        let files = crate::test_support::test_library_files();
         let blocking_release = Arc::clone(&release);
         let worker = tokio::spawn(spawn_worker_with(
             app.clone(),
@@ -1032,16 +1031,11 @@ mod tests {
         let pool_for_spawn = app_pool.clone();
         let cancel = CancellationToken::new();
         let cancel_for_spawn = cancel.clone();
-        let (cfg, _files) = test_config_with_max_attempts(3);
+        let (cfg, files) = test_config_with_max_attempts(3);
         let handle = tokio::spawn(async move {
-            spawn_worker(
-                pool_for_spawn,
-                cfg,
-                cancel_for_spawn,
-                crate::test_support::test_library_files(),
-            )
-            .await
-            .unwrap();
+            spawn_worker(pool_for_spawn, cfg, cancel_for_spawn, files)
+                .await
+                .unwrap();
         });
 
         // Allow the worker to run its startup revert_in_progress.
