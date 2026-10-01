@@ -57,8 +57,10 @@ or failover orchestration.
 ### Consequences
 
 - Positive: an operator who needs availability can scale out without forking Reverie; statelessness is the architectural
-  precondition and it is cheap. It is necessary but not sufficient: a reclaim lease bounded only by restart is unsafe
-  across concurrent instances, so that remains the outstanding multi-instance lift.
+  precondition and it is cheap. It is necessary but not sufficient: restart-bounded reclaim is unsafe across concurrent
+  instances, so the lease the
+  [durable job queue ADR](./0018-durable-job-queue-postgres-backed-skip-locked-crash-only.md) defers remains an
+  outstanding queue-related multi-instance lift.
 - Positive: Reverie's scope and failure surface stay bounded: no distributed-systems code to maintain, fewer moving
   parts for the single-instance majority.
 - Positive: the stance is consistent with the project-wide "enable, don't own" philosophy applied elsewhere.

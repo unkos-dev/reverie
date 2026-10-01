@@ -50,8 +50,13 @@ lets each axis reuse a tool the operator already runs, at the cost of a turnkey 
 of those tools.
 
 Reverie exposes open standards where they fit and outbound hooks otherwise. It leaves e-readers, identity providers,
-metrics stores, log aggregation, and automation services to operator tooling. Bundling a consuming service would require
-a separate decision.
+metrics stores, log aggregation, and automation services to operator tooling. The selected interfaces on three of those
+axes are an opt-in Prometheus-format `/metrics` endpoint for metrics, structured, machine-parsable logs to stdout for
+log aggregation, and outbound webhooks for eventing. Bundling a consuming service would require a separate decision.
+
+This decision governs how Reverie exposes itself to the operator's ecosystem. It does not cover inbound metadata
+enrichment, where Reverie consumes upstream APIs such as Open Library or Google Books for cataloguing, which is a
+separate concern with its own architecture.
 
 ### Consequences
 
@@ -93,5 +98,7 @@ a separate decision.
 
 - [Scale-stance record](./0021-scale-stance-stateless-application-operator-enabled-ha.md): the same "enable, don't own"
   philosophy on the high-availability axis.
+- [Unified identity record](./0029-unified-identity-with-pluggable-authentication-providers.md): adds local password
+  sign-in alongside OIDC. Local authentication is distinct from bundling an SSO or user-directory product.
 - A specific integration where no open standard or outbound hook can meet a real operator need is the signal to write a
   narrow decision record for bundling that one service, not to amend this philosophy by exception.
