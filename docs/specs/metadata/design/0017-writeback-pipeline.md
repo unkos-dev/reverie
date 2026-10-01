@@ -278,6 +278,9 @@ no-overwrite helper. An independent hash of the published destination must match
 Refusal, failed sync, corruption or an unreadable destination preserves the original. Normal completion explicitly
 closes the staging directory; cleanup errors propagate or are logged alongside the primary failure.
 
+After a failure leaves the destination visible and the source location recorded, each retry selects a new numeric
+suffix, so repeated failures can accumulate duplicate names without automatic reconciliation.
+
 Abrupt exit may leave bare UUID staging directories visible on a NAS share; no cleanup sweep runs. Mounted storage needs
 contained access, atomic content replacement, useful sync/error semantics and either no-replace rename or hard links for
 relocation. A successful sync after a reported failure does not prove that failed writes became durable. Filesystem and
