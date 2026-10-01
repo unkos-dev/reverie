@@ -1,0 +1,21 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT count(*) FROM writeback_jobs WHERE reason = 'metadata' AND attempt_count = 10",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "count",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "54fae5220fa08b5eb4d9fd8f51f1e8e1d758e002dd4248573926c2ba641d345f"
+}

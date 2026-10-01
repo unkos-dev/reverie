@@ -95,7 +95,7 @@ directly rather than assembling its own `AppState` and calling `build_router`.
   - `services::session_sweep::run_sweep` (the hourly expired-session reaper, driving `PostgresStore`'s `ExpiredDeletion`
     trait).
   - `services::writeback::queue::spawn_worker` (the writeback job queue, given the dedicated system-context pool
-    described in Data and state and shared `LibraryFiles`).
+    described in Data and state and shared `LibraryFiles`; also owns the bounded relocation-intent sweep).
 - `Dockerfile`'s `runtime` stage (the final `FROM debian:trixie-slim ... AS runtime` block) copies the release binary
   and the built frontend, creates a fixed non-root user, sets `REVERIE_FRONTEND_DIST_PATH`, and declares the
   `ENTRYPOINT` and `HEALTHCHECK` this subject's binary and readiness probe satisfy.
@@ -194,6 +194,12 @@ no-op. No worker, and no other part of this subject, calls `.cancel()`; every wo
     ingestion watcher, the enrichment queue, the session sweep, then the writeback worker. Each receives its own clone
     of the token and (where relevant) its own clone of the pools and configuration it needs.
 13. `axum::serve` begins accepting connections, wrapped in `with_graceful_shutdown(shutdown_signal(...))`.
+
+The enabled writeback worker resets orphaned claims, then sweeps at most 100 eligible relocation intents before polling.
+It repeats that indexed database sweep every five minutes inside its existing loop. Open intents use five-minute claim
+retry spacing; ordinary jobs retain their normal backoff. Relocation carriers reconcile only; metadata and cover jobs
+reconcile, reload their snapshots and continue. Disabling writeback skips both claims and sweeps. No additional worker
+or filesystem scan is involved, and the shared shutdown budget is unchanged.
 
 **An authorised OPDS download:** the handler first accepts its database/RLS lookup, then calls
 `LibraryFiles::open_download` with the recorded library identity and checked relative path. Unknown identities never

@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE manifestations SET relocation_source_path = $2, relocation_destination_path = $3 WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "1ec0923945f91a4b1caee8c96ce08352aab088fa04b6f87c10a407e6406903c6"
+}

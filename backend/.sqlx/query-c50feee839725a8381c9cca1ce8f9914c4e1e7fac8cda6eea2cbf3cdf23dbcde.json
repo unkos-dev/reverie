@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE manifestations SET current_file_hash = $2, file_size_bytes = 7 WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "c50feee839725a8381c9cca1ce8f9914c4e1e7fac8cda6eea2cbf3cdf23dbcde"
+}

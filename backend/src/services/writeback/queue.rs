@@ -109,12 +109,18 @@ where
     // transitions back to pending before we start polling.  Shared with
     // the shutdown path below.
     revert_in_progress(&pool).await?;
+    sweep_relocations(&pool).await?;
 
     let concurrency = config.writeback.concurrency as usize;
     let semaphore = Arc::new(Semaphore::new(concurrency));
     let mut interval: Interval =
         tokio::time::interval(Duration::from_secs(config.writeback.poll_idle_secs));
     interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+    let mut recovery_interval = tokio::time::interval_at(
+        tokio::time::Instant::now() + Duration::from_secs(300),
+        Duration::from_secs(300),
+    );
+    recovery_interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
 
     info!(
         concurrency,
@@ -132,6 +138,9 @@ where
             }
             result = jobs.join_next(), if !jobs.is_empty() => {
                 if let Some(Err(error)) = result { warn!(%error, "writeback job task failed"); }
+            }
+            _ = recovery_interval.tick() => {
+                sweep_relocations(&pool).await?;
             }
             _ = interval.tick() => {
                 loop {
@@ -190,6 +199,7 @@ pub async fn claim_next(pool: &PgPool) -> sqlx::Result<Option<(Uuid, i32)>> {
         r"WITH eligible AS (
              SELECT wj.id, wj.attempt_count
              FROM writeback_jobs wj
+             JOIN manifestations m ON m.id = wj.manifestation_id
              WHERE wj.status IN ('pending', 'failed')
                AND NOT EXISTS (
                  SELECT 1 FROM writeback_jobs other
@@ -201,6 +211,7 @@ pub async fn claim_next(pool: &PgPool) -> sqlx::Result<Option<(Uuid, i32)>> {
                  OR wj.last_attempted_at <
                       now() - (
                         CASE
+                          WHEN m.relocation_source_path IS NOT NULL THEN INTERVAL '5 minutes'
                           WHEN wj.attempt_count <= 0 THEN INTERVAL '0 minutes'
                           WHEN wj.attempt_count = 1 THEN INTERVAL '5 minutes'
                           WHEN wj.attempt_count = 2 THEN INTERVAL '30 minutes'
@@ -212,7 +223,7 @@ pub async fn claim_next(pool: &PgPool) -> sqlx::Result<Option<(Uuid, i32)>> {
                )
              ORDER BY wj.last_attempted_at NULLS FIRST, wj.created_at
              LIMIT 1
-             FOR UPDATE SKIP LOCKED
+             FOR UPDATE OF wj SKIP LOCKED
            )
            UPDATE writeback_jobs wj
               SET status = 'in_progress',
@@ -238,6 +249,27 @@ pub async fn claim_next(pool: &PgPool) -> sqlx::Result<Option<(Uuid, i32)>> {
         }
         Err(e) => Err(e),
     }
+}
+
+async fn sweep_relocations(pool: &PgPool) -> sqlx::Result<u64> {
+    let result = sqlx::query!(
+        "WITH eligible AS (
+            SELECT m.id FROM manifestations m
+            WHERE m.relocation_source_path IS NOT NULL
+              AND NOT EXISTS (
+                SELECT 1 FROM writeback_jobs wj
+                WHERE wj.manifestation_id = m.id
+                  AND wj.status IN ('pending', 'failed', 'in_progress')
+              )
+            ORDER BY m.id LIMIT 100
+            FOR UPDATE OF m SKIP LOCKED
+        )
+        INSERT INTO writeback_jobs (manifestation_id, reason)
+        SELECT id, 'relocation' FROM eligible",
+    )
+    .execute(pool)
+    .await?;
+    Ok(result.rows_affected())
 }
 
 /// Build and dispatch a terminal event for `job_id`; see
@@ -278,6 +310,26 @@ async fn finish(
     // failure followed by crash-recovery retry re-fires the same terminal
     // event; `events::dispatch` dedupes on the stable event id.
     match result {
+        Ok(RunOutcome::RelocationTerminal {
+            manifestation_id,
+            reason,
+            intent,
+            diagnosis,
+        }) => {
+            dispatch_terminal(
+                pool,
+                id,
+                events::TerminalOutcome::Skipped,
+                manifestation_id,
+                &reason,
+                attempt_count,
+                &diagnosis,
+            )
+            .await;
+            let mut tx = pool.begin().await?;
+            finalise_terminal(&mut tx, id, manifestation_id, &intent, &diagnosis).await?;
+            tx.commit().await?;
+        }
         Ok(RunOutcome::Success {
             manifestation_id,
             reason,
@@ -345,36 +397,13 @@ async fn finish(
             // row is gone or the lookup fails, so every terminal
             // transition still produces an event that downstream consumers
             // can correlate against the job id.
-            let mid = match sqlx::query_scalar!(
-                "SELECT manifestation_id FROM writeback_jobs WHERE id = $1",
-                id,
-            )
-            .fetch_optional(pool)
-            .await
-            {
-                Ok(Some(mid)) => mid,
-                Ok(None) => {
-                    warn!(
-                        %id,
-                        "writeback: job row vanished before failure webhook could be emitted; using sentinel manifestation_id"
-                    );
-                    Uuid::nil()
-                }
-                Err(lookup_err) => {
-                    warn!(
-                        error = %lookup_err,
-                        %id,
-                        "writeback: manifestation_id lookup failed; using sentinel manifestation_id"
-                    );
-                    Uuid::nil()
-                }
-            };
+            let (mid, reason) = failure_identity(pool, id).await;
             let outcome = if is_job_not_found {
                 events::TerminalOutcome::Skipped
             } else {
                 events::TerminalOutcome::Failed
             };
-            dispatch_terminal(pool, id, outcome, mid, "unknown", attempt_count, &err_str).await;
+            dispatch_terminal(pool, id, outcome, mid, &reason, attempt_count, &err_str).await;
 
             if is_job_not_found {
                 mark_skipped(pool, id, &err_str).await?;
@@ -383,6 +412,58 @@ async fn finish(
             }
         }
     }
+    Ok(())
+}
+
+async fn failure_identity(pool: &PgPool, id: Uuid) -> (Uuid, String) {
+    match sqlx::query!(
+        "SELECT manifestation_id, reason FROM writeback_jobs WHERE id = $1",
+        id,
+    )
+    .fetch_optional(pool)
+    .await
+    {
+        Ok(Some(row)) => (row.manifestation_id, row.reason),
+        Ok(None) => {
+            warn!(
+                %id,
+                "writeback: job row vanished before failure webhook could be emitted; using sentinel manifestation_id"
+            );
+            (Uuid::nil(), "unknown".into())
+        }
+        Err(lookup_err) => {
+            warn!(
+                error = %lookup_err,
+                %id,
+                "writeback: manifestation_id lookup failed; using sentinel manifestation_id"
+            );
+            (Uuid::nil(), "unknown".into())
+        }
+    }
+}
+
+async fn finalise_terminal(
+    connection: &mut sqlx::PgConnection,
+    id: Uuid,
+    manifestation_id: Uuid,
+    intent: &orchestrator::RelocationIntent,
+    diagnosis: &str,
+) -> sqlx::Result<()> {
+    sqlx::query!(
+        "SELECT id FROM writeback_jobs WHERE id = $1 AND manifestation_id = $2 AND status = 'in_progress' FOR UPDATE",
+        id, manifestation_id,
+    ).fetch_one(&mut *connection).await?;
+    let cleared = sqlx::query!(
+        "UPDATE manifestations SET relocation_source_path = NULL, relocation_destination_path = NULL WHERE id = $1 AND relocation_source_path = $2 AND relocation_destination_path = $3",
+        manifestation_id, intent.source.as_str(), intent.destination.as_str(),
+    ).execute(&mut *connection).await?;
+    if cleared.rows_affected() != 1 {
+        return Err(sqlx::Error::RowNotFound);
+    }
+    sqlx::query!(
+        "UPDATE writeback_jobs SET status = 'skipped', completed_at = now(), error = $2 WHERE id = $1",
+        id, diagnosis,
+    ).execute(&mut *connection).await?;
     Ok(())
 }
 
@@ -606,6 +687,623 @@ mod tests {
         .fetch_one(pool)
         .await
         .unwrap()
+    }
+
+    async fn set_intent(pool: &PgPool, mid: Uuid) -> orchestrator::RelocationIntent {
+        let source = sqlx::query_scalar!("SELECT file_path FROM manifestations WHERE id = $1", mid)
+            .fetch_one(pool)
+            .await
+            .unwrap();
+        let destination = format!("recovered/{mid}.epub");
+        sqlx::query!("UPDATE manifestations SET relocation_source_path = $2, relocation_destination_path = $3 WHERE id = $1", mid, source, destination).execute(pool).await.unwrap();
+        orchestrator::RelocationIntent {
+            source: source.parse().unwrap(),
+            destination: destination.parse().unwrap(),
+        }
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn relocation_schema_rejects_half_pairs_and_invalid_paths(pool: PgPool) {
+        let ing = ingestion_pool_for(&pool).await;
+        let wb = writeback_pool_for(&pool).await;
+        let (_, mid) = insert_fixture(&ing, "intent-schema").await;
+        for (source, destination) in [
+            (Some("source.epub"), None),
+            (None, Some("destination.epub")),
+        ] {
+            let error = sqlx::query!("UPDATE manifestations SET relocation_source_path = $2, relocation_destination_path = $3 WHERE id = $1", mid, source, destination).execute(&wb).await.unwrap_err();
+            assert!(
+                matches!(error, sqlx::Error::Database(error) if error.constraint() == Some("manifestations_relocation_pair_check"))
+            );
+        }
+        for invalid in [
+            "",
+            "/absolute.epub",
+            "trailing/",
+            "a//b.epub",
+            "a\\b.epub",
+            "C:drive.epub",
+            ".",
+            "..",
+            "a/./b",
+            "a/../b",
+        ] {
+            for (source, destination) in [(invalid, "valid.epub"), ("valid.epub", invalid)] {
+                let error = sqlx::query!("UPDATE manifestations SET relocation_source_path = $2, relocation_destination_path = $3 WHERE id = $1", mid, source, destination).execute(&wb).await.unwrap_err();
+                assert!(
+                    matches!(error, sqlx::Error::Database(error) if error.is_check_violation())
+                );
+            }
+        }
+        set_intent(&wb, mid).await;
+        let carrier = insert_job(&ing, mid, "relocation").await;
+        assert_eq!(
+            sqlx::query_scalar!("SELECT reason FROM writeback_jobs WHERE id = $1", carrier)
+                .fetch_one(&wb)
+                .await
+                .unwrap(),
+            "relocation"
+        );
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn relocation_queue_intent_retries_in_five_minutes_preserving_ordinary_backoff(
+        pool: PgPool,
+    ) {
+        let ing = ingestion_pool_for(&pool).await;
+        let wb = writeback_pool_for(&pool).await;
+        let (_, mid) = insert_fixture(&ing, "retry-intent").await;
+        let intent = set_intent(&wb, mid).await;
+        let job = insert_job(&ing, mid, "metadata").await;
+        sqlx::query!("UPDATE writeback_jobs SET status = 'failed', attempt_count = 5, last_attempted_at = now() - INTERVAL '4 minutes' WHERE id = $1", job).execute(&wb).await.unwrap();
+        assert!(claim_next(&wb).await.unwrap().is_none());
+        sqlx::query!("UPDATE writeback_jobs SET last_attempted_at = now() - INTERVAL '6 minutes' WHERE id = $1", job).execute(&wb).await.unwrap();
+        assert_eq!(claim_next(&wb).await.unwrap(), Some((job, 6)));
+        mark_failed(
+            &wb,
+            job,
+            6,
+            &test_config_with_max_attempts(10),
+            Some("storage failure"),
+        )
+        .await
+        .unwrap();
+        sqlx::query!("UPDATE manifestations SET relocation_source_path = NULL, relocation_destination_path = NULL WHERE id = $1 AND relocation_source_path = $2", mid, intent.source.as_str()).execute(&wb).await.unwrap();
+        assert!(claim_next(&wb).await.unwrap().is_none());
+        sqlx::query!("UPDATE writeback_jobs SET last_attempted_at = now() - INTERVAL '25 hours' WHERE id = $1", job).execute(&wb).await.unwrap();
+        assert_eq!(claim_next(&wb).await.unwrap(), Some((job, 7)));
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn relocation_queue_sweep_is_bounded_and_reaches_remaining_eligible_rows(pool: PgPool) {
+        let wb = writeback_pool_for(&pool).await;
+        let work = sqlx::query_scalar!(
+            "INSERT INTO works (title, sort_title) VALUES ($1, $1) RETURNING id",
+            "sweep"
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        sqlx::query!(
+            "INSERT INTO manifestations (library_id, work_id, format, file_path, ingestion_file_hash, current_file_hash, file_size_bytes, relocation_source_path, relocation_destination_path)
+             SELECT (SELECT id FROM libraries WHERE configuration_key = 'default'), $1, 'epub', 'source-' || n || '.epub', 'hash-' || n, 'hash-' || n, 7, 'source-' || n || '.epub', 'destination-' || n || '.epub' FROM generate_series(1, 105) AS n", work,
+        ).execute(&pool).await.unwrap();
+        assert_eq!(sweep_relocations(&wb).await.unwrap(), 100);
+        assert_eq!(sweep_relocations(&wb).await.unwrap(), 5);
+        assert_eq!(sweep_relocations(&wb).await.unwrap(), 0);
+        assert_eq!(
+            sqlx::query_scalar!("SELECT count(*) FROM writeback_jobs WHERE reason = 'relocation'")
+                .fetch_one(&pool)
+                .await
+                .unwrap(),
+            Some(105)
+        );
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn relocation_queue_sweep_excludes_live_jobs_and_preserves_exhausted_budget(
+        pool: PgPool,
+    ) {
+        let ing = ingestion_pool_for(&pool).await;
+        let wb = writeback_pool_for(&pool).await;
+        for status in ["pending", "failed", "in_progress", "skipped", "complete"] {
+            let (_, mid) = insert_fixture(&ing, status).await;
+            set_intent(&wb, mid).await;
+            let job = insert_job(&ing, mid, "metadata").await;
+            sqlx::query!("UPDATE writeback_jobs SET status = $2::text::writeback_status, attempt_count = 10 WHERE id = $1", job, status).execute(&wb).await.unwrap();
+        }
+        let (_, no_intent) = insert_fixture(&ing, "no-intent").await;
+        assert_eq!(sweep_relocations(&wb).await.unwrap(), 2);
+        assert_eq!(sweep_relocations(&wb).await.unwrap(), 0);
+        assert_eq!(sqlx::query_scalar!("SELECT count(*) FROM writeback_jobs WHERE reason = 'metadata' AND attempt_count = 10").fetch_one(&pool).await.unwrap(), Some(5));
+        assert_eq!(
+            sqlx::query_scalar!(
+                "SELECT count(*) FROM writeback_jobs WHERE manifestation_id = $1",
+                no_intent
+            )
+            .fetch_one(&pool)
+            .await
+            .unwrap(),
+            Some(0)
+        );
+    }
+
+    async fn carrier_fixture(
+        pool: &PgPool,
+    ) -> (
+        tempfile::TempDir,
+        LibraryFiles,
+        Uuid,
+        Uuid,
+        orchestrator::RelocationIntent,
+    ) {
+        let ing = ingestion_pool_for(pool).await;
+        let wb = writeback_pool_for(pool).await;
+        let (_, mid) = insert_fixture(&ing, "carrier").await;
+        let intent = set_intent(&wb, mid).await;
+        let library = crate::models::storage_library::default_library_id(pool)
+            .await
+            .unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().to_str().unwrap().parse().unwrap();
+        let files = crate::test_support::test_library_files_at(&root, library);
+        let opened = files.library(library).unwrap();
+        opened.create_dir_all("fixtures").unwrap();
+        opened.create_dir_all("recovered").unwrap();
+        opened.write(intent.source.as_path(), b"PAYLOAD").unwrap();
+        let hash = crate::services::epub::repack::hash_file(
+            &mut opened.open(intent.source.as_path()).unwrap().into_std(),
+        )
+        .unwrap();
+        sqlx::query!(
+            "UPDATE manifestations SET current_file_hash = $2, file_size_bytes = 7 WHERE id = $1",
+            mid,
+            hash
+        )
+        .execute(&wb)
+        .await
+        .unwrap();
+        let origin = insert_job(&ing, mid, "metadata").await;
+        mark_failed(
+            &wb,
+            origin,
+            3,
+            &test_config_with_max_attempts(3),
+            Some("storage unavailable"),
+        )
+        .await
+        .unwrap();
+        assert_eq!(sweep_relocations(&wb).await.unwrap(), 1);
+        let (job, _) = claim_next(&wb).await.unwrap().unwrap();
+        (dir, files, job, mid, intent)
+    }
+
+    async fn carrier_run(
+        pool: &PgPool,
+        files: &LibraryFiles,
+        job: Uuid,
+    ) -> Result<RunOutcome, WritebackError> {
+        let permit = Arc::new(Arc::new(Semaphore::new(1)).acquire_owned().await.unwrap());
+        orchestrator::run_once(pool, &test_config_with_max_attempts(3), files, job, permit).await
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn relocation_queue_exhausted_origin_recovers_without_metadata_event_or_rewrite(
+        pool: PgPool,
+    ) {
+        let wb = writeback_pool_for(&pool).await;
+        let (_dir, files, job, mid, intent) = carrier_fixture(&pool).await;
+        let ing = ingestion_pool_for(&pool).await;
+        let sibling = insert_job(&ing, mid, "metadata").await;
+        assert!(claim_next(&wb).await.unwrap().is_none());
+        let result = carrier_run(&wb, &files, job).await;
+        assert!(
+            matches!(&result, Ok(RunOutcome::Success { reason, .. }) if reason == "relocation")
+        );
+        finish(&wb, &test_config_with_max_attempts(3), job, 1, result)
+            .await
+            .unwrap();
+        let row = sqlx::query!(
+            "SELECT file_path, relocation_source_path FROM manifestations WHERE id = $1",
+            mid
+        )
+        .fetch_one(&wb)
+        .await
+        .unwrap();
+        assert_eq!(row.file_path, intent.destination.as_str());
+        assert!(row.relocation_source_path.is_none());
+        let library = crate::models::storage_library::default_library_id(&pool)
+            .await
+            .unwrap();
+        assert_eq!(
+            files
+                .library(library)
+                .unwrap()
+                .read(intent.destination.as_path())
+                .unwrap(),
+            b"PAYLOAD"
+        );
+        let event = events::event_id(job, events::TerminalOutcome::Complete);
+        assert_eq!(
+            sqlx::query_scalar!(
+                "SELECT count(*) FROM webhook_event_dedupe WHERE event_id = $1",
+                event
+            )
+            .fetch_one(&pool)
+            .await
+            .unwrap(),
+            Some(1)
+        );
+        assert_eq!(
+            sqlx::query_scalar!("SELECT count(*) FROM webhook_event_dedupe")
+                .fetch_one(&pool)
+                .await
+                .unwrap(),
+            Some(1)
+        );
+        assert_eq!(claim_next(&wb).await.unwrap(), Some((sibling, 1)));
+        assert_eq!(
+            sqlx::query_scalar!("SELECT reason FROM writeback_jobs WHERE id = $1", job)
+                .fetch_one(&pool)
+                .await
+                .unwrap(),
+            "relocation"
+        );
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn relocation_queue_permanent_loss_clears_intent_and_stops_sweep(pool: PgPool) {
+        let wb = writeback_pool_for(&pool).await;
+        let (_dir, files, job, mid, intent) = carrier_fixture(&pool).await;
+        let library = crate::models::storage_library::default_library_id(&pool)
+            .await
+            .unwrap();
+        files
+            .library(library)
+            .unwrap()
+            .remove_file(intent.source.as_path())
+            .unwrap();
+        let result = carrier_run(&wb, &files, job).await;
+        assert!(
+            matches!(&result, Ok(RunOutcome::RelocationTerminal { diagnosis, .. }) if diagnosis == "file_missing")
+        );
+        finish(&wb, &test_config_with_max_attempts(3), job, 1, result)
+            .await
+            .unwrap();
+        let row = sqlx::query!(
+            "SELECT status::text AS status, error FROM writeback_jobs WHERE id = $1",
+            job
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(row.status.as_deref(), Some("skipped"));
+        assert_eq!(row.error.as_deref(), Some("file_missing"));
+        assert!(
+            sqlx::query_scalar!(
+                "SELECT relocation_source_path FROM manifestations WHERE id = $1",
+                mid
+            )
+            .fetch_one(&wb)
+            .await
+            .unwrap()
+            .is_none()
+        );
+        assert_eq!(sweep_relocations(&wb).await.unwrap(), 0);
+        assert_eq!(
+            sqlx::query_scalar!(
+                "SELECT count(*) FROM webhook_event_dedupe WHERE event_id = $1",
+                events::event_id(job, events::TerminalOutcome::Skipped)
+            )
+            .fetch_one(&pool)
+            .await
+            .unwrap(),
+            Some(1)
+        );
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn relocation_queue_terminal_transaction_retains_sibling_exclusion_until_commit(
+        pool: PgPool,
+    ) {
+        let wb = writeback_pool_for(&pool).await;
+        let (_dir, _files, job, mid, intent) = carrier_fixture(&pool).await;
+        let ing = ingestion_pool_for(&pool).await;
+        let sibling = insert_job(&ing, mid, "metadata").await;
+        let mut tx = wb.begin().await.unwrap();
+        finalise_terminal(&mut tx, job, mid, &intent, "file_missing")
+            .await
+            .unwrap();
+        assert!(claim_next(&wb).await.unwrap().is_none());
+        tx.rollback().await.unwrap();
+        assert!(
+            sqlx::query_scalar!(
+                "SELECT relocation_source_path FROM manifestations WHERE id = $1",
+                mid
+            )
+            .fetch_one(&wb)
+            .await
+            .unwrap()
+            .is_some()
+        );
+        assert!(claim_next(&wb).await.unwrap().is_none());
+        finish(
+            &wb,
+            &test_config_with_max_attempts(3),
+            job,
+            1,
+            Ok(RunOutcome::RelocationTerminal {
+                manifestation_id: mid,
+                reason: "relocation".into(),
+                intent,
+                diagnosis: "file_missing".into(),
+            }),
+        )
+        .await
+        .unwrap();
+        assert_eq!(claim_next(&wb).await.unwrap(), Some((sibling, 1)));
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn relocation_queue_failed_finish_retains_intent_and_claim(pool: PgPool) {
+        let wb = writeback_pool_for(&pool).await;
+        let (_dir, _files, job, mid, intent) = carrier_fixture(&pool).await;
+        wb.close().await;
+        let result = finish(
+            &wb,
+            &test_config_with_max_attempts(3),
+            job,
+            1,
+            Ok(RunOutcome::RelocationTerminal {
+                manifestation_id: mid,
+                reason: "relocation".into(),
+                intent,
+                diagnosis: "file_missing".into(),
+            }),
+        )
+        .await;
+        assert!(matches!(result, Err(sqlx::Error::PoolClosed)));
+        let fresh = writeback_pool_for(&pool).await;
+        assert!(
+            sqlx::query_scalar!(
+                "SELECT relocation_source_path FROM manifestations WHERE id = $1",
+                mid
+            )
+            .fetch_one(&fresh)
+            .await
+            .unwrap()
+            .is_some()
+        );
+        assert_eq!(
+            sqlx::query_scalar!("SELECT status::text FROM writeback_jobs WHERE id = $1", job)
+                .fetch_one(&pool)
+                .await
+                .unwrap()
+                .as_deref(),
+            Some("in_progress")
+        );
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn relocation_queue_disabled_worker_performs_no_claim_reset_or_sweep(pool: PgPool) {
+        let wb = writeback_pool_for(&pool).await;
+        let (_dir, files, job, _mid, _intent) = carrier_fixture(&pool).await;
+        let ing = ingestion_pool_for(&pool).await;
+        let (_, eligible) = insert_fixture(&ing, "disabled-eligible").await;
+        set_intent(&wb, eligible).await;
+        let mut config = test_config_with_max_attempts(3);
+        config.writeback.enabled = false;
+        let cancel = CancellationToken::new();
+        cancel.cancel();
+        spawn_worker(wb.clone(), config, cancel, files)
+            .await
+            .unwrap();
+        assert_eq!(
+            sqlx::query_scalar!("SELECT status::text FROM writeback_jobs WHERE id = $1", job)
+                .fetch_one(&pool)
+                .await
+                .unwrap()
+                .as_deref(),
+            Some("in_progress")
+        );
+        assert_eq!(
+            sqlx::query_scalar!("SELECT count(*) FROM writeback_jobs WHERE reason = 'relocation'")
+                .fetch_one(&pool)
+                .await
+                .unwrap(),
+            Some(1)
+        );
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn relocation_queue_failure_event_uses_stored_reason(pool: PgPool) {
+        let wb = writeback_pool_for(&pool).await;
+        let (_dir, _files, job, mid, _intent) = carrier_fixture(&pool).await;
+        assert_eq!(failure_identity(&wb, job).await, (mid, "relocation".into()));
+        finish(
+            &wb,
+            &test_config_with_max_attempts(3),
+            job,
+            1,
+            Err(WritebackError::Persist("storage unavailable".into())),
+        )
+        .await
+        .unwrap();
+        let row = sqlx::query!(
+            "SELECT reason, status::text AS status, error FROM writeback_jobs WHERE id = $1",
+            job
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(row.reason, "relocation");
+        assert_eq!(row.status.as_deref(), Some("failed"));
+        assert!(row.error.unwrap().contains("storage unavailable"));
+        assert_eq!(
+            sqlx::query_scalar!(
+                "SELECT count(*) FROM webhook_event_dedupe WHERE event_id = $1",
+                events::event_id(job, events::TerminalOutcome::Failed)
+            )
+            .fetch_one(&pool)
+            .await
+            .unwrap(),
+            Some(1)
+        );
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn relocation_queue_startup_sweep_creates_carrier_before_claiming(pool: PgPool) {
+        let ing = ingestion_pool_for(&pool).await;
+        let wb = writeback_pool_for(&pool).await;
+        let (_, mid) = insert_fixture(&ing, "startup-sweep").await;
+        set_intent(&wb, mid).await;
+        let origin = insert_job(&ing, mid, "metadata").await;
+        mark_failed(
+            &wb,
+            origin,
+            3,
+            &test_config_with_max_attempts(3),
+            Some("exhausted"),
+        )
+        .await
+        .unwrap();
+        let cancel = CancellationToken::new();
+        let signal = Arc::new(tokio::sync::Notify::new());
+        let worker_signal = Arc::clone(&signal);
+        let worker_cancel = cancel.clone();
+        let worker_pool = wb.clone();
+        let handle = tokio::spawn(async move {
+            spawn_worker_with(
+                worker_pool,
+                test_config_with_max_attempts(3),
+                worker_cancel,
+                crate::test_support::test_library_files(),
+                move |pool, _config, _files, id, _permit| {
+                    let signal = Arc::clone(&worker_signal);
+                    async move {
+                        let (manifestation_id, reason) = failure_identity(&pool, id).await;
+                        assert_eq!(manifestation_id, mid);
+                        assert_eq!(reason, "relocation");
+                        signal.notify_one();
+                        Ok(RunOutcome::Success {
+                            manifestation_id,
+                            reason,
+                            current_file_hash: "unchanged".into(),
+                        })
+                    }
+                },
+                || {},
+            )
+            .await
+            .unwrap();
+        });
+        signal.notified().await;
+        cancel.cancel();
+        handle.await.unwrap();
+        assert_eq!(sqlx::query_scalar!("SELECT count(*) FROM writeback_jobs WHERE reason = 'relocation' AND status = 'complete'").fetch_one(&pool).await.unwrap(), Some(1));
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn relocation_queue_terminal_pair_mismatch_rolls_back_without_releasing_claim(
+        pool: PgPool,
+    ) {
+        let wb = writeback_pool_for(&pool).await;
+        let (_dir, _files, job, mid, mut intent) = carrier_fixture(&pool).await;
+        intent.destination = "different.epub".parse().unwrap();
+        let result = finish(
+            &wb,
+            &test_config_with_max_attempts(3),
+            job,
+            1,
+            Ok(RunOutcome::RelocationTerminal {
+                manifestation_id: mid,
+                reason: "relocation".into(),
+                intent,
+                diagnosis: "file_missing".into(),
+            }),
+        )
+        .await;
+        assert!(matches!(result, Err(sqlx::Error::RowNotFound)));
+        assert!(
+            sqlx::query_scalar!(
+                "SELECT relocation_source_path FROM manifestations WHERE id = $1",
+                mid
+            )
+            .fetch_one(&wb)
+            .await
+            .unwrap()
+            .is_some()
+        );
+        assert_eq!(
+            sqlx::query_scalar!("SELECT status::text FROM writeback_jobs WHERE id = $1", job)
+                .fetch_one(&pool)
+                .await
+                .unwrap()
+                .as_deref(),
+            Some("in_progress")
+        );
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn relocation_queue_storage_return_recovers_after_carrier_exhaustion(pool: PgPool) {
+        let wb = writeback_pool_for(&pool).await;
+        let (_dir, files, job, mid, intent) = carrier_fixture(&pool).await;
+        let library = crate::models::storage_library::default_library_id(&pool)
+            .await
+            .unwrap();
+        let root = files.library(library).unwrap();
+        root.rename(intent.source.as_path(), root, "saved.epub")
+            .unwrap();
+        root.create_dir(intent.source.as_path()).unwrap();
+        let result = carrier_run(&wb, &files, job).await;
+        assert!(matches!(&result, Err(WritebackError::Io(_))));
+        finish(&wb, &test_config_with_max_attempts(1), job, 1, result)
+            .await
+            .unwrap();
+        assert!(
+            sqlx::query_scalar!(
+                "SELECT relocation_source_path FROM manifestations WHERE id = $1",
+                mid
+            )
+            .fetch_one(&wb)
+            .await
+            .unwrap()
+            .is_some()
+        );
+        root.remove_dir(intent.source.as_path()).unwrap();
+        root.rename("saved.epub", root, intent.source.as_path())
+            .unwrap();
+        assert_eq!(sweep_relocations(&wb).await.unwrap(), 1);
+        let (next, _) = claim_next(&wb).await.unwrap().unwrap();
+        assert_ne!(next, job);
+        let recovered = carrier_run(&wb, &files, next).await;
+        assert!(
+            matches!(&recovered, Ok(RunOutcome::Success { reason, .. }) if reason == "relocation")
+        );
+        finish(&wb, &test_config_with_max_attempts(1), next, 1, recovered)
+            .await
+            .unwrap();
+        assert_eq!(root.read(intent.destination.as_path()).unwrap(), b"PAYLOAD");
+        assert!(
+            sqlx::query_scalar!(
+                "SELECT relocation_source_path FROM manifestations WHERE id = $1",
+                mid
+            )
+            .fetch_one(&wb)
+            .await
+            .unwrap()
+            .is_none()
+        );
+        assert_eq!(
+            sqlx::query_scalar!(
+                "SELECT attempt_count FROM writeback_jobs WHERE id = $1",
+                job
+            )
+            .fetch_one(&pool)
+            .await
+            .unwrap(),
+            1
+        );
     }
 
     #[sqlx::test(migrations = "./migrations")]

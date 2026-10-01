@@ -1,0 +1,52 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT file_path, relocation_source_path, current_file_hash FROM manifestations WHERE id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "file_path",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "manifestations",
+            "name": "file_path"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "relocation_source_path",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "manifestations",
+            "name": "relocation_source_path"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "current_file_hash",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "manifestations",
+            "name": "current_file_hash"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      true,
+      false
+    ]
+  },
+  "hash": "7ef64055eb3895ba74550562d541c991d142a2259586410588bcedfc30e17092"
+}

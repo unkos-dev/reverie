@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE writeback_jobs SET status = 'skipped', completed_at = now(), error = $2 WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "f765d18a210f9a89d15995b3ffca1f9c8f882cc56532baf596f486d224aed116"
+}

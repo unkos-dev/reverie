@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE writeback_jobs SET status = $2::text::writeback_status, attempt_count = 10 WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "2dfae152c3ac6a5b7e87807bd320e36ea8b41becd540e6c6c34b8c56d909d701"
+}

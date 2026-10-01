@@ -105,6 +105,15 @@ deferred until that topology is adopted.
 
 ## More information
 
+Writeback relocation replay uses paired manifestation paths and stored hash/size evidence under the current job claim.
+Every claim reconciles before rewriting and reloads its snapshot afterwards. Exhausted jobs retain their budgets while a
+bounded startup/five-minute sweep supplies relocation-only carriers. Permanent evidence clears intent and records the
+terminal diagnosis in one queue::finish transaction, retaining exclusion until commit. The `relocation_recovery_` and
+`relocation_queue_` cases exercise evidence states, continuation, carrier behaviour and transactional exclusion through
+existing filesystem and database seams. They do not establish cover-sidecar replay, complete writeback replay safety,
+process-kill behaviour or NAS flush guarantees. Successful re-sync after a reported error is a weaker guarantee than
+proof that earlier writes became durable.
+
 Sibling ADR: [crash-safe state](./0020-durable-crash-safe-state-in-postgres-via-atomic-transactions.md), committed-state
 durability; this ADR is its in-flight-work complement, and the boundary it notes (transactions do not cover filesystem
 writes) is why file-mutating handlers must prove re-run safety.

@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE writeback_jobs SET status = 'failed', attempt_count = 5, last_attempted_at = now() - INTERVAL '4 minutes' WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "71eb6631633a839321708fc61c4242d22b14604f25882ad2faba5eba4644d367"
+}
