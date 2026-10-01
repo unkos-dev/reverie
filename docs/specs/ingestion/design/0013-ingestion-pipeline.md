@@ -141,9 +141,9 @@ Call sites that dispatch to those owners:
 ## Interfaces and dependencies
 
 - The module's public surface (`backend/src/services/ingestion/mod.rs`): `ScanResult { processed, failed, skipped }`,
-  `run_watcher(config: Config, pool: PgPool, cancel: CancellationToken) -> Result<(), anyhow::Error>`, and
-  `scan_once(config: &Config, pool: &PgPool) -> Result<ScanResult, anyhow::Error>`. Every other item the child modules
-  export (`copier::{hash_file, copy_verified}`, `quarantine::quarantine_file`,
+  `run_watcher(config: Config, pool: PgPool, cancel: CancellationToken, files: LibraryFiles) -> Result<(), anyhow::Error>`,
+  and `scan_once(config: &Config, pool: &PgPool, files: &LibraryFiles) -> Result<ScanResult, anyhow::Error>`. Every
+  other item the child modules export (`copier::{hash_file, copy_verified}`, `quarantine::quarantine_file`,
   `cleanup::{eligible_paths, cleanup_batch}`, and `format_filter::select_by_priority`) has no caller outside this module
   in production code; `path_template::render` and `path_template::resolve_collision` are the one exception, reused by
   the Design "Writeback pipeline".
@@ -225,16 +225,13 @@ file's row:
 4. The extension is re-parsed into a `ManifestationFormat`, a defence against a bypass of step 1's format-priority
    selection; on failure, the just-copied library file is removed and the file fails without quarantine (see Failure and
    recovery).
-5. For an `epub` extension only, the copied library file, not the drop-zone original, is handed to
-   `epub::validate_and_repair`, owned by the Design "EPUB validation and repair". A `Quarantined` outcome removes the
-   library file and moves the drop-zone original to quarantine with a sidecar; `Repaired` and `Degraded` outcomes carry
-   accessibility metadata and parsed `OPF` data alongside their status. A `Repaired` outcome also re-reads the rewritten
-   library file for its hash and size, so `current_file_hash` and `file_size_bytes` describe the repaired bytes while
-   the ingestion hash keeps the original's; a failure to re-read it removes the library file and quarantines the
-   drop-zone original like a `Quarantined` outcome. A validator that fails to run (an I/O or internal error, not a
-   structural finding) stores `validation_status = failed` and still proceeds to commit, so the file is ingested and
-   served, with the failure surfaced only as a status value an operator can watch. A non-`epub` format leaves
-   `validation_status` at its `pending` default, since no validator exists for it.
+5. For an `epub` extension only, a blocking phase opens the known copied relative location beneath its library
+   capability and passes the file, actual parent and basename to `epub::validate_and_repair`. A `Quarantined` outcome
+   removes the library copy and moves the drop-zone original to quarantine with a sidecar. A completed repair returns
+   its final report, hash and size; the caller reuses that evidence for `current_file_hash` and `file_size_bytes`,
+   retaining the original ingestion hash. Successful repair status remains separate from unresolved degraded issues.
+   Validator errors retain `validation_status = failed` and ingestion continues. Non-EPUB files keep `pending`
+   validation status.
 6. Any `OpfData` recovered in step 5 is extracted into `ExtractedMetadata`. If the extracted title or an author differs
    from the filename heuristic enough to render a different library path, the file is renamed on disk (with its own
    collision resolution) to the metadata-derived path; a rename failure is logged, and the heuristic path is kept rather
@@ -246,9 +243,9 @@ file's row:
    canonical columns and version pointers from those drafts; then update the manifestation's ISBN, publisher,
    publication date, and page-count columns and their own version pointers from the extracted metadata. The whole
    sequence commits together or not at all.
-8. On a successful commit, and only for an `epub` extension whose validator did not positively rule out a usable
-   embedded cover, a cover thumbnail pre-warm is fired on the cache the Design "Covers" owns, keyed by the manifestation
-   id and the copy's verified hash; this pipeline does not wait for it.
+8. After a successful commit, EPUBs not ruled out as having no usable cover pass an opened handle for the known final
+   copy to thumbnail warming, keyed by the copy's current hash. Source opening uses the library capability; cache
+   publication remains owned by the Design "Covers". Warming is best-effort and does not affect ingest success.
 
 **Cleanup, once every selected file in the batch has reached a terminal outcome.** The orchestrator records a source as
 eligible only after its job is marked complete or skipped. Under `ingested`, cleanup deletes those selected sources,

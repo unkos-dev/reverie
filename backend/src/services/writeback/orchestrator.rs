@@ -1,13 +1,11 @@
 //! Per-job writeback orchestrator.
 //!
-//! Loads the job + manifestation + work snapshot, rewrites the `OPF` and
-//! (optionally) embeds a new cover, repacks the `EPUB`, swaps the file
-//! atomically, re-validates, rolls back on regression, and updates
-//! `manifestations.current_file_hash` on success.
+//! Loads a typed library-relative snapshot, composes entry repairs with metadata
+//! and cover changes, and publishes only an accepted candidate. Relocation and
+//! SQL compensation remain owned by the same claimed job.
 //!
-//! The orchestrator does NOT take a transaction — the queue's `finish`
-//! owns the job-status update via its own short-lived statement.  The
-//! per-job file mutations here happen outside any user-facing tx.
+//! Blocking filesystem phases retain the concurrency permit. SQL stays async;
+//! the queue owns terminal bookkeeping and events.
 //!
 //! ## `RLS` system-context invariant
 //!
@@ -21,19 +19,24 @@
 //! `db::init_writeback_pool`, instantiated in `lib.rs::run` at runtime.
 
 use std::collections::HashMap;
-use std::io::Read;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
+use crate::models::storage_library::LibraryId;
+use crate::services::files::{LibraryFiles, LibraryLocation, RelativeFilePath};
+#[cfg(test)]
 use quick_xml::Reader;
+#[cfg(test)]
 use quick_xml::events::Event;
+#[cfg(test)]
 use sha2::{Digest, Sha256};
 use sqlx::PgPool;
-use tempfile::NamedTempFile;
+use tokio::sync::OwnedSemaphorePermit;
 use uuid::Uuid;
 
 use crate::config::Config;
 use crate::models::manifestation_format::ManifestationFormat;
-use crate::services::epub::{self, ValidationOutcome, ValidationReport, repack, zip_layer};
+use crate::services::epub::{self, repack, zip_layer};
 use crate::services::ingestion::path_template;
 
 use super::cover_embed;
@@ -59,8 +62,7 @@ pub enum RunOutcome {
         /// Hex-encoded `SHA-256` of the on-disk file after writeback.
         current_file_hash: String,
     },
-    /// Retrying won't help (unsupported format, missing file, post-
-    /// validation rollback).  Bypasses the retry path directly to
+    /// Retrying will not help (unsupported format or missing file).  Bypasses the retry path directly to
     /// `mark_skipped`.  `skip_reason` is the user-facing explanation.
     Skipped {
         /// The manifestation the job referenced.
@@ -83,22 +85,11 @@ pub enum RunOutcome {
     },
 }
 
-/// Outcome of the post-writeback validation decision.  Extracted for
-/// testability: both branches need to rollback, so the shared decision
-/// point lives in one place.
-#[cfg_attr(test, derive(Debug))]
-enum FinaliseAction {
-    /// Post-validation passed — keep the new on-disk file.
-    Commit,
-    /// Post-validation failed (regression or validator error) — the
-    /// rollback has already restored the original bytes atomically.
-    RolledBack(String),
-}
-
 struct JobSnapshot {
     manifestation_id: Uuid,
     reason: String,
-    file_path: String,
+    file_path: RelativeFilePath,
+    library_id: LibraryId,
     format: ManifestationFormat,
     cover_path: Option<String>,
     title: Option<String>,
@@ -114,51 +105,20 @@ struct JobSnapshot {
     primary_author: Option<String>,
 }
 
-/// Run the full writeback pipeline for a single job.
-///
-/// Loads the job snapshot, skips early for unsupported formats or missing
-/// files, rewrites the `OPF`, optionally embeds a cover, repacks the `EPUB`,
-/// commits atomically, re-validates, rolls back on regression, re-renders the
-/// path template, and updates `manifestations.current_file_hash`.
-///
-/// Returns `Ok(RunOutcome)` for all terminal states including business-level
-/// failures (unsupported format, post-validation regression).  Only propagates
-/// `Err` for infrastructure faults that should count against the retry budget.
-///
-/// The `pool` argument MUST be a writeback-context pool (see module-level
-/// `RLS` invariant).
+/// Run a claimed writeback with bounded blocking phases and async SQL ownership.
 ///
 /// # Errors
-///
-/// - `WritebackError::JobNotFound` — no `writeback_jobs` row exists for
-///   `job_id` (terminal; `finish` routes to `mark_skipped`).
-/// - `WritebackError::Db` — a `sqlx` query failed (snapshot load,
-///   `current_file_hash` update, or `file_path` update).
-/// - `WritebackError::Io` — reading the source file, fsyncing, or writing
-///   the rollback tempfile failed.
-/// - `WritebackError::Zip` — the source `EPUB` could not be opened as a
-///   `ZIP` archive.
-/// - `WritebackError::Xml` — `OPF` parse or rewrite failed.
-/// - `WritebackError::Epub` — the pre-writeback `EPUB` validation call
-///   returned an error.
-/// - `WritebackError::MissingOpf` — `META-INF/container.xml` was absent or
-///   contained no `OPF` root-file path.
-/// - `WritebackError::Persist` — the atomic commit, cross-FS copy, or
-///   path-rename step failed.
-#[expect(
-    clippy::too_many_lines,
-    reason = "run_once implements the full writeback pipeline: snapshot load → transform → pack → rename → post-validation → DB update; each step is a data-dependency on the previous"
-)]
+/// Returns source, candidate, relocation, task and database failures.
 pub async fn run_once(
     pool: &PgPool,
     config: &Config,
+    files: &LibraryFiles,
     job_id: Uuid,
+    permit: Arc<OwnedSemaphorePermit>,
 ) -> Result<RunOutcome, WritebackError> {
-    let snap = load_snapshot(pool, job_id).await?;
+    let snap = Arc::new(load_snapshot(pool, job_id).await?);
     let manifestation_id = snap.manifestation_id;
     let reason = snap.reason.clone();
-
-    // Skip early when retrying won't help.
     if snap.format != ManifestationFormat::Epub {
         return Ok(RunOutcome::Skipped {
             manifestation_id,
@@ -166,25 +126,110 @@ pub async fn run_once(
             skip_reason: format!("format_unsupported: {}", snap.format),
         });
     }
-    let src_path = PathBuf::from(&snap.file_path);
-    if !src_path.exists() {
+    let phase_snap = Arc::clone(&snap);
+    let phase_files = files.clone();
+    let published = blocking_phase(Arc::clone(&permit), move || {
+        rewrite(&phase_snap, &phase_files)
+    })
+    .await?;
+    let Some(published) = published else {
         return Ok(RunOutcome::Skipped {
             manifestation_id,
             reason,
-            skip_reason: format!("file_missing: {}", snap.file_path),
+            skip_reason: format!("file_missing: {}", snap.file_path.as_str()),
+        });
+    };
+    let (final_path, durability_error) = path_rename_step(
+        &snap,
+        config,
+        files,
+        pool,
+        &published.hash,
+        Arc::clone(&permit),
+    )
+    .await?;
+    if let Some(error) = durability_error {
+        return Ok(RunOutcome::Failed {
+            manifestation_id,
+            reason,
+            error: format!("relocation durability uncertain: {error}"),
         });
     }
+    let new_hash = published.hash;
+    let post_has_cover = published.report.has_usable_embedded_cover;
+    let size = i64::try_from(published.size)
+        .map_err(|error| WritebackError::Persist(error.to_string()))?;
+    if let Err(error) = sqlx::query!(
+        "UPDATE manifestations SET current_file_hash = $1, has_embedded_cover = $3, file_size_bytes = $4 WHERE id = $2",
+        new_hash, manifestation_id, post_has_cover, size,
+    ).execute(pool).await {
+        tracing::error!(error = %error, %manifestation_id, final_path = final_path.as_str(), attempted_hash = %new_hash,
+            "writeback hash UPDATE failed after publication; a retry must reconcile");
+        return Err(error.into());
+    }
+    if reason == "cover"
+        && let Some(pending) = &snap.cover_path
+    {
+        let pending = pending.clone();
+        if let Err(error) = blocking_phase(Arc::clone(&permit), move || {
+            move_cover_sidecar(&pending).map_err(WritebackError::Io)
+        })
+        .await
+        {
+            tracing::warn!(error = %error, %manifestation_id, "cover sidecar move failed");
+        }
+    }
+    Ok(RunOutcome::Success {
+        manifestation_id,
+        reason,
+        current_file_hash: new_hash,
+    })
+}
 
-    // Snapshot original bytes for rollback + pre-validation.
-    let original_bytes = std::fs::read(&src_path)?;
-    let pre_report = epub::validate_and_repair(&src_path).map_err(WritebackError::Epub)?;
+pub(super) async fn blocking_phase<T: Send + 'static>(
+    permit: Arc<OwnedSemaphorePermit>,
+    operation: impl FnOnce() -> Result<T, WritebackError> + Send + 'static,
+) -> Result<T, WritebackError> {
+    tokio::task::spawn_blocking(move || {
+        let _permit = permit;
+        operation()
+    })
+    .await?
+}
 
-    // Read the OPF entry path from META-INF/container.xml.
-    let opf_path = find_opf_path(&original_bytes)?;
-    let opf_bytes = zip_layer::read_entry_from_bytes(&original_bytes, &opf_path)
-        .ok_or(zip::result::ZipError::FileNotFound)?;
-
-    // Build writeback target from the per-field canonical columns.
+fn rewrite(
+    snap: &JobSnapshot,
+    files: &LibraryFiles,
+) -> Result<Option<repack::Published>, WritebackError> {
+    let location = LibraryLocation {
+        library_id: snap.library_id,
+        path: snap.file_path.clone(),
+    };
+    let opened = match files.open_source(&location) {
+        Ok(opened) => opened,
+        Err(crate::services::files::LibraryFileError::Io(error))
+            if error.kind() == std::io::ErrorKind::NotFound =>
+        {
+            return Ok(None);
+        }
+        Err(error) => return Err(error.into()),
+    };
+    let (handle, pre_report) = epub::inspect(opened.file)?;
+    if pre_report.outcome == epub::ValidationOutcome::Quarantined {
+        return Err(epub::EpubError::CandidateRejected("source archive rejected".into()).into());
+    }
+    let opf_path = pre_report
+        .opf_data
+        .as_ref()
+        .map(|opf| opf.opf_path.as_str())
+        .ok_or(WritebackError::MissingOpf)?;
+    let repairs = epub::repair::RepairPlan::from_report(&pre_report);
+    let opf_bytes = match repairs.replacement(&handle, opf_path)? {
+        Some(bytes) => bytes,
+        None => {
+            zip_layer::read_entry(&handle, opf_path).ok_or(zip::result::ZipError::FileNotFound)?
+        }
+    };
     let target = Target {
         title: snap.title.as_deref(),
         subtitle: snap.subtitle.as_deref(),
@@ -197,278 +242,161 @@ pub async fn run_once(
         series: None,
     };
     let new_opf = opf_rewrite::transform(&opf_bytes, &target)?;
-
-    // Cover embed plan (only when the job was triggered by a cover move).
-    let cover_plan = if reason == "cover"
-        && let Some(cover_path) = snap.cover_path.as_deref()
+    let cover_plan = if snap.reason == "cover"
+        && let Some(path) = snap.cover_path.as_deref()
     {
-        let cover_bytes = std::fs::read(cover_path)?;
-        Some(cover_embed::plan_embed(&new_opf, &cover_bytes)?)
+        Some(cover_embed::plan_embed(&new_opf, &std::fs::read(path)?)?)
     } else {
         None
     };
-
-    let final_opf_bytes: Vec<u8> = cover_plan
+    let final_opf = cover_plan
         .as_ref()
-        .and_then(|p| p.opf_replacement.clone())
-        .unwrap_or(new_opf);
-
-    // `plan_embed` returns manifest hrefs relative to the OPF file's
-    // location.  The repack layer keys off ZIP-absolute paths, so
-    // translate hrefs by joining with the OPF's parent directory
-    // (e.g. `images/cover.png` → `OEBPS/images/cover.png`).  When the
-    // OPF is at ZIP root (`content.opf`), the two coincide.
-    let opf_dir = opf_path.rsplit_once('/').map_or("", |(d, _)| d);
-    let empty_replacements: HashMap<String, Vec<u8>> = HashMap::new();
-    let translated_replacements: HashMap<String, Vec<u8>> = match cover_plan.as_ref() {
-        Some(p) => p
-            .binary_replacements
-            .iter()
-            .map(|(href, bytes)| {
-                resolve_opf_relative(opf_dir, href).map(|path| (path, bytes.clone()))
-            })
-            .collect::<Result<_, _>>()?,
-        None => HashMap::new(),
-    };
-    let binary_replacements = if translated_replacements.is_empty() {
-        &empty_replacements
-    } else {
-        &translated_replacements
-    };
-    let empty_additions: Vec<(
-        String,
-        Vec<u8>,
-        zip::write::FileOptions<'static, zip::write::ExtendedFileOptions>,
-    )> = Vec::new();
-    let translated_additions: Vec<(
-        String,
-        Vec<u8>,
-        zip::write::FileOptions<'static, zip::write::ExtendedFileOptions>,
-    )> = match cover_plan.as_ref() {
-        Some(p) => p
-            .additions
-            .iter()
-            .map(|(href, bytes, opts)| {
-                resolve_opf_relative(opf_dir, href).map(|path| (path, bytes.clone(), opts.clone()))
-            })
-            .collect::<Result<_, _>>()?,
-        None => Vec::new(),
-    };
-    let additions: &[_] = if translated_additions.is_empty() {
-        &empty_additions
-    } else {
-        &translated_additions
-    };
-
-    // Repack into a temp file in the destination directory.
-    // `src_path` is always an existing managed file on disk, so its parent
-    // must exist; refuse rather than silently falling back to CWD — a rogue
-    // rename that landed at `/` would otherwise write the temp into the
-    // worker's working directory.
-    let dest_dir = src_path.parent().ok_or_else(|| {
-        WritebackError::Persist(format!(
-            "src_path has no parent directory: {}",
-            src_path.display()
-        ))
-    })?;
-    let temp = repack::with_modifications(
-        &src_path,
-        dest_dir,
-        Some(&opf_path),
-        Some(&final_opf_bytes),
-        binary_replacements,
-        additions,
-    )?;
-
-    // Commit atomically.  Same-dir → tempfile persist; cross-FS surfaced
-    // via path_rename::commit's EXDEV fallback.
-    path_rename::commit(temp, &src_path)?;
-
-    // Post-writeback validation: rollback atomically on regression OR
-    // validator error.  Both paths share `finalise_post_writeback`.
-    let post_validation = epub::validate_and_repair(&src_path);
-    match finalise_post_writeback(
-        &pre_report.outcome,
-        &post_validation,
-        &src_path,
-        &original_bytes,
-        dest_dir,
-    )? {
-        FinaliseAction::Commit => {}
-        FinaliseAction::RolledBack(err_msg) => {
-            return Ok(RunOutcome::Failed {
-                manifestation_id,
-                reason,
-                error: err_msg,
-            });
+        .and_then(|plan| plan.opf_replacement.as_ref())
+        .unwrap_or(&new_opf);
+    let opf_dir = opf_path
+        .rsplit_once('/')
+        .map_or("", |(directory, _)| directory);
+    let mut replacements = HashMap::new();
+    let mut additions = Vec::new();
+    if let Some(plan) = &cover_plan {
+        for (href, bytes) in &plan.binary_replacements {
+            replacements.insert(resolve_opf_relative(opf_dir, href)?, bytes.clone());
+        }
+        for (href, bytes, options) in &plan.additions {
+            additions.push((
+                resolve_opf_relative(opf_dir, href)?,
+                bytes.clone(),
+                options.clone(),
+            ));
         }
     }
-
-    // Path-rename: re-render the path template against the canonical
-    // metadata and move the file if the rendered path differs.
-    // Skipped when `library_path` is empty (test/dev shortcut).
-    let final_path = path_rename_step(&snap, config, src_path.clone(), pool).await?;
-
-    // Update current_file_hash from the final on-disk file.
-    //
-    // If this UPDATE fails the on-disk rewrite + rename already committed,
-    // so `file_path` is correct but `current_file_hash` stays at the
-    // pre-writeback value until the next successful retry.  Nothing else
-    // reconciles the divergence, so the specifics are logged at `error!`
-    // for the operator.
-    //
-    // Also refresh has_embedded_cover from the post-writeback validation
-    // already computed above: the fresh value is the truth for the file as
-    // it now sits on disk (e.g. a cover-reason writeback just embedded a
-    // sidecar cover that wasn't there at ingestion). Discarding it left the
-    // flag stuck at its ingestion-time value forever. Same tri-state
-    // semantics as ingestion: only a successful EPUB validation run
-    // produces `Some`; `COALESCE` leaves the column untouched when it
-    // doesn't (`post_validation` is `Err` here only in theory, since the
-    // branch above already routed that case to `RolledBack` and returned
-    // before this point).
-    let new_hash = compute_hex_sha256(&final_path)?;
-    let post_has_cover: Option<bool> = post_validation
-        .as_ref()
-        .ok()
-        .map(|report| report.has_usable_embedded_cover);
-    if let Err(e) = sqlx::query!(
-        "UPDATE manifestations \
-            SET current_file_hash = $1, \
-                has_embedded_cover = COALESCE($3, has_embedded_cover) \
-          WHERE id = $2",
-        new_hash,
-        manifestation_id,
-        post_has_cover,
-    )
-    .execute(pool)
-    .await
-    {
-        tracing::error!(
-            error = %e,
-            %manifestation_id,
-            final_path = %final_path.display(),
-            attempted_hash = %new_hash,
-            "writeback: current_file_hash UPDATE failed after successful on-disk commit \
-             on-disk file diverges from DB hash until a retry reconciles"
-        );
-        return Err(WritebackError::Db(e));
+    let (parent, basename) = path_rename::parent(files.library(snap.library_id)?, &snap.file_path)?;
+    match repack::publish(&parent, &basename, &pre_report, |candidate| {
+        repack::with_modifications(
+            &handle,
+            candidate,
+            Some(opf_path),
+            Some(final_opf),
+            &replacements,
+            &additions,
+            &repairs,
+        )
+    }) {
+        Ok(published) => Ok(Some(published)),
+        Err(error @ epub::EpubError::PublicationUncertain { .. }) => {
+            tracing::error!(%error, manifestation_id = %snap.manifestation_id, "writeback publication uncertain; no relocation or row-success update");
+            Err(error.into())
+        }
+        Err(error) => Err(error.into()),
     }
-
-    // Move cover sidecar from _covers/pending/ → _covers/accepted/ on
-    // success.  Best-effort: a failed move does not fail the writeback, and
-    // nothing later moves the orphan out of pending/, so failures are logged
-    // at warn! as the operator's signal.
-    if reason == "cover"
-        && let Some(pending) = snap.cover_path.as_deref()
-        && let Err(e) = move_cover_sidecar(pending)
-    {
-        tracing::warn!(
-            error = %e,
-            %manifestation_id,
-            pending_path = pending,
-            "writeback: cover sidecar move failed (non-fatal; the sidecar stays in pending/)"
-        );
-    }
-
-    Ok(RunOutcome::Success {
-        manifestation_id,
-        reason,
-        current_file_hash: new_hash,
-    })
 }
 
-/// Decide what to do after the post-writeback validation runs.  Both
-/// regression and validator-error branches perform the atomic rollback
-/// in one place, so the on-disk file can never be left in a broken state
-/// while the DB still points at the original hash.
-///
-/// Returns `WritebackError` only when the rollback itself fails
-/// (disk-full, permissions).  A failed rollback is genuinely fatal: the
-/// queue marks the job failed and the divergence stays until an operator
-/// acts on the logged error.
-fn finalise_post_writeback(
-    pre_outcome: &ValidationOutcome,
-    post_result: &Result<ValidationReport, crate::services::epub::EpubError>,
-    src_path: &Path,
-    original_bytes: &[u8],
-    dest_dir: &Path,
-) -> Result<FinaliseAction, WritebackError> {
-    let err_msg = match post_result {
-        Err(e) => format!("post_writeback_validation_errored: {e}"),
-        Ok(report) if is_regression(pre_outcome, &report.outcome) => format!(
-            "post_writeback_validation_regressed: pre={:?} post={:?}",
-            pre_outcome, report.outcome
-        ),
-        Ok(_) => return Ok(FinaliseAction::Commit),
-    };
-    rollback_atomic(src_path, original_bytes, dest_dir)?;
-    Ok(FinaliseAction::RolledBack(err_msg))
-}
-
-/// Render the path template, move the on-disk file if the rendered path
-/// differs from `src_path`, and `UPDATE manifestations.file_path` on
-/// success.  Returns the final on-disk path (either `src_path` unchanged
-/// or the new location).
-///
-/// Skipped (no-op) when `config.library_path` is empty — keeps tests that
-/// place fixtures outside any library root from triggering renames.
-/// Collisions resolve via `path_template::resolve_collision` (numeric
-/// suffix), mirroring the ingestion orchestrator's behaviour.
 async fn path_rename_step(
     snap: &JobSnapshot,
     config: &Config,
-    src_path: PathBuf,
+    files: &LibraryFiles,
     pool: &PgPool,
-) -> Result<PathBuf, WritebackError> {
-    let Some(candidate) = render_target_path(snap, config.library_path.as_str(), &src_path)? else {
-        return Ok(src_path);
+    hash: &str,
+    permit: Arc<OwnedSemaphorePermit>,
+) -> Result<(RelativeFilePath, Option<std::io::Error>), WritebackError> {
+    let Some(candidate) =
+        render_target_path(snap, config.library_path.as_str(), snap.file_path.as_path())?
+    else {
+        return Ok((snap.file_path.clone(), None));
     };
-
-    if let Some(parent) = candidate.parent() {
-        std::fs::create_dir_all(parent)?;
-    }
-
-    // Resolve collisions deterministically (numeric suffix), mirroring
-    // ingestion behaviour.
-    let new_path = path_template::resolve_collision(&candidate)?;
-
-    // Validate UTF-8 before the FS rename: a non-UTF-8 rendered path
-    // would otherwise orphan the file between the rename and the DB write.
-    let new_path_str = new_path
+    let candidate: RelativeFilePath = candidate
         .to_str()
-        .ok_or_else(|| {
-            WritebackError::Persist(format!("non-UTF8 rendered path: {}", new_path.display()))
-        })?
-        .to_owned();
-
-    path_rename::move_existing(&src_path, &new_path)?;
-
-    // If the DB update fails the file is orphaned: `file_path` still
-    // points at `src_path` (missing on disk), and the next run_once would
-    // skip as `file_missing` — permanently removing the book from the
-    // library index. Compensate with a best-effort move-back.
-    let update_result = sqlx::query!(
+        .ok_or_else(|| WritebackError::Persist("non-UTF8 template path".into()))?
+        .parse()?;
+    let phase_files = files.clone();
+    let source = snap.file_path.clone();
+    let library_id = snap.library_id;
+    let hash_owned = hash.to_owned();
+    let (destination, movement) = blocking_phase(Arc::clone(&permit), move || {
+        let root = phase_files.library(library_id)?;
+        let destination = resolve_collision(root, &candidate)?;
+        if let Some(parent) = destination
+            .as_path()
+            .parent()
+            .filter(|parent| !parent.as_os_str().is_empty())
+        {
+            root.create_dir_all(parent)?;
+        }
+        let movement = path_rename::move_existing(root, &source, &destination, &hash_owned)?;
+        Ok((destination, movement))
+    })
+    .await?;
+    let update = sqlx::query!(
         "UPDATE manifestations SET file_path = $1 WHERE id = $2",
-        new_path_str,
-        snap.manifestation_id,
+        destination.as_str(),
+        snap.manifestation_id
     )
     .execute(pool)
     .await;
-
-    if let Err(e) = update_result {
-        if let Err(re) = path_rename::move_existing(&new_path, &src_path) {
-            tracing::error!(
-                error = %re,
-                original = %src_path.display(),
-                attempted = %new_path.display(),
-                "writeback: path-rename DB update failed AND compensating move-back failed — on-disk state diverges from DB",
-            );
+    if let Err(error) = update {
+        let phase_files = files.clone();
+        let from = destination.clone();
+        let to = snap.file_path.clone();
+        let hash = hash.to_owned();
+        let compensation = blocking_phase(permit, move || {
+            path_rename::move_existing(phase_files.library(library_id)?, &from, &to, &hash)
+        })
+        .await;
+        match compensation {
+            Ok(path_rename::MoveResult::Durable) => {}
+            Ok(path_rename::MoveResult::VisibleUncertain(sync)) => {
+                tracing::error!(error = %sync, "compensating move-back visible with unconfirmed durability");
+            }
+            Err(compensation) => {
+                tracing::error!(error = %compensation, database_error = %error, "location UPDATE and compensating move-back failed");
+            }
         }
-        return Err(WritebackError::Db(e));
+        return Err(error.into());
     }
+    let durability_error = match movement {
+        path_rename::MoveResult::Durable => None,
+        path_rename::MoveResult::VisibleUncertain(error) => {
+            tracing::error!(%error, location = destination.as_str(), "relocation visible with unconfirmed durability");
+            Some(error)
+        }
+    };
+    Ok((destination, durability_error))
+}
 
-    Ok(new_path)
+fn resolve_collision(
+    root: &cap_std::fs::Dir,
+    candidate: &RelativeFilePath,
+) -> Result<RelativeFilePath, WritebackError> {
+    let mut path = candidate.as_path().to_owned();
+    let stem = path
+        .file_stem()
+        .and_then(|stem| stem.to_str())
+        .ok_or_else(|| WritebackError::Persist("missing collision stem".into()))?
+        .to_owned();
+    let extension = path
+        .extension()
+        .and_then(|extension| extension.to_str())
+        .unwrap_or("")
+        .to_owned();
+    for suffix in 1.. {
+        match root.metadata(&path) {
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                return Ok(path
+                    .to_str()
+                    .ok_or_else(|| WritebackError::Persist("non-UTF8 collision path".into()))?
+                    .parse()?);
+            }
+            Err(error) => return Err(error.into()),
+            Ok(_) => {
+                path.set_file_name(if extension.is_empty() {
+                    format!("{stem} ({})", suffix + 1)
+                } else {
+                    format!("{stem} ({}).{extension}", suffix + 1)
+                });
+            }
+        }
+    }
+    Err(WritebackError::Persist("collision suffix exhausted".into()))
 }
 
 /// Pure helper: compute the rendered target path from the snapshot +
@@ -498,7 +426,7 @@ fn render_target_path(
 
     let relative = path_template::render(path_template::DEFAULT_TEMPLATE, &vars);
     let relative = path_rename::normalise_relative(&relative)?;
-    let candidate = PathBuf::from(library_path).join(&relative);
+    let candidate = relative;
 
     if candidate == src_path {
         Ok(None)
@@ -507,29 +435,12 @@ fn render_target_path(
     }
 }
 
-/// Restore `original_bytes` to `dest` atomically.
-///
-/// Uses a tempfile in the same directory (for atomic rename semantics) +
-/// fsync before persist.  A SIGKILL or power loss between `write` and
-/// `persist` leaves the original file intact; only the tempfile is lost.
-fn rollback_atomic(
-    dest: &Path,
-    original_bytes: &[u8],
-    dest_dir: &Path,
-) -> Result<(), WritebackError> {
-    let temp = NamedTempFile::new_in(dest_dir)?;
-    std::fs::write(temp.path(), original_bytes)?;
-    // fsync the tempfile before rename so the bytes durably hit disk.
-    std::fs::File::open(temp.path())?.sync_all()?;
-    path_rename::commit(temp, dest)
-}
-
 // ── Snapshot load ─────────────────────────────────────────────────────────
 
 async fn load_snapshot(pool: &PgPool, job_id: Uuid) -> Result<JobSnapshot, WritebackError> {
     let row = sqlx::query!(
         r#"SELECT wj.manifestation_id, wj.reason,
-                  m.work_id, m.file_path,
+                  m.work_id, m.library_id, m.file_path,
                   m.format AS "format: ManifestationFormat",
                   m.cover_path,
                   m.publisher, m.pub_date, m.isbn_10, m.isbn_13,
@@ -559,7 +470,8 @@ async fn load_snapshot(pool: &PgPool, job_id: Uuid) -> Result<JobSnapshot, Write
     Ok(JobSnapshot {
         manifestation_id: row.manifestation_id,
         reason: row.reason,
-        file_path: row.file_path,
+        file_path: row.file_path.parse()?,
+        library_id: LibraryId::from_uuid(row.library_id),
         format: row.format,
         cover_path: row.cover_path,
         title: Some(row.title),
@@ -580,12 +492,7 @@ async fn load_snapshot(pool: &PgPool, job_id: Uuid) -> Result<JobSnapshot, Write
 
 // ── OPF path + entry helpers ──────────────────────────────────────────────
 
-fn find_opf_path(epub_bytes: &[u8]) -> Result<String, WritebackError> {
-    let container_bytes = zip_layer::read_entry_from_bytes(epub_bytes, "META-INF/container.xml")
-        .ok_or(WritebackError::MissingOpf)?;
-    extract_opf_path(&container_bytes).ok_or(WritebackError::MissingOpf)
-}
-
+#[cfg(test)]
 fn extract_opf_path(container_bytes: &[u8]) -> Option<String> {
     let xml = match std::str::from_utf8(container_bytes) {
         Ok(s) => s,
@@ -621,43 +528,6 @@ fn extract_opf_path(container_bytes: &[u8]) -> Option<String> {
             _ => {}
         }
     }
-}
-
-// ── Regression detection ──────────────────────────────────────────────────
-
-const fn is_regression(pre: &ValidationOutcome, post: &ValidationOutcome) -> bool {
-    use ValidationOutcome::{Clean, Degraded, Quarantined, Repaired};
-    matches!((pre, post), (_, Quarantined) | (Clean | Repaired, Degraded))
-}
-
-// ── Hash + sidecar helpers ────────────────────────────────────────────────
-
-fn compute_hex_sha256(path: &Path) -> Result<String, WritebackError> {
-    let mut f = std::fs::File::open(path)?;
-    let mut hasher = Sha256::new();
-    #[expect(
-        clippy::large_stack_arrays,
-        reason = "64 KiB I/O buffer; intentional for throughput"
-    )]
-    let mut buf = [0u8; 64 * 1024];
-    loop {
-        let n = f.read(&mut buf)?;
-        if n == 0 {
-            break;
-        }
-        hasher.update(&buf[..n]);
-    }
-    let digest = hasher.finalize();
-    let mut hex = String::with_capacity(digest.len() * 2);
-    for b in digest {
-        use std::fmt::Write;
-        // fmt::Write on String is infallible — the only error path on the trait
-        // is for types backed by I/O, which String is not.
-        if let Err(e) = write!(hex, "{b:02x}") {
-            tracing::warn!(error = ?e, "unexpected error writing to String (infallible)");
-        }
-    }
-    Ok(hex)
 }
 
 /// Resolve an OPF-relative href against the OPF's directory, yielding a
@@ -698,6 +568,38 @@ fn move_cover_sidecar(pending_path: &str) -> std::io::Result<()> {
 )]
 mod tests {
     use super::*;
+
+    async fn run_fixture(
+        pool: &PgPool,
+        config: &Config,
+        job_id: Uuid,
+        root: &Path,
+    ) -> Result<RunOutcome, WritebackError> {
+        let id = crate::models::storage_library::default_library_id(pool).await?;
+        let root = root.to_str().unwrap().parse().unwrap();
+        let files = LibraryFiles::open(
+            [(id, root)],
+            &config.ingestion_path,
+            &config.quarantine_path,
+        )
+        .unwrap();
+        let permit = Arc::new(
+            Arc::new(tokio::sync::Semaphore::new(1))
+                .acquire_owned()
+                .await
+                .unwrap(),
+        );
+        super::run_once(pool, config, &files, job_id, permit).await
+    }
+
+    async fn persisted_path(pool: &PgPool, id: Uuid, root: &Path) -> PathBuf {
+        let path = sqlx::query_scalar!("SELECT file_path FROM manifestations WHERE id = $1", id)
+            .fetch_one(pool)
+            .await
+            .unwrap();
+        root.join(path)
+    }
+
     use crate::config::{CleanupMode, CoverConfig, EnrichmentConfig, WritebackConfig};
     use crate::models::manifestation_format::ManifestationFormat;
     use std::io::Write;
@@ -889,6 +791,219 @@ mod tests {
         (work_id, m_id)
     }
 
+    #[tokio::test]
+    async fn bounded_writeback_blocking_permit_survives_async_cancellation() {
+        let semaphore = Arc::new(tokio::sync::Semaphore::new(1));
+        let release = Arc::new(std::sync::Barrier::new(2));
+        let blocking_release = Arc::clone(&release);
+        let (entered, ready) = tokio::sync::oneshot::channel();
+        let (completed, finished) = tokio::sync::oneshot::channel();
+        let task = tokio::spawn(blocking_phase(
+            Arc::new(Arc::clone(&semaphore).acquire_owned().await.unwrap()),
+            move || {
+                entered.send(()).unwrap();
+                blocking_release.wait();
+                completed.send(()).unwrap();
+                Ok(())
+            },
+        ));
+        ready.await.unwrap();
+        task.abort();
+        assert!(task.await.unwrap_err().is_cancelled());
+        assert!(Arc::clone(&semaphore).try_acquire_owned().is_err());
+        tokio::task::spawn_blocking(move || release.wait())
+            .await
+            .unwrap();
+        finished.await.unwrap();
+        let permit = semaphore.acquire_owned().await.unwrap();
+        drop(permit);
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn candidate_publication_regression_preserves_source_and_row(pool: PgPool) {
+        let app = writeback_pool_for(&pool).await;
+        let ing = ingestion_pool_for(&pool).await;
+        let mut png = std::io::Cursor::new(Vec::new());
+        image::DynamicImage::new_rgb8(1, 1)
+            .write_to(&mut png, image::ImageFormat::Png)
+            .unwrap();
+        let (dir, path) = make_fixture_epub_with_cover("Original", &png.into_inner());
+        let original = std::fs::read(&path).unwrap();
+        let hash = initial_hex_sha256(&original);
+        let (_, id) = insert_fixture(&ing, "reject", path.to_str().unwrap(), &hash).await;
+        let pending = dir.path().join("invalid.png");
+        std::fs::write(&pending, b"\x89PNG\r\n\x1a\ninvalid image").unwrap();
+        sqlx::query!(
+            "UPDATE manifestations SET cover_path = $1 WHERE id = $2",
+            pending.to_str().unwrap(),
+            id
+        )
+        .execute(&ing)
+        .await
+        .unwrap();
+        let job = sqlx::query_scalar!("INSERT INTO writeback_jobs (manifestation_id, reason) VALUES ($1, 'cover') RETURNING id", id).fetch_one(&ing).await.unwrap();
+        let result = run_fixture(&app, &test_config(dir.path()).0, job, dir.path()).await;
+        assert!(matches!(
+            result,
+            Err(WritebackError::Epub(epub::EpubError::CandidateRejected(_)))
+        ));
+        assert_eq!(std::fs::read(&path).unwrap(), original);
+        let row = sqlx::query!("SELECT file_path, current_file_hash, ingestion_file_hash FROM manifestations WHERE id = $1", id).fetch_one(&app).await.unwrap();
+        assert_eq!(row.file_path, "fixture.epub");
+        assert_eq!(row.current_file_hash, hash);
+        assert_eq!(row.ingestion_file_hash, hash);
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn bounded_writeback_two_library_relative_sources_and_unknown_identity(pool: PgPool) {
+        let app = writeback_pool_for(&pool).await;
+        let ing = ingestion_pool_for(&pool).await;
+        let default = crate::models::storage_library::default_library_id(&ing)
+            .await
+            .unwrap();
+        let other = sqlx::query_scalar!(
+            "INSERT INTO libraries (configuration_key) VALUES ('other') RETURNING id"
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        let other = LibraryId::from_uuid(other);
+        let (first, first_path) = make_fixture_epub("First");
+        let (second, second_path) = make_fixture_epub("Second");
+        let first_root = first.path().to_str().unwrap().parse().unwrap();
+        let second_root: crate::config::AbsoluteRootPath =
+            second.path().to_str().unwrap().parse().unwrap();
+        let files = LibraryFiles::open(
+            [(default, first_root), (other, second_root.clone())],
+            &second_root,
+            &second_root,
+        )
+        .unwrap();
+        let first_original = std::fs::read(&first_path).unwrap();
+        let second_original = std::fs::read(&second_path).unwrap();
+        let (_, id) = insert_fixture(
+            &ing,
+            "two",
+            second_path.to_str().unwrap(),
+            &initial_hex_sha256(&second_original),
+        )
+        .await;
+        sqlx::query!(
+            "UPDATE manifestations SET library_id = $1 WHERE id = $2",
+            other.as_uuid(),
+            id
+        )
+        .execute(&ing)
+        .await
+        .unwrap();
+        let job = sqlx::query_scalar!("INSERT INTO writeback_jobs (manifestation_id, reason) VALUES ($1, 'metadata') RETURNING id", id).fetch_one(&ing).await.unwrap();
+        let semaphore = Arc::new(tokio::sync::Semaphore::new(1));
+        let outcome = super::run_once(
+            &app,
+            &test_config(second.path()).0,
+            &files,
+            job,
+            Arc::new(Arc::clone(&semaphore).acquire_owned().await.unwrap()),
+        )
+        .await
+        .unwrap();
+        assert!(matches!(outcome, RunOutcome::Success { .. }));
+        assert_eq!(std::fs::read(first_path).unwrap(), first_original);
+        let row = sqlx::query!("SELECT library_id, file_path, current_file_hash, ingestion_file_hash, file_size_bytes FROM manifestations WHERE id = $1", id).fetch_one(&app).await.unwrap();
+        assert_eq!(row.library_id, other.as_uuid());
+        let final_bytes = std::fs::read(second.path().join(&row.file_path)).unwrap();
+        assert_eq!(row.current_file_hash, initial_hex_sha256(&final_bytes));
+        assert_eq!(
+            row.ingestion_file_hash,
+            initial_hex_sha256(&second_original)
+        );
+        assert_eq!(
+            row.file_size_bytes,
+            i64::try_from(final_bytes.len()).unwrap()
+        );
+        let files = crate::test_support::test_library_files_at(
+            &first.path().to_str().unwrap().parse().unwrap(),
+            default,
+        );
+        let result = super::run_once(
+            &app,
+            &test_config(second.path()).0,
+            &files,
+            job,
+            Arc::new(Arc::clone(&semaphore).acquire_owned().await.unwrap()),
+        )
+        .await;
+        assert!(matches!(
+            result,
+            Err(WritebackError::Library(
+                crate::services::files::LibraryFileError::UnknownLibrary
+            ))
+        ));
+        assert_eq!(
+            std::fs::read(second.path().join(row.file_path)).unwrap(),
+            final_bytes
+        );
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn bounded_writeback_location_sql_failure_compensates_within_library(pool: PgPool) {
+        let app = writeback_pool_for(&pool).await;
+        let ing = ingestion_pool_for(&pool).await;
+        let (dir, path) = make_fixture_epub("Original");
+        let (_, id) = insert_fixture(&ing, "compensate", path.to_str().unwrap(), "original").await;
+        let job = sqlx::query_scalar!("INSERT INTO writeback_jobs (manifestation_id, reason) VALUES ($1, 'metadata') RETURNING id", id).fetch_one(&ing).await.unwrap();
+        let snap = load_snapshot(&app, job).await.unwrap();
+        let root = dir.path().to_str().unwrap().parse().unwrap();
+        let files = crate::test_support::test_library_files_at(&root, snap.library_id);
+        let published = rewrite(&snap, &files).unwrap().unwrap();
+        let accepted_bytes = std::fs::read(&path).unwrap();
+        app.close().await;
+        let result = path_rename_step(
+            &snap,
+            &test_config(dir.path()).0,
+            &files,
+            &app,
+            &published.hash,
+            Arc::new(
+                Arc::new(tokio::sync::Semaphore::new(1))
+                    .acquire_owned()
+                    .await
+                    .unwrap(),
+            ),
+        )
+        .await;
+        assert!(matches!(
+            result,
+            Err(WritebackError::Db(sqlx::Error::PoolClosed))
+        ));
+        assert_eq!(std::fs::read(&path).unwrap(), accepted_bytes);
+        assert!(path.exists());
+        assert_eq!(
+            epub::validate(std::fs::File::open(&path).unwrap())
+                .unwrap()
+                .outcome,
+            epub::ValidationOutcome::Clean
+        );
+        let row = sqlx::query!(
+            "SELECT file_path, current_file_hash FROM manifestations WHERE id = $1",
+            id
+        )
+        .fetch_one(&ing)
+        .await
+        .unwrap();
+        assert_eq!(row.file_path, "fixture.epub");
+        assert_eq!(row.current_file_hash, "original");
+        let mut source = std::fs::File::open(&path).unwrap();
+        assert_ne!(
+            repack::hash_file(&mut source).unwrap(),
+            row.current_file_hash
+        );
+        assert!(
+            !dir.path()
+                .join("Unknown/WbFixture-compensate.epub")
+                .exists()
+        );
+    }
     /// Task 16 + Task 24: full `run_once` on a fixture EPUB whose OPF lives
     /// at `OEBPS/package.opf` (not the default `content.opf`).  Verifies:
     /// - the non-default OPF is discovered via `META-INF/container.xml`
@@ -930,16 +1045,22 @@ mod tests {
         .await
         .unwrap();
 
-        let outcome = run_once(&app_pool, &test_config(path.parent().unwrap()).0, job_id)
-            .await
-            .unwrap();
+        let outcome = run_fixture(
+            &app_pool,
+            &test_config(path.parent().unwrap()).0,
+            job_id,
+            path.parent().unwrap(),
+        )
+        .await
+        .unwrap();
         assert!(
             matches!(outcome, RunOutcome::Success { .. }),
             "run_once should succeed: {outcome:?}"
         );
 
         // OPF at OEBPS/package.opf should contain the new title.
-        let new_bytes = std::fs::read(&path).unwrap();
+        let new_bytes =
+            std::fs::read(persisted_path(&app_pool, m_id, path.parent().unwrap()).await).unwrap();
         let opf_bytes = zip_layer::read_entry_from_bytes(&new_bytes, "OEBPS/package.opf").unwrap();
         let opf_str = String::from_utf8(opf_bytes).unwrap();
         assert!(
@@ -970,7 +1091,7 @@ mod tests {
     /// manifestation.  `ingestion_file_hash` must be constant across
     /// both; `current_file_hash` must change each time.
     #[sqlx::test(migrations = "./migrations")]
-    async fn ingestion_file_hash_immutable_across_writeback_chain(pool: PgPool) {
+    async fn bounded_writeback_ingestion_file_hash_immutable_across_writeback_chain(pool: PgPool) {
         let app_pool = writeback_pool_for(&pool).await;
         let ing_pool = ingestion_pool_for(&pool).await;
         let marker = Uuid::new_v4().simple().to_string();
@@ -999,9 +1120,14 @@ mod tests {
         .fetch_one(&ing_pool)
         .await
         .unwrap();
-        run_once(&app_pool, &test_config(path.parent().unwrap()).0, j1)
-            .await
-            .unwrap();
+        run_fixture(
+            &app_pool,
+            &test_config(path.parent().unwrap()).0,
+            j1,
+            path.parent().unwrap(),
+        )
+        .await
+        .unwrap();
 
         let hash_after_first = sqlx::query_scalar!(
             "SELECT current_file_hash FROM manifestations WHERE id = $1",
@@ -1029,9 +1155,14 @@ mod tests {
         .fetch_one(&ing_pool)
         .await
         .unwrap();
-        run_once(&app_pool, &test_config(path.parent().unwrap()).0, j2)
-            .await
-            .unwrap();
+        run_fixture(
+            &app_pool,
+            &test_config(path.parent().unwrap()).0,
+            j2,
+            path.parent().unwrap(),
+        )
+        .await
+        .unwrap();
 
         let row = sqlx::query!(
             "SELECT current_file_hash, ingestion_file_hash FROM manifestations WHERE id = $1",
@@ -1117,7 +1248,9 @@ mod tests {
         let (mut cfg, _files) = test_config(lib_dir.path());
         cfg.library_path = library_root.parse().unwrap();
 
-        let outcome = run_once(&app_pool, &cfg, job_id).await.unwrap();
+        let outcome = run_fixture(&app_pool, &cfg, job_id, src_path.parent().unwrap())
+            .await
+            .unwrap();
         assert!(
             matches!(outcome, RunOutcome::Success { .. }),
             "run_once should succeed: {outcome:?}"
@@ -1284,10 +1417,11 @@ mod tests {
         .await
         .unwrap();
 
-        let outcome = run_once(
+        let outcome = run_fixture(
             &app_pool,
             &test_config(src_path.parent().unwrap()).0,
             job_id,
+            src_path.parent().unwrap(),
         )
         .await
         .unwrap();
@@ -1299,7 +1433,9 @@ mod tests {
         // The cover bytes inside the EPUB match the replacement, not
         // the original.  (Same-media replacement is in-place under the
         // existing manifest href.)
-        let new_bytes = std::fs::read(&src_path).unwrap();
+        let new_bytes =
+            std::fs::read(persisted_path(&app_pool, m_id, src_path.parent().unwrap()).await)
+                .unwrap();
         let embedded_cover =
             zip_layer::read_entry_from_bytes(&new_bytes, "OEBPS/images/cover.png").unwrap();
         assert_eq!(
@@ -1412,10 +1548,11 @@ mod tests {
         .await
         .unwrap();
 
-        let outcome = run_once(
+        let outcome = run_fixture(
             &app_pool,
             &test_config(src_path.parent().unwrap()).0,
             job_id,
+            src_path.parent().unwrap(),
         )
         .await
         .unwrap();
@@ -1444,7 +1581,7 @@ mod tests {
     /// Guards against regressions where the suffix logic silently
     /// overwrites an unrelated pre-existing file at the rendered path.
     #[sqlx::test(migrations = "./migrations")]
-    async fn run_once_rename_resolves_collision_with_suffix(pool: PgPool) {
+    async fn bounded_writeback_run_once_rename_resolves_collision_with_suffix(pool: PgPool) {
         let app_pool = writeback_pool_for(&pool).await;
         let ing_pool = ingestion_pool_for(&pool).await;
         let marker = Uuid::new_v4().simple().to_string();
@@ -1509,7 +1646,9 @@ mod tests {
 
         let (mut cfg, _files) = test_config(lib_dir.path());
         cfg.library_path = library_root.parse().unwrap();
-        let outcome = run_once(&app_pool, &cfg, job_id).await.unwrap();
+        let outcome = run_fixture(&app_pool, &cfg, job_id, src_path.parent().unwrap())
+            .await
+            .unwrap();
         assert!(
             matches!(outcome, RunOutcome::Success { .. }),
             "run_once should succeed: {outcome:?}"
@@ -1550,153 +1689,14 @@ mod tests {
         );
     }
 
-    // ── Rollback + post-validation decision tests ───────────────────────
-    //
-    // These exercise the atomic-rollback invariant and rollback on a
-    // validator Err, not just on regression.  A live regression that ends
-    // in `ValidationOutcome::Quarantined` under `validate_and_repair` has no
-    // automated coverage: the simple in-test fixtures don't reliably trigger
-    // it, so that outcome is exercised by hand.
-
-    fn scratch_with_bytes(bytes: &[u8]) -> (tempfile::TempDir, std::path::PathBuf) {
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("book.epub");
-        std::fs::write(&path, bytes).unwrap();
-        (dir, path)
-    }
-
-    /// Rollback restores the original bytes byte-for-byte.
-    #[test]
-    fn rollback_atomic_restores_original_bytes() {
-        let original = b"ORIGINAL EPUB BYTES 1234567890".repeat(16);
-        let modified = b"CORRUPT WRITEBACK RESULT".repeat(4);
-        let (dir, path) = scratch_with_bytes(&original);
-        std::fs::write(&path, &modified).unwrap();
-        assert_eq!(std::fs::read(&path).unwrap(), modified);
-
-        rollback_atomic(&path, &original, dir.path()).unwrap();
-        assert_eq!(std::fs::read(&path).unwrap(), original);
-    }
-
-    /// Rollback leaves no orphan tempfiles in the destination directory.
-    #[test]
-    fn rollback_atomic_cleans_up_tempfiles() {
-        let original = b"ORIGINAL".to_vec();
-        let (dir, path) = scratch_with_bytes(&original);
-        std::fs::write(&path, b"OVERWRITTEN").unwrap();
-
-        rollback_atomic(&path, &original, dir.path()).unwrap();
-
-        let remaining: Vec<_> = std::fs::read_dir(dir.path())
-            .unwrap()
-            .filter_map(std::result::Result::ok)
-            .map(|e| e.file_name().into_string().unwrap())
-            .collect();
-        assert_eq!(
-            remaining,
-            vec!["book.epub".to_string()],
-            "tempfile must not linger"
-        );
-    }
-
-    fn ok_report(outcome: ValidationOutcome) -> ValidationReport {
-        ValidationReport {
-            issues: vec![],
-            outcome,
-            accessibility_metadata: None,
-            opf_data: None,
-            has_usable_embedded_cover: false,
-        }
-    }
-
-    /// `Ok(Clean)` post-validation → Commit.  No rollback, file unchanged.
-    #[test]
-    fn finalise_post_writeback_commits_when_clean() {
-        let original = b"ORIG".to_vec();
-        let written = b"NEW".to_vec();
-        let (dir, path) = scratch_with_bytes(&written);
-
-        let action = finalise_post_writeback(
-            &ValidationOutcome::Clean,
-            &Ok(ok_report(ValidationOutcome::Clean)),
-            &path,
-            &original,
-            dir.path(),
-        )
-        .unwrap();
-
-        assert!(matches!(action, FinaliseAction::Commit));
-        assert_eq!(std::fs::read(&path).unwrap(), written, "file untouched");
-    }
-
-    /// `Ok(Quarantined)` post-validation → `RolledBack`.  File restored.
-    #[test]
-    fn finalise_post_writeback_rolls_back_on_regression() {
-        let original = b"ORIG".to_vec();
-        let written = b"CORRUPT".to_vec();
-        let (dir, path) = scratch_with_bytes(&written);
-
-        let action = finalise_post_writeback(
-            &ValidationOutcome::Clean,
-            &Ok(ok_report(ValidationOutcome::Quarantined)),
-            &path,
-            &original,
-            dir.path(),
-        )
-        .unwrap();
-
-        match action {
-            FinaliseAction::RolledBack(msg) => {
-                assert!(msg.contains("regressed"), "msg: {msg}");
-            }
-            FinaliseAction::Commit => panic!("expected RolledBack, got Commit"),
-        }
-        assert_eq!(std::fs::read(&path).unwrap(), original, "rollback restored");
-    }
-
-    /// `Err(EpubError)` post-validation → `RolledBack`.  This is the S2
-    /// branch: a validator error must not leave a corrupted file on disk.
-    #[test]
-    fn finalise_post_writeback_rolls_back_on_validator_error() {
-        use crate::services::epub::EpubError;
-
-        let original = b"ORIG".to_vec();
-        let written = b"CORRUPT".to_vec();
-        let (dir, path) = scratch_with_bytes(&written);
-
-        let err: Result<ValidationReport, EpubError> =
-            Err(EpubError::Io(std::io::Error::other("simulated")));
-
-        let action = finalise_post_writeback(
-            &ValidationOutcome::Clean,
-            &err,
-            &path,
-            &original,
-            dir.path(),
-        )
-        .unwrap();
-
-        match action {
-            FinaliseAction::RolledBack(msg) => {
-                assert!(msg.contains("errored"), "msg: {msg}");
-                assert!(msg.contains("simulated"), "msg: {msg}");
-            }
-            FinaliseAction::Commit => panic!("expected RolledBack, got Commit"),
-        }
-        assert_eq!(
-            std::fs::read(&path).unwrap(),
-            original,
-            "validator-err rollback restored"
-        );
-    }
-
     // ── Path-rename target rendering ────────────────────────────────────
 
     fn snap_with(title: Option<&str>, author: Option<&str>) -> JobSnapshot {
         JobSnapshot {
             manifestation_id: Uuid::nil(),
             reason: "metadata".into(),
-            file_path: String::new(),
+            file_path: "fixture.epub".parse().unwrap(),
+            library_id: LibraryId::from_uuid(Uuid::nil()),
             format: ManifestationFormat::Epub,
             cover_path: None,
             title: title.map(std::string::ToString::to_string),
@@ -1721,18 +1721,18 @@ mod tests {
     #[test]
     fn render_target_path_yields_author_title_layout() {
         let snap = snap_with(Some("Frankenstein"), Some("Shelley, Mary"));
-        let src = std::path::Path::new("/lib/old/file.epub");
+        let src = std::path::Path::new("old/file.epub");
         let target = render_target_path(&snap, "/lib", src).unwrap().unwrap();
         assert_eq!(
             target,
-            std::path::PathBuf::from("/lib/Shelley, Mary/Frankenstein.epub")
+            std::path::PathBuf::from("Shelley, Mary/Frankenstein.epub")
         );
     }
 
     #[test]
     fn render_target_path_returns_none_when_unchanged() {
         let snap = snap_with(Some("Frankenstein"), Some("Shelley, Mary"));
-        let already = std::path::PathBuf::from("/lib/Shelley, Mary/Frankenstein.epub");
+        let already = std::path::PathBuf::from("Shelley, Mary/Frankenstein.epub");
         assert!(
             render_target_path(&snap, "/lib", &already)
                 .unwrap()
@@ -1745,46 +1745,7 @@ mod tests {
         let snap = snap_with(None, None);
         let src = std::path::Path::new("/lib/orphan.epub");
         let target = render_target_path(&snap, "/lib", src).unwrap().unwrap();
-        assert_eq!(
-            target,
-            std::path::PathBuf::from("/lib/Unknown/Unknown.epub")
-        );
-    }
-
-    #[test]
-    fn is_regression_detects_quarantine() {
-        assert!(is_regression(
-            &ValidationOutcome::Clean,
-            &ValidationOutcome::Quarantined
-        ));
-        assert!(is_regression(
-            &ValidationOutcome::Repaired,
-            &ValidationOutcome::Quarantined
-        ));
-    }
-
-    #[test]
-    fn is_regression_detects_clean_to_degraded() {
-        assert!(is_regression(
-            &ValidationOutcome::Clean,
-            &ValidationOutcome::Degraded
-        ));
-    }
-
-    #[test]
-    fn is_regression_is_false_for_clean_to_clean() {
-        assert!(!is_regression(
-            &ValidationOutcome::Clean,
-            &ValidationOutcome::Clean
-        ));
-    }
-
-    #[test]
-    fn is_regression_is_false_for_degraded_to_degraded() {
-        assert!(!is_regression(
-            &ValidationOutcome::Degraded,
-            &ValidationOutcome::Degraded
-        ));
+        assert_eq!(target, std::path::PathBuf::from("Unknown/Unknown.epub"));
     }
 
     #[test]

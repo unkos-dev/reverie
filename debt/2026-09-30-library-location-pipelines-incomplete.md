@@ -9,9 +9,9 @@ lift-when: Ingestion, writeback and covers use recorded library-relative locatio
 
 # Library location pipelines are incomplete
 
-Manifestations require a library identity and a canonical relative path. OPDS downloads use that recorded location, but
-the ingestion, writeback and cover owners still use their previous filesystem interfaces. This checkpoint cannot support
-end-to-end library management and must remain draft. Tests and ordinary gates remain active.
+Manifestations require a library identity and a canonical relative path. Downloads, writeback and request cover-source
+reads use owning-library capabilities. Ingestion persistence and cover-cache operations remain incomplete, so the
+checkpoint cannot support end-to-end library management and stays draft. Tests and ordinary gates remain active.
 
 ## Owners and lift conditions
 
@@ -23,16 +23,10 @@ end-to-end library management and must remain draft. Tests and ordinary gates re
   library copy but retains the source and can leave destination directories. Each subsequent scan processes that source
   again and appends another failed ingestion attempt; the existing path-based duplicate check cannot match relative
   records.
-- `services::writeback::orchestrator::{load_snapshot, run_once, path_rename_step}` reads recorded paths as ambient paths
-  and writes full relocation destinations. Migrate source access, replacement, relocation and compensation to the owning
-  library capability. The `run_once_finds_non_default_opf_and_updates_hash`,
-  `ingestion_file_hash_immutable_across_writeback_chain`, `run_once_renames_file_to_template_path`, collision and cover
-  writeback tests must pass using recorded relative locations. A relative source resolved against the process directory
-  can produce a terminal `file_missing` skip. Skipped jobs never retry, including after source resolution is migrated;
-  replaying those edits requires an explicit operational action.
-- `services::covers::{get_or_create, spawn_warm_thumb, warm_one}` and `services::covers::cache` retain ambient source
-  and cache paths. Migrate EPUB source reads and cache publication to capabilities, including the ingestion warming
-  handoff. The authenticated OPDS cover tests and the `warm_one_` tests must pass with the same location contract.
+- `services::covers::cache` and cached response-file opening retain ambient cache paths. Source extraction consumes
+  opened library files; ingestion warming opens its known final copy, while recorded-location producer adoption remains
+  with ingestion. Migrate cache publication and response opening to capabilities and complete that warming handoff.
+  Authenticated OPDS cover tests and `warm_one_` tests must retain their existing behaviour.
 
 Remove this entry when these owners are migrated, ingestion-to-download and restart checks pass, and both the full
 backend suite and scoped preflight pass. No compatibility adapter is provided.

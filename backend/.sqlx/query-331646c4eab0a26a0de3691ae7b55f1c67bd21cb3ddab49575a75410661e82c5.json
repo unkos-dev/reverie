@@ -1,0 +1,52 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT file_path, current_file_hash, ingestion_file_hash FROM manifestations WHERE id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "file_path",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "manifestations",
+            "name": "file_path"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "current_file_hash",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "manifestations",
+            "name": "current_file_hash"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "ingestion_file_hash",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "manifestations",
+            "name": "ingestion_file_hash"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "331646c4eab0a26a0de3691ae7b55f1c67bd21cb3ddab49575a75410661e82c5"
+}

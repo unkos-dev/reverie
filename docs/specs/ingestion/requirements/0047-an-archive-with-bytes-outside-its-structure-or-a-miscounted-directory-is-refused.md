@@ -27,6 +27,8 @@ a single crafted archive from being read two different ways by two different too
 
 ## Acceptance criteria
 
+The archive tests below consume opened temporary files through the file-backed admission path.
+
 - One byte appended after the true end of the archive causes refusal. Checked by `trailing_one_byte_is_quarantined` in
   `backend/src/services/epub/zip_layer.rs`.
 - 70,000 bytes appended after the true end of the archive causes refusal. Checked by

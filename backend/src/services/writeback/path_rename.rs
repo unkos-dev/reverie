@@ -1,225 +1,138 @@
-//! Render + commit + collision-check for on-disk `EPUB` path updates.
-//!
-//! `commit` performs an atomic rename when `src` and `dest` are on the
-//! same filesystem.  When the kernel returns `EXDEV` (or
-//! `ErrorKind::CrossesDevices` on newer Rust), it falls back to a
-//! copy-via-tempfile + `SHA-256` verify + unlink-original path so writeback
-//! never leaves a partially-written file at the destination.
-//!
-//! Invariant: every file mutation in the writeback pipeline flows through
-//! either `commit` (tempfile → dest) or `move_existing` (src → dest),
-//! never via a bare `std::fs::rename`.  Both helpers fsync the destination's
-//! parent directory after rename so the directory-entry update is durable
-//! across a power loss.
-
-use std::path::{Path, PathBuf};
-
-use sha2::{Digest, Sha256};
-use tempfile::NamedTempFile;
+//! Contained relocation with bounded, independently verified EXDEV copying.
 
 use super::error::WritebackError;
+use crate::services::epub::repack::hash_file;
+use crate::services::files::RelativeFilePath;
+use cap_std::fs::Dir;
+use cap_tempfile::TempFile;
+use sha2::{Digest, Sha256};
+use std::ffi::{OsStr, OsString};
+use std::io::{Read, Write};
+use std::path::{Path, PathBuf};
 
-/// Persist `temp` onto `dest` atomically on same-FS, or fall back to
-/// copy + `SHA-256` verify + unlink when crossing filesystem boundaries.
-///
-/// The same-FS path calls `tempfile::NamedTempFile::persist`, which delegates
-/// to `libc::rename` — a single syscall that is atomic for visibility.  The
-/// cross-FS (`EXDEV`) path copies bytes into a second tempfile in `dest`'s
-/// parent directory, fsyncs that file, persists it to `dest`, then verifies
-/// the on-disk `SHA-256` matches the source before returning.
+/// Visible relocation and its durability result.
+pub enum MoveResult {
+    /// Both directory updates were synchronised.
+    Durable,
+    /// The file moved, but a directory sync failed.
+    VisibleUncertain(std::io::Error),
+}
+
+/// Open the actual parent of a checked relative location.
 ///
 /// # Errors
-///
-/// - `WritebackError::Persist` — the same-FS persist failed for a reason
-///   other than `EXDEV`.
-/// - `WritebackError::Io` — an I/O error occurred during the cross-FS copy,
-///   fsync, post-copy read, or hash verification.
-/// - `WritebackError::Persist("post-copy hash mismatch")` — the bytes on
-///   disk after the cross-FS copy do not match the source tempfile.
-pub fn commit(temp: NamedTempFile, dest: &Path) -> Result<(), WritebackError> {
-    match temp.persist(dest) {
-        Ok(_) => {
-            fsync_parent_dir(dest);
-            Ok(())
-        }
-        Err(err) if is_cross_device(&err.error) => exdev_fallback(err.file, dest),
-        Err(err) => Err(WritebackError::Persist(err.error.to_string())),
-    }
-}
-
-/// fsync the parent directory of `path` so the preceding rename's
-/// directory-entry update is durable across a power loss.  POSIX rename
-/// is atomic for visibility but does not guarantee the directory
-/// metadata is flushed — on ext4/xfs a crash between rename and
-/// directory-inode flush can revert the rename.
-///
-/// Best-effort: a failure here only means durability isn't guaranteed;
-/// the rename itself has already committed and nothing reconciles a
-/// post-crash divergence automatically.  Logging the failure is the
-/// operator's signal to investigate the underlying FS health.
-fn fsync_parent_dir(path: &Path) {
-    let Some(parent) = path.parent() else { return };
-    // An empty parent means the caller passed a bare filename; fsyncing
-    // CWD is almost never what they wanted, so skip.
-    if parent.as_os_str().is_empty() {
-        return;
-    }
-    match std::fs::File::open(parent) {
-        Ok(dir) => {
-            if let Err(e) = dir.sync_all() {
-                tracing::warn!(
-                    error = %e,
-                    parent = %parent.display(),
-                    "writeback: parent-dir fsync failed after rename; durability not guaranteed"
-                );
-            }
-        }
-        Err(e) => {
-            tracing::warn!(
-                error = %e,
-                parent = %parent.display(),
-                "writeback: could not open parent directory for post-rename fsync"
-            );
-        }
-    }
-}
-
-fn is_cross_device(e: &std::io::Error) -> bool {
-    // Linux 5.x returns ErrorKind::CrossesDevices (stabilised Rust 1.85).
-    // Older kernels surface EXDEV via raw_os_error == 18.
-    if e.kind() == std::io::ErrorKind::CrossesDevices {
-        return true;
-    }
-    matches!(e.raw_os_error(), Some(18))
-}
-
-fn exdev_fallback(temp: NamedTempFile, dest: &Path) -> Result<(), WritebackError> {
-    let temp_path = temp.path().to_path_buf();
-    let bytes = std::fs::read(&temp_path)?;
-    let src_hash = Sha256::digest(&bytes);
-
-    let parent = dest
+/// Returns contained lookup or missing-basename errors.
+pub fn parent(root: &Dir, path: &RelativeFilePath) -> std::io::Result<(Dir, OsString)> {
+    let path = path.as_path();
+    let directory = path
         .parent()
-        .ok_or_else(|| WritebackError::Persist("dest has no parent dir".into()))?;
-    let new_temp = NamedTempFile::new_in(parent)?;
-    std::fs::write(new_temp.path(), &bytes)?;
+        .filter(|parent| !parent.as_os_str().is_empty())
+        .unwrap_or_else(|| Path::new("."));
+    let basename = path
+        .file_name()
+        .ok_or_else(|| std::io::Error::other("location has no basename"))?;
+    Ok((root.open_dir(directory)?, basename.to_owned()))
+}
 
-    // fsync the new file before rename to ensure bytes are on disk.
-    let f = std::fs::File::open(new_temp.path())?;
-    f.sync_all()?;
+fn is_cross_device(error: &std::io::Error) -> bool {
+    error.kind() == std::io::ErrorKind::CrossesDevices || error.raw_os_error() == Some(18)
+}
 
-    new_temp
-        .persist(dest)
-        .map_err(|e| WritebackError::Persist(e.error.to_string()))?;
-    fsync_parent_dir(dest);
-
-    // Verify the final file matches what we intended to write.
-    let dest_bytes = std::fs::read(dest)?;
-    let dest_hash = Sha256::digest(&dest_bytes);
-    if dest_hash.as_slice() != src_hash.as_slice() {
-        return Err(WritebackError::Persist("post-copy hash mismatch".into()));
-    }
-    // `temp` dropping will unlink the original temp file at its old path.
-    drop(temp);
+fn persist(temp: TempFile<'_>, parent: &Dir, name: &OsStr) -> Result<(), WritebackError> {
+    temp.as_file().sync_all()?;
+    temp.replace(name)?;
+    parent.open(".")?.sync_all()?;
     Ok(())
 }
 
-/// Move an existing on-disk file to `dest`.  Same-FS → atomic rename.
-/// Cross-FS (`EXDEV`) → tempfile-in-dest-dir + persist + verify + unlink-original.
-///
-/// This is the "rename a file already on disk" sibling of `commit`
-/// (which takes a `NamedTempFile`).  Used by the orchestrator's
-/// path-rename step after post-writeback validation passes.
-///
-/// Both parent directories are fsynced after a same-FS rename when `src`
-/// and `dest` have different parents, so both the creation and unlink sides
-/// of the directory-entry change are durable.
+/// Relocate within one library, retaining the source until an EXDEV destination verifies.
 ///
 /// # Errors
-///
-/// - `WritebackError::Io` — `std::fs::rename` returned an error that is not
-///   `EXDEV`; or the cross-FS copy, fsync, verification read, or source removal failed.
-/// - `WritebackError::Persist("dest has no parent dir")` — `dest` has no
-///   parent component (bare filename passed as destination).
-/// - Any error returned by `commit` during the cross-FS fallback path.
-/// - `WritebackError::Persist("post-copy hash mismatch")` — the persisted
-///   destination does not match the source bytes; the source remains untouched.
-///
-/// Verification failure preserves the source and logs the unverified destination.
-pub fn move_existing(src: &Path, dest: &Path) -> Result<(), WritebackError> {
-    move_existing_with(src, dest, |src, dest| std::fs::rename(src, dest), commit)
+/// Non-EXDEV rename, copy, publication, verification and removal errors preserve the source where it still exists.
+pub fn move_existing(
+    root: &Dir,
+    src: &RelativeFilePath,
+    dest: &RelativeFilePath,
+    expected_hash: &str,
+) -> Result<MoveResult, WritebackError> {
+    move_existing_with(
+        root,
+        src,
+        dest,
+        expected_hash,
+        |source, name, target, destination| source.rename(name, target, destination),
+        persist,
+    )
 }
 
 fn move_existing_with(
-    src: &Path,
-    dest: &Path,
-    rename: impl FnOnce(&Path, &Path) -> std::io::Result<()>,
-    persist: impl FnOnce(NamedTempFile, &Path) -> Result<(), WritebackError>,
-) -> Result<(), WritebackError> {
-    match rename(src, dest) {
+    root: &Dir,
+    src: &RelativeFilePath,
+    dest: &RelativeFilePath,
+    expected_hash: &str,
+    rename: impl FnOnce(&Dir, &OsStr, &Dir, &OsStr) -> std::io::Result<()>,
+    publish: impl FnOnce(TempFile<'_>, &Dir, &OsStr) -> Result<(), WritebackError>,
+) -> Result<MoveResult, WritebackError> {
+    let (source_parent, source_name) = parent(root, src)?;
+    let (dest_parent, dest_name) = parent(root, dest)?;
+    match rename(&source_parent, &source_name, &dest_parent, &dest_name) {
         Ok(()) => {
-            fsync_parent_dir(dest);
-            // When `src` and `dest` share a parent the two fsyncs collapse
-            // to one (same inode); when they don't, flush `src`'s parent
-            // too so the unlink side of the rename is durable.
-            if src.parent() != dest.parent() {
-                fsync_parent_dir(src);
-            }
-            return Ok(());
+            let sync = dest_parent
+                .open(".")
+                .and_then(|dir| dir.sync_all())
+                .and_then(|()| source_parent.open(".").and_then(|dir| dir.sync_all()));
+            return Ok(match sync {
+                Ok(()) => MoveResult::Durable,
+                Err(error) => MoveResult::VisibleUncertain(error),
+            });
         }
-        Err(e) if !is_cross_device(&e) => return Err(WritebackError::Io(e)),
-        // EXDEV: src + dest sit on different mounts, so std::fs::rename
-        // can't perform the atomic same-FS rename.  Fall through to the
-        // copy-via-tempfile fallback below.
+        Err(error) if !is_cross_device(&error) => return Err(error.into()),
         Err(_) => {}
     }
-    // Cross-FS fallback: copy via a tempfile in dest's dir, then unlink src.
-    let parent = dest
-        .parent()
-        .ok_or_else(|| WritebackError::Persist("dest has no parent dir".into()))?;
-    let bytes = std::fs::read(src)?;
-    let temp = NamedTempFile::new_in(parent)?;
-    std::fs::write(temp.path(), &bytes)?;
-    std::fs::File::open(temp.path())?.sync_all()?;
-    persist(temp, dest)?;
-    let verification = std::fs::read(dest)
-        .map_err(WritebackError::Io)
-        .and_then(|dest_bytes| {
-            if Sha256::digest(&dest_bytes) == Sha256::digest(&bytes) {
-                Ok(())
-            } else {
-                Err(WritebackError::Persist("post-copy hash mismatch".into()))
+    let result = (|| {
+        let mut source = source_parent.open(&source_name)?;
+        let mut candidate = TempFile::new(&dest_parent)?;
+        let mut buffer = vec![0; 64 * 1024];
+        let mut hash = Sha256::new();
+        loop {
+            let n = source.read(&mut buffer)?;
+            if n == 0 {
+                break;
             }
-        });
-    if let Err(verification_error) = verification {
-        tracing::error!(
-            ?dest,
-            error = %verification_error,
-            "writeback: relocation destination failed verification"
-        );
-        return Err(verification_error);
+            candidate.write_all(&buffer[..n])?;
+            hash.update(&buffer[..n]);
+        }
+        let mut copied_hash = String::with_capacity(64);
+        for byte in hash.finalize() {
+            use std::fmt::Write;
+            write!(copied_hash, "{byte:02x}").map_err(std::io::Error::other)?;
+        }
+        if copied_hash != expected_hash {
+            return Err(WritebackError::Persist("source copy hash mismatch".into()));
+        }
+        publish(candidate, &dest_parent, &dest_name)?;
+        let mut destination = dest_parent.open(&dest_name)?.into_std();
+        if hash_file(&mut destination)? != expected_hash {
+            return Err(WritebackError::Persist("post-copy hash mismatch".into()));
+        }
+        source_parent.remove_file(&source_name)?;
+        Ok(
+            match source_parent.open(".").and_then(|dir| dir.sync_all()) {
+                Ok(()) => MoveResult::Durable,
+                Err(error) => MoveResult::VisibleUncertain(error),
+            },
+        )
+    })();
+    if let Err(error) = &result {
+        tracing::error!(destination = dest.as_str(), error = %error, "relocation failed; source retained where it still exists, destination may be published");
     }
-    std::fs::remove_file(src)?;
-    // The `remove_file` of `src` is a directory-metadata change; flush
-    // `src`'s parent so the unlink is durable.  `dest`'s parent was
-    // already fsync'd inside `commit`.
-    fsync_parent_dir(src);
-    Ok(())
+    result
 }
 
-/// Normalise a rendered path: reject `..` components and absolute paths
-/// that escape the library root.  Returns an equivalent relative
-/// `PathBuf` with `./` components stripped.
-///
-/// This is a defensive second line — primary sanitisation happens inside
-/// `services::ingestion::path_template::render`.  Without this check, a
-/// crafted title containing `../` segments could rename an `EPUB` outside
-/// the library root.
+/// Normalise the existing template output before parsing its checked location.
 ///
 /// # Errors
-///
-/// - `WritebackError::Persist` — `p` contains a `..` (`ParentDir`)
-///   component or an absolute prefix (`RootDir` or `Prefix`).
+/// Returns an error for parent or absolute components.
 pub fn normalise_relative(p: &Path) -> Result<PathBuf, WritebackError> {
     let mut out = PathBuf::new();
     for comp in p.components() {
@@ -246,159 +159,148 @@ pub fn normalise_relative(p: &Path) -> Result<PathBuf, WritebackError> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::io::Write;
 
-    #[test]
-    fn commit_same_directory_persists() {
+    fn fixture() -> (
+        tempfile::TempDir,
+        Dir,
+        RelativeFilePath,
+        RelativeFilePath,
+        String,
+    ) {
         let dir = tempfile::tempdir().unwrap();
-        let mut temp = NamedTempFile::new_in(dir.path()).unwrap();
-        temp.write_all(b"HELLO").unwrap();
-        let dest = dir.path().join("out.epub");
-        commit(temp, &dest).unwrap();
-        let contents = std::fs::read(&dest).unwrap();
-        assert_eq!(contents, b"HELLO");
+        let root = Dir::open_ambient_dir(dir.path(), cap_std::ambient_authority()).unwrap();
+        root.write("orig.epub", b"PAYLOAD").unwrap();
+        root.create_dir("subdir").unwrap();
+        let mut source = root.open("orig.epub").unwrap().into_std();
+        let hash = hash_file(&mut source).unwrap();
+        (
+            dir,
+            root,
+            "orig.epub".parse().unwrap(),
+            "subdir/new.epub".parse().unwrap(),
+            hash,
+        )
     }
 
     #[test]
-    fn normalise_rejects_parent_dir() {
-        let p = Path::new("../evil.epub");
-        assert!(normalise_relative(p).is_err());
+    fn contained_move_same_fs_renames_atomically() {
+        let (_dir, root, src, dest, hash) = fixture();
+        assert!(matches!(
+            move_existing(&root, &src, &dest, &hash).unwrap(),
+            MoveResult::Durable
+        ));
+        assert!(!root.exists(src.as_path()));
+        assert_eq!(root.read(dest.as_path()).unwrap(), b"PAYLOAD");
     }
 
     #[test]
-    fn normalise_rejects_absolute() {
-        let p = Path::new("/etc/passwd");
-        assert!(normalise_relative(p).is_err());
-    }
-
-    #[test]
-    fn normalise_strips_cur_dir() {
-        let p = Path::new("./sub/file.epub");
-        let out = normalise_relative(p).unwrap();
-        assert_eq!(out, PathBuf::from("sub/file.epub"));
-    }
-
-    /// `move_existing` performs an atomic rename within the same FS and
-    /// removes the source file in the process.
-    #[test]
-    fn move_existing_same_fs_renames_atomically() {
-        let dir = tempfile::tempdir().unwrap();
-        let src = dir.path().join("orig.epub");
-        let dest = dir.path().join("subdir/new.epub");
-        std::fs::write(&src, b"PAYLOAD").unwrap();
-        std::fs::create_dir_all(dest.parent().unwrap()).unwrap();
-
-        move_existing(&src, &dest).unwrap();
-
-        assert!(!src.exists(), "source must be unlinked after move");
-        assert!(dest.exists(), "dest must exist after move");
-        assert_eq!(std::fs::read(&dest).unwrap(), b"PAYLOAD");
-    }
-
-    #[test]
-    fn move_existing_cross_fs_relocates_verified_bytes() {
-        let dir = tempfile::tempdir().unwrap();
-        let src = dir.path().join("orig.epub");
-        let dest = dir.path().join("new.epub");
-        std::fs::write(&src, b"PAYLOAD").unwrap();
-
+    fn contained_move_cross_fs_relocates_verified_bytes() {
+        let (_dir, root, src, dest, hash) = fixture();
         move_existing_with(
+            &root,
             &src,
             &dest,
-            |_, _| Err(std::io::Error::from(std::io::ErrorKind::CrossesDevices)),
-            commit,
+            &hash,
+            |_, _, _, _| Err(std::io::ErrorKind::CrossesDevices.into()),
+            persist,
         )
         .unwrap();
-
-        assert!(!src.exists());
-        assert_eq!(std::fs::read(&dest).unwrap(), b"PAYLOAD");
-        assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 1);
+        assert!(!root.exists(src.as_path()));
+        assert_eq!(root.read(dest.as_path()).unwrap(), b"PAYLOAD");
     }
 
     #[test]
-    fn move_existing_cross_fs_hash_mismatch_preserves_source_and_destination() {
-        let dir = tempfile::tempdir().unwrap();
-        let src = dir.path().join("orig.epub");
-        let dest = dir.path().join("new.epub");
-        std::fs::write(&src, b"PAYLOAD").unwrap();
-
+    fn contained_move_non_exdev_preserves_source() {
+        let (_dir, root, src, dest, hash) = fixture();
         let result = move_existing_with(
+            &root,
             &src,
             &dest,
-            |_, _| Err(std::io::Error::from(std::io::ErrorKind::CrossesDevices)),
-            |temp, dest| {
-                commit(temp, dest)?;
-                std::fs::write(dest, b"CORRUPTED")?;
+            &hash,
+            |_, _, _, _| Err(std::io::ErrorKind::PermissionDenied.into()),
+            |_, _, _| panic!("non-EXDEV must never copy"),
+        );
+        assert!(
+            matches!(result, Err(WritebackError::Io(error)) if error.kind() == std::io::ErrorKind::PermissionDenied)
+        );
+        assert_eq!(root.read(src.as_path()).unwrap(), b"PAYLOAD");
+        assert!(!root.exists(dest.as_path()));
+    }
+
+    #[test]
+    fn contained_move_cross_fs_hash_mismatch_preserves_source_and_destination() {
+        let (_dir, root, src, dest, hash) = fixture();
+        let result = move_existing_with(
+            &root,
+            &src,
+            &dest,
+            &hash,
+            |_, _, _, _| Err(std::io::ErrorKind::CrossesDevices.into()),
+            |temp, parent, name| {
+                persist(temp, parent, name)?;
+                parent.write(name, b"CORRUPTED")?;
                 Ok(())
             },
         );
-
         assert!(
             matches!(result, Err(WritebackError::Persist(ref reason)) if reason == "post-copy hash mismatch")
         );
-        assert_eq!(std::fs::read(&src).unwrap(), b"PAYLOAD");
-        assert_eq!(std::fs::read(&dest).unwrap(), b"CORRUPTED");
-        assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 2);
-
-        let retry_dest =
-            crate::services::ingestion::path_template::resolve_collision(&dest).unwrap();
-        assert_eq!(retry_dest, dir.path().join("new (2).epub"));
+        assert_eq!(root.read(src.as_path()).unwrap(), b"PAYLOAD");
+        assert_eq!(root.read(dest.as_path()).unwrap(), b"CORRUPTED");
+        let retry = "subdir/new (2).epub".parse().unwrap();
         move_existing_with(
+            &root,
             &src,
-            &retry_dest,
-            |_, _| Err(std::io::Error::from(std::io::ErrorKind::CrossesDevices)),
-            commit,
+            &retry,
+            &hash,
+            |_, _, _, _| Err(std::io::ErrorKind::CrossesDevices.into()),
+            persist,
         )
         .unwrap();
-        assert!(!src.exists());
-        assert_eq!(std::fs::read(&dest).unwrap(), b"CORRUPTED");
-        assert_eq!(std::fs::read(&retry_dest).unwrap(), b"PAYLOAD");
-        assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 2);
+        assert!(!root.exists(src.as_path()));
+        assert_eq!(root.read(dest.as_path()).unwrap(), b"CORRUPTED");
+        assert_eq!(root.read(retry.as_path()).unwrap(), b"PAYLOAD");
     }
 
-    #[cfg(unix)]
     #[test]
-    fn move_existing_cross_fs_verification_read_error_preserves_source() {
-        let dir = tempfile::tempdir().unwrap();
-        let src = dir.path().join("orig.epub");
-        let dest = dir.path().join("new.epub");
-        std::fs::write(&src, b"PAYLOAD").unwrap();
-
+    fn contained_move_cross_fs_verification_read_error_preserves_source() {
+        let (_dir, root, src, dest, hash) = fixture();
         let result = move_existing_with(
+            &root,
             &src,
             &dest,
-            |_, _| Err(std::io::Error::from(std::io::ErrorKind::CrossesDevices)),
-            |temp, dest| {
-                commit(temp, dest)?;
-                std::fs::remove_file(dest)?;
-                std::os::unix::fs::symlink(dest, dest)?;
+            &hash,
+            |_, _, _, _| Err(std::io::ErrorKind::CrossesDevices.into()),
+            |temp, parent, name| {
+                persist(temp, parent, name)?;
+                parent.remove_file(name)?;
+                parent.symlink(name, name)?;
                 Ok(())
             },
         );
-
         assert!(matches!(result, Err(WritebackError::Io(_))));
-        assert_eq!(std::fs::read(&src).unwrap(), b"PAYLOAD");
+        assert_eq!(root.read(src.as_path()).unwrap(), b"PAYLOAD");
         assert!(
-            std::fs::symlink_metadata(&dest)
+            root.symlink_metadata(dest.as_path())
                 .unwrap()
                 .file_type()
                 .is_symlink()
         );
-        assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 2);
     }
 
-    /// Exercise the EXDEV branch by invoking it directly.  Real cross-FS
-    /// testing requires Docker volumes on different mount points; we
-    /// validate the fallback's bookkeeping here.
     #[test]
-    fn exdev_fallback_writes_same_bytes() {
-        let dir = tempfile::tempdir().unwrap();
-        let mut temp = NamedTempFile::new_in(dir.path()).unwrap();
-        temp.write_all(b"HELLO-EXDEV").unwrap();
-        // Pretend this is the cross-FS fallback path.
-        let dest = dir.path().join("out-exdev.epub");
-        exdev_fallback(temp, &dest).unwrap();
-        let contents = std::fs::read(&dest).unwrap();
-        assert_eq!(contents, b"HELLO-EXDEV");
+    fn normalise_rejects_parent_dir() {
+        assert!(normalise_relative(Path::new("../evil.epub")).is_err());
+    }
+    #[test]
+    fn normalise_rejects_absolute() {
+        assert!(normalise_relative(Path::new("/etc/passwd")).is_err());
+    }
+    #[test]
+    fn normalise_strips_cur_dir() {
+        assert_eq!(
+            normalise_relative(Path::new("./sub/file.epub")).unwrap(),
+            PathBuf::from("sub/file.epub")
+        );
     }
 }

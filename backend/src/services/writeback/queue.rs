@@ -34,8 +34,10 @@
 use std::sync::Arc;
 use std::time::Duration;
 
+use crate::services::files::LibraryFiles;
 use sqlx::PgPool;
 use tokio::sync::Semaphore;
+use tokio::task::JoinSet;
 use tokio::time::Interval;
 use tokio_util::sync::CancellationToken;
 use tracing::{info, warn};
@@ -43,11 +45,12 @@ use uuid::Uuid;
 
 use crate::config::Config;
 
+use super::error::WritebackError;
 use super::events;
 use super::orchestrator::{self, RunOutcome};
 
-/// Spawn the writeback queue worker loop.  Returns when `cancel` fires,
-/// reverting any `in_progress` row back to `pending`.
+/// Stop claiming on cancellation, drain tracked jobs, then recover orphaned claims.
+/// Active blocking work keeps its permit if the outer drain is aborted.
 ///
 /// On startup, calls [`revert_in_progress`] to recover any rows left
 /// `in_progress` by a prior process crash.  The worker then polls
@@ -66,7 +69,36 @@ pub async fn spawn_worker(
     pool: PgPool,
     config: Config,
     cancel: CancellationToken,
+    files: LibraryFiles,
 ) -> anyhow::Result<()> {
+    spawn_worker_with(
+        pool,
+        config,
+        cancel,
+        files,
+        |pool, config, files, id, permit| async move {
+            orchestrator::run_once(&pool, &config, &files, id, permit).await
+        },
+        || {},
+    )
+    .await
+}
+
+async fn spawn_worker_with<F, Fut>(
+    pool: PgPool,
+    config: Config,
+    cancel: CancellationToken,
+    files: LibraryFiles,
+    run: F,
+    draining: impl FnOnce(),
+) -> anyhow::Result<()>
+where
+    F: Fn(PgPool, Config, LibraryFiles, Uuid, Arc<tokio::sync::OwnedSemaphorePermit>) -> Fut
+        + Clone
+        + Send
+        + 'static,
+    Fut: std::future::Future<Output = Result<RunOutcome, WritebackError>> + Send + 'static,
+{
     if !config.writeback.enabled {
         info!("writeback queue disabled by config");
         cancel.cancelled().await;
@@ -90,15 +122,20 @@ pub async fn spawn_worker(
         "writeback queue started"
     );
 
+    let mut jobs = JoinSet::new();
     loop {
         tokio::select! {
             () = cancel.cancelled() => {
                 info!("writeback queue shutting down");
-                revert_in_progress(&pool).await?;
-                return Ok(());
+                draining();
+                break;
+            }
+            result = jobs.join_next(), if !jobs.is_empty() => {
+                if let Some(Err(error)) = result { warn!(%error, "writeback job task failed"); }
             }
             _ = interval.tick() => {
                 loop {
+                    if cancel.is_cancelled() { break; }
                     let Ok(permit) = semaphore.clone().try_acquire_owned() else {
                         break;
                     };
@@ -109,9 +146,11 @@ pub async fn spawn_worker(
                     };
                     let pool = pool.clone();
                     let cfg = config.clone();
-                    tokio::spawn(async move {
-                        let _p = permit;
-                        let result = orchestrator::run_once(&pool, &cfg, id).await;
+                    let files = files.clone();
+                    let run = run.clone();
+                    jobs.spawn(async move {
+                        let permit = Arc::new(permit);
+                        let result = run(pool.clone(), cfg.clone(), files, id, Arc::clone(&permit)).await;
                         if let Err(e) = finish(&pool, &cfg, id, attempt_count, result).await {
                             warn!(error = %e, %id, "writeback: finish bookkeeping failed");
                         }
@@ -120,6 +159,13 @@ pub async fn spawn_worker(
             }
         }
     }
+    while let Some(result) = jobs.join_next().await {
+        if let Err(error) = result {
+            warn!(%error, "writeback job task failed during drain");
+        }
+    }
+    revert_in_progress(&pool).await?;
+    Ok(())
 }
 
 /// Atomic claim of the next eligible `writeback_jobs` row.
@@ -569,6 +615,82 @@ mod tests {
         .unwrap()
     }
 
+    #[sqlx::test(migrations = "./migrations")]
+    async fn bounded_writeback_cancellation_drains_active_claim_without_overlap(pool: PgPool) {
+        let ing = ingestion_pool_for(&pool).await;
+        let app = writeback_pool_for(&pool).await;
+        let (_, manifestation) = insert_fixture(&ing, "blocked").await;
+        let first = insert_job(&ing, manifestation, "metadata").await;
+        let second = insert_job(&ing, manifestation, "metadata").await;
+        let release = Arc::new(std::sync::Barrier::new(2));
+        let (entered_tx, mut entered_rx) = tokio::sync::mpsc::channel(1);
+        let (draining_tx, draining_rx) = tokio::sync::oneshot::channel();
+        let cancel = CancellationToken::new();
+        let mut config = test_config_with_max_attempts(3);
+        config.writeback.concurrency = 1;
+        let files = crate::test_support::test_library_files();
+        let blocking_release = Arc::clone(&release);
+        let worker = tokio::spawn(spawn_worker_with(
+            app.clone(),
+            config,
+            cancel.clone(),
+            files,
+            move |_, _, _, _, permit| {
+                let release = Arc::clone(&blocking_release);
+                let entered = entered_tx.clone();
+                async move {
+                    orchestrator::blocking_phase(permit, move || {
+                        entered.blocking_send(()).unwrap();
+                        release.wait();
+                        Ok(RunOutcome::Success {
+                            manifestation_id: manifestation,
+                            reason: "metadata".into(),
+                            current_file_hash: "accepted".into(),
+                        })
+                    })
+                    .await
+                }
+            },
+            move || {
+                draining_tx.send(()).unwrap();
+            },
+        ));
+        entered_rx.recv().await.unwrap();
+        cancel.cancel();
+        draining_rx.await.unwrap();
+        let rows = sqlx::query!("SELECT id, status::text AS status FROM writeback_jobs WHERE manifestation_id = $1 ORDER BY created_at", manifestation).fetch_all(&app).await.unwrap();
+        assert_eq!(
+            rows.iter()
+                .find(|row| row.id == first)
+                .unwrap()
+                .status
+                .as_deref(),
+            Some("in_progress")
+        );
+        assert_eq!(
+            rows.iter()
+                .find(|row| row.id == second)
+                .unwrap()
+                .status
+                .as_deref(),
+            Some("pending")
+        );
+        assert!(claim_next(&app).await.unwrap().is_none());
+        assert!(!worker.is_finished());
+        tokio::task::spawn_blocking(move || release.wait())
+            .await
+            .unwrap();
+        worker.await.unwrap().unwrap();
+        let row = sqlx::query!(
+            "SELECT status::text AS status FROM writeback_jobs WHERE id = $1",
+            first
+        )
+        .fetch_one(&app)
+        .await
+        .unwrap();
+        assert_eq!(row.status.as_deref(), Some("complete"));
+    }
+
     /// NOT EXISTS soft filter: when one sibling is already `in_progress`,
     /// the CTE predicate treats the remaining pending siblings as
     /// ineligible.  This is the common-path optimisation — it avoids a
@@ -912,9 +1034,14 @@ mod tests {
         let cancel_for_spawn = cancel.clone();
         let (cfg, _files) = test_config_with_max_attempts(3);
         let handle = tokio::spawn(async move {
-            spawn_worker(pool_for_spawn, cfg, cancel_for_spawn)
-                .await
-                .unwrap();
+            spawn_worker(
+                pool_for_spawn,
+                cfg,
+                cancel_for_spawn,
+                crate::test_support::test_library_files(),
+            )
+            .await
+            .unwrap();
         });
 
         // Allow the worker to run its startup revert_in_progress.

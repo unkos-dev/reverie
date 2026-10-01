@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT wj.manifestation_id, wj.reason,\n                  m.work_id, m.file_path,\n                  m.format AS \"format: ManifestationFormat\",\n                  m.cover_path,\n                  m.publisher, m.pub_date, m.isbn_10, m.isbn_13,\n                  w.title, w.subtitle, w.description, w.language\n             FROM writeback_jobs wj\n             JOIN manifestations m ON m.id = wj.manifestation_id\n             JOIN works w          ON w.id = m.work_id\n            WHERE wj.id = $1",
+  "query": "SELECT wj.manifestation_id, wj.reason,\n                  m.work_id, m.library_id, m.file_path,\n                  m.format AS \"format: ManifestationFormat\",\n                  m.cover_path,\n                  m.publisher, m.pub_date, m.isbn_10, m.isbn_13,\n                  w.title, w.subtitle, w.description, w.language\n             FROM writeback_jobs wj\n             JOIN manifestations m ON m.id = wj.manifestation_id\n             JOIN works w          ON w.id = m.work_id\n            WHERE wj.id = $1",
   "describe": {
     "columns": [
       {
@@ -38,6 +38,17 @@
       },
       {
         "ordinal": 3,
+        "name": "library_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "manifestations",
+            "name": "library_id"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
         "name": "file_path",
         "type_info": "Text",
         "origin": {
@@ -48,7 +59,7 @@
         }
       },
       {
-        "ordinal": 4,
+        "ordinal": 5,
         "name": "format: ManifestationFormat",
         "type_info": {
           "Custom": {
@@ -73,7 +84,7 @@
         }
       },
       {
-        "ordinal": 5,
+        "ordinal": 6,
         "name": "cover_path",
         "type_info": "Text",
         "origin": {
@@ -84,7 +95,7 @@
         }
       },
       {
-        "ordinal": 6,
+        "ordinal": 7,
         "name": "publisher",
         "type_info": "Text",
         "origin": {
@@ -95,7 +106,7 @@
         }
       },
       {
-        "ordinal": 7,
+        "ordinal": 8,
         "name": "pub_date",
         "type_info": "Date",
         "origin": {
@@ -106,7 +117,7 @@
         }
       },
       {
-        "ordinal": 8,
+        "ordinal": 9,
         "name": "isbn_10",
         "type_info": "Text",
         "origin": {
@@ -117,7 +128,7 @@
         }
       },
       {
-        "ordinal": 9,
+        "ordinal": 10,
         "name": "isbn_13",
         "type_info": "Text",
         "origin": {
@@ -128,7 +139,7 @@
         }
       },
       {
-        "ordinal": 10,
+        "ordinal": 11,
         "name": "title",
         "type_info": "Text",
         "origin": {
@@ -139,7 +150,7 @@
         }
       },
       {
-        "ordinal": 11,
+        "ordinal": 12,
         "name": "subtitle",
         "type_info": "Text",
         "origin": {
@@ -150,7 +161,7 @@
         }
       },
       {
-        "ordinal": 12,
+        "ordinal": 13,
         "name": "description",
         "type_info": "Text",
         "origin": {
@@ -161,7 +172,7 @@
         }
       },
       {
-        "ordinal": 13,
+        "ordinal": 14,
         "name": "language",
         "type_info": "Text",
         "origin": {
@@ -183,6 +194,7 @@
       false,
       false,
       false,
+      false,
       true,
       true,
       true,
@@ -194,5 +206,5 @@
       true
     ]
   },
-  "hash": "9dd6853cc482cbf7e83e486e48960aaf58840cbb5a5dc4da0332d4583b0b96d0"
+  "hash": "23f23146c87d3c292bdeebff2eafba2332ad918ff3b302bf8990ff036ff3c8c6"
 }

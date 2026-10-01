@@ -89,12 +89,13 @@ directly rather than assembling its own `AppState` and calling `build_router`.
   session-cookie default.
 - The five background workers, each entered from its own module and given only what it needs:
   - `services::settings::spawn_listener` (settings LISTEN/NOTIFY reload, refreshing `AppState.settings`).
-  - `services::ingestion::run_watcher` (the filesystem watcher and ingestion scan loop).
+  - `services::ingestion::run_watcher` (the filesystem watcher and scan loop, receiving shared `LibraryFiles` for its
+    copied-EPUB boundary).
   - `services::enrichment::queue::spawn_queue` (the enrichment job queue).
   - `services::session_sweep::run_sweep` (the hourly expired-session reaper, driving `PostgresStore`'s `ExpiredDeletion`
     trait).
   - `services::writeback::queue::spawn_worker` (the writeback job queue, given the dedicated system-context pool
-    described in Data and state).
+    described in Data and state and shared `LibraryFiles`).
 - `Dockerfile`'s `runtime` stage (the final `FROM debian:trixie-slim ... AS runtime` block) copies the release binary
   and the built frontend, creates a fixed non-root user, sets `REVERIE_FRONTEND_DIST_PATH`, and declares the
   `ENTRYPOINT` and `HEALTHCHECK` this subject's binary and readiness probe satisfy.
@@ -206,7 +207,7 @@ metadata supplies Content-Length.
 1. `shutdown_signal`'s `tokio::select!` resolves on whichever of `ctrl_c()` or the registered SIGTERM handler fires
    first, logs once, and calls `cancel_token.cancel()`.
 2. Every worker's own loop observes the same token becoming cancelled and begins its own exit path (for example, the
-   writeback worker's shutdown-time revert of any `in_progress` job back to `pending`, described in its own subject).
+   writeback worker stops claiming and drains its tracked jobs before reverting orphaned claims).
 3. Axum's graceful-shutdown future resolving makes `axum::serve` stop accepting new connections, finish in-flight ones,
    and return; `run` binds this as `serve_result`.
 4. `run` calls `cancel_token.cancel()` again unconditionally. Because step 1 already cancelled the same underlying
@@ -218,7 +219,9 @@ metadata supplies Content-Length.
    given the separate, short `ABORT_GRACE` window to confirm the abort actually took effect before `drain_workers` moves
    on. Because the deadline is one fixed instant rather than a per-worker budget, a worker that overruns it exhausts the
    time remaining for every worker still queued behind it: once the deadline has passed, each subsequent `timeout_at`
-   call returns immediately as elapsed.
+   call returns immediately as elapsed. Writeback's blocking phases retain their semaphore permit across async
+   cancellation. If the shared deadline aborts its worker before jobs finish, unfinished claims stay `in_progress` for
+   startup recovery. The deadline does not promise completion of every blocking writer.
 6. `run` returns `serve_result` to `main`, which propagates a non-zero exit only when it carries an error.
 
 **An unclean shutdown**, where `axum::serve` itself returns an `Err` (for example, an accept-loop failure) without a

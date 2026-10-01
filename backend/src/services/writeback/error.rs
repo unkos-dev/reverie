@@ -20,12 +20,11 @@ pub enum WritebackError {
     /// A `quick_xml` parse or write event failed.
     #[error("xml: {0}")]
     Xml(#[from] quick_xml::Error),
-    /// The post-writeback `EPUB` validator returned an error or regression.
+    /// EPUB inspection, candidate validation or publication failed.
     #[error("epub: {0}")]
     Epub(#[from] crate::services::epub::EpubError),
-    /// The `EPUB` failed validation after writeback where it passed before;
-    /// the original bytes have been restored atomically.
-    #[error("post-writeback validation regressed: {0}")]
+    /// Cover planning refused an invalid transformation before publication.
+    #[error("writeback transformation rejected: {0}")]
     ValidationRegressed(String),
     /// `META-INF/container.xml` was absent or contained no `OPF` root-file path.
     #[error("missing container.xml or OPF entry")]
@@ -37,6 +36,12 @@ pub enum WritebackError {
     /// A `sqlx` database operation failed.
     #[error("sqlx: {0}")]
     Db(#[from] sqlx::Error),
+    /// Recorded library location cannot be opened.
+    #[error("library: {0}")]
+    Library(#[from] crate::services::files::LibraryFileError),
+    /// Blocking filesystem work failed to complete.
+    #[error("blocking writeback: {0}")]
+    Task(#[from] tokio::task::JoinError),
     /// A tempfile persist, path-render, or cross-filesystem copy failed;
     /// the human-readable cause is in the wrapped `String`.
     #[error("tempfile persist: {0}")]
