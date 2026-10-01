@@ -63,7 +63,9 @@ clients, and a code-first generated OpenAPI 3.1 document is the single source of
 zero-drift and gives third-party clients something to codegen against.
 
 The browser-facing data API uses a major version in its URL path, with incompatible generations mounted alongside the
-earlier version. Operational, authentication, and OPDS paths remain outside that versioned surface. OpenAPI 3.1 is
+earlier version. Before 1.0, the contract may still tighten within `v1` under the project's `0.x` instability allowance;
+the path version is the unit in which breaking generations are expressed. Operational and authentication paths remain
+outside that versioned surface, and so does OPDS, whose versioning its own specification governs. OpenAPI 3.1 is
 generated from the implementation as the contract and reference source; a hand-written second contract is rejected.
 
 ### Consequences
