@@ -1355,6 +1355,79 @@ mod tests {
     }
 
     #[sqlx::test(migrations = "./migrations")]
+    async fn relocation_recovery_deleted_source_parent_adopts_destination(pool: PgPool) {
+        deleted_source_parent_fixture(pool, false).await;
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn relocation_recovery_deleted_source_parent_after_visible_uncertainty(pool: PgPool) {
+        deleted_source_parent_fixture(pool, true).await;
+    }
+
+    async fn deleted_source_parent_fixture(pool: PgPool, visible_uncertain: bool) {
+        let wb = writeback_pool_for(&pool).await;
+        let (_dir, files, job, snap) = recovery_fixture(&pool, "relocation").await;
+        let root = files.library(snap.library_id).unwrap();
+        let source: RelativeFilePath = "old/fixture.epub".parse().unwrap();
+        root.create_dir("old").unwrap();
+        root.rename(snap.file_path.as_path(), root, source.as_path())
+            .unwrap();
+        sqlx::query!(
+            "UPDATE manifestations SET file_path = $2, relocation_source_path = $2 WHERE id = $1",
+            snap.manifestation_id,
+            source.as_str(),
+        )
+        .execute(&wb)
+        .await
+        .unwrap();
+        let stored = load_snapshot(&wb, job).await.unwrap();
+        let intent = stored.relocation.as_ref().unwrap();
+        let original = root.read(source.as_path()).unwrap();
+        path_rename::move_existing(
+            root,
+            &source,
+            &intent.destination,
+            &stored.current_file_hash,
+        )
+        .unwrap();
+        if visible_uncertain {
+            assert!(
+                record_movement(
+                    &wb,
+                    stored.manifestation_id,
+                    intent,
+                    path_rename::MoveResult::VisibleUncertain(std::io::Error::other(
+                        "reported sync failure"
+                    )),
+                )
+                .await
+                .unwrap()
+                .is_some()
+            );
+        }
+        root.remove_dir("old").unwrap();
+        let before = load_snapshot(&wb, job).await.unwrap();
+        assert_eq!(
+            before.file_path,
+            if visible_uncertain {
+                intent.destination.clone()
+            } else {
+                source
+            }
+        );
+        assert!(before.relocation.is_some());
+        let result = run_once(&wb, &test_config(), &files, job, fixture_permit().await)
+            .await
+            .unwrap();
+        assert!(matches!(result, RunOutcome::Success { .. }));
+        let fresh = load_snapshot(&wb, job).await.unwrap();
+        assert_eq!(fresh.file_path, intent.destination);
+        assert!(fresh.relocation.is_none());
+        assert_eq!(root.read(intent.destination.as_path()).unwrap(), original);
+        assert_eq!(fresh.current_file_hash, stored.current_file_hash);
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
     async fn relocation_recovery_sql_failure_retains_intent_before_adoption(pool: PgPool) {
         let wb = writeback_pool_for(&pool).await;
         let (dir, files, job, snap) = recovery_fixture(&pool, "relocation").await;

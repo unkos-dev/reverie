@@ -152,6 +152,8 @@ durable storage or adding a third persisted error state.
 
 - Positive: exact names and existing content evidence survive interruption, under the existing database claim.
 - Negative: unreadable storage keeps intent open; verification and periodic carrier scheduling remain application work.
+  An unresolved storage failure blocks later writeback for that book and continues creating carrier rows, roughly 28 per
+  day with the default ten attempts and five-minute retry spacing; queue and operation delays can reduce that rate.
 
 ### Filesystem move-back compensation
 
