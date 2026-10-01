@@ -430,9 +430,15 @@ pub async fn run() -> anyhow::Result<()> {
     let watcher_token = cancel_token.clone();
     let watcher_config = config.clone();
     let watcher_pool = state.ingestion_pool.clone();
+    let watcher_files = state.library_files.clone();
     let watcher_worker = tokio::spawn(async move {
-        if let Err(e) =
-            services::ingestion::run_watcher(watcher_config, watcher_pool, watcher_token).await
+        if let Err(e) = services::ingestion::run_watcher(
+            watcher_config,
+            watcher_pool,
+            watcher_token,
+            watcher_files,
+        )
+        .await
         {
             tracing::error!(error = %e, "ingestion watcher exited with error");
         }
@@ -460,10 +466,15 @@ pub async fn run() -> anyhow::Result<()> {
     // above, before any spawn.
     let writeback_token = cancel_token.clone();
     let writeback_config = config.clone();
+    let writeback_files = state.library_files.clone();
     let writeback_worker = tokio::spawn(async move {
-        if let Err(e) =
-            services::writeback::spawn_worker(writeback_pool, writeback_config, writeback_token)
-                .await
+        if let Err(e) = services::writeback::spawn_worker(
+            writeback_pool,
+            writeback_config,
+            writeback_token,
+            writeback_files,
+        )
+        .await
         {
             tracing::error!(error = %e, "writeback worker exited with error");
         }

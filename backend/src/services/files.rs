@@ -161,6 +161,23 @@ impl LibraryFiles {
         &self.inner.quarantine
     }
 
+    /// Open a recorded source from blocking filesystem work.
+    ///
+    /// # Errors
+    /// Returns an unknown identity, established escape or I/O error.
+    pub fn open_source(
+        &self,
+        location: &LibraryLocation,
+    ) -> Result<OpenedLibraryFile, LibraryFileError> {
+        let root = self
+            .inner
+            .libraries
+            .get(&location.library_id)
+            .ok_or(LibraryFileError::UnknownLibrary)?;
+        let relative = root.classify(location.path.as_path())?;
+        root.open(&relative)
+    }
+
     /// Open a recorded location after the caller authorises its catalogue lookup.
     ///
     /// Relative and absolute links resolving inside the owning root are supported.

@@ -20,10 +20,10 @@ with tier-dependent encoding, caching the result on disk under a content-address
 with a strong validator and cache headers, and the client's fallback to a generated cloth-bound spine when a cover fails
 to load.
 
-Cover requests and warming still interpret manifestation paths through ambient filesystem interfaces. They do not yet
-resolve the required library identity and relative location. The
-[pipeline limitation](../../../../debt/2026-09-30-library-location-pipelines-incomplete.md) blocks successful extraction
-from these records; cache publication also retains its ambient interface.
+Cover request misses use the authorised row's library identity and checked relative location to open the source EPUB.
+Warming consumes an already-opened source handle. Cache publication and response-file opening use the configured ambient
+cache root; the [pipeline limitation](../../../../debt/2026-09-30-library-location-pipelines-incomplete.md) tracks those
+remaining owners.
 
 ## Purpose and boundaries
 
@@ -67,9 +67,9 @@ content-addressed validator that the Design "Conditional requests and optimistic
 It does not own the `manifestations.file_path` and `current_file_hash` columns this subject reads: the Design "Works and
 manifestations data model".
 
-Depends on: `manifestations.file_path` and `current_file_hash`, read inside an RLS-scoped transaction for every
-request-path lookup; `config.library_path`, which roots the cache directory; `config.opds.enabled`, which gates only the
-OPDS mount's runtime mount (the API mount is unconditional).
+Depends on: `manifestations.library_id`, `file_path` and `current_file_hash`, read inside an RLS-scoped transaction for
+every request-path lookup; `config.library_path`, which roots the cache directory; `config.opds.enabled`, which gates
+only the OPDS mount's runtime mount (the API mount is unconditional).
 
 Depended on by: the library grid, the library table view, the book detail page, the book detail drawer, and the series
 page on the client, all of which request only the thumbnail tier; OPDS reader apps, which reach both tiers through the
@@ -150,14 +150,14 @@ and `webp` in that order, so it does not have this gap.
 
 ## Interfaces and dependencies
 
-- `extract_cover_bytes(epub_path: &Path) -> Result<(Vec<u8>, ImageFormat), CoverError>`;
+- `extract_cover_bytes(epub_file: File) -> Result<(Vec<u8>, ImageFormat), CoverError>`;
   `svg::rasterize_svg(svg_bytes, resolve_sibling) -> Result<Vec<u8>, CoverError>`;
   `svg::parses_as_svg(svg_bytes) -> bool`, called by the Design "EPUB validation and repair";
   `resize_cover(bytes, fmt, size) -> Result<(Vec<u8>, ImageFormat), CoverError>`.
 - `CoverCache::new(root)`, `::ensure_dir()`, `::cached_path(manifestation_id, file_hash_prefix, size, ext) -> PathBuf`,
   `::write_atomic(dest, bytes)`.
 - `get_or_create(state, manifestation_id, user_id, size) -> Result<CoverArtifact, CoverError>`, the request-path entry
-  point; `spawn_warm_thumb(library_path, manifestation_id, file_hash, epub_path)`, the pre-warm entry point the Design
+  point; `spawn_warm_thumb(library_path, manifestation_id, file_hash, epub_file)`, the pre-warm entry point the Design
   "Ingestion pipeline" calls.
 - Four `GET` endpoints, documented in the OpenAPI spec generated from `routes/opds/covers.rs`: `/opds/books/{id}/cover`,
   `/opds/books/{id}/cover/thumb` (Basic auth), `/api/v1/books/{id}/cover`, `/api/v1/books/{id}/cover/thumb` (session
@@ -198,14 +198,15 @@ and `webp` in that order, so it does not have this gap.
 **Serving a cover on the request path** (either mount, either tier):
 
 1. `serve_cover` calls `get_or_create`, which opens an RLS-scoped transaction (`db::acquire_with_rls`), looks up the
-   manifestation's `file_path` and `current_file_hash`, and drops the transaction immediately after.
+   manifestation's `library_id`, `file_path` and `current_file_hash`, and drops the transaction immediately after.
 2. A row RLS hides, or that does not exist, yields the same `CoverError::NoCover` as a manifestation with no cover;
    `get_or_create` cannot tell the two apart, by construction.
 3. `cached_hit` probes the cache directory for an already-encoded file at this tier (`jpg` only for `Thumb`; `jpg`,
    `png`, `webp` in order for `Full`). A hit returns immediately with no filesystem write and no archive access.
-4. A miss enters `spawn_blocking` and runs `generate_into_cache`: `extract_cover_bytes` re-validates the archive and
-   locates the cover (rasterising it first if it is SVG-declared), `resize_cover` resizes and encodes for the tier, and
-   `CoverCache::write_atomic` writes the result under its content-addressed name.
+4. A miss parses the checked relative location and enters `spawn_blocking`, opening through the recorded library before
+   `generate_into_cache`. `extract_cover_bytes` admits that opened archive and locates the cover (rasterising it first
+   if it is SVG-declared), `resize_cover` resizes and encodes for the tier, and `CoverCache::write_atomic` writes the
+   result under its content-addressed name.
 5. `serve_cover` compares a request's `If-None-Match` against the artifact's quoted `ETag`; a match returns `304` with
    the cache headers and no body. Otherwise it opens the cached file, derives `Content-Type` from its extension, and
    streams it with the cache headers and a `200`.
@@ -229,10 +230,11 @@ and `webp` in that order, so it does not have this gap.
 
 **Pre-warming a thumbnail at ingestion**, off the request path: the Design "Ingestion pipeline", after a successful EPUB
 ingest, evaluates a gate predicate over the manifestation's format and its ingestion-time `has_embedded_cover` value
-and, when it passes, calls `spawn_warm_thumb`. The call is detached (`tokio::spawn`) and best-effort: it acquires one of
-`WARM_LIMIT`'s three permits, runs `warm_one` (the same `cached_hit`-then-`generate_into_cache` sequence as the request
-path, but for the thumbnail tier only), and logs any outcome without returning it to the caller. Full-size covers are
-never pre-warmed; a full-size cover is generated on its first request instead.
+and, when it passes, opens the known final copy through its library capability and calls `spawn_warm_thumb`. The call is
+detached (`tokio::spawn`) and best-effort: it acquires one of `WARM_LIMIT`'s three permits, runs `warm_one` (the same
+`cached_hit`-then-`generate_into_cache` sequence as the request path, but for the thumbnail tier only), and logs any
+outcome without returning it to the caller. Full-size covers are never pre-warmed; a full-size cover is generated on its
+first request instead.
 
 **Reacting to a cover load on the client**: five surfaces render a server-supplied `cover_url` through their own `<img>`
 element; four of the five also hold their own local failure state. `cover_url` is always a non-empty, server-constructed

@@ -16,14 +16,8 @@ governed-by:
 
 This Design covers the background mechanism that flushes an accepted or manually-applied canonical metadata change into
 the on-disk `EPUB` file it describes: the `writeback_jobs` durable queue and its one-in-progress-per-manifestation
-index, the worker and the dedicated database pool it runs on, the `OPF` rewrite and repack, the atomic file-commit
-helpers, post-writeback validation with rollback of the original bytes, and the table that suppresses duplicate terminal
-events.
-
-Writeback still interprets manifestation paths as ambient paths and persists full relocation destinations. These
-interfaces do not satisfy the required library-relative location contract. The
-[pipeline limitation](../../../../debt/2026-09-30-library-location-pipelines-incomplete.md) blocks successful writeback
-from these records; the mechanisms below remain implemented but do not establish end-to-end operation.
+index, the bounded worker and dedicated database pool, OPF and cover planning, validated candidate publication,
+contained relocation and terminal-event deduplication. Source locations select their owning library capability.
 
 ## Purpose and boundaries
 
@@ -32,18 +26,18 @@ disk coming to reflect it: the `writeback_jobs` table and its partial unique ind
 (`idx_writeback_jobs_in_progress_unique`), the worker loop and claim logic (`backend/src/services/writeback/queue.rs`),
 the dedicated pool it runs on (`db::init_writeback_pool`, `backend/src/db.rs`), the per-job orchestrator
 (`backend/src/services/writeback/orchestrator.rs`), the pure routine that rewrites the `OPF` and the cover-embed planner
-(`backend/src/services/writeback/opf_rewrite.rs`, `backend/src/services/writeback/cover_embed.rs`), the atomic
-file-commit and rename helpers (`backend/src/services/writeback/path_rename.rs`), and the terminal-event
-duplicate-suppression gate (`backend/src/services/writeback/events.rs`, the `webhook_event_dedupe` table). It also owns
-`WritebackConfig` (`backend/src/config/writeback.rs`), the worker's own runtime knobs.
+(`backend/src/services/writeback/opf_rewrite.rs`, `backend/src/services/writeback/cover_embed.rs`), the contained
+relocation helpers (`backend/src/services/writeback/path_rename.rs`), and the terminal-event duplicate-suppression gate
+(`backend/src/services/writeback/events.rs`, the `webhook_event_dedupe` table). It also owns `WritebackConfig`
+(`backend/src/config/writeback.rs`), the worker's own runtime knobs.
 
 It does not own the `app.system_context` row-level-security mechanism the writeback pool relies on to reach the
 `manifestations_*_system` policies; that is the Design "Row-level security and database context", and this subject only
 states how it attaches to that mechanism. It does not own `EPUB` structural validation and repair
 (`backend/src/services/epub/mod.rs::validate_and_repair`, `backend/src/services/epub/repack.rs`,
-`backend/src/services/epub/repair.rs`), which is the Design "EPUB validation and repair"; this subject calls it before
-and after every rewrite and reacts to its outcome without describing its internals. It does not own the pipeline that
-decides which fields auto-apply and calls into this subject's enqueue path
+`backend/src/services/epub/repair.rs`), which is the Design "EPUB validation and repair"; this subject checks the opened
+source and final candidate before publication and reacts to their reports without describing its internals. It does not
+own the pipeline that decides which fields auto-apply and calls into this subject's enqueue path
 (`backend/src/services/enrichment/orchestrator.rs`), which is the Design "Enrichment pipeline". It does not own the
 metadata review and editing routes that also enqueue writeback jobs on manual accept, revert, or `PATCH`
 (`backend/src/routes/metadata.rs`), which is the Design "Metadata review and editing". It does not own the path-template
@@ -62,8 +56,8 @@ delivery, both described below as what exists today.
 
 Depends on: the two enqueue call sites named above, each of which inserts a `writeback_jobs` row inside the same
 transaction that moves a canonical pointer; the `EPUB` validation and repack service the Design "EPUB validation and
-repair" owns, for both pre- and post-writeback checks; the path-template renderer the Design "Ingestion pipeline" owns,
-for post-writeback file relocation; and the `manifestations_update_system` and `manifestations_select_system`
+repair" owns, for pure source and final-candidate checks; the path-template renderer the Design "Ingestion pipeline"
+owns, for post-writeback file relocation; and the `manifestations_update_system` and `manifestations_select_system`
 row-level-security policies the writeback pool's connections are built to satisfy.
 
 Depended on by: nothing inside the request path. The worker is a background task started once at process startup
@@ -80,10 +74,10 @@ purges.
 | ---------- | --------- |
 | `writeback_jobs` row creation | Two sites, both named `enqueue_writeback` (below) |
 | `writeback_jobs` status/attempt columns | `claim_next`, the three `mark_*` functions, `revert_in_progress` |
-| `manifestations.current_file_hash`/`.has_embedded_cover` | `orchestrator::run_once`'s closing `UPDATE` (ingestion also writes `current_file_hash`, once, at row creation) |
+| `manifestations.current_file_hash`/`.has_embedded_cover`/`.file_size_bytes` | `orchestrator::run_once`'s closing `UPDATE` (ingestion also writes `current_file_hash`, once, at row creation) |
 | `manifestations.file_path` | `orchestrator::path_rename_step` |
 | `webhook_event_dedupe` rows | `events::dispatch`, called only from `queue::finish` |
-| The on-disk `EPUB` file's bytes | `path_rename::commit` / `move_existing` (orchestrator only) |
+| The on-disk `EPUB` file's bytes | `epub::repack::publish` / `path_rename::move_existing` (orchestrator only) |
 
 The two enqueue sites are `enqueue_writeback` in `backend/src/routes/metadata.rs` (manual accept, revert, and `PATCH`,
 inside the caller's `acquire_with_rls` transaction on the request pool) and `enqueue_writeback` in
@@ -92,7 +86,7 @@ inside the caller's `acquire_with_rls` transaction on the request pool) and `enq
 `pending → in_progress → {complete, failed, skipped}`; `queue::claim_next` is the only writer of `in_progress`,
 `revert_in_progress` the only writer that moves a row back to `pending`, and `mark_complete`/`mark_skipped`/
 `mark_failed` the only writers of the three terminal states. `manifestations.current_file_hash` and
-`.has_embedded_cover` are recomputed from the on-disk file after a successful repack; `manifestations.file_path` is
+`.has_embedded_cover` and `.file_size_bytes` come from accepted candidate evidence; `manifestations.file_path` is
 rewritten only when the rendered library path differs from the current one. `webhook_event_dedupe` holds one row per
 `(job_id, outcome)` event id, written once on first delivery and refreshed only when a subsequent dispatch of that same
 id is itself delivered past the TTL; a dispatch suppressed as a duplicate returns before touching the table at all. The
@@ -108,8 +102,8 @@ happened on the caller's read of the manifestation before the pointer move.
 
 One state item has no single owner in the sense the census above otherwise holds to: the on-disk cover sidecar under
 `_covers/pending/`. On a successful cover-reason job, `orchestrator::move_cover_sidecar` promotes it to
-`_covers/accepted/` with a bare `std::fs::rename`, not through `path_rename::commit` or `move_existing`. This is the one
-file mutation in the pipeline that bypasses the atomic-commit helpers; it is deliberately best-effort (a failure is
+`_covers/accepted/` with a bare `std::fs::rename`, independently of managed EPUB publication and relocation. This is the
+one file mutation in the pipeline that bypasses the atomic-commit helpers; it is deliberately best-effort (a failure is
 logged at `warn!` and does not fail the job), and the file it moves is a sidecar, never the managed `EPUB` itself. As
 noted in Purpose and boundaries, nothing in the current system writes the sidecar this function reads, so the function
 has no live input to act on outside its own tests.
@@ -125,9 +119,9 @@ has no live input to act on outside its own tests.
 - `backend/src/services/writeback/orchestrator.rs` owns the per-job pipeline: `run_once` loads a `JobSnapshot`
   (`load_snapshot`), skips early for an unsupported format or a missing file, rewrites the `OPF`
   (`opf_rewrite::transform`), optionally plans a cover embed (`cover_embed::plan_embed`), repacks
-  (`epub::repack::with_modifications`), commits atomically (`path_rename::commit`), re-validates and rolls back on
-  regression (`finalise_post_writeback`, `rollback_atomic`), re-renders the library path (`path_rename_step`,
-  `render_target_path`), and writes the final `current_file_hash` and `has_embedded_cover`.
+  (`epub::repack::with_modifications`), publishes the accepted candidate (`epub::repack::publish`), renders a checked
+  relative destination (`path_rename_step`, `render_target_path`), and writes the accepted hash, cover flag and size.
+  ZIP, filesystem and sidecar phases run in `spawn_blocking`; SQL stays on the async job.
 - `backend/src/services/writeback/opf_rewrite.rs` (`transform`) is a pure function: given `OPF` bytes and a `Target`
   struct naming the desired per-field values, it streams the source through `quick_xml` events, replaces the targeted
   Dublin Core and `<meta>` elements that already exist, and inserts one when the target value is present but no matching
@@ -140,8 +134,9 @@ has no live input to act on outside its own tests.
   becomes orphaned in the archive, an accepted trade-off with nothing reclaiming it afterwards), or is inserted where no
   cover existed. It returns `OPF`-relative paths; the orchestrator translates them to `ZIP`-absolute paths by joining
   with the `OPF`'s own directory before passing them to the repack helper.
-- `backend/src/services/writeback/path_rename.rs` holds the two atomic-commit primitives (`commit`, `move_existing`) and
-  the path-safety check `normalise_relative`, described in Data and state and Security and operations.
+- `backend/src/services/writeback/path_rename.rs` opens actual source/destination parents, uses contained `Dir::rename`
+  and falls back only on EXDEV. The fallback streams through a 64 KiB buffer into `cap-tempfile`, verifies the published
+  destination independently and then removes the source.
 - `backend/src/services/writeback/events.rs` (`dispatch`, `event_id`) is the terminal-event duplicate-suppression gate
   described in Runtime behaviour and Failure and recovery.
 - `backend/src/config/writeback.rs` defines `WritebackConfig` (`enabled`, `concurrency`, `poll_idle_secs`,
@@ -173,17 +168,13 @@ has no live input to act on outside its own tests.
   carries `reason = 'metadata'`; the cover-reason branch of this pipeline (`cover_embed::plan_embed`,
   `move_cover_sidecar`) is exercised only by this module's own tests, which insert a `'cover'`-reason row and a
   `cover_path` value directly.
-- **`epub::validate_and_repair(path: &Path) -> Result<ValidationReport, EpubError>`**
-  (`backend/src/services/epub/mod.rs`) is called twice per job: once before any mutation, to snapshot the pre-writeback
-  `ValidationOutcome`, and once after the repacked file is committed, to detect a regression. Per its own documented
-  contract, a `Repaired` outcome means the call has already atomically replaced the file at `path` with the repaired
-  archive before returning; a `Clean`, `Degraded`, or `Quarantined` outcome leaves the file untouched.
-  `epub::repack::with_modifications` is the repack primitive the orchestrator calls with the rewritten `OPF` and any
-  cover replacements. The Design "EPUB validation and repair" is explicit that this subject, not that one, owns the
-  `OPF` rewrite and cover-embed bytes fed into that repack call.
-- **`services::ingestion::path_template::{render, resolve_collision, DEFAULT_TEMPLATE}`** is reused for
-  `path_rename_step`'s post-writeback file relocation, rendering the same template the Design "Ingestion pipeline"
-  renders at ingestion time, from the job's `Title`/`Author` variables.
+- **Opened EPUB interfaces.** `epub::inspect(File)` returns the admitted source and pure baseline report. `RepairPlan`
+  applies OPF repairs before `opf_rewrite::transform`. `with_modifications` writes repair, metadata and cover changes
+  into one file-backed candidate. `repack::publish` validates final bytes, compares unresolved severity, and returns
+  final report/hash/size only after durable replacement.
+- **`services::ingestion::path_template::{render, DEFAULT_TEMPLATE}`** is reused for `path_rename_step`'s post-writeback
+  file relocation, rendering the same template the Design "Ingestion pipeline" renders at ingestion time, from the job's
+  `Title`/`Author` variables.
 - **`db::init_writeback_pool(database_url, max_connections) -> Result<PgPool, sqlx::Error>`** is the pool constructor;
   every connection it opens runs `SELECT set_config('app.system_context', 'writeback', false)` once, in `after_connect`,
   before the pool hands it out.
@@ -205,21 +196,16 @@ has no live input to act on outside its own tests.
   that same id, through its `ON CONFLICT DO UPDATE`. A call suppressed as a duplicate returns before reaching that
   write. Every delivered call also opportunistically deletes up to 100 rows past the 48-hour TTL, so the table needs no
   scheduled purge job; a call suppressed as a duplicate skips the purge too.
-- **`manifestations.current_file_hash` and `.has_embedded_cover`.** Ingestion writes `current_file_hash` once, at row
-  creation, equal to `ingestion_file_hash` unless its own validation pass repairs the file before the insert, in which
-  case the two columns start apart on the very first row; a repair during ingestion is therefore the earliest point the
-  two can diverge, before any writeback job exists. Writeback recomputes `current_file_hash` from the on-disk file after
-  every successful `run_once`, so once a manifestation exists it is the column's only other writer, gated by the
-  `manifestations_update_system` policy; `has_embedded_cover` is refreshed the same way from the same post-writeback
-  validation pass.
+- **`manifestations.current_file_hash`, `.file_size_bytes` and `.has_embedded_cover`.** Ingestion writes these at row
+  creation, using accepted repair evidence when available. Writeback is their other writer: it stores the accepted
+  candidate hash, handle-derived size and cover flag in one async SQL update. Neither writer changes the immutable
+  `ingestion_file_hash` after insertion.
 - **`manifestations.file_path`.** Rewritten by `path_rename_step` only when `config.library_path` is non-empty and the
-  rendered path differs from the job's current `file_path`; both conditions are checked before any file move is
-  attempted.
-- **The on-disk `EPUB` file.** Its bytes are mutated only through `path_rename::commit` (temp file, same directory,
-  atomic rename) or `path_rename::move_existing` (existing file to a new location, same-filesystem rename, or a
-  copy-fsync-verify-unlink fallback across file systems); both cross-filesystem paths verify the persisted bytes against
-  the source before removing the original. The one exception, the cover sidecar's bare rename, is noted in the
-  state-writer census above.
+  rendered path differs from the job's current `file_path`. The location retains its `LibraryId` and a checked
+  `RelativeFilePath`. Async SQL records a visible move; on SQL failure the same claim attempts contained move-back.
+- **The on-disk `EPUB` file.** `epub::repack::publish` replaces its bytes using a finished, validated candidate.
+  `path_rename::move_existing` relocates it beneath the owning library through same-filesystem rename or a bounded
+  copy-sync-verify-unlink fallback on EXDEV. The cover sidecar's bare rename remains a separate, best-effort mutation.
 - **`WritebackConfig`.** `enabled` (default `true`) gates whether `spawn_worker` ever claims a job; when `false`, the
   worker parks on the cancellation token and returns without calling `revert_in_progress`, so rows already `pending` or
   `failed` simply accumulate unclaimed, and a row left `in_progress` by an earlier run stays `in_progress`; only
@@ -242,19 +228,20 @@ has no live input to act on outside its own tests.
 3. A `tokio::spawn`ed task calls `orchestrator::run_once` on the writeback pool. `load_snapshot` joins `writeback_jobs`,
    `manifestations`, and `works` for the canonical field values, then runs a second query joining `work_authors` and
    `authors` for the primary author's sort name.
-4. The format check passes (`ManifestationFormat::Epub`) and the file exists. `run_once` reads the file's bytes into
-   `original_bytes`, then calls `epub::validate_and_repair` on the same path to capture the pre-writeback
-   `ValidationOutcome`.
-5. `find_opf_path` and `read_entry_bytes` extract the `OPF` from `original_bytes`; `opf_rewrite::transform` produces the
-   rewritten `OPF` bytes carrying the new title alongside every untouched field and element.
-6. `epub::repack::with_modifications` repacks a temp file in the file's own directory, replacing only the `OPF` entry;
-   `path_rename::commit` persists it over the source path atomically.
-7. `epub::validate_and_repair` runs again on the committed file. Its outcome is not a regression (Failure and recovery
-   defines that condition), so `finalise_post_writeback` returns `Commit`.
-8. `path_rename_step` re-renders the library path template; when it names the same location the step is a no-op and
-   returns the unchanged path.
-9. `run_once` computes the final file's `SHA-256`, writes `current_file_hash` (and `has_embedded_cover`, from the second
-   validation pass) in one `UPDATE manifestations` on the writeback pool, and returns `RunOutcome::Success`.
+4. For an EPUB, the job opens its typed `LibraryId` and `RelativeFilePath` through `LibraryFiles`. Unknown identities
+   fail without fallback; a missing file skips the job.
+5. A bounded blocking phase checks the source without repair, applies existing OPF repairs and metadata changes, and
+   plans any requested cover embed.
+6. The same phase writes and finishes one candidate inside `repack::publish`. Pure candidate validation rejects
+   irrecoverable content, increased remaining severity or unresolved repair instructions before candidate publication.
+   Successfully applied repair remains separate from degraded findings; equal degraded severity stays admissible.
+7. The callback hashes and measures final candidate bytes. The maintained operation syncs, replaces the source basename
+   and syncs its actual opened parent. Uncertainty returns a failure before relocation or row-success bookkeeping.
+8. A blocking phase renders a checked relative destination in the same library, probes numeric collision suffixes and
+   performs a contained move. Async SQL records its actual relative location; a failed path update attempts contained
+   move-back under the same claim and permit.
+9. Async SQL writes the returned hash, size and cover flag, preserving `ingestion_file_hash`. A visible relocation with
+   unconfirmed directory durability records its location but fails the job before this success update.
 10. `queue::finish` calls `events::dispatch` with a `Complete` terminal event (delivered as a `tracing::info!` emit and
     recorded in `webhook_event_dedupe`), then `mark_complete` sets `status = 'complete'` and clears `error`.
 
@@ -303,22 +290,25 @@ overlapping a long-running job's completion):
   from a deleted manifestation, or manual row deletion), `load_snapshot` returns `Err(WritebackError::JobNotFound)`.
   `queue::finish` treats this the same as the format/missing-file case: straight to `mark_skipped`, since there is no
   row left to retry against.
-- **Post-writeback validation regression or validator error.** `finalise_post_writeback` compares the pre- and
-  post-writeback `ValidationOutcome`s via `is_regression` (any outcome moving to `Quarantined`, or `Clean`/`Repaired`
-  moving to `Degraded`) and treats a validator `Err` the same way. Either case calls `rollback_atomic`, which writes
-  `original_bytes` to a fresh temporary file in the file's own directory, `fsync`s it, and commits it over the file
-  through `path_rename::commit`, the same atomic primitive the forward path uses. `run_once` then returns
-  `RunOutcome::Failed`, and `queue::finish` routes it to `mark_failed`.
+- **Candidate rejection or validator/repair error.** The callback fails before replacement. Source bytes and stored
+  hash/location remain unchanged; the queue uses its failed/retry path. There is no whole-file snapshot or content
+  rollback.
+- **Publication uncertainty.** An error after callback acceptance may represent replacement or durability failure. The
+  error carries the accepted hash; the job logs the manifestation and error, performs no relocation or row-success
+  update, and fails. A retry opens the recorded file afresh to reconcile its evidence.
+- **Relocation failure.** Non-EXDEV errors never copy. EXDEV copy, publication, verification or source-removal failure
+  retains the source where it still exists, leaves its recorded location unchanged, and logs any possible destination. A
+  visibly completed move followed by sync failure records the destination then fails with unconfirmed durability.
 - **Retry backoff and exhaustion.** `mark_failed` compares `attempt_count` against `WritebackConfig.max_attempts`
   (default `10`): below the threshold the row becomes `failed` and is retried once its backoff window elapses; at or
   above it the row becomes `skipped`, a terminal exhaustion label logged at `warn!`. The claim `CTE`'s backoff window
   escalates by `attempt_count`: no wait at `0`, `5` minutes at `1`, `30` minutes at `2`, `2` hours at `3`, `8` hours at
   `4`, and `24` hours from `5` onward.
-- **A per-job task panic while the process stays alive.** `spawn_worker`'s `tokio::spawn` body carries no panic guard,
-  and `run_once` runs under no per-job timeout. If the spawned task panics, dropping its semaphore permit still frees a
+- **A per-job task panic while the process stays alive.** `spawn_worker`'s tracked job body carries no panic guard, and
+  `run_once` runs under no per-job timeout. If the spawned task panics, dropping its semaphore permit still frees a
   concurrency slot, but the claimed row itself stays `in_progress`: nothing inside a live process reclaims it. Only a
-  process restart (crash or an intentional restart) or a graceful shutdown, both of which call `revert_in_progress`,
-  frees the row again.
+  process restart (crash or an intentional restart) or a graceful shutdown, which call `revert_in_progress` only after
+  live jobs have ended, frees the row again.
 - **`current_file_hash` update failure after a successful on-disk commit.** If the final `UPDATE manifestations` fails,
   the file has already been rewritten and (where applicable) relocated; `file_path` is correct, but `current_file_hash`
   stays at its pre-writeback value; a subsequent successful run recomputes it. `run_once` logs this divergence at
@@ -360,18 +350,17 @@ belt-and-braces given that upstream `EPUB` validation is expected to reject the 
 or an absolute prefix before any file move is attempted, since a crafted title or author string feeds the path template
 that produces that candidate path.
 
-`path_rename::commit` and `move_existing` are the only two ways this subject's code mutates a managed `EPUB` file
-(besides the cover-sidecar exception in the state-writer census). Both fsync the destination's parent directory after a
-same-filesystem rename, so the directory-entry update survives a power loss even though the rename itself is already
-atomic for visibility. Crossing a filesystem boundary (`EXDEV`) inside `commit` falls back to a copy into a temporary
-file in the destination's own directory, an `fsync` of that temporary file before persisting it, and a post-copy
-`SHA-256` comparison against the source bytes before returning. `move_existing`'s own cross-filesystem fallback copies
-through a temporary file in the destination's directory, `fsync`s it, and persists it through `commit`. It then compares
-the final destination's `SHA-256` against the source bytes before removing the source and flushing its parent directory.
-An unreadable destination or a hash mismatch preserves the original source and leaves the unverified destination in
-place. The error log includes its path for investigation. A retry resolves the occupied path to a collision suffix. The
-relocation regression tests inject `CrossesDevices` at the rename boundary to execute this fallback with real file
-writes, including destination corruption after commit, a verification read error and the resulting retry path.
+`epub::repack::publish` replaces content beneath the actual opened parent through `atomic_replace_with`. The maintained
+crate owns candidate and parent sync. `path_rename::move_existing` opens both parents in the recorded library and syncs
+both after rename. Its EXDEV fallback streams and hashes a temporary destination copy, syncs and publishes it,
+independently verifies the final destination hash, then removes the source and syncs its parent. Corruption or an
+unreadable destination preserves the source and leaves any published destination for investigation. Retry suffix
+selection uses capability-relative metadata probes.
+
+The worker stops claiming on cancellation and drains its `JoinSet` within the application's existing shared 30-second
+budget. Shutdown recovery resets claims only after all tracked jobs have ended. If the outer drain aborts, unfinished
+rows stay `in_progress` for startup recovery; active blocking work retains its semaphore permit across async
+cancellation.
 
 This subject is one of the two attachment points for the ingestion-and-writeback row-level-security exemption the Design
 "Row-level security and database context" owns generally; the other is the ingestion pool's unconditional policies,

@@ -13,18 +13,18 @@
 //! After the counted iteration, the whole archive is checked
 //! for data preceding the first entry and for a counted total that differs
 //! from the declared count. Entries passing all checks are recorded in
-//! `ZipHandle::entries`; the raw bytes are kept in `ZipHandle::bytes` so
-//! upper layers can re-read entries without additional filesystem I/O.
+//! `ZipHandle::entries` and an owned name-to-wayfinder index. Upper layers
+//! read entries through that index from the admitted opened file.
 //!
 //! All size checks use the `ZIP` central-directory declared size to bound
 //! allocation, plus a lying-central-directory probe for small entries.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
+use std::fs::File;
 use std::io::Read;
-use std::path::Path;
 
-use flate2::bufread::DeflateDecoder;
-use rawzip::{CompressionMethod, ZipArchive, ZipSliceArchive, ZipSliceEntry};
+use flate2::read::DeflateDecoder;
+use rawzip::{CompressionMethod, FileReader, ZipArchive, ZipArchiveEntryWayfinder, ZipEntry};
 
 use super::repack::{MIMETYPE_CONTENT, MIMETYPE_ENTRY};
 use super::{
@@ -42,18 +42,45 @@ const MIMETYPE_CONTENT_PROBE_CAP: u64 = 64;
 /// `ZIP` specification's maximum comment length.
 const MAX_EOCD_SEARCH_SPACE: u64 = 22 + 65_535;
 
-/// Lightweight handle returned by `zip_layer` so upper layers can re-open the archive.
+type EntryIndex = HashMap<String, (ZipArchiveEntryWayfinder, CompressionMethod)>;
+
+/// An admitted file-backed archive and its bounded entry index.
 pub struct ZipHandle {
-    /// Raw bytes of the entire archive (read once; `ZIP` seeks into this).
-    pub bytes: Vec<u8>,
-    /// Names of all successfully readable entries.
+    archive: Option<ZipArchive<FileReader>>,
+    file: Option<File>,
+    /// Admitted names in central-directory order.
     pub entries: Vec<String>,
+    index: EntryIndex,
 }
 
-const fn empty_handle() -> ZipHandle {
+fn empty_handle() -> ZipHandle {
     ZipHandle {
-        bytes: Vec::new(),
+        archive: None,
+        file: None,
         entries: Vec::new(),
+        index: HashMap::new(),
+    }
+}
+
+impl ZipHandle {
+    /// Clone the admitted source handle for a seek-based repack pass.
+    ///
+    /// # Errors
+    /// Returns an I/O error if admission failed or the handle cannot be cloned.
+    pub fn file(&self) -> std::io::Result<File> {
+        self.file
+            .as_ref()
+            .ok_or_else(|| std::io::Error::other("archive not admitted"))?
+            .try_clone()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn from_bytes(bytes: &[u8]) -> Self {
+        use std::io::{Seek, Write};
+        let mut file = tempfile::tempfile().unwrap();
+        file.write_all(bytes).unwrap();
+        file.rewind().unwrap();
+        validate(file, &mut Vec::new()).unwrap()
     }
 }
 
@@ -64,12 +91,11 @@ const fn empty_handle() -> ZipHandle {
 ///
 /// # Errors
 ///
-/// Returns `EpubError::Io` if the file at `path` cannot be read from
-/// the filesystem. A corrupt central directory or unreadable entry is recorded
+/// Returns `EpubError::Io` if handle metadata or cloning fails. A corrupt central directory or unreadable entry is recorded
 /// as an `IssueKind::CorruptEntry` issue rather than returned as an
 /// error — the function still returns `Ok` with those issues appended.
-pub fn validate(path: &Path, issues: &mut Vec<Issue>) -> Result<ZipHandle, super::EpubError> {
-    let size = std::fs::metadata(path)?.len();
+pub fn validate(file: File, issues: &mut Vec<Issue>) -> Result<ZipHandle, super::EpubError> {
+    let size = file.metadata()?.len();
     if size > MAX_ARCHIVE_BYTES {
         issues.push(Issue {
             layer: Layer::Zip,
@@ -82,14 +108,15 @@ pub fn validate(path: &Path, issues: &mut Vec<Issue>) -> Result<ZipHandle, super
         return Ok(empty_handle());
     }
 
-    let bytes = std::fs::read(path)?;
+    let source = file.try_clone()?;
+    let mut buffer = vec![0; rawzip::RECOMMENDED_BUFFER_SIZE];
 
     // THREAT: every ambiguity the locator tolerates instead of rejecting is a
     // rejection here. The entry-count guard below is only sound if this layer
     // never opens an archive interpretation the writer side would not itself
     // have produced.
     let Ok(archive) =
-        ZipArchive::with_max_search_space(MAX_EOCD_SEARCH_SPACE).locate_in_slice(bytes)
+        ZipArchive::with_max_search_space(MAX_EOCD_SEARCH_SPACE).locate_in_file(file, &mut buffer)
     else {
         issues.push(Issue {
             layer: Layer::Zip,
@@ -104,7 +131,7 @@ pub fn validate(path: &Path, issues: &mut Vec<Issue>) -> Result<ZipHandle, super
     // The locator accepts a comment that ends before the true end of the
     // file; `end_offset` does not rely on self-reported sizes, so unaccounted
     // trailing data is a rejection here rather than a silently ignored tail.
-    if archive.end_offset() != u64::try_from(archive.get_ref().len()).unwrap_or(u64::MAX) {
+    if archive.end_offset() != size {
         issues.push(Issue {
             layer: Layer::Zip,
             severity: Severity::Irrecoverable,
@@ -129,10 +156,12 @@ pub fn validate(path: &Path, issues: &mut Vec<Issue>) -> Result<ZipHandle, super
 
     validate_entries(&archive, issues).map_or_else(
         || Ok(empty_handle()),
-        |entries| {
+        |(entries, index)| {
             Ok(ZipHandle {
-                bytes: archive.into_inner(),
+                archive: Some(archive),
+                file: Some(source),
                 entries,
+                index,
             })
         },
     )
@@ -149,17 +178,19 @@ pub fn validate(path: &Path, issues: &mut Vec<Issue>) -> Result<ZipHandle, super
     reason = "one linear guard-clause sequence per entry sharing loop state (seen names, aggregate size, prelude tracking); splitting would require threading that state through helper signatures and obscure the check order"
 )]
 fn validate_entries(
-    archive: &ZipSliceArchive<Vec<u8>>,
+    archive: &ZipArchive<FileReader>,
     issues: &mut Vec<Issue>,
-) -> Option<Vec<String>> {
+) -> Option<(Vec<String>, EntryIndex)> {
     let mut entries = Vec::new();
+    let mut index = HashMap::new();
     let mut seen_names: HashSet<String> = HashSet::new();
     let mut aggregate_size: u64 = 0;
     let mut min_local_header_offset: Option<u64> = None;
     let mut count: usize = 0;
     let mut mimetype_facts: Option<MimetypeFacts> = None;
 
-    let mut iter = archive.entries();
+    let mut directory_buffer = vec![0; rawzip::RECOMMENDED_BUFFER_SIZE];
+    let mut iter = archive.entries(&mut directory_buffer);
     loop {
         let record = match iter.next_entry() {
             Ok(Some(record)) => record,
@@ -294,11 +325,11 @@ fn validate_entries(
         let probe_cap = uncompressed.saturating_add(1).min(4_096);
         let mut buf = Vec::new();
         let probe_result = if method == CompressionMethod::DEFLATE {
-            DeflateDecoder::new(slice_entry.data())
+            DeflateDecoder::new(slice_entry.reader())
                 .take(probe_cap)
                 .read_to_end(&mut buf)
         } else {
-            slice_entry.data().take(probe_cap).read_to_end(&mut buf)
+            slice_entry.reader().take(probe_cap).read_to_end(&mut buf)
         };
         if probe_result.is_err() {
             issues.push(Issue {
@@ -325,13 +356,21 @@ fn validate_entries(
         }
 
         if name.as_str() == MIMETYPE_ENTRY {
-            mimetype_facts = Some(gather_mimetype_facts(
-                &slice_entry,
-                method,
-                record.local_header_offset(),
-            ));
+            if let Ok(facts) =
+                gather_mimetype_facts(&slice_entry, method, record.local_header_offset())
+            {
+                mimetype_facts = Some(facts);
+            } else {
+                issues.push(Issue {
+                    layer: Layer::Zip,
+                    severity: Severity::Irrecoverable,
+                    kind: IssueKind::CorruptEntry { entry_name: name },
+                });
+                return None;
+            }
         }
 
+        index.insert(name.clone(), (record.wayfinder(), method));
         entries.push(name);
     }
 
@@ -358,7 +397,7 @@ fn validate_entries(
 
     push_mimetype_issues(issues, mimetype_facts.as_ref());
 
-    Some(entries)
+    Some((entries, index))
 }
 
 /// Local-header facts about the `mimetype` entry needed to evaluate the OCF
@@ -385,23 +424,24 @@ struct MimetypeFacts {
 /// `local_header_offset` is the central directory's record of where this
 /// entry's local header starts.
 fn gather_mimetype_facts(
-    slice_entry: &ZipSliceEntry<'_>,
+    slice_entry: &ZipEntry<'_, FileReader>,
     method: CompressionMethod,
     local_header_offset: u64,
-) -> MimetypeFacts {
-    let local_header = slice_entry.local_header();
+) -> Result<MimetypeFacts, rawzip::Error> {
+    let mut header_buffer = vec![0; 2 * usize::from(u16::MAX)];
+    let local_header = slice_entry.local_header(&mut header_buffer)?;
     let file_path = local_header.file_path();
     let name_bytes: &[u8] = file_path.as_ref();
     let at_offset_zero = local_header_offset == 0 && name_bytes == MIMETYPE_ENTRY.as_bytes();
 
     let mut buf = Vec::new();
     let probe_result = if method == CompressionMethod::DEFLATE {
-        DeflateDecoder::new(slice_entry.data())
+        DeflateDecoder::new(slice_entry.reader())
             .take(MIMETYPE_CONTENT_PROBE_CAP)
             .read_to_end(&mut buf)
     } else {
         slice_entry
-            .data()
+            .reader()
             .take(MIMETYPE_CONTENT_PROBE_CAP)
             .read_to_end(&mut buf)
     };
@@ -409,12 +449,12 @@ fn gather_mimetype_facts(
         buf.clear();
     }
 
-    MimetypeFacts {
+    Ok(MimetypeFacts {
         at_offset_zero,
         compressed: local_header.compression_method() != CompressionMethod::STORE,
         has_extra_field: !local_header.extra_fields().remaining_bytes().is_empty(),
         content_matches: buf == MIMETYPE_CONTENT,
-    }
+    })
 }
 
 /// Pushes one `Repaired` `InvalidMimetype` issue per OCF container rule
@@ -448,62 +488,35 @@ fn push_mimetype_issues(issues: &mut Vec<Issue>, facts: Option<&MimetypeFacts>) 
     }
 }
 
-/// Read a specific entry from the archive bytes.
-///
-/// Returns `None` if the entry is absent, uses a compression method other
-/// than Stored or Deflate, or its decompressed bytes fail `ZIP`'s declared
-/// `CRC-32` or size.
+/// Read an admitted indexed entry, verifying its declared CRC and size.
 #[must_use]
 pub fn read_entry(handle: &ZipHandle, entry_name: &str) -> Option<Vec<u8>> {
-    read_entry_from_bytes(&handle.bytes, entry_name)
-}
-
-/// Read one entry directly from raw archive bytes.
-///
-/// For call sites that hold bytes without a [`ZipHandle`] (the repair pass
-/// and the writeback orchestrator). Returns `None` on any locator, entry, or
-/// verification failure.
-#[must_use]
-pub fn read_entry_from_bytes(bytes: &[u8], entry_name: &str) -> Option<Vec<u8>> {
-    let archive = ZipArchive::with_max_search_space(MAX_EOCD_SEARCH_SPACE)
-        .locate_in_slice(bytes)
-        .ok()?;
-
-    let mut iter = archive.entries();
-    let record = loop {
-        let record = iter.next_entry().ok()??;
-        let file_path = record.file_path();
-        let name_bytes: &[u8] = file_path.as_ref();
-        if name_bytes == entry_name.as_bytes() {
-            break record;
-        }
-    };
-
-    let method = record.compression_method();
-    if record.flags().is_encrypted() {
-        return None;
-    }
-    if method != CompressionMethod::STORE && method != CompressionMethod::DEFLATE {
-        return None;
-    }
-
-    let slice_entry = archive.get_entry(record.wayfinder()).ok()?;
+    let archive = handle.archive.as_ref()?;
+    let (record, method) = *handle.index.get(entry_name)?;
+    let entry = archive.get_entry(record).ok()?;
+    let mut bytes = Vec::new();
     let cap = MAX_ENTRY_UNCOMPRESSED_BYTES + 1;
-    let mut buf = Vec::new();
     let result = if method == CompressionMethod::DEFLATE {
-        let decoder = DeflateDecoder::new(slice_entry.data());
-        slice_entry
-            .verifying_reader(decoder)
+        entry
+            .verifying_reader(DeflateDecoder::new(entry.reader()))
             .take(cap)
-            .read_to_end(&mut buf)
+            .read_to_end(&mut bytes)
     } else {
-        slice_entry
-            .verifying_reader(slice_entry.data())
+        entry
+            .verifying_reader(entry.reader())
             .take(cap)
-            .read_to_end(&mut buf)
+            .read_to_end(&mut bytes)
     };
     result.ok()?;
-    Some(buf)
+    if bytes.len() as u64 > MAX_ENTRY_UNCOMPRESSED_BYTES {
+        return None;
+    }
+    Some(bytes)
+}
+
+#[cfg(test)]
+pub(crate) fn read_entry_from_bytes(bytes: &[u8], entry_name: &str) -> Option<Vec<u8>> {
+    read_entry(&ZipHandle::from_bytes(bytes), entry_name)
 }
 
 #[cfg(test)]
@@ -605,7 +618,7 @@ mod tests {
         let bytes = make_zip(&[("../evil.xhtml", b"bad")]);
         let (_dir, path) = write_temp(&bytes);
         let mut issues = Vec::new();
-        let _ = validate(&path, &mut issues).unwrap();
+        let _ = validate(File::open(&path).unwrap(), &mut issues).unwrap();
         assert!(issues.iter().any(|i| {
             i.severity == Severity::Irrecoverable
                 && matches!(&i.kind, IssueKind::PathTraversal { .. })
@@ -617,7 +630,7 @@ mod tests {
         let bytes = make_zip_with_mimetype(&[("OEBPS/content.opf", b"<package/>")]);
         let (_dir, path) = write_temp(&bytes);
         let mut issues = Vec::new();
-        let handle = validate(&path, &mut issues).unwrap();
+        let handle = validate(File::open(&path).unwrap(), &mut issues).unwrap();
         assert!(issues.is_empty());
         assert_eq!(
             handle.entries,
@@ -629,7 +642,7 @@ mod tests {
     fn corrupt_zip_emits_irrecoverable() {
         let (_dir, path) = write_temp(b"not a zip file");
         let mut issues = Vec::new();
-        let _ = validate(&path, &mut issues).unwrap();
+        let _ = validate(File::open(&path).unwrap(), &mut issues).unwrap();
         assert!(issues.iter().any(|i| {
             i.severity == Severity::Irrecoverable
                 && matches!(&i.kind, IssueKind::CorruptEntry { .. })
@@ -643,7 +656,7 @@ mod tests {
         let bytes = make_zip(&entries);
         let (_dir, path) = write_temp(&bytes);
         let mut issues = Vec::new();
-        let handle = validate(&path, &mut issues).unwrap();
+        let handle = validate(File::open(&path).unwrap(), &mut issues).unwrap();
         assert!(
             !issues
                 .iter()
@@ -659,7 +672,7 @@ mod tests {
         let bytes = make_zip(&entries);
         let (_dir, path) = write_temp(&bytes);
         let mut issues = Vec::new();
-        let handle = validate(&path, &mut issues).unwrap();
+        let handle = validate(File::open(&path).unwrap(), &mut issues).unwrap();
         assert!(issues.iter().any(|i| {
             i.severity == Severity::Irrecoverable
                 && matches!(
@@ -670,7 +683,7 @@ mod tests {
                 )
         }));
         assert!(handle.entries.is_empty());
-        assert!(handle.bytes.is_empty());
+        assert!(handle.archive.is_none());
     }
 
     #[test]
@@ -685,7 +698,7 @@ mod tests {
         patch_entry_count_hint(&mut bytes, u16::try_from(MAX_ZIP_ENTRIES).unwrap());
         let (_dir, path) = write_temp(&bytes);
         let mut issues = Vec::new();
-        let handle = validate(&path, &mut issues).unwrap();
+        let handle = validate(File::open(&path).unwrap(), &mut issues).unwrap();
         assert!(issues.iter().any(|i| {
             i.severity == Severity::Irrecoverable
                 && matches!(
@@ -695,7 +708,7 @@ mod tests {
                             && *limit == MAX_ZIP_ENTRIES
                 )
         }));
-        assert!(handle.bytes.is_empty());
+        assert!(handle.archive.is_none());
     }
 
     #[test]
@@ -705,7 +718,7 @@ mod tests {
         let file = std::fs::File::create(&path).unwrap();
         file.set_len(MAX_ARCHIVE_BYTES + 1).unwrap();
         let mut issues = Vec::new();
-        let handle = validate(&path, &mut issues).unwrap();
+        let handle = validate(File::open(&path).unwrap(), &mut issues).unwrap();
         assert!(issues.iter().any(|i| {
             i.severity == Severity::Irrecoverable
                 && matches!(
@@ -714,7 +727,7 @@ mod tests {
                         if *size == MAX_ARCHIVE_BYTES + 1 && *limit == MAX_ARCHIVE_BYTES
                 )
         }));
-        assert!(handle.bytes.is_empty());
+        assert!(handle.archive.is_none());
     }
 
     fn zip64_eocd_tail(total_entries: u64) -> Vec<u8> {
@@ -757,7 +770,7 @@ mod tests {
         let bytes = zip64_eocd_tail(count);
         let (_dir, path) = write_temp(&bytes);
         let mut issues = Vec::new();
-        let handle = validate(&path, &mut issues).unwrap();
+        let handle = validate(File::open(&path).unwrap(), &mut issues).unwrap();
         assert!(issues.iter().any(|i| {
             i.severity == Severity::Irrecoverable
                 && matches!(
@@ -771,7 +784,7 @@ mod tests {
                 .iter()
                 .any(|i| matches!(&i.kind, IssueKind::CorruptEntry { .. }))
         );
-        assert!(handle.bytes.is_empty());
+        assert!(handle.archive.is_none());
     }
 
     #[test]
@@ -786,7 +799,7 @@ mod tests {
         ]);
         let (_dir, path) = write_temp(&bytes);
         let mut issues = Vec::new();
-        let handle = validate(&path, &mut issues).unwrap();
+        let handle = validate(File::open(&path).unwrap(), &mut issues).unwrap();
         assert!(issues.is_empty());
         assert_eq!(
             handle.entries,
@@ -809,7 +822,7 @@ mod tests {
         let bytes = w.finish().unwrap().into_inner();
         let (_dir, path) = write_temp(&bytes);
         let mut issues = Vec::new();
-        let handle = validate(&path, &mut issues).unwrap();
+        let handle = validate(File::open(&path).unwrap(), &mut issues).unwrap();
         assert_eq!(issues.len(), 1);
         assert!(matches!(
             &issues[0],
@@ -842,7 +855,7 @@ mod tests {
         let bytes = w.finish().unwrap().into_inner();
         let (_dir, path) = write_temp(&bytes);
         let mut issues = Vec::new();
-        let handle = validate(&path, &mut issues).unwrap();
+        let handle = validate(File::open(&path).unwrap(), &mut issues).unwrap();
         assert!(issues.is_empty());
         assert_eq!(
             handle.entries,
@@ -883,7 +896,7 @@ mod tests {
 
         let (_dir, path) = write_temp(&bytes);
         let mut issues = Vec::new();
-        let handle = validate(&path, &mut issues).unwrap();
+        let handle = validate(File::open(&path).unwrap(), &mut issues).unwrap();
         assert!(issues.is_empty());
         assert_eq!(
             handle.entries,
@@ -901,12 +914,12 @@ mod tests {
         bytes.push(0xAA);
         let (_dir, path) = write_temp(&bytes);
         let mut issues = Vec::new();
-        let handle = validate(&path, &mut issues).unwrap();
+        let handle = validate(File::open(&path).unwrap(), &mut issues).unwrap();
         assert!(issues.iter().any(|i| {
             i.severity == Severity::Irrecoverable
                 && matches!(&i.kind, IssueKind::CorruptEntry { .. })
         }));
-        assert!(handle.bytes.is_empty());
+        assert!(handle.archive.is_none());
     }
 
     #[test]
@@ -915,12 +928,12 @@ mod tests {
         bytes.extend(std::iter::repeat_n(0xAAu8, 70_000));
         let (_dir, path) = write_temp(&bytes);
         let mut issues = Vec::new();
-        let handle = validate(&path, &mut issues).unwrap();
+        let handle = validate(File::open(&path).unwrap(), &mut issues).unwrap();
         assert!(issues.iter().any(|i| {
             i.severity == Severity::Irrecoverable
                 && matches!(&i.kind, IssueKind::CorruptEntry { .. })
         }));
-        assert!(handle.bytes.is_empty());
+        assert!(handle.archive.is_none());
     }
 
     #[test]
@@ -939,7 +952,7 @@ mod tests {
         let bytes = w.finish().unwrap().into_inner();
         let (_dir, path) = write_temp(&bytes);
         let mut issues = Vec::new();
-        let handle = validate(&path, &mut issues).unwrap();
+        let handle = validate(File::open(&path).unwrap(), &mut issues).unwrap();
         assert!(issues.is_empty());
         assert_eq!(
             handle.entries,
@@ -964,12 +977,12 @@ mod tests {
         bytes.extend_from_slice(&tail);
         let (_dir, path) = write_temp(&bytes);
         let mut issues = Vec::new();
-        let handle = validate(&path, &mut issues).unwrap();
+        let handle = validate(File::open(&path).unwrap(), &mut issues).unwrap();
         assert!(issues.iter().any(|i| {
             i.severity == Severity::Irrecoverable
                 && matches!(&i.kind, IssueKind::CorruptEntry { .. })
         }));
-        assert!(handle.bytes.is_empty());
+        assert!(handle.archive.is_none());
     }
 
     #[test]
@@ -982,12 +995,12 @@ mod tests {
         bytes[eocd + 11] = patched[1];
         let (_dir, path) = write_temp(&bytes);
         let mut issues = Vec::new();
-        let handle = validate(&path, &mut issues).unwrap();
+        let handle = validate(File::open(&path).unwrap(), &mut issues).unwrap();
         assert!(issues.iter().any(|i| {
             i.severity == Severity::Irrecoverable
                 && matches!(&i.kind, IssueKind::CorruptEntry { .. })
         }));
-        assert!(handle.bytes.is_empty());
+        assert!(handle.archive.is_none());
     }
 
     #[test]
@@ -1000,12 +1013,12 @@ mod tests {
         bytes[eocd + 11] = patched[1];
         let (_dir, path) = write_temp(&bytes);
         let mut issues = Vec::new();
-        let handle = validate(&path, &mut issues).unwrap();
+        let handle = validate(File::open(&path).unwrap(), &mut issues).unwrap();
         assert!(issues.iter().any(|i| {
             i.severity == Severity::Irrecoverable
                 && matches!(&i.kind, IssueKind::CorruptEntry { .. })
         }));
-        assert!(handle.bytes.is_empty());
+        assert!(handle.archive.is_none());
     }
 
     #[test]
@@ -1014,12 +1027,12 @@ mod tests {
         bytes.extend(make_zip(&[("a.txt", b"hello world")]));
         let (_dir, path) = write_temp(&bytes);
         let mut issues = Vec::new();
-        let handle = validate(&path, &mut issues).unwrap();
+        let handle = validate(File::open(&path).unwrap(), &mut issues).unwrap();
         assert!(issues.iter().any(|i| {
             i.severity == Severity::Irrecoverable
                 && matches!(&i.kind, IssueKind::PreludeBeforeArchive { bytes } if *bytes == 4)
         }));
-        assert!(handle.bytes.is_empty());
+        assert!(handle.archive.is_none());
     }
 
     #[test]
@@ -1033,12 +1046,12 @@ mod tests {
         bytes[name_start] = b'a';
         let (_dir, path) = write_temp(&bytes);
         let mut issues = Vec::new();
-        let handle = validate(&path, &mut issues).unwrap();
+        let handle = validate(File::open(&path).unwrap(), &mut issues).unwrap();
         assert!(issues.iter().any(|i| {
             i.severity == Severity::Irrecoverable
                 && matches!(&i.kind, IssueKind::DuplicateEntry { entry_name } if entry_name == "a.txt")
         }));
-        assert!(handle.bytes.is_empty());
+        assert!(handle.archive.is_none());
     }
 
     #[test]
@@ -1050,12 +1063,12 @@ mod tests {
         bytes[name_start] = 0xFF;
         let (_dir, path) = write_temp(&bytes);
         let mut issues = Vec::new();
-        let handle = validate(&path, &mut issues).unwrap();
+        let handle = validate(File::open(&path).unwrap(), &mut issues).unwrap();
         assert!(issues.iter().any(|i| {
             i.severity == Severity::Irrecoverable
                 && matches!(&i.kind, IssueKind::CorruptEntry { .. })
         }));
-        assert!(handle.bytes.is_empty());
+        assert!(handle.archive.is_none());
     }
 
     /// Sets the compression-method field to `method` on the first
@@ -1083,7 +1096,7 @@ mod tests {
         mark_first_entry_method(&mut bytes, 12);
         let (_dir, path) = write_temp(&bytes);
         let mut issues = Vec::new();
-        let handle = validate(&path, &mut issues).unwrap();
+        let handle = validate(File::open(&path).unwrap(), &mut issues).unwrap();
         assert!(issues.iter().any(|i| {
             i.severity == Severity::Irrecoverable
                 && matches!(
@@ -1092,7 +1105,7 @@ mod tests {
                         if entry_name == "a.txt" && *method == 12
                 )
         }));
-        assert!(handle.bytes.is_empty());
+        assert!(handle.archive.is_none());
     }
 
     /// Sets the general-purpose "encrypted" bit (bit 0) on the first
@@ -1115,7 +1128,7 @@ mod tests {
         mark_first_entry_encrypted(&mut bytes);
         let (_dir, path) = write_temp(&bytes);
         let mut issues = Vec::new();
-        let handle = validate(&path, &mut issues).unwrap();
+        let handle = validate(File::open(&path).unwrap(), &mut issues).unwrap();
         assert!(issues.iter().any(|i| {
             i.severity == Severity::Irrecoverable
                 && matches!(
@@ -1124,7 +1137,7 @@ mod tests {
                         if entry_name == "a.txt"
                 )
         }));
-        assert!(handle.bytes.is_empty());
+        assert!(handle.archive.is_none());
     }
 
     #[test]
@@ -1145,10 +1158,7 @@ mod tests {
         // CRC-32 field is at offset+16 in the central directory record.
         let crc_start = offsets[0] + 16;
         bytes[crc_start] ^= 0xFF;
-        let handle = ZipHandle {
-            bytes,
-            entries: vec!["a.txt".to_string()],
-        };
+        let handle = ZipHandle::from_bytes(&bytes);
         assert!(read_entry(&handle, "a.txt").is_none());
     }
 
@@ -1175,7 +1185,7 @@ mod tests {
 
         let (_dir, path) = write_temp(&bytes);
         let mut issues = Vec::new();
-        let handle = validate(&path, &mut issues).unwrap();
+        let handle = validate(File::open(&path).unwrap(), &mut issues).unwrap();
         assert!(issues.is_empty());
 
         assert_eq!(
@@ -1209,7 +1219,7 @@ mod tests {
 
         let (_dir, path) = write_temp(&bytes);
         let mut issues = Vec::new();
-        let handle = validate(&path, &mut issues).unwrap();
+        let handle = validate(File::open(&path).unwrap(), &mut issues).unwrap();
         assert!(issues.is_empty());
         assert_eq!(
             read_entry(&handle, "big.bin").as_deref(),
@@ -1233,7 +1243,7 @@ mod tests {
         let bytes = make_zip(&[("OEBPS/content.opf", b"<package/>")]);
         let (_dir, path) = write_temp(&bytes);
         let mut issues = Vec::new();
-        let _ = validate(&path, &mut issues).unwrap();
+        let _ = validate(File::open(&path).unwrap(), &mut issues).unwrap();
         let mimetype_issues: Vec<&Issue> = issues
             .iter()
             .filter(|i| matches!(&i.kind, IssueKind::InvalidMimetype { .. }))
@@ -1264,7 +1274,7 @@ mod tests {
 
         let (_dir, path) = write_temp(&bytes);
         let mut issues = Vec::new();
-        let _ = validate(&path, &mut issues).unwrap();
+        let _ = validate(File::open(&path).unwrap(), &mut issues).unwrap();
         let problems = mimetype_problems(&issues);
         assert_eq!(problems.len(), 1);
         assert!(matches!(problems[0], MimetypeProblem::NotFirst));
@@ -1282,7 +1292,7 @@ mod tests {
 
         let (_dir, path) = write_temp(&bytes);
         let mut issues = Vec::new();
-        let _ = validate(&path, &mut issues).unwrap();
+        let _ = validate(File::open(&path).unwrap(), &mut issues).unwrap();
         let problems = mimetype_problems(&issues);
         assert_eq!(problems.len(), 1);
         assert!(matches!(problems[0], MimetypeProblem::Compressed));
@@ -1304,7 +1314,7 @@ mod tests {
 
         let (_dir, path) = write_temp(&bytes);
         let mut issues = Vec::new();
-        let _ = validate(&path, &mut issues).unwrap();
+        let _ = validate(File::open(&path).unwrap(), &mut issues).unwrap();
         let problems = mimetype_problems(&issues);
         assert_eq!(problems.len(), 1);
         assert!(matches!(problems[0], MimetypeProblem::ExtraField));
@@ -1322,7 +1332,7 @@ mod tests {
 
         let (_dir, path) = write_temp(&bytes);
         let mut issues = Vec::new();
-        let _ = validate(&path, &mut issues).unwrap();
+        let _ = validate(File::open(&path).unwrap(), &mut issues).unwrap();
         let problems = mimetype_problems(&issues);
         assert_eq!(problems.len(), 1);
         assert!(matches!(problems[0], MimetypeProblem::Content));
@@ -1342,7 +1352,7 @@ mod tests {
 
         let (_dir, path) = write_temp(&bytes);
         let mut issues = Vec::new();
-        let _ = validate(&path, &mut issues).unwrap();
+        let _ = validate(File::open(&path).unwrap(), &mut issues).unwrap();
         let problems = mimetype_problems(&issues);
         assert_eq!(problems.len(), 1);
         assert!(matches!(problems[0], MimetypeProblem::Content));
@@ -1364,7 +1374,7 @@ mod tests {
 
         let (_dir, path) = write_temp(&bytes);
         let mut issues = Vec::new();
-        let _ = validate(&path, &mut issues).unwrap();
+        let _ = validate(File::open(&path).unwrap(), &mut issues).unwrap();
         let problems = mimetype_problems(&issues);
         assert_eq!(problems.len(), 2);
         assert!(
@@ -1453,7 +1463,7 @@ mod tests {
 
         let (_dir, path) = write_temp(&bytes);
         let mut issues = Vec::new();
-        let _ = validate(&path, &mut issues).unwrap();
+        let _ = validate(File::open(&path).unwrap(), &mut issues).unwrap();
         let problems = mimetype_problems(&issues);
         assert_eq!(problems.len(), 1);
         assert!(matches!(problems[0], MimetypeProblem::ExtraField));
