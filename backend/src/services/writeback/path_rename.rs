@@ -90,12 +90,23 @@ fn recover_with(
         }
         (source_evidence, Evidence::Verified) => {
             let (destination_parent, _) = parent(root, destination)?;
-            let (source_parent, source_name) = parent(root, source)?;
+            let source_parent = match parent(root, source) {
+                Ok(parent) => Some(parent),
+                Err(error)
+                    if matches!(source_evidence, Evidence::Absent)
+                        && error.kind() == std::io::ErrorKind::NotFound =>
+                {
+                    None
+                }
+                Err(error) => return Err(error.into()),
+            };
             sync(&destination_parent)?;
-            if matches!(source_evidence, Evidence::Verified) && source != destination {
-                source_parent.remove_file(source_name)?;
+            if let Some((source_parent, source_name)) = source_parent {
+                if matches!(source_evidence, Evidence::Verified) && source != destination {
+                    source_parent.remove_file(source_name)?;
+                }
+                sync(&source_parent)?;
             }
-            sync(&source_parent)?;
             Ok(Recovery::Destination)
         }
         (Evidence::Verified, Evidence::Changed) => Ok(Recovery::SourceOccupied),
@@ -498,6 +509,26 @@ mod tests {
                 Recovery::Destination
             ));
         }
+    }
+
+    #[test]
+    fn relocation_recovery_non_directory_source_parent_retains_destination() {
+        let (_dir, root, source, destination, hash) = fixture();
+        let original = root.read(source.as_path()).unwrap();
+        root.rename(source.as_path(), &root, destination.as_path())
+            .unwrap();
+        root.write("old", b"source parent replaced by a file")
+            .unwrap();
+        let missing_source = "old/orig.epub".parse().unwrap();
+        assert!(matches!(
+            recover(&root, &missing_source, &destination, &hash, 7),
+            Err(WritebackError::Io(error)) if error.kind() == std::io::ErrorKind::NotADirectory
+        ));
+        assert_eq!(root.read(destination.as_path()).unwrap(), original);
+        assert_eq!(
+            root.read("old").unwrap(),
+            b"source parent replaced by a file"
+        );
     }
 
     #[test]

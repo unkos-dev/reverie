@@ -298,7 +298,7 @@ retains intent and fails before any recovery mutation, taking precedence over lo
 | Source     | Destination       | Action                                                                           |
 | ---------- | ----------------- | -------------------------------------------------------------------------------- |
 | Verified   | Absent            | Resume the recorded no-overwrite move                                            |
-| Absent     | Verified          | Sync parents, adopt destination and clear intent                                 |
+| Absent     | Verified          | Sync parents except missing source parent; adopt destination and clear intent    |
 | Verified   | Verified          | Sync destination parent, remove verified source, sync source parent and finalise |
 | Verified   | Foreign           | Restore recorded source and clear intent atomically, then fail                   |
 | Absent     | Absent            | Terminal `file_missing`                                                          |
@@ -313,6 +313,10 @@ retain intent. A row naming the destination with an open pair is valid: recovery
 parent sync before clearing. A successful later sync permits finalisation under a weaker guarantee; it cannot prove that
 previously failed writes became durable. Failure text is stored on the job and logged; successful completion clears the
 job error.
+
+When the source is confirmed absent, `NotFound` from its parent-directory lookup skips that unavailable parent's sync.
+The destination parent still must sync before adoption. Every other lookup error, including a file replacing the source
+directory, retains intent and fails recovery.
 
 Permanent diagnoses return to `queue::finish`, which locks the in-progress job, clears the corresponding pair and
 records Skipped with the diagnosis in one transaction. Claim exclusion remains until commit; a failed transaction
