@@ -152,8 +152,24 @@ the actual open uses a relative target through the pinned directory. The opened 
 streamed bytes. Established escapes return 403, missing files return 404, and other failures, including unknown library
 identities and ambiguous I/O denial, return generic 500 responses.
 
-This foundation is a draft checkpoint. Initial ingestion does not yet supply the required library identity, while
-writeback and cover operations still interpret stored paths through their previous filesystem interfaces. These
+A library can reside on a NAS separate from the Linux container host when its mounted filesystem supplies contained file
+access, atomic content replacement and useful sync/error semantics. Writeback relocation needs no-replace rename or hard
+links. Only EINVAL or ENOSYS from no-replace rename enables the hard-link fallback; collision, permission and ambiguous
+network errors remain failures. Unsupported operations preserve the source. This contract does not promise that every
+NFS or SMB server supplies the required behaviour.
+
+Hard-link relocation syncs the destination parent before removing the source, then syncs the source parent. A failed
+link or destination sync retains the source; removal failure may leave both names. EXDEV copies stage inside an owned
+directory on the actual destination filesystem, refuse occupied final names and independently verify the destination
+before removing the original. Normal completion removes staging, but abrupt exit may leave bare UUID directory names
+visible on the share. No cleanup sweep runs.
+
+A successful sync after a reported failure does not prove that failed writes became durable. Filesystem relocation and
+SQL location updates remain separate, with move-back on SQL failure. A crash between them can leave the recorded
+location stale without automatic reconciliation. These guarantees do not establish a NAS server's acknowledgement or
+flush behaviour; representative mounted-share verification is still needed.
+
+This is a draft checkpoint. Initial ingestion does not yet supply the required library identity. The remaining
 [pipeline limitations](../debt/2026-09-30-library-location-pipelines-incomplete.md) prevent end-to-end use and release
 readiness. Their tests remain active.
 

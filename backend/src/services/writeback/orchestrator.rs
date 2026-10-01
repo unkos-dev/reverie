@@ -308,13 +308,7 @@ async fn path_rename_step(
     let (destination, movement) = blocking_phase(Arc::clone(&permit), move || {
         let root = phase_files.library(library_id)?;
         let destination = resolve_collision(root, &candidate)?;
-        if let Some(parent) = destination
-            .as_path()
-            .parent()
-            .filter(|parent| !parent.as_os_str().is_empty())
-        {
-            root.create_dir_all(parent)?;
-        }
+        path_rename::prepare_destination(root, &destination)?;
         let movement = path_rename::move_existing(root, &source, &destination, &hash_owned)?;
         Ok((destination, movement))
     })
