@@ -21,7 +21,7 @@
     "@commitlint/cli": "^21.1.0",
     "@commitlint/config-conventional": "^21.1.0",
     "@playwright/cli": "0.1.21",
-    "lefthook": "2.1.14",
+    "lefthook": "2.1.15",
     "license-checker-rseidelsohn": "5.0.1",
     "vite": "catalog:",
     "vite-plus": "catalog:"
