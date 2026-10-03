@@ -1603,6 +1603,133 @@ mod tests {
     }
 
     #[sqlx::test(migrations = "./migrations")]
+    async fn relocation_queue_aborted_worker_retains_claim_until_restart(pool: PgPool) {
+        let wb = writeback_pool_for(&pool).await;
+        let ing = ingestion_pool_for(&pool).await;
+        let (_dir, files, job, mid, intent) = carrier_fixture(&pool).await;
+        sqlx::query!(
+            "UPDATE writeback_jobs SET last_attempted_at = NULL WHERE id = $1",
+            job
+        )
+        .execute(&wb)
+        .await
+        .unwrap();
+        let library = crate::models::storage_library::default_library_id(&pool)
+            .await
+            .unwrap();
+        let hash = sqlx::query_scalar!(
+            "SELECT current_file_hash FROM manifestations WHERE id = $1",
+            mid
+        )
+        .fetch_one(&wb)
+        .await
+        .unwrap();
+        let entered = Arc::new(tokio::sync::Notify::new());
+        let completed = Arc::new(tokio::sync::Notify::new());
+        let calls = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let (release_tx, release_rx) = std::sync::mpsc::channel();
+        let release = Arc::new(std::sync::Mutex::new(release_rx));
+        let phase_entered = Arc::clone(&entered);
+        let phase_completed = Arc::clone(&completed);
+        let phase_calls = Arc::clone(&calls);
+        let phase_intent = intent.clone();
+        let worker = tokio::spawn(spawn_worker_with(
+            wb.clone(),
+            test_config_with_max_attempts(3),
+            CancellationToken::new(),
+            files.clone(),
+            move |_pool, _config, files, id, permit| {
+                let entered = Arc::clone(&phase_entered);
+                let completed = Arc::clone(&phase_completed);
+                let calls = Arc::clone(&phase_calls);
+                let release = Arc::clone(&release);
+                let intent = phase_intent.clone();
+                let hash = hash.clone();
+                async move {
+                    assert_eq!(id, job);
+                    calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                    orchestrator::blocking_phase(permit, move || {
+                        entered.notify_one();
+                        release.lock().unwrap().recv().unwrap();
+                        let result = super::super::path_rename::recover(
+                            files.library(library)?,
+                            &intent.source,
+                            &intent.destination,
+                            &hash,
+                            7,
+                        );
+                        completed.notify_one();
+                        result
+                    })
+                    .await?;
+                    Ok(RunOutcome::Success {
+                        manifestation_id: mid,
+                        reason: "relocation".into(),
+                        current_file_hash: "unchanged".into(),
+                    })
+                }
+            },
+            WorkerHooks::new(|| {}),
+        ));
+        tokio::time::timeout(Duration::from_secs(5), entered.notified())
+            .await
+            .unwrap();
+        worker.abort();
+        assert!(worker.await.unwrap_err().is_cancelled());
+        let sibling = insert_job(&ing, mid, "metadata").await;
+        assert!(claim_next(&wb).await.unwrap().is_none());
+        assert_eq!(
+            sqlx::query_scalar!("SELECT status::text FROM writeback_jobs WHERE id = $1", job)
+                .fetch_one(&wb)
+                .await
+                .unwrap()
+                .as_deref(),
+            Some("in_progress")
+        );
+        assert_eq!(calls.load(std::sync::atomic::Ordering::SeqCst), 1);
+        release_tx.send(()).unwrap();
+        tokio::time::timeout(Duration::from_secs(5), completed.notified())
+            .await
+            .unwrap();
+        let root = files.library(library).unwrap();
+        assert_eq!(root.read(intent.destination.as_path()).unwrap(), b"PAYLOAD");
+        assert!(!root.try_exists(intent.source.as_path()).unwrap());
+        assert_eq!(
+            sqlx::query_scalar!("SELECT status::text FROM writeback_jobs WHERE id = $1", job)
+                .fetch_one(&wb)
+                .await
+                .unwrap()
+                .as_deref(),
+            Some("in_progress")
+        );
+        revert_in_progress(&wb).await.unwrap();
+        sqlx::query!(
+            "UPDATE writeback_jobs SET last_attempted_at = NULL WHERE id = $1",
+            job
+        )
+        .execute(&wb)
+        .await
+        .unwrap();
+        let (claimed, attempt) = claim_next(&wb).await.unwrap().unwrap();
+        assert_eq!(claimed, job);
+        let result = carrier_run(&wb, &files, job).await;
+        assert!(matches!(&result, Ok(RunOutcome::Success { .. })));
+        finish(&wb, &test_config_with_max_attempts(3), job, attempt, result)
+            .await
+            .unwrap();
+        let row = sqlx::query!(
+            "SELECT file_path, relocation_source_path FROM manifestations WHERE id = $1",
+            mid
+        )
+        .fetch_one(&wb)
+        .await
+        .unwrap();
+        assert_eq!(row.file_path, intent.destination.as_str());
+        assert!(row.relocation_source_path.is_none());
+        assert_eq!(claim_next(&wb).await.unwrap().unwrap().0, sibling);
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
     async fn relocation_queue_startup_sweep_creates_carrier_before_claiming(pool: PgPool) {
         let ing = ingestion_pool_for(&pool).await;
         let wb = writeback_pool_for(&pool).await;

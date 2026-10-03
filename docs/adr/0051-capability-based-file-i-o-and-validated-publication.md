@@ -96,7 +96,16 @@ obsolete-claim release share one transaction afterwards. A visible move with unc
 while retaining intent. Move-back cannot restore a single atomic filesystem/database outcome and can itself fail or
 collide, so failure retains evidence for forward reconciliation instead.
 
-Recovery locks the exact in-progress job and intent and verifies both names' path claims before another rewrite. It
+Recovery verifies the exact in-progress job, intent and both names' path claims in a short transaction, then releases
+the connection before filesystem work. A fresh short transaction locks the exact claimed job and guards the intent
+update when recording the outcome. Holding row locks during hashing, copying or sync would block canonical metadata
+edits and occupy a writeback connection without adding exclusion within the supported deployment.
+
+Exclusion relies on the
+[restart-bounded single-instance claim](./0018-durable-job-queue-postgres-backed-skip-locked-crash-only.md). The worker
+stops claiming on shutdown; aborting it leaves unfinished rows in progress. Runtime shutdown waits for started blocking
+work to finish before the process exits, so startup reclaim follows the old mutation's completion or process death. A
+multi-instance deployment or runtime shutdown that abandons running blocking work must revisit this protocol. Recovery
 adopts verified destination bytes, removes only a verified source and preserves foreign or externally changed files.
 Confirmed permanent loss or change clears the corresponding intent with terminal job bookkeeping in one transaction
 owned by queue::finish; otherwise clearing after a separate terminal write would release exclusion too early. Unreadable
