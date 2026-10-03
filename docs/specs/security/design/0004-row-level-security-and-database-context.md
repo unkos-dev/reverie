@@ -155,6 +155,10 @@ its grants are what limit it.
 Path claims have separate pipeline-only ALL policies and no readonly grant. Ownership lookup rejects a context without
 unfiltered claim visibility rather than treating policy-hidden rows as absent claims.
 
+`ingestion_inputs` is global pipeline state with no per-user row policy. It grants SELECT, INSERT, UPDATE and DELETE to
+`reverie_app` and `reverie_ingestion`, and SELECT to `reverie_readonly`. The ingestion owner writes current inputs;
+there is no input-management endpoint. Manifestation RLS remains the content-visibility boundary.
+
 ### The grant boundary
 
 Row-level security decides which rows a query sees; the grant decides whether the role may run the query at all, and the
@@ -183,9 +187,10 @@ the credential the session cookie carries. `reverie_ingestion` has no grant in t
 `reverie_ingestion` has SELECT on `libraries` and is granted the catalogue and pipeline tables: `works`, `authors`,
 `work_authors`, `manifestations`, `library_path_claims`, `series`, `series_works`, `omnibus_contents`,
 `metadata_versions`, `metadata_sources`, `field_locks`, `tags`, `manifestation_tags`, `genres`, `manifestation_genres`,
-`moods`, `manifestation_moods`, `api_cache`, `ingestion_jobs`, `writeback_jobs`, `identifier_schemes`, `rating_sources`,
-`manifestation_external_identifiers`, `manifestation_external_ratings` and `work_external_identifiers`. It has no grant
-on any account, credential, shelf, reading, preference, settings or webhook table.
+`moods`, `manifestation_moods`, `api_cache`, `ingestion_inputs`, `ingestion_jobs`, `writeback_jobs`,
+`identifier_schemes`, `rating_sources`, `manifestation_external_identifiers`, `manifestation_external_ratings` and
+`work_external_identifiers`. It has no grant on any account, credential, shelf, reading, preference, settings or webhook
+table.
 
 ## Interfaces and dependencies
 

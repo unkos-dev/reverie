@@ -129,6 +129,58 @@ policies. The `vite-plugins/csp-hash.ts` script hashes the inline `fouc.js` scri
 - **Timeouts.** Configure a timeout for every request, connection pool acquire, database statement, and outbound HTTP
   call.
 
+## Ingestion readiness and retries
+
+One coordinator discovers inputs, waits for readiness and runs one attempt at a time. Startup, watcher events and admin
+scans share that owner. An input needs ten seconds of observed unchanged size and modification time. A scan returns HTTP
+202 after discovery with queued, deferred and suppressed counts and `/api/v1/dashboard/activity` as its monitor. These
+counts describe discovery; they do not identify a separate import batch or promise completed imports.
+
+EPUB is the only accepted format and the default. An empty accepted-format set accepts nothing. Hidden entries and
+`Thumbs.db` are ignored; other files, including sidecars, remain independent inputs. Rejection preserves the original,
+records its reason and creates neither a manifestation nor a quarantine copy. Unchanged rejected inputs remain
+suppressed across restart. A changed fingerprint creates a new generation. Content duplicates link the existing work; a
+destination-path collision selects a suffix and does not establish duplication.
+
+Persisted settings control acceptance and cleanup through the existing settings API and live reload. Imported-source
+cleanup defaults to enabled; duplicate-source cleanup defaults to disabled. Cleanup requires an unchanged source and
+uses the current settings snapshot. Rejected and unaccepted files are retained. Upward pruning starts only from a
+successful deletion, stops at the ingestion root and preserves unrelated empty directories. A directory can be pruned
+only if every remaining entry is a regular `.DS_Store` or `Thumbs.db` file. Sidecars, other hidden files, directories
+and symlinks prevent pruning. The old format-priority, cleanup-mode and quarantine-root settings are removed.
+
+Attempts use a child of the worker's shutdown cancellation token and a progress counter. Source hashing and streaming
+check cancellation between 64 KiB chunks and advance progress after each chunk. There is no total-duration deadline.
+After 120 seconds without progress, the coordinator requests cancellation. Validation and no-overwrite publication
+finish their current operation before cancellation is handled. Cancellation discards the owned candidate and preserves
+the source. Attempt ownership lasts until the blocking closure returns. After five minutes without progress, a stall
+warning repeats every five minutes until that return. A read blocked inside the kernel cannot observe cancellation.
+Shutdown cancellation records no terminal outcome; startup reclaims interrupted attempts. A progressing large copy can
+exceed two minutes, and a blocked read can outlast the shared 30-second shutdown drain budget.
+
+Operational failures have three classes:
+
+- **Shared dependency:** An unavailable database or a failed probe of the opened ingestion or library root pauses new
+  attempts. Root failures include EIO, ENOTCONN, ESTALE, EHOSTDOWN and ENOSPC on the destination root. Probes run after
+  30 seconds, one minute, two minutes and then every five minutes until successful. Observation and readiness continue
+  where ingestion authority permits. Completed results whose outcome commit failed are retained and recommitted on this
+  schedule. Pause and resume are each logged once. These failures consume no input retry budget.
+- **Transient input:** With both roots probing healthy, input-specific EIO, an idle stall, a panic, an unchanged-source
+  hash mismatch and other unlisted I/O errors are transient. Hash mismatch first rechecks the source fingerprint; a
+  changed source discards the candidate and schedules another check without recording a failure. Unlisted I/O errors,
+  including WriteZero and UnexpectedEof, record their error kind in the attempt reason. Five automatic retries follow
+  the initial attempt, after five minutes, 30 minutes, two hours, eight hours and 24 hours, without `jitter`. The sixth
+  failed transient attempt exhausts the generation and leaves operational failure without a deadline. Counts come from
+  linked attempt history since the last persisted retry reset, excluding shared-dependency and interrupted outcomes.
+- **Needs change:** Source EACCES or EPERM, ENAMETOOLONG, a non-regular file, ELOOP and an unrepresentable path do not
+  retry automatically.
+
+A new generation, startup reconstruction or an admin scan resets exhausted and needs-change inputs to eligibility,
+subject to readiness, and persists the retry-reset marker. Rejection suppression is unchanged. Retry timings and budgets
+are internal constants; no settings configure them. An outage can leave inputs waiting until authority becomes healthy
+again. Operators currently manage retained originals on disk and request another scan after a correction; dedicated
+input-management, retry UI and retention controls remain deferred.
+
 ## Managed library files
 
 Reverie owns writes and reorganisation inside `REVERIE_LIBRARY_PATH`. Coordinate external tools with the application, or
@@ -136,12 +188,12 @@ pause it before they change managed files. Relocating the root, replacing its di
 coordinated restart: an opened capability identifies the original directory object and does not follow a replacement
 path into another library.
 
-`REVERIE_LIBRARY_PATH`, `REVERIE_INGESTION_PATH` and `REVERIE_QUARANTINE_PATH` must be absolute paths to provisioned
-directories. Mount the intended volumes before starting Reverie. The server opens all three roots before admin
-bootstrap, workers or requests; empty, relative, missing and non-directory roots fail startup. It does not create these
-directories or retry acquisition during requests. The `reverie migrate` command does not require storage roots. Stop
-Reverie before removing a mount, since its open directory handles can keep a mount busy. Directory existence alone does
-not establish that the intended volume is mounted.
+`REVERIE_LIBRARY_PATH` and `REVERIE_INGESTION_PATH` must be absolute paths to provisioned directories. Mount the
+intended volumes before starting Reverie. The server opens both roots before admin bootstrap, workers or requests;
+empty, relative, missing and non-directory roots fail startup. It does not create these directories or retry acquisition
+during requests. The `reverie migrate` command does not require storage roots. Stop Reverie before removing a mount,
+since its open directory handles can keep a mount busy. Directory existence alone does not establish that the intended
+volume is mounted.
 
 Each manifestation records a library identity and a canonical path relative to that library. Startup binds the seeded
 `default` identity to `REVERIE_LIBRARY_PATH`; downloads select that immutable binding, and unknown identities never fall

@@ -137,6 +137,42 @@ CREATE TYPE public.identity_provider AS ENUM (
 ALTER TYPE public.identity_provider OWNER TO reverie_migrator;
 
 --
+-- Name: ingestion_attempt_outcome; Type: TYPE; Schema: public; Owner: reverie_migrator
+--
+
+CREATE TYPE public.ingestion_attempt_outcome AS ENUM (
+    'imported',
+    'duplicate',
+    'rejected',
+    'changed',
+    'shared_dependency',
+    'transient_input',
+    'needs_change',
+    'interrupted'
+);
+
+
+ALTER TYPE public.ingestion_attempt_outcome OWNER TO reverie_migrator;
+
+--
+-- Name: ingestion_input_status; Type: TYPE; Schema: public; Owner: reverie_migrator
+--
+
+CREATE TYPE public.ingestion_input_status AS ENUM (
+    'pending',
+    'processing',
+    'imported',
+    'duplicate',
+    'rejected',
+    'not_accepted',
+    'operational_failure',
+    'removed'
+);
+
+
+ALTER TYPE public.ingestion_input_status OWNER TO reverie_migrator;
+
+--
 -- Name: ingestion_status; Type: TYPE; Schema: public; Owner: reverie_migrator
 --
 
@@ -570,6 +606,37 @@ CREATE TABLE public.identifier_schemes (
 ALTER TABLE public.identifier_schemes OWNER TO reverie_migrator;
 
 --
+-- Name: ingestion_inputs; Type: TABLE; Schema: public; Owner: reverie_migrator
+--
+
+CREATE TABLE public.ingestion_inputs (
+    id uuid DEFAULT uuidv7() NOT NULL,
+    source_path bytea NOT NULL,
+    fingerprint jsonb NOT NULL,
+    generation bigint DEFAULT 1 NOT NULL,
+    status public.ingestion_input_status DEFAULT 'pending'::public.ingestion_input_status NOT NULL,
+    reason text,
+    work_id uuid,
+    retry_reset_at timestamp with time zone DEFAULT now() NOT NULL,
+    observed_at timestamp with time zone DEFAULT now() NOT NULL,
+    completed_at timestamp with time zone,
+    removed_at timestamp with time zone,
+    removal_cause text,
+    CONSTRAINT ingestion_inputs_check CHECK (((status = 'removed'::public.ingestion_input_status) = ((removed_at IS NOT NULL) AND (removal_cause IS NOT NULL)))),
+    CONSTRAINT ingestion_inputs_check1 CHECK (((status = 'removed'::public.ingestion_input_status) OR ((removed_at IS NULL) AND (removal_cause IS NULL)))),
+    CONSTRAINT ingestion_inputs_completed_at_check CHECK (((completed_at >= '0001-01-01 00:00:00+00'::timestamp with time zone) AND (completed_at < '10000-01-01 00:00:00+00'::timestamp with time zone))),
+    CONSTRAINT ingestion_inputs_generation_check CHECK ((generation > 0)),
+    CONSTRAINT ingestion_inputs_observed_at_check CHECK (((observed_at >= '0001-01-01 00:00:00+00'::timestamp with time zone) AND (observed_at < '10000-01-01 00:00:00+00'::timestamp with time zone))),
+    CONSTRAINT ingestion_inputs_removal_cause_check CHECK ((removal_cause = ANY (ARRAY['automatic_cleanup'::text, 'admin_deletion'::text, 'external_disappearance'::text]))),
+    CONSTRAINT ingestion_inputs_removed_at_check CHECK (((removed_at >= '0001-01-01 00:00:00+00'::timestamp with time zone) AND (removed_at < '10000-01-01 00:00:00+00'::timestamp with time zone))),
+    CONSTRAINT ingestion_inputs_retry_reset_at_check CHECK (((retry_reset_at >= '0001-01-01 00:00:00+00'::timestamp with time zone) AND (retry_reset_at < '10000-01-01 00:00:00+00'::timestamp with time zone))),
+    CONSTRAINT ingestion_inputs_source_path_check CHECK ((octet_length(source_path) > 0))
+);
+
+
+ALTER TABLE public.ingestion_inputs OWNER TO reverie_migrator;
+
+--
 -- Name: ingestion_jobs; Type: TABLE; Schema: public; Owner: reverie_migrator
 --
 
@@ -582,8 +649,13 @@ CREATE TABLE public.ingestion_jobs (
     started_at timestamp with time zone,
     completed_at timestamp with time zone,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
+    input_id uuid,
+    input_generation bigint,
+    outcome public.ingestion_attempt_outcome,
     CONSTRAINT ingestion_jobs_completed_at_ts_decode_range CHECK (((completed_at >= '0001-01-01 00:00:00+00'::timestamp with time zone) AND (completed_at < '10000-01-01 00:00:00+00'::timestamp with time zone))),
     CONSTRAINT ingestion_jobs_created_at_ts_decode_range CHECK (((created_at >= '0001-01-01 00:00:00+00'::timestamp with time zone) AND (created_at < '10000-01-01 00:00:00+00'::timestamp with time zone))),
+    CONSTRAINT ingestion_jobs_generation_positive CHECK ((input_generation > 0)),
+    CONSTRAINT ingestion_jobs_input_pair CHECK (((input_id IS NULL) = (input_generation IS NULL))),
     CONSTRAINT ingestion_jobs_started_at_ts_decode_range CHECK (((started_at >= '0001-01-01 00:00:00+00'::timestamp with time zone) AND (started_at < '10000-01-01 00:00:00+00'::timestamp with time zone)))
 );
 
@@ -1032,12 +1104,13 @@ CREATE TABLE public.settings (
     writeback_max_attempts integer DEFAULT 3 NOT NULL,
     opds_enabled boolean DEFAULT true NOT NULL,
     opds_page_size integer DEFAULT 50 NOT NULL,
-    format_priority text[] DEFAULT '{epub,pdf,mobi,azw3,cbz,cbr}'::text[] NOT NULL,
-    cleanup_mode text DEFAULT 'all'::text NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
     provider_visibility jsonb DEFAULT '{}'::jsonb NOT NULL,
     revision bigint DEFAULT 0 NOT NULL,
-    CONSTRAINT settings_cleanup_mode_check CHECK ((cleanup_mode = ANY (ARRAY['all'::text, 'ingested'::text, 'none'::text]))),
+    accepted_formats text[] DEFAULT '{epub}'::text[] NOT NULL,
+    cleanup_imported boolean DEFAULT true NOT NULL,
+    cleanup_duplicates boolean DEFAULT false NOT NULL,
+    CONSTRAINT settings_accepted_formats_check CHECK ((accepted_formats <@ ARRAY['epub'::text])),
     CONSTRAINT settings_cover_download_timeout_secs_check CHECK ((cover_download_timeout_secs >= 1)),
     CONSTRAINT settings_cover_max_bytes_check CHECK ((cover_max_bytes >= 1)),
     CONSTRAINT settings_cover_min_long_edge_px_check CHECK ((cover_min_long_edge_px >= 1)),
@@ -1425,6 +1498,14 @@ ALTER TABLE ONLY public.genres
 
 ALTER TABLE ONLY public.identifier_schemes
     ADD CONSTRAINT identifier_schemes_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: ingestion_inputs ingestion_inputs_pkey; Type: CONSTRAINT; Schema: public; Owner: reverie_migrator
+--
+
+ALTER TABLE ONLY public.ingestion_inputs
+    ADD CONSTRAINT ingestion_inputs_pkey PRIMARY KEY (id);
 
 
 --
@@ -1837,10 +1918,31 @@ CREATE INDEX idx_genres_name_trgm ON public.genres USING gin (public.immutable_u
 
 
 --
+-- Name: idx_ingestion_inputs_current; Type: INDEX; Schema: public; Owner: reverie_migrator
+--
+
+CREATE INDEX idx_ingestion_inputs_current ON public.ingestion_inputs USING btree (id) WHERE (status <> 'removed'::public.ingestion_input_status);
+
+
+--
+-- Name: idx_ingestion_inputs_present_path; Type: INDEX; Schema: public; Owner: reverie_migrator
+--
+
+CREATE UNIQUE INDEX idx_ingestion_inputs_present_path ON public.ingestion_inputs USING btree (source_path) WHERE (status <> 'removed'::public.ingestion_input_status);
+
+
+--
 -- Name: idx_ingestion_jobs_batch_id; Type: INDEX; Schema: public; Owner: reverie_migrator
 --
 
 CREATE INDEX idx_ingestion_jobs_batch_id ON public.ingestion_jobs USING btree (batch_id);
+
+
+--
+-- Name: idx_ingestion_jobs_input_history; Type: INDEX; Schema: public; Owner: reverie_migrator
+--
+
+CREATE INDEX idx_ingestion_jobs_input_history ON public.ingestion_jobs USING btree (input_id, input_generation, created_at);
 
 
 --
@@ -2467,6 +2569,22 @@ ALTER TABLE ONLY public.field_locks
 
 ALTER TABLE ONLY public.field_locks
     ADD CONSTRAINT field_locks_manifestation_id_fkey FOREIGN KEY (manifestation_id) REFERENCES public.manifestations(id) ON DELETE CASCADE;
+
+
+--
+-- Name: ingestion_inputs ingestion_inputs_work_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: reverie_migrator
+--
+
+ALTER TABLE ONLY public.ingestion_inputs
+    ADD CONSTRAINT ingestion_inputs_work_id_fkey FOREIGN KEY (work_id) REFERENCES public.works(id) ON DELETE SET NULL;
+
+
+--
+-- Name: ingestion_jobs ingestion_jobs_input_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: reverie_migrator
+--
+
+ALTER TABLE ONLY public.ingestion_jobs
+    ADD CONSTRAINT ingestion_jobs_input_id_fkey FOREIGN KEY (input_id) REFERENCES public.ingestion_inputs(id);
 
 
 --
@@ -3477,6 +3595,15 @@ GRANT SELECT ON TABLE public.genres TO reverie_readonly;
 GRANT SELECT ON TABLE public.identifier_schemes TO reverie_app;
 GRANT SELECT ON TABLE public.identifier_schemes TO reverie_ingestion;
 GRANT SELECT ON TABLE public.identifier_schemes TO reverie_readonly;
+
+
+--
+-- Name: TABLE ingestion_inputs; Type: ACL; Schema: public; Owner: reverie_migrator
+--
+
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.ingestion_inputs TO reverie_app;
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.ingestion_inputs TO reverie_ingestion;
+GRANT SELECT ON TABLE public.ingestion_inputs TO reverie_readonly;
 
 
 --

@@ -81,16 +81,16 @@ directly rather than assembling its own `AppState` and calling `build_router`.
 - `backend/src/state.rs::AppState` is the `Clone` handle `run` builds once and threads into the router, the request
   handlers and (via per-task clones of its constituent fields) the background workers. Its fields are documented in Data
   and state below.
-- `backend/src/services/files.rs::LibraryFiles` shares immutable library-identity bindings and opened ingestion and
-  quarantine directories across AppState clones. Startup opens all required capabilities before seeds or workers.
+- `backend/src/services/files.rs::LibraryFiles` shares immutable library-identity bindings and the opened ingestion
+  directory across AppState clones. Startup opens all required capabilities before seeds or workers.
 - `backend/src/routes/health.rs` supplies `GET /health` (liveness: always `200 ok`) and `GET /health/ready` (readiness:
   pings the application pool with `SELECT 1`, returning `200 ok` or a `503` Problem Details body). Both are outside
   `/api/v1` and carry an explicit empty `security(())` OpenAPI annotation, opting out of the document-level
   session-cookie default.
 - The five background workers, each entered from its own module and given only what it needs:
   - `services::settings::spawn_listener` (settings LISTEN/NOTIFY reload, refreshing `AppState.settings`).
-  - `services::ingestion::run_watcher` (the filesystem watcher and scan loop, receiving shared `LibraryFiles` for its
-    copied-EPUB boundary).
+  - `services::ingestion::run_watcher` (one owner for capability discovery, readiness, attempts, retries and cleanup,
+    receiving shared `LibraryFiles`, the live settings cache and its command receiver).
   - `services::enrichment::queue::spawn_queue` (the enrichment job queue).
   - `services::session_sweep::run_sweep` (the hourly expired-session reaper, driving `PostgresStore`'s `ExpiredDeletion`
     trait).
@@ -103,9 +103,9 @@ directly rather than assembling its own `AppState` and calling `build_router`.
 ### State-writer census
 
 This subject owns the shutdown `CancellationToken` and the storage bindings created in `run`. The bindings have one
-writer: startup calls `LibraryFiles::open` before constructing AppState. Library, ingestion and quarantine capabilities
-are immutable for the lifetime of all AppState clones. Requests neither acquire nor replace roots. Other dependencies
-are written once at construction.
+writer: startup calls `LibraryFiles::open` before constructing AppState. Library and ingestion capabilities are
+immutable for the lifetime of all AppState clones. Requests neither acquire nor replace roots. Other dependencies are
+written once at construction.
 
 The token is a local binding in `run`, cloned once per worker and once more into `shutdown_signal`. Two call sites write
 its cancelled flag: `shutdown_signal` (on `ctrl_c()` or SIGTERM) and `run` itself, unconditionally, immediately after
@@ -113,6 +113,12 @@ its cancelled flag: `shutdown_signal` (on `ctrl_c()` or SIGTERM) and `run` itsel
 `CancellationToken::cancel` is idempotent: whichever call site runs first actually flips the flag, and the other is a
 no-op. No worker, and no other part of this subject, calls `.cancel()`; every worker only ever reads the token (via
 `cancel.cancelled()` or an equivalent `tokio::select!` arm inside its own loop) to learn when to stop.
+
+`AppState.ingestion` holds the shared command handle created at startup. Scan handlers submit discovery to the existing
+ingestion worker and receive classification counts after discovery. Watcher, startup and deadline signals coalesce
+inside that owner. Delete and rename notifications bypass create/modify batching; capability rechecks establish absence.
+Shutdown cancellation propagates to the active attempt's child token, without a terminal outcome. The worker retains a
+running blocking closure until return; a kernel-blocked read can outlast the existing shared drain budget.
 
 ## Interfaces and dependencies
 
@@ -174,8 +180,8 @@ no-op. No worker, and no other part of this subject, calls `.cancel()`; every wo
    guard — the configuration gate already guarantees the value is present whenever `auto_migrate` is `true`, so this is
    a second, redundant check — before calling `db::run_migrations` against it. Either branch's failure stops startup.
 6. The application pool selects the default library identity. A blocking task opens its configured library root and the
-   ingestion and quarantine roots through `LibraryFiles::open`. Missing identity, missing or non-directory roots, and
-   acquisition failures stop startup with context. Root configuration is absolute; parsing does not access disk.
+   ingestion roots through `LibraryFiles::open`. Missing identity, missing or non-directory roots, and acquisition
+   failures stop startup with context. Root configuration is absolute; parsing does not access disk.
 7. `seed_admin_if_configured` creates the first administrator from `REVERIE_BOOTSTRAP_*` when configured and no
    administrator yet exists; it is a no-op otherwise.
 8. One bounded HTTPS OIDC transport is built when either identity mode is configured; local-only mode builds none. The

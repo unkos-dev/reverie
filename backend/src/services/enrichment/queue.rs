@@ -361,7 +361,7 @@ mod tests {
     // tests for the companion grant migration on `field_locks`.
 
     fn test_config_with_max_attempts(max_attempts: u32) -> Config {
-        use crate::config::{CleanupMode, CoverConfig, EnrichmentConfig};
+        use crate::config::{CoverConfig, EnrichmentConfig};
         use crate::models::manifestation_format::ManifestationFormat;
 
         Config {
@@ -369,7 +369,6 @@ mod tests {
             database_url: String::new(),
             library_path: crate::config::Config::default().library_path,
             ingestion_path: crate::config::Config::default().ingestion_path,
-            quarantine_path: crate::config::Config::default().quarantine_path,
             log_level: "info".into(),
             db_max_connections: 5,
             oidc_issuer_url: String::new(),
@@ -395,8 +394,9 @@ mod tests {
             migration_database_url: None,
             auto_migrate: false,
             ingestion_database_url: String::new(),
-            format_priority: vec![ManifestationFormat::Epub],
-            cleanup_mode: CleanupMode::None,
+            accepted_formats: vec![ManifestationFormat::Epub],
+            cleanup_imported: false,
+            cleanup_duplicates: false,
             enrichment: EnrichmentConfig {
                 enabled: true,
                 concurrency: 2,

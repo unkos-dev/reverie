@@ -4,15 +4,30 @@
   "description": "Resolved process-wide configuration.\n\nFields reflect the settled view of\nthe environment after defaults, parsing, and validation; subsystem\nconfigs (OPDS, enrichment, cover, writeback, security) are nested as\nowned values so callers do not pass the entire `Config` into helpers\nthat only need one slice.",
   "type": "object",
   "properties": {
+    "accepted_formats": {
+      "description": "Accepted ingestion formats (`REVERIE_ACCEPTED_FORMATS`, comma-separated;\ndefault `epub`). An empty list suspends acquisition.",
+      "type": "array",
+      "default": [
+        "epub"
+      ],
+      "items": {
+        "$ref": "#/$defs/ManifestationFormat"
+      }
+    },
     "auto_migrate": {
       "description": "Run pending migrations in-process at startup\n(`REVERIE_AUTO_MIGRATE`, default `false`). The shipped default is\nout-of-band migration via `reverie migrate`; when this is `true` the\nlong-lived server process carries the migration credential for its\nwhole lifetime, so it is an opt-in escape hatch only. Requires\n[`Self::migration_database_url`] to be set.",
       "type": "boolean",
       "default": false
     },
-    "cleanup_mode": {
-      "description": "Source cleanup (`REVERIE_CLEANUP_MODE`, default `all`):\ncompleted/skipped selections (`ingested`), also their same-group siblings\n(`all`), or disabled (`none`); independent of failure/quarantine handling.",
-      "$ref": "#/$defs/CleanupMode",
-      "default": "all"
+    "cleanup_duplicates": {
+      "description": "Remove duplicate sources (`REVERIE_CLEANUP_DUPLICATES`, default `false`).",
+      "type": "boolean",
+      "default": false
+    },
+    "cleanup_imported": {
+      "description": "Remove imported sources (`REVERIE_CLEANUP_IMPORTED`, default `true`).",
+      "type": "boolean",
+      "default": true
     },
     "cover": {
       "description": "Cover-image acquisition limits (max bytes, redirect cap, etc.).",
@@ -33,21 +48,6 @@
     "enrichment": {
       "description": "Metadata enrichment knobs (concurrency, cache TTLs, etc.).",
       "$ref": "#/$defs/EnrichmentConfig"
-    },
-    "format_priority": {
-      "description": "Ranked acceptable formats (`REVERIE_FORMAT_PRIORITY`,\ncomma-separated; default `epub,pdf,mobi,azw3,cbz,cbr`). The\ningestion pipeline picks the highest-ranked file when an\nincoming work has multiple candidates.",
-      "type": "array",
-      "default": [
-        "epub",
-        "pdf",
-        "mobi",
-        "azw3",
-        "cbz",
-        "cbr"
-      ],
-      "items": {
-        "$ref": "#/$defs/ManifestationFormat"
-      }
     },
     "googlebooks_api_key": {
       "description": "Optional Google Books API key\n(`REVERIE_GOOGLEBOOKS_API_KEY`); when set, requests bypass the\npublic anonymous quota.",
@@ -186,11 +186,6 @@
       "maximum": 65535,
       "minimum": 0
     },
-    "quarantine_path": {
-      "description": "Absolute failed-ingestion quarantine directory\n(`REVERIE_QUARANTINE_PATH`, default `/data/quarantine`). Must exist\nbefore server startup.",
-      "type": "string",
-      "default": "/data/quarantine"
-    },
     "recovery_pin_dir": {
       "description": "Directory the clear recovery PIN is written into, one file per user at\n`<dir>/<user_id>.pin` (file mode 0600, directory mode 0700), for an\noperator to read and relay (`REVERIE_RECOVERY_PIN_DIR`, default\n`/data/recovery-pins`). Per-user files keep concurrent recoveries from\ncolliding. MUST be outside any web-served directory; the database stores\nonly an Argon2id hash of the PIN.",
       "type": "string",
@@ -246,26 +241,6 @@
     }
   },
   "$defs": {
-    "CleanupMode": {
-      "description": "Source cleanup eligibility after a scan's per-file outcomes are recorded.\n\nWire format (JSON, DB `text` column): lowercase string, one of\n`\"all\"` | `\"ingested\"` | `\"none\"`.\n\nDeliberately NOT `#[non_exhaustive]`: the ingestion watcher matches it\nexhaustively, so adding a variant is a compile error at the match site\nrather than a silent fall-through, the same property the `Command` enum\nrelies on.",
-      "oneOf": [
-        {
-          "description": "Delete completed and skipped selected files and their siblings in the\nsame directory with the same case-insensitive filename stem.",
-          "type": "string",
-          "const": "all"
-        },
-        {
-          "description": "Delete only format-selected files whose jobs completed or were skipped.",
-          "type": "string",
-          "const": "ingested"
-        },
-        {
-          "description": "Disable source cleanup; failure and quarantine handling still applies.",
-          "type": "string",
-          "const": "none"
-        }
-      ]
-    },
     "CoverConfig": {
       "description": "Cover-image acquisition limits applied by the cover service when\nfetching from third-party metadata providers.",
       "type": "object",
@@ -369,7 +344,7 @@
       }
     },
     "ManifestationFormat": {
-      "description": "Canonical file format of a manifestation.\n\nClosed set shared by the Postgres `manifestation_format` `ENUM`, the\n`REVERIE_FORMAT_PRIORITY` env-var parser, and download-path content\nnegotiation. Extending the set requires both a Rust variant and a\nmatching `ALTER TYPE … ADD VALUE` migration.",
+      "description": "Canonical file format of a manifestation.\n\nClosed set shared by the Postgres `manifestation_format` `ENUM`, the\n`REVERIE_ACCEPTED_FORMATS` env-var parser, and download-path content\nnegotiation. Extending the set requires both a Rust variant and a\nmatching `ALTER TYPE … ADD VALUE` migration.",
       "oneOf": [
         {
           "description": "EPUB 2 / 3 reflowable e-book.",

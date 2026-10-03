@@ -1,0 +1,44 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT outcome AS \"outcome: AttemptOutcome\" FROM ingestion_jobs WHERE id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "outcome: AttemptOutcome",
+        "type_info": {
+          "Custom": {
+            "name": "ingestion_attempt_outcome",
+            "kind": {
+              "Enum": [
+                "imported",
+                "duplicate",
+                "rejected",
+                "changed",
+                "shared_dependency",
+                "transient_input",
+                "needs_change",
+                "interrupted"
+              ]
+            }
+          }
+        },
+        "origin": {
+          "Table": {
+            "table": "ingestion_jobs",
+            "name": "outcome"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      true
+    ]
+  },
+  "hash": "bb0c5ba68b2e5e9900396fe91d5036751e0684fdf157d03fe59ea7f538a90be6"
+}

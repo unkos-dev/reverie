@@ -108,13 +108,16 @@ written by `find_or_create_series`'s caller in `backend/src/models/work.rs`. Non
 (`NOT NULL`, no uniqueness). The three status enums (`validation_status`, `ingestion_status`, `enrichment_status`) each
 default to `pending`; this model carries them as manifestation columns, but their transition rules belong to the
 pipelines that drive them. `manifestations.ingestion_status` is the lifecycle of the manifestation row itself, once one
-exists; `ingestion_jobs`, owned by the Design "Ingestion pipeline", is a separate per-file row (`job_status`: `queued`,
-`running`, `complete`, `failed`, `skipped`) grouped by `batch_id` for one scan, written for every scanned file including
-one skipped as a duplicate or one that fails before any manifestation row is created, so the two need not agree.
-`content_rating`, the cover columns (`cover_path`, `cover_sha256`, `cover_size_bytes`, `cover_source`,
-`has_embedded_cover`), and `accessibility_metadata` are likewise columns this table carries for a neighbouring subject's
-semantics. `suspected_duplicate_work_id` (`ON DELETE SET NULL` to `works`) is the one column that points sideways, at a
-candidate duplicate rather than the owning work.
+exists. The Design "Ingestion pipeline" owns `ingestion_inputs`, the byte-preserving current source identity,
+fingerprint, generation, status, reason, work link and removal bookkeeping. New `ingestion_jobs` link their captured
+input and generation and carry typed outcomes separately from `job_status`; existing unlinked history remains readable.
+Suppressed and not-accepted inputs create no attempt. Terminal attempt and current-generation input updates share one
+transaction, and imported outcomes share the manifestation, work, draft and claim transaction. Removed input records
+retain history while a later arrival at the same name receives a new identity. `content_rating`, the cover columns
+(`cover_path`, `cover_sha256`, `cover_size_bytes`, `cover_source`, `has_embedded_cover`), and `accessibility_metadata`
+are likewise columns this table carries for a neighbouring subject's semantics. `suspected_duplicate_work_id`
+(`ON DELETE SET NULL` to `works`) is the one column that points sideways, at a candidate duplicate rather than the
+owning work.
 
 **Library ownership.** `libraries.id` defaults to `uuidv7()`. Its unique, non-empty `configuration_key` binds an
 identity to deployment configuration; the migration seeds `default`. The row stores no root path or naming policy.

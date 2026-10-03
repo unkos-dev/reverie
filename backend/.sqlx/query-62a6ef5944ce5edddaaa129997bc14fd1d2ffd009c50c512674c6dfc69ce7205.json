@@ -1,0 +1,141 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO ingestion_inputs (source_path, fingerprint)\n           SELECT path, fingerprint FROM UNNEST($1::bytea[], $2::jsonb[]) AS observed(path, fingerprint)\n           ON CONFLICT (source_path) WHERE status <> 'removed'\n           DO UPDATE SET\n             fingerprint = EXCLUDED.fingerprint,\n             generation = ingestion_inputs.generation + (ingestion_inputs.fingerprint <> EXCLUDED.fingerprint)::int,\n             status = CASE WHEN ingestion_inputs.fingerprint <> EXCLUDED.fingerprint\n                      THEN 'pending'::ingestion_input_status ELSE ingestion_inputs.status END,\n             reason = CASE WHEN ingestion_inputs.fingerprint <> EXCLUDED.fingerprint THEN NULL ELSE ingestion_inputs.reason END,\n             work_id = CASE WHEN ingestion_inputs.fingerprint <> EXCLUDED.fingerprint THEN NULL ELSE ingestion_inputs.work_id END,\n             completed_at = CASE WHEN ingestion_inputs.fingerprint <> EXCLUDED.fingerprint THEN NULL ELSE ingestion_inputs.completed_at END,\n             retry_reset_at = CASE WHEN ingestion_inputs.fingerprint <> EXCLUDED.fingerprint THEN now() ELSE ingestion_inputs.retry_reset_at END,\n             observed_at = CASE WHEN ingestion_inputs.fingerprint <> EXCLUDED.fingerprint THEN now() ELSE ingestion_inputs.observed_at END\n           RETURNING id, source_path, fingerprint AS \"fingerprint: sqlx::types::Json<Fingerprint>\",\n             generation, status AS \"status: InputStatus\", reason, work_id, retry_reset_at, observed_at",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "ingestion_inputs",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "source_path",
+        "type_info": "Bytea",
+        "origin": {
+          "Table": {
+            "table": "ingestion_inputs",
+            "name": "source_path"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "fingerprint: sqlx::types::Json<Fingerprint>",
+        "type_info": "Jsonb",
+        "origin": {
+          "Table": {
+            "table": "ingestion_inputs",
+            "name": "fingerprint"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "generation",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "ingestion_inputs",
+            "name": "generation"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "status: InputStatus",
+        "type_info": {
+          "Custom": {
+            "name": "ingestion_input_status",
+            "kind": {
+              "Enum": [
+                "pending",
+                "processing",
+                "imported",
+                "duplicate",
+                "rejected",
+                "not_accepted",
+                "operational_failure",
+                "removed"
+              ]
+            }
+          }
+        },
+        "origin": {
+          "Table": {
+            "table": "ingestion_inputs",
+            "name": "status"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "reason",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "ingestion_inputs",
+            "name": "reason"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "work_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "ingestion_inputs",
+            "name": "work_id"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "retry_reset_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "ingestion_inputs",
+            "name": "retry_reset_at"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "observed_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "ingestion_inputs",
+            "name": "observed_at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "ByteaArray",
+        "JsonbArray"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      false,
+      false
+    ]
+  },
+  "hash": "62a6ef5944ce5edddaaa129997bc14fd1d2ffd009c50c512674c6dfc69ce7205"
+}

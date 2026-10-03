@@ -53,11 +53,18 @@ configuration supplies absolute roots independently of those identities. Metadat
 destinations; they do not reinterpret recorded locations. This permits independent libraries without committing to an
 administration interface or organisation syntax.
 
-Use a concrete `LibraryFiles` boundary with cap-std. Open provisioned library, ingestion and quarantine roots before
-serving or starting workers, then keep the identity-to-root bindings immutable. Classification supports internal symlink
-targets; only the selected opened directory grants authority for the file operation. Opened roots identify directory
-objects, so external relocation or replacement requires a coordinated restart. Directory existence cannot establish that
-the intended filesystem is mounted; deployment ordering remains an operator responsibility.
+Use a concrete `LibraryFiles` boundary with cap-std. Open provisioned library and ingestion roots before serving or
+starting workers, then keep the identity-to-root bindings immutable. Classification supports internal symlink targets;
+only the selected opened directory grants authority for the file operation. Opened roots identify directory objects, so
+external relocation or replacement requires a coordinated restart. Directory existence cannot establish that the
+intended filesystem is mounted; deployment ordering remains an operator responsibility.
+
+Choose independent candidate acquisition and retained-source rejection for ingestion. Source handles supply
+fingerprints, immutable ingestion hashes and streamed bytes; validation and repair act only on owned candidate bytes.
+Irrecoverable content preserves its original and rejection reason without a manifestation or a separate quarantine copy.
+Imported and duplicate cleanup are independent outcome options, with deletion restricted to an unchanged source. Moving
+originals to quarantine remains a viable separation mechanism, but changes externally shared paths and requires another
+growing byte store. Retained originals keep correction with the operator and need explicit retry eligibility.
 
 The development catalogue is disposable and can be rebuilt and re-ingested. No conversion, legacy location reader or
 temporary writer adapter is part of this decision. Startup never resets the database.
@@ -128,7 +135,7 @@ durable storage or adding a third persisted error state.
 ### Consequences
 
 - Positive: a download's handle supplies both metadata and bytes, and contained opening closes the path lookup gap.
-- Positive: candidate validation can reject a rewrite without changing the original file.
+- Positive: candidate validation can reject a rewrite or ingestion without changing externally shared original bytes.
 - Positive: maintained crates own contained resolution and replacement mechanics.
 - Negative: absolute-link compatibility still needs ambient classification before contained opening.
 - Negative: provisioned roots and mount ordering are startup prerequisites; pinned roots require coordinated shutdown
@@ -140,6 +147,10 @@ durable storage or adding a third persisted error state.
 - Negative: reported sync errors retain a weaker durability guarantee even after successful re-sync; a bounded sweep and
   queue backlog can delay recovery beyond five minutes.
 - Negative: abrupt exit can leave bare UUID staging directories visible on a NAS share; no scavenging is provided.
+- Negative: rejected and operationally failed originals remain on disk until corrected or removed by the operator;
+  dedicated management and retention controls are separate work.
+- Negative: a kernel-blocked read cannot observe cooperative cancellation and can delay shutdown; outages pause new
+  ingestion while completed results await successful outcome commits.
 
 ## Pros and cons of the options
 
@@ -180,10 +191,10 @@ durable storage or adding a third persisted error state.
 
 ## More information
 
-OPDS downloads, writeback relocation and initial ingestion publication apply the capability boundary. Ingestion still
-validates its library copy before registration; independently owned staged validation and complete outcome
-reconciliation remain incomplete, as does cover-cache publication. No representative NAS behaviour or server flush
-guarantee is established by source inspection or injected error-code tests.
+OPDS downloads, writeback relocation and initial ingestion publication apply the capability boundary. Ingestion
+validates independently owned staged bytes before publication and reconciles input, attempt and manifestation outcomes.
+Cover-cache publication remains incomplete. No representative NAS behaviour or server flush guarantee is established by
+source inspection or injected error-code tests.
 
 - [cap-std capability model](https://github.com/bytecodealliance/cap-std/blob/v4.0.3/README.md).
 - [cap-std-ext replacement implementation](https://github.com/coreos/cap-std-ext/blob/v5.1.2/src/dirext.rs).
