@@ -2265,13 +2265,21 @@ mod tests {
             std::fs::write(path, bytes).unwrap();
         }
         config.cleanup_mode = mode;
+        let id = crate::models::storage_library::default_library_id(&pool)
+            .await
+            .unwrap();
+        let files = LibraryFiles::open(
+            [(id, config.library_path.clone())],
+            &config.ingestion_path,
+            &config.quarantine_path,
+        )
+        .unwrap();
         if !quarantine_available {
-            let blocked = quarantine.path().join("blocked");
-            std::fs::write(&blocked, b"not a directory").unwrap();
-            config.quarantine_path = blocked.to_str().unwrap().parse().unwrap();
+            std::fs::remove_dir(quarantine.path()).unwrap();
+            std::fs::write(quarantine.path(), b"not a directory").unwrap();
         }
 
-        let result = scan_once(&config, &pool).await.unwrap();
+        let result = super::scan_once(&config, &pool, &files).await.unwrap();
         assert_eq!(result.processed, 1);
         assert_eq!(result.skipped, 1);
         assert_eq!(result.failed, 1);
