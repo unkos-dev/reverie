@@ -169,10 +169,12 @@ function without parsing them.
 - Extracted content stored outside web root
 - EPUB parser runs on the ingestion pool with scoped RLS; with `DATABASE_URL_INGESTION` unset the pipeline runs as
   the application role and cannot write at all
-- Cleanup deletion bounded to the ingestion root: `cleanup_batch` rejects any
-  caller-supplied path whose canonicalised parent (files) or canonicalised self
-  (directories) resolves outside the ingestion tree — directory pruning landed
-  in PR #387, file deletion in PR #388
+- Source cleanup uses opened ingestion authority, rejects symlink parents and rechecks the current generation and
+  source fingerprint before deletion. Pruning starts only from a successful deletion and stops at the root.
+- Approved metadata-file exception: a deletion ancestor may discard regular `.DS_Store` and `Thumbs.db` files only
+  when every remaining entry belongs to that fixed list. Symlinks, other hidden files, sidecars and directories preserve
+  the ancestor. Empty-directory removal is ordinary and non-recursive. This capability boundary supplies containment
+  without a canonical-path check followed by an ambient mutation.
 
 Any of these currently missing is a security bug.
 

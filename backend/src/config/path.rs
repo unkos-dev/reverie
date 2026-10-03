@@ -16,8 +16,8 @@ pub struct AbsoluteRootPath(String);
 pub struct RootPathError;
 
 impl AbsoluteRootPath {
-    pub(super) fn defaults() -> [Self; 3] {
-        ["/data/library", "/data/ingestion", "/data/quarantine"].map(|path| Self(path.into()))
+    pub(super) fn defaults() -> [Self; 2] {
+        ["/data/library", "/data/ingestion"].map(|path| Self(path.into()))
     }
 
     /// The configured path without filesystem resolution.

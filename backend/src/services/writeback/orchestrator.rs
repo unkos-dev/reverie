@@ -832,12 +832,7 @@ mod tests {
     ) -> Result<RunOutcome, WritebackError> {
         let id = crate::models::storage_library::default_library_id(pool).await?;
         let root = root.to_str().unwrap().parse().unwrap();
-        let files = LibraryFiles::open(
-            [(id, root)],
-            &config.ingestion_path,
-            &config.quarantine_path,
-        )
-        .unwrap();
+        let files = LibraryFiles::open([(id, root)], &config.ingestion_path).unwrap();
         let permit = Arc::new(
             Arc::new(tokio::sync::Semaphore::new(1))
                 .acquire_owned()
@@ -855,7 +850,7 @@ mod tests {
         root.join(path)
     }
 
-    use crate::config::{CleanupMode, CoverConfig, EnrichmentConfig, WritebackConfig};
+    use crate::config::{CoverConfig, EnrichmentConfig, WritebackConfig};
     use crate::models::manifestation_format::ManifestationFormat;
     use std::io::Write;
     use zip::ZipWriter;
@@ -873,7 +868,6 @@ mod tests {
             database_url: String::new(),
             library_path: storage_config.library_path,
             ingestion_path: storage_config.ingestion_path,
-            quarantine_path: storage_config.quarantine_path,
             log_level: "info".into(),
             db_max_connections: 5,
             oidc_issuer_url: String::new(),
@@ -899,8 +893,9 @@ mod tests {
             migration_database_url: None,
             auto_migrate: false,
             ingestion_database_url: String::new(),
-            format_priority: vec![ManifestationFormat::Epub],
-            cleanup_mode: CleanupMode::None,
+            accepted_formats: vec![ManifestationFormat::Epub],
+            cleanup_imported: false,
+            cleanup_duplicates: false,
             enrichment: EnrichmentConfig {
                 enabled: false,
                 concurrency: 1,
@@ -1278,7 +1273,6 @@ mod tests {
         .await
         .unwrap();
         let input = tempfile::tempdir().unwrap();
-        let quarantine = tempfile::tempdir().unwrap();
         std::fs::copy(&path, input.path().join("Title.epub")).unwrap();
         let library_id = crate::models::storage_library::default_library_id(&pool)
             .await
@@ -1286,11 +1280,10 @@ mod tests {
         let (mut config, _files) = test_config(dir.path());
         config.library_path = dir.path().to_str().unwrap().parse().unwrap();
         config.ingestion_path = input.path().to_str().unwrap().parse().unwrap();
-        config.quarantine_path = quarantine.path().to_str().unwrap().parse().unwrap();
+
         let files = LibraryFiles::open(
             [(library_id, config.library_path.clone())],
             &config.ingestion_path,
-            &config.quarantine_path,
         )
         .unwrap();
         let job = sqlx::query_scalar!("INSERT INTO writeback_jobs (manifestation_id, reason) VALUES ($1, 'metadata') RETURNING id", id).fetch_one(&pool).await.unwrap();
@@ -1401,7 +1394,6 @@ mod tests {
             second.path().to_str().unwrap().parse().unwrap();
         let files = LibraryFiles::open(
             [(default, first_root), (other, second_root.clone())],
-            &second_root,
             &second_root,
         )
         .unwrap();

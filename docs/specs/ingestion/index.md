@@ -4,7 +4,7 @@
 
 ## Requirements
 
-- [REV-REQ-0043](requirements/0043-an-irrecoverable-epub-is-quarantined-and-gets-no-manifestation-row.md): An irrecoverable EPUB is quarantined and gets no manifestation row
+- [REV-REQ-0043](requirements/0043-an-irrecoverable-epub-remains-in-ingestion-with-a-recorded-rejection-reason.md): An irrecoverable EPUB remains in ingestion with a recorded rejection reason
 - [REV-REQ-0044](requirements/0044-a-repair-leaves-the-file-fully-rewritten-or-untouched.md): A repair leaves the file fully rewritten or untouched
 - [REV-REQ-0045](requirements/0045-unsafe-archive-entry-names-are-refused-before-any-path-use.md): Unsafe archive entry names are refused before any path use
 - [REV-REQ-0046](requirements/0046-an-archive-exceeding-a-resource-bound-is-refused-before-extraction.md): An archive exceeding a resource bound is refused before extraction

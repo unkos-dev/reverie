@@ -4,21 +4,23 @@ use sqlx::PgPool;
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
-use walkdir::WalkDir;
 
 use crate::config::Config;
 use crate::models::ingestion_status::IngestionStatus;
 use crate::models::manifestation_format::ManifestationFormat;
 use crate::models::storage_library::LibraryId;
 use crate::models::validation_status::ValidationStatus;
-use crate::models::{ingestion_job, library_path_claim, work};
-use crate::services::epub::{self, ValidationOutcome};
+use crate::models::{library_path_claim, work};
+#[cfg(test)]
+use crate::services::epub;
+use crate::services::epub::ValidationOutcome;
 use crate::services::files::{LibraryFiles, LibraryLocation, RelativeFilePath};
-use crate::services::ingestion::{cleanup, copier, format_filter, path_template, quarantine};
+use crate::services::ingestion::{cleanup, copier, path_template};
 use crate::services::metadata;
 use crate::services::writeback::path_rename;
 
 /// Counts returned by a completed [`scan_once`] call.
+#[cfg(test)]
 #[derive(Debug)]
 pub struct ScanResult {
     /// Files copied to the library and committed to the database.
@@ -30,69 +32,921 @@ pub struct ScanResult {
     pub skipped: usize,
 }
 
-/// Start the filesystem watcher and process batches in a loop.
-///
-/// Spawns the `notify`-based watcher as a background task. Each time the watcher
-/// delivers a batch of changed paths, a full [`scan_once`] is triggered. Exits
-/// cleanly when `cancel` is triggered or when the watcher channel closes.
+/// Shared command handle for the sole ingestion scheduling owner.
+#[derive(Clone)]
+pub struct CoordinatorHandle {
+    sender: mpsc::Sender<tokio::sync::oneshot::Sender<anyhow::Result<DiscoveryResult>>>,
+}
+
+/// Classification counts from discovery, before ingestion completes.
+#[derive(Debug, serde::Serialize, utoipa::ToSchema)]
+pub struct DiscoveryResult {
+    /// Inputs ready for the coordinator's attempt queue.
+    pub queued: usize,
+    /// Inputs awaiting readiness or a retry deadline.
+    pub deferred: usize,
+    /// Inputs whose current generation is ineligible.
+    pub suppressed: usize,
+    /// Existing activity resource for observing attempts.
+    pub monitor: &'static str,
+}
+
+pub type CoordinatorCommands =
+    mpsc::Receiver<tokio::sync::oneshot::Sender<anyhow::Result<DiscoveryResult>>>;
+
+/// Create the shared handle and its single-owner receiver.
+#[must_use]
+pub fn coordinator_channel() -> (CoordinatorHandle, CoordinatorCommands) {
+    let (sender, receiver) = mpsc::channel(16);
+    (CoordinatorHandle { sender }, receiver)
+}
+
+impl CoordinatorHandle {
+    /// Discover current inputs without bypassing readiness.
+    ///
+    /// # Errors
+    /// Returns an error when the owner or discovery is unavailable.
+    pub async fn scan(&self) -> anyhow::Result<DiscoveryResult> {
+        let (sender, receiver) = tokio::sync::oneshot::channel();
+        self.sender
+            .send(sender)
+            .await
+            .map_err(|_| anyhow::anyhow!("ingestion coordinator unavailable"))?;
+        receiver
+            .await
+            .map_err(|_| anyhow::anyhow!("ingestion discovery interrupted"))?
+    }
+}
+
+const READINESS: std::time::Duration = std::time::Duration::from_secs(10);
+const RETRIES: [u64; 5] = [300, 1800, 7200, 28800, 86400];
+const PROBES: [u64; 4] = [30, 60, 120, 300];
+const IDLE: std::time::Duration = std::time::Duration::from_secs(120);
+const STALL: std::time::Duration = std::time::Duration::from_secs(300);
+
+struct Pause {
+    step: usize,
+    next: tokio::time::Instant,
+}
+
+impl Pause {
+    fn new() -> Self {
+        Self {
+            step: 0,
+            next: tokio::time::Instant::now() + std::time::Duration::from_secs(PROBES[0]),
+        }
+    }
+
+    fn failed(&mut self) {
+        self.step = (self.step + 1).min(PROBES.len() - 1);
+        self.next = tokio::time::Instant::now() + std::time::Duration::from_secs(PROBES[self.step]);
+    }
+}
+
+struct PendingResult {
+    input: crate::models::ingestion_input::Input,
+    job: Uuid,
+    result: ProcessResult,
+    source_deleted: bool,
+}
+
+struct Active {
+    future: futures::future::BoxFuture<'static, PendingResult>,
+    progress: copier::Progress,
+    count: u64,
+    last_progress: tokio::time::Instant,
+    next_warning: tokio::time::Instant,
+    recommit: bool,
+}
+
+impl Active {
+    fn recommit(
+        mut pending: PendingResult,
+        config: Config,
+        pool: PgPool,
+        files: LibraryFiles,
+    ) -> Self {
+        use futures::FutureExt;
+        let progress = match &pending.result {
+            ProcessResult::Accepted(accepted) => accepted.candidate.progress(),
+            _ => copier::Progress::new(&CancellationToken::new()),
+        };
+        let now = tokio::time::Instant::now();
+        let future = async move {
+            if let ProcessResult::Accepted(accepted) = &mut pending.result {
+                match std::panic::AssertUnwindSafe(finish_accepted(
+                    accepted,
+                    &config,
+                    &pool,
+                    &files,
+                    Some((&pending.input, pending.job)),
+                ))
+                .catch_unwind()
+                .await
+                {
+                    Ok(Ok(result)) => pending.result = result,
+                    Ok(Err(error)) => tracing::warn!(%error, "accepted result recommit deferred"),
+                    Err(_) => {
+                        accepted.failure = Some((
+                            crate::models::ingestion_input::AttemptOutcome::TransientInput,
+                            "panic during finalisation".into(),
+                        ));
+                    }
+                }
+            }
+            pending
+        }
+        .boxed();
+        Self {
+            future,
+            progress,
+            count: 0,
+            last_progress: now,
+            next_warning: now + STALL,
+            recommit: true,
+        }
+    }
+
+    fn tick(&mut self) {
+        let now = tokio::time::Instant::now();
+        let count = self.progress.count();
+        if count != self.count {
+            self.count = count;
+            self.last_progress = now;
+            self.next_warning = now + STALL;
+        }
+        if now.duration_since(self.last_progress) >= IDLE {
+            self.progress.cancel.cancel();
+        }
+        if now >= self.next_warning {
+            tracing::warn!(
+                idle_seconds = now.duration_since(self.last_progress).as_secs(),
+                "ingestion attempt stalled; awaiting blocking return"
+            );
+            self.next_warning += STALL;
+        }
+    }
+}
+
+struct Coordinator {
+    config: Config,
+    pool: PgPool,
+    files: LibraryFiles,
+    settings: std::sync::Arc<tokio::sync::RwLock<crate::models::settings::Settings>>,
+    inputs: std::collections::HashMap<Uuid, crate::models::ingestion_input::Input>,
+    deadlines: tokio_util::time::DelayQueue<Uuid>,
+    keys: std::collections::HashMap<Uuid, tokio_util::time::delay_queue::Key>,
+    ready: std::collections::VecDeque<Uuid>,
+    observed: std::collections::HashMap<
+        Vec<u8>,
+        (
+            crate::models::ingestion_input::Fingerprint,
+            tokio::time::Instant,
+        ),
+    >,
+    pause: Option<Pause>,
+    pending: Option<PendingResult>,
+    lock: Option<sqlx::pool::PoolConnection<sqlx::Postgres>>,
+    library_id: Option<LibraryId>,
+    recovered: bool,
+    accepted: Option<Vec<String>>,
+}
+
+impl Coordinator {
+    fn pause(&mut self, error: &dyn std::fmt::Display) {
+        if self.pause.is_none() {
+            tracing::warn!(%error, "ingestion coordinator paused");
+            self.pause = Some(Pause::new());
+        }
+    }
+
+    async fn probe(&mut self) -> anyhow::Result<()> {
+        use sqlx::Connection;
+        if let Some(connection) = &mut self.lock
+            && connection.ping().await.is_err()
+        {
+            self.lock = None;
+        }
+        if self.lock.is_none() {
+            let mut connection = self.pool.acquire().await?;
+            connection.close_on_drop();
+            let held = sqlx::query_scalar!(
+                "SELECT pg_try_advisory_lock($1) AS \"held!\"",
+                SCAN_ADVISORY_LOCK_ID
+            )
+            .fetch_one(&mut *connection)
+            .await?;
+            anyhow::ensure!(held, "ingestion ownership unavailable");
+            self.lock = Some(connection);
+        }
+        if self.library_id.is_none() {
+            self.library_id =
+                Some(crate::models::storage_library::default_library_id(&self.pool).await?);
+        }
+        let library_id = self
+            .library_id
+            .ok_or_else(|| anyhow::anyhow!("library authority unavailable"))?;
+        let files = self.files.clone();
+        tokio::task::spawn_blocking(move || probe_roots(&files, library_id)).await??;
+        if !self.recovered {
+            crate::models::ingestion_input::reclaim(&self.pool).await?;
+            self.recovered = true;
+        }
+        Ok(())
+    }
+
+    fn forget(&mut self, id: Uuid) {
+        if let Some(key) = self.keys.remove(&id) {
+            self.deadlines.remove(&key);
+        }
+        self.ready.retain(|queued| *queued != id);
+        self.inputs.remove(&id);
+    }
+
+    fn schedule(
+        &mut self,
+        input: crate::models::ingestion_input::Input,
+        retry: &crate::models::ingestion_input::RetryState,
+    ) -> usize {
+        use crate::models::ingestion_input::InputStatus;
+        let id = input.id;
+        let unchanged = self.inputs.get(&id).is_some_and(|old| {
+            old.generation == input.generation && old.retry_reset_at == input.retry_reset_at
+        });
+        if !unchanged {
+            self.forget(id);
+        }
+        let eligible = self
+            .accepted
+            .as_ref()
+            .is_none_or(|formats| formats.iter().any(|format| format == "epub"))
+            && match input.status {
+                InputStatus::Pending => true,
+                InputStatus::OperationalFailure => !retry.needs_change && retry.count < 6,
+                _ => false,
+            };
+        if !eligible {
+            tracing::debug!(input = %id, status = ?input.status, reason = input.reason.as_deref(), work = ?input.work_id, "ingestion generation suppressed");
+            self.forget(id);
+            self.inputs.insert(id, input);
+            return 2;
+        }
+        let now = tokio::time::Instant::now();
+        let elapsed = (chrono::Utc::now() - input.observed_at)
+            .to_std()
+            .unwrap_or_default()
+            .min(READINESS);
+        let observed = self
+            .observed
+            .get(&input.source_path)
+            .map_or(now - elapsed, |(_, observed)| *observed);
+        let mut deadline = observed + READINESS;
+        if retry.count > 0
+            && let Some(failed_at) = retry.failed_at
+        {
+            let index = usize::try_from(retry.count - 1).unwrap_or(RETRIES.len());
+            if let Some(delay) = RETRIES.get(index) {
+                let remaining = (failed_at
+                    + chrono::Duration::seconds(i64::try_from(*delay).unwrap_or(i64::MAX))
+                    - chrono::Utc::now())
+                .to_std()
+                .unwrap_or_default();
+                deadline = deadline.max(now + remaining);
+            }
+        }
+        self.inputs.insert(id, input);
+        if self.keys.contains_key(&id) {
+            return 1;
+        }
+        if self.ready.contains(&id) {
+            return 0;
+        }
+        if deadline <= now {
+            self.ready.push_back(id);
+            0
+        } else {
+            self.keys.insert(id, self.deadlines.insert_at(id, deadline));
+            1
+        }
+    }
+
+    async fn discover(&mut self, reset: bool) -> anyhow::Result<DiscoveryResult> {
+        use crate::models::ingestion_input::{self, InputPath, InputStatus};
+        use std::os::unix::ffi::OsStrExt;
+        let files = self.files.clone();
+        let (observations, complete) =
+            tokio::task::spawn_blocking(move || discover_files(files.ingestion())).await??;
+        let now = tokio::time::Instant::now();
+        for (path, fingerprint) in &observations {
+            let bytes = path.path().as_os_str().as_bytes().to_vec();
+            let entry = self
+                .observed
+                .entry(bytes)
+                .or_insert_with(|| (fingerprint.clone(), now));
+            if entry.0 != *fingerprint {
+                *entry = (fingerprint.clone(), now);
+            }
+        }
+        for chunk in observations.chunks(100) {
+            let paths = chunk
+                .iter()
+                .map(|(path, _)| path.clone())
+                .collect::<Vec<_>>();
+            let fingerprints = chunk
+                .iter()
+                .map(|(_, fingerprint)| fingerprint.clone())
+                .collect::<Vec<_>>();
+            ingestion_input::observe(&self.pool, &paths, &fingerprints).await?;
+        }
+        if reset {
+            ingestion_input::reset_retries(&self.pool).await?;
+        }
+        let accepted = self
+            .settings
+            .read()
+            .await
+            .ingestion
+            .accepted_formats
+            .clone();
+        self.accepted = Some(accepted.clone());
+        let mut result = DiscoveryResult {
+            queued: 0,
+            deferred: 0,
+            suppressed: 0,
+            monitor: "/api/v1/dashboard/activity",
+        };
+        let mut after = None;
+        loop {
+            let mut page = ingestion_input::current_page(&self.pool, after).await?;
+            if page.is_empty() {
+                break;
+            }
+            after = page.last().map(|input| input.id);
+            if complete {
+                self.reconcile_page(&mut page, now).await?;
+            }
+            let mut unaccepted = Vec::new();
+            let mut generations = Vec::new();
+            let mut newly_accepted = Vec::new();
+            let mut accepted_generations = Vec::new();
+            for input in &mut page {
+                let path = InputPath::from_bytes(input.source_path.clone())?.path();
+                let supported = path
+                    .extension()
+                    .and_then(|ext| ext.to_str())
+                    .is_some_and(|ext| ext.eq_ignore_ascii_case("epub"))
+                    && accepted.iter().any(|format| format == "epub");
+                if !supported && input.status == InputStatus::Pending {
+                    unaccepted.push(input.id);
+                    generations.push(input.generation);
+                    input.status = InputStatus::NotAccepted;
+                } else if supported && input.status == InputStatus::NotAccepted {
+                    newly_accepted.push(input.id);
+                    accepted_generations.push(input.generation);
+                    input.status = InputStatus::Pending;
+                }
+            }
+            ingestion_input::set_unaccepted_many(&self.pool, &unaccepted, &generations).await?;
+            ingestion_input::set_accepted_many(&self.pool, &newly_accepted, &accepted_generations)
+                .await?;
+            let ids = page.iter().map(|input| input.id).collect::<Vec<_>>();
+            let retry = ingestion_input::retry_states(&self.pool, &ids).await?;
+            for input in page {
+                if let Some(retry) = retry.iter().find(|retry| retry.id == input.id) {
+                    match self.schedule(input, retry) {
+                        0 => result.queued += 1,
+                        1 => result.deferred += 1,
+                        _ => result.suppressed += 1,
+                    }
+                }
+            }
+        }
+        Ok(result)
+    }
+
+    async fn reconcile_page(
+        &mut self,
+        page: &mut Vec<crate::models::ingestion_input::Input>,
+        now: tokio::time::Instant,
+    ) -> anyhow::Result<()> {
+        use crate::models::ingestion_input::{self, Fingerprint, InputPath};
+        let phase_files = self.files.clone();
+        let check = page.clone();
+        let checked = tokio::task::spawn_blocking(move || {
+            check
+                .into_iter()
+                .map(|input| {
+                    let metadata = InputPath::from_bytes(input.source_path.clone())
+                        .and_then(|path| copier::input_metadata(phase_files.ingestion(), &path));
+                    (input, metadata)
+                })
+                .collect::<Vec<_>>()
+        })
+        .await?;
+        let mut missing = Vec::new();
+        let mut generations = Vec::new();
+        let mut paths = Vec::new();
+        let mut fingerprints = Vec::new();
+        for (input, metadata) in checked {
+            match metadata {
+                Ok(metadata) => {
+                    let fingerprint = Fingerprint::from_metadata(&metadata);
+                    if input.fingerprint.0 != fingerprint {
+                        let path = InputPath::from_bytes(input.source_path.clone())?;
+                        self.observed
+                            .insert(input.source_path, (fingerprint.clone(), now));
+                        paths.push(path);
+                        fingerprints.push(fingerprint);
+                    }
+                }
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                    missing.push(input.id);
+                    generations.push(input.generation);
+                    self.forget(input.id);
+                }
+                Err(error) => {
+                    tracing::warn!(kind = ?error.kind(), "ingestion observation unavailable");
+                }
+            }
+        }
+        ingestion_input::remove_many(&self.pool, &missing, &generations, "external_disappearance")
+            .await?;
+        if !paths.is_empty() {
+            let updates = ingestion_input::observe(&self.pool, &paths, &fingerprints).await?;
+            for updated in updates {
+                if let Some(input) = page.iter_mut().find(|input| input.id == updated.id) {
+                    *input = updated;
+                }
+            }
+        }
+        page.retain(|input| !missing.contains(&input.id));
+        Ok(())
+    }
+
+    async fn start_attempt(
+        &mut self,
+        cancel: &CancellationToken,
+    ) -> anyhow::Result<Option<Active>> {
+        if self.pending.is_none()
+            && self.pause.is_none()
+            && let Some(id) = self.ready.pop_front()
+            && let Some(input) = self.inputs.get(&id).cloned()
+            && let Some(library_id) = self.library_id
+        {
+            if !self
+                .settings
+                .read()
+                .await
+                .ingestion
+                .accepted_formats
+                .iter()
+                .any(|format| format == "epub")
+            {
+                if let Err(error) = self.discover(false).await {
+                    self.pause(&error);
+                }
+                return Ok(None);
+            }
+            match crate::models::ingestion_input::begin_attempt(&self.pool, &input, Uuid::new_v4())
+                .await
+            {
+                Ok(job) => {
+                    return self
+                        .active_attempt(input, job, library_id, cancel)
+                        .map(Some);
+                }
+                Err(error) => {
+                    self.ready.push_front(id);
+                    self.pause(&error);
+                }
+            }
+        }
+        Ok(None)
+    }
+
+    fn active_attempt(
+        &self,
+        input: crate::models::ingestion_input::Input,
+        job: Uuid,
+        library_id: LibraryId,
+        cancel: &CancellationToken,
+    ) -> anyhow::Result<Active> {
+        use futures::FutureExt;
+        let config = self.config.clone();
+        let pool = self.pool.clone();
+        let files = self.files.clone();
+        let progress = copier::Progress::new(cancel);
+        let attempt_progress = progress.clone();
+        let path = config.ingestion_path.as_path().join(
+            crate::models::ingestion_input::InputPath::from_bytes(input.source_path.clone())?
+                .path(),
+        );
+        let now = tokio::time::Instant::now();
+        let future = async move {
+            let mut result = std::panic::AssertUnwindSafe(process_file(
+                &path,
+                &config,
+                &pool,
+                &files,
+                library_id,
+                Some(&input),
+                attempt_progress,
+            ))
+            .catch_unwind()
+            .await
+            .unwrap_or_else(|_| {
+                ProcessResult::Operational(
+                    crate::models::ingestion_input::AttemptOutcome::TransientInput,
+                    "panic during ingestion attempt".into(),
+                )
+            });
+            if let ProcessResult::Accepted(accepted) = &mut result {
+                match std::panic::AssertUnwindSafe(finish_accepted(
+                    accepted,
+                    &config,
+                    &pool,
+                    &files,
+                    Some((&input, job)),
+                ))
+                .catch_unwind()
+                .await
+                {
+                    Ok(Ok(completed)) => result = completed,
+                    Ok(Err(error)) => {
+                        tracing::warn!(%error, "accepted result retained for recommit");
+                    }
+                    Err(_) => tracing::warn!("accepted result retained after finalisation panic"),
+                }
+            }
+            PendingResult {
+                input,
+                job,
+                result,
+                source_deleted: false,
+            }
+        }
+        .boxed();
+        Ok(Active {
+            future,
+            progress,
+            count: 0,
+            last_progress: now,
+            next_warning: now + STALL,
+            recommit: false,
+        })
+    }
+
+    async fn reprobe(&mut self) -> anyhow::Result<Option<Active>> {
+        if self
+            .pause
+            .as_ref()
+            .is_some_and(|pause| tokio::time::Instant::now() >= pause.next)
+        {
+            match self.probe().await {
+                Ok(()) => {
+                    if self
+                        .pending
+                        .as_ref()
+                        .is_some_and(|pending| matches!(pending.result, ProcessResult::Accepted(_)))
+                    {
+                        if let Some(pending) = self.pending.take() {
+                            if let Some(pause) = &mut self.pause {
+                                pause.failed();
+                            }
+                            return Ok(Some(Active::recommit(
+                                pending,
+                                self.config.clone(),
+                                self.pool.clone(),
+                                self.files.clone(),
+                            )));
+                        }
+                        if let Some(pause) = &mut self.pause {
+                            pause.failed();
+                        }
+                        return Ok(None);
+                    }
+                    if let Err(error) = self.finalise().await {
+                        if let Some(pause) = &mut self.pause {
+                            pause.failed();
+                        }
+                        tracing::debug!(%error, "ingestion result recommit deferred");
+                    } else {
+                        self.pause = None;
+                        tracing::info!("ingestion coordinator resumed");
+                        if let Err(error) = self.discover(false).await {
+                            self.pause(&error);
+                        }
+                    }
+                }
+                Err(error) => {
+                    if let Some(pause) = &mut self.pause {
+                        pause.failed();
+                    }
+                    tracing::debug!(%error, "ingestion dependency probe failed");
+                }
+            }
+        }
+        Ok(None)
+    }
+
+    async fn finalise(&mut self) -> anyhow::Result<()> {
+        use crate::models::ingestion_input::{self, AttemptOutcome, InputStatus};
+        let Some(mut pending) = self.pending.take() else {
+            return Ok(());
+        };
+        let result = async {
+            if let ProcessResult::Accepted(accepted) = &mut pending.result {
+                pending.result = finish_accepted(
+                    accepted,
+                    &self.config,
+                    &self.pool,
+                    &self.files,
+                    Some((&pending.input, pending.job)),
+                )
+                .await?;
+            }
+            let (outcome, status, reason, work) = match &pending.result {
+                ProcessResult::Complete => return Ok(()),
+                ProcessResult::Skipped(work) => (
+                    AttemptOutcome::Duplicate,
+                    InputStatus::Duplicate,
+                    None,
+                    Some(*work),
+                ),
+                ProcessResult::Failed(reason) => (
+                    AttemptOutcome::Rejected,
+                    InputStatus::Rejected,
+                    Some(reason.as_str()),
+                    None,
+                ),
+                ProcessResult::Operational(class, reason) => (
+                    *class,
+                    if *class == AttemptOutcome::SharedDependency {
+                        InputStatus::Pending
+                    } else {
+                        InputStatus::OperationalFailure
+                    },
+                    Some(reason.as_str()),
+                    None,
+                ),
+                ProcessResult::Changed => {
+                    (AttemptOutcome::Changed, InputStatus::Pending, None, None)
+                }
+                ProcessResult::Accepted(_) => anyhow::bail!("accepted result awaiting commit"),
+            };
+            let mut tx = self.pool.begin().await?;
+            ingestion_input::finish(
+                &mut tx,
+                &pending.input,
+                pending.job,
+                outcome,
+                status,
+                reason,
+                work,
+            )
+            .await?;
+            tx.commit().await?;
+            Ok::<(), anyhow::Error>(())
+        }
+        .await;
+        match result {
+            Ok(()) => {
+                if let Err(error) = self.cleanup(&mut pending).await {
+                    self.pending = Some(pending);
+                    return Err(error);
+                }
+                self.forget(pending.input.id);
+                self.discover(false).await?;
+                Ok(())
+            }
+            Err(error) => {
+                self.pending = Some(pending);
+                Err(error)
+            }
+        }
+    }
+
+    async fn cleanup(&self, pending: &mut PendingResult) -> anyhow::Result<()> {
+        use crate::models::ingestion_input::{self, InputPath, InputStatus};
+        let Some(current) = ingestion_input::current(&self.pool, pending.input.id).await? else {
+            return Ok(());
+        };
+        if current.generation != pending.input.generation {
+            return Ok(());
+        }
+        if pending.source_deleted {
+            ingestion_input::remove(&self.pool, &current, "automatic_cleanup").await?;
+            return Ok(());
+        }
+        let settings = self.settings.read().await;
+        let enabled = match current.status {
+            InputStatus::Imported => settings.ingestion.cleanup_imported,
+            InputStatus::Duplicate => settings.ingestion.cleanup_duplicates,
+            _ => false,
+        };
+        drop(settings);
+        if !enabled {
+            return Ok(());
+        }
+        let files = self.files.clone();
+        let path = InputPath::from_bytes(current.source_path.clone())?;
+        let fingerprint = current.fingerprint.0.clone();
+        pending.source_deleted = tokio::task::spawn_blocking(move || {
+            cleanup::remove_verified(files.ingestion(), &path, &fingerprint)
+        })
+        .await??;
+        if pending.source_deleted {
+            ingestion_input::remove(&self.pool, &current, "automatic_cleanup").await?;
+        }
+        Ok(())
+    }
+}
+
+fn probe_roots(files: &LibraryFiles, library_id: LibraryId) -> std::io::Result<()> {
+    use std::io::Write;
+    files.ingestion().dir_metadata()?;
+    let _ = files.ingestion().entries()?.next().transpose()?;
+    let root = files.library(library_id).map_err(std::io::Error::other)?;
+    root.dir_metadata()?;
+    let mut probe = cap_tempfile::TempFile::new(root)?;
+    probe.write_all(&[0])?;
+    probe.as_file().sync_all()
+}
+
+fn discover_files(
+    root: &cap_std::fs::Dir,
+) -> std::io::Result<(
+    Vec<(
+        crate::models::ingestion_input::InputPath,
+        crate::models::ingestion_input::Fingerprint,
+    )>,
+    bool,
+)> {
+    use crate::models::ingestion_input::{Fingerprint, InputPath};
+    use std::os::unix::ffi::OsStrExt;
+    let mut todo = vec![PathBuf::new()];
+    let mut files = Vec::new();
+    let mut complete = true;
+    while let Some(path) = todo.pop() {
+        let directory = if path.as_os_str().is_empty() {
+            root.try_clone()
+        } else {
+            let child = InputPath::from_path(&path.join("entry"))?;
+            copier::source_parent(root, &child).map(|(parent, _)| parent)
+        };
+        let directory = match directory {
+            Ok(directory) => directory,
+            Err(error) => {
+                complete = false;
+                tracing::warn!(kind = ?error.kind(), "ingestion directory unreadable");
+                continue;
+            }
+        };
+        let entries = match directory.entries() {
+            Ok(entries) => entries,
+            Err(error) => {
+                complete = false;
+                tracing::warn!(kind = ?error.kind(), "ingestion directory unreadable");
+                continue;
+            }
+        };
+        for entry in entries {
+            let Ok(entry) = entry else {
+                complete = false;
+                continue;
+            };
+            let name = entry.file_name();
+            if name.as_bytes().starts_with(b".") || name == "Thumbs.db" {
+                continue;
+            }
+            let relative = path.join(name);
+            match entry.file_type() {
+                Ok(kind) if kind.is_dir() => todo.push(relative),
+                Ok(kind) if kind.is_file() => {
+                    let input_path = InputPath::from_path(&relative)?;
+                    match copier::input_metadata(root, &input_path) {
+                        Ok(metadata) => {
+                            files.push((input_path, Fingerprint::from_metadata(&metadata)));
+                        }
+                        Err(_) => complete = false,
+                    }
+                }
+                Ok(_) => {}
+                Err(_) => complete = false,
+            }
+        }
+    }
+    Ok((files, complete))
+}
+
+/// Run discovery, readiness, attempts and recovery under one scheduling owner.
 ///
 /// # Errors
-///
-/// This function does not return errors during normal operation: per-batch
-/// `scan_once` failures are logged via `tracing::error!` and the loop
-/// continues. The `Result` return type is preserved for parity with the
-/// `tokio::spawn` callsite. The function reaches `Ok(())` when `cancel`
-/// fires or when the watcher channel closes (the latter typically because
-/// the spawned watcher task itself errored and exited).
+/// Returns an error when a required input location cannot be represented.
 pub async fn run_watcher(
     config: Config,
     pool: PgPool,
     cancel: CancellationToken,
     files: LibraryFiles,
+    settings: std::sync::Arc<tokio::sync::RwLock<crate::models::settings::Settings>>,
+    mut commands: CoordinatorCommands,
 ) -> Result<(), anyhow::Error> {
+    use futures::StreamExt;
     let (tx, mut rx) = mpsc::channel::<Vec<PathBuf>>(16);
-    let ingestion_path = PathBuf::from(&config.ingestion_path);
     let watcher_cancel = cancel.clone();
-
+    let ingestion_path = PathBuf::from(&config.ingestion_path);
     tokio::spawn(async move {
-        if let Err(e) = super::watcher::watch(ingestion_path, tx, watcher_cancel).await {
-            tracing::error!(error = %e, "filesystem watcher failed");
+        if let Err(error) = super::watcher::watch(ingestion_path, tx, watcher_cancel).await {
+            tracing::error!(%error, "filesystem watcher failed");
         }
     });
-
+    let mut owner = Coordinator {
+        config,
+        pool,
+        files,
+        settings,
+        inputs: std::collections::HashMap::default(),
+        deadlines: tokio_util::time::DelayQueue::default(),
+        keys: std::collections::HashMap::default(),
+        ready: std::collections::VecDeque::default(),
+        observed: std::collections::HashMap::default(),
+        pause: None,
+        pending: None,
+        lock: None,
+        library_id: None,
+        recovered: false,
+        accepted: None,
+    };
+    if let Err(error) = owner.probe().await {
+        owner.pause(&error);
+    }
+    if let Err(error) = owner.discover(false).await {
+        owner.pause(&error);
+    }
+    let mut active: Option<Active> = None;
+    let mut tick = tokio::time::interval(std::time::Duration::from_secs(1));
     loop {
+        if active.is_none() {
+            active = owner.start_attempt(&cancel).await?;
+        }
         tokio::select! {
+            biased;
             () = cancel.cancelled() => {
-                tracing::info!("orchestrator shutting down");
-                break;
-            }
-            batch = rx.recv() => {
-                if let Some(_paths) = batch {
-                    // Watcher detected files — do a full scan of the ingestion dir.
-                    // We scan rather than use the watcher's paths because walkdir
-                    // gives us the complete picture (handles late-arriving files).
-                    let result = scan_once(&config, &pool, &files).await;
-                    match result {
-                        Ok(r) => {
-                            tracing::info!(
-                                processed = r.processed,
-                                failed = r.failed,
-                                skipped = r.skipped,
-                                "batch complete"
-                            );
-                        }
-                        Err(e) => {
-                            tracing::error!(error = %e, "batch processing failed");
+                if let Some(mut active) = active.take() {
+                    loop {
+                        tokio::select! {
+                            _ = &mut active.future => break,
+                            _ = tick.tick() => active.tick(),
                         }
                     }
-                } else {
-                    tracing::warn!("watcher channel closed, stopping orchestrator");
-                    break;
+                }
+                break;
+            }
+            result = async { match &mut active { Some(active) => (&mut active.future).await, None => std::future::pending().await } } => {
+                let recommit = active.as_ref().is_some_and(|active| active.recommit);
+                active = None;
+                let retained = matches!(&result.result, ProcessResult::Accepted(_));
+                if retained || matches!(&result.result, ProcessResult::Operational(crate::models::ingestion_input::AttemptOutcome::SharedDependency, _)) {
+                    owner.pause(&"shared dependency failure");
+                }
+                owner.pending = Some(result);
+                if !retained {
+                    match owner.finalise().await {
+                        Ok(()) if recommit => {
+                            owner.pause = None;
+                            tracing::info!("ingestion coordinator resumed");
+                        }
+                        Ok(()) => {}
+                        Err(error) => owner.pause(&error),
+                    }
+                }
+            }
+            expired = owner.deadlines.next(), if !owner.deadlines.is_empty() => {
+                if let Some(expired) = expired {
+                    let id = expired.into_inner();
+                    owner.keys.remove(&id);
+                    if owner.inputs.contains_key(&id) && !owner.ready.contains(&id) { owner.ready.push_back(id); }
+                }
+            }
+            Some(reply) = commands.recv() => {
+                let result = owner.discover(true).await;
+                if let Err(error) = &result { owner.pause(error); }
+                drop(reply.send(result));
+            }
+            Some(_) = rx.recv() => {
+                if let Err(error) = owner.discover(false).await { owner.pause(&error); }
+            }
+            _ = tick.tick() => {
+                if let Some(active) = &mut active { active.tick(); }
+                let accepted = owner.settings.read().await.ingestion.accepted_formats.clone();
+                if owner.accepted.as_ref().is_some_and(|previous| *previous != accepted)
+                    && let Err(error) = owner.discover(false).await { owner.pause(&error); }
+                if active.is_none() {
+                    active = owner.reprobe().await?;
                 }
             }
         }
     }
-
     Ok(())
 }
 
@@ -100,165 +954,172 @@ pub async fn run_watcher(
 /// calls (watcher + manual POST) from racing on duplicate checks and file copies.
 const SCAN_ADVISORY_LOCK_ID: i64 = 0x5265_7665_0000_0004; // "Reve" + step 4
 
-/// One-shot ingestion scan: walk the ingestion directory, filter by format priority,
-/// copy to library, and track via `ingestion_jobs`.
-///
-/// Acquires a Postgres advisory lock (`pg_advisory_lock`) to serialize concurrent
-/// scans. A second call that arrives while one is in progress will block at the
-/// lock acquire until the first completes. The lock is session-scoped and released
-/// when the connection returns to the pool.
-///
-/// # Errors
-///
-/// Returns `anyhow::Error` if the advisory lock cannot be acquired, if the
-/// `spawn_blocking` tasks panic, or if a fatal database error occurs outside
-/// the per-file error path. Per-file failures are counted in `ScanResult::failed`
-/// and do not propagate as errors.
+#[cfg(test)]
 pub async fn scan_once(
     config: &Config,
     pool: &PgPool,
     files: &LibraryFiles,
-) -> Result<ScanResult, anyhow::Error> {
-    // Serialize scans — only one can run at a time. Uses a session-level advisory
-    // lock (released when the connection returns to the pool) rather than a
-    // transaction-level lock, because the scan spans many transactions.
-    let mut lock_conn = pool.acquire().await?;
-    sqlx::query!("SELECT pg_advisory_lock($1)", SCAN_ADVISORY_LOCK_ID)
-        .fetch_one(&mut *lock_conn)
-        .await?;
-
-    let result = scan_once_inner(config, pool, files).await;
-
-    // Release the advisory lock explicitly (also released on connection drop).
-    // Log a warning if the unlock fails — the lock will still release on connection drop.
-    if let Err(e) = sqlx::query!("SELECT pg_advisory_unlock($1)", SCAN_ADVISORY_LOCK_ID)
-        .fetch_one(&mut *lock_conn)
-        .await
+) -> anyhow::Result<ScanResult> {
+    use crate::models::ingestion_input::{self, InputStatus};
+    let mut owner = tests::coordinator(pool.clone(), config.clone(), files.clone());
     {
-        tracing::warn!(error = %e, "failed to explicitly release advisory scan lock; will release on connection drop");
+        let mut settings = owner.settings.write().await;
+        settings.ingestion.accepted_formats = config
+            .accepted_formats
+            .iter()
+            .map(std::string::ToString::to_string)
+            .collect();
+        settings.ingestion.cleanup_imported = config.cleanup_imported;
+        settings.ingestion.cleanup_duplicates = config.cleanup_duplicates;
     }
-
-    result
-}
-
-async fn scan_once_inner(
-    config: &Config,
-    pool: &PgPool,
-    files: &LibraryFiles,
-) -> Result<ScanResult, anyhow::Error> {
-    let library_id = crate::models::storage_library::default_library_id(pool).await?;
-    let ingestion_path = PathBuf::from(&config.ingestion_path);
-    let format_priority = config.format_priority.clone();
-
-    // Walk the ingestion directory and collect all regular files.
-    // follow_links(false) prevents symlink-based file exfiltration.
-    // Wrapped in spawn_blocking because WalkDir performs synchronous I/O that
-    // would otherwise block the tokio runtime thread.
-    let all_source_files: Vec<PathBuf> = {
-        let ingestion_path = ingestion_path.clone();
-        tokio::task::spawn_blocking(move || {
-            WalkDir::new(&ingestion_path)
-                .follow_links(false)
-                .into_iter()
-                .filter_map(|entry| match entry {
-                    Ok(e) => Some(e),
-                    Err(e) => {
-                        tracing::warn!(error = %e, "skipping inaccessible path during ingestion scan");
-                        None
-                    }
-                })
-                .filter(|e| e.file_type().is_file())
-                .map(walkdir::DirEntry::into_path)
-                .collect::<Vec<PathBuf>>()
-        })
-        .await?
+    owner.probe().await?;
+    owner.discover(false).await?;
+    let mut result = ScanResult {
+        processed: 0,
+        skipped: 0,
+        failed: 0,
     };
-
-    if all_source_files.is_empty() {
-        tracing::info!("ingestion directory empty, nothing to process");
-        return Ok(ScanResult {
-            processed: 0,
-            failed: 0,
-            skipped: 0,
-        });
-    }
-
-    // Select highest-priority format per stem
-    let selected = format_filter::select_by_priority(&all_source_files, &format_priority);
-    if selected.is_empty() {
-        tracing::info!(
-            total_files = all_source_files.len(),
-            "no files matched format priority"
-        );
-        return Ok(ScanResult {
-            processed: 0,
-            failed: 0,
-            skipped: 0,
-        });
-    }
-
-    let batch_id = Uuid::new_v4();
-    let mut processed = 0usize;
-    let mut failed = 0usize;
-    let mut skipped = 0usize;
-    let mut successful = Vec::new();
-
-    for source in &selected {
-        let source_str = source.display().to_string();
-        let job = ingestion_job::create(pool, batch_id, &source_str).await?;
-        ingestion_job::mark_running(pool, job.id).await?;
-
-        match process_file(source, config, pool, files, library_id).await {
-            ProcessResult::Complete => {
-                ingestion_job::mark_complete(pool, job.id).await?;
-                processed += 1;
-                successful.push(source.clone());
+    let mut after = None;
+    loop {
+        let page = ingestion_input::current_page(pool, after).await?;
+        if page.is_empty() {
+            break;
+        }
+        after = page.last().map(|input| input.id);
+        for input in page
+            .into_iter()
+            .filter(|input| input.status == InputStatus::Pending)
+        {
+            let library_id = owner
+                .library_id
+                .ok_or_else(|| anyhow::anyhow!("library authority unavailable"))?;
+            let path = config
+                .ingestion_path
+                .as_path()
+                .join(ingestion_input::InputPath::from_bytes(input.source_path.clone())?.path());
+            let job = ingestion_input::begin_attempt(pool, &input, Uuid::new_v4()).await?;
+            let processed = process_file(
+                &path,
+                config,
+                pool,
+                files,
+                library_id,
+                Some(&input),
+                copier::Progress::new(&CancellationToken::new()),
+            )
+            .await;
+            match &processed {
+                ProcessResult::Accepted(_) | ProcessResult::Complete => result.processed += 1,
+                ProcessResult::Skipped(_) => result.skipped += 1,
+                ProcessResult::Failed(_) | ProcessResult::Operational(_, _) => result.failed += 1,
+                ProcessResult::Changed => {}
             }
-            ProcessResult::Skipped => {
-                ingestion_job::mark_skipped(pool, job.id).await?;
-                skipped += 1;
-                successful.push(source.clone());
-            }
-            ProcessResult::Failed(reason) => {
-                ingestion_job::mark_failed(pool, job.id, &reason).await?;
-                failed += 1;
-            }
+            owner.pending = Some(PendingResult {
+                input,
+                job,
+                result: processed,
+                source_deleted: false,
+            });
+            owner.finalise().await?;
         }
     }
-
-    let cleanup_files =
-        cleanup::eligible_paths(config.cleanup_mode, &successful, &all_source_files);
-    if !cleanup_files.is_empty() {
-        let ingestion_path_clone = config.ingestion_path.clone();
-        tokio::task::spawn_blocking(move || {
-            let ingestion_root = PathBuf::from(&ingestion_path_clone);
-            match cleanup::cleanup_batch(&cleanup_files, &ingestion_root) {
-                Ok(r) => {
-                    tracing::info!(
-                        files = r.removed_files,
-                        dirs = r.removed_dirs,
-                        "cleanup complete"
-                    );
-                }
-                Err(e) => {
-                    tracing::error!(error = %e, "cleanup failed");
-                }
-            }
-        })
-        .await?;
-    }
-
-    Ok(ScanResult {
-        processed,
-        failed,
-        skipped,
-    })
+    Ok(result)
 }
 
 enum ProcessResult {
     Complete,
-    Skipped,
+    Accepted(Box<Accepted>),
+    Skipped(Uuid),
     Failed(String),
+    Operational(crate::models::ingestion_input::AttemptOutcome, String),
+    Changed,
+}
+
+struct Accepted {
+    candidate: std::sync::Arc<copier::Candidate>,
+    source: crate::models::ingestion_input::InputPath,
+    library_id: LibraryId,
+    path: RelativeFilePath,
+    vars: std::collections::HashMap<String, String>,
+    extracted: Option<metadata::extractor::ExtractedMetadata>,
+    validation_status: ValidationStatus,
+    accessibility_metadata: Option<serde_json::Value>,
+    has_embedded_cover: Option<bool>,
+    current_hash: String,
+    current_size: u64,
+    published: Option<(LibraryLocation, copier::CopyResult)>,
+    failure: Option<(crate::models::ingestion_input::AttemptOutcome, String)>,
+}
+
+#[derive(Debug, Eq, PartialEq)]
+enum FailureDisposition {
+    Changed,
+    Failure(crate::models::ingestion_input::AttemptOutcome, String),
+}
+
+fn classify_acquisition_error(
+    error: &copier::CopyError,
+    source_changed: bool,
+    roots_healthy: bool,
+    source_operation: bool,
+) -> FailureDisposition {
+    use crate::models::ingestion_input::AttemptOutcome;
+    if matches!(error, copier::CopyError::Changed)
+        || (matches!(error, copier::CopyError::HashMismatch { .. }) && source_changed)
+    {
+        return FailureDisposition::Changed;
+    }
+    let io = match error {
+        copier::CopyError::Io(error)
+        | copier::CopyError::DestinationIo(error)
+        | copier::CopyError::Persist(crate::services::writeback::error::WritebackError::Io(
+            error,
+        ))
+        | copier::CopyError::Publication {
+            error: crate::services::writeback::error::WritebackError::Io(error),
+            ..
+        } => Some(error),
+        _ => None,
+    };
+    let destination = !source_operation
+        || matches!(
+            error,
+            copier::CopyError::DestinationIo(_) | copier::CopyError::Publication { .. }
+        );
+    let class = if !roots_healthy || (destination && io.is_some_and(|error| error.raw_os_error() == Some(rustix::io::Errno::NOSPC.raw_os_error()))) {
+        AttemptOutcome::SharedDependency
+    } else if matches!(error, copier::CopyError::NonRegular)
+        || io.is_some_and(|error| {
+            matches!(error.raw_os_error(), Some(code) if code == rustix::io::Errno::NAMETOOLONG.raw_os_error() || code == rustix::io::Errno::LOOP.raw_os_error())
+                || (!destination && matches!(error.raw_os_error(), Some(code) if code == rustix::io::Errno::ACCESS.raw_os_error() || code == rustix::io::Errno::PERM.raw_os_error()))
+        }) {
+        AttemptOutcome::NeedsChange
+    } else {
+        AttemptOutcome::TransientInput
+    };
+    FailureDisposition::Failure(class, copy_error_reason(error))
+}
+
+async fn acquisition_failure(
+    error: copier::CopyError,
+    files: &LibraryFiles,
+    library_id: LibraryId,
+    source_operation: bool,
+) -> ProcessResult {
+    let files = files.clone();
+    match tokio::task::spawn_blocking(move || {
+        let roots_healthy = probe_roots(&files, library_id).is_ok();
+        classify_acquisition_error(&error, false, roots_healthy, source_operation)
+    })
+    .await
+    {
+        Ok(FailureDisposition::Changed) => ProcessResult::Changed,
+        Ok(FailureDisposition::Failure(class, reason)) => ProcessResult::Operational(class, reason),
+        Err(_) => ProcessResult::Operational(
+            crate::models::ingestion_input::AttemptOutcome::TransientInput,
+            "panic during error classification".into(),
+        ),
+    }
 }
 
 async fn select_ingestion_path(
@@ -296,38 +1157,6 @@ async fn select_ingestion_path(
         }
     }
     anyhow::bail!("ingestion collision suffix exhausted")
-}
-
-async fn move_ingestion_candidate(
-    pool: &PgPool,
-    files: &LibraryFiles,
-    source: &LibraryLocation,
-    candidate: &RelativeFilePath,
-    hash: &str,
-) -> anyhow::Result<LibraryLocation> {
-    let (destination, mut tx) =
-        select_ingestion_path(pool, files, source.library_id, candidate).await?;
-    library_path_claim::exclude(&mut tx, source).await?;
-    if library_path_claim::owner(&mut tx, source).await?.is_some() {
-        anyhow::bail!("ingestion source ownership changed")
-    }
-    let phase_files = files.clone();
-    let source = source.clone();
-    let phase_destination = destination.clone();
-    let hash = hash.to_owned();
-    tokio::task::spawn_blocking(move || {
-        let _exclusion = tx;
-        let root = phase_files.library(source.library_id)?;
-        path_rename::prepare_destination(root, &phase_destination.path)?;
-        match path_rename::move_existing(root, &source.path, &phase_destination.path, &hash)? {
-            path_rename::MoveResult::Durable => {}
-            path_rename::MoveResult::VisibleUncertain(error) => {
-                tracing::error!(%error, "ingestion metadata move visible with unconfirmed durability");
-            }
-        }
-        Ok::<(), anyhow::Error>(())
-    }).await??;
-    Ok(destination)
 }
 
 async fn cleanup_candidate(
@@ -377,49 +1206,49 @@ async fn cleanup_candidate_with(
     .await?
 }
 
-fn cleanup_failure(reason: String, cleanup: anyhow::Result<()>) -> String {
-    match cleanup {
-        Ok(()) => reason,
-        Err(error) => {
-            tracing::error!(%error, "ingestion cleanup retained library copy");
-            format!("{reason}; cleanup retained library copy: {error}")
-        }
-    }
-}
-
-// Validator entry point with a test-only fault-injection seam.
-//
-// `epub::validate_and_repair`'s `Err` means the validator itself could not
-// run (IO failure, internal error) — unreachable deterministically through
-// file content, since malformed bytes surface as `Quarantined` issues, not
-// `Err`. In test builds, a library file whose name contains
-// `force-validator-error` short-circuits to `Err` so the validator-crash
-// arm can be exercised end-to-end. Compiled out of non-test
-// builds; no global state, so parallel tests cannot interfere.
-fn run_validator(
+async fn discard_publication(
+    pool: &PgPool,
     files: &LibraryFiles,
-    library_id: LibraryId,
-    path: &crate::services::files::RelativeFilePath,
-) -> Result<epub::Validated, epub::EpubError> {
-    #[cfg(test)]
-    if path.as_str().contains("force-validator-error") {
-        return Err(epub::EpubError::Io(std::io::Error::other(
-            "forced validator error (test seam)",
-        )));
+    location: &LibraryLocation,
+    identity: (u64, u64),
+) -> anyhow::Result<()> {
+    let mut tx = pool.begin().await?;
+    library_path_claim::exclude(&mut tx, location).await?;
+    if library_path_claim::owner(&mut tx, location)
+        .await?
+        .is_some()
+    {
+        return Ok(());
     }
-    let root = files
-        .library(library_id)
-        .map_err(|error| epub::EpubError::Io(std::io::Error::other(error)))?;
-    let (parent, basename) = crate::services::writeback::path_rename::parent(root, path)?;
-    let file = root.open(path.as_path())?.into_std();
-    epub::validate_and_repair(file, &parent, &basename)
+    let phase_files = files.clone();
+    let phase_location = location.clone();
+    let owned = tokio::task::spawn_blocking(move || {
+        use cap_std::fs::MetadataExt;
+        let (parent, name) = path_rename::parent(
+            phase_files.library(phase_location.library_id)?,
+            &phase_location.path,
+        )?;
+        match parent.symlink_metadata(name) {
+            Ok(metadata) => Ok(metadata.is_file() && (metadata.dev(), metadata.ino()) == identity),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(false),
+            Err(error) => Err(anyhow::Error::from(error)),
+        }
+    })
+    .await??;
+    tx.rollback().await?;
+    if owned {
+        cleanup_candidate(pool, files, location, identity).await?;
+    }
+    Ok(())
 }
 
+#[cfg(test)]
 struct IngestionValidation {
     result: Result<epub::Validated, epub::EpubError>,
     current: Option<(String, u64)>,
 }
 
+#[cfg(test)]
 fn reconcile_validation(
     files: &LibraryFiles,
     library_id: LibraryId,
@@ -439,370 +1268,482 @@ fn reconcile_validation(
     Ok(IngestionValidation { result, current })
 }
 
-#[expect(
-    clippy::too_many_lines,
-    reason = "process_file executes a sequential 8-step ingest pipeline (hash, dedup, copy, validate, rename, DB commit) where each step needs output from the previous; decomposing further requires passing a large context struct between helpers"
-)]
 async fn process_file(
     source: &Path,
     config: &Config,
     pool: &PgPool,
     files: &LibraryFiles,
     library_id: LibraryId,
+    input: Option<&crate::models::ingestion_input::Input>,
+    progress: copier::Progress,
 ) -> ProcessResult {
-    let library_path = Path::new(config.library_path.as_str());
-    let quarantine_path = Path::new(config.quarantine_path.as_str());
-    let source = source.to_path_buf();
-    let library_path = library_path.to_path_buf();
-    let quarantine_path = quarantine_path.to_path_buf();
-
-    // Step 1: Parse filename and hash source (in spawn_blocking)
-    let prep_result = {
-        let source = source.clone();
-        tokio::task::spawn_blocking(move || {
-            let filename = source
-                .file_name()
-                .and_then(|f| f.to_str())
-                .unwrap_or("unknown");
-            let vars = path_template::heuristic_vars_from_filename(filename);
-            let relative = path_template::render(path_template::DEFAULT_TEMPLATE, &vars);
-
-            let final_relative = relative;
-
-            let source_hash = match copier::hash_file(&source) {
-                Ok(h) => h,
-                Err(e) => return Err(format!("failed to hash source: {e}")),
-            };
-
-            Ok((vars, final_relative, source_hash))
-        })
-        .await
+    use crate::models::ingestion_input::{Fingerprint, InputPath};
+    let Ok(path) = source
+        .strip_prefix(config.ingestion_path.as_path())
+        .map_err(std::io::Error::other)
+        .and_then(InputPath::from_path)
+    else {
+        return ProcessResult::Operational(
+            crate::models::ingestion_input::AttemptOutcome::NeedsChange,
+            "unrepresentable source path".into(),
+        );
     };
-
-    let (vars, rendered_relative, source_hash) = match prep_result {
-        Ok(Ok(tuple)) => tuple,
-        Ok(Err(reason)) => {
-            quarantine_async(&source, &quarantine_path, &reason).await;
-            return ProcessResult::Failed(reason);
-        }
-        Err(e) => return ProcessResult::Failed(format!("spawn_blocking panicked: {e}")),
+    let Some(filename) = source.file_name().and_then(|name| name.to_str()) else {
+        return ProcessResult::Operational(
+            crate::models::ingestion_input::AttemptOutcome::NeedsChange,
+            "unrepresentable source path".into(),
+        );
     };
-
-    let candidate: RelativeFilePath = match rendered_relative
-        .to_str()
-        .ok_or_else(|| "non-UTF8 copied location".to_owned())
-        .and_then(|path| {
-            path.parse()
-                .map_err(|error: crate::services::files::LibraryFileError| error.to_string())
-        }) {
-        Ok(path) => path,
-        Err(error) => return ProcessResult::Failed(error),
-    };
-    let (initial_location, publication) =
-        match select_ingestion_path(pool, files, library_id, &candidate).await {
-            Ok(selected) => selected,
-            Err(error) => return ProcessResult::Failed(format!("path selection failed: {error}")),
-        };
-    let final_relative = initial_location.path.as_path().to_owned();
-
-    // Step 2: Duplicate check BEFORE copying
-    let duplicate = sqlx::query_scalar!(
-        "SELECT EXISTS(SELECT 1 FROM manifestations WHERE ingestion_file_hash = $1 OR (library_id = $3 AND file_path = $2)) AS \"exists!\"",
-        &source_hash,
-        initial_location.path.as_str(),
-        library_id.as_uuid(),
-    )
-    .fetch_one(pool)
-    .await;
-
-    match duplicate {
-        Ok(true) => return ProcessResult::Skipped,
-        Ok(false) => {}
-        Err(e) => {
-            // Fail the job rather than proceeding without the safety check.
-            // A transient DB error should not silently disable deduplication.
-            return ProcessResult::Failed(format!("duplicate check query failed: {e}"));
-        }
+    let vars = path_template::heuristic_vars_from_filename(filename);
+    if vars
+        .get("ext")
+        .is_none_or(|ext| !ext.eq_ignore_ascii_case("epub"))
+    {
+        return ProcessResult::Failed("unsupported format".into());
     }
-
-    // Step 3: Copy with verification (in spawn_blocking).
-    // Pass pre-computed source_hash so the copier only reads the source once (for
-    // copying) and verifies the dest hash against it inline.
+    let rendered = path_template::render(path_template::DEFAULT_TEMPLATE, &vars);
+    let candidate_path: RelativeFilePath = match checked_candidate(&rendered) {
+        Ok(path) => path,
+        Err(_) => {
+            return ProcessResult::Operational(
+                crate::models::ingestion_input::AttemptOutcome::NeedsChange,
+                "unrepresentable library path".into(),
+            );
+        }
+    };
     let phase_files = files.clone();
-    let phase_location = initial_location.clone();
-    let phase_source = source.clone();
-    let hash_for_copy = source_hash.clone();
-    let copy_result = tokio::task::spawn_blocking(move || {
-        let _publication = publication;
-        copier::copy_verified_into(
-            &phase_source,
+    let phase_path = path.clone();
+    let phase_candidate = candidate_path.clone();
+    let expected = input.map(|input| input.fingerprint.0.clone());
+    let acquired = tokio::task::spawn_blocking(move || {
+        let source = copier::open_input(phase_files.ingestion(), &phase_path)?;
+        let fingerprint = expected.unwrap_or(Fingerprint::from_metadata(&source.metadata()?));
+        copier::acquire_controlled(
+            phase_files.ingestion(),
+            &phase_path,
             phase_files
                 .library(library_id)
                 .map_err(std::io::Error::other)?,
-            &phase_location.path,
-            &hash_for_copy,
+            &phase_candidate,
+            &fingerprint,
+            progress,
         )
     })
     .await;
-    let copy_result = match copy_result {
-        Ok(Ok(result)) => result,
-        Ok(Err(error)) => {
-            let reason = format!("copy failed: {error}");
-            quarantine_async(&source, &quarantine_path, &reason).await;
-            return ProcessResult::Failed(reason);
+    let candidate = match acquired {
+        Ok(Ok(candidate)) => candidate,
+        Ok(Err(error)) => return acquisition_failure(error, files, library_id, true).await,
+        Err(_) => {
+            return ProcessResult::Operational(
+                crate::models::ingestion_input::AttemptOutcome::TransientInput,
+                "panic during acquisition".into(),
+            );
         }
-        Err(error) => return ProcessResult::Failed(format!("copy task failed: {error}")),
     };
+    let duplicate = sqlx::query_scalar!(
+        "SELECT work_id FROM manifestations WHERE ingestion_file_hash = $1 LIMIT 1",
+        &candidate.ingestion_hash
+    )
+    .fetch_optional(pool)
+    .await;
+    match duplicate {
+        Ok(Some(work)) => {
+            if let Err(error) = candidate.close() {
+                return acquisition_failure(
+                    copier::CopyError::DestinationIo(error),
+                    files,
+                    library_id,
+                    false,
+                )
+                .await;
+            }
+            return ProcessResult::Skipped(work);
+        }
+        Ok(None) => {}
+        Err(error) => {
+            return ProcessResult::Operational(
+                crate::models::ingestion_input::AttemptOutcome::SharedDependency,
+                format!("duplicate confirmation failed: {error}"),
+            );
+        }
+    }
+    validate_candidate(candidate, path, candidate_path, vars, files, library_id).await
+}
 
-    // Step 4: Determine manifestation_format from extension.
-    // The format_filter::select_by_priority earlier guarantees ext parses to a
-    // ManifestationFormat — this is the safety net for any code path that
-    // bypasses that filter.
-    let ext = vars.get("ext").cloned().unwrap_or_default();
-    let Ok(format) = ext.parse::<ManifestationFormat>() else {
-        let cleanup = cleanup_candidate(pool, files, &initial_location, copy_result.identity).await;
-        let reason = format!("unsupported format: {ext}");
-        return ProcessResult::Failed(cleanup_failure(reason, cleanup));
-    };
-
-    // Step 4.5: EPUB structural validation and auto-repair.
-    // Only EPUB has a structural validator; other formats keep the
-    // 'pending' column default — "validation has not run" — rather than
-    // claiming 'clean' for a check that never happened. If a
-    // validator for another format ships later, its files are already in
-    // the truthful pre-validation state.
-    //
-    let mut current_hash = copy_result.sha256.clone();
-    let mut current_size = copy_result.file_size;
-    let (validation_status, accessibility_metadata, opf_data, has_embedded_cover): (
-        ValidationStatus,
-        Option<serde_json::Value>,
-        Option<epub::opf_layer::OpfData>,
-        // NULL/None means "unknown" (non-EPUB, or the validator crashed) —
-        // distinct from Some(false) ("checked, no usable embedded cover"),
-        // mirroring the pending/clean split already drawn for validation_status.
-        Option<bool>,
-    ) = if ext == "epub" {
-        let lib_file = library_path.join(&final_relative);
-        let validation = {
-            let files = files.clone();
-            let relative = match final_relative
-                .to_str()
-                .ok_or_else(|| "non-UTF8 copied location".to_owned())
-                .and_then(|path| {
-                    path.parse()
-                        .map_err(|error: crate::services::files::LibraryFileError| {
-                            error.to_string()
-                        })
-                }) {
-                Ok(path) => path,
-                Err(error) => return ProcessResult::Failed(error),
-            };
-            tokio::task::spawn_blocking(move || {
-                let result = run_validator(&files, library_id, &relative);
-                reconcile_validation(&files, library_id, &relative, result)
-            })
-            .await
+async fn validate_candidate(
+    candidate: copier::Candidate,
+    path: crate::models::ingestion_input::InputPath,
+    candidate_path: RelativeFilePath,
+    vars: std::collections::HashMap<String, String>,
+    files: &LibraryFiles,
+    library_id: LibraryId,
+) -> ProcessResult {
+    let forced_error = candidate_path.as_str().contains("force-validator-error");
+    let validated = tokio::task::spawn_blocking(move || {
+        #[cfg(test)]
+        let validation = if forced_error {
+            Err(epub::EpubError::Io(std::io::Error::other(
+                "forced validator error (test seam)",
+            )))
+        } else {
+            candidate.validate()
         };
-        let validation = match validation {
-            Ok(Ok(validation)) => validation,
-            Ok(Err(error)) => {
-                return ProcessResult::Failed(format!(
-                    "publication reconciliation failed: {error}"
+        #[cfg(not(test))]
+        let validation = {
+            let _ = forced_error;
+            candidate.validate()
+        };
+        let mut file = candidate.open()?;
+        let hash = candidate.accepted_hash(&mut file)?;
+        let size = file.metadata()?.len();
+        Ok::<_, copier::CopyError>((candidate, validation, hash, size))
+    })
+    .await;
+    let (candidate, validation, current_hash, current_size) = match validated {
+        Ok(Ok(value)) => value,
+        Ok(Err(error)) => return acquisition_failure(error, files, library_id, false).await,
+        Err(_) => {
+            return ProcessResult::Operational(
+                crate::models::ingestion_input::AttemptOutcome::TransientInput,
+                "panic during validation".into(),
+            );
+        }
+    };
+    accepted_from_validation(
+        candidate,
+        path,
+        vars,
+        library_id,
+        files,
+        (validation, current_hash, current_size),
+    )
+    .await
+}
+
+async fn accepted_from_validation(
+    candidate: copier::Candidate,
+    path: crate::models::ingestion_input::InputPath,
+    vars: std::collections::HashMap<String, String>,
+    library_id: LibraryId,
+    files: &LibraryFiles,
+    validated: (
+        Result<crate::services::epub::Validated, crate::services::epub::EpubError>,
+        String,
+        u64,
+    ),
+) -> ProcessResult {
+    let (validation, current_hash, current_size) = validated;
+    let (validation_status, accessibility_metadata, opf_data, has_embedded_cover) = match validation
+    {
+        Ok(validated) => {
+            let report = validated.report;
+            if report.outcome == ValidationOutcome::Quarantined {
+                let reason = report
+                    .issues
+                    .iter()
+                    .map(|issue| format!("{:?}", issue.kind))
+                    .collect::<Vec<_>>()
+                    .join("; ");
+                if let Err(error) = candidate.close() {
+                    return acquisition_failure(
+                        copier::CopyError::DestinationIo(error),
+                        files,
+                        library_id,
+                        false,
+                    )
+                    .await;
+                }
+                return ProcessResult::Failed(format!("EPUB rejected: {reason}"));
+            }
+            let status = match report.outcome {
+                ValidationOutcome::Clean => ValidationStatus::Clean,
+                ValidationOutcome::Repaired => ValidationStatus::Repaired,
+                ValidationOutcome::Degraded => ValidationStatus::Degraded,
+                ValidationOutcome::Quarantined => unreachable!(),
+            };
+            (
+                status,
+                report.accessibility_metadata,
+                report.opf_data,
+                Some(report.has_usable_embedded_cover),
+            )
+        }
+        Err(error) => {
+            tracing::warn!(%error, "EPUB validator execution failed");
+            (ValidationStatus::Failed, None, None, None)
+        }
+    };
+    let extracted = opf_data.as_ref().map(metadata::extractor::extract);
+    let mut final_vars = vars.clone();
+    if let Some(meta) = extracted.as_ref() {
+        if let Some(title) = meta.title.as_ref() {
+            final_vars.insert("Title".into(), title.clone());
+        }
+        if let Some(author) = meta.first_author() {
+            final_vars.insert("Author".into(), author.sort_name.clone());
+        }
+    }
+    let rendered = path_template::render(path_template::DEFAULT_TEMPLATE, &final_vars);
+    let final_candidate: RelativeFilePath = match checked_candidate(&rendered) {
+        Ok(path) => path,
+        Err(_) => {
+            return ProcessResult::Operational(
+                crate::models::ingestion_input::AttemptOutcome::NeedsChange,
+                "unrepresentable library path".into(),
+            );
+        }
+    };
+    ProcessResult::Accepted(Box::new(Accepted {
+        candidate: std::sync::Arc::new(candidate),
+        source: path,
+        library_id,
+        path: final_candidate,
+        vars,
+        extracted,
+        validation_status,
+        accessibility_metadata,
+        has_embedded_cover,
+        current_hash,
+        current_size,
+        published: None,
+        failure: None,
+    }))
+}
+
+async fn finish_accepted(
+    accepted: &mut Accepted,
+    config: &Config,
+    pool: &PgPool,
+    files: &LibraryFiles,
+    attempt: Option<(&crate::models::ingestion_input::Input, Uuid)>,
+) -> anyhow::Result<ProcessResult> {
+    if let Some((class, reason)) = &accepted.failure {
+        if let Some((location, copied)) = &accepted.published {
+            discard_publication(pool, files, location, copied.identity).await?;
+            accepted.published = None;
+        }
+        return Ok(ProcessResult::Operational(*class, reason.clone()));
+    }
+    if accepted.candidate.progress().cancel.is_cancelled() {
+        if let Some((location, copied)) = &accepted.published {
+            discard_publication(pool, files, location, copied.identity).await?;
+            accepted.published = None;
+        }
+        return Ok(acquisition_failure(
+            copier::CopyError::Cancelled,
+            files,
+            accepted.library_id,
+            true,
+        )
+        .await);
+    }
+    if let Some((location, copied)) = &accepted.published {
+        let committed = sqlx::query!(
+            "SELECT id, work_id FROM manifestations WHERE library_id = $1 AND file_path = $2 AND ingestion_file_hash = $3",
+            location.library_id.as_uuid(), location.path.as_str(), &copied.sha256,
+        ).fetch_optional(pool).await?;
+        if let Some(row) = committed {
+            warm_accepted(accepted, config, files, row.id).await;
+            return Ok(ProcessResult::Complete);
+        }
+        discard_publication(pool, files, location, copied.identity).await?;
+        accepted.published = None;
+    }
+    if let Some(result) = publish_accepted(accepted, pool, files).await? {
+        return Ok(result);
+    }
+    commit_accepted(accepted, config, pool, files, attempt).await
+}
+
+async fn publish_accepted(
+    accepted: &mut Accepted,
+    pool: &PgPool,
+    files: &LibraryFiles,
+) -> anyhow::Result<Option<ProcessResult>> {
+    let (location, publication) =
+        select_ingestion_path(pool, files, accepted.library_id, &accepted.path).await?;
+    let phase_files = files.clone();
+    let phase_path = accepted.source.clone();
+    let phase_location = location.clone();
+    let candidate = accepted.candidate.clone();
+    let published = tokio::task::spawn_blocking(move || {
+        let _publication = publication;
+        candidate.verify_source(phase_files.ingestion(), &phase_path)?;
+        let result = candidate.publish(
+            phase_files
+                .library(phase_location.library_id)
+                .map_err(std::io::Error::other)?,
+            &phase_location.path,
+        );
+        if matches!(result, Err(copier::CopyError::HashMismatch { .. })) {
+            candidate.verify_source(phase_files.ingestion(), &phase_path)?;
+        }
+        result
+    })
+    .await;
+    let published = match published {
+        Ok(result) => result,
+        Err(error) => {
+            if let Some((path, copied)) = accepted.candidate.publication() {
+                accepted.published = Some((
+                    LibraryLocation {
+                        library_id: accepted.library_id,
+                        path,
+                    },
+                    copied,
                 ));
             }
-            Err(error) => {
-                return ProcessResult::Failed(format!("spawn_blocking panicked: {error}"));
-            }
-        };
-        if let Some((hash, size)) = validation.current {
-            current_hash = hash;
-            current_size = size;
+            accepted.failure = Some((
+                crate::models::ingestion_input::AttemptOutcome::TransientInput,
+                "panic during publication".into(),
+            ));
+            return Err(error.into());
         }
-
-        match validation.result {
-            Ok(validated) => {
-                if let Some((hash, size)) = validated.rewritten {
-                    current_hash = hash;
-                    current_size = size;
-                }
-                let report = validated.report;
-                tracing::info!(
-                    path = %lib_file.display(),
-                    outcome = ?report.outcome,
-                    issues = report.issues.len(),
-                    "epub validation complete"
-                );
-                let a11y = report.accessibility_metadata;
-                let opf = report.opf_data;
-                let issues = report.issues;
-                let has_cover = report.has_usable_embedded_cover;
-                match report.outcome {
-                    ValidationOutcome::Quarantined => {
-                        let cleanup =
-                            cleanup_candidate(pool, files, &initial_location, copy_result.identity)
-                                .await;
-                        let reason = issues
-                            .iter()
-                            .map(|i| format!("{:?}", i.kind))
-                            .collect::<Vec<_>>()
-                            .join("; ");
-                        quarantine_async(&source, &quarantine_path, &reason).await;
-                        return ProcessResult::Failed(cleanup_failure(
-                            format!("EPUB quarantined: {reason}"),
-                            cleanup,
-                        ));
-                    }
-                    ValidationOutcome::Clean => {
-                        (ValidationStatus::Clean, a11y, opf, Some(has_cover))
-                    }
-                    ValidationOutcome::Repaired => {
-                        (ValidationStatus::Repaired, a11y, opf, Some(has_cover))
-                    }
-                    ValidationOutcome::Degraded => {
-                        (ValidationStatus::Degraded, a11y, opf, Some(has_cover))
-                    }
-                }
-            }
-            Err(e) => {
-                tracing::warn!(error = %e, "epub validation error; storing validation_status=failed");
-                (ValidationStatus::Failed, None, None, None)
-            }
-        }
-    } else {
-        (ValidationStatus::Pending, None, None, None)
     };
-
-    // Step 5: Extract metadata and create work + manifestation
-    let extracted = opf_data.as_ref().map(metadata::extractor::extract);
-
-    let final_location = if let Some(ref meta) = extracted {
-        if meta.title.is_some() || !meta.creators.is_empty() {
-            let mut meta_vars = vars.clone();
-            if let Some(ref title) = meta.title {
-                meta_vars.insert("Title".into(), title.clone());
+    let copied = match published {
+        Ok(copied) => copied,
+        Err(copier::CopyError::Publication { copied, error }) => {
+            accepted.published = Some((location, *copied));
+            if let ProcessResult::Operational(class, reason) = acquisition_failure(
+                copier::CopyError::Persist(error),
+                files,
+                accepted.library_id,
+                false,
+            )
+            .await
+            {
+                accepted.failure = Some((class, reason));
             }
-            if let Some(first) = meta.first_author() {
-                meta_vars.insert("Author".into(), first.sort_name.clone());
-            }
-            let rendered = path_template::render(path_template::DEFAULT_TEMPLATE, &meta_vars);
-            let candidate: RelativeFilePath = match rendered
-                .to_str()
-                .ok_or_else(|| "non-UTF8 metadata path".to_owned())
-                .and_then(|path| {
-                    path.parse()
-                        .map_err(|error: crate::services::files::LibraryFileError| {
-                            error.to_string()
-                        })
-                }) {
-                Ok(path) => path,
-                Err(error) => return ProcessResult::Failed(error),
-            };
-            if candidate == initial_location.path {
-                initial_location.clone()
-            } else {
-                match move_ingestion_candidate(
-                    pool,
-                    files,
-                    &initial_location,
-                    &candidate,
-                    &current_hash,
-                )
-                .await
-                {
-                    Ok(location) => location,
-                    Err(error) => {
-                        tracing::warn!(%error, "metadata move refused; retaining heuristic location");
-                        initial_location.clone()
-                    }
-                }
-            }
-        } else {
-            initial_location.clone()
+            return Err(anyhow::anyhow!(
+                "publication awaits owned-name reconciliation"
+            ));
         }
-    } else {
-        initial_location.clone()
-    };
-
-    // DB section — single transaction so the ingest invariant holds:
-    // every non-NULL canonical field on the manifestation has a corresponding
-    // metadata_versions row pointed to by its *_version_id column.
-    let db_outcome = commit_ingest(
-        pool,
-        &extracted,
-        &vars,
-        &final_location,
-        &copy_result,
-        ManifestationMeta {
-            format,
-            validation_status,
-            accessibility_metadata: &accessibility_metadata,
-            has_embedded_cover,
-            current_hash: &current_hash,
-            current_size,
-        },
-    )
-    .await;
-
-    let (work_id, manifestation_id) = match db_outcome {
-        Ok(pair) => pair,
-        Err(e) => {
-            tracing::error!(error = %e, "ingest DB commit failed");
-            let cleanup =
-                cleanup_candidate(pool, files, &final_location, copy_result.identity).await;
-            return ProcessResult::Failed(cleanup_failure(
-                format!("DB insert failed: {e}"),
-                cleanup,
+        Err(error) => {
+            return Ok(Some(
+                acquisition_failure(error, files, accepted.library_id, false).await,
             ));
         }
     };
-
-    if let Some(ref meta) = extracted {
-        tracing::info!(
-            title = meta.title.as_deref().unwrap_or("unknown"),
-            authors = meta.creators.len(),
-            confidence = meta.confidence,
-            has_isbn = meta.isbn.is_some(),
-            work_id = %work_id,
-            manifestation_id = %manifestation_id,
-            "metadata extraction complete"
-        );
-    } else {
-        tracing::info!(
-            work_id = %work_id,
-            manifestation_id = %manifestation_id,
-            "ingest complete without OPF (heuristic-fallback journal row written)"
-        );
+    accepted.published = Some((location, copied));
+    if accepted.candidate.progress().cancel.is_cancelled() {
+        let (location, copied) = accepted
+            .published
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("publication evidence missing"))?;
+        discard_publication(pool, files, location, copied.identity).await?;
+        accepted.published = None;
+        return Ok(Some(
+            acquisition_failure(
+                copier::CopyError::Cancelled,
+                files,
+                accepted.library_id,
+                true,
+            )
+            .await,
+        ));
     }
+    Ok(None)
+}
 
-    // Pre-warm the thumbnail cover off the request path so the first library
-    // grid view is a warm cache hit instead of a cold rasterize. Best-effort
-    // and concurrency-bounded. `current_hash` is `current_file_hash` (see
-    // `commit_ingest`), which keys the cover cache.
-    if should_warm_cover(format, has_embedded_cover) {
-        let path = final_location.path.clone();
-        let files = files.clone();
-        let opened = tokio::task::spawn_blocking(move || {
-            files.open_source(&crate::services::files::LibraryLocation { library_id, path })
-        })
-        .await;
-        match opened {
-            Ok(Ok(opened)) => crate::services::covers::spawn_warm_thumb(
-                library_path.display().to_string(),
-                manifestation_id,
-                current_hash,
-                opened.file,
-            ),
-            Ok(Err(error)) => {
-                tracing::warn!(%error, %manifestation_id, "opening cover warming source failed");
+async fn commit_accepted(
+    accepted: &mut Accepted,
+    config: &Config,
+    pool: &PgPool,
+    files: &LibraryFiles,
+    attempt: Option<(&crate::models::ingestion_input::Input, Uuid)>,
+) -> anyhow::Result<ProcessResult> {
+    let (location, copied) = accepted
+        .published
+        .as_ref()
+        .ok_or_else(|| anyhow::anyhow!("publication evidence missing"))?;
+    let committed = commit_ingest_outcome(
+        pool,
+        accepted.extracted.as_ref(),
+        &accepted.vars,
+        location,
+        copied,
+        ManifestationMeta {
+            format: ManifestationFormat::Epub,
+            validation_status: accepted.validation_status,
+            accessibility_metadata: &accepted.accessibility_metadata,
+            has_embedded_cover: accepted.has_embedded_cover,
+            current_hash: &accepted.current_hash,
+            current_size: accepted.current_size,
+        },
+        attempt,
+    )
+    .await;
+    match committed {
+        Ok((work, manifestation)) => {
+            tracing::info!(%work, %manifestation, "ingestion committed");
+            warm_accepted(accepted, config, files, manifestation).await;
+            Ok(ProcessResult::Complete)
+        }
+        Err(error) => {
+            let committed = sqlx::query!(
+                "SELECT id, work_id FROM manifestations WHERE library_id = $1 AND file_path = $2 AND ingestion_file_hash = $3",
+                location.library_id.as_uuid(), location.path.as_str(), &copied.sha256,
+            ).fetch_optional(pool).await?;
+            if let Some(row) = committed {
+                warm_accepted(accepted, config, files, row.id).await;
+                return Ok(ProcessResult::Complete);
             }
-            Err(error) => {
-                tracing::warn!(%error, %manifestation_id, "cover warming source task failed");
-            }
+            discard_publication(pool, files, location, copied.identity).await?;
+            accepted.published = None;
+            Err(error.into())
         }
     }
+}
 
-    ProcessResult::Complete
+async fn warm_accepted(
+    accepted: &Accepted,
+    config: &Config,
+    files: &LibraryFiles,
+    manifestation: Uuid,
+) {
+    if !should_warm_cover(ManifestationFormat::Epub, accepted.has_embedded_cover) {
+        return;
+    }
+    let Some((location, _)) = &accepted.published else {
+        return;
+    };
+    let phase_files = files.clone();
+    let location = location.clone();
+    match tokio::task::spawn_blocking(move || phase_files.open_source(&location)).await {
+        Ok(Ok(opened)) => crate::services::covers::spawn_warm_thumb(
+            config.library_path.as_str().to_owned(),
+            manifestation,
+            accepted.current_hash.clone(),
+            opened.file,
+        ),
+        Ok(Err(error)) => tracing::warn!(%error, "cover warming source unavailable"),
+        Err(error) => tracing::warn!(%error, "cover warming task failed"),
+    }
+}
+
+fn checked_candidate(
+    path: &Path,
+) -> Result<RelativeFilePath, crate::services::files::LibraryFileError> {
+    path.to_str()
+        .ok_or(crate::services::files::LibraryFileError::InvalidLocation)?
+        .parse()
+}
+
+fn copy_error_reason(error: &copier::CopyError) -> String {
+    match error {
+        copier::CopyError::Io(error)
+        | copier::CopyError::DestinationIo(error)
+        | copier::CopyError::Persist(crate::services::writeback::error::WritebackError::Io(
+            error,
+        ))
+        | copier::CopyError::Publication {
+            error: crate::services::writeback::error::WritebackError::Io(error),
+            ..
+        } => {
+            format!("I/O error: {:?}", error.kind())
+        }
+        error => error.to_string(),
+    }
 }
 
 /// Whether an ingest should pre-warm the cover thumbnail. EPUB is the only
@@ -841,6 +1782,7 @@ struct ManifestationMeta<'a> {
     clippy::ref_option,
     reason = "commit_ingest is called with &extracted from a site that holds an owned Option; changing to Option<&T> would require .as_ref() at the call site with no readability benefit"
 )]
+#[cfg(test)]
 async fn commit_ingest(
     pool: &PgPool,
     extracted: &Option<crate::services::metadata::extractor::ExtractedMetadata>,
@@ -849,9 +1791,28 @@ async fn commit_ingest(
     copy_result: &copier::CopyResult,
     meta: ManifestationMeta<'_>,
 ) -> Result<(Uuid, Uuid), sqlx::Error> {
-    use crate::services::metadata::draft;
-    use crate::services::metadata::extractor::ExtractedMetadata;
+    commit_ingest_outcome(
+        pool,
+        extracted.as_ref(),
+        vars,
+        location,
+        copy_result,
+        meta,
+        None,
+    )
+    .await
+}
 
+async fn commit_ingest_outcome(
+    pool: &PgPool,
+    extracted: Option<&crate::services::metadata::extractor::ExtractedMetadata>,
+    vars: &std::collections::HashMap<String, String>,
+    location: &LibraryLocation,
+    copy_result: &copier::CopyResult,
+    meta: ManifestationMeta<'_>,
+    attempt: Option<(&crate::models::ingestion_input::Input, Uuid)>,
+) -> Result<(Uuid, Uuid), sqlx::Error> {
+    use crate::services::metadata::draft;
     let mut tx = pool.begin().await?;
 
     // 1. Try to match an existing work (only when OPF gave us signal).
@@ -903,32 +1864,7 @@ async fn commit_ingest(
     // 3. Write drafts — OPF metadata when available, heuristic fallback otherwise.
     //    The heuristic row gives the canonical title_version_id pointer even
     //    when no OPF metadata exists, preserving the ingest invariant.
-    let metadata_for_drafts: ExtractedMetadata = extracted.as_ref().map_or_else(
-        || {
-            let title = vars
-                .get("Title")
-                .cloned()
-                .unwrap_or_else(|| "Unknown".into());
-            ExtractedMetadata {
-                title: Some(title.clone()),
-                sort_title: Some(title),
-                subtitle: None,
-                description: None,
-                language: None,
-                creators: Vec::new(),
-                unmapped_contributors: Vec::new(),
-                pages: None,
-                publisher: None,
-                pub_date: None,
-                isbn: None,
-                subjects: Vec::new(),
-                series: None,
-                inversion: None,
-                confidence: 0.2,
-            }
-        },
-        ExtractedMetadata::clone,
-    );
+    let metadata_for_drafts = draft_metadata(extracted, vars);
     let draft_ids = draft::write_drafts(&mut tx, manifestation_id, &metadata_for_drafts).await?;
 
     // 4. Upgrade stub work with real values + pointers (create path only).
@@ -968,23 +1904,53 @@ async fn commit_ingest(
     .execute(&mut *tx)
     .await?;
 
+    if let Some((input, job)) = attempt {
+        crate::models::ingestion_input::finish(
+            &mut tx,
+            input,
+            job,
+            crate::models::ingestion_input::AttemptOutcome::Imported,
+            crate::models::ingestion_input::InputStatus::Imported,
+            None,
+            Some(work_id),
+        )
+        .await?;
+    }
     tx.commit().await?;
     Ok((work_id, manifestation_id))
 }
 
-async fn quarantine_async(source: &Path, quarantine_path: &Path, reason: &str) {
-    let source = source.to_path_buf();
-    let qpath = quarantine_path.to_path_buf();
-    let reason = reason.to_string();
-    if let Err(e) = tokio::task::spawn_blocking(move || {
-        if let Err(e) = quarantine::quarantine_file(&source, &qpath, &reason) {
-            tracing::error!(error = %e, "quarantine failed");
-        }
-    })
-    .await
-    {
-        tracing::error!(error = %e, "quarantine spawn_blocking panicked");
-    }
+fn draft_metadata(
+    extracted: Option<&crate::services::metadata::extractor::ExtractedMetadata>,
+    vars: &std::collections::HashMap<String, String>,
+) -> crate::services::metadata::extractor::ExtractedMetadata {
+    use crate::services::metadata::extractor::ExtractedMetadata;
+    extracted.map_or_else(
+        || {
+            let title = vars
+                .get("Title")
+                .cloned()
+                .unwrap_or_else(|| "Unknown".into());
+            ExtractedMetadata {
+                title: Some(title.clone()),
+                sort_title: Some(title),
+                subtitle: None,
+                description: None,
+                language: None,
+                creators: Vec::new(),
+                unmapped_contributors: Vec::new(),
+                pages: None,
+                publisher: None,
+                pub_date: None,
+                isbn: None,
+                subjects: Vec::new(),
+                series: None,
+                inversion: None,
+                confidence: 0.2,
+            }
+        },
+        ExtractedMetadata::clone,
+    )
 }
 
 #[cfg(test)]
@@ -994,6 +1960,1061 @@ async fn quarantine_async(source: &Path, quarantine_path: &Path, reason: &str) {
 )]
 mod tests {
     use super::*;
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn capability_ingestion_coordinator_recommit_advances_probe_deadline_before_dispatch(
+        pool: PgPool,
+    ) {
+        use crate::models::ingestion_input;
+        let ing = ingestion_pool_for(&pool).await;
+        let (source, _library, _unused, config) = scan_env();
+        let library_id = crate::models::storage_library::default_library_id(&ing)
+            .await
+            .unwrap();
+        let files = LibraryFiles::open(
+            [(library_id, config.library_path.clone())],
+            &config.ingestion_path,
+        )
+        .unwrap();
+        std::fs::write(source.path().join("book.epub"), make_minimal_epub()).unwrap();
+        let mut owner = coordinator(ing.clone(), config, files);
+        owner.probe().await.unwrap();
+        owner.discover(false).await.unwrap();
+        let input = ingestion_input::current_page(&ing, None)
+            .await
+            .unwrap()
+            .remove(0);
+        let job = ingestion_input::begin_attempt(&ing, &input, Uuid::new_v4())
+            .await
+            .unwrap();
+        let result = process_file(
+            &source.path().join("book.epub"),
+            &owner.config,
+            &ing,
+            &owner.files,
+            library_id,
+            Some(&input),
+            copier::Progress::new(&CancellationToken::new()),
+        )
+        .await;
+        assert!(matches!(result, ProcessResult::Accepted(_)));
+        owner.pending = Some(PendingResult {
+            input,
+            job,
+            result,
+            source_deleted: false,
+        });
+        owner.pause(&"outcome commit unavailable");
+        owner.pause.as_mut().unwrap().next = tokio::time::Instant::now();
+        let mut active = owner.reprobe().await.unwrap().unwrap();
+        assert!(active.recommit);
+        assert_eq!(owner.pause.as_ref().unwrap().step, 1);
+        assert!(
+            owner
+                .pause
+                .as_ref()
+                .unwrap()
+                .next
+                .duration_since(tokio::time::Instant::now())
+                >= std::time::Duration::from_secs(59)
+        );
+        let completed = (&mut active.future).await;
+        assert!(matches!(completed.result, ProcessResult::Complete));
+        owner.pending = Some(completed);
+        owner.finalise().await.unwrap();
+        assert!(owner.pending.is_none());
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn capability_ingestion_coordinator_needs_change_resets_on_admin_startup_and_generation(
+        pool: PgPool,
+    ) {
+        use crate::models::ingestion_input::{self, AttemptOutcome, InputStatus};
+        let ing = ingestion_pool_for(&pool).await;
+        let (source, _library, _unused, config) = scan_env();
+        let library_id = crate::models::storage_library::default_library_id(&ing)
+            .await
+            .unwrap();
+        let files = LibraryFiles::open(
+            [(library_id, config.library_path.clone())],
+            &config.ingestion_path,
+        )
+        .unwrap();
+        std::fs::write(source.path().join("book.epub"), make_minimal_epub()).unwrap();
+        let mut owner = coordinator(ing.clone(), config, files);
+        owner.discover(false).await.unwrap();
+        for reset in ["admin", "startup", "generation"] {
+            let input = ingestion_input::current_page(&ing, None)
+                .await
+                .unwrap()
+                .remove(0);
+            let job = ingestion_input::begin_attempt(&ing, &input, Uuid::new_v4())
+                .await
+                .unwrap();
+            let mut tx = ing.begin().await.unwrap();
+            ingestion_input::finish(
+                &mut tx,
+                &input,
+                job,
+                AttemptOutcome::NeedsChange,
+                InputStatus::OperationalFailure,
+                Some("PermissionDenied"),
+                None,
+            )
+            .await
+            .unwrap();
+            tx.commit().await.unwrap();
+            assert_eq!(owner.discover(false).await.unwrap().suppressed, 1);
+            assert!(!owner.keys.contains_key(&input.id));
+            match reset {
+                "admin" => {
+                    owner.discover(true).await.unwrap();
+                }
+                "startup" => {
+                    ingestion_input::reclaim(&ing).await.unwrap();
+                    owner.discover(false).await.unwrap();
+                }
+                _ => {
+                    std::fs::write(source.path().join("book.epub"), b"new generation").unwrap();
+                    owner.discover(false).await.unwrap();
+                }
+            }
+            let reset_input = ingestion_input::current(&ing, input.id)
+                .await
+                .unwrap()
+                .unwrap();
+            assert_eq!(reset_input.status, InputStatus::Pending);
+            assert!(reset_input.retry_reset_at > input.retry_reset_at);
+            let retry = ingestion_input::retry_states(&ing, &[input.id])
+                .await
+                .unwrap()
+                .remove(0);
+            assert!(!retry.needs_change);
+            assert_eq!(retry.count, 0);
+            assert!(owner.keys.contains_key(&input.id));
+        }
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn capability_ingestion_coordinator_running_worker_obeys_readiness_and_live_settings(
+        pool: PgPool,
+    ) {
+        use crate::models::ingestion_input::{self, InputStatus};
+        let ing = ingestion_pool_for(&pool).await;
+        let (source, _library, _unused, config) = scan_env();
+        let library_id = crate::models::storage_library::default_library_id(&ing)
+            .await
+            .unwrap();
+        let files = LibraryFiles::open(
+            [(library_id, config.library_path.clone())],
+            &config.ingestion_path,
+        )
+        .unwrap();
+        std::fs::write(source.path().join("book.epub"), make_minimal_epub()).unwrap();
+        let settings = crate::test_support::test_settings();
+        settings.write().await.ingestion.accepted_formats.clear();
+        let cancel = CancellationToken::new();
+        let (handle, commands) = coordinator_channel();
+        let worker = tokio::spawn(run_watcher(
+            config,
+            ing.clone(),
+            cancel.clone(),
+            files,
+            settings.clone(),
+            commands,
+        ));
+        let discovery = handle.scan().await.unwrap();
+        assert_eq!(discovery.suppressed, 1);
+        let input = ingestion_input::current_page(&ing, None)
+            .await
+            .unwrap()
+            .remove(0);
+        assert_eq!(input.status, InputStatus::NotAccepted);
+        settings
+            .write()
+            .await
+            .ingestion
+            .accepted_formats
+            .push("epub".into());
+        let discovery = handle.scan().await.unwrap();
+        assert_eq!(discovery.deferred, 1);
+        assert_eq!(
+            sqlx::query_scalar!(
+                r#"SELECT COUNT(*) AS "count!" FROM ingestion_jobs WHERE input_id = $1"#,
+                input.id
+            )
+            .fetch_one(&ing)
+            .await
+            .unwrap(),
+            0
+        );
+        tokio::time::timeout(std::time::Duration::from_secs(20), async {
+            loop {
+                if ingestion_input::current(&ing, input.id)
+                    .await
+                    .unwrap()
+                    .is_none()
+                {
+                    break;
+                }
+                tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+            }
+        })
+        .await
+        .unwrap();
+        assert!(!source.path().join("book.epub").exists());
+        assert_eq!(
+            sqlx::query_scalar!(
+                "SELECT outcome::text FROM ingestion_jobs WHERE input_id = $1",
+                input.id
+            )
+            .fetch_one(&ing)
+            .await
+            .unwrap(),
+            Some("imported".into())
+        );
+        cancel.cancel();
+        worker.await.unwrap().unwrap();
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn capability_ingestion_coordinator_shutdown_has_no_outcome_and_startup_reclaims(
+        pool: PgPool,
+    ) {
+        use crate::models::ingestion_input::{self, InputStatus};
+        let ing = ingestion_pool_for(&pool).await;
+        let (source, _library, _unused, config) = scan_env();
+        let library_id = crate::models::storage_library::default_library_id(&ing)
+            .await
+            .unwrap();
+        let files = LibraryFiles::open(
+            [(library_id, config.library_path.clone())],
+            &config.ingestion_path,
+        )
+        .unwrap();
+        std::fs::write(source.path().join("book.epub"), make_minimal_epub()).unwrap();
+        let mut owner = coordinator(ing.clone(), config.clone(), files.clone());
+        owner.discover(false).await.unwrap();
+        let input = ingestion_input::current_page(&ing, None)
+            .await
+            .unwrap()
+            .remove(0);
+        let cancel = CancellationToken::new();
+        let job = ingestion_input::begin_attempt(&ing, &input, Uuid::new_v4())
+            .await
+            .unwrap();
+        let mut active = owner
+            .active_attempt(input.clone(), job, library_id, &cancel)
+            .unwrap();
+        cancel.cancel();
+        let result = (&mut active.future).await;
+        assert!(matches!(result.result, ProcessResult::Operational(_, _)));
+        assert_eq!(
+            sqlx::query_scalar!(
+                "SELECT outcome::text FROM ingestion_jobs WHERE id = $1",
+                job
+            )
+            .fetch_one(&ing)
+            .await
+            .unwrap(),
+            None
+        );
+        assert!(source.path().join("book.epub").exists());
+        assert_eq!(
+            ingestion_input::current(&ing, input.id)
+                .await
+                .unwrap()
+                .unwrap()
+                .status,
+            InputStatus::Processing
+        );
+        ingestion_input::reclaim(&ing).await.unwrap();
+        let reclaimed = ingestion_input::current(&ing, input.id)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(reclaimed.status, InputStatus::Pending);
+        assert!(reclaimed.retry_reset_at > input.retry_reset_at);
+        assert_eq!(
+            sqlx::query_scalar!(
+                "SELECT outcome::text FROM ingestion_jobs WHERE id = $1",
+                job
+            )
+            .fetch_one(&ing)
+            .await
+            .unwrap(),
+            Some("interrupted".into())
+        );
+        assert_eq!(
+            ingestion_input::transient_count(&ing, &reclaimed)
+                .await
+                .unwrap(),
+            0
+        );
+    }
+
+    async fn attempt(owner: &mut Coordinator, input: crate::models::ingestion_input::Input) {
+        let library_id = crate::models::storage_library::default_library_id(&owner.pool)
+            .await
+            .unwrap();
+        let path = owner.config.ingestion_path.as_path().join(
+            crate::models::ingestion_input::InputPath::from_bytes(input.source_path.clone())
+                .unwrap()
+                .path(),
+        );
+        let job =
+            crate::models::ingestion_input::begin_attempt(&owner.pool, &input, Uuid::new_v4())
+                .await
+                .unwrap();
+        let result = process_file(
+            &path,
+            &owner.config,
+            &owner.pool,
+            &owner.files,
+            library_id,
+            Some(&input),
+            copier::Progress::new(&CancellationToken::new()),
+        )
+        .await;
+        owner.pending = Some(PendingResult {
+            input,
+            job,
+            result,
+            source_deleted: false,
+        });
+        owner.finalise().await.unwrap();
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn capability_ingestion_coordinator_discovery_rename_missing_and_partial_scan(
+        pool: PgPool,
+    ) {
+        use crate::models::ingestion_input::{self, InputStatus};
+        use std::os::unix::fs::PermissionsExt;
+        let pool = ingestion_pool_for(&pool).await;
+        let (source, _library, _unused, config) = scan_env();
+        let library_id = crate::models::storage_library::default_library_id(&pool)
+            .await
+            .unwrap();
+        let files = LibraryFiles::open(
+            [(library_id, config.library_path.clone())],
+            &config.ingestion_path,
+        )
+        .unwrap();
+        std::fs::write(source.path().join("book.epub"), make_minimal_epub()).unwrap();
+        std::fs::write(source.path().join("cover.jpg"), b"sidecar").unwrap();
+        std::fs::write(source.path().join(".hidden.epub"), b"ignore").unwrap();
+        std::fs::write(source.path().join("Thumbs.db"), b"ignore").unwrap();
+        let mut owner = coordinator(pool.clone(), config, files);
+        let discovered = owner.discover(false).await.unwrap();
+        assert_eq!(
+            (
+                discovered.queued,
+                discovered.deferred,
+                discovered.suppressed
+            ),
+            (0, 1, 1)
+        );
+        assert_eq!(owner.discover(true).await.unwrap().deferred, 1);
+        assert_eq!(owner.keys.len(), 1);
+        let old = ingestion_input::current_page(&pool, None)
+            .await
+            .unwrap()
+            .into_iter()
+            .find(|input| input.source_path == b"book.epub")
+            .unwrap();
+        std::fs::rename(
+            source.path().join("book.epub"),
+            source.path().join("renamed.epub"),
+        )
+        .unwrap();
+        std::fs::remove_file(source.path().join("cover.jpg")).unwrap();
+        owner.discover(false).await.unwrap();
+        assert!(
+            ingestion_input::current(&pool, old.id)
+                .await
+                .unwrap()
+                .is_none()
+        );
+        let present = ingestion_input::current_page(&pool, None).await.unwrap();
+        assert_eq!(present.len(), 1);
+        assert_eq!(present[0].source_path, b"renamed.epub");
+        assert_ne!(present[0].id, old.id);
+        assert_eq!(present[0].status, InputStatus::Pending);
+        std::fs::set_permissions(source.path(), std::fs::Permissions::from_mode(0o000)).unwrap();
+        let partial = owner.discover(false).await;
+        std::fs::set_permissions(source.path(), std::fs::Permissions::from_mode(0o700)).unwrap();
+        partial.unwrap();
+        assert!(
+            ingestion_input::current(&pool, present[0].id)
+                .await
+                .unwrap()
+                .is_some()
+        );
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn capability_ingestion_coordinator_import_duplicate_rejection_cleanup_and_restart_suppression(
+        pool: PgPool,
+    ) {
+        use crate::models::ingestion_input::{self, InputStatus};
+        let pool = ingestion_pool_for(&pool).await;
+        let (source, _library, _unused, config) = scan_env();
+        let library_id = crate::models::storage_library::default_library_id(&pool)
+            .await
+            .unwrap();
+        let files = LibraryFiles::open(
+            [(library_id, config.library_path.clone())],
+            &config.ingestion_path,
+        )
+        .unwrap();
+        let bytes = make_minimal_epub();
+        std::fs::write(source.path().join("book.epub"), &bytes).unwrap();
+        let mut owner = coordinator(pool.clone(), config, files);
+        owner.discover(false).await.unwrap();
+        let input = ingestion_input::current_page(&pool, None)
+            .await
+            .unwrap()
+            .remove(0);
+        let imported_id = input.id;
+        attempt(&mut owner, input).await;
+        assert!(
+            ingestion_input::current(&pool, imported_id)
+                .await
+                .unwrap()
+                .is_none()
+        );
+        assert!(!source.path().join("book.epub").exists());
+        std::fs::write(source.path().join("duplicate.epub"), &bytes).unwrap();
+        owner.discover(false).await.unwrap();
+        let duplicate = ingestion_input::current_page(&pool, None)
+            .await
+            .unwrap()
+            .remove(0);
+        let duplicate_id = duplicate.id;
+        attempt(&mut owner, duplicate).await;
+        let duplicate = ingestion_input::current(&pool, duplicate_id)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(duplicate.status, InputStatus::Duplicate);
+        assert!(duplicate.work_id.is_some());
+        assert!(source.path().join("duplicate.epub").exists());
+        owner.settings.write().await.ingestion.cleanup_duplicates = true;
+        std::fs::write(source.path().join("duplicate-opt-in.epub"), &bytes).unwrap();
+        owner.discover(false).await.unwrap();
+        let opt_in = ingestion_input::current_page(&pool, None)
+            .await
+            .unwrap()
+            .into_iter()
+            .find(|input| input.source_path == b"duplicate-opt-in.epub")
+            .unwrap();
+        let opt_in_id = opt_in.id;
+        attempt(&mut owner, opt_in).await;
+        assert!(
+            ingestion_input::current(&pool, opt_in_id)
+                .await
+                .unwrap()
+                .is_none()
+        );
+        assert!(!source.path().join("duplicate-opt-in.epub").exists());
+        std::fs::write(source.path().join("bad.epub"), b"corrupt").unwrap();
+        std::fs::write(source.path().join("unaccepted.pdf"), b"PDF").unwrap();
+        owner.discover(false).await.unwrap();
+        let rejected = ingestion_input::current_page(&pool, None)
+            .await
+            .unwrap()
+            .into_iter()
+            .find(|input| input.source_path == b"bad.epub")
+            .unwrap();
+        let rejected_id = rejected.id;
+        attempt(&mut owner, rejected).await;
+        let rejected = ingestion_input::current(&pool, rejected_id)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(rejected.status, InputStatus::Rejected);
+        assert!(
+            rejected
+                .reason
+                .as_deref()
+                .unwrap()
+                .contains("EPUB rejected")
+        );
+        assert_eq!(
+            std::fs::read(source.path().join("bad.epub")).unwrap(),
+            b"corrupt"
+        );
+        ingestion_input::reclaim(&pool).await.unwrap();
+        owner.observed.clear();
+        assert_eq!(owner.discover(true).await.unwrap().suppressed, 3);
+        assert_eq!(
+            ingestion_input::current(&pool, rejected_id)
+                .await
+                .unwrap()
+                .unwrap()
+                .status,
+            InputStatus::Rejected
+        );
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn capability_ingestion_coordinator_retains_completed_result_when_database_unavailable_and_recommits(
+        pool: PgPool,
+    ) {
+        use crate::models::ingestion_input::{self, InputStatus};
+        let ing = ingestion_pool_for(&pool).await;
+        let (source, _library, _unused, config) = scan_env();
+        let library_id = crate::models::storage_library::default_library_id(&ing)
+            .await
+            .unwrap();
+        let files = LibraryFiles::open(
+            [(library_id, config.library_path.clone())],
+            &config.ingestion_path,
+        )
+        .unwrap();
+        std::fs::write(source.path().join("book.epub"), make_minimal_epub()).unwrap();
+        let mut owner = coordinator(ing.clone(), config.clone(), files.clone());
+        owner.discover(false).await.unwrap();
+        let input = ingestion_input::current_page(&ing, None)
+            .await
+            .unwrap()
+            .remove(0);
+        let job = ingestion_input::begin_attempt(&ing, &input, Uuid::new_v4())
+            .await
+            .unwrap();
+        let result = process_file(
+            &source.path().join("book.epub"),
+            &config,
+            &ing,
+            &files,
+            library_id,
+            Some(&input),
+            copier::Progress::new(&CancellationToken::new()),
+        )
+        .await;
+        let ProcessResult::Accepted(mut accepted) = result else {
+            panic!("expected independently owned accepted result");
+        };
+        let location = LibraryLocation {
+            library_id,
+            path: "retained.epub".parse().unwrap(),
+        };
+        let copied = accepted
+            .candidate
+            .publish(files.library(library_id).unwrap(), &location.path)
+            .unwrap();
+        accepted.published = Some((location.clone(), copied));
+        ing.close().await;
+        assert!(
+            finish_accepted(&mut accepted, &config, &ing, &files, Some((&input, job)))
+                .await
+                .is_err()
+        );
+        assert!(accepted.published.is_some());
+        assert!(
+            files
+                .library(library_id)
+                .unwrap()
+                .try_exists(location.path.as_path())
+                .unwrap()
+        );
+        assert!(source.path().join("book.epub").exists());
+        let resumed = ingestion_pool_for(&pool).await;
+        assert!(matches!(
+            finish_accepted(
+                &mut accepted,
+                &config,
+                &resumed,
+                &files,
+                Some((&input, job))
+            )
+            .await
+            .unwrap(),
+            ProcessResult::Complete
+        ));
+        assert_eq!(
+            ingestion_input::current(&resumed, input.id)
+                .await
+                .unwrap()
+                .unwrap()
+                .status,
+            InputStatus::Imported
+        );
+        let final_path = accepted.published.as_ref().unwrap().0.path.clone();
+        assert!(matches!(
+            finish_accepted(
+                &mut accepted,
+                &config,
+                &resumed,
+                &files,
+                Some((&input, job))
+            )
+            .await
+            .unwrap(),
+            ProcessResult::Complete
+        ));
+        assert!(
+            files
+                .library(library_id)
+                .unwrap()
+                .try_exists(final_path.as_path())
+                .unwrap()
+        );
+    }
+
+    pub(super) fn coordinator(pool: PgPool, config: Config, files: LibraryFiles) -> Coordinator {
+        Coordinator {
+            config,
+            pool,
+            files,
+            settings: crate::test_support::test_settings(),
+            inputs: std::collections::HashMap::default(),
+            deadlines: tokio_util::time::DelayQueue::default(),
+            keys: std::collections::HashMap::default(),
+            ready: std::collections::VecDeque::default(),
+            observed: std::collections::HashMap::default(),
+            pause: None,
+            pending: None,
+            lock: None,
+            library_id: None,
+            recovered: false,
+            accepted: None,
+        }
+    }
+
+    fn pending_input() -> crate::models::ingestion_input::Input {
+        use crate::models::ingestion_input::{Fingerprint, Input, InputStatus};
+        Input {
+            id: Uuid::new_v4(),
+            source_path: b"book.epub".to_vec(),
+            generation: 1,
+            fingerprint: sqlx::types::Json(Fingerprint {
+                device: 1,
+                inode: 2,
+                size: 3,
+                mtime_seconds: 4,
+                mtime_nanoseconds: 0,
+                ctime_seconds: 4,
+                ctime_nanoseconds: 0,
+            }),
+            status: InputStatus::Pending,
+            reason: None,
+            work_id: None,
+            retry_reset_at: chrono::Utc::now(),
+            observed_at: chrono::Utc::now(),
+        }
+    }
+
+    fn no_retry(id: Uuid) -> crate::models::ingestion_input::RetryState {
+        crate::models::ingestion_input::RetryState {
+            id,
+            count: 0,
+            failed_at: None,
+            needs_change: false,
+        }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn capability_ingestion_coordinator_readiness_coalesces_and_other_ready_input_proceeds() {
+        use futures::StreamExt;
+        let mut owner = coordinator(
+            crate::test_support::test_state().pool,
+            Config::default(),
+            crate::test_support::test_library_files(),
+        );
+        let input = pending_input();
+        let id = input.id;
+        owner.observed.insert(
+            input.source_path.clone(),
+            (input.fingerprint.0.clone(), tokio::time::Instant::now()),
+        );
+        assert_eq!(owner.schedule(input.clone(), &no_retry(id)), 1);
+        tokio::time::advance(std::time::Duration::from_secs(9)).await;
+        assert_eq!(owner.schedule(input, &no_retry(id)), 1);
+        assert_eq!(owner.keys.len(), 1);
+        let mut ready = pending_input();
+        ready.source_path = b"ready.epub".to_vec();
+        owner.observed.insert(
+            ready.source_path.clone(),
+            (
+                ready.fingerprint.0.clone(),
+                tokio::time::Instant::now() - READINESS,
+            ),
+        );
+        let ready_id = ready.id;
+        assert_eq!(owner.schedule(ready, &no_retry(ready_id)), 0);
+        assert_eq!(owner.ready.pop_front(), Some(ready_id));
+        tokio::time::advance(std::time::Duration::from_secs(1)).await;
+        let expired = owner.deadlines.next().await.unwrap();
+        assert_eq!(expired.into_inner(), id);
+        owner.keys.remove(&id);
+        assert!(owner.deadlines.is_empty());
+        owner.forget(id);
+        let replacement = pending_input();
+        owner.observed.insert(
+            replacement.source_path.clone(),
+            (
+                replacement.fingerprint.0.clone(),
+                tokio::time::Instant::now(),
+            ),
+        );
+        assert_eq!(
+            owner.schedule(replacement.clone(), &no_retry(replacement.id)),
+            1
+        );
+        assert_eq!(owner.keys.len(), 1);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn capability_ingestion_coordinator_five_retries_then_sixth_failure_exhausts() {
+        use crate::models::ingestion_input::{InputStatus, RetryState};
+        let mut owner = coordinator(
+            crate::test_support::test_state().pool,
+            Config::default(),
+            crate::test_support::test_library_files(),
+        );
+        assert_eq!(RETRIES, [300, 1800, 7200, 28800, 86400]);
+        for count in 1..=6 {
+            let mut input = pending_input();
+            input.source_path = format!("retry-{count}.epub").into_bytes();
+            input.status = InputStatus::OperationalFailure;
+            owner.observed.insert(
+                input.source_path.clone(),
+                (
+                    input.fingerprint.0.clone(),
+                    tokio::time::Instant::now() - READINESS,
+                ),
+            );
+            let id = input.id;
+            let retry = RetryState {
+                id,
+                count,
+                failed_at: Some(chrono::Utc::now()),
+                needs_change: false,
+            };
+            assert_eq!(owner.schedule(input, &retry), if count < 6 { 1 } else { 2 });
+            if count < 6 {
+                let key = owner.keys.get(&id).unwrap();
+                let remaining = owner
+                    .deadlines
+                    .deadline(key)
+                    .duration_since(tokio::time::Instant::now());
+                assert!(
+                    remaining
+                        .as_secs()
+                        .abs_diff(RETRIES[usize::try_from(count - 1).unwrap()])
+                        <= 1
+                );
+            } else {
+                assert!(!owner.keys.contains_key(&id));
+                assert!(!owner.ready.contains(&id));
+            }
+        }
+        let mut input = pending_input();
+        input.source_path = b"needs-change.epub".to_vec();
+        input.status = InputStatus::OperationalFailure;
+        let mut retry = no_retry(input.id);
+        retry.needs_change = true;
+        assert_eq!(owner.schedule(input.clone(), &retry), 2);
+        assert!(!owner.keys.contains_key(&input.id));
+        input.status = InputStatus::Pending;
+        input.retry_reset_at += chrono::Duration::seconds(1);
+        assert_eq!(owner.schedule(input.clone(), &no_retry(input.id)), 1);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn capability_ingestion_coordinator_idle_cancellation_stall_warnings_and_no_total_deadline()
+     {
+        use futures::FutureExt;
+        let progress = copier::Progress::new(&CancellationToken::new());
+        let now = tokio::time::Instant::now();
+        let mut active = Active {
+            future: std::future::pending().boxed(),
+            progress: progress.clone(),
+            count: 0,
+            last_progress: now,
+            next_warning: now + STALL,
+            recommit: false,
+        };
+        tokio::time::advance(IDLE.checked_sub(std::time::Duration::from_secs(1)).unwrap()).await;
+        active.tick();
+        assert!(!progress.cancel.is_cancelled());
+        tokio::time::advance(std::time::Duration::from_secs(1)).await;
+        active.tick();
+        assert!(progress.cancel.is_cancelled());
+        assert!(active.future.now_or_never().is_none());
+        active.future = std::future::pending().boxed();
+        tokio::time::advance(STALL.checked_sub(IDLE).unwrap()).await;
+        active.tick();
+        assert_eq!(active.next_warning, now + STALL * 2);
+        tokio::time::advance(STALL).await;
+        active.tick();
+        assert_eq!(active.next_warning, now + STALL * 3);
+        let source = tempfile::tempdir().unwrap();
+        let library = tempfile::tempdir().unwrap();
+        let source =
+            cap_std::fs::Dir::open_ambient_dir(source.path(), cap_std::ambient_authority())
+                .unwrap();
+        let library =
+            cap_std::fs::Dir::open_ambient_dir(library.path(), cap_std::ambient_authority())
+                .unwrap();
+        source.write("book.epub", b"stable bytes").unwrap();
+        let path =
+            crate::models::ingestion_input::InputPath::from_path(Path::new("book.epub")).unwrap();
+        let fingerprint = crate::models::ingestion_input::Fingerprint::from_metadata(
+            &copier::input_metadata(&source, &path).unwrap(),
+        );
+        active.progress = copier::Progress::new(&CancellationToken::new());
+        active.last_progress = tokio::time::Instant::now();
+        active.count = 0;
+        for _ in 0..4 {
+            tokio::time::advance(std::time::Duration::from_secs(100)).await;
+            copier::acquire_controlled(
+                &source,
+                &path,
+                &library,
+                &"book.epub".parse().unwrap(),
+                &fingerprint,
+                active.progress.clone(),
+            )
+            .unwrap()
+            .close()
+            .unwrap();
+            active.tick();
+            assert!(!active.progress.cancel.is_cancelled());
+        }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn capability_ingestion_coordinator_shared_probe_schedule_and_single_pause() {
+        let mut owner = coordinator(
+            crate::test_support::test_state().pool,
+            Config::default(),
+            crate::test_support::test_library_files(),
+        );
+        owner.pause(&"database unavailable");
+        let first = owner.pause.as_ref().unwrap().next;
+        owner.pause(&"root unavailable");
+        assert_eq!(owner.pause.as_ref().unwrap().next, first);
+        for seconds in [30, 60, 120, 300, 300] {
+            let pause = owner.pause.as_mut().unwrap();
+            assert_eq!(
+                pause
+                    .next
+                    .duration_since(tokio::time::Instant::now())
+                    .as_secs(),
+                seconds
+            );
+            tokio::time::advance(std::time::Duration::from_secs(seconds)).await;
+            pause.failed();
+        }
+    }
+
+    #[test]
+    fn capability_ingestion_coordinator_root_faults_and_needs_change_classes() {
+        use crate::models::ingestion_input::AttemptOutcome;
+        for errno in [
+            rustix::io::Errno::IO,
+            rustix::io::Errno::NOTCONN,
+            rustix::io::Errno::STALE,
+            rustix::io::Errno::HOSTDOWN,
+            rustix::io::Errno::NOSPC,
+        ] {
+            let error =
+                copier::CopyError::Io(std::io::Error::from_raw_os_error(errno.raw_os_error()));
+            assert!(matches!(
+                classify_acquisition_error(&error, false, false, true),
+                FailureDisposition::Failure(AttemptOutcome::SharedDependency, _)
+            ));
+        }
+        for errno in [
+            rustix::io::Errno::ACCESS,
+            rustix::io::Errno::PERM,
+            rustix::io::Errno::NAMETOOLONG,
+            rustix::io::Errno::LOOP,
+        ] {
+            let error =
+                copier::CopyError::Io(std::io::Error::from_raw_os_error(errno.raw_os_error()));
+            assert!(matches!(
+                classify_acquisition_error(&error, false, true, true),
+                FailureDisposition::Failure(AttemptOutcome::NeedsChange, _)
+            ));
+        }
+        assert!(matches!(
+            classify_acquisition_error(&copier::CopyError::NonRegular, false, true, true),
+            FailureDisposition::Failure(AttemptOutcome::NeedsChange, _)
+        ));
+        let error = copier::CopyError::DestinationIo(std::io::Error::from_raw_os_error(
+            rustix::io::Errno::NOSPC.raw_os_error(),
+        ));
+        assert!(matches!(
+            classify_acquisition_error(&error, false, true, false),
+            FailureDisposition::Failure(AttemptOutcome::SharedDependency, _)
+        ));
+    }
+
+    #[test]
+    fn capability_ingestion_acquisition_rejected_candidate_never_publishes() {
+        use crate::models::ingestion_input::{Fingerprint, InputPath};
+        let source_dir = tempfile::tempdir().unwrap();
+        let library_dir = tempfile::tempdir().unwrap();
+        let source =
+            cap_std::fs::Dir::open_ambient_dir(source_dir.path(), cap_std::ambient_authority())
+                .unwrap();
+        let library =
+            cap_std::fs::Dir::open_ambient_dir(library_dir.path(), cap_std::ambient_authority())
+                .unwrap();
+        source.write("bad.epub", b"corrupt EPUB").unwrap();
+        let path = InputPath::from_path(Path::new("bad.epub")).unwrap();
+        let observed = Fingerprint::from_metadata(
+            &copier::open_input(&source, &path)
+                .unwrap()
+                .metadata()
+                .unwrap(),
+        );
+        let candidate = copier::acquire(
+            &source,
+            &path,
+            &library,
+            &"bad.epub".parse().unwrap(),
+            &observed,
+        )
+        .unwrap();
+        assert_eq!(
+            candidate.validate().unwrap().report.outcome,
+            ValidationOutcome::Quarantined
+        );
+        assert!(!library.try_exists("bad.epub").unwrap());
+        candidate.close().unwrap();
+        assert_eq!(source.read("bad.epub").unwrap(), b"corrupt EPUB");
+        assert_eq!(library.entries().unwrap().count(), 0);
+    }
+
+    #[test]
+    fn capability_ingestion_acquisition_hardlink_repair_owns_independent_bytes() {
+        use crate::models::ingestion_input::{Fingerprint, InputPath};
+        let source_dir = tempfile::tempdir().unwrap();
+        let library_dir = tempfile::tempdir().unwrap();
+        let source =
+            cap_std::fs::Dir::open_ambient_dir(source_dir.path(), cap_std::ambient_authority())
+                .unwrap();
+        let library =
+            cap_std::fs::Dir::open_ambient_dir(library_dir.path(), cap_std::ambient_authority())
+                .unwrap();
+        let original = make_repaired_epub();
+        source.write("repair.epub", &original).unwrap();
+        source
+            .hard_link("repair.epub", &source, "torrent.epub")
+            .unwrap();
+        let path = InputPath::from_path(Path::new("repair.epub")).unwrap();
+        let observed = Fingerprint::from_metadata(
+            &copier::open_input(&source, &path)
+                .unwrap()
+                .metadata()
+                .unwrap(),
+        );
+        let relative = "Author/repair.epub".parse().unwrap();
+        let candidate = copier::acquire(&source, &path, &library, &relative, &observed).unwrap();
+        assert_eq!(
+            candidate.validate().unwrap().report.outcome,
+            ValidationOutcome::Repaired
+        );
+        let copied = candidate.publish(&library, &relative).unwrap();
+        assert_ne!(library.read(relative.as_path()).unwrap(), original);
+        assert_eq!(source.read("repair.epub").unwrap(), original);
+        assert_eq!(source.read("torrent.epub").unwrap(), original);
+        assert_ne!(copied.identity, (observed.device, observed.inode));
+        candidate.close().unwrap();
+    }
+
+    #[test]
+    fn capability_ingestion_acquisition_source_change_and_no_overwrite_preserve_bytes() {
+        use crate::models::ingestion_input::{Fingerprint, InputPath};
+        let source_dir = tempfile::tempdir().unwrap();
+        let library_dir = tempfile::tempdir().unwrap();
+        let source =
+            cap_std::fs::Dir::open_ambient_dir(source_dir.path(), cap_std::ambient_authority())
+                .unwrap();
+        let library =
+            cap_std::fs::Dir::open_ambient_dir(library_dir.path(), cap_std::ambient_authority())
+                .unwrap();
+        source.write("book.epub", make_minimal_epub()).unwrap();
+        let path = InputPath::from_path(Path::new("book.epub")).unwrap();
+        let observed = Fingerprint::from_metadata(
+            &copier::open_input(&source, &path)
+                .unwrap()
+                .metadata()
+                .unwrap(),
+        );
+        let relative = "book.epub".parse().unwrap();
+        let candidate = copier::acquire(&source, &path, &library, &relative, &observed).unwrap();
+        library.write("book.epub", b"foreign owner").unwrap();
+        assert!(candidate.publish(&library, &relative).is_err());
+        assert_eq!(library.read("book.epub").unwrap(), b"foreign owner");
+        source.write("book.epub", b"new source generation").unwrap();
+        assert!(matches!(
+            candidate.verify_source(&source, &path),
+            Err(copier::CopyError::Changed)
+        ));
+        candidate.close().unwrap();
+        assert_eq!(source.read("book.epub").unwrap(), b"new source generation");
+    }
+
+    #[test]
+    fn capability_ingestion_coordinator_hash_mismatch_rechecks_source_before_failure() {
+        use crate::models::ingestion_input::{AttemptOutcome, Fingerprint, InputPath};
+        let root = tempfile::tempdir().unwrap();
+        let dir =
+            cap_std::fs::Dir::open_ambient_dir(root.path(), cap_std::ambient_authority()).unwrap();
+        dir.write("source.epub", b"first").unwrap();
+        let path = InputPath::from_path(Path::new("source.epub")).unwrap();
+        let original = Fingerprint::from_metadata(
+            &copier::open_input(&dir, &path).unwrap().metadata().unwrap(),
+        );
+        let error = copier::CopyError::HashMismatch {
+            source_hash: "first".into(),
+            dest_hash: "second".into(),
+        };
+        let unchanged = Fingerprint::from_metadata(
+            &copier::open_input(&dir, &path).unwrap().metadata().unwrap(),
+        );
+        assert!(matches!(
+            classify_acquisition_error(&error, unchanged != original, true, true),
+            FailureDisposition::Failure(AttemptOutcome::TransientInput, _)
+        ));
+        dir.write("source.epub", b"changed and longer").unwrap();
+        let changed = Fingerprint::from_metadata(
+            &copier::open_input(&dir, &path).unwrap().metadata().unwrap(),
+        );
+        assert_eq!(
+            classify_acquisition_error(&error, changed != original, true, true),
+            FailureDisposition::Changed
+        );
+        assert_eq!(dir.read("source.epub").unwrap(), b"changed and longer");
+    }
+
+    #[test]
+    fn capability_ingestion_coordinator_unlisted_io_is_transient_with_error_kind() {
+        use crate::models::ingestion_input::AttemptOutcome;
+        for kind in [
+            std::io::ErrorKind::WriteZero,
+            std::io::ErrorKind::UnexpectedEof,
+            std::io::ErrorKind::Other,
+        ] {
+            let error = copier::CopyError::Io(std::io::Error::new(kind, "input operation failed"));
+            match classify_acquisition_error(&error, false, true, true) {
+                FailureDisposition::Failure(AttemptOutcome::TransientInput, reason) => {
+                    assert!(reason.contains(&format!("{kind:?}")));
+                }
+                disposition => panic!("incorrect classification: {disposition:?}"),
+            }
+            assert!(matches!(
+                classify_acquisition_error(&error, false, false, true),
+                FailureDisposition::Failure(AttemptOutcome::SharedDependency, _)
+            ));
+        }
+    }
 
     #[test]
     fn candidate_publication_ingestion_uncertainty_reconciles_actual_bytes() {
@@ -1065,14 +3086,10 @@ mod tests {
 
     async fn scan_once(config: &Config, pool: &PgPool) -> Result<ScanResult, anyhow::Error> {
         let id = crate::models::storage_library::default_library_id(pool).await?;
-        let files = LibraryFiles::open(
-            [(id, config.library_path.clone())],
-            &config.ingestion_path,
-            &config.quarantine_path,
-        )?;
+        let files =
+            LibraryFiles::open([(id, config.library_path.clone())], &config.ingestion_path)?;
         super::scan_once(config, pool, &files).await
     }
-    use crate::config::CleanupMode;
     use crate::test_support::db::ingestion_pool_for;
 
     #[test]
@@ -1084,13 +3101,12 @@ mod tests {
         assert!(!should_warm_cover(ManifestationFormat::Pdf, Some(true)));
     }
 
-    fn test_config_for(ingestion: &str, library: &str, quarantine: &str) -> Config {
+    fn test_config_for(ingestion: &str, library: &str, _quarantine: &str) -> Config {
         Config {
             port: 3000,
             database_url: String::new(),
             library_path: library.parse().unwrap(),
             ingestion_path: ingestion.parse().unwrap(),
-            quarantine_path: quarantine.parse().unwrap(),
             log_level: "info".into(),
             db_max_connections: 5,
             oidc_issuer_url: String::new(),
@@ -1116,9 +3132,9 @@ mod tests {
             migration_database_url: None,
             auto_migrate: false,
             ingestion_database_url: String::new(),
-            format_priority: vec![ManifestationFormat::Epub, ManifestationFormat::Pdf],
-            // Preserve source files during tests so we can run multiple scans
-            cleanup_mode: CleanupMode::None,
+            accepted_formats: vec![ManifestationFormat::Epub],
+            cleanup_imported: false,
+            cleanup_duplicates: false,
             enrichment: crate::config::EnrichmentConfig {
                 enabled: false,
                 concurrency: 1,
@@ -1175,67 +3191,23 @@ mod tests {
     }
 
     #[sqlx::test(migrations = "./migrations")]
-    async fn scan_once_processes_pdf_end_to_end(pool: PgPool) {
+    async fn scan_once_records_pdf_as_not_accepted(pool: PgPool) {
         let pool = ingestion_pool_for(&pool).await;
-        let (ingestion, library, _quarantine, config) = scan_env();
-
+        let (ingestion, library, _unused, config) = scan_env();
         let source = ingestion.path().join("Tolkien - The Hobbit.pdf");
-        std::fs::write(&source, b"fake pdf bytes for scan_once test").unwrap();
-
+        std::fs::write(&source, b"PDF bytes").unwrap();
         let result = scan_once(&config, &pool).await.unwrap();
-        assert_eq!(result.processed, 1, "expected 1 processed");
-        assert_eq!(result.failed, 0);
-        assert_eq!(result.skipped, 0);
-
-        // File should exist in the library under Author/Title.ext
-        let dest = library.path().join("Tolkien/The Hobbit.pdf");
-        assert!(dest.exists(), "expected file at {}", dest.display());
+        assert_eq!((result.processed, result.failed, result.skipped), (0, 0, 0));
+        let input = crate::models::ingestion_input::current_page(&pool, None)
+            .await
+            .unwrap()
+            .remove(0);
         assert_eq!(
-            std::fs::read(&dest).unwrap(),
-            b"fake pdf bytes for scan_once test"
+            input.status,
+            crate::models::ingestion_input::InputStatus::NotAccepted
         );
-
-        // Manifestation row should exist
-        let dest_str = dest.strip_prefix(library.path()).unwrap().to_str().unwrap();
-        let count = sqlx::query_scalar!(
-            "SELECT COUNT(*) AS \"count!\" FROM manifestations WHERE file_path = $1",
-            dest_str,
-        )
-        .fetch_one(&pool)
-        .await
-        .unwrap();
-        assert_eq!(count, 1, "expected 1 manifestation row");
-
-        // Non-EPUB formats have no structural validator, so the row must
-        // stay Pending ("validation has not run") — not claim Clean for a
-        // check that never happened.
-        use crate::models::validation_status::ValidationStatus;
-        let status = sqlx::query_scalar!(
-            "SELECT validation_status AS \"validation_status!: ValidationStatus\" FROM manifestations WHERE file_path = $1",
-            dest_str,
-        )
-        .fetch_one(&pool)
-        .await
-        .unwrap();
-        assert_eq!(
-            status,
-            ValidationStatus::Pending,
-            "expected validation_status=pending for never-validated non-EPUB"
-        );
-
-        // Same reasoning for the cover flag: no validator ran, so it must
-        // stay NULL ("never checked"), not become false ("checked, no cover").
-        let has_cover = sqlx::query_scalar!(
-            "SELECT has_embedded_cover FROM manifestations WHERE file_path = $1",
-            dest_str,
-        )
-        .fetch_one(&pool)
-        .await
-        .unwrap();
-        assert_eq!(
-            has_cover, None,
-            "expected has_embedded_cover NULL for never-validated non-EPUB"
-        );
+        assert_eq!(std::fs::read(&source).unwrap(), b"PDF bytes");
+        assert!(!library.path().join("Tolkien/The Hobbit.pdf").exists());
     }
 
     /// Tempdir trio + scan config for a `scan_once` test. The dirs must
@@ -1287,6 +3259,85 @@ mod tests {
         )
         .unwrap();
         (dir, files, location, copied)
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn capability_ingestion_acquisition_import_commits_attempt_and_input_atomically(
+        pool: PgPool,
+    ) {
+        use crate::models::ingestion_input::{self, Fingerprint, InputPath, InputStatus};
+        let ing = ingestion_pool_for(&pool).await;
+        let (dir, _files, location, copied) = claim_copy_fixture(&pool, "atomic.epub").await;
+        let fingerprint =
+            Fingerprint::from_metadata(&std::fs::metadata(dir.path().join("input.pdf")).unwrap());
+        let input = ingestion_input::observe(
+            &ing,
+            &[InputPath::from_path(Path::new("input.epub")).unwrap()],
+            &[fingerprint],
+        )
+        .await
+        .unwrap()
+        .remove(0);
+        let job = ingestion_input::begin_attempt(&ing, &input, Uuid::new_v4())
+            .await
+            .unwrap();
+        let vars = path_template::heuristic_vars_from_filename("Atomic.epub");
+        let meta = || ManifestationMeta {
+            format: ManifestationFormat::Epub,
+            validation_status: ValidationStatus::Clean,
+            accessibility_metadata: &None,
+            has_embedded_cover: Some(false),
+            current_hash: &copied.sha256,
+            current_size: copied.file_size,
+        };
+        assert!(
+            commit_ingest_outcome(
+                &ing,
+                None,
+                &vars,
+                &location,
+                &copied,
+                meta(),
+                Some((&input, Uuid::new_v4()))
+            )
+            .await
+            .is_err()
+        );
+        assert_eq!(
+            ingestion_input::current_page(&ing, None).await.unwrap()[0].status,
+            InputStatus::Processing
+        );
+        let mut tx = ing.begin().await.unwrap();
+        assert!(
+            library_path_claim::owner(&mut tx, &location)
+                .await
+                .unwrap()
+                .is_none()
+        );
+        tx.rollback().await.unwrap();
+        let (work, manifestation) = commit_ingest_outcome(
+            &ing,
+            None,
+            &vars,
+            &location,
+            &copied,
+            meta(),
+            Some((&input, job)),
+        )
+        .await
+        .unwrap();
+        let imported = ingestion_input::current_page(&ing, None)
+            .await
+            .unwrap()
+            .remove(0);
+        assert_eq!(imported.status, InputStatus::Imported);
+        assert_eq!(imported.work_id, Some(work));
+        let mut tx = ing.begin().await.unwrap();
+        assert_eq!(
+            library_path_claim::owner(&mut tx, &location).await.unwrap(),
+            Some(manifestation)
+        );
+        tx.rollback().await.unwrap();
     }
 
     #[sqlx::test(migrations = "./migrations")]
@@ -1357,7 +3408,16 @@ mod tests {
         let files = crate::test_support::test_library_files_at(&config.library_path, library_id);
         let source = ingestion.path().join("Author - Unsupported.bin");
         std::fs::write(&source, b"unsupported bytes").unwrap();
-        let result = process_file(&source, &config, &ing, &files, library_id).await;
+        let result = process_file(
+            &source,
+            &config,
+            &ing,
+            &files,
+            library_id,
+            None,
+            copier::Progress::new(&CancellationToken::new()),
+        )
+        .await;
         assert!(
             matches!(result, ProcessResult::Failed(reason) if reason.contains("unsupported format"))
         );
@@ -1935,6 +3995,31 @@ mod tests {
         .await
         .unwrap();
         assert_eq!(has_cover, Some(false), "expected has_embedded_cover=false");
+
+        let library_id = crate::models::storage_library::default_library_id(&pool)
+            .await
+            .unwrap();
+        let hash = copier::hash_file(&source).unwrap();
+        let manifestation = sqlx::query!(
+            "SELECT id, work_id FROM manifestations WHERE library_id = $1 AND file_path = $2 AND ingestion_file_hash = $3",
+            library_id.as_uuid(), dest_str, &hash,
+        ).fetch_one(&pool).await.unwrap();
+        let app_pool = crate::test_support::db::app_pool_for(&pool).await;
+        let (_id, auth) = crate::test_support::db::create_admin_and_basic_auth(&app_pool).await;
+        let server =
+            crate::test_support::db::server_with_opds_enabled(&app_pool, &pool, library.path())
+                .await;
+        let response = server
+            .get(&format!("/opds/books/{}/file", manifestation.id))
+            .add_header(axum::http::header::AUTHORIZATION, auth)
+            .await;
+        let expected = std::fs::read(&dest).unwrap();
+        assert_eq!(response.status_code(), axum::http::StatusCode::OK);
+        assert_eq!(
+            response.header(axum::http::header::CONTENT_LENGTH),
+            expected.len().to_string()
+        );
+        assert_eq!(response.as_bytes().as_ref(), expected);
     }
 
     #[sqlx::test(migrations = "./migrations")]
@@ -2173,46 +4258,35 @@ mod tests {
     }
 
     #[sqlx::test(migrations = "./migrations")]
-    async fn scan_once_quarantines_corrupt_epub(pool: PgPool) {
-        // P2: a corrupt EPUB (not a valid ZIP) must be quarantined — the source
-        // gets a quarantine sidecar, the library copy is removed, and failed=1.
+    async fn scan_once_retains_corrupt_epub_and_reason(pool: PgPool) {
         let pool = ingestion_pool_for(&pool).await;
-        let (ingestion, library, quarantine, config) = scan_env();
-
+        let (ingestion, library, unused, config) = scan_env();
         let source = ingestion.path().join("Bad - Corrupt Book.epub");
         std::fs::write(&source, b"this is not a zip file").unwrap();
-
         let result = scan_once(&config, &pool).await.unwrap();
-        assert_eq!(result.failed, 1, "expected 1 failed (quarantined)");
-        assert_eq!(result.processed, 0);
-
-        // Quarantine directory must contain a sidecar file for the corrupt EPUB
-        let quarantine_entries: Vec<_> = std::fs::read_dir(quarantine.path())
+        assert_eq!((result.failed, result.processed), (1, 0));
+        let input = crate::models::ingestion_input::current_page(&pool, None)
+            .await
             .unwrap()
-            .filter_map(std::result::Result::ok)
-            .collect();
-        assert!(
-            !quarantine_entries.is_empty(),
-            "expected a quarantine sidecar file, found none"
+            .remove(0);
+        assert_eq!(
+            input.status,
+            crate::models::ingestion_input::InputStatus::Rejected
         );
-
-        // Library must NOT contain the corrupt file
+        assert!(input.reason.as_deref().unwrap().contains("EPUB rejected"));
+        assert_eq!(std::fs::read(&source).unwrap(), b"this is not a zip file");
+        assert_eq!(std::fs::read_dir(unused.path()).unwrap().count(), 0);
         let dest = library.path().join("Bad/Corrupt Book.epub");
-        assert!(!dest.exists(), "corrupt EPUB must not remain in library");
-
-        // No manifestation row must have been written
-        let dest_str = dest.strip_prefix(library.path()).unwrap().to_str().unwrap();
+        assert!(!dest.exists());
+        let relative = "Bad/Corrupt Book.epub";
         let count = sqlx::query_scalar!(
             "SELECT COUNT(*) AS \"count!\" FROM manifestations WHERE file_path = $1",
-            dest_str,
+            relative,
         )
         .fetch_one(&pool)
         .await
         .unwrap();
-        assert_eq!(
-            count, 0,
-            "no manifestation row should exist for quarantined EPUB"
-        );
+        assert_eq!(count, 0);
     }
 
     #[sqlx::test(migrations = "./migrations")]
@@ -2221,118 +4295,89 @@ mod tests {
         let (ingestion, _library, _quarantine, config) = scan_env();
 
         // Unique content to avoid collisions with other test data
-        let unique_content = format!("dedup-test-{}", uuid::Uuid::new_v4());
-        let source = ingestion.path().join("Author - Book.pdf");
-        std::fs::write(&source, unique_content.as_bytes()).unwrap();
+        let unique_content = make_minimal_epub();
+        let source = ingestion.path().join("Author - Book.epub");
+        std::fs::write(&source, &unique_content).unwrap();
 
         // First scan: should process the file
         let r1 = scan_once(&config, &pool).await.unwrap();
         assert_eq!(r1.processed, 1, "first scan: expected processed=1");
         assert_eq!(r1.failed, 0);
 
-        // Second scan: same file still in ingestion dir, same hash → skip
+        // The imported input remains suppressed while its fingerprint is unchanged.
         let r2 = scan_once(&config, &pool).await.unwrap();
-        assert_eq!(r2.skipped, 1, "second scan: expected skipped=1");
+        assert_eq!(r2.skipped, 0, "unchanged imported input is suppressed");
         assert_eq!(r2.processed, 0);
     }
 
-    async fn mixed_cleanup_batch(pool: PgPool, mode: CleanupMode, quarantine_available: bool) {
+    async fn mixed_cleanup_batch(pool: PgPool, imported: bool, duplicates: bool) {
         let pool = ingestion_pool_for(&pool).await;
-        let (ingestion, library, quarantine, mut config) = scan_env();
-        let skipped = ingestion.path().join("Author - Skipped.pdf");
-        std::fs::write(&skipped, b"already ingested").unwrap();
-        let first = scan_once(&config, &pool).await.unwrap();
-        assert_eq!(first.processed, 1);
-
-        let completed = ingestion.path().join("Author - Completed.pdf");
-        let failed = ingestion.path().join("Author - Failed.epub");
-        let completed_sibling = ingestion.path().join("AUTHOR - COMPLETED.txt");
-        let skipped_sibling = ingestion.path().join("Author - Skipped.txt");
-        let failed_sibling = ingestion.path().join("Author - Failed.pdf");
-        let unrelated = ingestion.path().join("unrelated.txt");
-        let other_dir = ingestion.path().join("other");
-        std::fs::create_dir(&other_dir).unwrap();
-        let other_group = other_dir.join("Author - Completed.txt");
-        for (path, bytes) in [
-            (&completed, b"new book".as_slice()),
-            (&failed, b"not a zip archive".as_slice()),
-            (&completed_sibling, b"completed sibling".as_slice()),
-            (&skipped_sibling, b"skipped sibling".as_slice()),
-            (&failed_sibling, b"failed sibling".as_slice()),
-            (&unrelated, b"unrelated".as_slice()),
-            (&other_group, b"another directory".as_slice()),
-        ] {
-            std::fs::write(path, bytes).unwrap();
+        let (ingestion, library, _unused, mut config) = scan_env();
+        let original = ingestion.path().join("Author - Original.epub");
+        let duplicate_bytes = make_minimal_epub();
+        std::fs::write(&original, &duplicate_bytes).unwrap();
+        assert_eq!(scan_once(&config, &pool).await.unwrap().processed, 1);
+        std::fs::remove_file(original).unwrap();
+        let completed = ingestion.path().join("Author - Completed.epub");
+        let duplicate = ingestion.path().join("Author - Duplicate.epub");
+        let rejected = ingestion.path().join("Author - Rejected.epub");
+        std::fs::write(&completed, make_metadata_epub()).unwrap();
+        std::fs::write(&duplicate, &duplicate_bytes).unwrap();
+        std::fs::write(&rejected, b"corrupt archive").unwrap();
+        let siblings = [
+            "AUTHOR - COMPLETED.txt",
+            "Author - Duplicate.txt",
+            "Author - Rejected.pdf",
+            "unrelated.txt",
+        ];
+        for name in siblings {
+            std::fs::write(ingestion.path().join(name), b"retain").unwrap();
         }
-        config.cleanup_mode = mode;
-        let id = crate::models::storage_library::default_library_id(&pool)
-            .await
-            .unwrap();
-        let files = LibraryFiles::open(
-            [(id, config.library_path.clone())],
-            &config.ingestion_path,
-            &config.quarantine_path,
-        )
-        .unwrap();
-        if !quarantine_available {
-            std::fs::remove_dir(quarantine.path()).unwrap();
-            std::fs::write(quarantine.path(), b"not a directory").unwrap();
-        }
-
-        let result = super::scan_once(&config, &pool, &files).await.unwrap();
-        assert_eq!(result.processed, 1);
-        assert_eq!(result.skipped, 1);
-        assert_eq!(result.failed, 1);
-        assert_eq!(completed.exists(), mode == CleanupMode::None);
-        assert_eq!(skipped.exists(), mode == CleanupMode::None);
-        assert_eq!(completed_sibling.exists(), mode != CleanupMode::All);
-        assert_eq!(skipped_sibling.exists(), mode != CleanupMode::All);
-        assert!(failed_sibling.exists());
-        assert!(unrelated.exists());
-        assert!(other_group.exists());
-        if quarantine_available {
-            assert!(!failed.exists());
+        std::fs::create_dir(ingestion.path().join("unrelated-empty")).unwrap();
+        config.cleanup_imported = imported;
+        config.cleanup_duplicates = duplicates;
+        let result = scan_once(&config, &pool).await.unwrap();
+        assert_eq!((result.processed, result.skipped, result.failed), (1, 1, 1));
+        assert_eq!(completed.exists(), !imported);
+        assert_eq!(duplicate.exists(), !duplicates);
+        assert_eq!(std::fs::read(rejected).unwrap(), b"corrupt archive");
+        for name in siblings {
             assert_eq!(
-                std::fs::read(quarantine.path().join("Author - Failed.epub")).unwrap(),
-                b"not a zip archive"
+                std::fs::read(ingestion.path().join(name)).unwrap(),
+                b"retain"
             );
-            assert!(
-                quarantine
-                    .path()
-                    .join("Author - Failed.epub.quarantine.json")
-                    .exists()
-            );
-        } else {
-            assert_eq!(std::fs::read(&failed).unwrap(), b"not a zip archive");
         }
-        assert_eq!(
-            std::fs::read(library.path().join("Author/Completed.pdf")).unwrap(),
-            b"new book"
+        assert!(ingestion.path().join("unrelated-empty").exists());
+        assert!(
+            library
+                .path()
+                .join("McAuthor, Test/The Integration Test.epub")
+                .exists()
         );
-        assert_eq!(
-            std::fs::read(library.path().join("Author/Skipped.pdf")).unwrap(),
-            b"already ingested"
-        );
     }
 
     #[sqlx::test(migrations = "./migrations")]
-    async fn scan_once_mixed_cleanup_none(pool: PgPool) {
-        mixed_cleanup_batch(pool, CleanupMode::None, true).await;
+    async fn capability_ingestion_cleanup_all_outcomes_retained_when_disabled(pool: PgPool) {
+        mixed_cleanup_batch(pool, false, false).await;
     }
 
     #[sqlx::test(migrations = "./migrations")]
-    async fn scan_once_mixed_cleanup_ingested(pool: PgPool) {
-        mixed_cleanup_batch(pool, CleanupMode::Ingested, true).await;
+    async fn capability_ingestion_cleanup_imported_only_retains_duplicate_rejected_and_siblings(
+        pool: PgPool,
+    ) {
+        mixed_cleanup_batch(pool, true, false).await;
     }
 
     #[sqlx::test(migrations = "./migrations")]
-    async fn scan_once_mixed_cleanup_all(pool: PgPool) {
-        mixed_cleanup_batch(pool, CleanupMode::All, true).await;
+    async fn capability_ingestion_cleanup_duplicate_opt_in_keeps_rejected_and_siblings(
+        pool: PgPool,
+    ) {
+        mixed_cleanup_batch(pool, true, true).await;
     }
 
     #[sqlx::test(migrations = "./migrations")]
-    async fn scan_once_mixed_cleanup_all_preserves_unquarantined_source(pool: PgPool) {
-        mixed_cleanup_batch(pool, CleanupMode::All, false).await;
+    async fn capability_ingestion_cleanup_duplicate_only_keeps_imported_original(pool: PgPool) {
+        mixed_cleanup_batch(pool, false, true).await;
     }
 
     // ── Task 30: ingest-invariant DB tests ────────────────────────────────
@@ -2482,19 +4527,18 @@ mod tests {
         let pool = ingestion_pool_for(&pool).await;
         let (ingestion, library, _quarantine, config) = scan_env();
 
-        // PDF has no OPF extraction path → heuristic fallback engages.
         let marker = uuid::Uuid::new_v4().simple().to_string();
-        let source = ingestion
-            .path()
-            .join(format!("Heuristic Author - Heuristic Title {marker}.pdf"));
-        std::fs::write(&source, format!("heuristic-pdf-{marker}")).unwrap();
+        let source = ingestion.path().join(format!(
+            "Heuristic Author - Heuristic Title force-validator-error {marker}.epub"
+        ));
+        std::fs::write(&source, make_minimal_epub()).unwrap();
 
         let result = scan_once(&config, &pool).await.unwrap();
         assert_eq!(result.processed, 1, "expected 1 processed");
 
-        let dest = library
-            .path()
-            .join(format!("Heuristic Author/Heuristic Title {marker}.pdf"));
+        let dest = library.path().join(format!(
+            "Heuristic Author/Heuristic Title force-validator-error {marker}.epub"
+        ));
         assert!(dest.exists(), "expected file at {}", dest.display());
 
         // The work should have its title_version_id pointing at the heuristic

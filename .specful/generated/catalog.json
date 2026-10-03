@@ -1092,8 +1092,8 @@
     {
       "id": "REV-REQ-0043",
       "kind": "req",
-      "path": "docs/specs/ingestion/requirements/0043-an-irrecoverable-epub-is-quarantined-and-gets-no-manifestation-row.md",
-      "title": "An irrecoverable EPUB is quarantined and gets no manifestation row"
+      "path": "docs/specs/ingestion/requirements/0043-an-irrecoverable-epub-remains-in-ingestion-with-a-recorded-rejection-reason.md",
+      "title": "An irrecoverable EPUB remains in ingestion with a recorded rejection reason"
     },
     {
       "id": "REV-REQ-0044",

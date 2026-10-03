@@ -1373,7 +1373,7 @@ mod tests {
         reason = "bare reqwest::Client::new() against wiremock on loopback is ADR-exempt (docs/adr/0007-outbound-http-clients-send-an-explicit-user-agent.md): wiremock does not score User-Agents and no WAF sits in the path"
     )]
     use super::*;
-    use crate::config::{CleanupMode, CoverConfig, EnrichmentConfig};
+    use crate::config::{CoverConfig, EnrichmentConfig};
     use crate::models::manifestation_format::ManifestationFormat;
     use serde_json::json;
     use wiremock::matchers::{method, path};
@@ -1491,7 +1491,6 @@ mod tests {
             database_url: String::new(),
             library_path: crate::config::Config::default().library_path,
             ingestion_path: crate::config::Config::default().ingestion_path,
-            quarantine_path: crate::config::Config::default().quarantine_path,
             log_level: "info".into(),
             db_max_connections: 5,
             oidc_issuer_url: String::new(),
@@ -1517,8 +1516,9 @@ mod tests {
             migration_database_url: None,
             auto_migrate: false,
             ingestion_database_url: String::new(),
-            format_priority: vec![ManifestationFormat::Epub],
-            cleanup_mode: CleanupMode::None,
+            accepted_formats: vec![ManifestationFormat::Epub],
+            cleanup_imported: false,
+            cleanup_duplicates: false,
             enrichment: EnrichmentConfig {
                 enabled: true,
                 concurrency: 1,

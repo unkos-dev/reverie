@@ -8,15 +8,14 @@ use chrono::{DateTime, Utc};
 use sqlx::PgPool;
 use tokio::sync::RwLock;
 
-use crate::models::settings::{Settings, UpdateSettings};
+use crate::models::settings::{IngestionSettings, Settings, UpdateSettings};
 
 /// Load the singleton settings row from the database.
 ///
 /// # Errors
 /// Returns `sqlx::Error` on connection or query failure.
 pub async fn load(pool: &PgPool) -> Result<Settings, sqlx::Error> {
-    sqlx::query_as!(
-        Settings,
+    sqlx::query!(
         r#"SELECT
             enrichment_enabled,
             enrichment_concurrency,
@@ -32,8 +31,9 @@ pub async fn load(pool: &PgPool) -> Result<Settings, sqlx::Error> {
             writeback_max_attempts,
             opds_enabled,
             opds_page_size,
-            format_priority,
-            cleanup_mode,
+            accepted_formats,
+            cleanup_imported,
+            cleanup_duplicates,
             provider_visibility,
             revision,
             updated_at
@@ -42,6 +42,30 @@ pub async fn load(pool: &PgPool) -> Result<Settings, sqlx::Error> {
     )
     .fetch_one(pool)
     .await
+    .map(|row| Settings {
+        enrichment_enabled: row.enrichment_enabled,
+        enrichment_concurrency: row.enrichment_concurrency,
+        enrichment_poll_idle_secs: row.enrichment_poll_idle_secs,
+        enrichment_fetch_budget_secs: row.enrichment_fetch_budget_secs,
+        cover_max_bytes: row.cover_max_bytes,
+        cover_download_timeout_secs: row.cover_download_timeout_secs,
+        cover_min_long_edge_px: row.cover_min_long_edge_px,
+        cover_redirect_limit: row.cover_redirect_limit,
+        writeback_enabled: row.writeback_enabled,
+        writeback_concurrency: row.writeback_concurrency,
+        writeback_poll_idle_secs: row.writeback_poll_idle_secs,
+        writeback_max_attempts: row.writeback_max_attempts,
+        opds_enabled: row.opds_enabled,
+        opds_page_size: row.opds_page_size,
+        ingestion: IngestionSettings {
+            accepted_formats: row.accepted_formats,
+            cleanup_imported: row.cleanup_imported,
+            cleanup_duplicates: row.cleanup_duplicates,
+        },
+        provider_visibility: row.provider_visibility,
+        revision: row.revision,
+        updated_at: row.updated_at,
+    })
 }
 
 /// Install `candidate` into the cache slot only when its `revision` is newer
@@ -189,14 +213,18 @@ pub async fn save(pool: &PgPool, req: &UpdateSettings) -> Result<Settings, sqlx:
         separated.push("opds_page_size = ");
         separated.push_bind_unseparated(v);
     }
-    if let Some(ref v) = req.format_priority {
+    if let Some(ref v) = req.accepted_formats {
         let strings: Vec<String> = v.iter().map(ToString::to_string).collect();
-        separated.push("format_priority = ");
+        separated.push("accepted_formats = ");
         separated.push_bind_unseparated(strings);
     }
-    if let Some(ref v) = req.cleanup_mode {
-        separated.push("cleanup_mode = ");
-        separated.push_bind_unseparated(v.as_str().to_owned());
+    if let Some(v) = req.cleanup_imported {
+        separated.push("cleanup_imported = ");
+        separated.push_bind_unseparated(v);
+    }
+    if let Some(v) = req.cleanup_duplicates {
+        separated.push("cleanup_duplicates = ");
+        separated.push_bind_unseparated(v);
     }
     if let Some(ref v) = req.provider_visibility {
         let obj: serde_json::Map<String, serde_json::Value> = v
@@ -213,7 +241,7 @@ pub async fn save(pool: &PgPool, req: &UpdateSettings) -> Result<Settings, sqlx:
     separated.push("revision = revision + 1");
     separated.push("updated_at = now()");
 
-    qb.push(" WHERE id = true RETURNING enrichment_enabled, enrichment_concurrency, enrichment_poll_idle_secs, enrichment_fetch_budget_secs, cover_max_bytes, cover_download_timeout_secs, cover_min_long_edge_px, cover_redirect_limit, writeback_enabled, writeback_concurrency, writeback_poll_idle_secs, writeback_max_attempts, opds_enabled, opds_page_size, format_priority, cleanup_mode, provider_visibility, revision, updated_at");
+    qb.push(" WHERE id = true RETURNING enrichment_enabled, enrichment_concurrency, enrichment_poll_idle_secs, enrichment_fetch_budget_secs, cover_max_bytes, cover_download_timeout_secs, cover_min_long_edge_px, cover_redirect_limit, writeback_enabled, writeback_concurrency, writeback_poll_idle_secs, writeback_max_attempts, opds_enabled, opds_page_size, accepted_formats, cleanup_imported, cleanup_duplicates, provider_visibility, revision, updated_at");
 
     qb.build_query_as::<Settings>().fetch_one(pool).await
 }
@@ -328,8 +356,9 @@ mod tests {
             writeback_max_attempts: None,
             opds_enabled: None,
             opds_page_size: None,
-            format_priority: None,
-            cleanup_mode: None,
+            accepted_formats: None,
+            cleanup_imported: None,
+            cleanup_duplicates: None,
             provider_visibility: None,
         }
     }

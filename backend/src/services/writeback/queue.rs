@@ -640,7 +640,7 @@ pub async fn revert_in_progress(pool: &PgPool) -> sqlx::Result<()> {
 )]
 mod tests {
     use super::*;
-    use crate::config::{CleanupMode, CoverConfig, EnrichmentConfig, WritebackConfig};
+    use crate::config::{CoverConfig, EnrichmentConfig, WritebackConfig};
     use crate::models::manifestation_format::ManifestationFormat;
     use tokio::sync::Barrier;
 
@@ -658,7 +658,6 @@ mod tests {
             database_url: String::new(),
             library_path: storage_config.library_path,
             ingestion_path: storage_config.ingestion_path,
-            quarantine_path: storage_config.quarantine_path,
             log_level: "info".into(),
             db_max_connections: 5,
             oidc_issuer_url: String::new(),
@@ -684,8 +683,9 @@ mod tests {
             migration_database_url: None,
             auto_migrate: false,
             ingestion_database_url: String::new(),
-            format_priority: vec![ManifestationFormat::Epub],
-            cleanup_mode: CleanupMode::None,
+            accepted_formats: vec![ManifestationFormat::Epub],
+            cleanup_imported: false,
+            cleanup_duplicates: false,
             enrichment: EnrichmentConfig {
                 enabled: false,
                 concurrency: 1,

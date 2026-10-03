@@ -3487,7 +3487,6 @@ dependencies = [
  "utoipa-axum",
  "uuid",
  "validator",
- "walkdir",
  "wiremock",
  "zip",
  "zxcvbn",
@@ -4625,6 +4624,7 @@ dependencies = [
  "futures-sink",
  "libc",
  "pin-project-lite",
+ "slab",
  "tokio",
 ]
 

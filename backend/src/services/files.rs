@@ -69,7 +69,6 @@ pub struct LibraryFiles {
 struct LibraryFilesInner {
     libraries: HashMap<LibraryId, Arc<LibraryRoot>>,
     ingestion: Dir,
-    quarantine: Dir,
 }
 
 struct LibraryRoot {
@@ -113,7 +112,6 @@ impl LibraryFiles {
     pub fn open(
         libraries: impl IntoIterator<Item = (LibraryId, AbsoluteRootPath)>,
         ingestion: &AbsoluteRootPath,
-        quarantine: &AbsoluteRootPath,
     ) -> Result<Self, LibraryFileError> {
         let mut roots = HashMap::new();
         for (id, path) in libraries {
@@ -130,7 +128,6 @@ impl LibraryFiles {
             inner: Arc::new(LibraryFilesInner {
                 libraries: roots,
                 ingestion: open_root_dir(ingestion)?,
-                quarantine: open_root_dir(quarantine)?,
             }),
             #[cfg(test)]
             fixtures: None,
@@ -153,12 +150,6 @@ impl LibraryFiles {
     #[must_use]
     pub fn ingestion(&self) -> &Dir {
         &self.inner.ingestion
-    }
-
-    /// The opened failed-ingestion quarantine directory.
-    #[must_use]
-    pub fn quarantine(&self) -> &Dir {
-        &self.inner.quarantine
     }
 
     /// Open a recorded source from blocking filesystem work.
@@ -275,7 +266,7 @@ mod tests {
     }
 
     fn files(path: &Path, id: LibraryId) -> LibraryFiles {
-        LibraryFiles::open([(id, root(path))], &root(path), &root(path)).unwrap()
+        LibraryFiles::open([(id, root(path))], &root(path)).unwrap()
     }
 
     #[test]
@@ -283,20 +274,16 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let id = LibraryId::from_uuid(Uuid::new_v4());
         let missing = root(&tmp.path().join("missing"));
-        for (library, ingestion, quarantine) in [
-            (missing.clone(), root(tmp.path()), root(tmp.path())),
-            (root(tmp.path()), missing.clone(), root(tmp.path())),
-            (root(tmp.path()), root(tmp.path()), missing),
+        for (library, ingestion) in [
+            (missing.clone(), root(tmp.path())),
+            (root(tmp.path()), missing),
         ] {
-            assert!(
-                matches!(LibraryFiles::open([(id, library)], &ingestion, &quarantine),
-                Err(LibraryFileError::Io(e)) if e.kind() == io::ErrorKind::NotFound)
-            );
+            assert!(matches!(LibraryFiles::open([(id, library)], &ingestion),
+                Err(LibraryFileError::Io(e)) if e.kind() == io::ErrorKind::NotFound));
         }
         let files = files(tmp.path(), id);
         assert!(files.library(id).unwrap().dir_metadata().unwrap().is_dir());
         assert!(files.ingestion().dir_metadata().unwrap().is_dir());
-        assert!(files.quarantine().dir_metadata().unwrap().is_dir());
     }
 
     #[test]
@@ -305,13 +292,12 @@ mod tests {
         let file = tmp.path().join("file");
         std::fs::write(&file, b"file").unwrap();
         let id = LibraryId::from_uuid(Uuid::new_v4());
-        for (library, ingestion, quarantine) in [
-            (root(&file), root(tmp.path()), root(tmp.path())),
-            (root(tmp.path()), root(&file), root(tmp.path())),
-            (root(tmp.path()), root(tmp.path()), root(&file)),
+        for (library, ingestion) in [
+            (root(&file), root(tmp.path())),
+            (root(tmp.path()), root(&file)),
         ] {
             assert!(matches!(
-                LibraryFiles::open([(id, library)], &ingestion, &quarantine),
+                LibraryFiles::open([(id, library)], &ingestion),
                 Err(LibraryFileError::Io(_))
             ));
         }
@@ -354,7 +340,6 @@ mod tests {
         let files = LibraryFiles::open(
             [(a, root(first.path())), (b, root(second.path()))],
             &root(first.path()),
-            &root(first.path()),
         )
         .unwrap();
         for (id, expected) in [(a, b"first".as_slice()), (b, b"second".as_slice())] {
@@ -373,7 +358,6 @@ mod tests {
         assert!(
             LibraryFiles::open(
                 [(a, root(first.path())), (a, root(second.path()))],
-                &root(first.path()),
                 &root(first.path())
             )
             .is_err()

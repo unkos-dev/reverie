@@ -1,0 +1,34 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE ingestion_jobs SET outcome = $2, completed_at = now(), error_message = $3,\n         status = CASE WHEN $2::ingestion_attempt_outcome = 'imported' THEN 'complete'::job_status\n                       WHEN $2::ingestion_attempt_outcome IN ('duplicate', 'changed') THEN 'skipped'::job_status ELSE 'failed'::job_status END\n         WHERE id = $1 AND input_id = $4 AND input_generation = $5",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        {
+          "Custom": {
+            "name": "ingestion_attempt_outcome",
+            "kind": {
+              "Enum": [
+                "imported",
+                "duplicate",
+                "rejected",
+                "changed",
+                "shared_dependency",
+                "transient_input",
+                "needs_change",
+                "interrupted"
+              ]
+            }
+          }
+        },
+        "Text",
+        "Uuid",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "86a309d7eceb1a062b40a1978e3f80b522cf33910370b5520cd951dd97d9504c"
+}

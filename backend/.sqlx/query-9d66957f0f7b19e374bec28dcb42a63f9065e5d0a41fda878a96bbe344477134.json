@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT\n            enrichment_enabled,\n            enrichment_concurrency,\n            enrichment_poll_idle_secs,\n            enrichment_fetch_budget_secs,\n            cover_max_bytes,\n            cover_download_timeout_secs,\n            cover_min_long_edge_px,\n            cover_redirect_limit,\n            writeback_enabled,\n            writeback_concurrency,\n            writeback_poll_idle_secs,\n            writeback_max_attempts,\n            opds_enabled,\n            opds_page_size,\n            format_priority,\n            cleanup_mode,\n            provider_visibility,\n            revision,\n            updated_at\n        FROM settings\n        WHERE id = true",
+  "query": "SELECT\n            enrichment_enabled,\n            enrichment_concurrency,\n            enrichment_poll_idle_secs,\n            enrichment_fetch_budget_secs,\n            cover_max_bytes,\n            cover_download_timeout_secs,\n            cover_min_long_edge_px,\n            cover_redirect_limit,\n            writeback_enabled,\n            writeback_concurrency,\n            writeback_poll_idle_secs,\n            writeback_max_attempts,\n            opds_enabled,\n            opds_page_size,\n            accepted_formats,\n            cleanup_imported,\n            cleanup_duplicates,\n            provider_visibility,\n            revision,\n            updated_at\n        FROM settings\n        WHERE id = true",
   "describe": {
     "columns": [
       {
@@ -159,28 +159,39 @@
       },
       {
         "ordinal": 14,
-        "name": "format_priority",
+        "name": "accepted_formats",
         "type_info": "TextArray",
         "origin": {
           "Table": {
             "table": "settings",
-            "name": "format_priority"
+            "name": "accepted_formats"
           }
         }
       },
       {
         "ordinal": 15,
-        "name": "cleanup_mode",
-        "type_info": "Text",
+        "name": "cleanup_imported",
+        "type_info": "Bool",
         "origin": {
           "Table": {
             "table": "settings",
-            "name": "cleanup_mode"
+            "name": "cleanup_imported"
           }
         }
       },
       {
         "ordinal": 16,
+        "name": "cleanup_duplicates",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "settings",
+            "name": "cleanup_duplicates"
+          }
+        }
+      },
+      {
+        "ordinal": 17,
         "name": "provider_visibility",
         "type_info": "Jsonb",
         "origin": {
@@ -191,7 +202,7 @@
         }
       },
       {
-        "ordinal": 17,
+        "ordinal": 18,
         "name": "revision",
         "type_info": "Int8",
         "origin": {
@@ -202,7 +213,7 @@
         }
       },
       {
-        "ordinal": 18,
+        "ordinal": 19,
         "name": "updated_at",
         "type_info": "Timestamptz",
         "origin": {
@@ -235,8 +246,9 @@
       false,
       false,
       false,
+      false,
       false
     ]
   },
-  "hash": "8ca29812128e52aed408fb79cb9b90636d32b4cfeb526935637b0fff5823b280"
+  "hash": "9d66957f0f7b19e374bec28dcb42a63f9065e5d0a41fda878a96bbe344477134"
 }

@@ -3,7 +3,7 @@ use axum_test::TestServer;
 
 use crate::auth::oidc::OidcClient;
 use crate::config::{
-    CleanupMode, Config, CoverConfig, EnrichmentConfig, OpdsConfig, SecurityConfig, WritebackConfig,
+    Config, CoverConfig, EnrichmentConfig, OpdsConfig, SecurityConfig, WritebackConfig,
 };
 use crate::models::manifestation_format::ManifestationFormat;
 use crate::state::AppState;
@@ -21,9 +21,7 @@ pub fn test_storage_config(
 ) -> (Config, crate::services::files::LibraryFiles) {
     let staging = tempfile::tempdir().unwrap();
     let ingestion = staging.path().join("ingestion");
-    let quarantine = staging.path().join("quarantine");
     std::fs::create_dir(&ingestion).unwrap();
-    std::fs::create_dir(&quarantine).unwrap();
     let library = library.map_or_else(
         || {
             let path = staging.path().join("library");
@@ -35,11 +33,9 @@ pub fn test_storage_config(
     let mut config = test_config();
     config.library_path = library.to_str().unwrap().parse().unwrap();
     config.ingestion_path = ingestion.to_str().unwrap().parse().unwrap();
-    config.quarantine_path = quarantine.to_str().unwrap().parse().unwrap();
     let files = crate::services::files::LibraryFiles::open(
         [(id, config.library_path.clone())],
         &config.ingestion_path,
-        &config.quarantine_path,
     )
     .unwrap()
     .with_fixtures(vec![staging]);
@@ -52,7 +48,6 @@ pub fn test_config() -> Config {
         database_url: String::new(),
         library_path: crate::config::Config::default().library_path,
         ingestion_path: crate::config::Config::default().ingestion_path,
-        quarantine_path: crate::config::Config::default().quarantine_path,
         log_level: "info".into(),
         db_max_connections: 10,
         oidc_issuer_url: String::new(),
@@ -81,15 +76,9 @@ pub fn test_config() -> Config {
         migration_database_url: None,
         auto_migrate: false,
         ingestion_database_url: String::new(),
-        format_priority: vec![
-            ManifestationFormat::Epub,
-            ManifestationFormat::Pdf,
-            ManifestationFormat::Mobi,
-            ManifestationFormat::Azw3,
-            ManifestationFormat::Cbz,
-            ManifestationFormat::Cbr,
-        ],
-        cleanup_mode: CleanupMode::All,
+        accepted_formats: vec![ManifestationFormat::Epub],
+        cleanup_imported: true,
+        cleanup_duplicates: false,
         enrichment: EnrichmentConfig {
             enabled: false,
             concurrency: 1,
@@ -195,15 +184,11 @@ pub fn test_settings() -> std::sync::Arc<tokio::sync::RwLock<crate::models::sett
         writeback_max_attempts: 3,
         opds_enabled: true,
         opds_page_size: 50,
-        format_priority: vec![
-            "epub".into(),
-            "pdf".into(),
-            "mobi".into(),
-            "azw3".into(),
-            "cbz".into(),
-            "cbr".into(),
-        ],
-        cleanup_mode: "all".into(),
+        ingestion: crate::models::settings::IngestionSettings {
+            accepted_formats: vec!["epub".into()],
+            cleanup_imported: true,
+            cleanup_duplicates: false,
+        },
         provider_visibility: serde_json::json!({}),
         revision: 0,
         updated_at: chrono::Utc::now(),
@@ -218,6 +203,7 @@ pub fn test_state() -> AppState {
     AppState {
         pool: sqlx::PgPool::connect_lazy("postgres://invalid").unwrap(),
         ingestion_pool: sqlx::PgPool::connect_lazy("postgres://invalid").unwrap(),
+        ingestion: crate::services::ingestion::coordinator_channel().0,
         library_files,
         config,
         oidc: Some(std::sync::Arc::new(test_oidc_runtime())),
@@ -231,26 +217,18 @@ pub fn test_state() -> AppState {
 #[tokio::test]
 async fn test_state_storage_roots_match_config_and_survive_cloning() {
     let state = test_state();
-    for (dir, path) in [
-        (
-            state.library_files.ingestion(),
-            &state.config.ingestion_path,
-        ),
-        (
-            state.library_files.quarantine(),
-            &state.config.quarantine_path,
-        ),
-    ] {
-        dir.write("marker", b"fixture bytes").unwrap();
-        assert_eq!(
-            std::fs::read(path.as_path().join("marker")).unwrap(),
-            b"fixture bytes"
-        );
-    }
+    state
+        .library_files
+        .ingestion()
+        .write("marker", b"fixture bytes")
+        .unwrap();
+    assert_eq!(
+        std::fs::read(state.config.ingestion_path.as_path().join("marker")).unwrap(),
+        b"fixture bytes"
+    );
     let roots = [
         state.config.library_path.as_path().to_owned(),
         state.config.ingestion_path.as_path().to_owned(),
-        state.config.quarantine_path.as_path().to_owned(),
     ];
     let clone = state.clone();
     drop(state);
@@ -606,6 +584,7 @@ pub mod db {
         let state = AppState {
             pool: app_pool.clone(),
             ingestion_pool: ingestion_pool.clone(),
+            ingestion: crate::services::ingestion::coordinator_channel().0,
             library_files,
             config,
             oidc: Some(std::sync::Arc::new(super::test_oidc_runtime())),
@@ -653,6 +632,7 @@ pub mod db {
         let state = AppState {
             pool: app_pool.clone(),
             ingestion_pool: ingestion_pool.clone(),
+            ingestion: crate::services::ingestion::coordinator_channel().0,
             library_files,
             config,
             oidc: Some(std::sync::Arc::new(super::test_oidc_runtime())),
@@ -681,6 +661,7 @@ pub mod db {
         let state = AppState {
             pool: app_pool.clone(),
             ingestion_pool: ingestion_pool.clone(),
+            ingestion: crate::services::ingestion::coordinator_channel().0,
             library_files,
             config,
             oidc: Some(std::sync::Arc::new(super::test_oidc_runtime())),
@@ -714,6 +695,7 @@ pub mod db {
         let state = AppState {
             pool: app_pool.clone(),
             ingestion_pool: ingestion_pool.clone(),
+            ingestion: crate::services::ingestion::coordinator_channel().0,
             library_files,
             config,
             oidc: Some(std::sync::Arc::new(super::test_oidc_runtime())),
@@ -758,6 +740,7 @@ pub mod db {
         let state = AppState {
             pool: app_pool.clone(),
             ingestion_pool: ingestion_pool.clone(),
+            ingestion: crate::services::ingestion::coordinator_channel().0,
             library_files,
             config,
             oidc: Some(std::sync::Arc::new(super::test_oidc_runtime())),
@@ -788,6 +771,7 @@ pub mod db {
         let state = AppState {
             pool: app_pool.clone(),
             ingestion_pool: ingestion_pool.clone(),
+            ingestion: crate::services::ingestion::coordinator_channel().0,
             library_files,
             config,
             oidc: Some(std::sync::Arc::new(super::test_oidc_runtime())),
@@ -826,6 +810,7 @@ pub mod db {
         let state = AppState {
             pool: app_pool.clone(),
             ingestion_pool: ingestion_pool.clone(),
+            ingestion: crate::services::ingestion::coordinator_channel().0,
             library_files,
             config,
             oidc: Some(std::sync::Arc::new(super::test_oidc_runtime())),

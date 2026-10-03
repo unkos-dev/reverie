@@ -5,18 +5,48 @@
 
 use std::fmt::Write as _;
 
+use crate::models::ingestion_input::{Fingerprint, InputPath};
 use crate::services::files::RelativeFilePath;
 use crate::services::writeback::path_rename;
 use cap_std::fs::{Dir, MetadataExt};
 use cap_tempfile::{TempDir, TempFile};
 use sha2::{Digest, Sha256};
-use std::io::{BufReader, BufWriter, Read, Write};
-use std::path::{Path, PathBuf};
+#[cfg(test)]
+use std::io::{BufReader, BufWriter};
+use std::io::{Read, Write};
+use std::io::{Seek, SeekFrom};
+#[cfg(test)]
+use std::path::Path;
+use std::path::PathBuf;
+use std::sync::{
+    Arc,
+    atomic::{AtomicU64, Ordering},
+};
+use tokio_util::sync::CancellationToken;
 
 const BUF_SIZE: usize = 64 * 1024;
 
-/// Outcome of a successful [`copy_verified_into`] call.
-#[derive(Debug)]
+#[derive(Clone)]
+pub(crate) struct Progress {
+    pub(crate) cancel: CancellationToken,
+    chunks: Arc<AtomicU64>,
+}
+
+impl Progress {
+    pub(crate) fn new(shutdown: &CancellationToken) -> Self {
+        Self {
+            cancel: shutdown.child_token(),
+            chunks: Arc::new(AtomicU64::new(0)),
+        }
+    }
+
+    pub(crate) fn count(&self) -> u64 {
+        self.chunks.load(Ordering::Relaxed)
+    }
+}
+
+/// Identity and integrity evidence for a published candidate.
+#[derive(Clone, Debug)]
 pub struct CopyResult {
     /// Relative location beneath the supplied library capability.
     pub dest_path: PathBuf,
@@ -28,7 +58,7 @@ pub struct CopyResult {
     pub identity: (u64, u64),
 }
 
-/// Errors returned by [`copy_verified_into`] and [`hash_file`].
+/// Opened acquisition and publication failures.
 #[derive(Debug, thiserror::Error)]
 pub enum CopyError {
     /// An underlying I/O failure (open, read, write, rename, or metadata).
@@ -48,6 +78,283 @@ pub enum CopyError {
     /// Contained preparation or no-overwrite publication failed.
     #[error("tempfile persist failed: {0}")]
     Persist(#[from] crate::services::writeback::error::WritebackError),
+    /// The observed source changed during acquisition.
+    #[error("source changed during acquisition")]
+    Changed,
+    /// Cooperative cancellation observed between chunks.
+    #[error("attempt cancelled after no progress")]
+    Cancelled,
+    /// The source is not a regular file.
+    #[error("source is not a regular file")]
+    NonRegular,
+    /// A destination operation failed.
+    #[error("destination I/O error: {0}")]
+    DestinationIo(std::io::Error),
+    /// Publication may have made the owned final name visible.
+    #[error("publication failed: {error}")]
+    Publication {
+        /// Identity of the independently owned bytes.
+        copied: Box<CopyResult>,
+        /// Publication or durability failure.
+        error: crate::services::writeback::error::WritebackError,
+    },
+}
+
+pub(crate) fn source_parent(
+    root: &Dir,
+    path: &InputPath,
+) -> std::io::Result<(Dir, std::ffi::OsString)> {
+    use rustix::fs::{Mode, OFlags, openat};
+    let path = path.path();
+    let name = path
+        .file_name()
+        .ok_or_else(|| {
+            std::io::Error::new(std::io::ErrorKind::InvalidInput, "source has no basename")
+        })?
+        .to_owned();
+    let mut directory = root.try_clone()?;
+    if let Some(parent) = path.parent() {
+        for component in parent.components() {
+            let fd = openat(
+                &directory,
+                component.as_os_str(),
+                OFlags::RDONLY | OFlags::CLOEXEC | OFlags::DIRECTORY | OFlags::NOFOLLOW,
+                Mode::empty(),
+            )
+            .map_err(std::io::Error::from)?;
+            directory = Dir::from_std_file(std::fs::File::from(fd));
+        }
+    }
+    Ok((directory, name))
+}
+
+pub(crate) fn open_input(root: &Dir, path: &InputPath) -> Result<std::fs::File, CopyError> {
+    use rustix::fs::{Mode, OFlags, openat};
+    let (parent, name) = source_parent(root, path)?;
+    let fd = openat(
+        &parent,
+        &name,
+        OFlags::RDONLY | OFlags::CLOEXEC | OFlags::NOFOLLOW | OFlags::NONBLOCK,
+        Mode::empty(),
+    )
+    .map_err(std::io::Error::from)?;
+    let file = std::fs::File::from(fd);
+    if !file.metadata()?.is_file() {
+        return Err(CopyError::NonRegular);
+    }
+    Ok(file)
+}
+
+pub(crate) fn input_metadata(root: &Dir, path: &InputPath) -> std::io::Result<std::fs::Metadata> {
+    let (parent, name) = source_parent(root, path)?;
+    let fd = rustix::fs::openat(
+        &parent,
+        &name,
+        rustix::fs::OFlags::PATH | rustix::fs::OFlags::NOFOLLOW | rustix::fs::OFlags::CLOEXEC,
+        rustix::fs::Mode::empty(),
+    )
+    .map_err(std::io::Error::from)?;
+    std::fs::File::from(fd).metadata()
+}
+
+pub(crate) struct Candidate {
+    staging: TempDir,
+    source: std::fs::File,
+    fingerprint: Fingerprint,
+    pub(crate) ingestion_hash: String,
+    progress: Progress,
+    publication: std::sync::Mutex<Option<(RelativeFilePath, CopyResult)>>,
+}
+
+impl Candidate {
+    pub(crate) fn publication(&self) -> Option<(RelativeFilePath, CopyResult)> {
+        self.publication
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone()
+    }
+    pub(crate) fn progress(&self) -> Progress {
+        self.progress.clone()
+    }
+
+    pub(crate) fn accepted_hash(&self, file: &mut impl Read) -> Result<String, CopyError> {
+        stream(file, &mut std::io::sink(), Some(&self.progress), true)
+    }
+    pub(crate) fn open(&self) -> std::io::Result<std::fs::File> {
+        self.staging
+            .open("candidate.epub")
+            .map(cap_std::fs::File::into_std)
+    }
+
+    pub(crate) fn validate(
+        &self,
+    ) -> Result<crate::services::epub::Validated, crate::services::epub::EpubError> {
+        crate::services::epub::validate_and_repair(
+            self.open()?,
+            &self.staging,
+            std::ffi::OsStr::new("candidate.epub"),
+        )
+    }
+
+    pub(crate) fn verify_source(&self, root: &Dir, path: &InputPath) -> Result<(), CopyError> {
+        if Fingerprint::from_metadata(&self.source.metadata()?) != self.fingerprint {
+            return Err(CopyError::Changed);
+        }
+        let current = match open_input(root, path) {
+            Ok(current) => current,
+            Err(CopyError::Io(error)) if error.kind() == std::io::ErrorKind::NotFound => {
+                return Err(CopyError::Changed);
+            }
+            Err(error) => return Err(error),
+        };
+        if Fingerprint::from_metadata(&current.metadata()?) != self.fingerprint {
+            return Err(CopyError::Changed);
+        }
+        Ok(())
+    }
+
+    pub(crate) fn publish(
+        &self,
+        root: &Dir,
+        relative: &RelativeFilePath,
+    ) -> Result<CopyResult, CopyError> {
+        path_rename::prepare_destination(root, relative)?;
+        let (parent, name) = path_rename::parent(root, relative)?;
+        let staging = TempDir::new_in(&parent)?;
+        let mut temp = TempFile::new(&staging)?;
+        let mut accepted = self.open()?;
+        let expected = stream(
+            &mut accepted,
+            &mut std::io::sink(),
+            Some(&self.progress),
+            false,
+        )?;
+        accepted.seek(SeekFrom::Start(0))?;
+        let actual = stream(&mut accepted, &mut temp, Some(&self.progress), false)?;
+        if expected != actual {
+            return Err(CopyError::HashMismatch {
+                source_hash: expected,
+                dest_hash: actual,
+            });
+        }
+        let metadata = temp.as_file().metadata()?;
+        let result = CopyResult {
+            dest_path: relative.as_path().to_owned(),
+            sha256: self.ingestion_hash.clone(),
+            file_size: metadata.len(),
+            identity: (metadata.dev(), metadata.ino()),
+        };
+        *self
+            .publication
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) =
+            Some((relative.clone(), result.clone()));
+        if let Err(error) = path_rename::persist(temp, &staging, &parent, &name) {
+            return Err(CopyError::Publication {
+                copied: Box::new(result),
+                error,
+            });
+        }
+        staging.close()?;
+        Ok(result)
+    }
+
+    pub(crate) fn close(self) -> std::io::Result<()> {
+        self.staging.close()
+    }
+}
+
+#[cfg(test)]
+pub(crate) fn acquire(
+    source: &Dir,
+    path: &InputPath,
+    destination: &Dir,
+    relative: &RelativeFilePath,
+    expected: &Fingerprint,
+) -> Result<Candidate, CopyError> {
+    acquire_controlled(
+        source,
+        path,
+        destination,
+        relative,
+        expected,
+        Progress::new(&CancellationToken::new()),
+    )
+}
+
+pub(crate) fn acquire_controlled(
+    source: &Dir,
+    path: &InputPath,
+    destination: &Dir,
+    relative: &RelativeFilePath,
+    expected: &Fingerprint,
+    progress: Progress,
+) -> Result<Candidate, CopyError> {
+    let mut file = open_input(source, path)?;
+    let fingerprint = Fingerprint::from_metadata(&file.metadata()?);
+    if &fingerprint != expected {
+        return Err(CopyError::Changed);
+    }
+    path_rename::prepare_destination(destination, relative).map_err(CopyError::DestinationIo)?;
+    let (parent, _) =
+        path_rename::parent(destination, relative).map_err(CopyError::DestinationIo)?;
+    let staging = TempDir::new_in(&parent).map_err(CopyError::DestinationIo)?;
+    let mut temp = TempFile::new(&staging).map_err(CopyError::DestinationIo)?;
+    let ingestion_hash = stream(&mut file, &mut std::io::sink(), Some(&progress), true)?;
+    file.seek(SeekFrom::Start(0))?;
+    let streamed = stream(&mut file, &mut temp, Some(&progress), true)?;
+    let candidate = Candidate {
+        staging: {
+            temp.replace("candidate.epub")
+                .map_err(CopyError::DestinationIo)?;
+            staging
+        },
+        source: file,
+        fingerprint,
+        ingestion_hash,
+        progress,
+        publication: std::sync::Mutex::new(None),
+    };
+    candidate.verify_source(source, path)?;
+    if candidate.ingestion_hash != streamed {
+        return Err(CopyError::HashMismatch {
+            source_hash: candidate.ingestion_hash,
+            dest_hash: streamed,
+        });
+    }
+    Ok(candidate)
+}
+
+fn stream(
+    reader: &mut impl Read,
+    writer: &mut impl Write,
+    progress: Option<&Progress>,
+    cancellable: bool,
+) -> Result<String, CopyError> {
+    let mut hasher = Sha256::new();
+    let mut buffer = vec![0; BUF_SIZE];
+    loop {
+        if cancellable && progress.is_some_and(|progress| progress.cancel.is_cancelled()) {
+            return Err(CopyError::Cancelled);
+        }
+        let count = reader.read(&mut buffer)?;
+        if count == 0 {
+            break;
+        }
+        writer
+            .write_all(&buffer[..count])
+            .map_err(CopyError::DestinationIo)?;
+        hasher.update(&buffer[..count]);
+        if let Some(progress) = progress {
+            progress.chunks.fetch_add(1, Ordering::Relaxed);
+        }
+    }
+    writer.flush().map_err(CopyError::DestinationIo)?;
+    let mut digest = String::with_capacity(64);
+    for byte in hasher.finalize() {
+        write!(&mut digest, "{byte:02x}").map_err(std::io::Error::other)?;
+    }
+    Ok(digest)
 }
 
 /// Hash a file using streaming `SHA-256` with a 64 KB buffer.
@@ -57,6 +364,7 @@ pub enum CopyError {
 /// # Errors
 ///
 /// Returns `std::io::Error` if the file cannot be opened or read.
+#[cfg(test)]
 pub fn hash_file(path: &Path) -> Result<String, std::io::Error> {
     let file = std::fs::File::open(path)?;
     let mut reader = BufReader::with_capacity(BUF_SIZE, file);
@@ -125,6 +433,7 @@ fn copy_verified(
 ///
 /// # Errors
 /// Returns source, integrity, contained lookup or publication failures.
+#[cfg(test)]
 pub fn copy_verified_into(
     source: &Path,
     root: &Dir,
@@ -194,6 +503,131 @@ pub fn copy_verified_into(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn capability_ingestion_coordinator_blocked_read_retains_candidate_until_closure_returns()
+    {
+        struct BlockedRead {
+            entered: Option<std::sync::mpsc::Sender<()>>,
+            release: std::sync::mpsc::Receiver<()>,
+            bytes: std::io::Cursor<Vec<u8>>,
+        }
+        impl Read for BlockedRead {
+            fn read(&mut self, buffer: &mut [u8]) -> std::io::Result<usize> {
+                if let Some(entered) = self.entered.take() {
+                    entered.send(()).unwrap();
+                    self.release.recv().unwrap();
+                }
+                self.bytes.read(buffer)
+            }
+        }
+        let directory = tempfile::tempdir().unwrap();
+        let root = Dir::open_ambient_dir(directory.path(), cap_std::ambient_authority()).unwrap();
+        root.write("source.epub", b"preserved source").unwrap();
+        let staging_root = root.try_clone().unwrap();
+        let (entered, entry) = std::sync::mpsc::channel();
+        let (release, blocked) = std::sync::mpsc::channel();
+        let shutdown = CancellationToken::new();
+        let progress = Progress::new(&shutdown);
+        let running_progress = progress.clone();
+        let closure = tokio::task::spawn_blocking(move || {
+            let staging = TempDir::new_in(&staging_root).unwrap();
+            let mut candidate = TempFile::new(&staging).unwrap();
+            let mut reader = BlockedRead {
+                entered: Some(entered),
+                release: blocked,
+                bytes: std::io::Cursor::new(vec![7; BUF_SIZE * 2]),
+            };
+            stream(&mut reader, &mut candidate, Some(&running_progress), true)
+        });
+        entry.recv().unwrap();
+        shutdown.cancel();
+        assert!(!closure.is_finished());
+        assert_eq!(root.entries().unwrap().count(), 2);
+        assert_eq!(progress.count(), 0);
+        release.send(()).unwrap();
+        assert!(matches!(closure.await.unwrap(), Err(CopyError::Cancelled)));
+        assert_eq!(progress.count(), 1);
+        assert_eq!(root.entries().unwrap().count(), 1);
+        assert_eq!(root.read("source.epub").unwrap(), b"preserved source");
+    }
+
+    #[test]
+    fn capability_ingestion_coordinator_checks_cancellation_between_chunks_and_counts_completed_chunks()
+     {
+        struct CancelAfterRead {
+            reader: std::io::Cursor<Vec<u8>>,
+            cancel: CancellationToken,
+        }
+        impl Read for CancelAfterRead {
+            fn read(&mut self, buffer: &mut [u8]) -> std::io::Result<usize> {
+                let count = self.reader.read(buffer)?;
+                self.cancel.cancel();
+                Ok(count)
+            }
+        }
+        let progress = Progress::new(&CancellationToken::new());
+        let bytes = vec![7; BUF_SIZE * 3];
+        let mut reader = CancelAfterRead {
+            reader: std::io::Cursor::new(bytes),
+            cancel: progress.cancel.clone(),
+        };
+        let mut destination = Vec::new();
+        assert!(matches!(
+            stream(&mut reader, &mut destination, Some(&progress), true),
+            Err(CopyError::Cancelled)
+        ));
+        assert_eq!(destination.len(), BUF_SIZE);
+        assert_eq!(progress.count(), 1);
+    }
+
+    #[test]
+    fn capability_ingestion_coordinator_cancelled_acquisition_discards_candidate_preserves_source()
+    {
+        let source_dir = tempfile::tempdir().unwrap();
+        let library_dir = tempfile::tempdir().unwrap();
+        let source =
+            Dir::open_ambient_dir(source_dir.path(), cap_std::ambient_authority()).unwrap();
+        let library =
+            Dir::open_ambient_dir(library_dir.path(), cap_std::ambient_authority()).unwrap();
+        source.write("book.epub", b"owned source").unwrap();
+        let path = InputPath::from_path(Path::new("book.epub")).unwrap();
+        let fingerprint = Fingerprint::from_metadata(&input_metadata(&source, &path).unwrap());
+        let shutdown = CancellationToken::new();
+        let progress = Progress::new(&shutdown);
+        shutdown.cancel();
+        assert!(matches!(
+            acquire_controlled(
+                &source,
+                &path,
+                &library,
+                &"book.epub".parse().unwrap(),
+                &fingerprint,
+                progress
+            ),
+            Err(CopyError::Cancelled)
+        ));
+        assert_eq!(source.read("book.epub").unwrap(), b"owned source");
+        assert_eq!(library.entries().unwrap().count(), 0);
+    }
+
+    #[test]
+    fn capability_ingestion_coordinator_publication_stream_is_uninterrupted_and_advances_progress()
+    {
+        let progress = Progress::new(&CancellationToken::new());
+        progress.cancel.cancel();
+        let bytes = vec![9; BUF_SIZE * 2 + 1];
+        let mut writer = Vec::new();
+        stream(
+            &mut std::io::Cursor::new(bytes.clone()),
+            &mut writer,
+            Some(&progress),
+            false,
+        )
+        .unwrap();
+        assert_eq!(writer, bytes);
+        assert_eq!(progress.count(), 3);
+    }
 
     #[test]
     fn hash_file_known_content() {
