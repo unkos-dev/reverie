@@ -31,8 +31,8 @@ a separate pooling tier between the application and Postgres?
 - Session-level Postgres features are load-bearing: Reverie's persisted settings use `LISTEN`/`NOTIFY` over a
   `PgListener` (see the persisted-settings ADR), and the migration path takes a session-level advisory lock. A
   transaction-multiplexing pooler tier breaks both.
-- Enable, don't own: an operator who scales out can place their own pooler in front of Postgres; Reverie should not
-  preclude that, but it should not own that infrastructure.
+- Enable, don't own: an operator who scales out can place their own session-mode pooler in front of Postgres; Reverie
+  should not preclude that, but it should not own that infrastructure.
 
 ## Considered options
 
@@ -46,12 +46,12 @@ Chosen option: **in-process `sqlx::PgPool`, no separate pooling tier**, because 
 count, recycles idle connections, and applies acquire timeouts, so for a single-instance deployment a second pooling
 tier is redundant. It would add a component and a single point of failure to solve a fan-out problem the deployment
 contract does not have, and a transaction-multiplexing tier would break the `LISTEN`/`NOTIFY` settings-reload path and
-the session-level migration lock, both first-party invariants. All database access goes through the shared
-`sqlx::PgPool` in `AppState`, including the role-scoped ingestion pool; no handler or worker opens a raw per-request
-`PgConnection`, and no external pooling component appears in the Docker Compose deployment.
+the session-level migration lock, both first-party invariants. Database access uses in-process `sqlx` pools rather than
+per-request connections, and the Docker Compose deployment bundles no external pooling component.
 
 This does not constrain an operator: per the scale-stance ADR's "enable, don't own", an operator who runs their own
-fleet may front Postgres with a pooler externally. Reverie does not ship or depend on one.
+fleet may front Postgres with a session-mode pooler externally. A transaction-pooling tier would break the session-level
+features above. Reverie does not ship or depend on one.
 
 ### Consequences
 
@@ -60,8 +60,8 @@ fleet may front Postgres with a pooler externally. Reverie does not ship or depe
 - Positive: `LISTEN`/`NOTIFY` settings reload, session-level advisory locks, and prepared-statement caching all keep
   working natively, because an in-process pool runs each connection in session mode.
 - Positive: the connection budget is bounded and predictable, one process, one pool per role, sized to the Docker host.
-- Positive: choosing not to bundle a pooling tier does not forbid one; an operator may add one externally with no
-  Reverie change.
+- Positive: choosing not to bundle a pooling tier does not forbid one; an operator may add a session-mode pooler
+  externally with no Reverie change.
 - Negative: an operator who runs multiple app instances multiplies the connection budget (instances times pool size)
   against one Postgres; that topology is explicitly not the supported default and is the scale-stance ADR's concern,
   where pool sizing or an operator-owned pooler would be revisited.
