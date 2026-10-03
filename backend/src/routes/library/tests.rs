@@ -94,12 +94,12 @@ async fn insert_book(ingestion_pool: &PgPool, marker: &str, title: &str) -> (Uui
     let file_path = format!("fixtures/library-test-{marker}.epub");
     let hash = format!("library-test-hash-{marker}");
     let m_id: Uuid = sqlx::query_scalar!(
-        "INSERT INTO manifestations \
+        "WITH inserted AS (INSERT INTO manifestations \
             (library_id, work_id, format, file_path, ingestion_file_hash, current_file_hash, \
              file_size_bytes, ingestion_status, validation_status) \
          VALUES ((SELECT id FROM libraries WHERE configuration_key = 'default'), $1, 'epub'::manifestation_format, $2, $3, $3, 1000, \
                  'complete'::ingestion_status, 'clean'::validation_status) \
-         RETURNING id",
+         RETURNING *), claimed AS (INSERT INTO library_path_claims (library_id, path, manifestation_id) SELECT library_id, file_path, id FROM inserted) SELECT id AS \"id!\" FROM inserted",
         work_id,
         file_path,
         hash,
@@ -133,12 +133,12 @@ async fn insert_book_at(
     let file_path = format!("fixtures/library-test-{marker}.epub");
     let hash = format!("library-test-hash-{marker}");
     let m_id: Uuid = sqlx::query_scalar!(
-        "INSERT INTO manifestations \
+        "WITH inserted AS (INSERT INTO manifestations \
             (library_id, work_id, format, file_path, ingestion_file_hash, current_file_hash, \
              file_size_bytes, ingestion_status, validation_status, created_at) \
          VALUES ((SELECT id FROM libraries WHERE configuration_key = 'default'), $1, 'epub'::manifestation_format, $2, $3, $3, 1000, \
                  'complete'::ingestion_status, 'clean'::validation_status, $4) \
-         RETURNING id",
+         RETURNING *), claimed AS (INSERT INTO library_path_claims (library_id, path, manifestation_id) SELECT library_id, file_path, id FROM inserted) SELECT id AS \"id!\" FROM inserted",
         work_id,
         file_path,
         hash,
@@ -303,11 +303,11 @@ async fn list_endpoint_decodes_pending_validation_status(pool: PgPool) {
     .await
     .expect("insert work");
     sqlx::query!(
-        "INSERT INTO manifestations \
+        "WITH inserted AS (INSERT INTO manifestations \
             (library_id, work_id, format, file_path, ingestion_file_hash, current_file_hash, \
              file_size_bytes, ingestion_status, validation_status) \
          VALUES ((SELECT id FROM libraries WHERE configuration_key = 'default'), $1, 'epub'::manifestation_format, 'fixtures/pending.epub', 'pending-hash', \
-                 'pending-hash', 1000, 'complete'::ingestion_status, 'pending'::validation_status)",
+                 'pending-hash', 1000, 'complete'::ingestion_status, 'pending'::validation_status) RETURNING *) INSERT INTO library_path_claims (library_id, path, manifestation_id) SELECT library_id, file_path, id FROM inserted",
         work_id,
     )
     .execute(&ingestion_pool)
@@ -864,11 +864,11 @@ async fn list_endpoint_sort_title_multi_manifestation_per_work_not_dropped(pool:
             let file_path = format!("fixtures/multimani-{marker}.epub");
             let hash = format!("multimani-hash-{marker}");
             sqlx::query!(
-                "INSERT INTO manifestations \
+                "WITH inserted AS (INSERT INTO manifestations \
                     (library_id, work_id, format, file_path, ingestion_file_hash, current_file_hash, \
                      file_size_bytes, ingestion_status, validation_status) \
                  VALUES ((SELECT id FROM libraries WHERE configuration_key = 'default'), $1, 'epub'::manifestation_format, $2, $3, $3, 1000, \
-                         'complete'::ingestion_status, 'clean'::validation_status)",
+                         'complete'::ingestion_status, 'clean'::validation_status) RETURNING *) INSERT INTO library_path_claims (library_id, path, manifestation_id) SELECT library_id, file_path, id FROM inserted",
                 work_id,
                 file_path,
                 hash,
@@ -1938,12 +1938,12 @@ async fn work_endpoint_returns_work_with_manifestations(pool: PgPool) {
         let file_path = format!("fixtures/work-test-{marker}.epub");
         let hash = format!("work-test-hash-{marker}");
         let mid: Uuid = sqlx::query_scalar!(
-            "INSERT INTO manifestations \
+            "WITH inserted AS (INSERT INTO manifestations \
                 (library_id, work_id, format, file_path, ingestion_file_hash, current_file_hash, \
                  file_size_bytes, ingestion_status, validation_status) \
              VALUES ((SELECT id FROM libraries WHERE configuration_key = 'default'), $1, 'epub'::manifestation_format, $2, $3, $3, 1000, \
                      'complete'::ingestion_status, 'clean'::validation_status) \
-             RETURNING id",
+             RETURNING *), claimed AS (INSERT INTO library_path_claims (library_id, path, manifestation_id) SELECT library_id, file_path, id FROM inserted) SELECT id AS \"id!\" FROM inserted",
             work_id,
             file_path,
             hash,
@@ -2993,13 +2993,13 @@ async fn subtitle_contains_rides_trgm_index_at_scale(pool: PgPool) {
     .await
     .expect("seed works");
     sqlx::query!(
-        "INSERT INTO manifestations \
+        "WITH inserted AS (INSERT INTO manifestations \
             (library_id, work_id, format, file_path, ingestion_file_hash, current_file_hash, \
              file_size_bytes, ingestion_status, validation_status) \
          SELECT (SELECT id FROM libraries WHERE configuration_key = 'default'), w.id, 'epub'::manifestation_format, 'fixtures/bulk-' || w.id, \
                 'bulk-hash-' || w.id, 'bulk-hash-' || w.id, 1000, \
                 'complete'::ingestion_status, 'clean'::validation_status \
-         FROM works w"
+         FROM works w RETURNING *) INSERT INTO library_path_claims (library_id, path, manifestation_id) SELECT library_id, file_path, id FROM inserted"
     )
     .execute(&ingestion_pool)
     .await
@@ -3085,13 +3085,13 @@ async fn title_contains_diacritic_folding_rides_trgm_index_at_scale(pool: PgPool
     .await
     .expect("seed accented work");
     sqlx::query!(
-        "INSERT INTO manifestations \
+        "WITH inserted AS (INSERT INTO manifestations \
             (library_id, work_id, format, file_path, ingestion_file_hash, current_file_hash, \
              file_size_bytes, ingestion_status, validation_status) \
          SELECT (SELECT id FROM libraries WHERE configuration_key = 'default'), w.id, 'epub'::manifestation_format, 'fixtures/bulk-' || w.id, \
                 'bulk-hash-' || w.id, 'bulk-hash-' || w.id, 1000, \
                 'complete'::ingestion_status, 'clean'::validation_status \
-         FROM works w"
+         FROM works w RETURNING *) INSERT INTO library_path_claims (library_id, path, manifestation_id) SELECT library_id, file_path, id FROM inserted"
     )
     .execute(&ingestion_pool)
     .await
@@ -3162,13 +3162,13 @@ async fn list_filter_genre_predicates_use_indexes_at_scale(pool: PgPool) {
     .await
     .expect("seed works");
     sqlx::query!(
-        "INSERT INTO manifestations \
+        "WITH inserted AS (INSERT INTO manifestations \
             (library_id, work_id, format, file_path, ingestion_file_hash, current_file_hash, \
              file_size_bytes, ingestion_status, validation_status) \
          SELECT (SELECT id FROM libraries WHERE configuration_key = 'default'), w.id, 'epub'::manifestation_format, 'fixtures/bulk-' || w.id, \
                 'bulk-hash-' || w.id, 'bulk-hash-' || w.id, 1000, \
                 'complete'::ingestion_status, 'clean'::validation_status \
-         FROM works w"
+         FROM works w RETURNING *) INSERT INTO library_path_claims (library_id, path, manifestation_id) SELECT library_id, file_path, id FROM inserted"
     )
     .execute(&ingestion_pool)
     .await
@@ -3263,13 +3263,13 @@ async fn pages_sort_rides_desc_nulls_last_index_at_scale(pool: PgPool) {
     .await
     .expect("seed works");
     sqlx::query!(
-        "INSERT INTO manifestations \
+        "WITH inserted AS (INSERT INTO manifestations \
             (library_id, work_id, format, file_path, ingestion_file_hash, current_file_hash, \
              file_size_bytes, ingestion_status, validation_status) \
          SELECT (SELECT id FROM libraries WHERE configuration_key = 'default'), w.id, 'epub'::manifestation_format, 'fixtures/bulk-' || w.id, \
                 'bulk-hash-' || w.id, 'bulk-hash-' || w.id, 1000, \
                 'complete'::ingestion_status, 'clean'::validation_status \
-         FROM works w"
+         FROM works w RETURNING *) INSERT INTO library_path_claims (library_id, path, manifestation_id) SELECT library_id, file_path, id FROM inserted"
     )
     .execute(&ingestion_pool)
     .await
@@ -3635,11 +3635,11 @@ async fn perf_search_p50_under_200ms_at_10k_rows(pool: PgPool) {
         let hash = format!("perf-search-hash-{i}");
         let file_path = format!("fixtures/perf-search-{i}.epub");
         sqlx::query!(
-            "INSERT INTO manifestations \
+            "WITH inserted AS (INSERT INTO manifestations \
                 (library_id, work_id, format, file_path, ingestion_file_hash, current_file_hash, \
                  file_size_bytes, ingestion_status, validation_status) \
              VALUES ((SELECT id FROM libraries WHERE configuration_key = 'default'), $1, 'epub'::manifestation_format, $2, $3, $3, 1000, \
-                     'complete'::ingestion_status, 'clean'::validation_status)",
+                     'complete'::ingestion_status, 'clean'::validation_status) RETURNING *) INSERT INTO library_path_claims (library_id, path, manifestation_id) SELECT library_id, file_path, id FROM inserted",
             work_id,
             file_path,
             hash,

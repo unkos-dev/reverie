@@ -1,0 +1,21 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT 'unrecognised'::text AS \"reason!: JobReason\"",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "reason!: JobReason",
+        "type_info": "Text",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "0f707a21f0500cbea6633bc4f1b2c7d543dddca28f2e056f3dcd2c9b480ede13"
+}

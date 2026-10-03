@@ -23,6 +23,8 @@ pub mod ingestion_job;
 pub mod ingestion_status;
 /// Response DTOs for the JSON library API (`/api/v1/books`, `/api/v1/works`).
 pub mod library;
+/// Transaction-bound managed path ownership.
+pub mod library_path_claim;
 /// Local password credentials (seam for local-account login).
 pub mod local_credentials;
 /// DB-backed per-account login throttle (escalating backoff, CLI-clearable).

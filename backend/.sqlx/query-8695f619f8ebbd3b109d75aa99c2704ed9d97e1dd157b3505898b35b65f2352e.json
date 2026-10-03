@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT $1::text AS \"reason!: JobReason\"",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "reason!: JobReason",
+        "type_info": "Text",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "8695f619f8ebbd3b109d75aa99c2704ed9d97e1dd157b3505898b35b65f2352e"
+}

@@ -114,6 +114,12 @@ existing filesystem and database seams. They do not establish cover-sidecar repl
 process-kill behaviour or NAS flush guarantees. Successful re-sync after a reported error is a weaker guarantee than
 proof that earlier writes became durable.
 
+Shared path claims enforce owner-correct recorded and intent locations. Ordinary recovery retains its edit budget until
+destination finalisation commits the edit debit; carriers keep bounded attempts, and finish reads the durable count.
+Transient reset, sweep and claim errors retry within the existing worker without losing its tracked jobs. The
+`relocation_accounting_`, `relocation_worker_`, `path_claim_` and `relocation_downgrade_` cases cover transactional
+budgets, worker survival, publisher ownership and populated reverse migration through existing test seams.
+
 Sibling ADR: [crash-safe state](./0020-durable-crash-safe-state-in-postgres-via-atomic-transactions.md), committed-state
 durability; this ADR is its in-flight-work complement, and the boundary it notes (transactions do not cover filesystem
 writes) is why file-mutating handlers must prove re-run safety.

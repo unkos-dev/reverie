@@ -45,6 +45,7 @@ use uuid::Uuid;
 
 use crate::config::Config;
 
+use super::JobReason;
 use super::error::WritebackError;
 use super::events;
 use super::orchestrator::{self, RunOutcome};
@@ -79,9 +80,66 @@ pub async fn spawn_worker(
         |pool, config, files, id, permit| async move {
             orchestrator::run_once(&pool, &config, &files, id, permit).await
         },
-        || {},
+        WorkerHooks::new(|| {}),
     )
     .await
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum WorkerOperation {
+    Reset,
+    StartupSweep,
+    PeriodicSweep,
+    Claim,
+}
+
+struct WorkerHooks<D, B> {
+    draining: D,
+    database: B,
+    recovery_period: Duration,
+}
+
+impl<D> WorkerHooks<D, fn(WorkerOperation) -> sqlx::Result<()>> {
+    fn new(draining: D) -> Self {
+        Self {
+            draining,
+            database: |_| Ok(()),
+            recovery_period: Duration::from_secs(300),
+        }
+    }
+}
+
+async fn worker_startup(
+    pool: &PgPool,
+    database: &mut impl FnMut(WorkerOperation) -> sqlx::Result<()>,
+    reset_complete: &mut bool,
+    sweep_complete: &mut bool,
+) -> bool {
+    if !*reset_complete {
+        let result = async {
+            database(WorkerOperation::Reset)?;
+            revert_in_progress(pool).await
+        }
+        .await;
+        if let Err(error) = result {
+            warn!(%error, "writeback startup reset failed; retrying on timer");
+            return false;
+        }
+        *reset_complete = true;
+    }
+    if !*sweep_complete {
+        let result = async {
+            database(WorkerOperation::StartupSweep)?;
+            sweep_relocations(pool).await
+        }
+        .await;
+        if let Err(error) = result {
+            warn!(%error, "writeback startup sweep failed; retrying on timer");
+            return false;
+        }
+        *sweep_complete = true;
+    }
+    true
 }
 
 async fn spawn_worker_with<F, Fut>(
@@ -90,7 +148,7 @@ async fn spawn_worker_with<F, Fut>(
     cancel: CancellationToken,
     files: LibraryFiles,
     run: F,
-    draining: impl FnOnce(),
+    mut hooks: WorkerHooks<impl FnOnce(), impl FnMut(WorkerOperation) -> sqlx::Result<()>>,
 ) -> anyhow::Result<()>
 where
     F: Fn(PgPool, Config, LibraryFiles, Uuid, Arc<tokio::sync::OwnedSemaphorePermit>) -> Fut
@@ -105,11 +163,8 @@ where
         return Ok(());
     }
 
-    // Crash-recovery: any row left in_progress from a previous process
-    // transitions back to pending before we start polling.  Shared with
-    // the shutdown path below.
-    revert_in_progress(&pool).await?;
-    sweep_relocations(&pool).await?;
+    let mut reset_complete = false;
+    let mut startup_sweep_complete = false;
 
     let concurrency = config.writeback.concurrency as usize;
     let semaphore = Arc::new(Semaphore::new(concurrency));
@@ -117,8 +172,8 @@ where
         tokio::time::interval(Duration::from_secs(config.writeback.poll_idle_secs));
     interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
     let mut recovery_interval = tokio::time::interval_at(
-        tokio::time::Instant::now() + Duration::from_secs(300),
-        Duration::from_secs(300),
+        tokio::time::Instant::now() + hooks.recovery_period,
+        hooks.recovery_period,
     );
     recovery_interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
 
@@ -133,22 +188,40 @@ where
         tokio::select! {
             () = cancel.cancelled() => {
                 info!("writeback queue shutting down");
-                draining();
+                (hooks.draining)();
                 break;
             }
             result = jobs.join_next(), if !jobs.is_empty() => {
                 if let Some(Err(error)) = result { warn!(%error, "writeback job task failed"); }
             }
-            _ = recovery_interval.tick() => {
-                sweep_relocations(&pool).await?;
+            _ = recovery_interval.tick(), if startup_sweep_complete => {
+                let result = async {
+                    (hooks.database)(WorkerOperation::PeriodicSweep)?;
+                    sweep_relocations(&pool).await
+                }.await;
+                if let Err(error) = result {
+                    warn!(%error, "writeback periodic relocation sweep failed; retrying on timer");
+                }
             }
             _ = interval.tick() => {
+                if !worker_startup(&pool, &mut hooks.database, &mut reset_complete, &mut startup_sweep_complete).await {
+                    continue;
+                }
                 loop {
                     if cancel.is_cancelled() { break; }
                     let Ok(permit) = semaphore.clone().try_acquire_owned() else {
                         break;
                     };
-                    let claim = claim_next(&pool).await?;
+                    let claim = match async {
+                        (hooks.database)(WorkerOperation::Claim)?;
+                        claim_next(&pool).await
+                    }.await {
+                        Ok(claim) => claim,
+                        Err(error) => {
+                            warn!(%error, "writeback claim failed; retrying on timer");
+                            break;
+                        }
+                    };
                     let Some((id, attempt_count)) = claim else {
                         drop(permit);
                         break;
@@ -197,7 +270,8 @@ where
 pub async fn claim_next(pool: &PgPool) -> sqlx::Result<Option<(Uuid, i32)>> {
     let result = sqlx::query!(
         r"WITH eligible AS (
-             SELECT wj.id, wj.attempt_count
+             SELECT wj.id, wj.attempt_count,
+                    m.relocation_source_path IS NOT NULL AND wj.reason <> 'relocation' AS recovering_edit
              FROM writeback_jobs wj
              JOIN manifestations m ON m.id = wj.manifestation_id
              WHERE wj.status IN ('pending', 'failed')
@@ -228,7 +302,7 @@ pub async fn claim_next(pool: &PgPool) -> sqlx::Result<Option<(Uuid, i32)>> {
            UPDATE writeback_jobs wj
               SET status = 'in_progress',
                   last_attempted_at = now(),
-                  attempt_count = wj.attempt_count + 1
+                  attempt_count = wj.attempt_count + CASE WHEN eligible.recovering_edit THEN 0 ELSE 1 END
              FROM eligible
             WHERE wj.id = eligible.id
            RETURNING wj.id, wj.attempt_count",
@@ -301,9 +375,14 @@ async fn finish(
     pool: &PgPool,
     config: &Config,
     id: Uuid,
-    attempt_count: i32,
+    _claimed_attempt_count: i32,
     result: Result<RunOutcome, super::error::WritebackError>,
 ) -> sqlx::Result<()> {
+    let attempt_count =
+        sqlx::query_scalar!("SELECT attempt_count FROM writeback_jobs WHERE id = $1", id,)
+            .fetch_optional(pool)
+            .await?
+            .unwrap_or(0);
     // Emit the webhook BEFORE the DB bookkeeping write.  If the DB write
     // fails, the event still fires (a transient DB hiccup on the final
     // update otherwise silently dropped the webhook forever).  A DB
@@ -417,13 +496,13 @@ async fn finish(
 
 async fn failure_identity(pool: &PgPool, id: Uuid) -> (Uuid, String) {
     match sqlx::query!(
-        "SELECT manifestation_id, reason FROM writeback_jobs WHERE id = $1",
+        "SELECT manifestation_id, reason AS \"reason: JobReason\" FROM writeback_jobs WHERE id = $1",
         id,
     )
     .fetch_optional(pool)
     .await
     {
-        Ok(Some(row)) => (row.manifestation_id, row.reason),
+        Ok(Some(row)) => (row.manifestation_id, row.reason.as_str().to_owned()),
         Ok(None) => {
             warn!(
                 %id,
@@ -443,7 +522,7 @@ async fn failure_identity(pool: &PgPool, id: Uuid) -> (Uuid, String) {
 }
 
 async fn finalise_terminal(
-    connection: &mut sqlx::PgConnection,
+    connection: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     id: Uuid,
     manifestation_id: Uuid,
     intent: &orchestrator::RelocationIntent,
@@ -452,18 +531,19 @@ async fn finalise_terminal(
     sqlx::query!(
         "SELECT id FROM writeback_jobs WHERE id = $1 AND manifestation_id = $2 AND status = 'in_progress' FOR UPDATE",
         id, manifestation_id,
-    ).fetch_one(&mut *connection).await?;
+    ).fetch_one(&mut **connection).await?;
     let cleared = sqlx::query!(
         "UPDATE manifestations SET relocation_source_path = NULL, relocation_destination_path = NULL WHERE id = $1 AND relocation_source_path = $2 AND relocation_destination_path = $3",
         manifestation_id, intent.source.as_str(), intent.destination.as_str(),
-    ).execute(&mut *connection).await?;
+    ).execute(&mut **connection).await?;
     if cleared.rows_affected() != 1 {
         return Err(sqlx::Error::RowNotFound);
     }
     sqlx::query!(
         "UPDATE writeback_jobs SET status = 'skipped', completed_at = now(), error = $2 WHERE id = $1",
         id, diagnosis,
-    ).execute(&mut *connection).await?;
+    ).execute(&mut **connection).await?;
+    crate::models::library_path_claim::release_obsolete(connection, manifestation_id).await?;
     Ok(())
 }
 
@@ -668,13 +748,13 @@ mod tests {
             // Set enrichment_status = 'complete' so these fixtures don't
             // leak into the enrichment queue's claim_next under parallel
             // test execution (the column defaults to 'pending').
-            "INSERT INTO manifestations \
+            "WITH inserted AS (INSERT INTO manifestations \
                (library_id, work_id, format, file_path, ingestion_file_hash, current_file_hash, \
                 file_size_bytes, ingestion_status, validation_status, enrichment_status) \
              VALUES ((SELECT id FROM libraries WHERE configuration_key = 'default'), $1, 'epub'::manifestation_format, $2, $3, $3, 1000, \
                      'complete'::ingestion_status, 'clean'::validation_status, \
                      'complete'::enrichment_status) \
-             RETURNING id",
+             RETURNING *), claimed AS (INSERT INTO library_path_claims (library_id, path, manifestation_id) SELECT library_id, file_path, id FROM inserted) SELECT id AS \"id!\" FROM inserted",
             work_id,
             file_path,
             hash,
@@ -702,7 +782,7 @@ mod tests {
             .await
             .unwrap();
         let destination = format!("recovered/{mid}.epub");
-        sqlx::query!("UPDATE manifestations SET relocation_source_path = $2, relocation_destination_path = $3 WHERE id = $1", mid, source, destination).execute(pool).await.unwrap();
+        sqlx::query!("WITH changed AS (UPDATE manifestations SET relocation_source_path = $2, relocation_destination_path = $3 WHERE id = $1 RETURNING *), removed AS (DELETE FROM library_path_claims c USING changed m WHERE c.manifestation_id = m.id AND c.library_id <> m.library_id) INSERT INTO library_path_claims (library_id, path, manifestation_id) SELECT library_id, file_path AS path, id FROM changed UNION SELECT library_id, relocation_source_path, id FROM changed WHERE relocation_source_path IS NOT NULL UNION SELECT library_id, relocation_destination_path, id FROM changed WHERE relocation_destination_path IS NOT NULL ON CONFLICT (library_id, path) DO NOTHING", mid, source, destination).execute(pool).await.unwrap();
         orchestrator::RelocationIntent {
             source: source.parse().unwrap(),
             destination: destination.parse().unwrap(),
@@ -718,7 +798,7 @@ mod tests {
             (Some("source.epub"), None),
             (None, Some("destination.epub")),
         ] {
-            let error = sqlx::query!("UPDATE manifestations SET relocation_source_path = $2, relocation_destination_path = $3 WHERE id = $1", mid, source, destination).execute(&wb).await.unwrap_err();
+            let error = sqlx::query!("WITH changed AS (UPDATE manifestations SET relocation_source_path = $2, relocation_destination_path = $3 WHERE id = $1 RETURNING *), removed AS (DELETE FROM library_path_claims c USING changed m WHERE c.manifestation_id = m.id AND c.library_id <> m.library_id) INSERT INTO library_path_claims (library_id, path, manifestation_id) SELECT library_id, file_path AS path, id FROM changed UNION SELECT library_id, relocation_source_path, id FROM changed WHERE relocation_source_path IS NOT NULL UNION SELECT library_id, relocation_destination_path, id FROM changed WHERE relocation_destination_path IS NOT NULL ON CONFLICT (library_id, path) DO NOTHING", mid, source, destination).execute(&wb).await.unwrap_err();
             assert!(
                 matches!(error, sqlx::Error::Database(error) if error.constraint() == Some("manifestations_relocation_pair_check"))
             );
@@ -736,7 +816,7 @@ mod tests {
             "a/../b",
         ] {
             for (source, destination) in [(invalid, "valid.epub"), ("valid.epub", invalid)] {
-                let error = sqlx::query!("UPDATE manifestations SET relocation_source_path = $2, relocation_destination_path = $3 WHERE id = $1", mid, source, destination).execute(&wb).await.unwrap_err();
+                let error = sqlx::query!("WITH changed AS (UPDATE manifestations SET relocation_source_path = $2, relocation_destination_path = $3 WHERE id = $1 RETURNING *), removed AS (DELETE FROM library_path_claims c USING changed m WHERE c.manifestation_id = m.id AND c.library_id <> m.library_id) INSERT INTO library_path_claims (library_id, path, manifestation_id) SELECT library_id, file_path AS path, id FROM changed UNION SELECT library_id, relocation_source_path, id FROM changed WHERE relocation_source_path IS NOT NULL UNION SELECT library_id, relocation_destination_path, id FROM changed WHERE relocation_destination_path IS NOT NULL ON CONFLICT (library_id, path) DO NOTHING", mid, source, destination).execute(&wb).await.unwrap_err();
                 assert!(
                     matches!(error, sqlx::Error::Database(error) if error.is_check_violation())
                 );
@@ -754,6 +834,156 @@ mod tests {
     }
 
     #[sqlx::test(migrations = "./migrations")]
+    async fn relocation_accounting_waiting_edit_survives_recovery_and_source_restoration_failures(
+        pool: PgPool,
+    ) {
+        let wb = writeback_pool_for(&pool).await;
+        let (_dir, files, job, mid, intent) = carrier_fixture(&pool).await;
+        sqlx::query!(
+            "UPDATE writeback_jobs SET reason = 'metadata', attempt_count = 0 WHERE id = $1",
+            job
+        )
+        .execute(&wb)
+        .await
+        .unwrap();
+        let library = crate::models::storage_library::default_library_id(&pool)
+            .await
+            .unwrap();
+        let root = files.library(library).unwrap();
+        root.rename(intent.source.as_path(), root, "saved.epub")
+            .unwrap();
+        root.create_dir(intent.source.as_path()).unwrap();
+        for _ in 0..5 {
+            let result = carrier_run(&wb, &files, job).await;
+            assert!(result.is_err());
+            finish(&wb, &test_config_with_max_attempts(1), job, 99, result)
+                .await
+                .unwrap();
+            let row = sqlx::query!(
+                "SELECT attempt_count, status::text AS status FROM writeback_jobs WHERE id = $1",
+                job
+            )
+            .fetch_one(&wb)
+            .await
+            .unwrap();
+            assert_eq!(row.attempt_count, 0);
+            assert_eq!(row.status.as_deref(), Some("failed"));
+            sqlx::query!("UPDATE writeback_jobs SET last_attempted_at = now() - INTERVAL '6 minutes' WHERE id = $1", job).execute(&wb).await.unwrap();
+            assert_eq!(claim_next(&wb).await.unwrap(), Some((job, 0)));
+        }
+        root.remove_dir(intent.source.as_path()).unwrap();
+        root.rename("saved.epub", root, intent.source.as_path())
+            .unwrap();
+        root.write(intent.destination.as_path(), b"FOREIGN")
+            .unwrap();
+        let result = carrier_run(&wb, &files, job).await;
+        assert!(
+            matches!(&result, Ok(RunOutcome::Failed { error, .. }) if error.contains("source restored"))
+        );
+        finish(&wb, &test_config_with_max_attempts(1), job, 99, result)
+            .await
+            .unwrap();
+        assert_eq!(
+            sqlx::query_scalar!(
+                "SELECT attempt_count FROM writeback_jobs WHERE id = $1",
+                job
+            )
+            .fetch_one(&wb)
+            .await
+            .unwrap(),
+            0
+        );
+        assert!(
+            sqlx::query_scalar!(
+                "SELECT relocation_source_path FROM manifestations WHERE id = $1",
+                mid
+            )
+            .fetch_one(&wb)
+            .await
+            .unwrap()
+            .is_none()
+        );
+        assert_eq!(root.read(intent.destination.as_path()).unwrap(), b"FOREIGN");
+        sqlx::query!(
+            "UPDATE writeback_jobs SET last_attempted_at = NULL WHERE id = $1",
+            job
+        )
+        .execute(&wb)
+        .await
+        .unwrap();
+        assert_eq!(claim_next(&wb).await.unwrap(), Some((job, 1)));
+        let result = carrier_run(&wb, &files, job).await;
+        assert!(result.is_err());
+        finish(&wb, &test_config_with_max_attempts(1), job, 0, result)
+            .await
+            .unwrap();
+        assert_eq!(
+            sqlx::query_scalar!("SELECT status::text FROM writeback_jobs WHERE id = $1", job)
+                .fetch_one(&wb)
+                .await
+                .unwrap()
+                .as_deref(),
+            Some("skipped")
+        );
+        assert_eq!(root.read(intent.source.as_path()).unwrap(), b"PAYLOAD");
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn relocation_accounting_permanent_recovery_consumes_no_edit(pool: PgPool) {
+        let wb = writeback_pool_for(&pool).await;
+        let (_dir, files, job, mid, intent) = carrier_fixture(&pool).await;
+        sqlx::query!(
+            "UPDATE writeback_jobs SET reason = 'cover', attempt_count = 0 WHERE id = $1",
+            job
+        )
+        .execute(&wb)
+        .await
+        .unwrap();
+        let library = crate::models::storage_library::default_library_id(&pool)
+            .await
+            .unwrap();
+        files
+            .library(library)
+            .unwrap()
+            .remove_file(intent.source.as_path())
+            .unwrap();
+        let result = carrier_run(&wb, &files, job).await;
+        assert!(matches!(&result, Ok(RunOutcome::RelocationTerminal { .. })));
+        finish(&wb, &test_config_with_max_attempts(1), job, 99, result)
+            .await
+            .unwrap();
+        let row = sqlx::query!(
+            "SELECT attempt_count, status::text AS status FROM writeback_jobs WHERE id = $1",
+            job
+        )
+        .fetch_one(&wb)
+        .await
+        .unwrap();
+        assert_eq!(row.attempt_count, 0);
+        assert_eq!(row.status.as_deref(), Some("skipped"));
+        assert!(
+            sqlx::query_scalar!(
+                "SELECT relocation_source_path FROM manifestations WHERE id = $1",
+                mid
+            )
+            .fetch_one(&wb)
+            .await
+            .unwrap()
+            .is_none()
+        );
+        assert_eq!(
+            sqlx::query_scalar!(
+                "SELECT count(*) FROM library_path_claims WHERE manifestation_id = $1",
+                mid
+            )
+            .fetch_one(&wb)
+            .await
+            .unwrap(),
+            Some(1)
+        );
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
     async fn relocation_queue_intent_retries_in_five_minutes_preserving_ordinary_backoff(
         pool: PgPool,
     ) {
@@ -765,20 +995,20 @@ mod tests {
         sqlx::query!("UPDATE writeback_jobs SET status = 'failed', attempt_count = 5, last_attempted_at = now() - INTERVAL '4 minutes' WHERE id = $1", job).execute(&wb).await.unwrap();
         assert!(claim_next(&wb).await.unwrap().is_none());
         sqlx::query!("UPDATE writeback_jobs SET last_attempted_at = now() - INTERVAL '6 minutes' WHERE id = $1", job).execute(&wb).await.unwrap();
-        assert_eq!(claim_next(&wb).await.unwrap(), Some((job, 6)));
+        assert_eq!(claim_next(&wb).await.unwrap(), Some((job, 5)));
         mark_failed(
             &wb,
             job,
-            6,
+            5,
             &test_config_with_max_attempts(10),
             Some("storage failure"),
         )
         .await
         .unwrap();
-        sqlx::query!("UPDATE manifestations SET relocation_source_path = NULL, relocation_destination_path = NULL WHERE id = $1 AND relocation_source_path = $2", mid, intent.source.as_str()).execute(&wb).await.unwrap();
+        sqlx::query!("WITH changed AS (UPDATE manifestations SET relocation_source_path = NULL, relocation_destination_path = NULL WHERE id = $1 AND relocation_source_path = $2 RETURNING *), removed AS (DELETE FROM library_path_claims c USING changed m WHERE c.manifestation_id = m.id AND c.library_id <> m.library_id) INSERT INTO library_path_claims (library_id, path, manifestation_id) SELECT library_id, file_path AS path, id FROM changed UNION SELECT library_id, relocation_source_path, id FROM changed WHERE relocation_source_path IS NOT NULL UNION SELECT library_id, relocation_destination_path, id FROM changed WHERE relocation_destination_path IS NOT NULL ON CONFLICT (library_id, path) DO NOTHING", mid, intent.source.as_str()).execute(&wb).await.unwrap();
         assert!(claim_next(&wb).await.unwrap().is_none());
         sqlx::query!("UPDATE writeback_jobs SET last_attempted_at = now() - INTERVAL '25 hours' WHERE id = $1", job).execute(&wb).await.unwrap();
-        assert_eq!(claim_next(&wb).await.unwrap(), Some((job, 7)));
+        assert_eq!(claim_next(&wb).await.unwrap(), Some((job, 6)));
     }
 
     #[sqlx::test(migrations = "./migrations")]
@@ -792,8 +1022,8 @@ mod tests {
         .await
         .unwrap();
         sqlx::query!(
-            "INSERT INTO manifestations (library_id, work_id, format, file_path, ingestion_file_hash, current_file_hash, file_size_bytes, relocation_source_path, relocation_destination_path)
-             SELECT (SELECT id FROM libraries WHERE configuration_key = 'default'), $1, 'epub', 'source-' || n || '.epub', 'hash-' || n, 'hash-' || n, 7, 'source-' || n || '.epub', 'destination-' || n || '.epub' FROM generate_series(1, 105) AS n", work,
+            "WITH inserted AS (INSERT INTO manifestations (library_id, work_id, format, file_path, ingestion_file_hash, current_file_hash, file_size_bytes, relocation_source_path, relocation_destination_path)
+             SELECT (SELECT id FROM libraries WHERE configuration_key = 'default'), $1, 'epub', 'source-' || n || '.epub', 'hash-' || n, 'hash-' || n, 7, 'source-' || n || '.epub', 'destination-' || n || '.epub' FROM generate_series(1, 105) AS n RETURNING *) INSERT INTO library_path_claims (library_id, path, manifestation_id) SELECT library_id, file_path AS path, id FROM inserted UNION SELECT library_id, relocation_source_path, id FROM inserted WHERE relocation_source_path IS NOT NULL UNION SELECT library_id, relocation_destination_path, id FROM inserted WHERE relocation_destination_path IS NOT NULL", work,
         ).execute(&pool).await.unwrap();
         assert_eq!(sweep_relocations(&wb).await.unwrap(), 100);
         assert_eq!(sweep_relocations(&wb).await.unwrap(), 5);
@@ -1158,6 +1388,227 @@ mod tests {
         );
     }
 
+    async fn worker_job_status(pool: &PgPool, job: Uuid) -> Option<String> {
+        sqlx::query_scalar!("SELECT status::text FROM writeback_jobs WHERE id = $1", job)
+            .fetch_one(pool)
+            .await
+            .unwrap()
+    }
+
+    async fn assert_worker_fault_status(pool: &PgPool, job: Uuid, fault: WorkerOperation) {
+        if fault != WorkerOperation::PeriodicSweep {
+            let status = worker_job_status(pool, job).await;
+            assert_eq!(
+                status.as_deref(),
+                Some(if fault == WorkerOperation::Reset {
+                    "in_progress"
+                } else {
+                    "pending"
+                })
+            );
+        }
+    }
+
+    async fn worker_fault_case(pool: PgPool, fault: WorkerOperation) {
+        let ing = ingestion_pool_for(&pool).await;
+        let wb = writeback_pool_for(&pool).await;
+        let (_, mid) = insert_fixture(&ing, "worker-transient").await;
+        let job = insert_job(&ing, mid, "metadata").await;
+        if fault == WorkerOperation::Reset {
+            sqlx::query!(
+                "UPDATE writeback_jobs SET status = 'in_progress' WHERE id = $1",
+                job
+            )
+            .execute(&wb)
+            .await
+            .unwrap();
+        }
+        let (failed, mut failed_rx) = tokio::sync::mpsc::channel(1);
+        let (draining, drained) = tokio::sync::oneshot::channel();
+        let started = Arc::new(tokio::sync::Notify::new());
+        let released = Arc::new(tokio::sync::Notify::new());
+        let run_started = Arc::clone(&started);
+        let run_release = Arc::clone(&released);
+        let cancel = CancellationToken::new();
+        let mut injected = false;
+        let hooks = WorkerHooks {
+            draining: move || {
+                draining.send(()).unwrap();
+            },
+            database: move |operation| {
+                if operation == fault && !injected {
+                    injected = true;
+                    failed.try_send(()).unwrap();
+                    Err(sqlx::Error::Io(std::io::Error::other(
+                        "transient database failure",
+                    )))
+                } else {
+                    Ok(())
+                }
+            },
+            recovery_period: Duration::from_millis(10),
+        };
+        let mut worker = tokio::spawn(spawn_worker_with(
+            wb.clone(),
+            test_config_with_max_attempts(3),
+            cancel.clone(),
+            crate::test_support::test_library_files(),
+            move |_, _, _, id, _permit| {
+                let started = Arc::clone(&run_started);
+                let release = Arc::clone(&run_release);
+                async move {
+                    assert_eq!(id, job);
+                    started.notify_one();
+                    release.notified().await;
+                    Ok(RunOutcome::Success {
+                        manifestation_id: mid,
+                        reason: "metadata".into(),
+                        current_file_hash: "unchanged".into(),
+                    })
+                }
+            },
+            hooks,
+        ));
+        tokio::time::timeout(Duration::from_secs(5), failed_rx.recv())
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(!worker.is_finished());
+        assert_worker_fault_status(&wb, job, fault).await;
+        tokio::select! {
+            () = started.notified() => {}
+            result = &mut worker => panic!("worker exited after transient {fault:?}: {result:?}"),
+            () = tokio::time::sleep(Duration::from_secs(5)) => {
+                cancel.cancel();
+                released.notify_one();
+                worker.abort();
+                panic!("worker did not recover after transient {fault:?}");
+            }
+        }
+        assert_eq!(
+            worker_job_status(&wb, job).await.as_deref(),
+            Some("in_progress")
+        );
+        assert!(claim_next(&wb).await.unwrap().is_none());
+        cancel.cancel();
+        tokio::time::timeout(Duration::from_secs(5), drained)
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(!worker.is_finished());
+        released.notify_one();
+        tokio::time::timeout(Duration::from_secs(5), worker)
+            .await
+            .unwrap()
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            worker_job_status(&wb, job).await.as_deref(),
+            Some("complete")
+        );
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn relocation_worker_transient_startup_reset_retries_before_claim(pool: PgPool) {
+        worker_fault_case(pool, WorkerOperation::Reset).await;
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn relocation_worker_transient_startup_sweep_retries(pool: PgPool) {
+        worker_fault_case(pool, WorkerOperation::StartupSweep).await;
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn relocation_worker_transient_claim_retries(pool: PgPool) {
+        worker_fault_case(pool, WorkerOperation::Claim).await;
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn relocation_worker_transient_periodic_sweep_preserves_active_job_and_drain(
+        pool: PgPool,
+    ) {
+        worker_fault_case(pool, WorkerOperation::PeriodicSweep).await;
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn relocation_worker_disabled_skips_database_operations(pool: PgPool) {
+        let mut config = test_config_with_max_attempts(3);
+        config.writeback.enabled = false;
+        let cancel = CancellationToken::new();
+        cancel.cancel();
+        pool.close().await;
+        spawn_worker_with(
+            pool,
+            config,
+            cancel,
+            crate::test_support::test_library_files(),
+            |_, _, _, _, _| async { panic!("disabled worker ran a job") },
+            WorkerHooks {
+                draining: || panic!("disabled worker drained jobs"),
+                database: |_| panic!("disabled worker touched database"),
+                recovery_period: Duration::from_secs(300),
+            },
+        )
+        .await
+        .unwrap();
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn relocation_accounting_finish_uses_durable_edit_count(pool: PgPool) {
+        let ing = ingestion_pool_for(&pool).await;
+        let wb = writeback_pool_for(&pool).await;
+        let (_, mid) = insert_fixture(&ing, "durable-attempt").await;
+        let job = insert_job(&ing, mid, "cover").await;
+        sqlx::query!(
+            "UPDATE writeback_jobs SET status = 'in_progress', attempt_count = 2 WHERE id = $1",
+            job
+        )
+        .execute(&wb)
+        .await
+        .unwrap();
+        finish(
+            &wb,
+            &test_config_with_max_attempts(2),
+            job,
+            0,
+            Ok(RunOutcome::Failed {
+                manifestation_id: mid,
+                reason: "cover".into(),
+                error: "actual edit failure".into(),
+            }),
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            sqlx::query_scalar!("SELECT status::text FROM writeback_jobs WHERE id = $1", job)
+                .fetch_one(&wb)
+                .await
+                .unwrap()
+                .as_deref(),
+            Some("skipped")
+        );
+        assert_eq!(
+            sqlx::query_scalar!(
+                "SELECT attempt_count FROM writeback_jobs WHERE id = $1",
+                job
+            )
+            .fetch_one(&wb)
+            .await
+            .unwrap(),
+            2
+        );
+        assert_eq!(
+            sqlx::query_scalar!(
+                "SELECT count(*) FROM webhook_event_dedupe WHERE event_id = $1",
+                events::event_id(job, events::TerminalOutcome::Failed)
+            )
+            .fetch_one(&pool)
+            .await
+            .unwrap(),
+            Some(1)
+        );
+    }
+
     #[sqlx::test(migrations = "./migrations")]
     async fn relocation_queue_startup_sweep_creates_carrier_before_claiming(pool: PgPool) {
         let ing = ingestion_pool_for(&pool).await;
@@ -1199,12 +1650,21 @@ mod tests {
                         })
                     }
                 },
-                || {},
+                WorkerHooks::new(|| {}),
             )
             .await
             .unwrap();
         });
-        signal.notified().await;
+        let mut handle = handle;
+        tokio::select! {
+            () = signal.notified() => {}
+            result = &mut handle => panic!("startup worker exited before notification: {result:?}"),
+            () = tokio::time::sleep(Duration::from_secs(5)) => {
+                cancel.cancel();
+                handle.abort();
+                panic!("startup worker did not claim its carrier within five seconds");
+            }
+        }
         cancel.cancel();
         handle.await.unwrap();
         assert_eq!(sqlx::query_scalar!("SELECT count(*) FROM writeback_jobs WHERE reason = 'relocation' AND status = 'complete'").fetch_one(&pool).await.unwrap(), Some(1));
@@ -1348,9 +1808,9 @@ mod tests {
                     .await
                 }
             },
-            move || {
+            WorkerHooks::new(move || {
                 draining_tx.send(()).unwrap();
-            },
+            }),
         ));
         entered_rx.recv().await.unwrap();
         cancel.cancel();

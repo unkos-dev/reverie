@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "WITH inserted AS (INSERT INTO manifestations (library_id, work_id, format, file_path, ingestion_file_hash, current_file_hash, file_size_bytes, relocation_source_path, relocation_destination_path)\n             SELECT (SELECT id FROM libraries WHERE configuration_key = 'default'), $1, 'epub', 'source-' || n || '.epub', 'hash-' || n, 'hash-' || n, 7, 'source-' || n || '.epub', 'destination-' || n || '.epub' FROM generate_series(1, 105) AS n RETURNING *) INSERT INTO library_path_claims (library_id, path, manifestation_id) SELECT library_id, file_path AS path, id FROM inserted UNION SELECT library_id, relocation_source_path, id FROM inserted WHERE relocation_source_path IS NOT NULL UNION SELECT library_id, relocation_destination_path, id FROM inserted WHERE relocation_destination_path IS NOT NULL",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "dacb7637431801420e501165efcff48c13b534612681c9fb3f3e8c43a21c4663"
+}

@@ -618,6 +618,20 @@ CREATE TABLE public.libraries (
 ALTER TABLE public.libraries OWNER TO reverie_migrator;
 
 --
+-- Name: library_path_claims; Type: TABLE; Schema: public; Owner: reverie_migrator
+--
+
+CREATE TABLE public.library_path_claims (
+    library_id uuid NOT NULL,
+    path text NOT NULL,
+    manifestation_id uuid NOT NULL,
+    CONSTRAINT library_path_claims_path_check CHECK (((path <> ''::text) AND (path !~ '(^/|/$|//|\\|^[A-Za-z]:|(^|/)[.]{1,2}(/|$))'::text)))
+);
+
+
+ALTER TABLE public.library_path_claims OWNER TO reverie_migrator;
+
+--
 -- Name: local_credentials; Type: TABLE; Schema: public; Owner: reverie_migrator
 --
 
@@ -1446,6 +1460,22 @@ ALTER TABLE ONLY public.libraries
 
 
 --
+-- Name: library_path_claims library_path_claims_manifestation_id_library_id_path_key; Type: CONSTRAINT; Schema: public; Owner: reverie_migrator
+--
+
+ALTER TABLE ONLY public.library_path_claims
+    ADD CONSTRAINT library_path_claims_manifestation_id_library_id_path_key UNIQUE (manifestation_id, library_id, path);
+
+
+--
+-- Name: library_path_claims library_path_claims_pkey; Type: CONSTRAINT; Schema: public; Owner: reverie_migrator
+--
+
+ALTER TABLE ONLY public.library_path_claims
+    ADD CONSTRAINT library_path_claims_pkey PRIMARY KEY (library_id, path);
+
+
+--
 -- Name: local_credentials local_credentials_pkey; Type: CONSTRAINT; Schema: public; Owner: reverie_migrator
 --
 
@@ -1507,6 +1537,14 @@ ALTER TABLE ONLY public.manifestation_tags
 
 ALTER TABLE ONLY public.manifestations
     ADD CONSTRAINT manifestations_file_hash_unique UNIQUE (ingestion_file_hash);
+
+
+--
+-- Name: manifestations manifestations_id_library_key; Type: CONSTRAINT; Schema: public; Owner: reverie_migrator
+--
+
+ALTER TABLE ONLY public.manifestations
+    ADD CONSTRAINT manifestations_id_library_key UNIQUE (id, library_id);
 
 
 --
@@ -1810,6 +1848,13 @@ CREATE INDEX idx_ingestion_jobs_batch_id ON public.ingestion_jobs USING btree (b
 --
 
 CREATE INDEX idx_ingestion_jobs_status ON public.ingestion_jobs USING btree (status);
+
+
+--
+-- Name: idx_library_path_claims_owner; Type: INDEX; Schema: public; Owner: reverie_migrator
+--
+
+CREATE INDEX idx_library_path_claims_owner ON public.library_path_claims USING btree (manifestation_id);
 
 
 --
@@ -2425,6 +2470,14 @@ ALTER TABLE ONLY public.field_locks
 
 
 --
+-- Name: library_path_claims library_path_claims_owner_fk; Type: FK CONSTRAINT; Schema: public; Owner: reverie_migrator
+--
+
+ALTER TABLE ONLY public.library_path_claims
+    ADD CONSTRAINT library_path_claims_owner_fk FOREIGN KEY (manifestation_id, library_id) REFERENCES public.manifestations(id, library_id) ON DELETE CASCADE DEFERRABLE INITIALLY DEFERRED;
+
+
+--
 -- Name: local_credentials local_credentials_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: reverie_migrator
 --
 
@@ -2569,6 +2622,14 @@ ALTER TABLE ONLY public.manifestations
 
 
 --
+-- Name: manifestations manifestations_destination_owner_claim_fk; Type: FK CONSTRAINT; Schema: public; Owner: reverie_migrator
+--
+
+ALTER TABLE ONLY public.manifestations
+    ADD CONSTRAINT manifestations_destination_owner_claim_fk FOREIGN KEY (id, library_id, relocation_destination_path) REFERENCES public.library_path_claims(manifestation_id, library_id, path) DEFERRABLE INITIALLY DEFERRED;
+
+
+--
 -- Name: manifestations manifestations_isbn_10_version_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: reverie_migrator
 --
 
@@ -2614,6 +2675,30 @@ ALTER TABLE ONLY public.manifestations
 
 ALTER TABLE ONLY public.manifestations
     ADD CONSTRAINT manifestations_publisher_version_id_fkey FOREIGN KEY (publisher_version_id) REFERENCES public.metadata_versions(id) ON DELETE SET NULL;
+
+
+--
+-- Name: manifestations manifestations_recorded_owner_claim_fk; Type: FK CONSTRAINT; Schema: public; Owner: reverie_migrator
+--
+
+ALTER TABLE ONLY public.manifestations
+    ADD CONSTRAINT manifestations_recorded_owner_claim_fk FOREIGN KEY (id, library_id, file_path) REFERENCES public.library_path_claims(manifestation_id, library_id, path) DEFERRABLE INITIALLY DEFERRED;
+
+
+--
+-- Name: manifestations manifestations_recorded_path_claim_fk; Type: FK CONSTRAINT; Schema: public; Owner: reverie_migrator
+--
+
+ALTER TABLE ONLY public.manifestations
+    ADD CONSTRAINT manifestations_recorded_path_claim_fk FOREIGN KEY (library_id, file_path) REFERENCES public.library_path_claims(library_id, path) DEFERRABLE INITIALLY DEFERRED;
+
+
+--
+-- Name: manifestations manifestations_source_owner_claim_fk; Type: FK CONSTRAINT; Schema: public; Owner: reverie_migrator
+--
+
+ALTER TABLE ONLY public.manifestations
+    ADD CONSTRAINT manifestations_source_owner_claim_fk FOREIGN KEY (id, library_id, relocation_source_path) REFERENCES public.library_path_claims(manifestation_id, library_id, path) DEFERRABLE INITIALLY DEFERRED;
 
 
 --
@@ -2886,6 +2971,26 @@ ALTER TABLE ONLY public.works
 
 ALTER TABLE ONLY public.writeback_jobs
     ADD CONSTRAINT writeback_jobs_manifestation_id_fkey FOREIGN KEY (manifestation_id) REFERENCES public.manifestations(id) ON DELETE CASCADE;
+
+
+--
+-- Name: library_path_claims; Type: ROW SECURITY; Schema: public; Owner: reverie_migrator
+--
+
+ALTER TABLE public.library_path_claims ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: library_path_claims library_path_claims_ingestion; Type: POLICY; Schema: public; Owner: reverie_migrator
+--
+
+CREATE POLICY library_path_claims_ingestion ON public.library_path_claims TO reverie_ingestion USING (true) WITH CHECK (true);
+
+
+--
+-- Name: library_path_claims library_path_claims_writeback; Type: POLICY; Schema: public; Owner: reverie_migrator
+--
+
+CREATE POLICY library_path_claims_writeback ON public.library_path_claims TO reverie_app USING ((current_setting('app.system_context'::text, true) = 'writeback'::text)) WITH CHECK ((current_setting('app.system_context'::text, true) = 'writeback'::text));
 
 
 --
@@ -3397,6 +3502,14 @@ GRANT SELECT,INSERT ON TABLE public.instance_bootstrap TO reverie_app;
 GRANT SELECT ON TABLE public.libraries TO reverie_app;
 GRANT SELECT ON TABLE public.libraries TO reverie_ingestion;
 GRANT SELECT ON TABLE public.libraries TO reverie_readonly;
+
+
+--
+-- Name: TABLE library_path_claims; Type: ACL; Schema: public; Owner: reverie_migrator
+--
+
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.library_path_claims TO reverie_app;
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.library_path_claims TO reverie_ingestion;
 
 
 --

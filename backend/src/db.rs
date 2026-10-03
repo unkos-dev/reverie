@@ -718,9 +718,9 @@ mod tests {
         .fetch_one(pool)
         .await?;
         sqlx::query!(
-            "INSERT INTO manifestations
+            "WITH inserted AS (INSERT INTO manifestations
              (work_id, library_id, file_path, format, ingestion_file_hash, current_file_hash, file_size_bytes)
-             VALUES ($1, $2, $3, 'epub', $4, $4, 7)",
+             VALUES ($1, $2, $3, 'epub', $4, $4, 7) RETURNING *) INSERT INTO library_path_claims (library_id, path, manifestation_id) SELECT library_id, file_path, id FROM inserted",
             work,
             library_id,
             path,
@@ -738,6 +738,464 @@ mod tests {
             .code()
             .unwrap()
             .into_owned()
+    }
+
+    fn claim_location(library: uuid::Uuid, path: &str) -> crate::services::files::LibraryLocation {
+        crate::services::files::LibraryLocation {
+            library_id: crate::models::storage_library::LibraryId::from_uuid(library),
+            path: path.parse().unwrap(),
+        }
+    }
+
+    async fn claim_manifestation(
+        tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+        library: uuid::Uuid,
+        path: &str,
+    ) -> (uuid::Uuid, uuid::Uuid) {
+        let work = sqlx::query_scalar!(
+            "INSERT INTO works (title, sort_title) VALUES ('Claim', 'claim') RETURNING id"
+        )
+        .fetch_one(&mut **tx)
+        .await
+        .unwrap();
+        let id = uuid::Uuid::new_v4();
+        sqlx::query!(
+            "INSERT INTO manifestations (id, work_id, library_id, file_path, format, ingestion_file_hash, current_file_hash, file_size_bytes)
+             VALUES ($1, $2, $3, $4, 'epub', $5, $5, 7)",
+            id, work, library, path, id.to_string(),
+        ).execute(&mut **tx).await.unwrap();
+        (work, id)
+    }
+
+    async fn apply_schema_pair(pool: &PgPool, first: &'static str, second: &'static str) {
+        let mut tx = pool.begin().await.unwrap();
+        sqlx::raw_sql(first).execute(&mut *tx).await.unwrap();
+        sqlx::raw_sql(second).execute(&mut *tx).await.unwrap();
+        tx.commit().await.unwrap();
+    }
+
+    async fn populated_relocation_downgrade(pool: &PgPool, recorded_destination: bool) {
+        use crate::models::library_path_claim::reserve;
+        let library = crate::models::storage_library::default_library_id(pool)
+            .await
+            .unwrap()
+            .as_uuid();
+        let mut tx = pool.begin().await.unwrap();
+        let (_, id) = claim_manifestation(&mut tx, library, "recorded.epub").await;
+        for path in ["recorded.epub", "source.epub", "destination.epub"] {
+            assert!(
+                reserve(&mut tx, &claim_location(library, path), id)
+                    .await
+                    .unwrap()
+            );
+        }
+        let destination = if recorded_destination {
+            "recorded.epub"
+        } else {
+            "destination.epub"
+        };
+        sqlx::query!("UPDATE manifestations SET relocation_source_path = 'source.epub', relocation_destination_path = $2 WHERE id = $1", id, destination).execute(&mut *tx).await.unwrap();
+        sqlx::query!("INSERT INTO writeback_jobs (manifestation_id, reason, status, attempt_count) VALUES ($1, 'relocation', 'skipped', 10), ($1, 'metadata', 'pending', 1), ($1, 'cover', 'failed', 2)", id).execute(&mut *tx).await.unwrap();
+        tx.commit().await.unwrap();
+        apply_schema_pair(
+            pool,
+            include_str!("../migrations/20261003000000_library_path_claims.down.sql"),
+            include_str!("../migrations/20261001000000_writeback_relocation_intent.down.sql"),
+        )
+        .await;
+        assert_eq!(
+            sqlx::query_scalar!("SELECT count(*) FROM writeback_jobs WHERE reason = 'relocation'")
+                .fetch_one(pool)
+                .await
+                .unwrap(),
+            Some(0)
+        );
+        let remaining = sqlx::query!("SELECT reason, attempt_count, status::text AS status FROM writeback_jobs WHERE manifestation_id = $1 ORDER BY reason", id).fetch_all(pool).await.unwrap();
+        assert_eq!(remaining.len(), 2);
+        assert_eq!(
+            (
+                remaining[0].reason.as_str(),
+                remaining[0].attempt_count,
+                remaining[0].status.as_deref()
+            ),
+            ("cover", 2, Some("failed"))
+        );
+        assert_eq!(
+            (
+                remaining[1].reason.as_str(),
+                remaining[1].attempt_count,
+                remaining[1].status.as_deref()
+            ),
+            ("metadata", 1, Some("pending"))
+        );
+        assert_eq!(
+            sqlx::query_scalar!("SELECT file_path FROM manifestations WHERE id = $1", id)
+                .fetch_one(pool)
+                .await
+                .unwrap(),
+            "recorded.epub"
+        );
+        assert_eq!(storage_sqlstate(&sqlx::query!("INSERT INTO writeback_jobs (manifestation_id, reason) VALUES ($1, 'relocation')", id).execute(pool).await.unwrap_err()), "23514");
+        apply_schema_pair(
+            pool,
+            include_str!("../migrations/20261001000000_writeback_relocation_intent.up.sql"),
+            include_str!("../migrations/20261003000000_library_path_claims.up.sql"),
+        )
+        .await;
+        assert_eq!(
+            sqlx::query_scalar!(
+                "SELECT path FROM library_path_claims WHERE manifestation_id = $1",
+                id
+            )
+            .fetch_one(pool)
+            .await
+            .unwrap(),
+            "recorded.epub"
+        );
+        assert!(
+            sqlx::query_scalar!(
+                "SELECT relocation_source_path FROM manifestations WHERE id = $1",
+                id
+            )
+            .fetch_one(pool)
+            .await
+            .unwrap()
+            .is_none()
+        );
+        sqlx::query!(
+            "INSERT INTO writeback_jobs (manifestation_id, reason) VALUES ($1, 'relocation')",
+            id
+        )
+        .execute(pool)
+        .await
+        .unwrap();
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn relocation_downgrade_populated_jobs_preserve_recorded_source(pool: PgPool) {
+        populated_relocation_downgrade(&pool, false).await;
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn relocation_downgrade_retained_pair_preserves_recorded_destination(pool: PgPool) {
+        populated_relocation_downgrade(&pool, true).await;
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn path_claim_unique_owner_deduplication_and_library_scope(pool: PgPool) {
+        use crate::models::library_path_claim::{owner, reserve};
+        let library = crate::models::storage_library::default_library_id(&pool)
+            .await
+            .unwrap()
+            .as_uuid();
+        let other = sqlx::query_scalar!(
+            "INSERT INTO libraries (configuration_key) VALUES ('other') RETURNING id"
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        let ing = crate::test_support::db::ingestion_pool_for(&pool).await;
+        let mut tx = ing.begin().await.unwrap();
+        let (_, first) = claim_manifestation(&mut tx, library, "same.epub").await;
+        let (_, second) = claim_manifestation(&mut tx, other, "same.epub").await;
+        let location = claim_location(library, "same.epub");
+        assert!(reserve(&mut tx, &location, first).await.unwrap());
+        assert!(reserve(&mut tx, &location, first).await.unwrap());
+        assert!(!reserve(&mut tx, &location, second).await.unwrap());
+        assert_eq!(owner(&mut tx, &location).await.unwrap(), Some(first));
+        assert!(
+            reserve(&mut tx, &claim_location(other, "same.epub"), second)
+                .await
+                .unwrap()
+        );
+        tx.commit().await.unwrap();
+        assert_eq!(
+            sqlx::query_scalar!("SELECT count(*) FROM library_path_claims")
+                .fetch_one(&pool)
+                .await
+                .unwrap(),
+            Some(2)
+        );
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn path_claim_missing_wrong_owner_and_wrong_library_fail_at_commit(pool: PgPool) {
+        use crate::models::library_path_claim::reserve;
+        let library = crate::models::storage_library::default_library_id(&pool)
+            .await
+            .unwrap()
+            .as_uuid();
+        let other = sqlx::query_scalar!(
+            "INSERT INTO libraries (configuration_key) VALUES ('other') RETURNING id"
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        let mut tx = pool.begin().await.unwrap();
+        let (_, owner) = claim_manifestation(&mut tx, library, "owner.epub").await;
+        assert!(
+            reserve(&mut tx, &claim_location(library, "owner.epub"), owner)
+                .await
+                .unwrap()
+        );
+        tx.commit().await.unwrap();
+        for case in ["missing", "wrong-owner", "wrong-library"] {
+            let mut tx = pool.begin().await.unwrap();
+            let (_, id) = claim_manifestation(&mut tx, library, "invalid.epub").await;
+            match case {
+                "wrong-owner" => {
+                    assert!(
+                        reserve(&mut tx, &claim_location(library, "invalid.epub"), owner)
+                            .await
+                            .unwrap()
+                    );
+                }
+                "wrong-library" => {
+                    assert!(
+                        reserve(&mut tx, &claim_location(other, "invalid.epub"), id)
+                            .await
+                            .unwrap()
+                    );
+                }
+                _ => {}
+            }
+            assert_eq!(
+                storage_sqlstate(&tx.commit().await.unwrap_err()),
+                "23503",
+                "{case}"
+            );
+        }
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn path_claim_both_intent_references_and_direct_deletion(pool: PgPool) {
+        use crate::models::library_path_claim::reserve;
+        let library = crate::models::storage_library::default_library_id(&pool)
+            .await
+            .unwrap()
+            .as_uuid();
+        let mut tx = pool.begin().await.unwrap();
+        let (_, id) = claim_manifestation(&mut tx, library, "recorded.epub").await;
+        assert!(
+            reserve(&mut tx, &claim_location(library, "recorded.epub"), id)
+                .await
+                .unwrap()
+        );
+        tx.commit().await.unwrap();
+        for absent in ["source.epub", "destination.epub"] {
+            let mut tx = pool.begin().await.unwrap();
+            let present = if absent == "source.epub" {
+                "destination.epub"
+            } else {
+                "source.epub"
+            };
+            assert!(
+                reserve(&mut tx, &claim_location(library, present), id)
+                    .await
+                    .unwrap()
+            );
+            sqlx::query!("UPDATE manifestations SET relocation_source_path = 'source.epub', relocation_destination_path = 'destination.epub' WHERE id = $1", id).execute(&mut *tx).await.unwrap();
+            assert_eq!(storage_sqlstate(&tx.commit().await.unwrap_err()), "23503");
+        }
+        let mut tx = pool.begin().await.unwrap();
+        sqlx::query!(
+            "DELETE FROM library_path_claims WHERE manifestation_id = $1",
+            id
+        )
+        .execute(&mut *tx)
+        .await
+        .unwrap();
+        assert_eq!(storage_sqlstate(&tx.commit().await.unwrap_err()), "23503");
+        let mut tx = pool.begin().await.unwrap();
+        for path in ["source.epub", "destination.epub"] {
+            assert!(
+                reserve(&mut tx, &claim_location(library, path), id)
+                    .await
+                    .unwrap()
+            );
+        }
+        sqlx::query!("UPDATE manifestations SET relocation_source_path = 'source.epub', relocation_destination_path = 'destination.epub' WHERE id = $1", id).execute(&mut *tx).await.unwrap();
+        tx.commit().await.unwrap();
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn path_claim_manifestation_and_work_cascade(pool: PgPool) {
+        use crate::models::library_path_claim::reserve;
+        let library = crate::models::storage_library::default_library_id(&pool)
+            .await
+            .unwrap()
+            .as_uuid();
+        for delete_work in [false, true] {
+            let mut tx = pool.begin().await.unwrap();
+            let (work, id) = claim_manifestation(&mut tx, library, "cascade.epub").await;
+            for path in ["cascade.epub", "source.epub", "destination.epub"] {
+                assert!(
+                    reserve(&mut tx, &claim_location(library, path), id)
+                        .await
+                        .unwrap()
+                );
+            }
+            sqlx::query!("UPDATE manifestations SET relocation_source_path = 'source.epub', relocation_destination_path = 'destination.epub' WHERE id = $1", id).execute(&mut *tx).await.unwrap();
+            tx.commit().await.unwrap();
+            if delete_work {
+                sqlx::query!("DELETE FROM works WHERE id = $1", work)
+                    .execute(&pool)
+                    .await
+                    .unwrap();
+            } else {
+                sqlx::query!("DELETE FROM manifestations WHERE id = $1", id)
+                    .execute(&pool)
+                    .await
+                    .unwrap();
+            }
+            assert_eq!(
+                sqlx::query_scalar!(
+                    "SELECT count(*) FROM library_path_claims WHERE manifestation_id = $1",
+                    id
+                )
+                .fetch_one(&pool)
+                .await
+                .unwrap(),
+                Some(0)
+            );
+        }
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn path_claim_role_access_and_concurrent_reservation(pool: PgPool) {
+        use crate::models::library_path_claim::{owner, reserve};
+        let library = crate::models::storage_library::default_library_id(&pool)
+            .await
+            .unwrap()
+            .as_uuid();
+        let ing = crate::test_support::db::ingestion_pool_for(&pool).await;
+        let wb = crate::test_support::db::writeback_pool_for(&pool).await;
+        let ordinary = crate::test_support::db::app_pool_for(&pool).await;
+        let mut tx = ing.begin().await.unwrap();
+        let (_, first) = claim_manifestation(&mut tx, library, "first.epub").await;
+        let (_, second) = claim_manifestation(&mut tx, library, "second.epub").await;
+        assert!(
+            reserve(&mut tx, &claim_location(library, "first.epub"), first)
+                .await
+                .unwrap()
+        );
+        assert!(
+            reserve(&mut tx, &claim_location(library, "second.epub"), second)
+                .await
+                .unwrap()
+        );
+        tx.commit().await.unwrap();
+        let mut tx = ordinary.begin().await.unwrap();
+        assert!(
+            owner(&mut tx, &claim_location(library, "first.epub"))
+                .await
+                .unwrap_err()
+                .to_string()
+                .contains("ownership evidence is unavailable")
+        );
+        assert_eq!(
+            storage_sqlstate(
+                &reserve(&mut tx, &claim_location(library, "denied.epub"), first)
+                    .await
+                    .unwrap_err()
+            ),
+            "42501"
+        );
+        tx.rollback().await.unwrap();
+        let mut tx = wb.begin().await.unwrap();
+        assert_eq!(
+            owner(&mut tx, &claim_location(library, "first.epub"))
+                .await
+                .unwrap(),
+            Some(first)
+        );
+        assert!(
+            reserve(&mut tx, &claim_location(library, "contended.epub"), first)
+                .await
+                .unwrap()
+        );
+        let (started, reached) = tokio::sync::oneshot::channel();
+        let next = tokio::spawn(async move {
+            let mut tx = ing.begin().await.unwrap();
+            started.send(()).unwrap();
+            let reserved = reserve(&mut tx, &claim_location(library, "contended.epub"), second)
+                .await
+                .unwrap();
+            tx.rollback().await.unwrap();
+            reserved
+        });
+        reached.await.unwrap();
+        assert!(!next.is_finished());
+        tx.commit().await.unwrap();
+        assert!(
+            !tokio::time::timeout(std::time::Duration::from_secs(5), next)
+                .await
+                .unwrap()
+                .unwrap()
+        );
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn path_claim_backfill_deduplicates_retained_pair_and_conflict_rolls_back(pool: PgPool) {
+        let library = crate::models::storage_library::default_library_id(&pool)
+            .await
+            .unwrap()
+            .as_uuid();
+        let down = include_str!("../migrations/20261003000000_library_path_claims.down.sql");
+        let up = include_str!("../migrations/20261003000000_library_path_claims.up.sql");
+        sqlx::raw_sql(down).execute(&pool).await.unwrap();
+        let mut tx = pool.begin().await.unwrap();
+        let (_, first) = claim_manifestation(&mut tx, library, "destination.epub").await;
+        sqlx::query!("UPDATE manifestations SET relocation_source_path = 'source.epub', relocation_destination_path = file_path WHERE id = $1", first).execute(&mut *tx).await.unwrap();
+        tx.commit().await.unwrap();
+        let mut tx = pool.begin().await.unwrap();
+        sqlx::raw_sql(up).execute(&mut *tx).await.unwrap();
+        tx.commit().await.unwrap();
+        assert_eq!(
+            sqlx::query_scalar!(
+                "SELECT count(*) FROM library_path_claims WHERE manifestation_id = $1",
+                first
+            )
+            .fetch_one(&pool)
+            .await
+            .unwrap(),
+            Some(2)
+        );
+        sqlx::raw_sql(down).execute(&pool).await.unwrap();
+        let mut tx = pool.begin().await.unwrap();
+        let (_, second) = claim_manifestation(&mut tx, library, "other.epub").await;
+        sqlx::query!("UPDATE manifestations SET relocation_source_path = file_path, relocation_destination_path = 'destination.epub' WHERE id = $1", second).execute(&mut *tx).await.unwrap();
+        tx.commit().await.unwrap();
+        sqlx::query!("DELETE FROM _sqlx_migrations WHERE version = 20261003000000")
+            .execute(&pool)
+            .await
+            .unwrap();
+        assert!(run_migrations_inner(&pool).await.is_err());
+        assert!(
+            !sqlx::query_scalar!(
+                "SELECT EXISTS (SELECT 1 FROM pg_class WHERE relname = 'library_path_claims')"
+            )
+            .fetch_one(&pool)
+            .await
+            .unwrap()
+            .unwrap()
+        );
+        assert_eq!(
+            sqlx::query_scalar!(
+                "SELECT count(*) FROM _sqlx_migrations WHERE version = 20261003000000"
+            )
+            .fetch_one(&pool)
+            .await
+            .unwrap(),
+            Some(0)
+        );
+        assert_eq!(
+            sqlx::query_scalar!("SELECT count(*) FROM manifestations")
+                .fetch_one(&pool)
+                .await
+                .unwrap(),
+            Some(2)
+        );
     }
 
     #[sqlx::test(migrations = "./migrations")]
@@ -875,8 +1333,20 @@ mod tests {
         let up =
             include_str!("../migrations/20260930000000_library_relative_file_locations.up.sql");
         let mut tx = pool.begin().await.unwrap();
+        sqlx::raw_sql(include_str!(
+            "../migrations/20261003000000_library_path_claims.down.sql"
+        ))
+        .execute(&mut *tx)
+        .await
+        .unwrap();
         sqlx::raw_sql(down).execute(&mut *tx).await.unwrap();
         sqlx::raw_sql(up).execute(&mut *tx).await.unwrap();
+        sqlx::raw_sql(include_str!(
+            "../migrations/20261003000000_library_path_claims.up.sql"
+        ))
+        .execute(&mut *tx)
+        .await
+        .unwrap();
         tx.commit().await.unwrap();
         crate::models::storage_library::default_library_id(&pool)
             .await
