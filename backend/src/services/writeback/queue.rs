@@ -856,7 +856,7 @@ mod tests {
         for _ in 0..5 {
             let result = carrier_run(&wb, &files, job).await;
             assert!(result.is_err());
-            finish(&wb, &test_config_with_max_attempts(1), job, 99, result)
+            finish(&wb, &test_config_with_max_attempts(1).0, job, 99, result)
                 .await
                 .unwrap();
             let row = sqlx::query!(
@@ -880,7 +880,7 @@ mod tests {
         assert!(
             matches!(&result, Ok(RunOutcome::Failed { error, .. }) if error.contains("source restored"))
         );
-        finish(&wb, &test_config_with_max_attempts(1), job, 99, result)
+        finish(&wb, &test_config_with_max_attempts(1).0, job, 99, result)
             .await
             .unwrap();
         assert_eq!(
@@ -914,7 +914,7 @@ mod tests {
         assert_eq!(claim_next(&wb).await.unwrap(), Some((job, 1)));
         let result = carrier_run(&wb, &files, job).await;
         assert!(result.is_err());
-        finish(&wb, &test_config_with_max_attempts(1), job, 0, result)
+        finish(&wb, &test_config_with_max_attempts(1).0, job, 0, result)
             .await
             .unwrap();
         assert_eq!(
@@ -949,7 +949,7 @@ mod tests {
             .unwrap();
         let result = carrier_run(&wb, &files, job).await;
         assert!(matches!(&result, Ok(RunOutcome::RelocationTerminal { .. })));
-        finish(&wb, &test_config_with_max_attempts(1), job, 99, result)
+        finish(&wb, &test_config_with_max_attempts(1).0, job, 99, result)
             .await
             .unwrap();
         let row = sqlx::query!(
@@ -1000,7 +1000,7 @@ mod tests {
             &wb,
             job,
             5,
-            &test_config_with_max_attempts(10),
+            &test_config_with_max_attempts(10).0,
             Some("storage failure"),
         )
         .await
@@ -1105,7 +1105,7 @@ mod tests {
             &wb,
             origin,
             3,
-            &test_config_with_max_attempts(3),
+            &test_config_with_max_attempts(3).0,
             Some("storage unavailable"),
         )
         .await
@@ -1121,7 +1121,14 @@ mod tests {
         job: Uuid,
     ) -> Result<RunOutcome, WritebackError> {
         let permit = Arc::new(Arc::new(Semaphore::new(1)).acquire_owned().await.unwrap());
-        orchestrator::run_once(pool, &test_config_with_max_attempts(3), files, job, permit).await
+        orchestrator::run_once(
+            pool,
+            &test_config_with_max_attempts(3).0,
+            files,
+            job,
+            permit,
+        )
+        .await
     }
 
     #[sqlx::test(migrations = "./migrations")]
@@ -1137,7 +1144,7 @@ mod tests {
         assert!(
             matches!(&result, Ok(RunOutcome::Success { reason, .. }) if reason == "relocation")
         );
-        finish(&wb, &test_config_with_max_attempts(3), job, 1, result)
+        finish(&wb, &test_config_with_max_attempts(3).0, job, 1, result)
             .await
             .unwrap();
         let row = sqlx::query!(
@@ -1204,7 +1211,7 @@ mod tests {
         assert!(
             matches!(&result, Ok(RunOutcome::RelocationTerminal { diagnosis, .. }) if diagnosis == "file_missing")
         );
-        finish(&wb, &test_config_with_max_attempts(3), job, 1, result)
+        finish(&wb, &test_config_with_max_attempts(3).0, job, 1, result)
             .await
             .unwrap();
         let row = sqlx::query!(
@@ -1266,7 +1273,7 @@ mod tests {
         assert!(claim_next(&wb).await.unwrap().is_none());
         finish(
             &wb,
-            &test_config_with_max_attempts(3),
+            &test_config_with_max_attempts(3).0,
             job,
             1,
             Ok(RunOutcome::RelocationTerminal {
@@ -1288,7 +1295,7 @@ mod tests {
         wb.close().await;
         let result = finish(
             &wb,
-            &test_config_with_max_attempts(3),
+            &test_config_with_max_attempts(3).0,
             job,
             1,
             Ok(RunOutcome::RelocationTerminal {
@@ -1328,7 +1335,7 @@ mod tests {
         let ing = ingestion_pool_for(&pool).await;
         let (_, eligible) = insert_fixture(&ing, "disabled-eligible").await;
         set_intent(&wb, eligible).await;
-        let mut config = test_config_with_max_attempts(3);
+        let (mut config, _files) = test_config_with_max_attempts(3);
         config.writeback.enabled = false;
         let cancel = CancellationToken::new();
         cancel.cancel();
@@ -1359,7 +1366,7 @@ mod tests {
         assert_eq!(failure_identity(&wb, job).await, (mid, "relocation".into()));
         finish(
             &wb,
-            &test_config_with_max_attempts(3),
+            &test_config_with_max_attempts(3).0,
             job,
             1,
             Err(WritebackError::Persist("storage unavailable".into())),
@@ -1448,11 +1455,12 @@ mod tests {
             },
             recovery_period: Duration::from_millis(10),
         };
+        let (config, files) = test_config_with_max_attempts(3);
         let mut worker = tokio::spawn(spawn_worker_with(
             wb.clone(),
-            test_config_with_max_attempts(3),
+            config,
             cancel.clone(),
-            crate::test_support::test_library_files(),
+            files,
             move |_, _, _, id, _permit| {
                 let started = Arc::clone(&run_started);
                 let release = Arc::clone(&run_release);
@@ -1532,7 +1540,7 @@ mod tests {
 
     #[sqlx::test(migrations = "./migrations")]
     async fn relocation_worker_disabled_skips_database_operations(pool: PgPool) {
-        let mut config = test_config_with_max_attempts(3);
+        let (mut config, files) = test_config_with_max_attempts(3);
         config.writeback.enabled = false;
         let cancel = CancellationToken::new();
         cancel.cancel();
@@ -1541,7 +1549,7 @@ mod tests {
             pool,
             config,
             cancel,
-            crate::test_support::test_library_files(),
+            files,
             |_, _, _, _, _| async { panic!("disabled worker ran a job") },
             WorkerHooks {
                 draining: || panic!("disabled worker drained jobs"),
@@ -1568,7 +1576,7 @@ mod tests {
         .unwrap();
         finish(
             &wb,
-            &test_config_with_max_attempts(2),
+            &test_config_with_max_attempts(2).0,
             job,
             0,
             Ok(RunOutcome::Failed {
@@ -1610,6 +1618,139 @@ mod tests {
     }
 
     #[sqlx::test(migrations = "./migrations")]
+    async fn relocation_queue_aborted_worker_retains_claim_until_restart(pool: PgPool) {
+        let wb = writeback_pool_for(&pool).await;
+        let ing = ingestion_pool_for(&pool).await;
+        let (_dir, files, job, mid, intent) = carrier_fixture(&pool).await;
+        sqlx::query!(
+            "UPDATE writeback_jobs SET last_attempted_at = NULL WHERE id = $1",
+            job
+        )
+        .execute(&wb)
+        .await
+        .unwrap();
+        let library = crate::models::storage_library::default_library_id(&pool)
+            .await
+            .unwrap();
+        let hash = sqlx::query_scalar!(
+            "SELECT current_file_hash FROM manifestations WHERE id = $1",
+            mid
+        )
+        .fetch_one(&wb)
+        .await
+        .unwrap();
+        let entered = Arc::new(tokio::sync::Notify::new());
+        let completed = Arc::new(tokio::sync::Notify::new());
+        let calls = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let (release_tx, release_rx) = std::sync::mpsc::channel();
+        let release = Arc::new(std::sync::Mutex::new(release_rx));
+        let phase_entered = Arc::clone(&entered);
+        let phase_completed = Arc::clone(&completed);
+        let phase_calls = Arc::clone(&calls);
+        let phase_intent = intent.clone();
+        let worker = tokio::spawn(spawn_worker_with(
+            wb.clone(),
+            test_config_with_max_attempts(3).0,
+            CancellationToken::new(),
+            files.clone(),
+            move |_pool, _config, files, id, permit| {
+                let entered = Arc::clone(&phase_entered);
+                let completed = Arc::clone(&phase_completed);
+                let calls = Arc::clone(&phase_calls);
+                let release = Arc::clone(&release);
+                let intent = phase_intent.clone();
+                let hash = hash.clone();
+                async move {
+                    assert_eq!(id, job);
+                    calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                    orchestrator::blocking_phase(permit, move || {
+                        entered.notify_one();
+                        release.lock().unwrap().recv().unwrap();
+                        let result = super::super::path_rename::recover(
+                            files.library(library)?,
+                            &intent.source,
+                            &intent.destination,
+                            &hash,
+                            7,
+                        );
+                        completed.notify_one();
+                        result
+                    })
+                    .await?;
+                    Ok(RunOutcome::Success {
+                        manifestation_id: mid,
+                        reason: "relocation".into(),
+                        current_file_hash: "unchanged".into(),
+                    })
+                }
+            },
+            WorkerHooks::new(|| {}),
+        ));
+        tokio::time::timeout(Duration::from_secs(5), entered.notified())
+            .await
+            .unwrap();
+        worker.abort();
+        assert!(worker.await.unwrap_err().is_cancelled());
+        let sibling = insert_job(&ing, mid, "metadata").await;
+        assert!(claim_next(&wb).await.unwrap().is_none());
+        assert_eq!(
+            sqlx::query_scalar!("SELECT status::text FROM writeback_jobs WHERE id = $1", job)
+                .fetch_one(&wb)
+                .await
+                .unwrap()
+                .as_deref(),
+            Some("in_progress")
+        );
+        assert_eq!(calls.load(std::sync::atomic::Ordering::SeqCst), 1);
+        release_tx.send(()).unwrap();
+        tokio::time::timeout(Duration::from_secs(5), completed.notified())
+            .await
+            .unwrap();
+        let root = files.library(library).unwrap();
+        assert_eq!(root.read(intent.destination.as_path()).unwrap(), b"PAYLOAD");
+        assert!(!root.try_exists(intent.source.as_path()).unwrap());
+        assert_eq!(
+            sqlx::query_scalar!("SELECT status::text FROM writeback_jobs WHERE id = $1", job)
+                .fetch_one(&wb)
+                .await
+                .unwrap()
+                .as_deref(),
+            Some("in_progress")
+        );
+        revert_in_progress(&wb).await.unwrap();
+        sqlx::query!(
+            "UPDATE writeback_jobs SET last_attempted_at = NULL WHERE id = $1",
+            job
+        )
+        .execute(&wb)
+        .await
+        .unwrap();
+        let (claimed, attempt) = claim_next(&wb).await.unwrap().unwrap();
+        assert_eq!(claimed, job);
+        let result = carrier_run(&wb, &files, job).await;
+        assert!(matches!(&result, Ok(RunOutcome::Success { .. })));
+        finish(
+            &wb,
+            &test_config_with_max_attempts(3).0,
+            job,
+            attempt,
+            result,
+        )
+        .await
+        .unwrap();
+        let row = sqlx::query!(
+            "SELECT file_path, relocation_source_path FROM manifestations WHERE id = $1",
+            mid
+        )
+        .fetch_one(&wb)
+        .await
+        .unwrap();
+        assert_eq!(row.file_path, intent.destination.as_str());
+        assert!(row.relocation_source_path.is_none());
+        assert_eq!(claim_next(&wb).await.unwrap().unwrap().0, sibling);
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
     async fn relocation_queue_startup_sweep_creates_carrier_before_claiming(pool: PgPool) {
         let ing = ingestion_pool_for(&pool).await;
         let wb = writeback_pool_for(&pool).await;
@@ -1620,7 +1761,7 @@ mod tests {
             &wb,
             origin,
             3,
-            &test_config_with_max_attempts(3),
+            &test_config_with_max_attempts(3).0,
             Some("exhausted"),
         )
         .await
@@ -1630,12 +1771,13 @@ mod tests {
         let worker_signal = Arc::clone(&signal);
         let worker_cancel = cancel.clone();
         let worker_pool = wb.clone();
+        let (config, files) = test_config_with_max_attempts(3);
         let handle = tokio::spawn(async move {
             spawn_worker_with(
                 worker_pool,
-                test_config_with_max_attempts(3),
+                config,
                 worker_cancel,
-                crate::test_support::test_library_files(),
+                files,
                 move |pool, _config, _files, id, _permit| {
                     let signal = Arc::clone(&worker_signal);
                     async move {
@@ -1679,7 +1821,7 @@ mod tests {
         intent.destination = "different.epub".parse().unwrap();
         let result = finish(
             &wb,
-            &test_config_with_max_attempts(3),
+            &test_config_with_max_attempts(3).0,
             job,
             1,
             Ok(RunOutcome::RelocationTerminal {
@@ -1724,7 +1866,7 @@ mod tests {
         root.create_dir(intent.source.as_path()).unwrap();
         let result = carrier_run(&wb, &files, job).await;
         assert!(matches!(&result, Err(WritebackError::Io(_))));
-        finish(&wb, &test_config_with_max_attempts(1), job, 1, result)
+        finish(&wb, &test_config_with_max_attempts(1).0, job, 1, result)
             .await
             .unwrap();
         assert!(
@@ -1747,7 +1889,7 @@ mod tests {
         assert!(
             matches!(&recovered, Ok(RunOutcome::Success { reason, .. }) if reason == "relocation")
         );
-        finish(&wb, &test_config_with_max_attempts(1), next, 1, recovered)
+        finish(&wb, &test_config_with_max_attempts(1).0, next, 1, recovered)
             .await
             .unwrap();
         assert_eq!(root.read(intent.destination.as_path()).unwrap(), b"PAYLOAD");

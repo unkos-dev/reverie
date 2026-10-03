@@ -245,9 +245,12 @@ intent before returning the failure. Final location, pair clearing and obsolete-
 recorded destination with retained intent keeps both claims. Permanent finalisation releases only obsolete names in the
 transaction owned by `queue::finish`.
 
-Recovery locks the exact in-progress job and intent and verifies both names' owners before filesystem access. A foreign
-owner prevents adoption and source removal even when bytes match. Size/hash evidence still establishes content; claims
-do not establish external file provenance, so publication independently refuses replacement.
+Recovery verifies the exact in-progress job, intent and both names' owners in a short transaction before filesystem
+access. It commits and releases the database connection before hashing, copying or sync, allowing canonical metadata
+edits during recovery. Finalisation opens a fresh short transaction, locks the exact in-progress job and guards the
+intent update; location, intent, obsolete claims and any ordinary edit debit commit together. A foreign owner prevents
+adoption and source removal even when bytes match. Size/hash evidence still establishes content; claims do not establish
+external file provenance, so publication independently refuses replacement.
 
 Ordinary jobs with open intent claim recovery without incrementing their edit count. Successful destination recovery
 increments that count once in the transaction that finalises location and intent, before snapshot reload and the edit.
@@ -485,7 +488,11 @@ selection uses capability-relative metadata probes.
 The worker stops claiming on cancellation and drains its `JoinSet` within the application's existing shared 30-second
 budget. Shutdown recovery resets claims only after all tracked jobs have ended. If the outer drain aborts, unfinished
 rows stay `in_progress` for startup recovery; active blocking work retains its semaphore permit across async
-cancellation.
+cancellation. The worker is not restarted within the process. Under ADR-0018's single-instance, restart-bounded claim
+model, no other job for that manifestation can run while its claimed mutation continues. The runtime created by
+`#[tokio::main]` waits for started blocking work during shutdown without a shutdown timeout. A replacement process
+reclaims only after the previous process exits; a forced process kill instead leaves the persisted intent for crash
+recovery. This exclusion governs both initial relocation and recovery without holding a transaction during file work.
 
 This subject is one of the two attachment points for the ingestion-and-writeback row-level-security exemption the Design
 "Row-level security and database context" owns generally; the other is the ingestion pool's unconditional policies,
