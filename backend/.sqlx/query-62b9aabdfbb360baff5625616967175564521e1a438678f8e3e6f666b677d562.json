@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM library_path_claims AS c USING manifestations AS m\n         WHERE c.manifestation_id = $1 AND m.id = c.manifestation_id\n         AND c.path <> m.file_path\n         AND c.path IS DISTINCT FROM m.relocation_source_path\n         AND c.path IS DISTINCT FROM m.relocation_destination_path",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "62b9aabdfbb360baff5625616967175564521e1a438678f8e3e6f666b677d562"
+}

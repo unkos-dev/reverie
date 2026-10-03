@@ -112,6 +112,36 @@ pub fn resolve_collision(path: &Path) -> std::io::Result<PathBuf> {
     ))
 }
 
+/// Render one candidate using the existing collision suffix convention.
+///
+/// # Errors
+/// Returns an invalid or non-UTF8 relative path.
+pub fn collision_candidate(
+    candidate: &crate::services::files::RelativeFilePath,
+    suffix: u64,
+) -> std::io::Result<crate::services::files::RelativeFilePath> {
+    if suffix == 1 {
+        return Ok(candidate.clone());
+    }
+    let mut path = candidate.as_path().to_owned();
+    let stem = path
+        .file_stem()
+        .and_then(|stem| stem.to_str())
+        .ok_or_else(|| std::io::Error::other("missing collision stem"))?;
+    let name = path
+        .extension()
+        .and_then(|extension| extension.to_str())
+        .map_or_else(
+            || format!("{stem} ({suffix})"),
+            |extension| format!("{stem} ({suffix}).{extension}"),
+        );
+    path.set_file_name(name);
+    path.to_str()
+        .ok_or_else(|| std::io::Error::other("non-UTF8 collision path"))?
+        .parse()
+        .map_err(std::io::Error::other)
+}
+
 /// Parse author and title from a filename using the `Author - Title.ext` convention.
 #[must_use]
 pub fn heuristic_vars_from_filename(filename: &str) -> HashMap<String, String> {

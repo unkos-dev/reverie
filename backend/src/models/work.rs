@@ -611,11 +611,11 @@ mod tests {
         let isbn = "9780306406157";
         let path = format!("fixtures/test-isbn-{work_id1}.epub");
         sqlx::query!(
-            "INSERT INTO manifestations \
+            "WITH inserted AS (INSERT INTO manifestations \
              (library_id, work_id, isbn_13, format, file_path, ingestion_file_hash, current_file_hash, \
               file_size_bytes, ingestion_status, validation_status) \
              VALUES ((SELECT id FROM libraries WHERE configuration_key = 'default'), $1, $2, 'epub'::manifestation_format, $3, 'testhash', 'testhash', 1000, \
-                     'complete'::ingestion_status, 'clean'::validation_status)",
+                     'complete'::ingestion_status, 'clean'::validation_status) RETURNING *) INSERT INTO library_path_claims (library_id, path, manifestation_id) SELECT library_id, file_path, id FROM inserted",
             work_id1,
             isbn,
             path,
@@ -782,12 +782,12 @@ mod tests {
         let path = format!("fixtures/rematch-{file_marker}.epub");
         let hash = format!("hash-{file_marker}");
         sqlx::query_scalar!(
-            "INSERT INTO manifestations \
+            "WITH inserted AS (INSERT INTO manifestations \
                (library_id, work_id, isbn_13, format, file_path, ingestion_file_hash, current_file_hash, \
                 file_size_bytes, ingestion_status, validation_status) \
              VALUES ((SELECT id FROM libraries WHERE configuration_key = 'default'), $1, $2, 'epub'::manifestation_format, $3, $4, $4, 1000, \
                      'complete'::ingestion_status, 'clean'::validation_status) \
-             RETURNING id",
+             RETURNING *), claimed AS (INSERT INTO library_path_claims (library_id, path, manifestation_id) SELECT library_id, file_path, id FROM inserted) SELECT id AS \"id!\" FROM inserted",
             work_id,
             isbn_13,
             path,

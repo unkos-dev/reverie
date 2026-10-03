@@ -1,0 +1,19 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE manifestations SET current_file_hash = $1, has_embedded_cover = $3, file_size_bytes = $4, relocation_source_path = $5, relocation_destination_path = $6 WHERE id = $2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Uuid",
+        "Bool",
+        "Int8",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "6d57a5e5cf259ab27a2f72d991ad35c86ce7546a1f3c5eff25e79e07f5a5298c"
+}

@@ -146,12 +146,12 @@ mod tests {
         let file_path = format!("fixtures/fl-test-{work_id}.epub");
         let hash = format!("hash-fl-{work_id}");
         let m_id = sqlx::query_scalar!(
-            "INSERT INTO manifestations \
+            "WITH inserted AS (INSERT INTO manifestations \
              (library_id, work_id, format, file_path, ingestion_file_hash, current_file_hash, \
               file_size_bytes, ingestion_status, validation_status) \
              VALUES ((SELECT id FROM libraries WHERE configuration_key = 'default'), $1, 'epub'::manifestation_format, $2, $3, $3, 100, \
                      'complete'::ingestion_status, 'clean'::validation_status) \
-             RETURNING id",
+             RETURNING *), claimed AS (INSERT INTO library_path_claims (library_id, path, manifestation_id) SELECT library_id, file_path, id FROM inserted) SELECT id AS \"id!\" FROM inserted",
             work_id,
             file_path,
             hash,

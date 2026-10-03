@@ -11,11 +11,12 @@ use crate::models::ingestion_status::IngestionStatus;
 use crate::models::manifestation_format::ManifestationFormat;
 use crate::models::storage_library::LibraryId;
 use crate::models::validation_status::ValidationStatus;
-use crate::models::{ingestion_job, work};
+use crate::models::{ingestion_job, library_path_claim, work};
 use crate::services::epub::{self, ValidationOutcome};
-use crate::services::files::LibraryFiles;
+use crate::services::files::{LibraryFiles, LibraryLocation, RelativeFilePath};
 use crate::services::ingestion::{cleanup, copier, format_filter, path_template, quarantine};
 use crate::services::metadata;
+use crate::services::writeback::path_rename;
 
 /// Counts returned by a completed [`scan_once`] call.
 #[derive(Debug)]
@@ -260,6 +261,132 @@ enum ProcessResult {
     Failed(String),
 }
 
+async fn select_ingestion_path(
+    pool: &PgPool,
+    files: &LibraryFiles,
+    library_id: LibraryId,
+    candidate: &RelativeFilePath,
+) -> anyhow::Result<(LibraryLocation, sqlx::Transaction<'static, sqlx::Postgres>)> {
+    let mut tx = pool.begin().await?;
+    for suffix in 1..=999 {
+        let path = path_template::collision_candidate(candidate, suffix)?;
+        let location = LibraryLocation { library_id, path };
+        library_path_claim::exclude(&mut tx, &location).await?;
+        if library_path_claim::owner(&mut tx, &location)
+            .await?
+            .is_some()
+        {
+            continue;
+        }
+        let phase_files = files.clone();
+        let phase_location = location.clone();
+        let occupied = tokio::task::spawn_blocking(move || {
+            match phase_files
+                .library(library_id)?
+                .symlink_metadata(phase_location.path.as_path())
+            {
+                Ok(_) => Ok(true),
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(false),
+                Err(error) => Err(crate::services::files::LibraryFileError::Io(error)),
+            }
+        })
+        .await??;
+        if !occupied {
+            return Ok((location, tx));
+        }
+    }
+    anyhow::bail!("ingestion collision suffix exhausted")
+}
+
+async fn move_ingestion_candidate(
+    pool: &PgPool,
+    files: &LibraryFiles,
+    source: &LibraryLocation,
+    candidate: &RelativeFilePath,
+    hash: &str,
+) -> anyhow::Result<LibraryLocation> {
+    let (destination, mut tx) =
+        select_ingestion_path(pool, files, source.library_id, candidate).await?;
+    library_path_claim::exclude(&mut tx, source).await?;
+    if library_path_claim::owner(&mut tx, source).await?.is_some() {
+        anyhow::bail!("ingestion source ownership changed")
+    }
+    let phase_files = files.clone();
+    let source = source.clone();
+    let phase_destination = destination.clone();
+    let hash = hash.to_owned();
+    tokio::task::spawn_blocking(move || {
+        let _exclusion = tx;
+        let root = phase_files.library(source.library_id)?;
+        path_rename::prepare_destination(root, &phase_destination.path)?;
+        match path_rename::move_existing(root, &source.path, &phase_destination.path, &hash)? {
+            path_rename::MoveResult::Durable => {}
+            path_rename::MoveResult::VisibleUncertain(error) => {
+                tracing::error!(%error, "ingestion metadata move visible with unconfirmed durability");
+            }
+        }
+        Ok::<(), anyhow::Error>(())
+    }).await??;
+    Ok(destination)
+}
+
+async fn cleanup_candidate(
+    pool: &PgPool,
+    files: &LibraryFiles,
+    location: &LibraryLocation,
+    identity: (u64, u64),
+) -> anyhow::Result<()> {
+    cleanup_candidate_with(pool, files, location, identity, |parent, name| {
+        parent.remove_file(name)
+    })
+    .await
+}
+
+async fn cleanup_candidate_with(
+    pool: &PgPool,
+    files: &LibraryFiles,
+    location: &LibraryLocation,
+    identity: (u64, u64),
+    remove: impl FnOnce(&cap_std::fs::Dir, &std::ffi::OsStr) -> std::io::Result<()> + Send + 'static,
+) -> anyhow::Result<()> {
+    let mut tx = pool.begin().await?;
+    library_path_claim::exclude(&mut tx, location).await?;
+    if library_path_claim::owner(&mut tx, location).await?.is_some()
+        || sqlx::query_scalar!(
+            "SELECT EXISTS (SELECT 1 FROM manifestations WHERE library_id = $1 AND file_path = $2) AS \"owned!\"",
+            location.library_id.as_uuid(), location.path.as_str(),
+        ).fetch_one(&mut *tx).await? {
+        anyhow::bail!("library copy retained: committed or claimed ownership")
+    }
+    let files = files.clone();
+    let location = location.clone();
+    tokio::task::spawn_blocking(move || {
+        use cap_std::fs::MetadataExt;
+
+        // THREAT: Cancellation must not release exclusion while removal can still mutate the name.
+        let _exclusion = tx;
+        let (parent, name) =
+            path_rename::parent(files.library(location.library_id)?, &location.path)?;
+        let metadata = parent.symlink_metadata(&name)?;
+        if !metadata.is_file() || (metadata.dev(), metadata.ino()) != identity {
+            anyhow::bail!("library copy retained: candidate identity changed")
+        }
+        remove(&parent, &name)?;
+        Ok(())
+    })
+    .await?
+}
+
+fn cleanup_failure(reason: String, cleanup: anyhow::Result<()>) -> String {
+    match cleanup {
+        Ok(()) => reason,
+        Err(error) => {
+            tracing::error!(%error, "ingestion cleanup retained library copy");
+            format!("{reason}; cleanup retained library copy: {error}")
+        }
+    }
+}
+
 // Validator entry point with a test-only fault-injection seam.
 //
 // `epub::validate_and_repair`'s `Err` means the validator itself could not
@@ -332,7 +459,6 @@ async fn process_file(
     // Step 1: Parse filename and hash source (in spawn_blocking)
     let prep_result = {
         let source = source.clone();
-        let library_path = library_path.clone();
         tokio::task::spawn_blocking(move || {
             let filename = source
                 .file_name()
@@ -341,27 +467,19 @@ async fn process_file(
             let vars = path_template::heuristic_vars_from_filename(filename);
             let relative = path_template::render(path_template::DEFAULT_TEMPLATE, &vars);
 
-            let final_relative =
-                match path_template::resolve_collision(&library_path.join(&relative)) {
-                    Ok(full_path) => full_path
-                        .strip_prefix(&library_path)
-                        .unwrap_or(&relative)
-                        .to_path_buf(),
-                    Err(e) => return Err(format!("collision resolution failed: {e}")),
-                };
+            let final_relative = relative;
 
             let source_hash = match copier::hash_file(&source) {
                 Ok(h) => h,
                 Err(e) => return Err(format!("failed to hash source: {e}")),
             };
 
-            let dest_path_str = library_path.join(&final_relative).display().to_string();
-            Ok((vars, final_relative, source_hash, dest_path_str))
+            Ok((vars, final_relative, source_hash))
         })
         .await
     };
 
-    let (vars, final_relative, source_hash, dest_path_str) = match prep_result {
+    let (vars, rendered_relative, source_hash) = match prep_result {
         Ok(Ok(tuple)) => tuple,
         Ok(Err(reason)) => {
             quarantine_async(&source, &quarantine_path, &reason).await;
@@ -370,11 +488,29 @@ async fn process_file(
         Err(e) => return ProcessResult::Failed(format!("spawn_blocking panicked: {e}")),
     };
 
+    let candidate: RelativeFilePath = match rendered_relative
+        .to_str()
+        .ok_or_else(|| "non-UTF8 copied location".to_owned())
+        .and_then(|path| {
+            path.parse()
+                .map_err(|error: crate::services::files::LibraryFileError| error.to_string())
+        }) {
+        Ok(path) => path,
+        Err(error) => return ProcessResult::Failed(error),
+    };
+    let (initial_location, publication) =
+        match select_ingestion_path(pool, files, library_id, &candidate).await {
+            Ok(selected) => selected,
+            Err(error) => return ProcessResult::Failed(format!("path selection failed: {error}")),
+        };
+    let final_relative = initial_location.path.as_path().to_owned();
+
     // Step 2: Duplicate check BEFORE copying
     let duplicate = sqlx::query_scalar!(
-        "SELECT EXISTS(SELECT 1 FROM manifestations WHERE ingestion_file_hash = $1 OR file_path = $2) AS \"exists!\"",
+        "SELECT EXISTS(SELECT 1 FROM manifestations WHERE ingestion_file_hash = $1 OR (library_id = $3 AND file_path = $2)) AS \"exists!\"",
         &source_hash,
-        &dest_path_str,
+        initial_location.path.as_str(),
+        library_id.as_uuid(),
     )
     .fetch_one(pool)
     .await;
@@ -392,25 +528,30 @@ async fn process_file(
     // Step 3: Copy with verification (in spawn_blocking).
     // Pass pre-computed source_hash so the copier only reads the source once (for
     // copying) and verifies the dest hash against it inline.
-    let copy_result = {
-        let source = source.clone();
-        let library_path = library_path.clone();
-        let final_relative = final_relative.clone();
-        let hash_for_copy = source_hash.clone();
-        tokio::task::spawn_blocking(move || {
-            copier::copy_verified(&source, &library_path, &final_relative, &hash_for_copy)
-        })
-        .await
-    };
-
+    let phase_files = files.clone();
+    let phase_location = initial_location.clone();
+    let phase_source = source.clone();
+    let hash_for_copy = source_hash.clone();
+    let copy_result = tokio::task::spawn_blocking(move || {
+        let _publication = publication;
+        copier::copy_verified_into(
+            &phase_source,
+            phase_files
+                .library(library_id)
+                .map_err(std::io::Error::other)?,
+            &phase_location.path,
+            &hash_for_copy,
+        )
+    })
+    .await;
     let copy_result = match copy_result {
         Ok(Ok(result)) => result,
-        Ok(Err(e)) => {
-            let reason = format!("copy failed: {e}");
+        Ok(Err(error)) => {
+            let reason = format!("copy failed: {error}");
             quarantine_async(&source, &quarantine_path, &reason).await;
             return ProcessResult::Failed(reason);
         }
-        Err(e) => return ProcessResult::Failed(format!("spawn_blocking panicked: {e}")),
+        Err(error) => return ProcessResult::Failed(format!("copy task failed: {error}")),
     };
 
     // Step 4: Determine manifestation_format from extension.
@@ -419,17 +560,9 @@ async fn process_file(
     // bypasses that filter.
     let ext = vars.get("ext").cloned().unwrap_or_default();
     let Ok(format) = ext.parse::<ManifestationFormat>() else {
-        let dest = dest_path_str.clone();
-        if let Err(e) = tokio::task::spawn_blocking(move || {
-            if let Err(e) = std::fs::remove_file(&dest) {
-                tracing::warn!(path = %dest, error = %e, "failed to remove orphaned library file after format check");
-            }
-        })
-        .await
-        {
-            tracing::warn!(error = %e, "cleanup spawn_blocking panicked after format check");
-        }
-        return ProcessResult::Failed(format!("unsupported format: {ext}"));
+        let cleanup = cleanup_candidate(pool, files, &initial_location, copy_result.identity).await;
+        let reason = format!("unsupported format: {ext}");
+        return ProcessResult::Failed(cleanup_failure(reason, cleanup));
     };
 
     // Step 4.5: EPUB structural validation and auto-repair.
@@ -506,27 +639,19 @@ async fn process_file(
                 let has_cover = report.has_usable_embedded_cover;
                 match report.outcome {
                     ValidationOutcome::Quarantined => {
-                        let lib_file_str = lib_file.display().to_string();
-                        if let Err(e) = tokio::task::spawn_blocking(move || {
-                            if let Err(e) = std::fs::remove_file(&lib_file_str) {
-                                tracing::warn!(
-                                    path = %lib_file_str,
-                                    error = %e,
-                                    "failed to remove library file for quarantined EPUB"
-                                );
-                            }
-                        })
-                        .await
-                        {
-                            tracing::warn!(error = %e, "cleanup spawn_blocking panicked for quarantined EPUB removal");
-                        }
+                        let cleanup =
+                            cleanup_candidate(pool, files, &initial_location, copy_result.identity)
+                                .await;
                         let reason = issues
                             .iter()
                             .map(|i| format!("{:?}", i.kind))
                             .collect::<Vec<_>>()
                             .join("; ");
                         quarantine_async(&source, &quarantine_path, &reason).await;
-                        return ProcessResult::Failed(format!("EPUB quarantined: {reason}"));
+                        return ProcessResult::Failed(cleanup_failure(
+                            format!("EPUB quarantined: {reason}"),
+                            cleanup,
+                        ));
                     }
                     ValidationOutcome::Clean => {
                         (ValidationStatus::Clean, a11y, opf, Some(has_cover))
@@ -551,72 +676,52 @@ async fn process_file(
     // Step 5: Extract metadata and create work + manifestation
     let extracted = opf_data.as_ref().map(metadata::extractor::extract);
 
-    // Compute metadata-based path if extraction succeeded
-    let final_path_str = if let Some(ref meta) = extracted {
+    let final_location = if let Some(ref meta) = extracted {
         if meta.title.is_some() || !meta.creators.is_empty() {
             let mut meta_vars = vars.clone();
-            if let Some(ref t) = meta.title {
-                meta_vars.insert("Title".into(), t.clone());
+            if let Some(ref title) = meta.title {
+                meta_vars.insert("Title".into(), title.clone());
             }
             if let Some(first) = meta.first_author() {
                 meta_vars.insert("Author".into(), first.sort_name.clone());
             }
-            let new_relative = path_template::render(path_template::DEFAULT_TEMPLATE, &meta_vars);
-            let new_full = library_path.join(&new_relative);
-
-            // Attempt rename if path changed
-            if new_full.display().to_string() == dest_path_str {
-                dest_path_str.clone()
+            let rendered = path_template::render(path_template::DEFAULT_TEMPLATE, &meta_vars);
+            let candidate: RelativeFilePath = match rendered
+                .to_str()
+                .ok_or_else(|| "non-UTF8 metadata path".to_owned())
+                .and_then(|path| {
+                    path.parse()
+                        .map_err(|error: crate::services::files::LibraryFileError| {
+                            error.to_string()
+                        })
+                }) {
+                Ok(path) => path,
+                Err(error) => return ProcessResult::Failed(error),
+            };
+            if candidate == initial_location.path {
+                initial_location.clone()
             } else {
-                let old_path = dest_path_str.clone();
-                let new_full_clone = new_full.clone();
-                let rename_result = tokio::task::spawn_blocking(move || {
-                    // Resolve collision on new path
-                    let resolved = path_template::resolve_collision(&new_full_clone)?;
-                    if let Some(parent) = resolved.parent() {
-                        std::fs::create_dir_all(parent)?;
-                    }
-                    std::fs::rename(&old_path, &resolved)?;
-                    // Try to clean up empty parent dirs of old path
-                    if let Some(old_parent) = Path::new(&old_path).parent() {
-                        // Best-effort: only succeeds if the directory is empty.
-                        // Failure (non-empty dir, permissions) is expected and ignored.
-                        if let Err(e) = std::fs::remove_dir(old_parent) {
-                            tracing::debug!(path = %old_parent.display(), error = %e, "could not remove old parent dir (non-empty or permissions); expected");
-                        }
-                    }
-                    Ok::<String, std::io::Error>(resolved.display().to_string())
-                })
-                .await;
-
-                match rename_result {
-                    Ok(Ok(new_path)) => {
-                        tracing::info!(
-                            old_path = %dest_path_str,
-                            new_path = %new_path,
-                            "renamed file to metadata-based path"
-                        );
-                        new_path
-                    }
-                    Ok(Err(e)) => {
-                        tracing::warn!(
-                            error = %e,
-                            old_path = %dest_path_str,
-                            "metadata rename failed; keeping heuristic path"
-                        );
-                        dest_path_str.clone()
-                    }
-                    Err(e) => {
-                        tracing::warn!(error = %e, "rename spawn_blocking panicked");
-                        dest_path_str.clone()
+                match move_ingestion_candidate(
+                    pool,
+                    files,
+                    &initial_location,
+                    &candidate,
+                    &current_hash,
+                )
+                .await
+                {
+                    Ok(location) => location,
+                    Err(error) => {
+                        tracing::warn!(%error, "metadata move refused; retaining heuristic location");
+                        initial_location.clone()
                     }
                 }
             }
         } else {
-            dest_path_str.clone()
+            initial_location.clone()
         }
     } else {
-        dest_path_str.clone()
+        initial_location.clone()
     };
 
     // DB section — single transaction so the ingest invariant holds:
@@ -626,7 +731,7 @@ async fn process_file(
         pool,
         &extracted,
         &vars,
-        &final_path_str,
+        &final_location,
         &copy_result,
         ManifestationMeta {
             format,
@@ -643,21 +748,12 @@ async fn process_file(
         Ok(pair) => pair,
         Err(e) => {
             tracing::error!(error = %e, "ingest DB commit failed");
-            let dest = final_path_str.clone();
-            if let Err(e) = tokio::task::spawn_blocking(move || {
-                if let Err(rm_err) = std::fs::remove_file(&dest) {
-                    tracing::warn!(
-                        path = %dest,
-                        error = %rm_err,
-                        "failed to remove orphaned library file after DB error"
-                    );
-                }
-            })
-            .await
-            {
-                tracing::warn!(error = %e, "cleanup spawn_blocking panicked after DB error");
-            }
-            return ProcessResult::Failed(format!("DB insert failed: {e}"));
+            let cleanup =
+                cleanup_candidate(pool, files, &final_location, copy_result.identity).await;
+            return ProcessResult::Failed(cleanup_failure(
+                format!("DB insert failed: {e}"),
+                cleanup,
+            ));
         }
     };
 
@@ -684,41 +780,24 @@ async fn process_file(
     // and concurrency-bounded. `current_hash` is `current_file_hash` (see
     // `commit_ingest`), which keys the cover cache.
     if should_warm_cover(format, has_embedded_cover) {
-        let source_relative = Path::new(&final_path_str)
-            .strip_prefix(&library_path)
-            .map_err(|error| error.to_string())
-            .and_then(|path| {
-                path.to_str()
-                    .ok_or_else(|| "non-UTF8 warming source".to_owned())
-            })
-            .and_then(|path| {
-                path.parse()
-                    .map_err(|error: crate::services::files::LibraryFileError| error.to_string())
-            });
-        match source_relative {
-            Ok(path) => {
-                let files = files.clone();
-                let opened = tokio::task::spawn_blocking(move || {
-                    files.open_source(&crate::services::files::LibraryLocation { library_id, path })
-                })
-                .await;
-                match opened {
-                    Ok(Ok(opened)) => crate::services::covers::spawn_warm_thumb(
-                        library_path.display().to_string(),
-                        manifestation_id,
-                        current_hash,
-                        opened.file,
-                    ),
-                    Ok(Err(error)) => {
-                        tracing::warn!(%error, %manifestation_id, "opening cover warming source failed");
-                    }
-                    Err(error) => {
-                        tracing::warn!(%error, %manifestation_id, "cover warming source task failed");
-                    }
-                }
+        let path = final_location.path.clone();
+        let files = files.clone();
+        let opened = tokio::task::spawn_blocking(move || {
+            files.open_source(&crate::services::files::LibraryLocation { library_id, path })
+        })
+        .await;
+        match opened {
+            Ok(Ok(opened)) => crate::services::covers::spawn_warm_thumb(
+                library_path.display().to_string(),
+                manifestation_id,
+                current_hash,
+                opened.file,
+            ),
+            Ok(Err(error)) => {
+                tracing::warn!(%error, %manifestation_id, "opening cover warming source failed");
             }
             Err(error) => {
-                tracing::warn!(%error, %manifestation_id, "invalid cover warming location");
+                tracing::warn!(%error, %manifestation_id, "cover warming source task failed");
             }
         }
     }
@@ -766,7 +845,7 @@ async fn commit_ingest(
     pool: &PgPool,
     extracted: &Option<crate::services::metadata::extractor::ExtractedMetadata>,
     vars: &std::collections::HashMap<String, String>,
-    final_path_str: &str,
+    location: &LibraryLocation,
     copy_result: &copier::CopyResult,
     meta: ManifestationMeta<'_>,
 ) -> Result<(Uuid, Uuid), sqlx::Error> {
@@ -795,14 +874,14 @@ async fn commit_ingest(
     let ingestion_status = IngestionStatus::Complete;
     let manifestation_id = sqlx::query_scalar!(
         "INSERT INTO manifestations \
-             (work_id, format, file_path, ingestion_file_hash, current_file_hash, \
+             (work_id, format, file_path, ingestion_file_hash, current_file_hash, library_id, \
               file_size_bytes, ingestion_status, validation_status, accessibility_metadata, \
               has_embedded_cover) \
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) \
+         VALUES ($1, $2, $3, $4, $5, $11, $6, $7, $8, $9, $10) \
          RETURNING id",
         work_id,
         meta.format as ManifestationFormat,
-        final_path_str,
+        location.path.as_str(),
         &copy_result.sha256,
         meta.current_hash,
         file_size,
@@ -810,9 +889,16 @@ async fn commit_ingest(
         meta.validation_status as ValidationStatus,
         meta.accessibility_metadata.as_ref(),
         meta.has_embedded_cover,
+        location.library_id.as_uuid(),
     )
     .fetch_one(&mut *tx)
     .await?;
+
+    if !library_path_claim::reserve(&mut tx, location, manifestation_id).await? {
+        return Err(sqlx::Error::Protocol(
+            "ingestion destination belongs to another manifestation".into(),
+        ));
+    }
 
     // 3. Write drafts — OPF metadata when available, heuristic fallback otherwise.
     //    The heuristic row gives the canonical title_version_id pointer even
@@ -1170,6 +1256,325 @@ mod tests {
             quarantine.path().to_str().unwrap(),
         );
         (ingestion, library, quarantine, config)
+    }
+
+    async fn claim_copy_fixture(
+        pool: &PgPool,
+        path: &str,
+    ) -> (
+        tempfile::TempDir,
+        LibraryFiles,
+        LibraryLocation,
+        copier::CopyResult,
+    ) {
+        let library_id = crate::models::storage_library::default_library_id(pool)
+            .await
+            .unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().to_str().unwrap().parse().unwrap();
+        let files = crate::test_support::test_library_files_at(&root, library_id);
+        let source = dir.path().join("input.pdf");
+        std::fs::write(&source, b"candidate bytes").unwrap();
+        let location = LibraryLocation {
+            library_id,
+            path: path.parse().unwrap(),
+        };
+        let copied = copier::copy_verified_into(
+            &source,
+            files.library(library_id).unwrap(),
+            &location.path,
+            &copier::hash_file(&source).unwrap(),
+        )
+        .unwrap();
+        (dir, files, location, copied)
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn path_claim_ingestion_manifestation_commit_and_competing_owner(pool: PgPool) {
+        let ing = ingestion_pool_for(&pool).await;
+        let (_dir, files, location, copied) = claim_copy_fixture(&pool, "atomic.pdf").await;
+        let vars = path_template::heuristic_vars_from_filename("Atomic.pdf");
+        let meta = || ManifestationMeta {
+            format: ManifestationFormat::Pdf,
+            validation_status: ValidationStatus::Pending,
+            accessibility_metadata: &None,
+            has_embedded_cover: None,
+            current_hash: &copied.sha256,
+            current_size: copied.file_size,
+        };
+        let (_, id) = commit_ingest(&ing, &None, &vars, &location, &copied, meta())
+            .await
+            .unwrap();
+        assert_eq!(sqlx::query_scalar!("SELECT manifestation_id FROM library_path_claims WHERE library_id = $1 AND path = $2", location.library_id.as_uuid(), location.path.as_str()).fetch_one(&pool).await.unwrap(), id);
+        assert_eq!(
+            sqlx::query_scalar!("SELECT file_path FROM manifestations WHERE id = $1", id)
+                .fetch_one(&pool)
+                .await
+                .unwrap(),
+            "atomic.pdf"
+        );
+        let competing = LibraryLocation {
+            library_id: location.library_id,
+            path: "competing.pdf".parse().unwrap(),
+        };
+        let mut tx = ing.begin().await.unwrap();
+        assert!(
+            library_path_claim::reserve(&mut tx, &competing, id)
+                .await
+                .unwrap()
+        );
+        tx.commit().await.unwrap();
+        assert!(
+            commit_ingest(&ing, &None, &vars, &competing, &copied, meta())
+                .await
+                .is_err()
+        );
+        assert_eq!(
+            sqlx::query_scalar!(
+                "SELECT count(*) FROM manifestations WHERE library_id = $1 AND file_path = $2",
+                competing.library_id.as_uuid(),
+                competing.path.as_str()
+            )
+            .fetch_one(&pool)
+            .await
+            .unwrap(),
+            Some(0)
+        );
+        assert!(
+            cleanup_candidate(&ing, &files, &location, copied.identity)
+                .await
+                .is_err()
+        );
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn path_claim_ingestion_unsupported_format_cleans_only_its_candidate(pool: PgPool) {
+        let library_id = crate::models::storage_library::default_library_id(&pool)
+            .await
+            .unwrap();
+        let ing = ingestion_pool_for(&pool).await;
+        let (ingestion, library, _quarantine, config) = scan_env();
+        let files = crate::test_support::test_library_files_at(&config.library_path, library_id);
+        let source = ingestion.path().join("Author - Unsupported.bin");
+        std::fs::write(&source, b"unsupported bytes").unwrap();
+        let result = process_file(&source, &config, &ing, &files, library_id).await;
+        assert!(
+            matches!(result, ProcessResult::Failed(reason) if reason.contains("unsupported format"))
+        );
+        assert!(!library.path().join("Author/Unsupported.bin").exists());
+        assert_eq!(std::fs::read(source).unwrap(), b"unsupported bytes");
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn path_claim_ingestion_cleanup_preserves_committed_owner_after_lost_ack(pool: PgPool) {
+        let ing = ingestion_pool_for(&pool).await;
+        let (_dir, files, location, copied) =
+            claim_copy_fixture(&pool, "fixtures/admin-test-ack.epub").await;
+        crate::test_support::db::insert_work_and_manifestation(&ing, "ack").await;
+        let error = cleanup_candidate(&ing, &files, &location, copied.identity)
+            .await
+            .unwrap_err();
+        assert!(error.to_string().contains("committed or claimed"));
+        let ordinary = crate::test_support::db::app_pool_for(&pool).await;
+        let error = cleanup_candidate(&ordinary, &files, &location, copied.identity)
+            .await
+            .unwrap_err();
+        assert!(
+            error
+                .to_string()
+                .contains("ownership evidence is unavailable")
+        );
+        assert_eq!(
+            files
+                .library(location.library_id)
+                .unwrap()
+                .read(location.path.as_path())
+                .unwrap(),
+            b"candidate bytes"
+        );
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn path_claim_ingestion_cleanup_definite_failure_and_changed_identity(pool: PgPool) {
+        let ing = ingestion_pool_for(&pool).await;
+        let (dir, files, location, copied) = claim_copy_fixture(&pool, "candidate.pdf").await;
+        let (_, owner) =
+            crate::test_support::db::insert_work_and_manifestation(&ing, "rollback").await;
+        let mut tx = ing.begin().await.unwrap();
+        assert!(
+            library_path_claim::reserve(&mut tx, &location, owner)
+                .await
+                .unwrap()
+        );
+        tx.rollback().await.unwrap();
+        cleanup_candidate(&ing, &files, &location, copied.identity)
+            .await
+            .unwrap();
+        assert!(!dir.path().join(location.path.as_path()).exists());
+        let (_changed_dir, files, location, copied) =
+            claim_copy_fixture(&pool, "changed.pdf").await;
+        let root = files.library(location.library_id).unwrap();
+        root.rename(location.path.as_path(), root, "retained-original.pdf")
+            .unwrap();
+        root.write(location.path.as_path(), b"foreign bytes")
+            .unwrap();
+        assert!(
+            cleanup_candidate(&ing, &files, &location, copied.identity)
+                .await
+                .unwrap_err()
+                .to_string()
+                .contains("identity changed")
+        );
+        assert_eq!(
+            root.read(location.path.as_path()).unwrap(),
+            b"foreign bytes"
+        );
+        ing.close().await;
+        assert!(
+            cleanup_candidate(&ing, &files, &location, copied.identity)
+                .await
+                .is_err()
+        );
+        assert_eq!(
+            root.read(location.path.as_path()).unwrap(),
+            b"foreign bytes"
+        );
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn path_claim_ingestion_cleanup_cancellation_keeps_exclusion_until_mutation_finishes(
+        pool: PgPool,
+    ) {
+        let ing = ingestion_pool_for(&pool).await;
+        let (_dir, files, location, copied) = claim_copy_fixture(&pool, "cancelled.pdf").await;
+        let (started, reached) = tokio::sync::oneshot::channel();
+        let (release, released) = std::sync::mpsc::sync_channel(1);
+        let task_pool = ing.clone();
+        let task_files = files.clone();
+        let task_location = location.clone();
+        let task = tokio::spawn(async move {
+            cleanup_candidate_with(
+                &task_pool,
+                &task_files,
+                &task_location,
+                copied.identity,
+                move |parent, name| {
+                    started.send(()).unwrap();
+                    released
+                        .recv_timeout(std::time::Duration::from_secs(5))
+                        .unwrap();
+                    parent.remove_file(name)
+                },
+            )
+            .await
+        });
+        tokio::time::timeout(std::time::Duration::from_secs(5), reached)
+            .await
+            .unwrap()
+            .unwrap();
+        task.abort();
+        assert!(task.await.unwrap_err().is_cancelled());
+        let next_pool = ing.clone();
+        let next_location = location.clone();
+        let mut next = tokio::spawn(async move {
+            let mut tx = next_pool.begin().await.unwrap();
+            library_path_claim::exclude(&mut tx, &next_location)
+                .await
+                .unwrap();
+            tx.rollback().await.unwrap();
+        });
+        assert!(
+            tokio::time::timeout(std::time::Duration::from_millis(50), &mut next)
+                .await
+                .is_err()
+        );
+        release.send(()).unwrap();
+        tokio::time::timeout(std::time::Duration::from_secs(5), next)
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(
+            files
+                .library(location.library_id)
+                .unwrap()
+                .symlink_metadata(location.path.as_path())
+                .is_err()
+        );
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn path_claim_ingestion_selection_skips_absent_foreign_claim_and_copy_refuses_race(
+        pool: PgPool,
+    ) {
+        let ing = ingestion_pool_for(&pool).await;
+        let (dir, files, location, copied) = claim_copy_fixture(&pool, "candidate.pdf").await;
+        let (_, owner) =
+            crate::test_support::db::insert_work_and_manifestation(&ing, "reserved").await;
+        let mut tx = ing.begin().await.unwrap();
+        let reserved = LibraryLocation {
+            library_id: location.library_id,
+            path: "absent.pdf".parse().unwrap(),
+        };
+        assert!(
+            library_path_claim::reserve(&mut tx, &reserved, owner)
+                .await
+                .unwrap()
+        );
+        tx.commit().await.unwrap();
+        let (selected, tx) =
+            select_ingestion_path(&ing, &files, location.library_id, &reserved.path)
+                .await
+                .unwrap();
+        assert_eq!(selected.path.as_str(), "absent (2).pdf");
+        tx.rollback().await.unwrap();
+        assert!(
+            copier::copy_verified_into(
+                &dir.path().join("input.pdf"),
+                files.library(location.library_id).unwrap(),
+                &location.path,
+                &copied.sha256
+            )
+            .is_err()
+        );
+        assert_eq!(
+            files
+                .library(location.library_id)
+                .unwrap()
+                .read(location.path.as_path())
+                .unwrap(),
+            b"candidate bytes"
+        );
+        let (_, tx) = select_ingestion_path(
+            &ing,
+            &files,
+            location.library_id,
+            &"metadata.pdf".parse().unwrap(),
+        )
+        .await
+        .unwrap();
+        tx.rollback().await.unwrap();
+        files
+            .library(location.library_id)
+            .unwrap()
+            .write("metadata.pdf", b"foreign destination")
+            .unwrap();
+        assert!(
+            path_rename::move_existing(
+                files.library(location.library_id).unwrap(),
+                &location.path,
+                &"metadata.pdf".parse().unwrap(),
+                &copied.sha256
+            )
+            .is_err()
+        );
+        assert_eq!(
+            files
+                .library(location.library_id)
+                .unwrap()
+                .read("metadata.pdf")
+                .unwrap(),
+            b"foreign destination"
+        );
     }
 
     const CONTAINER_XML: &[u8] = br#"<?xml version="1.0" encoding="UTF-8"?>
@@ -1860,13 +2265,21 @@ mod tests {
             std::fs::write(path, bytes).unwrap();
         }
         config.cleanup_mode = mode;
+        let id = crate::models::storage_library::default_library_id(&pool)
+            .await
+            .unwrap();
+        let files = LibraryFiles::open(
+            [(id, config.library_path.clone())],
+            &config.ingestion_path,
+            &config.quarantine_path,
+        )
+        .unwrap();
         if !quarantine_available {
-            let blocked = quarantine.path().join("blocked");
-            std::fs::write(&blocked, b"not a directory").unwrap();
-            config.quarantine_path = blocked.to_str().unwrap().parse().unwrap();
+            std::fs::remove_dir(quarantine.path()).unwrap();
+            std::fs::write(quarantine.path(), b"not a directory").unwrap();
         }
 
-        let result = scan_once(&config, &pool).await.unwrap();
+        let result = super::scan_once(&config, &pool, &files).await.unwrap();
         assert_eq!(result.processed, 1);
         assert_eq!(result.skipped, 1);
         assert_eq!(result.failed, 1);

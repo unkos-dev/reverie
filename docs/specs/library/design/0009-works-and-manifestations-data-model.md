@@ -11,6 +11,7 @@ satisfies:
   - "REV-REQ-0065"
 governed-by:
   - "REV-ADR-0051"
+  - "REV-ADR-0052"
 ---
 
 # Works and manifestations data model
@@ -34,7 +35,8 @@ This subject owns the schema and its own structural guarantees for: `works` and 
 and `works_search_vector_update` triggers; and the foreign-key graph, unique constraints and CHECK constraints that
 bound all of the above. All of it lives in `backend/migrations/20260810000000_initial_schema.up.sql`, with the three
 vocabulary junctions' row-level-security policies added by `backend/migrations/20260903000000_junction_table_rls.up.sql`
-and library ownership defined by `backend/migrations/20260930000000_library_relative_file_locations.up.sql`.
+and library ownership defined by `backend/migrations/20260930000000_library_relative_file_locations.up.sql` and
+`backend/migrations/20261003000000_library_path_claims.up.sql`.
 
 It does not own row-level security or the grants that decide who may query these tables at all; that mechanism, and the
 full policy grid for the tables in this model that carry it, is the Design "Row-level security and database context". It
@@ -73,6 +75,7 @@ columns this model owns.
 | `work_authors` | Work-author membership, one row per work/author/role | `role`, `position`, `source_version_id` |
 | `libraries` | Persistent storage identity | `id`, unique non-empty `configuration_key` |
 | `manifestations` | One ingested file of one format | `library_id`, relative path, hashes, statuses, version pointers |
+| `library_path_claims` | Managed name ownership | `library_id`, relative `path`, manifestation owner |
 | `series` | A series, with self-referential nesting | `name`, `sort_name`, `parent_id` |
 | `series_works` | Series membership, fractional ordering | `series_id`, `work_id`, `position`, `is_omnibus`, `note` |
 | `omnibus_contents` | Omnibus to its works | `omnibus_manifestation_id`, `contained_work_id`, `position` |
@@ -120,6 +123,18 @@ leading or trailing slashes, repeated slashes, backslashes, ASCII drive prefixes
 names the actual file beneath its owning root. Different libraries can use the same relative name, while the ingestion
 hash remains globally unique. Startup selects the default identity through `backend/src/models/storage_library.rs`;
 runtime roles can read identities but cannot create or edit them.
+
+`library_path_claims` has an immediate primary key on `(library_id, path)` and a non-null manifestation owner. Its path
+uses the same relative grammar. A unique owner/library/path target supports foreign keys for the recorded location and
+both non-null intent names; a separate recorded library/path foreign key also requires the name's claim. The claim's
+owner/library foreign key references the manifestation's unique `(id, library_id)` and cascades on owner deletion. These
+circular references are initially deferred, so one transaction can insert or remove both sides. Direct deletion of a
+required claim fails at commit. The owner index supports cascades, including work deletion.
+
+Backfill inserts the distinct union of recorded, source and destination names. Repeated names for one owner collapse;
+different owners sharing a key abort the transactional migration. Ingestion inserts claims with manifestations;
+writeback reserves intent destinations and releases obsolete claims with finalisation. Test fixtures and the operator
+seed script create matching claims in their existing transactions. Owner deletion is the remaining claim writer.
 
 **Series.** `series.parent_id` self-references `series.id` with `ON DELETE SET NULL`: deleting a parent orphans its
 children instead of cascading the delete through the tree. `series_works`'s primary key is `(series_id, work_id)`, so a
@@ -175,9 +190,9 @@ and `filters.rs`, and the shared `backend/src/routes/sort_spec.rs` and `cursor.r
 subject), and `backend/src/routes/suggest.rs` and `backend/src/routes/library/search.rs` (vocabulary and text search).
 
 The migration grants `SELECT`, `INSERT`, `UPDATE` and `DELETE` on every table in this model to `reverie_app` and
-`reverie_ingestion`, and `SELECT` alone to `reverie_readonly`; the Design "Row-level security and database context" is
-the authority on that grant boundary and on the policies that further narrow `manifestations` and its three vocabulary
-junctions.
+`reverie_ingestion`, and `SELECT` alone to `reverie_readonly`, except that path claims have no readonly grant; the
+Design "Row-level security and database context" is the authority on that grant boundary and on the policies that
+further narrow `manifestations` and its three vocabulary junctions.
 
 ## Data and state
 

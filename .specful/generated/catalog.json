@@ -370,6 +370,13 @@
       "title": "Capability-based file I/O and validated publication"
     },
     {
+      "id": "REV-ADR-0052",
+      "kind": "adr",
+      "path": "docs/adr/0052-library-path-ownership-during-publication-and-relocation.md",
+      "status": "proposed",
+      "title": "Library path ownership during publication and relocation"
+    },
+    {
       "governed-by": [
         "REV-ADR-0041",
         "REV-ADR-0047"
@@ -412,7 +419,8 @@
     {
       "governed-by": [
         "REV-ADR-0028",
-        "REV-ADR-0017"
+        "REV-ADR-0017",
+        "REV-ADR-0052"
       ],
       "id": "REV-DESIGN-0004",
       "kind": "design",
@@ -486,7 +494,8 @@
     },
     {
       "governed-by": [
-        "REV-ADR-0051"
+        "REV-ADR-0051",
+        "REV-ADR-0052"
       ],
       "id": "REV-DESIGN-0009",
       "kind": "design",
@@ -550,7 +559,8 @@
     },
     {
       "governed-by": [
-        "REV-ADR-0020"
+        "REV-ADR-0020",
+        "REV-ADR-0052"
       ],
       "id": "REV-DESIGN-0013",
       "kind": "design",
@@ -609,7 +619,8 @@
       "governed-by": [
         "REV-ADR-0018",
         "REV-ADR-0020",
-        "REV-ADR-0051"
+        "REV-ADR-0051",
+        "REV-ADR-0052"
       ],
       "id": "REV-DESIGN-0017",
       "kind": "design",

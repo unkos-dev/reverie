@@ -49,12 +49,12 @@ async fn insert_epub_manifestation(
     .expect("insert work");
 
     let m_id: Uuid = sqlx::query_scalar!(
-        "INSERT INTO manifestations \
+        "WITH inserted AS (INSERT INTO manifestations \
             (library_id, work_id, format, file_path, ingestion_file_hash, current_file_hash, \
              file_size_bytes, ingestion_status, validation_status) \
          VALUES ((SELECT id FROM libraries WHERE configuration_key = 'default'), $1, 'epub'::manifestation_format, $2, $3, $3, $4, \
                  'complete'::ingestion_status, 'clean'::validation_status) \
-         RETURNING id",
+         RETURNING *), claimed AS (INSERT INTO library_path_claims (library_id, path, manifestation_id) SELECT library_id, file_path, id FROM inserted) SELECT id AS \"id!\" FROM inserted",
         work_id,
         file_path,
         hash,
@@ -509,12 +509,12 @@ async fn download_streams_and_path_traversal_403(pool: PgPool) {
     let outside_path = "outside.epub";
     std::os::unix::fs::symlink(&outside_abs, library_root.join(outside_path)).unwrap();
     let outside_m: Uuid = sqlx::query_scalar!(
-        "INSERT INTO manifestations \
+        "WITH inserted AS (INSERT INTO manifestations \
             (library_id, work_id, format, file_path, ingestion_file_hash, current_file_hash, \
              file_size_bytes, ingestion_status, validation_status) \
          VALUES ((SELECT id FROM libraries WHERE configuration_key = 'default'), $1, 'epub'::manifestation_format, $2, 'outside-hash', 'outside-hash', 13, \
                  'complete'::ingestion_status, 'clean'::validation_status) \
-         RETURNING id",
+         RETURNING *), claimed AS (INSERT INTO library_path_claims (library_id, path, manifestation_id) SELECT library_id, file_path, id FROM inserted) SELECT id AS \"id!\" FROM inserted",
         work_id,
         outside_path,
     )
@@ -720,9 +720,9 @@ mod storage {
         "INSERT INTO works (title, sort_title) VALUES ('Original title', 'original title') RETURNING id"
     ).fetch_one(pool).await.unwrap();
         let file = sqlx::query_scalar!(
-        "INSERT INTO manifestations
+        "WITH inserted AS (INSERT INTO manifestations
          (library_id, work_id, file_path, format, ingestion_file_hash, current_file_hash, file_size_bytes)
-         VALUES ($1, $2, $3, 'epub', $4, $4, 12345) RETURNING id",
+         VALUES ($1, $2, $3, 'epub', $4, $4, 12345) RETURNING *), claimed AS (INSERT INTO library_path_claims (library_id, path, manifestation_id) SELECT library_id, file_path, id FROM inserted) SELECT id AS \"id!\" FROM inserted",
         library_id.as_uuid(), work, path, hash,
     ).fetch_one(pool).await.unwrap();
         (work, file)
@@ -996,12 +996,12 @@ async fn insert_manifestation_with_path(
     .expect("insert work");
 
     sqlx::query_scalar!(
-        "INSERT INTO manifestations \
+        "WITH inserted AS (INSERT INTO manifestations \
             (library_id, work_id, format, file_path, ingestion_file_hash, current_file_hash, \
              file_size_bytes, ingestion_status, validation_status) \
          VALUES ((SELECT id FROM libraries WHERE configuration_key = 'default'), $1, 'epub'::manifestation_format, $2, $3, $3, $4, \
                  'complete'::ingestion_status, 'clean'::validation_status) \
-         RETURNING id",
+         RETURNING *), claimed AS (INSERT INTO library_path_claims (library_id, path, manifestation_id) SELECT library_id, file_path, id FROM inserted) SELECT id AS \"id!\" FROM inserted",
         work_id,
         file_path,
         "missinghash0000missinghash0000ab",
@@ -1142,12 +1142,12 @@ async fn insert_manifestation_bytes(
     .expect("insert work");
 
     sqlx::query_scalar!(
-        "INSERT INTO manifestations \
+        "WITH inserted AS (INSERT INTO manifestations \
             (library_id, work_id, format, file_path, ingestion_file_hash, current_file_hash, \
              file_size_bytes, ingestion_status, validation_status) \
          VALUES ((SELECT id FROM libraries WHERE configuration_key = 'default'), $1, 'epub'::manifestation_format, $2, $3, $3, $4, \
                  'complete'::ingestion_status, 'clean'::validation_status) \
-         RETURNING id",
+         RETURNING *), claimed AS (INSERT INTO library_path_claims (library_id, path, manifestation_id) SELECT library_id, file_path, id FROM inserted) SELECT id AS \"id!\" FROM inserted",
         work_id,
         file_path,
         hash,
@@ -1356,12 +1356,12 @@ async fn series_feed_renders_all_manifestations(pool: PgPool) {
         let file_path = format!("fixtures/series-{i}.epub");
         let hash = format!("series-hash-{i}");
         let m_id: Uuid = sqlx::query_scalar!(
-            "INSERT INTO manifestations \
+            "WITH inserted AS (INSERT INTO manifestations \
                 (library_id, work_id, format, file_path, ingestion_file_hash, current_file_hash, \
                  file_size_bytes, ingestion_status, validation_status, created_at) \
              VALUES ((SELECT id FROM libraries WHERE configuration_key = 'default'), $1, 'epub'::manifestation_format, $2, $3, $3, 1000, \
                      'complete'::ingestion_status, 'clean'::validation_status, $4) \
-             RETURNING id",
+             RETURNING *), claimed AS (INSERT INTO library_path_claims (library_id, path, manifestation_id) SELECT library_id, file_path, id FROM inserted) SELECT id AS \"id!\" FROM inserted",
             work_id,
             file_path,
             hash,
@@ -1581,11 +1581,11 @@ async fn exact_page_size_has_no_next_link(pool: PgPool) {
         let file_path = format!("fixtures/exact-{i}.epub");
         let hash = format!("exact-hash-{i}");
         sqlx::query!(
-            "INSERT INTO manifestations \
+            "WITH inserted AS (INSERT INTO manifestations \
                 (library_id, work_id, format, file_path, ingestion_file_hash, current_file_hash, \
                  file_size_bytes, ingestion_status, validation_status) \
              VALUES ((SELECT id FROM libraries WHERE configuration_key = 'default'), $1, 'epub'::manifestation_format, $2, $3, $3, 1000, \
-                     'complete'::ingestion_status, 'clean'::validation_status)",
+                     'complete'::ingestion_status, 'clean'::validation_status) RETURNING *) INSERT INTO library_path_claims (library_id, path, manifestation_id) SELECT library_id, file_path, id FROM inserted",
             work_id,
             file_path,
             hash,

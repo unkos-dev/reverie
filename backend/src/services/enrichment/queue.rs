@@ -464,7 +464,7 @@ mod tests {
         let path = format!("fixtures/queue-{marker}.epub");
         let hash = format!("queue-hash-{marker}");
         let manifestation_id = sqlx::query_scalar!(
-            "INSERT INTO manifestations \
+            "WITH inserted AS (INSERT INTO manifestations \
                (library_id, work_id, format, file_path, ingestion_file_hash, current_file_hash, \
                 file_size_bytes, ingestion_status, validation_status, \
                 enrichment_status, enrichment_attempt_count, enrichment_attempted_at) \
@@ -473,7 +473,7 @@ mod tests {
                      $4, $5, \
                      CASE WHEN $6::bigint IS NULL THEN NULL \
                           ELSE now() - ($6 || ' seconds')::interval END) \
-             RETURNING id",
+             RETURNING *), claimed AS (INSERT INTO library_path_claims (library_id, path, manifestation_id) SELECT library_id, file_path, id FROM inserted) SELECT id AS \"id!\" FROM inserted",
             work_id,
             path,
             hash,

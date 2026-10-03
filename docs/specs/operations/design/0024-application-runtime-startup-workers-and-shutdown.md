@@ -95,7 +95,7 @@ directly rather than assembling its own `AppState` and calling `build_router`.
   - `services::session_sweep::run_sweep` (the hourly expired-session reaper, driving `PostgresStore`'s `ExpiredDeletion`
     trait).
   - `services::writeback::queue::spawn_worker` (the writeback job queue, given the dedicated system-context pool
-    described in Data and state and shared `LibraryFiles`).
+    described in Data and state and shared `LibraryFiles`; also owns the bounded relocation-intent sweep).
 - `Dockerfile`'s `runtime` stage (the final `FROM debian:trixie-slim ... AS runtime` block) copies the release binary
   and the built frontend, creates a fixed non-root user, sets `REVERIE_FRONTEND_DIST_PATH`, and declares the
   `ENTRYPOINT` and `HEALTHCHECK` this subject's binary and readiness probe satisfy.
@@ -195,6 +195,14 @@ no-op. No worker, and no other part of this subject, calls `.cancel()`; every wo
     of the token and (where relevant) its own clone of the pools and configuration it needs.
 13. `axum::serve` begins accepting connections, wrapped in `with_graceful_shutdown(shutdown_signal(...))`.
 
+The enabled writeback worker resets orphaned claims before claiming, then sweeps at most 100 eligible relocation
+intents. Transient reset, startup-sweep, periodic-sweep and claim errors are logged inside that worker and retried on
+its existing timer. It retains tracked jobs and permits through these failures. The indexed sweep repeats every five
+minutes. Open intents use five-minute claim spacing; ordinary jobs awaiting recovery preserve their edit budgets until
+destination finalisation starts an edit. Relocation carriers reconcile only; metadata and cover jobs reconcile, reload
+their snapshots and continue. Disabling writeback skips resets, claims and sweeps. The shared shutdown budget and
+tracked-job drain remain unchanged.
+
 **An authorised OPDS download:** the handler first accepts its database/RLS lookup, then calls
 `LibraryFiles::open_download` with the recorded library identity and checked relative path. Unknown identities never
 fall back to another library. Path classification, contained opening and handle metadata run in `spawn_blocking`.
@@ -269,9 +277,10 @@ is never reached.
   worker are each spawned inside a closure of the shape
   `if let Err(e) = <worker fn>(...).await { tracing::error!(...) }`; the closure itself always returns `()`, so the
   resulting `JoinHandle<()>` always resolves `Ok(())` regardless of whether the worker's own function failed internally.
-  At drain time this means a worker that exited early because of an internal error is logged once, at the point of
-  failure, and is otherwise indistinguishable from a worker that ran cleanly for the life of the process: nothing in
-  this subject restarts it, and nothing re-surfaces the failure once the process has moved past that point in its logs.
+  Writeback handles transient reset, sweep and claim errors within its loop, so these errors do not end its function. At
+  drain time this means a worker that exited early because of an internal error is logged once, at the point of failure,
+  and is otherwise indistinguishable from a worker that ran cleanly for the life of the process: nothing in this subject
+  restarts it, and nothing re-surfaces the failure once the process has moved past that point in its logs.
 - **A worker overrunning the shared drain deadline.** Covered in Runtime behaviour: it is aborted, logged, and given a
   short bounded window to confirm the abort took effect; if it is still running after that window, a final error is
   logged and the worker is left for the Tokio runtime to tear down when the process itself exits.
