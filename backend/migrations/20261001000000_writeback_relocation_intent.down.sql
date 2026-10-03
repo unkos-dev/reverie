@@ -1,3 +1,6 @@
+DELETE FROM public.writeback_jobs
+WHERE reason = 'relocation';
+
 ALTER TABLE public.writeback_jobs
     DROP CONSTRAINT writeback_jobs_reason_chk,
     ADD CONSTRAINT writeback_jobs_reason_chk CHECK (reason IN ('metadata', 'cover'));

@@ -91,16 +91,24 @@ responsibility. A successful sync after a reported failure does not prove that f
 
 Choose manifestation-local forward relocation recovery because a recorded pair survives interruption without depending
 on the originating job's remaining attempts. Accepted content evidence and exact relocation names share one existing
-UPDATE before movement; final location and intent clearing share one UPDATE afterwards. A visible move with uncertain
-sync records its destination while retaining intent. Move-back cannot restore a single atomic filesystem/database
-outcome and can itself fail or collide, so failure retains evidence for forward reconciliation instead.
+UPDATE before movement, with destination ownership reserved in the same transaction. Final location, intent clearing and
+obsolete-claim release share one transaction afterwards. A visible move with uncertain sync records its destination
+while retaining intent. Move-back cannot restore a single atomic filesystem/database outcome and can itself fail or
+collide, so failure retains evidence for forward reconciliation instead.
 
-Recovery verifies both recorded names under the current manifestation claim before another rewrite. It adopts verified
-destination bytes, removes only a verified source and preserves foreign or externally changed files. Confirmed permanent
-loss or change clears the corresponding intent with terminal job bookkeeping in one transaction owned by queue::finish;
-otherwise clearing after a separate terminal write would release exclusion too early. Unreadable evidence or unfinished
-filesystem/SQL recovery retains intent. Ordinary jobs reload and continue; bounded relocation-only carriers recover
-intents whose original jobs exhausted their attempts without publishing content again.
+Recovery locks the exact in-progress job and intent and verifies both names' path claims before another rewrite. It
+adopts verified destination bytes, removes only a verified source and preserves foreign or externally changed files.
+Confirmed permanent loss or change clears the corresponding intent with terminal job bookkeeping in one transaction
+owned by queue::finish; otherwise clearing after a separate terminal write would release exclusion too early. Unreadable
+evidence or unfinished filesystem/SQL recovery retains intent. Ordinary jobs reload and continue; bounded
+relocation-only carriers recover intents whose original jobs exhausted their attempts without publishing content again.
+
+Ordinary recovery claims preserve the edit budget. Successful destination finalisation debits one edit in its
+transaction before snapshot reload; failed recovery, source restoration and permanent evidence outcomes do not debit an
+edit. Relocation carriers retain bounded attempts. Finish reads the durable count, including after interruption or
+database failure. Transient reset, sweep and claim failures remain inside the existing worker, retaining its tracked
+jobs and retry timer. [Library path ownership](./0052-library-path-ownership-during-publication-and-relocation.md)
+records the shared claim constraints and publisher authority.
 
 A startup and five-minute bounded sweep inside the existing enabled worker supplies carriers; five-minute intent retry
 spacing limits scheduling opportunities, not operation duration. This choice claims relocation replay safety only.
@@ -163,9 +171,10 @@ durable storage or adding a third persisted error state.
 
 ## More information
 
-OPDS downloads and writeback relocation apply the capability boundary. Initial ingestion and cover-cache publication
-remain incomplete. No representative NAS behaviour or server flush guarantee is established by source inspection or
-injected error-code tests.
+OPDS downloads, writeback relocation and initial ingestion publication apply the capability boundary. Ingestion still
+validates its library copy before registration; independently owned staged validation and complete outcome
+reconciliation remain incomplete, as does cover-cache publication. No representative NAS behaviour or server flush
+guarantee is established by source inspection or injected error-code tests.
 
 - [cap-std capability model](https://github.com/bytecodealliance/cap-std/blob/v4.0.3/README.md).
 - [cap-std-ext replacement implementation](https://github.com/coreos/cap-std-ext/blob/v5.1.2/src/dirext.rs).

@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO writeback_jobs (manifestation_id, reason) VALUES ($1, 'relocation')",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "2c26c5474ea3244bde96b23a10ecd052dbba3838b63b25eb3de1e0f3c89e1660"
+}

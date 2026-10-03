@@ -29,3 +29,36 @@ pub mod queue;
 
 /// Start the background writeback queue worker.  See [`queue::spawn_worker`].
 pub use queue::spawn_worker;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, sqlx::Type)]
+#[sqlx(type_name = "text", rename_all = "lowercase")]
+pub(super) enum JobReason {
+    Metadata,
+    Cover,
+    Relocation,
+}
+
+impl JobReason {
+    const fn as_str(self) -> &'static str {
+        match self {
+            Self::Metadata => "metadata",
+            Self::Cover => "cover",
+            Self::Relocation => "relocation",
+        }
+    }
+
+    const fn attempt_phase(self, has_intent: bool) -> AttemptPhase {
+        match (self, has_intent) {
+            (Self::Relocation, _) => AttemptPhase::Carrier,
+            (_, true) => AttemptPhase::Recovery,
+            (_, false) => AttemptPhase::Edit,
+        }
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(super) enum AttemptPhase {
+    Recovery,
+    Edit,
+    Carrier,
+}

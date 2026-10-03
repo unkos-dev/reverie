@@ -100,6 +100,12 @@ SELECT
 FROM works AS w
 WHERE w.title LIKE 'Seeded Tome %';
 
+INSERT INTO library_path_claims (library_id, path, manifestation_id)
+SELECT m.library_id, m.file_path, m.id
+FROM manifestations AS m
+JOIN works AS w ON w.id = m.work_id
+WHERE w.title LIKE 'Seeded Tome %';
+
 ANALYZE works, manifestations, work_authors;
 
 COMMIT;

@@ -1,0 +1,78 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO manifestations (work_id, format, file_path, ingestion_file_hash, current_file_hash, library_id, file_size_bytes, ingestion_status, validation_status, accessibility_metadata, has_embedded_cover) VALUES ($1, $2, $3, $4, $5, $11, $6, $7, $8, $9, $10) RETURNING id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "manifestations",
+            "name": "id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        {
+          "Custom": {
+            "name": "manifestation_format",
+            "kind": {
+              "Enum": [
+                "epub",
+                "pdf",
+                "mobi",
+                "azw3",
+                "cbz",
+                "cbr"
+              ]
+            }
+          }
+        },
+        "Text",
+        "Text",
+        "Text",
+        "Int8",
+        {
+          "Custom": {
+            "name": "ingestion_status",
+            "kind": {
+              "Enum": [
+                "pending",
+                "processing",
+                "complete",
+                "failed",
+                "skipped"
+              ]
+            }
+          }
+        },
+        {
+          "Custom": {
+            "name": "validation_status",
+            "kind": {
+              "Enum": [
+                "pending",
+                "clean",
+                "repaired",
+                "degraded",
+                "failed"
+              ]
+            }
+          }
+        },
+        "Jsonb",
+        "Bool",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "525e92c7673c7b5887040d99bcb9f78b2841b9a215f387a70d65943d7ea012e0"
+}

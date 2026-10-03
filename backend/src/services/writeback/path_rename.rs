@@ -65,7 +65,15 @@ pub(super) fn recover(
     hash: &str,
     size: i64,
 ) -> Result<Recovery, WritebackError> {
-    recover_with(root, source, destination, hash, size, sync_directory)
+    recover_with(
+        root,
+        source,
+        destination,
+        hash,
+        size,
+        sync_directory,
+        evidence,
+    )
 }
 
 fn recover_with(
@@ -75,11 +83,10 @@ fn recover_with(
     hash: &str,
     size: i64,
     sync: impl Fn(&Dir) -> std::io::Result<()>,
+    evidence: impl Fn(&Dir, &RelativeFilePath, &str, i64) -> Result<Evidence, WritebackError>,
 ) -> Result<Recovery, WritebackError> {
-    let source_evidence = evidence(root, source, hash, size);
-    let destination_evidence = evidence(root, destination, hash, size);
-    let source_evidence = source_evidence?;
-    let destination_evidence = destination_evidence?;
+    let source_evidence = evidence(root, source, hash, size)?;
+    let destination_evidence = evidence(root, destination, hash, size)?;
     match (source_evidence, destination_evidence) {
         (Evidence::Verified, Evidence::Absent) => {
             prepare_destination(root, destination)?;
@@ -220,7 +227,7 @@ fn commit_no_replace_with(
     })
 }
 
-fn persist(
+pub(crate) fn persist(
     temp: TempFile<'_>,
     staging: &Dir,
     parent: &Dir,
@@ -384,16 +391,24 @@ mod tests {
         root.hard_link(source.as_path(), &root, destination.as_path())
             .unwrap();
         let syncs = std::cell::Cell::new(0);
-        let recovered = recover_with(&root, &source, &destination, &hash, 7, |directory| {
-            if syncs.get() == 0 {
-                assert_eq!(root.read(source.as_path()).unwrap(), b"PAYLOAD");
-            } else {
-                assert!(!root.exists(source.as_path()));
-            }
-            assert_eq!(root.read(destination.as_path()).unwrap(), b"PAYLOAD");
-            syncs.set(syncs.get() + 1);
-            sync_directory(directory)
-        })
+        let recovered = recover_with(
+            &root,
+            &source,
+            &destination,
+            &hash,
+            7,
+            |directory| {
+                if syncs.get() == 0 {
+                    assert_eq!(root.read(source.as_path()).unwrap(), b"PAYLOAD");
+                } else {
+                    assert!(!root.exists(source.as_path()));
+                }
+                assert_eq!(root.read(destination.as_path()).unwrap(), b"PAYLOAD");
+                syncs.set(syncs.get() + 1);
+                sync_directory(directory)
+            },
+            evidence,
+        )
         .unwrap();
         assert!(matches!(recovered, Recovery::Destination));
         assert_eq!(syncs.get(), 2);
@@ -465,6 +480,25 @@ mod tests {
     }
 
     #[test]
+    fn relocation_accounting_source_error_prevents_destination_evidence_read() {
+        let (_dir, root, source, destination, hash) = fixture();
+        let result = recover_with(
+            &root,
+            &source,
+            &destination,
+            &hash,
+            7,
+            sync_directory,
+            |_, path, _, _| {
+                assert_eq!(path, &source);
+                Err(std::io::Error::other("unreadable source").into())
+            },
+        );
+        assert!(matches!(result, Err(WritebackError::Io(_))));
+        assert_eq!(root.read(source.as_path()).unwrap(), b"PAYLOAD");
+    }
+
+    #[test]
     fn relocation_recovery_unreadable_evidence_precedes_loss_or_adoption() {
         for unreadable_source in [true, false] {
             let (_dir, root, source, destination, hash) = fixture();
@@ -492,15 +526,23 @@ mod tests {
             root.hard_link(source.as_path(), &root, destination.as_path())
                 .unwrap();
             let syncs = std::cell::Cell::new(0);
-            let result = recover_with(&root, &source, &destination, &hash, 7, |directory| {
-                let count = syncs.get();
-                syncs.set(count + 1);
-                if count == failing_sync {
-                    Err(std::io::Error::other("reported sync failure"))
-                } else {
-                    sync_directory(directory)
-                }
-            });
+            let result = recover_with(
+                &root,
+                &source,
+                &destination,
+                &hash,
+                7,
+                |directory| {
+                    let count = syncs.get();
+                    syncs.set(count + 1);
+                    if count == failing_sync {
+                        Err(std::io::Error::other("reported sync failure"))
+                    } else {
+                        sync_directory(directory)
+                    }
+                },
+                evidence,
+            );
             assert!(matches!(result, Err(WritebackError::Io(_))));
             assert_eq!(root.exists(source.as_path()), failing_sync == 0);
             assert_eq!(root.read(destination.as_path()).unwrap(), b"PAYLOAD");

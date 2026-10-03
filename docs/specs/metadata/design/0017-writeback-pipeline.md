@@ -11,6 +11,7 @@ governed-by:
   - "REV-ADR-0018"
   - "REV-ADR-0020"
   - "REV-ADR-0051"
+  - "REV-ADR-0052"
 ---
 
 # Writeback pipeline
@@ -74,9 +75,10 @@ purges.
 | State item | Writer(s) |
 | ---------- | --------- |
 | `writeback_jobs` row creation | Metadata/enrichment enqueue transactions; bounded relocation sweep |
-| `writeback_jobs` status/attempt columns | `claim_next`, `finish`, the three `mark_*` functions, `revert_in_progress` |
+| `writeback_jobs` status/attempt columns | Claim and finish bookkeeping; recovery's transactional edit debit; startup/shutdown reset |
 | `manifestations.current_file_hash`/`.has_embedded_cover`/`.file_size_bytes` | `orchestrator::run_once`'s post-publication `UPDATE`, before relocation (ingestion also writes `current_file_hash`, once, at row creation) |
 | `manifestations.file_path` and paired relocation paths | Claimed orchestration and recovery; terminal clearing by `queue::finish` |
+| `library_path_claims` | Ingestion insertion; accepted-content reservation; location/terminal finalisation; owner deletion cascade |
 | `webhook_event_dedupe` rows | `events::dispatch`, called only from `queue::finish` |
 | The on-disk `EPUB` file's bytes | `epub::repack::publish` / `path_rename::move_existing` (orchestrator only) |
 
@@ -189,11 +191,11 @@ has no live input to act on outside its own tests.
 ## Data and state
 
 - **`writeback_jobs`.** One row per enqueue. `reason` is a `CHECK`-constrained `text` column (`'metadata'` or `'cover'`
-  or `'relocation'`); `status` is the `writeback_status` enum (`pending`, `in_progress`, `complete`, `failed`,
-  `skipped`). `attempt_count` and `last_attempted_at` drive the retry backoff described in Runtime behaviour. The
-  partial unique index `idx_writeback_jobs_in_progress_unique` on `(manifestation_id) WHERE status = 'in_progress'` is
-  the sole correctness guarantee behind "at most one in-flight job per manifestation"; nothing in application code
-  enforces it independently.
+  or `'relocation'`), decoded as the closed `JobReason` type; unknown text fails decoding. `status` is the
+  `writeback_status` enum (`pending`, `in_progress`, `complete`, `failed`, `skipped`). `attempt_count` and
+  `last_attempted_at` drive the retry backoff described in Runtime behaviour. The partial unique index
+  `idx_writeback_jobs_in_progress_unique` on `(manifestation_id) WHERE status = 'in_progress'` is the sole correctness
+  guarantee behind "at most one in-flight job per manifestation"; nothing in application code enforces it independently.
 - **`webhook_event_dedupe`.** `(event_id, seen_at)`, primary-keyed on `event_id`. `event_id` is the stable string
   `writeback:{job_id}:{outcome}`; `seen_at` is written on first delivery and refreshed only on a subsequent delivery of
   that same id, through its `ON CONFLICT DO UPDATE`. A call suppressed as a duplicate returns before reaching that
@@ -226,6 +228,34 @@ has no live input to act on outside its own tests.
 
 ## Runtime behaviour
 
+### Library path ownership
+
+`library_path_claims` assigns each `(library_id, path)` to one manifestation. The recorded location and both intent
+names require that owner's claim through deferred foreign keys. Claims cascade with the manifestation; distinct recorded
+and intent names backfill in one transaction, and conflicting owners abort the migration.
+
+Destination selection holds transaction-level path exclusion, checks claims and contained filesystem occupancy, and
+skips another owner's name even when its file is absent. It keeps the current owned name when parent and extension match
+the rendered candidate and the basename is either the candidate or its stem followed by one space and `(n)` before the
+extension. `n` is canonical decimal and at least 2; `(1)`, `(02)` and signed numbers do not qualify.
+
+The accepted-content transaction retains the source claim and reserves the exact destination with hash, size, cover flag
+and paired intent. A selection failure rolls back the reservation `savepoint` and still records accepted content without
+intent before returning the failure. Final location, pair clearing and obsolete-claim release commit together. A
+recorded destination with retained intent keeps both claims. Permanent finalisation releases only obsolete names in the
+transaction owned by `queue::finish`.
+
+Recovery locks the exact in-progress job and intent and verifies both names' owners before filesystem access. A foreign
+owner prevents adoption and source removal even when bytes match. Size/hash evidence still establishes content; claims
+do not establish external file provenance, so publication independently refuses replacement.
+
+Ordinary jobs with open intent claim recovery without incrementing their edit count. Successful destination recovery
+increments that count once in the transaction that finalises location and intent, before snapshot reload and the edit.
+Recovery failure, source restoration and permanent evidence outcomes consume no ordinary edit attempt. Transaction
+failure, panic or cancellation before commit retains the count; interruption after commit consumes the started edit.
+Jobs without intent and relocation carriers increment at claim. `finish` reads the durable count for exhaustion and
+events, including after recovery. Open intents retain five-minute spacing and carriers retain bounded attempts.
+
 **A manual metadata edit enqueues and completes a writeback job**, for example accepting a proposed title through
 `PATCH /api/v1/books/{id}/metadata`:
 
@@ -234,7 +264,8 @@ has no live input to act on outside its own tests.
    back together.
 2. On its next poll tick (or immediately, if idle), `queue::spawn_worker`'s inner loop acquires a semaphore permit and
    calls `claim_next`. The claim `CTE` selects the row (its `NOT EXISTS` clause finds no in-progress sibling), marks it
-   `in_progress`, increments `attempt_count`, and returns its id.
+   `in_progress`, records the attempt time and returns its id. It increments `attempt_count` for an edit without intent
+   or a relocation carrier; an ordinary job awaiting recovery retains its edit count.
 3. A `tokio::spawn`ed task calls `orchestrator::run_once` on the writeback pool. `load_snapshot` joins `writeback_jobs`,
    `manifestations`, and `works` for the canonical field values, then runs a second query joining `work_authors` and
    `authors` for the primary author's sort name.
@@ -249,14 +280,16 @@ has no live input to act on outside its own tests.
    Successfully applied repair remains separate from degraded findings; equal degraded severity stays admissible.
 7. The callback hashes and measures final candidate bytes. The maintained operation syncs, replaces the source basename
    and syncs its actual opened parent. Uncertainty returns a failure before relocation or row-success bookkeeping.
-8. A blocking phase selects the exact checked collision destination. Async SQL writes the returned hash, size, cover
-   flag and relocation pair, preserving `ingestion_file_hash`. A selection error still permits recording accepted
+8. Claims-aware selection selects the exact checked collision destination. Async SQL writes the returned hash, size,
+   cover flag and relocation pair, preserving `ingestion_file_hash`. A selection error still permits recording accepted
    content evidence without intent, then fails before movement. This evidence remains current if relocation fails.
 9. A blocking phase prepares destination parents and performs the contained no-overwrite move. Async SQL records its
-   actual relative location and clears intent in one UPDATE. A visible relocation with unconfirmed directory durability
-   records the destination but retains intent and fails. SQL failure retains intent without moving bytes back.
-10. `queue::finish` calls `events::dispatch` with a `Complete` terminal event (delivered as a `tracing::info!` emit and
-    recorded in `webhook_event_dedupe`), then `mark_complete` sets `status = 'complete'` and clears `error`.
+   actual relative location, clears intent and releases obsolete claims in one transaction. A visible relocation with
+   unconfirmed directory durability records the destination but retains intent and fails. SQL failure retains intent
+   without moving bytes back.
+10. `queue::finish` reads the durable attempt count and calls `events::dispatch` with a `Complete` terminal event
+    (delivered as a `tracing::info!` emit and recorded in `webhook_event_dedupe`), then `mark_complete` sets
+    `status = 'complete'` and clears `error`.
 
 **A cover-reason job** follows the same shape with one difference at step 5: `reason == "cover"` routes through
 `cover_embed::plan_embed` against the pending cover sidecar's bytes, producing binary replacements and/or new `ZIP`
@@ -291,9 +324,10 @@ closes the staging directory; cleanup errors propagate or are logged alongside t
 
 ### Relocation recovery
 
-Every claim reconciles the exact stored names under the owning library capability before any content rewrite. Size and
-SHA-256 distinguish verified bytes from readable mismatch; only confirmed NotFound is absence. Unreadable evidence
-retains intent and fails before any recovery mutation, taking precedence over loss or adoption.
+Every claim reconciles the exact stored names under the owning library capability and owner-correct claims before any
+content rewrite. Size and SHA-256 distinguish verified bytes from readable mismatch; only confirmed NotFound is absence.
+Unreadable evidence retains intent and fails before any recovery mutation, taking precedence over loss or adoption. A
+source evidence error returns before the destination is opened or hashed.
 
 | Source     | Destination       | Action                                                                           |
 | ---------- | ----------------- | -------------------------------------------------------------------------------- |
@@ -330,6 +364,12 @@ and their attempt counts remain. Each inserted carrier excludes its manifestatio
 sweep to reach remaining eligible rows. This is a database sweep inside the same worker, not a filesystem scan or
 another worker. Open intents can exceed worker concurrency. When disabled, the worker performs neither claims nor
 sweeps.
+
+Transient startup reset and startup-sweep errors retry on the existing polling timer before claiming. Periodic sweep and
+claim errors are logged and retried inside the same worker; its tracked jobs and semaphore permits remain alive.
+Cancellation ends timer waits and starts the existing drain. Schema downgrade, with workers stopped, drops claims
+references before the claims table and removes relocation-only jobs before restoring the old reason CHECK; ordinary jobs
+and recorded paths remain.
 
 Abrupt exit may leave bare UUID staging directories visible on a NAS share; no cleanup sweep runs. Mounted storage needs
 contained access, atomic content replacement, useful sync/error semantics and either no-replace rename or hard links for
@@ -408,7 +448,9 @@ overlapping a long-running job's completion):
   The TTL exceeds the maximum claim backoff (24 hours), so this re-fire, bounded by the reclaimed job's own backoff
   window, is always caught by the duplicate-suppression check within its TTL. Duplicate-suppression bookkeeping itself
   is fail-open: a read or write error against `webhook_event_dedupe` is logged and delivery proceeds regardless,
-  preserving the same "never silently drop the event" property the emit-before-bookkeeping ordering exists for.
+  preserving the same "never silently drop the event" property the emit-before-bookkeeping ordering exists for. Finish
+  first reads the durable attempt count; failure to read it returns a database error before event dispatch or terminal
+  bookkeeping, retaining the claimed job for recovery.
 - **Worker disabled with an orphaned row.** As noted in Data and state, `WritebackConfig.enabled = false` skips
   `revert_in_progress` entirely. A row left `in_progress` by a crash that occurred while the worker was last enabled
   stays `in_progress`, blocking every other job for that manifestation behind the partial unique index; only an operator

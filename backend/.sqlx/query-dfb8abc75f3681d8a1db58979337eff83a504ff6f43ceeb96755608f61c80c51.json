@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE manifestations SET relocation_source_path = 'source.epub', relocation_destination_path = 'destination.epub' WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "dfb8abc75f3681d8a1db58979337eff83a504ff6f43ceeb96755608f61c80c51"
+}

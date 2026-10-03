@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE writeback_jobs SET attempt_count = attempt_count + 1 WHERE id = $1 AND status = 'in_progress'",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "00c2dba0f8319b3a426105e33e5572594fa3c01393266128846a69d0e46d8f9b"
+}
