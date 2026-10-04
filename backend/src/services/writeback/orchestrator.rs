@@ -1433,7 +1433,7 @@ mod tests {
         let selected = select_destination(
             &mut tx,
             &snap,
-            &test_config(),
+            &test_config(dir.path()).0,
             &files,
             fixture_permit().await,
         )
@@ -1446,7 +1446,7 @@ mod tests {
         let mut tx = wb.begin().await.unwrap();
         assert!(matches!(
             select_destination(
-                &mut tx, &snap, &test_config(), &files, fixture_permit().await,
+                &mut tx, &snap, &test_config(dir.path()).0, &files, fixture_permit().await,
             ).await,
             Err(WritebackError::Persist(message)) if message == "collision suffix exhausted"
         ));
@@ -1549,12 +1549,13 @@ mod tests {
         .execute(&app)
         .await
         .unwrap();
-        let pending = dir.path().join("invalid.png");
+        let pending = dir.path().join("_covers/pending/invalid.png");
+        std::fs::create_dir_all(pending.parent().unwrap()).unwrap();
         let invalid = b"\x89PNG\r\n\x1a\ninvalid image";
         std::fs::write(&pending, invalid).unwrap();
         sqlx::query!(
             "UPDATE manifestations SET cover_path = $1 WHERE id = $2",
-            pending.to_str().unwrap(),
+            "_covers/pending/invalid.png",
             id
         )
         .execute(&ing)
@@ -1570,7 +1571,7 @@ mod tests {
         .unwrap();
         assert_eq!(before, Some(true));
         assert!(matches!(
-            run_fixture(&app, &test_config(), job, dir.path()).await,
+            run_fixture(&app, &test_config(dir.path()).0, job, dir.path()).await,
             Err(WritebackError::ValidationRegressed(_))
         ));
         assert_eq!(std::fs::read(&path).unwrap(), original);
