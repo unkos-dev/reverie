@@ -61,16 +61,21 @@ pub struct CoverCache {
 }
 
 impl CoverCache {
-    /// Create and open the lazy cache beneath the owning library.
+    /// Open the lazy cache beneath the owning library, creating it only when absent.
     ///
     /// # Errors
     /// Returns an I/O error if contained directory creation or opening fails.
     pub fn new(library: &Dir) -> Result<Self, CoverError> {
         // THREAT: Cache authority comes only from the recorded library's pinned directory.
-        library.create_dir_all("_covers/cache")?;
-        Ok(Self {
-            root: library.open_dir("_covers/cache")?,
-        })
+        let root = match library.open_dir("_covers/cache") {
+            Ok(root) => root,
+            Err(error) if error.kind() == io::ErrorKind::NotFound => {
+                library.create_dir_all("_covers/cache")?;
+                library.open_dir("_covers/cache")?
+            }
+            Err(error) => return Err(error.into()),
+        };
+        Ok(Self { root })
     }
 
     fn basename(

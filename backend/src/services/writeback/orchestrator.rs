@@ -113,7 +113,7 @@ struct JobSnapshot {
     file_size_bytes: i64,
     relocation: Option<RelocationIntent>,
     format: ManifestationFormat,
-    cover_path: Option<RelativeFilePath>,
+    cover_path: Option<String>,
     title: Option<String>,
     subtitle: Option<String>,
     description: Option<String>,
@@ -294,7 +294,8 @@ fn rewrite(
     let cover_plan = if snap.reason == JobReason::Cover
         && let Some(path) = snap.cover_path.as_ref()
     {
-        pending_cover_suffix(path)?;
+        let path: RelativeFilePath = path.parse()?;
+        pending_cover_suffix(&path)?;
         // THREAT: Pending cover bytes are opened only in the manifestation's owning library.
         let bytes = files.library(snap.library_id)?.read(path.as_path())?;
         Some(cover_embed::plan_embed(&new_opf, &bytes)?)
@@ -733,7 +734,7 @@ async fn load_snapshot(pool: &PgPool, job_id: Uuid) -> Result<JobSnapshot, Write
             _ => return Err(WritebackError::Persist("unpaired relocation intent".into())),
         },
         format: row.format,
-        cover_path: row.cover_path.map(|path| path.parse()).transpose()?,
+        cover_path: row.cover_path,
         title: Some(row.title),
         subtitle: row.subtitle,
         description: row.description,
@@ -820,9 +821,10 @@ fn pending_cover_suffix(path: &RelativeFilePath) -> Result<RelativeFilePath, Wri
 fn move_cover_sidecar(
     files: &LibraryFiles,
     library_id: LibraryId,
-    path: &RelativeFilePath,
+    path: &str,
 ) -> Result<(), WritebackError> {
-    let suffix = pending_cover_suffix(path)?;
+    let path: RelativeFilePath = path.parse()?;
+    let suffix = pending_cover_suffix(&path)?;
     let library = files.library(library_id)?;
     let pending = library.open_dir("_covers/pending")?;
     library.create_dir_all("_covers/accepted")?;
@@ -1926,6 +1928,15 @@ mod tests {
             .execute(&wb)
             .await
             .unwrap();
+        } else {
+            sqlx::query!(
+                "UPDATE manifestations SET cover_path = $2 WHERE id = $1",
+                snap.manifestation_id,
+                "/unused-cover.jpg"
+            )
+            .execute(&wb)
+            .await
+            .unwrap();
         }
         let outcome = run_once(
             &wb,
@@ -1939,6 +1950,9 @@ mod tests {
         assert!(matches!(outcome, RunOutcome::Success { reason: actual, .. } if actual == reason));
         let fresh = load_snapshot(&wb, job).await.unwrap();
         assert!(fresh.relocation.is_none());
+        if reason == "metadata" {
+            assert_eq!(fresh.cover_path.as_deref(), Some("/unused-cover.jpg"));
+        }
         assert_eq!(
             sqlx::query_scalar!(
                 "SELECT attempt_count FROM writeback_jobs WHERE id = $1",
@@ -1975,6 +1989,38 @@ mod tests {
     #[sqlx::test(migrations = "./migrations")]
     async fn relocation_recovery_newer_metadata_job_reloads_and_continues(pool: PgPool) {
         continuation_fixture(pool, "metadata").await;
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn relocation_recovery_carrier_ignores_invalid_unused_cover_path(pool: PgPool) {
+        let wb = writeback_pool_for(&pool).await;
+        let (dir, files, job, snap) = recovery_fixture(&pool, "relocation").await;
+        let original = std::fs::read(dir.path().join("fixture.epub")).unwrap();
+        sqlx::query!(
+            "UPDATE manifestations SET cover_path = $2 WHERE id = $1",
+            snap.manifestation_id,
+            "/unused-cover.jpg"
+        )
+        .execute(&wb)
+        .await
+        .unwrap();
+        let outcome = run_once(&wb, &test_config(), &files, job, fixture_permit().await)
+            .await
+            .unwrap();
+        assert!(matches!(
+            outcome,
+            RunOutcome::Success { reason, .. } if reason == "relocation"
+        ));
+        let fresh = load_snapshot(&wb, job).await.unwrap();
+        assert!(fresh.relocation.is_none());
+        assert_eq!(fresh.file_path.as_str(), "recovered.epub");
+        assert_eq!(fresh.current_file_hash, snap.current_file_hash);
+        assert_eq!(fresh.cover_path.as_deref(), Some("/unused-cover.jpg"));
+        assert_eq!(
+            std::fs::read(dir.path().join("recovered.epub")).unwrap(),
+            original
+        );
+        assert!(!dir.path().join("_covers").exists());
     }
 
     #[sqlx::test(migrations = "./migrations")]
@@ -3204,15 +3250,15 @@ mod tests {
             b"other library"
         );
         std::fs::remove_file(dir.path().join("_covers/accepted")).unwrap();
-        let pending: RelativeFilePath = "_covers/pending/cover.png".parse().unwrap();
-        move_cover_sidecar(&files, library, &pending).unwrap();
+        let pending = "_covers/pending/cover.png";
+        move_cover_sidecar(&files, library, pending).unwrap();
         assert!(!dir.path().join("_covers/pending/cover.png").exists());
         assert_eq!(
             std::fs::read(dir.path().join("_covers/accepted/cover.png")).unwrap(),
             bytes
         );
         std::fs::write(dir.path().join("_covers/pending/cover.png"), &bytes).unwrap();
-        move_cover_sidecar(&files, library, &pending).unwrap();
+        move_cover_sidecar(&files, library, pending).unwrap();
         assert_eq!(
             std::fs::read(dir.path().join("_covers/accepted/cover.png")).unwrap(),
             bytes
@@ -3291,14 +3337,7 @@ mod tests {
         std::fs::remove_file(dir.path().join("_covers/pending/cover.png")).unwrap();
         std::fs::write(dir.path().join("_covers/pending/cover.png"), b"owned").unwrap();
         std::os::unix::fs::symlink(outside.path(), dir.path().join("_covers/accepted")).unwrap();
-        assert!(
-            move_cover_sidecar(
-                &files,
-                library,
-                &"_covers/pending/cover.png".parse().unwrap()
-            )
-            .is_err()
-        );
+        assert!(move_cover_sidecar(&files, library, "_covers/pending/cover.png").is_err());
         assert_eq!(
             std::fs::read(dir.path().join("_covers/pending/cover.png")).unwrap(),
             b"owned"
@@ -3309,14 +3348,7 @@ mod tests {
         std::fs::remove_file(dir.path().join("_covers/pending/cover.png")).unwrap();
         std::fs::remove_dir(dir.path().join("_covers/pending")).unwrap();
         std::os::unix::fs::symlink(outside.path(), dir.path().join("_covers/pending")).unwrap();
-        assert!(
-            move_cover_sidecar(
-                &files,
-                library,
-                &"_covers/pending/cover.png".parse().unwrap()
-            )
-            .is_err()
-        );
+        assert!(move_cover_sidecar(&files, library, "_covers/pending/cover.png").is_err());
         assert_eq!(std::fs::read(&outside_file).unwrap(), b"outside bytes");
     }
 }

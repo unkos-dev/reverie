@@ -265,13 +265,7 @@ async fn serve_cover(
         Err(CoverError::NoCover | CoverError::ArchiveRejected(_)) => {
             return Err(AppError::NotFound);
         }
-        // A cover file that has vanished from disk (the source EPUB moved, an
-        // evicted cache entry, an unmounted library) is a 404, not a 500: the
-        // manifestation was already RLS-gated inside `get_or_create`, so this
-        // discloses nothing the caller's own list row did not, and RFC 9110
-        // §15.5.5 is the correct status. It also replaces the per-request
-        // `Internal` ERROR, which floods the log once per thumbnail when a whole
-        // shelf of files is missing on a grid load, with a single WARN.
+        // THREAT: RLS authorisation precedes the short-cached missing-file response.
         Err(CoverError::Io(e)) if e.kind() == std::io::ErrorKind::NotFound => {
             tracing::warn!(%manifestation_id, ?size, error = %e, "cover file missing on disk; serving 404");
             return Ok(cover_miss_not_found());

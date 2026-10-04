@@ -119,6 +119,8 @@ pub enum CoverError {
 
 /// Fetch a cover image from `url`, validate it, and stage it atomically.
 ///
+/// The supplied library identity is resolved before any network `I/O`.
+///
 /// Steps performed (in order):
 /// 1. `SSRF`-check the initial `URL`.
 /// 2. Send the request.
@@ -150,6 +152,8 @@ pub async fn download(
     manifestation_id: Uuid,
     version_id: Uuid,
 ) -> Result<CoverArtifact, CoverError> {
+    files.library(library_id)?;
+
     // Step 1: SSRF-check the initial URL before any network I/O.
     //
     // Bypassable via `DownloadConfig::allow_private_hosts = true` for in-process
@@ -322,6 +326,44 @@ mod tests {
     }
 
     // ── Happy path ────────────────────────────────────────────────────────
+
+    #[tokio::test]
+    async fn capability_cover_staging_unknown_library_makes_no_request() {
+        let tmp = TempDir::new().unwrap();
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_bytes(make_png(240, 320))
+                    .insert_header("content-type", "image/png"),
+            )
+            .mount(&server)
+            .await;
+        let known = LibraryId::from_uuid(Uuid::new_v4());
+        let unknown = LibraryId::from_uuid(Uuid::new_v4());
+        let files = crate::test_support::test_library_files_at(
+            &tmp.path().to_str().unwrap().parse().unwrap(),
+            known,
+        );
+        let result = download(
+            &server.uri(),
+            &client(),
+            &default_config(),
+            &files,
+            unknown,
+            Uuid::new_v4(),
+            Uuid::new_v4(),
+        )
+        .await;
+        assert!(matches!(
+            result,
+            Err(CoverError::Library(
+                crate::services::files::LibraryFileError::UnknownLibrary
+            ))
+        ));
+        assert!(server.received_requests().await.unwrap().is_empty());
+        assert!(!tmp.path().join("_covers").exists());
+    }
 
     #[tokio::test]
     async fn valid_jpeg_fetched_and_staged() {

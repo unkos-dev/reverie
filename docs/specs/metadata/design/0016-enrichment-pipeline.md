@@ -237,12 +237,13 @@ sidecar within the same library. Neither has a live production input. Staging do
 
 ## Runtime behaviour
 
-**Dormant cover staging**, exercised by its embedded tests, checks the initial URL, declared MIME type, streamed byte
-limit, magic-byte agreement and decoded dimensions before hashing or publication. Blocking work selects the supplied
-library, creates and opens `_covers/pending`, then calls the cover cache module\'s shared `publish_cover_bytes`
-primitive. Complete `cap-tempfile` replacement has no forced sync or additional permission policy. Repeated names use
-the existing replacing semantics. Network, validation, unknown-library, contained I/O and blocking-task errors propagate
-without publishing an invalid raster or supplying an ambient compatibility path.
+**Dormant cover staging**, exercised by its embedded tests, resolves the supplied library identity before any network
+work. It checks the initial URL, declared MIME type, streamed byte limit, magic-byte agreement and decoded dimensions
+before hashing or publication. Blocking work selects that library, creates and opens `_covers/pending`, then calls the
+cover cache module's shared `publish_cover_bytes` primitive. Complete `cap-tempfile` replacement has no forced sync or
+additional permission policy. Repeated names use the existing replacing semantics. Network, validation, unknown-library,
+contained I/O and blocking-task errors propagate without publishing an invalid raster or supplying an ambient
+compatibility path.
 
 **A background pass**, once `claim_next` claims a row:
 

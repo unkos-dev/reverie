@@ -47,15 +47,15 @@ renderer this subject reuses for post-writeback file relocation (`backend/src/se
 which is the Design "Ingestion pipeline". It does not own the enrichment-downloaded sidecar cover at
 `manifestations.cover_path`, the `SSRF`-guarded remote-cover `HTTP` client, or the `_covers/pending` and
 `_covers/accepted` staging directories: the Design "Covers" assigns that download and staging area to the Design
-"Enrichment pipeline". This subject parses the row's sidecar location as a checked relative path, requires the
-`_covers/pending/` namespace and reads through the manifestation's owning library capability. Successful cover jobs
-promote it within that same library to `_covers/accepted/`. No code path anywhere in `backend/src` writes
-`manifestations.cover_path`, so this subject's cover-embed step never runs against real sidecar bytes in a live system;
-see Interfaces and dependencies and Runtime behaviour for the fuller picture, including why a cover-reason job cannot be
-created at all today. `webhooks` and `webhook_deliveries` have tables and row-level security enabled but carry no policy
-and no handler anywhere in `backend/src`; this subject's only connection to webhooks is the duplicate-suppression table
-it shares a name prefix with and the `tracing`-emit stub that stands in for delivery, both described below as what
-exists today.
+"Enrichment pipeline". After relocation reconciliation, cover jobs parse the row's sidecar location as a checked
+relative path, require the `_covers/pending/` namespace and read through the manifestation's owning library capability.
+Metadata jobs and relocation carriers ignore the unused sidecar location. Successful cover jobs promote it within that
+same library to `_covers/accepted/`. No code path anywhere in `backend/src` writes `manifestations.cover_path`, so this
+subject's cover-embed step never runs against real sidecar bytes in a live system; see Interfaces and dependencies and
+Runtime behaviour for the fuller picture, including why a cover-reason job cannot be created at all today. `webhooks`
+and `webhook_deliveries` have tables and row-level security enabled but carry no policy and no handler anywhere in
+`backend/src`; this subject's only connection to webhooks is the duplicate-suppression table it shares a name prefix
+with and the `tracing`-emit stub that stands in for delivery, both described below as what exists today.
 
 Depends on: the two enqueue call sites named above, each of which inserts a `writeback_jobs` row inside the same
 transaction that moves a canonical pointer; the `EPUB` validation and repack service the Design "EPUB validation and

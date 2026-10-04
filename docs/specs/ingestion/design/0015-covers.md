@@ -93,10 +93,14 @@ creates a `cap-tempfile` temporary in the opened directory, writes and flushes c
 and replaces the final basename. Publication imposes no forced fsync or additional permission policy. Temporary
 ownership cleans up an unsuccessful publication; an obstructed destination retains its existing bytes.
 
-Each blocking operation creates and opens the lazy cache directory through its library capability. That operation
-retains the directory; no cache Dir survives for the process lifetime. Removal between completed operations is repaired
-by the next operation's normal directory creation. Removal during an operation can fail that operation; there is no
-retry or reader fallback.
+On Unix, cache and pending-cover files use `cap-tempfile`'s `0o666 & !umask` creation mode. Filesystem access depends on
+the process `umask`, directory permissions and storage access controls; HTTP access remains scoped by row-level
+security.
+
+Each blocking operation opens the lazy cache directory through its library capability, creating it only when absent.
+That operation retains the directory; no cache Dir survives for the process lifetime. Removal between completed
+operations is repaired by the next operation's normal directory creation. Removal during an operation can fail that
+operation; there is no retry or reader fallback.
 
 Concurrent writers may generate the same key. They take no destination lock: identical source bytes and tier produce
 identical encoded bytes, and complete last-writer-wins replacement is benign. An opened response handle remains tied to
@@ -134,7 +138,7 @@ non-file entry or another contained-open error fails the operation.
   `warm_one` runs it from a background task, bounded by the `WARM_LIMIT` semaphore (three concurrent permits), which
   `spawn_warm_thumb` acquires before generating; nothing in the tree closes this semaphore.
 - `routes/opds/covers.rs::serve_cover` is the one handler body both HTTP mounts share. It calls `get_or_create`,
-  resolves the response by `CoverError` variant and compares `If-None-Match` only after the artifact's file has been
+  resolves the response by `CoverError` variant and compares `If-None-Match` only after the artefact's file has been
   opened. A match returns the validator and cache headers without streaming a body; a miss streams that same handle.
 - The two mounts differ only in extractor wrapping and runtime gating: `covers::opds_router()` builds
   `/opds/books/{id}/cover{,/thumb}` behind `BasicOnly`, mounted only when `config.opds.enabled` (though always
