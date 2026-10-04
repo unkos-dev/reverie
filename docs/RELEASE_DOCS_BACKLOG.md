@@ -25,12 +25,12 @@ an operator reading the value:
   ingested and served.
 
 The load-bearing point operators need: `clean`, `repaired`, and `degraded` are **all** stored-and-served outcomes on one
-quality tier: `clean` means _no issues found_, not _the only valid state_. A quarantined file is never represented here
-because quarantine deletes the file and writes no row.
+quality tier: `clean` means _no issues found_, not _the only valid state_. A rejected ingestion input retains its
+original and reason without a manifestation row.
 
-Write an operator-facing Starlight page covering these states (and how quarantine differs) when the library/validation
-UI surface that exposes them lands. The dev-facing reference, [`backend/schema.sql`](../backend/schema.sql), carries the
-vocabulary.
+Write an operator-facing Starlight page covering these states (and how ingestion rejection differs) when the
+library/validation UI surface that exposes them lands. The dev-facing reference,
+[`backend/schema.sql`](../backend/schema.sql), carries the vocabulary.
 
 ### OIDC `email` claim: addr-spec validation and degrade-to-NULL
 

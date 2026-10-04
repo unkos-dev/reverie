@@ -46,7 +46,6 @@ pub const ENV_MAP: &[(&str, &str)] = &[
     ("REVERIE_PORT", "port"),
     ("REVERIE_LIBRARY_PATH", "library_path"),
     ("REVERIE_INGESTION_PATH", "ingestion_path"),
-    ("REVERIE_QUARANTINE_PATH", "quarantine_path"),
     // Cascade resolved in `EnvProvider::data` (GOTCHA-CASCADE): both map to
     // `log_level`; `REVERIE_LOG_LEVEL` wins when both are set.
     ("REVERIE_LOG_LEVEL", "log_level"),
@@ -79,8 +78,9 @@ pub const ENV_MAP: &[(&str, &str)] = &[
         "trusted_client_ip_header",
     ),
     ("REVERIE_AUTO_MIGRATE", "auto_migrate"),
-    ("REVERIE_FORMAT_PRIORITY", "format_priority"),
-    ("REVERIE_CLEANUP_MODE", "cleanup_mode"),
+    ("REVERIE_ACCEPTED_FORMATS", "accepted_formats"),
+    ("REVERIE_CLEANUP_IMPORTED", "cleanup_imported"),
+    ("REVERIE_CLEANUP_DUPLICATES", "cleanup_duplicates"),
     ("REVERIE_GOOGLEBOOKS_API_KEY", "googlebooks_api_key"),
     ("REVERIE_HARDCOVER_API_TOKEN", "hardcover_api_token"),
     ("REVERIE_OPERATOR_CONTACT", "operator_contact"),
@@ -227,7 +227,7 @@ impl Provider for EnvProvider {
             if val.is_empty()
                 && !matches!(
                     key.as_str(),
-                    "REVERIE_LIBRARY_PATH" | "REVERIE_INGESTION_PATH" | "REVERIE_QUARANTINE_PATH"
+                    "REVERIE_LIBRARY_PATH" | "REVERIE_INGESTION_PATH" | "REVERIE_ACCEPTED_FORMATS"
                 )
             {
                 continue;

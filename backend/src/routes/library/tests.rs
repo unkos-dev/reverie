@@ -31,6 +31,7 @@ fn server_with_page_size(app_pool: &PgPool, ingestion_pool: &PgPool, page_size: 
     let state = AppState {
         pool: app_pool.clone(),
         ingestion_pool: ingestion_pool.clone(),
+        ingestion: crate::services::ingestion::coordinator_channel().0,
         library_files: crate::test_support::test_library_files_at(
             &config.library_path,
             crate::models::storage_library::LibraryId::from_uuid(uuid::Uuid::new_v4()),

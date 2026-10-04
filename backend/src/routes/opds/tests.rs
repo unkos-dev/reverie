@@ -790,12 +790,8 @@ mod storage {
         std::fs::write(b.path().join("book.epub"), b"second library").unwrap();
         let root_a: crate::config::AbsoluteRootPath = a.path().to_str().unwrap().parse().unwrap();
         let root_b = b.path().to_str().unwrap().parse().unwrap();
-        let files = LibraryFiles::open(
-            [(first, root_a.clone()), (second, root_b)],
-            &root_a,
-            &root_a,
-        )
-        .unwrap();
+        let files =
+            LibraryFiles::open([(first, root_a.clone()), (second, root_b)], &root_a).unwrap();
         let server = recorded_download_server(&app_pool, &ingestion_pool, files);
         for (id, hash, expected) in [
             (first, "first", b"first library".as_slice()),

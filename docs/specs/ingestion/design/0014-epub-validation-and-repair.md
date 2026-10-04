@@ -38,13 +38,13 @@ repack helper that rebuilds a ZIP archive with the `mimetype` entry first and st
 verbatim (`repack.rs`).
 
 It does not own what a caller does with a `Quarantined` outcome, and the three production callers do three different
-things with it. The Design "Ingestion pipeline" removes the just-copied library file, moves the drop-zone original to
-quarantine with a sidecar, and never commits a manifestation row for it. The Design "Writeback pipeline" rejects a
-quarantined source or candidate before publication, leaving rejected content's source bytes and stored hash/location
-untouched. On-demand cover extraction in the Design "Covers" (`backend/src/services/covers/extract.rs`) does not call
-this subject's entry point at all; it re-runs Layer 1 alone and turns any `Irrecoverable` finding into
-`CoverError::ArchiveRejected`. This subject owns only the production of the `Quarantined` value and the issues behind
-it, not any of those three dispositions.
+things with it. The Design "Ingestion pipeline" discards its owned candidate, retains the drop-zone original and records
+the rejection reason without a manifestation row. The Design "Writeback pipeline" rejects a quarantined source or
+candidate before publication, leaving rejected content's source bytes and stored hash/location untouched. On-demand
+cover extraction in the Design "Covers" (`backend/src/services/covers/extract.rs`) does not call this subject's entry
+point at all; it re-runs Layer 1 alone and turns any `Irrecoverable` finding into `CoverError::ArchiveRejected`. This
+subject owns only the production of the `Quarantined` value and the issues behind it, not any of those three
+dispositions.
 
 It does not own committing a validation outcome to the database. The `validation_status` column, its Postgres enum, and
 the `ValidationStatus` Rust type that maps one-to-one onto this subject's own `ValidationOutcome` variants

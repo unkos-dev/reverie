@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE ingestion_inputs SET status = 'removed', removed_at = now(), removal_cause = $3\n         FROM UNNEST($1::uuid[], $2::bigint[]) AS selected(input_id, input_generation)\n         WHERE id = selected.input_id AND generation = selected.input_generation AND status <> 'removed'",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "UuidArray",
+        "Int8Array",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "9e5a9c11e4d3df1741bc63870ef30307034a0582d45123c169cf3ea84b465b29"
+}

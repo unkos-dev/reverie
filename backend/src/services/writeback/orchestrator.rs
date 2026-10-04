@@ -850,7 +850,7 @@ mod tests {
         root.join(path)
     }
 
-    use crate::config::{CleanupMode, CoverConfig, EnrichmentConfig, WritebackConfig};
+    use crate::config::{CoverConfig, EnrichmentConfig, WritebackConfig};
     use crate::models::manifestation_format::ManifestationFormat;
     use std::io::Write;
     use zip::ZipWriter;
@@ -864,7 +864,6 @@ mod tests {
             database_url: String::new(),
             library_path: crate::config::Config::default().library_path,
             ingestion_path: crate::config::Config::default().ingestion_path,
-            quarantine_path: crate::config::Config::default().quarantine_path,
             log_level: "info".into(),
             db_max_connections: 5,
             oidc_issuer_url: String::new(),
@@ -890,8 +889,9 @@ mod tests {
             migration_database_url: None,
             auto_migrate: false,
             ingestion_database_url: String::new(),
-            format_priority: vec![ManifestationFormat::Epub],
-            cleanup_mode: CleanupMode::None,
+            accepted_formats: vec![ManifestationFormat::Epub],
+            cleanup_imported: false,
+            cleanup_duplicates: false,
             enrichment: EnrichmentConfig {
                 enabled: false,
                 concurrency: 1,
@@ -1268,7 +1268,6 @@ mod tests {
         .await
         .unwrap();
         let input = tempfile::tempdir().unwrap();
-        let quarantine = tempfile::tempdir().unwrap();
         std::fs::copy(&path, input.path().join("Title.epub")).unwrap();
         let library_id = crate::models::storage_library::default_library_id(&pool)
             .await
@@ -1276,11 +1275,10 @@ mod tests {
         let mut config = test_config();
         config.library_path = dir.path().to_str().unwrap().parse().unwrap();
         config.ingestion_path = input.path().to_str().unwrap().parse().unwrap();
-        config.quarantine_path = quarantine.path().to_str().unwrap().parse().unwrap();
+
         let files = LibraryFiles::open(
             [(library_id, config.library_path.clone())],
             &config.ingestion_path,
-            &config.quarantine_path,
         )
         .unwrap();
         let job = sqlx::query_scalar!("INSERT INTO writeback_jobs (manifestation_id, reason) VALUES ($1, 'metadata') RETURNING id", id).fetch_one(&pool).await.unwrap();
@@ -1292,12 +1290,42 @@ mod tests {
                 .0,
             job
         );
-        let (writeback, ingestion) = tokio::join!(
-            run_once(&wb, &config, &files, job, fixture_permit().await),
-            crate::services::ingestion::scan_once(&config, &ing, &files),
-        );
-        assert!(matches!(writeback.unwrap(), RunOutcome::Success { .. }));
-        assert_eq!(ingestion.unwrap().processed, 1);
+        let cancel = tokio_util::sync::CancellationToken::new();
+        let (handle, commands) = crate::services::ingestion::coordinator_channel();
+        let settings = crate::test_support::test_settings();
+        settings.write().await.ingestion.cleanup_imported = false;
+        let worker = tokio::spawn(crate::services::ingestion::run_watcher(
+            config.clone(),
+            ing.clone(),
+            cancel.clone(),
+            files.clone(),
+            settings,
+            commands,
+        ));
+        handle.scan().await.unwrap();
+        assert!(matches!(
+            run_once(&wb, &config, &files, job, fixture_permit().await)
+                .await
+                .unwrap(),
+            RunOutcome::Success { .. }
+        ));
+        tokio::time::timeout(std::time::Duration::from_secs(20), async {
+            loop {
+                let inputs = crate::models::ingestion_input::current_page(&ing, None)
+                    .await
+                    .unwrap();
+                if inputs.iter().any(|input| {
+                    input.status == crate::models::ingestion_input::InputStatus::Imported
+                }) {
+                    break;
+                }
+                tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+            }
+        })
+        .await
+        .unwrap();
+        cancel.cancel();
+        worker.await.unwrap().unwrap();
         let rows = sqlx::query!("SELECT m.id, m.file_path, c.manifestation_id FROM manifestations m JOIN library_path_claims c ON c.library_id = m.library_id AND c.path = m.file_path WHERE m.library_id = $1 ORDER BY m.id LIMIT 3", library_id.as_uuid()).fetch_all(&pool).await.unwrap();
         assert_eq!(rows.len(), 2);
         assert_ne!(rows[0].file_path, rows[1].file_path);
@@ -1391,7 +1419,6 @@ mod tests {
             second.path().to_str().unwrap().parse().unwrap();
         let files = LibraryFiles::open(
             [(default, first_root), (other, second_root.clone())],
-            &second_root,
             &second_root,
         )
         .unwrap();

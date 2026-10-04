@@ -6,8 +6,19 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
-use crate::config::CleanupMode;
 use crate::models::manifestation_format::ManifestationFormat;
+
+/// Live acquisition and source-cleanup policy.
+#[derive(Debug, Clone, Serialize, sqlx::FromRow, utoipa::ToSchema)]
+pub struct IngestionSettings {
+    /// Formats accepted for ingestion; currently only EPUB is supported.
+    #[schema(value_type = Vec<ManifestationFormat>)]
+    pub accepted_formats: Vec<String>,
+    /// Remove an imported source after its outcome is committed.
+    pub cleanup_imported: bool,
+    /// Remove a duplicate source after its outcome is committed.
+    pub cleanup_duplicates: bool,
+}
 
 /// Runtime-tunable settings loaded from the `settings` table.
 ///
@@ -48,16 +59,10 @@ pub struct Settings {
     /// OPDS feed page size (1–500).
     pub opds_page_size: i32,
 
-    /// Ranked format preference for ingestion (`["epub","pdf",…]`).
-    // Raw TEXT[] column (DB CHECK-validated); documented as the typed enum so
-    // read and write schemas agree — see `UpdateSettings.format_priority`.
-    #[schema(value_type = Vec<ManifestationFormat>)]
-    pub format_priority: Vec<String>,
-    /// Post-ingestion cleanup mode (`all`, `ingested`, or `none`).
-    // Raw TEXT column (DB CHECK-validated); documented as the typed enum so
-    // read and write schemas agree — see `UpdateSettings.cleanup_mode`.
-    #[schema(value_type = CleanupMode)]
-    pub cleanup_mode: String,
+    /// Ingestion policy exposed as flat settings fields.
+    #[serde(flatten)]
+    #[sqlx(flatten)]
+    pub ingestion: IngestionSettings,
 
     /// Per-provider display visibility for external identifiers and ratings
     /// (`{"googlebooks": false}` hides that provider from projections).
@@ -82,43 +87,6 @@ pub struct Settings {
     pub updated_at: DateTime<Utc>,
 }
 
-impl Settings {
-    /// Parse `cleanup_mode` text column into the typed enum.
-    ///
-    /// DB CHECK constraint guarantees valid values; panicking on
-    /// mismatch is correct (schema-vs-code drift = programming error).
-    ///
-    /// # Panics
-    /// Panics if the stored value is outside `"all" | "ingested" | "none"`.
-    #[must_use]
-    pub fn cleanup_mode(&self) -> CleanupMode {
-        match self.cleanup_mode.as_str() {
-            "all" => CleanupMode::All,
-            "ingested" => CleanupMode::Ingested,
-            "none" => CleanupMode::None,
-            other => unreachable!("DB CHECK constraint violated: cleanup_mode = {other:?}"),
-        }
-    }
-
-    /// Parse `format_priority` text[] column into typed enums.
-    ///
-    /// DB values were validated on write; panicking on mismatch is
-    /// correct (schema-vs-code drift = programming error).
-    ///
-    /// # Panics
-    /// Panics if any stored element is not a known [`ManifestationFormat`] wire value.
-    #[must_use]
-    pub fn format_priority(&self) -> Vec<ManifestationFormat> {
-        self.format_priority
-            .iter()
-            .map(|s| {
-                s.parse::<ManifestationFormat>()
-                    .unwrap_or_else(|_| unreachable!("DB validated format_priority element: {s:?}"))
-            })
-            .collect()
-    }
-}
-
 // Fields that require a process restart to take effect (env-only:
 // port, database_url, OIDC, library_path). Currently empty because
 // no restart-required fields are in the settings table yet.
@@ -126,9 +94,8 @@ impl Settings {
 /// Partial update request for `PUT /api/v1/settings`.
 ///
 /// All fields optional — absent fields are left unchanged (JSON Merge
-/// Patch semantics per RFC 7396). `CleanupMode` and
-/// `ManifestationFormat` are validated at deserialization time by serde;
-/// collection invariants (non-empty, no duplicates) are checked by
+/// Patch semantics per RFC 7396). `ManifestationFormat` is validated at
+/// deserialization time; EPUB-only membership and duplicates are checked by
 /// [`validate_update`].
 #[derive(Debug, Deserialize, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
@@ -165,10 +132,12 @@ pub struct UpdateSettings {
     /// OPDS feed page size (1–500).
     pub opds_page_size: Option<i32>,
 
-    /// Ranked format preference for ingestion.
-    pub format_priority: Option<Vec<ManifestationFormat>>,
-    /// Post-ingestion cleanup mode.
-    pub cleanup_mode: Option<CleanupMode>,
+    /// Formats accepted for ingestion; an empty list suspends acquisition.
+    pub accepted_formats: Option<Vec<ManifestationFormat>>,
+    /// Remove imported source files.
+    pub cleanup_imported: Option<bool>,
+    /// Remove duplicate source files.
+    pub cleanup_duplicates: Option<bool>,
 
     /// Per-provider display visibility, replacing the stored map wholesale.
     /// Values must be booleans; keys are validated against the union of
@@ -220,17 +189,18 @@ impl UpdateSettings {
             && self.writeback_max_attempts.is_none()
             && self.opds_enabled.is_none()
             && self.opds_page_size.is_none()
-            && self.format_priority.is_none()
-            && self.cleanup_mode.is_none()
+            && self.accepted_formats.is_none()
+            && self.cleanup_imported.is_none()
+            && self.cleanup_duplicates.is_none()
             && self.provider_visibility.is_none()
     }
 }
 
 /// Validate an [`UpdateSettings`] payload.
 ///
-/// Serde validates enum membership (`CleanupMode`, `ManifestationFormat`)
+/// Serde validates enum membership (`ManifestationFormat`)
 /// at deserialization time. This function validates range constraints and
-/// collection invariants (non-empty, no duplicates).
+/// EPUB-only membership and duplicate entries.
 ///
 /// Returns `Err(message)` on first validation failure.
 ///
@@ -252,14 +222,14 @@ pub fn validate_update(req: &UpdateSettings) -> Result<(), String> {
     {
         return Err("opds_page_size must be between 1 and 500".into());
     }
-    if let Some(ref fp) = req.format_priority {
-        if fp.is_empty() {
-            return Err("format_priority must not be empty".into());
-        }
+    if let Some(ref fp) = req.accepted_formats {
         let mut seen = std::collections::HashSet::new();
         for f in fp {
+            if *f != ManifestationFormat::Epub {
+                return Err("accepted_formats supports only epub".into());
+            }
             if !seen.insert(f) {
-                return Err(format!("format_priority contains duplicate format: {f}"));
+                return Err(format!("accepted_formats contains duplicate format: {f}"));
             }
         }
     }

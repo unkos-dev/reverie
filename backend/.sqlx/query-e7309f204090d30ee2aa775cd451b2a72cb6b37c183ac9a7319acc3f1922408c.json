@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE ingestion_jobs SET outcome = 'needs_change', status = 'failed', completed_at = now(),\n         error_message = 'publication name has another owner or changed content' WHERE id = $1 AND outcome IS NULL",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "e7309f204090d30ee2aa775cd451b2a72cb6b37c183ac9a7319acc3f1922408c"
+}

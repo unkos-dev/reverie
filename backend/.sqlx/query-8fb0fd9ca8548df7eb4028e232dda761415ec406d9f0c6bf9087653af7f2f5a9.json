@@ -1,0 +1,32 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE ingestion_jobs SET publication_failure_class = $2, publication_failure_reason = $3\n         WHERE id = $1 AND publication_library_id IS NOT NULL",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        {
+          "Custom": {
+            "name": "ingestion_attempt_outcome",
+            "kind": {
+              "Enum": [
+                "imported",
+                "duplicate",
+                "rejected",
+                "changed",
+                "shared_dependency",
+                "transient_input",
+                "needs_change",
+                "interrupted"
+              ]
+            }
+          }
+        },
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "8fb0fd9ca8548df7eb4028e232dda761415ec406d9f0c6bf9087653af7f2f5a9"
+}

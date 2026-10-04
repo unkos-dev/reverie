@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE settings SET accepted_formats = $1, cleanup_imported = $2, cleanup_duplicates = $3,\n         ingestion_seeded = true, revision = revision + 1, updated_at = now()\n         WHERE id = true AND NOT ingestion_seeded",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "TextArray",
+        "Bool",
+        "Bool"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "67e63c7aee5665ab6aa4027d69cee57641780dd79666c8574d4125041d578743"
+}

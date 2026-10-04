@@ -140,7 +140,7 @@ services:
       - path: .env.runtime
         required: true
     # Host paths for the fixed container defaults the app now ships
-    # (/data/library, /data/ingestion, /data/quarantine,
+    # (/data/library, /data/ingestion,
     # /data/recovery-pins; see backend/src/config/mod.rs). Fixed container
     # paths mean the runtime env never needs to carry them; only the host
     # side is operator-configured, via `docker/.env` like REVERIE_VERSION.
@@ -162,11 +162,6 @@ services:
       - type: bind
         source: ${REVERIE_INGESTION_HOST_PATH:?required}
         target: /data/ingestion
-        bind:
-          create_host_path: false
-      - type: bind
-        source: ${REVERIE_QUARANTINE_HOST_PATH:?required}
-        target: /data/quarantine
         bind:
           create_host_path: false
       - type: bind

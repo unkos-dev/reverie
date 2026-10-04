@@ -155,6 +155,10 @@ its grants are what limit it.
 Path claims have separate pipeline-only ALL policies and no readonly grant. Ownership lookup rejects a context without
 unfiltered claim visibility rather than treating policy-hidden rows as absent claims.
 
+`ingestion_inputs` is global pipeline state with no per-user row policy. It grants SELECT, INSERT, UPDATE and DELETE to
+`reverie_app` and `reverie_ingestion`, and SELECT to `reverie_readonly`. The ingestion owner writes current inputs;
+there is no input-management endpoint. Manifestation RLS remains the content-visibility boundary.
+
 ### The grant boundary
 
 Row-level security decides which rows a query sees; the grant decides whether the role may run the query at all, and the
@@ -183,9 +187,10 @@ the credential the session cookie carries. `reverie_ingestion` has no grant in t
 `reverie_ingestion` has SELECT on `libraries` and is granted the catalogue and pipeline tables: `works`, `authors`,
 `work_authors`, `manifestations`, `library_path_claims`, `series`, `series_works`, `omnibus_contents`,
 `metadata_versions`, `metadata_sources`, `field_locks`, `tags`, `manifestation_tags`, `genres`, `manifestation_genres`,
-`moods`, `manifestation_moods`, `api_cache`, `ingestion_jobs`, `writeback_jobs`, `identifier_schemes`, `rating_sources`,
-`manifestation_external_identifiers`, `manifestation_external_ratings` and `work_external_identifiers`. It has no grant
-on any account, credential, shelf, reading, preference, settings or webhook table.
+`moods`, `manifestation_moods`, `api_cache`, `ingestion_inputs`, `ingestion_jobs`, `writeback_jobs`,
+`identifier_schemes`, `rating_sources`, `manifestation_external_identifiers`, `manifestation_external_ratings` and
+`work_external_identifiers`. It has no grant on any account, credential, shelf, reading, preference, settings or webhook
+table.
 
 ## Interfaces and dependencies
 
@@ -240,11 +245,12 @@ manifestation the child has not been given on a shelf satisfies neither policy a
    `app.system_context` reads back as `writeback`.
 3. The row updates whoever owns or can see it; the system-context policies have no condition beyond that setting.
 
-**Two handlers read through the ingestion pool instead of `acquire_with_rls`**, deliberately:
+**Two authorised workflows use the ingestion pool instead of `acquire_with_rls`**:
 
 - The admin ingestion scan (`scan` in `backend/src/routes/ingestion.rs`) calls `CurrentUser::require_admin` and then
-  `services::ingestion::scan_once(&state.config, &state.ingestion_pool)`. A scan covers a whole directory with no single
-  manifestation or owning caller to scope a transaction to, so the admin check is the only boundary on this path.
+  submits discovery through `AppState.ingestion` to the existing scheduling owner. That owner uses the ingestion pool
+  for global input and publication history and scoped catalogue writes. A scan covers a directory with no single
+  manifestation or owning caller to scope a transaction to; the admin check controls discovery submission.
 - The enrichment dry run (`dry_run` in `backend/src/routes/enrichment.rs`) checks visibility first: it opens an
   `acquire_with_rls` transaction on `state.pool` and runs `SELECT id FROM manifestations WHERE id = $1`, returning
   `AppError::NotFound` when that comes back empty, so a manifestation the caller cannot see looks the same as one that
@@ -270,10 +276,14 @@ Both outcomes keep gated rows hidden, but the failure is not always quiet, and w
 `acquire_with_rls` meets depends on what the borrowed connection did before. Nothing catches the omission itself: the
 defences are the documentation on `acquire_with_rls` and review of each new handler.
 
-The two ingestion-pool handlers above are not this failure. Both read through `state.ingestion_pool`, whose
-unconditional policies give `reverie_ingestion` access without any user context, as long as the pool has its own
-credentials. When `DATABASE_URL_INGESTION` is unset and the pool connects as `reverie_app`, its reads meet the ordinary
-policies with no user context set, and fail in one of the two ways above.
+These workflows read through `state.ingestion_pool`, whose unconditional policies give `reverie_ingestion` access
+without any user context, as long as the pool has its own credentials. When `DATABASE_URL_INGESTION` is unset and the
+pool connects as `reverie_app`, its reads meet the ordinary policies with no user context set, and fail in one of the
+two ways above.
+
+Initial ingestion settings seeding runs through the primary application's existing SELECT/UPDATE grants on `settings`,
+before worker startup. The ingestion role gains no settings grant. Publication evidence uses existing `ingestion_jobs`
+access; filesystem disposition requires unfiltered claim visibility and path exclusion before mutation.
 
 ## Security and operations
 

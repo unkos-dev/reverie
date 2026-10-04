@@ -77,7 +77,7 @@ pub enum Layer {
 /// How serious an `Issue` is and whether it has been resolved.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Severity {
-    /// File cannot be used; must be quarantined.
+    /// File cannot be used; ingestion preserves the original with a rejection reason.
     Irrecoverable,
     /// Issue was automatically repaired.
     Repaired,

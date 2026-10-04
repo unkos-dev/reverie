@@ -125,10 +125,6 @@ pub struct Config {
     /// Absolute ingestion drop directory (`REVERIE_INGESTION_PATH`,
     /// default `/data/ingestion`). Must exist before server startup.
     pub ingestion_path: AbsoluteRootPath,
-    /// Absolute failed-ingestion quarantine directory
-    /// (`REVERIE_QUARANTINE_PATH`, default `/data/quarantine`). Must exist
-    /// before server startup.
-    pub quarantine_path: AbsoluteRootPath,
     /// Log-filter directive resolved from the environment with cascading
     /// precedence: `REVERIE_LOG_LEVEL` > `RUST_LOG` > `"info"`. The
     /// `REVERIE_*` operator namespace wins on conflict so staging docs
@@ -342,16 +338,14 @@ pub struct Config {
     /// `reverie_ingestion` against the `*_ingestion_full_access` RLS
     /// policies.
     pub ingestion_database_url: String,
-    /// Ranked acceptable formats (`REVERIE_FORMAT_PRIORITY`,
-    /// comma-separated; default `epub,pdf,mobi,azw3,cbz,cbr`). The
-    /// ingestion pipeline picks the highest-ranked file when an
-    /// incoming work has multiple candidates.
-    #[serde(deserialize_with = "de_format_priority")]
-    pub format_priority: Vec<ManifestationFormat>,
-    /// Source cleanup (`REVERIE_CLEANUP_MODE`, default `all`):
-    /// completed/skipped selections (`ingested`), also their same-group siblings
-    /// (`all`), or disabled (`none`); independent of failure/quarantine handling.
-    pub cleanup_mode: CleanupMode,
+    /// Accepted ingestion formats (`REVERIE_ACCEPTED_FORMATS`, comma-separated;
+    /// default `epub`). Seeds settings once; saved values win. An empty list suspends acquisition.
+    #[serde(deserialize_with = "de_accepted_formats")]
+    pub accepted_formats: Vec<ManifestationFormat>,
+    /// Initial imported-source cleanup setting (`REVERIE_CLEANUP_IMPORTED`, default `true`); saved values win.
+    pub cleanup_imported: bool,
+    /// Initial duplicate-source cleanup setting (`REVERIE_CLEANUP_DUPLICATES`, default `false`); saved values win.
+    pub cleanup_duplicates: bool,
     /// Metadata enrichment knobs (concurrency, cache TTLs, etc.).
     #[validate(nested)]
     pub enrichment: EnrichmentConfig,
@@ -389,55 +383,6 @@ pub struct Config {
     #[serde(skip)]
     #[schemars(skip)]
     pub ingestion_dsn_defaulted: bool,
-}
-
-/// Source cleanup eligibility after a scan's per-file outcomes are recorded.
-///
-/// Wire format (JSON, DB `text` column): lowercase string, one of
-/// `"all"` | `"ingested"` | `"none"`.
-///
-/// Deliberately NOT `#[non_exhaustive]`: the ingestion watcher matches it
-/// exhaustively, so adding a variant is a compile error at the match site
-/// rather than a silent fall-through, the same property the `Command` enum
-/// relies on.
-#[derive(
-    Debug,
-    Clone,
-    Copy,
-    PartialEq,
-    Eq,
-    serde::Serialize,
-    serde::Deserialize,
-    schemars::JsonSchema,
-    utoipa::ToSchema,
-)]
-#[serde(rename_all = "lowercase")]
-pub enum CleanupMode {
-    /// Delete completed and skipped selected files and their siblings in the
-    /// same directory with the same case-insensitive filename stem.
-    All,
-    /// Delete only format-selected files whose jobs completed or were skipped.
-    Ingested,
-    /// Disable source cleanup; failure and quarantine handling still applies.
-    None,
-}
-
-impl CleanupMode {
-    /// Lowercase wire string matching the `#[serde(rename_all)]` mapping.
-    #[must_use]
-    pub const fn as_str(self) -> &'static str {
-        match self {
-            Self::All => "all",
-            Self::Ingested => "ingested",
-            Self::None => "none",
-        }
-    }
-}
-
-impl std::fmt::Display for CleanupMode {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(self.as_str())
-    }
 }
 
 /// Configuration-load failure mode. Surfaces missing required vars and
@@ -482,7 +427,7 @@ impl Config {
     /// Returns [`ConfigError::MissingVar`] when a required variable is
     /// unset (`DATABASE_URL`, `OIDC_*`); returns [`ConfigError::Invalid`]
     /// when an optional variable is set but fails parse or validation
-    /// (out-of-range numerics, unsupported `format_priority` entries,
+    /// (out-of-range numerics, unsupported `accepted_formats` entries,
     /// malformed URLs, header-injection-prone characters in
     /// `REVERIE_CSP_REPORT_ENDPOINT`, etc.); returns [`ConfigError::Multiple`]
     /// when more than one declarative validation fails together. The
@@ -636,7 +581,7 @@ impl Config {
     }
 }
 
-/// Deserialize the comma-separated `REVERIE_FORMAT_PRIORITY` surface
+/// Deserialize the comma-separated `REVERIE_ACCEPTED_FORMATS` surface
 /// (`epub,pdf,mobi`) into the ranked `Vec<ManifestationFormat>`.
 ///
 /// The env contract is bare CSV in a single variable — NOT figment array
@@ -644,30 +589,29 @@ impl Config {
 /// array parsing. Each token is trimmed, lowercased, and parsed via
 /// [`ManifestationFormat`]'s `FromStr`; an unsupported token rejects the whole
 /// value.
-fn de_format_priority<'de, D>(de: D) -> Result<Vec<ManifestationFormat>, D::Error>
+fn de_accepted_formats<'de, D>(de: D) -> Result<Vec<ManifestationFormat>, D::Error>
 where
     D: serde::Deserializer<'de>,
 {
     let raw = <String as serde::Deserialize>::deserialize(de)?;
-    let formats: Vec<ManifestationFormat> = raw
+    if raw.is_empty() {
+        return Ok(Vec::new());
+    }
+    let formats = raw
         .split(',')
-        .map(|s| s.trim().to_lowercase())
-        .filter(|s| !s.is_empty())
-        .map(|s| {
-            s.parse::<ManifestationFormat>().map_err(|_| {
-                serde::de::Error::custom(format!(
-                    "unsupported format '{s}'. Supported: epub, pdf, mobi, azw3, cbz, cbr"
-                ))
-            })
+        .map(|token| {
+            let token = token.trim().to_lowercase();
+            if token != "epub" {
+                return Err(serde::de::Error::custom(format!(
+                    "unsupported format '{token}'; supported: epub"
+                )));
+            }
+            Ok(ManifestationFormat::Epub)
         })
-        .collect::<Result<_, _>>()?;
-    // A non-empty raw value that yields zero formats (e.g. `","` or `" , "`)
-    // is rejected rather than silently producing an empty priority list — an
-    // empty list makes the ingestion pipeline skip every candidate file with
-    // no operator-visible cause.
-    if formats.is_empty() {
+        .collect::<Result<Vec<_>, D::Error>>()?;
+    if formats.len() > 1 {
         return Err(serde::de::Error::custom(
-            "must list at least one format. Supported: epub, pdf, mobi, azw3, cbz, cbr",
+            "accepted_formats contains duplicate format: epub",
         ));
     }
     Ok(formats)
@@ -811,14 +755,13 @@ fn join_path(prefix: &str, field: &str) -> String {
 
 impl Default for Config {
     fn default() -> Self {
-        let [library_path, ingestion_path, quarantine_path] = AbsoluteRootPath::defaults();
+        let [library_path, ingestion_path] = AbsoluteRootPath::defaults();
         Self {
             port: 3000,
             // REQUIRED — empty sentinel; reviewer handles MissingVar (GOTCHA-REQUIRED).
             database_url: String::new(),
             library_path,
             ingestion_path,
-            quarantine_path,
             log_level: "info".into(),
             db_max_connections: 10,
             login_rate_per_min: 10,
@@ -848,15 +791,9 @@ impl Default for Config {
             auto_migrate: false,
             // Falls back to database_url at post-deserialize time (Task 6).
             ingestion_database_url: String::new(),
-            format_priority: vec![
-                ManifestationFormat::Epub,
-                ManifestationFormat::Pdf,
-                ManifestationFormat::Mobi,
-                ManifestationFormat::Azw3,
-                ManifestationFormat::Cbz,
-                ManifestationFormat::Cbr,
-            ],
-            cleanup_mode: CleanupMode::All,
+            accepted_formats: vec![ManifestationFormat::Epub],
+            cleanup_imported: true,
+            cleanup_duplicates: false,
             enrichment: EnrichmentConfig::default(),
             cover: CoverConfig::default(),
             writeback: WritebackConfig::default(),
@@ -879,16 +816,11 @@ mod tests {
         let config = cfg_from(BASE_VARS).unwrap();
         assert_eq!(config.library_path.as_str(), "/data/library");
         assert_eq!(config.ingestion_path.as_str(), "/data/ingestion");
-        assert_eq!(config.quarantine_path.as_str(), "/data/quarantine");
     }
 
     #[test]
     fn library_storage_config_empty_and_relative_rejected() {
-        for var in [
-            "REVERIE_LIBRARY_PATH",
-            "REVERIE_INGESTION_PATH",
-            "REVERIE_QUARANTINE_PATH",
-        ] {
+        for var in ["REVERIE_LIBRARY_PATH", "REVERIE_INGESTION_PATH"] {
             for value in ["", "library", "./library", "../library"] {
                 let error = cfg_from_owned(&with_overrides(&[(var, value)])).unwrap_err();
                 assert!(matches!(error, ConfigError::Invalid { var: ref name, .. } if name == var));
@@ -911,7 +843,6 @@ mod tests {
         for (field, default) in [
             ("library_path", "/data/library"),
             ("ingestion_path", "/data/ingestion"),
-            ("quarantine_path", "/data/quarantine"),
         ] {
             assert_eq!(schema["properties"][field]["type"], "string");
             assert_eq!(schema["properties"][field]["default"], default);
@@ -1018,7 +949,6 @@ mod tests {
         assert_eq!(config.database_url, "postgres://test@localhost/reverie_dev");
         assert_eq!(config.library_path.as_str(), "/data/library");
         assert_eq!(config.ingestion_path.as_str(), "/data/ingestion");
-        assert_eq!(config.quarantine_path.as_str(), "/data/quarantine");
         assert_eq!(config.recovery_pin_dir, "/data/recovery-pins");
         // BASE_VARS exports DATABASE_URL_MIGRATION but leaves REVERIE_AUTO_MIGRATE
         // unset (off), so the DSN is intentionally NOT carried into Config.
@@ -1029,18 +959,9 @@ mod tests {
             config.ingestion_database_url,
             "postgres://test@localhost/reverie_dev"
         );
-        assert_eq!(
-            config.format_priority,
-            vec![
-                ManifestationFormat::Epub,
-                ManifestationFormat::Pdf,
-                ManifestationFormat::Mobi,
-                ManifestationFormat::Azw3,
-                ManifestationFormat::Cbz,
-                ManifestationFormat::Cbr,
-            ]
-        );
-        assert_eq!(config.cleanup_mode, CleanupMode::All);
+        assert_eq!(config.accepted_formats, vec![ManifestationFormat::Epub]);
+        assert!(config.cleanup_imported);
+        assert!(!config.cleanup_duplicates);
         // Enrichment defaults
         assert!(config.enrichment.enabled);
         assert_eq!(config.enrichment.concurrency, 2);
@@ -1090,7 +1011,6 @@ mod tests {
             ("REVERIE_PORT", "8080"),
             ("REVERIE_LIBRARY_PATH", "/data/library"),
             ("REVERIE_INGESTION_PATH", "/data/ingestion"),
-            ("REVERIE_QUARANTINE_PATH", "/data/quarantine"),
             ("RUST_LOG", "debug"),
         ]);
         let config = cfg_from_owned(&vars).unwrap();
@@ -1213,37 +1133,30 @@ mod tests {
     }
 
     #[test]
-    fn from_env_custom_ingestion_url_and_format_priority() {
+    fn from_env_custom_ingestion_url_and_accepted_formats() {
         let vars = with_overrides(&[
             (
                 "DATABASE_URL_INGESTION",
                 "postgres://ingestion@localhost/reverie_dev",
             ),
-            ("REVERIE_FORMAT_PRIORITY", "pdf, EPUB , mobi"),
+            ("REVERIE_ACCEPTED_FORMATS", " EPUB "),
         ]);
         let config = cfg_from_owned(&vars).unwrap();
         assert_eq!(
             config.ingestion_database_url,
             "postgres://ingestion@localhost/reverie_dev"
         );
-        assert_eq!(
-            config.format_priority,
-            vec![
-                ManifestationFormat::Pdf,
-                ManifestationFormat::Epub,
-                ManifestationFormat::Mobi,
-            ]
-        );
+        assert_eq!(config.accepted_formats, vec![ManifestationFormat::Epub]);
     }
 
     #[test]
-    fn from_env_rejects_unsupported_format_priority() {
-        let vars = with_overrides(&[("REVERIE_FORMAT_PRIORITY", "epub,djvu")]);
+    fn from_env_rejects_unsupported_accepted_formats() {
+        let vars = with_overrides(&[("REVERIE_ACCEPTED_FORMATS", "epub,djvu")]);
         let err = cfg_from_owned(&vars).unwrap_err();
         let msg = err.to_string();
         assert!(msg.contains("djvu"), "expected djvu in error: {msg}");
         assert!(
-            msg.contains("REVERIE_FORMAT_PRIORITY"),
+            msg.contains("REVERIE_ACCEPTED_FORMATS"),
             "expected var name in error: {msg}"
         );
     }
@@ -1727,11 +1640,11 @@ mod tests {
     }
 
     #[test]
-    fn from_env_invalid_cleanup_mode() {
-        let vars = with_overrides(&[("REVERIE_CLEANUP_MODE", "archive")]);
+    fn from_env_invalid_cleanup_imported() {
+        let vars = with_overrides(&[("REVERIE_CLEANUP_IMPORTED", "archive")]);
         let err = cfg_from_owned(&vars).unwrap_err();
         assert!(
-            err.to_string().contains("REVERIE_CLEANUP_MODE"),
+            err.to_string().contains("REVERIE_CLEANUP_IMPORTED"),
             "unexpected: {err}"
         );
     }
@@ -1761,13 +1674,16 @@ mod tests {
     }
 
     #[test]
-    fn format_priority_comma_only_is_rejected() {
+    fn accepted_formats_comma_only_is_rejected() {
         // A non-empty value that splits to zero formats must error, not boot
         // with an empty priority list that silently skips every file.
-        let vars = with_overrides(&[("REVERIE_FORMAT_PRIORITY", ",")]);
+        let vars = with_overrides(&[("REVERIE_ACCEPTED_FORMATS", ",")]);
         let err = cfg_from_owned(&vars).unwrap_err();
-        assert!(err.to_string().contains("REVERIE_FORMAT_PRIORITY"), "{err}");
-        assert!(err.to_string().contains("at least one format"), "{err}");
+        assert!(
+            err.to_string().contains("REVERIE_ACCEPTED_FORMATS"),
+            "{err}"
+        );
+        assert!(err.to_string().contains("unsupported format"), "{err}");
     }
 
     #[test]

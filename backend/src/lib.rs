@@ -310,7 +310,6 @@ pub async fn run() -> anyhow::Result<()> {
         services::files::LibraryFiles::open(
             [(library_id, root_config.library_path)],
             &root_config.ingestion_path,
-            &root_config.quarantine_path,
         )
     })
     .await
@@ -365,9 +364,9 @@ pub async fn run() -> anyhow::Result<()> {
         .await
         .map_err(|e| anyhow::anyhow!("failed to connect ingestion pool: {e}"))?;
 
-    let initial_settings = services::settings::load(&pool)
+    let initial_settings = services::settings::seed_ingestion(&pool, &config)
         .await
-        .map_err(|e| anyhow::anyhow!("failed to load settings from database: {e}"))?;
+        .map_err(|e| anyhow::anyhow!("failed to seed ingestion settings: {e}"))?;
     let settings = std::sync::Arc::new(tokio::sync::RwLock::new(initial_settings));
     let last_settings_reload = std::sync::Arc::new(tokio::sync::RwLock::new(None));
 
@@ -379,9 +378,11 @@ pub async fn run() -> anyhow::Result<()> {
             .ok_or_else(|| anyhow::anyhow!("login_rate_per_min must be >= 1"))?,
     );
 
+    let (ingestion, ingestion_commands) = services::ingestion::coordinator_channel();
     let state = AppState {
         pool,
         ingestion_pool,
+        ingestion,
         library_files,
         config: config.clone(),
         oidc,
@@ -431,12 +432,15 @@ pub async fn run() -> anyhow::Result<()> {
     let watcher_config = config.clone();
     let watcher_pool = state.ingestion_pool.clone();
     let watcher_files = state.library_files.clone();
+    let watcher_settings = state.settings.clone();
     let watcher_worker = tokio::spawn(async move {
         if let Err(e) = services::ingestion::run_watcher(
             watcher_config,
             watcher_pool,
             watcher_token,
             watcher_files,
+            watcher_settings,
+            ingestion_commands,
         )
         .await
         {

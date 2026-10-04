@@ -17,8 +17,7 @@ pub mod external_identifier;
 pub mod external_rating;
 /// Closed value set for the `identity_provider` Postgres `ENUM`.
 pub mod identity_provider;
-/// Per-file ingestion job rows produced by the import pipeline.
-pub mod ingestion_job;
+pub(crate) mod ingestion_input;
 /// Closed value set for the `ingestion_status` Postgres `ENUM`.
 pub mod ingestion_status;
 /// Response DTOs for the JSON library API (`/api/v1/books`, `/api/v1/works`).
