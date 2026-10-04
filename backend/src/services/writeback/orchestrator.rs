@@ -1290,12 +1290,42 @@ mod tests {
                 .0,
             job
         );
-        let (writeback, ingestion) = tokio::join!(
-            run_once(&wb, &config, &files, job, fixture_permit().await),
-            crate::services::ingestion::scan_once(&config, &ing, &files),
-        );
-        assert!(matches!(writeback.unwrap(), RunOutcome::Success { .. }));
-        assert_eq!(ingestion.unwrap().processed, 1);
+        let cancel = tokio_util::sync::CancellationToken::new();
+        let (handle, commands) = crate::services::ingestion::coordinator_channel();
+        let settings = crate::test_support::test_settings();
+        settings.write().await.ingestion.cleanup_imported = false;
+        let worker = tokio::spawn(crate::services::ingestion::run_watcher(
+            config.clone(),
+            ing.clone(),
+            cancel.clone(),
+            files.clone(),
+            settings,
+            commands,
+        ));
+        handle.scan().await.unwrap();
+        assert!(matches!(
+            run_once(&wb, &config, &files, job, fixture_permit().await)
+                .await
+                .unwrap(),
+            RunOutcome::Success { .. }
+        ));
+        tokio::time::timeout(std::time::Duration::from_secs(20), async {
+            loop {
+                let inputs = crate::models::ingestion_input::current_page(&ing, None)
+                    .await
+                    .unwrap();
+                if inputs.iter().any(|input| {
+                    input.status == crate::models::ingestion_input::InputStatus::Imported
+                }) {
+                    break;
+                }
+                tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+            }
+        })
+        .await
+        .unwrap();
+        cancel.cancel();
+        worker.await.unwrap().unwrap();
         let rows = sqlx::query!("SELECT m.id, m.file_path, c.manifestation_id FROM manifestations m JOIN library_path_claims c ON c.library_id = m.library_id AND c.path = m.file_path WHERE m.library_id = $1 ORDER BY m.id LIMIT 3", library_id.as_uuid()).fetch_all(&pool).await.unwrap();
         assert_eq!(rows.len(), 2);
         assert_ne!(rows[0].file_path, rows[1].file_path);

@@ -1,0 +1,21 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE ingestion_jobs SET publication_library_id = $4, publication_path = $5,\n         publication_identity = $6, publication_hash = $7, publication_size = $8\n         WHERE id = $1 AND input_id = $2 AND input_generation = $3 AND outcome IS NULL\n           AND publication_library_id IS NULL",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Int8",
+        "Uuid",
+        "Text",
+        "Jsonb",
+        "Text",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "618c60f3204c19905c1074665913b271a5c5b00840e202350f4fa46121784241"
+}

@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "UPDATE ingestion_inputs SET status = 'processing'\n         WHERE id = $1 AND generation = $2 AND status IN ('pending', 'operational_failure') RETURNING id",
+  "query": "UPDATE ingestion_inputs SET status = 'processing'\n         WHERE id = $1 AND generation = $2 AND status IN ('pending', 'operational_failure')\n           AND NOT EXISTS (SELECT 1 FROM ingestion_jobs j WHERE j.input_id = ingestion_inputs.id\n             AND j.publication_library_id IS NOT NULL) RETURNING id",
   "describe": {
     "columns": [
       {
@@ -25,5 +25,5 @@
       false
     ]
   },
-  "hash": "4561b16455010efd856ef5b266c6cb8d909de2fa8d062fbb420beea78f91fbb4"
+  "hash": "914491c4bf71da024e222360f973cfbfbb7a259e3677235a0acc8f36b7c7a4e3"
 }

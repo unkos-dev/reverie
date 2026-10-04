@@ -113,11 +113,14 @@ fingerprint, generation, status, reason, work link and removal bookkeeping. New 
 input and generation and carry typed outcomes separately from `job_status`; existing unlinked history remains readable.
 Suppressed and not-accepted inputs create no attempt. Terminal attempt and current-generation input updates share one
 transaction, and imported outcomes share the manifestation, work, draft and claim transaction. Removed input records
-retain history while a later arrival at the same name receives a new identity. `content_rating`, the cover columns
-(`cover_path`, `cover_sha256`, `cover_size_bytes`, `cover_source`, `has_embedded_cover`), and `accessibility_metadata`
-are likewise columns this table carries for a neighbouring subject's semantics. `suspected_duplicate_work_id`
-(`ON DELETE SET NULL` to `works`) is the one column that points sideways, at a candidate duplicate rather than the
-owning work.
+retain history while a later arrival at the same name receives a new identity. Linked jobs carry nullable publication
+library, relative path, unsigned device/`inode` identity, accepted hash and non-negative size together. Paired deferred
+failure fields require that evidence. A partial index supports bounded unresolved-job recovery. An acknowledged intent
+precedes filesystem visibility; the imported transaction clears it with the claim and outcome. `content_rating`, the
+cover columns (`cover_path`, `cover_sha256`, `cover_size_bytes`, `cover_source`, `has_embedded_cover`), and
+`accessibility_metadata` are likewise columns this table carries for a neighbouring subject's semantics.
+`suspected_duplicate_work_id` (`ON DELETE SET NULL` to `works`) is the one column that points sideways, at a candidate
+duplicate rather than the owning work.
 
 **Library ownership.** `libraries.id` defaults to `uuidv7()`. Its unique, non-empty `configuration_key` binds an
 identity to deployment configuration; the migration seeds `default`. The row stores no root path or naming policy.

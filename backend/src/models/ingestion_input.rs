@@ -101,6 +101,147 @@ pub struct Input {
     pub observed_at: DateTime<Utc>,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PublicationIdentity {
+    pub device: u64,
+    pub inode: u64,
+}
+
+pub struct Publication {
+    pub job: Uuid,
+    pub input_id: Uuid,
+    pub input_generation: i64,
+    pub library_id: Uuid,
+    pub path: String,
+    pub identity: sqlx::types::Json<PublicationIdentity>,
+    pub hash: String,
+    pub size: i64,
+    pub failure_class: Option<AttemptOutcome>,
+    pub failure_reason: Option<String>,
+    pub imported: bool,
+}
+
+pub async fn record_publication(
+    tx: &mut Transaction<'_, Postgres>,
+    input: &Input,
+    job: Uuid,
+    location: &crate::services::files::LibraryLocation,
+    identity: &PublicationIdentity,
+    hash: &str,
+    size: u64,
+) -> sqlx::Result<()> {
+    let size = i64::try_from(size).map_err(|error| sqlx::Error::Encode(Box::new(error)))?;
+    let updated = sqlx::query!(
+        "UPDATE ingestion_jobs SET publication_library_id = $4, publication_path = $5,
+         publication_identity = $6, publication_hash = $7, publication_size = $8
+         WHERE id = $1 AND input_id = $2 AND input_generation = $3 AND outcome IS NULL
+           AND publication_library_id IS NULL",
+        job,
+        input.id,
+        input.generation,
+        location.library_id.as_uuid(),
+        location.path.as_str(),
+        sqlx::types::Json(identity) as _,
+        hash,
+        size,
+    )
+    .execute(&mut **tx)
+    .await?;
+    if updated.rows_affected() != 1 {
+        return Err(sqlx::Error::RowNotFound);
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+pub async fn publication_page(
+    pool: &PgPool,
+    after: Option<Uuid>,
+) -> sqlx::Result<Vec<Publication>> {
+    publication_page_selected(pool, after, None).await
+}
+
+pub async fn publication_page_selected(
+    pool: &PgPool,
+    after: Option<Uuid>,
+    selected: Option<&[InputPath]>,
+) -> sqlx::Result<Vec<Publication>> {
+    let paths = selected.map(|paths| paths.iter().map(|path| path.0.clone()).collect::<Vec<_>>());
+    sqlx::query_as!(Publication,
+        r#"SELECT id AS job, input_id AS "input_id!", input_generation AS "input_generation!",
+             publication_library_id AS "library_id!", publication_path AS "path!",
+             publication_identity AS "identity!: sqlx::types::Json<PublicationIdentity>",
+             publication_hash AS "hash!", publication_size AS "size!",
+             publication_failure_class AS "failure_class: AttemptOutcome", publication_failure_reason AS failure_reason,
+             COALESCE(outcome = 'imported', false) AS "imported!"
+           FROM ingestion_jobs WHERE publication_library_id IS NOT NULL AND ($1::uuid IS NULL OR id > $1)
+             AND ($2::bytea[] IS NULL OR EXISTS (
+               SELECT 1 FROM ingestion_inputs i, UNNEST($2::bytea[]) AS selected(path)
+               WHERE i.id = ingestion_jobs.input_id AND (i.source_path = selected.path
+                 OR substring(i.source_path FROM 1 FOR octet_length(selected.path) + 1) = selected.path || '\x2f'::bytea)))
+           ORDER BY id LIMIT 100"#, after, paths.as_deref(),
+    ).fetch_all(pool).await
+}
+
+pub async fn clear_publication(tx: &mut Transaction<'_, Postgres>, job: Uuid) -> sqlx::Result<()> {
+    sqlx::query!(
+        "UPDATE ingestion_jobs SET publication_library_id = NULL, publication_path = NULL,
+         publication_identity = NULL, publication_hash = NULL, publication_size = NULL,
+         publication_failure_class = NULL, publication_failure_reason = NULL WHERE id = $1",
+        job,
+    )
+    .execute(&mut **tx)
+    .await?;
+    Ok(())
+}
+
+pub async fn foreign_publication(
+    tx: &mut Transaction<'_, Postgres>,
+    publication: &Publication,
+) -> sqlx::Result<()> {
+    clear_publication(tx, publication.job).await?;
+    sqlx::query!(
+        "UPDATE ingestion_jobs SET outcome = 'needs_change', status = 'failed', completed_at = now(),
+         error_message = 'publication name has another owner or changed content' WHERE id = $1 AND outcome IS NULL",
+        publication.job,
+    ).execute(&mut **tx).await?;
+    sqlx::query!(
+        "UPDATE ingestion_inputs SET status = 'operational_failure', completed_at = now(),
+         reason = 'publication name has another owner or changed content'
+         WHERE id = $1 AND generation = $2 AND status <> 'removed'",
+        publication.input_id,
+        publication.input_generation,
+    )
+    .execute(&mut **tx)
+    .await?;
+    Ok(())
+}
+
+pub async fn defer_publication(
+    pool: &PgPool,
+    job: Uuid,
+    class: AttemptOutcome,
+    reason: &str,
+) -> sqlx::Result<()> {
+    sqlx::query!(
+        "UPDATE ingestion_jobs SET publication_failure_class = $2, publication_failure_reason = $3
+         WHERE id = $1 AND publication_library_id IS NOT NULL",
+        job,
+        class as AttemptOutcome,
+        reason,
+    )
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+pub async fn imported_attempt(pool: &PgPool, job: Uuid) -> sqlx::Result<bool> {
+    sqlx::query_scalar!(
+        "SELECT COALESCE(outcome = 'imported', false) AS \"imported!\" FROM ingestion_jobs WHERE id = $1", job,
+    ).fetch_one(pool).await
+}
+
 pub async fn observe(
     pool: &PgPool,
     paths: &[InputPath],
@@ -119,14 +260,10 @@ pub async fn observe(
            ON CONFLICT (source_path) WHERE status <> 'removed'
            DO UPDATE SET
              fingerprint = EXCLUDED.fingerprint,
-             generation = ingestion_inputs.generation + (ingestion_inputs.fingerprint <> EXCLUDED.fingerprint)::int,
-             status = CASE WHEN ingestion_inputs.fingerprint <> EXCLUDED.fingerprint
-                      THEN 'pending'::ingestion_input_status ELSE ingestion_inputs.status END,
-             reason = CASE WHEN ingestion_inputs.fingerprint <> EXCLUDED.fingerprint THEN NULL ELSE ingestion_inputs.reason END,
-             work_id = CASE WHEN ingestion_inputs.fingerprint <> EXCLUDED.fingerprint THEN NULL ELSE ingestion_inputs.work_id END,
-             completed_at = CASE WHEN ingestion_inputs.fingerprint <> EXCLUDED.fingerprint THEN NULL ELSE ingestion_inputs.completed_at END,
-             retry_reset_at = CASE WHEN ingestion_inputs.fingerprint <> EXCLUDED.fingerprint THEN now() ELSE ingestion_inputs.retry_reset_at END,
-             observed_at = CASE WHEN ingestion_inputs.fingerprint <> EXCLUDED.fingerprint THEN now() ELSE ingestion_inputs.observed_at END
+             generation = ingestion_inputs.generation + 1,
+             status = 'pending', reason = NULL, work_id = NULL, completed_at = NULL,
+             retry_reset_at = now(), observed_at = now()
+           WHERE ingestion_inputs.fingerprint <> EXCLUDED.fingerprint
            RETURNING id, source_path, fingerprint AS "fingerprint: sqlx::types::Json<Fingerprint>",
              generation, status AS "status: InputStatus", reason, work_id, retry_reset_at, observed_at"#,
         &paths,
@@ -147,6 +284,22 @@ pub async fn current_page(pool: &PgPool, after: Option<Uuid>) -> sqlx::Result<Ve
     )
     .fetch_all(pool)
     .await
+}
+
+pub async fn selected_page(
+    pool: &PgPool,
+    paths: &[InputPath],
+    after: Option<Uuid>,
+) -> sqlx::Result<Vec<Input>> {
+    let paths = paths.iter().map(|path| path.0.clone()).collect::<Vec<_>>();
+    sqlx::query_as!(Input,
+        r#"SELECT id, source_path, fingerprint AS "fingerprint: sqlx::types::Json<Fingerprint>",
+             generation, status AS "status: InputStatus", reason, work_id, retry_reset_at, observed_at
+           FROM ingestion_inputs WHERE status <> 'removed' AND ($2::uuid IS NULL OR id > $2)
+             AND EXISTS (SELECT 1 FROM UNNEST($1::bytea[]) AS selected(path)
+               WHERE source_path = path OR substring(source_path FROM 1 FOR octet_length(path) + 1) = path || '/'::bytea)
+           ORDER BY id LIMIT 100"#, &paths, after,
+    ).fetch_all(pool).await
 }
 
 pub async fn current(pool: &PgPool, id: Uuid) -> sqlx::Result<Option<Input>> {
@@ -177,13 +330,14 @@ pub async fn reclaim(pool: &PgPool) -> sqlx::Result<()> {
     let mut tx = pool.begin().await?;
     sqlx::query!(
         "UPDATE ingestion_jobs SET status = 'failed', outcome = 'interrupted', completed_at = now()
-         WHERE input_id IS NOT NULL AND status IN ('queued', 'running')",
+         WHERE input_id IS NOT NULL AND status IN ('queued', 'running') AND publication_library_id IS NULL",
     )
     .execute(&mut *tx)
     .await?;
     sqlx::query!(
         "UPDATE ingestion_inputs SET status = 'pending', reason = NULL, retry_reset_at = clock_timestamp()
-         WHERE status = 'processing'",
+         WHERE status = 'processing' AND NOT EXISTS (SELECT 1 FROM ingestion_jobs j
+           WHERE j.input_id = ingestion_inputs.id AND j.publication_library_id IS NOT NULL)",
     )
     .execute(&mut *tx)
     .await?;
@@ -195,7 +349,9 @@ pub async fn begin_attempt(pool: &PgPool, input: &Input, batch: Uuid) -> sqlx::R
     let mut tx = pool.begin().await?;
     let claimed = sqlx::query!(
         "UPDATE ingestion_inputs SET status = 'processing'
-         WHERE id = $1 AND generation = $2 AND status IN ('pending', 'operational_failure') RETURNING id",
+         WHERE id = $1 AND generation = $2 AND status IN ('pending', 'operational_failure')
+           AND NOT EXISTS (SELECT 1 FROM ingestion_jobs j WHERE j.input_id = ingestion_inputs.id
+             AND j.publication_library_id IS NOT NULL) RETURNING id",
         input.id,
         input.generation,
     )
@@ -229,9 +385,13 @@ pub async fn finish(
 ) -> sqlx::Result<()> {
     let history = sqlx::query!(
         "UPDATE ingestion_jobs SET outcome = $2, completed_at = now(), error_message = $3,
+         publication_library_id = NULL, publication_path = NULL, publication_identity = NULL,
+         publication_hash = NULL, publication_size = NULL, publication_failure_class = NULL,
+         publication_failure_reason = NULL,
          status = CASE WHEN $2::ingestion_attempt_outcome = 'imported' THEN 'complete'::job_status
                        WHEN $2::ingestion_attempt_outcome IN ('duplicate', 'changed') THEN 'skipped'::job_status ELSE 'failed'::job_status END
-         WHERE id = $1 AND input_id = $4 AND input_generation = $5",
+         WHERE id = $1 AND input_id = $4 AND input_generation = $5
+           AND (publication_library_id IS NULL OR $2::ingestion_attempt_outcome = 'imported')",
         job,
         outcome as AttemptOutcome,
         reason,
@@ -351,6 +511,163 @@ pub async fn remove_many(
 mod tests {
     use super::*;
 
+    #[sqlx::test(migrations = "./migrations")]
+    async fn capability_ingestion_publication_acknowledged_evidence_blocks_reclaim_and_acquisition(
+        pool: PgPool,
+    ) {
+        let input = observed(&pool, 10).await;
+        let job = begin_attempt(&pool, &input, Uuid::new_v4()).await.unwrap();
+        let location = crate::services::files::LibraryLocation {
+            library_id: crate::models::storage_library::default_library_id(&pool)
+                .await
+                .unwrap(),
+            path: "book.epub".parse().unwrap(),
+        };
+        let identity = PublicationIdentity {
+            device: 42,
+            inode: u64::MAX,
+        };
+        let mut tx = pool.begin().await.unwrap();
+        record_publication(
+            &mut tx,
+            &input,
+            job,
+            &location,
+            &identity,
+            &"a".repeat(64),
+            10,
+        )
+        .await
+        .unwrap();
+        assert!(publication_page(&pool, None).await.unwrap().is_empty());
+        tx.commit().await.unwrap();
+        let evidence = publication_page(&pool, None).await.unwrap().remove(0);
+        assert_eq!(evidence.job, job);
+        assert_eq!(evidence.identity.0, identity);
+        assert_eq!(evidence.hash, "a".repeat(64));
+        assert_eq!(evidence.size, 10);
+        assert!(!evidence.imported);
+        reclaim(&pool).await.unwrap();
+        assert_eq!(
+            current(&pool, input.id).await.unwrap().unwrap().status,
+            InputStatus::Processing
+        );
+        assert!(begin_attempt(&pool, &input, Uuid::new_v4()).await.is_err());
+        let mut tx = pool.begin().await.unwrap();
+        assert!(
+            finish(
+                &mut tx,
+                &input,
+                job,
+                AttemptOutcome::NeedsChange,
+                InputStatus::OperationalFailure,
+                Some("unresolved"),
+                None
+            )
+            .await
+            .is_err()
+        );
+        tx.rollback().await.unwrap();
+        let mut tx = pool.begin().await.unwrap();
+        clear_publication(&mut tx, job).await.unwrap();
+        tx.commit().await.unwrap();
+        reclaim(&pool).await.unwrap();
+        assert_eq!(
+            current(&pool, input.id).await.unwrap().unwrap().status,
+            InputStatus::Pending
+        );
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn capability_ingestion_publication_pages_and_stale_disposition(pool: PgPool) {
+        let library_id = crate::models::storage_library::default_library_id(&pool)
+            .await
+            .unwrap();
+        let paths = (0..101)
+            .map(|index| InputPath::from_path(Path::new(&format!("{index}.epub"))).unwrap())
+            .collect::<Vec<_>>();
+        let inputs = observe(&pool, &paths, &vec![fingerprint(10); 101])
+            .await
+            .unwrap();
+        for input in &inputs {
+            let job = begin_attempt(&pool, input, Uuid::new_v4()).await.unwrap();
+            let location = crate::services::files::LibraryLocation {
+                library_id,
+                path: format!("{}.epub", input.id).parse().unwrap(),
+            };
+            let mut tx = pool.begin().await.unwrap();
+            record_publication(
+                &mut tx,
+                input,
+                job,
+                &location,
+                &PublicationIdentity {
+                    device: 1,
+                    inode: 2,
+                },
+                &"a".repeat(64),
+                10,
+            )
+            .await
+            .unwrap();
+            tx.commit().await.unwrap();
+        }
+        let first = publication_page(&pool, None).await.unwrap();
+        assert_eq!(first.len(), 100);
+        let second = publication_page(&pool, Some(first.last().unwrap().job))
+            .await
+            .unwrap();
+        assert_eq!(second.len(), 1);
+        assert!(
+            publication_page(&pool, Some(second[0].job))
+                .await
+                .unwrap()
+                .is_empty()
+        );
+        let old = &first[0];
+        let input = current(&pool, old.input_id).await.unwrap().unwrap();
+        let path = InputPath::from_bytes(input.source_path).unwrap();
+        let changed = observe(&pool, &[path], &[fingerprint(11)])
+            .await
+            .unwrap()
+            .remove(0);
+        let mut tx = pool.begin().await.unwrap();
+        foreign_publication(&mut tx, old).await.unwrap();
+        tx.commit().await.unwrap();
+        let current = current(&pool, input.id).await.unwrap().unwrap();
+        assert_eq!(current.generation, changed.generation);
+        assert_eq!(current.status, InputStatus::Pending);
+        assert!(current.reason.is_none());
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn capability_ingestion_publication_rejects_invalid_hash_and_oversized_length(
+        pool: PgPool,
+    ) {
+        let input = observed(&pool, 10).await;
+        let job = begin_attempt(&pool, &input, Uuid::new_v4()).await.unwrap();
+        let location = crate::services::files::LibraryLocation {
+            library_id: crate::models::storage_library::default_library_id(&pool)
+                .await
+                .unwrap(),
+            path: "book.epub".parse().unwrap(),
+        };
+        let identity = PublicationIdentity {
+            device: 1,
+            inode: 2,
+        };
+        for (hash, size) in [("bad".into(), 10), ("a".repeat(64), u64::MAX)] {
+            let mut tx = pool.begin().await.unwrap();
+            assert!(
+                record_publication(&mut tx, &input, job, &location, &identity, &hash, size)
+                    .await
+                    .is_err()
+            );
+            tx.rollback().await.unwrap();
+        }
+        assert!(publication_page(&pool, None).await.unwrap().is_empty());
+    }
+
     #[test]
     fn capability_ingestion_inputs_epub_only_and_imported_cleanup_defaults() {
         let config = crate::config::Config::default();
@@ -388,19 +705,24 @@ mod tests {
     }
 
     async fn observed(pool: &PgPool, size: u64) -> Input {
-        observe(
-            pool,
-            &[InputPath::from_path(Path::new("book.epub")).unwrap()],
-            &[fingerprint(size)],
-        )
-        .await
-        .unwrap()
-        .remove(0)
+        let paths = [InputPath::from_path(Path::new("book.epub")).unwrap()];
+        observe(pool, &paths, &[fingerprint(size)]).await.unwrap();
+        selected_page(pool, &paths, None).await.unwrap().remove(0)
     }
 
     #[sqlx::test(migrations = "./migrations")]
     async fn capability_ingestion_inputs_current_uniqueness_and_removed_replacement(pool: PgPool) {
         let original = observed(&pool, 10).await;
+        assert!(
+            observe(
+                &pool,
+                &[InputPath::from_path(Path::new("book.epub")).unwrap()],
+                &[fingerprint(10)]
+            )
+            .await
+            .unwrap()
+            .is_empty()
+        );
         let same = observed(&pool, 10).await;
         assert_eq!(same.id, original.id);
         assert_eq!(same.generation, 1);

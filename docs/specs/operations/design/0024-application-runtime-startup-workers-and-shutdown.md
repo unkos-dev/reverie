@@ -44,8 +44,9 @@ Depends on: `config::Config` for every setting `run` reads; `db::init_pool`, `db
 `db::run_migrations` and `db::verify_schema_current` for every database connection it opens;
 `auth::oidc::init_oidc_client` and `auth::jwt::init_jwt_validator` for the two optional identity clients it constructs;
 `security::csp::build_api_csp`, `security::csp::build_html_csp` and `security::dist_validation::validate_frontend_dist`
-for the CSP headers it finalises before building the router; `services::settings::load` for the initial settings
-snapshot; `build_router` for the Axum router it serves; and the five worker entry points named in Structure below.
+for the CSP headers it finalises before building the router; `services::settings::seed_ingestion` for the initial
+settings snapshot; `build_router` for the Axum router it serves; and the five worker entry points named in Structure
+below.
 
 Depended on by: `main.rs`, whose `#[tokio::main]` `main` is the sole caller of `parse_command` and the command
 entrypoints; the container image's `ENTRYPOINT`, which invokes the compiled binary with no arguments (the `Serve` path)
@@ -120,6 +121,11 @@ inside that owner. Delete and rename notifications bypass create/modify batching
 Shutdown cancellation propagates to the active attempt's child token, without a terminal outcome. The worker retains a
 running blocking closure until return; a kernel-blocked read can outlast the existing shared drain budget.
 
+The owner reconciles acknowledged publication evidence before reclaiming interrupted attempts under its advisory lock.
+Unresolved local ownership suspends only the affected input. Streaming accepts idle cancellation after 120 seconds;
+validation and publication are protected phases that retain earlier shutdown requests. Phase transitions reset idle
+observation. Watchdog ticks and completion precede queued watcher traffic.
+
 ## Interfaces and dependencies
 
 - The CLI surface `parse_command` accepts is the only interface `main.rs` exposes: no argument (`Serve`), or exactly one
@@ -190,8 +196,9 @@ running blocking closure until return; a kernel-blocked read can outlast the exi
    `config.resource_server_configured()` is true, using the same transport. A configured role without a transport fails
    startup. [OIDC outbound transport](../../accounts/design/0025-oidc-outbound-transport.md) describes the shared client
    policy and request paths.
-9. `db::init_pool` opens the ingestion pool; `services::settings::load` reads the initial settings row; the login rate
-   limiter is built from `config.login_rate_per_min`.
+9. `db::init_pool` opens the ingestion pool; `services::settings::seed_ingestion` conditionally seeds ingestion fields
+   through the primary pool and reads the winning settings row in one transaction; the login rate limiter is built from
+   `config.login_rate_per_min`.
 10. `AppState` is assembled with the opened `LibraryFiles`, and `build_router` is called on a clone of it.
 11. `db::init_writeback_pool` opens the writeback pool, and the TCP listener is bound. One more fallible call follows
     immediately: `listener.local_addr()` is read back to log the bound address. Nothing has been spawned yet at this
@@ -295,8 +302,8 @@ is never reached.
 
 Reverie owns managed-library writes and reorganisation. External tools coordinate or pause the application before
 changing managed files. An opened root remains tied to its directory object; replacing or relocating the configured root
-requires a coordinated restart. Provision and mount all three absolute roots before starting the server, and stop it
-before removing a mount: open directory handles can keep a mount busy. Directory existence cannot prove that the
+requires a coordinated restart. Provision and mount the library and ingestion roots before starting the server, and stop
+it before removing a mount: open directory handles can keep a mount busy. Directory existence cannot prove that the
 intended volume is mounted. Downloads use the owning capability after authorisation and never reopen an ambient path for
 streaming. The
 [incomplete producer and cover pipelines](../../../../debt/2026-09-30-library-location-pipelines-incomplete.md) retain

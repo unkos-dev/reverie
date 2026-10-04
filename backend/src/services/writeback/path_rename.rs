@@ -156,16 +156,55 @@ fn sync_directory(directory: &Dir) -> std::io::Result<()> {
 /// # Errors
 /// Returns contained lookup, creation or parent-sync errors before relocation.
 pub fn prepare_destination(root: &Dir, destination: &RelativeFilePath) -> std::io::Result<()> {
+    prepare_destination_inner(root, destination, None)
+}
+
+pub(crate) struct CreatedDirectory {
+    pub(crate) path: RelativeFilePath,
+    pub(crate) parent: Dir,
+    pub(crate) name: OsString,
+    pub(crate) identity: (u64, u64),
+}
+
+pub(crate) fn prepare_destination_tracked(
+    root: &Dir,
+    destination: &RelativeFilePath,
+    created: &mut Vec<CreatedDirectory>,
+) -> std::io::Result<()> {
+    prepare_destination_inner(root, destination, Some(created))
+}
+
+fn prepare_destination_inner(
+    root: &Dir,
+    destination: &RelativeFilePath,
+    mut created: Option<&mut Vec<CreatedDirectory>>,
+) -> std::io::Result<()> {
+    use cap_std::fs::MetadataExt;
     let mut directory = root.try_clone()?;
     let mut relative = PathBuf::new();
     if let Some(parent) = destination.as_path().parent() {
         for component in parent.components() {
+            relative.push(component);
             match directory.create_dir(component.as_os_str()) {
-                Ok(()) => sync_directory(&directory)?,
+                Ok(()) => {
+                    if let Some(created) = &mut created {
+                        let metadata = directory.symlink_metadata(component.as_os_str())?;
+                        created.push(CreatedDirectory {
+                            path: relative
+                                .to_str()
+                                .ok_or_else(|| std::io::Error::other("invalid created directory"))?
+                                .parse()
+                                .map_err(std::io::Error::other)?,
+                            parent: directory.try_clone()?,
+                            name: component.as_os_str().to_owned(),
+                            identity: (metadata.dev(), metadata.ino()),
+                        });
+                    }
+                    sync_directory(&directory)?;
+                }
                 Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {}
                 Err(error) => return Err(error),
             }
-            relative.push(component);
             directory = root.open_dir(&relative)?;
         }
     }
@@ -181,7 +220,7 @@ fn rename_no_replace(
     renameat_with(source, name, target, destination, RenameFlags::NOREPLACE).map_err(Into::into)
 }
 
-fn commit_no_replace(
+pub(crate) fn commit_no_replace(
     source: &Dir,
     name: &OsStr,
     target: &Dir,

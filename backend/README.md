@@ -136,27 +136,37 @@ scans share that owner. An input needs ten seconds of observed unchanged size an
 202 after discovery with queued, deferred and suppressed counts and `/api/v1/dashboard/activity` as its monitor. These
 counts describe discovery; they do not identify a separate import batch or promise completed imports.
 
+Startup and admin scans discover the full tree. Watcher events recheck affected names and directory trees, and
+finalisation refreshes only its source. Unchanged observations do not rewrite database rows or restart readiness.
+
 EPUB is the only accepted format and the default. An empty accepted-format set accepts nothing. Hidden entries and
 `Thumbs.db` are ignored; other files, including sidecars, remain independent inputs. Rejection preserves the original,
 records its reason and creates neither a manifestation nor a quarantine copy. Unchanged rejected inputs remain
 suppressed across restart. A changed fingerprint creates a new generation. Content duplicates link the existing work; a
 destination-path collision selects a suffix and does not establish duplication.
 
-Persisted settings control acceptance and cleanup through the existing settings API and live reload. Imported-source
-cleanup defaults to enabled; duplicate-source cleanup defaults to disabled. Cleanup requires an unchanged source and
-uses the current settings snapshot. Rejected and unaccepted files are retained. Upward pruning starts only from a
-successful deletion, stops at the ingestion root and preserves unrelated empty directories. A directory can be pruned
-only if every remaining entry is a regular `.DS_Store` or `Thumbs.db` file. Sidecars, other hidden files, directories
-and symlinks prevent pruning. The old format-priority, cleanup-mode and quarantine-root settings are removed.
+The three ingestion environment values seed settings once before startup completes. Saved database values then control
+acceptance and cleanup through the existing settings API and live reload, including empty acceptance and default values.
+Changing those environment values on restart does not overwrite saved settings. Imported-source cleanup defaults to
+enabled; duplicate-source cleanup defaults to disabled. Cleanup requires an unchanged source and uses the current
+settings snapshot. Rejected and unaccepted files are retained. Upward pruning starts only from a successful deletion,
+stops at the ingestion root and preserves unrelated empty directories. A directory can be pruned only if every remaining
+entry is a regular `.DS_Store` or `Thumbs.db` file. Sidecars, other hidden files, directories and symlinks prevent
+pruning. The old format-priority, cleanup-mode and quarantine-root settings are removed.
+
+A local cleanup error preserves the completed import or duplicate and its work link; other inputs continue. Successful
+deletion whose state update fails retains a live receipt for recommit. Absence without that receipt records
+`unattributed_disappearance`, including after restart, because absence alone cannot identify the actor.
 
 Attempts use a child of the worker's shutdown cancellation token and a progress counter. Source hashing and streaming
 check cancellation between 64 KiB chunks and advance progress after each chunk. There is no total-duration deadline.
-After 120 seconds without progress, the coordinator requests cancellation. Validation and no-overwrite publication
-finish their current operation before cancellation is handled. Cancellation discards the owned candidate and preserves
-the source. Attempt ownership lasts until the blocking closure returns. After five minutes without progress, a stall
-warning repeats every five minutes until that return. A read blocked inside the kernel cannot observe cancellation.
-Shutdown cancellation records no terminal outcome; startup reclaims interrupted attempts. A progressing large copy can
-exceed two minutes, and a blocked read can outlast the shared 30-second shutdown drain budget.
+After 120 seconds without streaming progress, the coordinator requests cancellation. Validation and publication are
+protected from idle cancellation; phase transitions reset idle observation and preserve earlier shutdown requests.
+Cancellation discards the owned candidate and preserves the source. Attempt ownership lasts until the blocking closure
+returns. After five minutes without progress, a stall warning repeats every five minutes until that return. A read
+blocked inside the kernel cannot observe cancellation. Shutdown cancellation records no terminal outcome; startup
+reclaims interrupted attempts. A progressing large copy can exceed two minutes, and a blocked read can outlast the
+shared 30-second shutdown drain budget.
 
 Operational failures have three classes:
 
@@ -174,6 +184,13 @@ Operational failures have three classes:
   linked attempt history since the last persisted retry reset, excluding shared-dependency and interrupted outcomes.
 - **Needs change:** Source EACCES or EPERM, ENAMETOOLONG, a non-regular file, ELOOP and an unrepresentable path do not
   retry automatically.
+
+Before final publication, the linked attempt durably records its exact library/name, candidate identity, accepted hash
+and size. The imported transaction clears this evidence with the manifestation claim and outcome. Startup reconciles
+unresolved evidence before reclaiming interrupted attempts. It preserves committed owners, including files relocated by
+writeback, and foreign content; only a verified unregistered owned name can be removed. Unavailable ownership, read,
+removal or required sync retains evidence and suspends that input while healthy unrelated inputs continue. Correct the
+obstruction and request a scan. Shared failures retain the global probe schedule.
 
 A new generation, startup reconstruction or an admin scan resets exhausted and needs-change inputs to eligibility,
 subject to readiness, and persists the retry-reset marker. Rejection suppression is unchanged. Retry timings and budgets

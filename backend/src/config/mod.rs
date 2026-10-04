@@ -339,12 +339,12 @@ pub struct Config {
     /// policies.
     pub ingestion_database_url: String,
     /// Accepted ingestion formats (`REVERIE_ACCEPTED_FORMATS`, comma-separated;
-    /// default `epub`). An empty list suspends acquisition.
+    /// default `epub`). Seeds settings once; saved values win. An empty list suspends acquisition.
     #[serde(deserialize_with = "de_accepted_formats")]
     pub accepted_formats: Vec<ManifestationFormat>,
-    /// Remove imported sources (`REVERIE_CLEANUP_IMPORTED`, default `true`).
+    /// Initial imported-source cleanup setting (`REVERIE_CLEANUP_IMPORTED`, default `true`); saved values win.
     pub cleanup_imported: bool,
-    /// Remove duplicate sources (`REVERIE_CLEANUP_DUPLICATES`, default `false`).
+    /// Initial duplicate-source cleanup setting (`REVERIE_CLEANUP_DUPLICATES`, default `false`); saved values win.
     pub cleanup_duplicates: bool,
     /// Metadata enrichment knobs (concurrency, cache TTLs, etc.).
     #[validate(nested)]

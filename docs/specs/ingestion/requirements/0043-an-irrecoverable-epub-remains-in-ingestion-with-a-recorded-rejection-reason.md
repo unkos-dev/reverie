@@ -22,7 +22,7 @@ externally shared source bytes.
 ## Acceptance criteria
 
 - A corrupt archive leaves the original byte-for-byte unchanged, records rejected input state and a reason, and creates
-  no manifestation or separate file copy. Checked by `scan_once_retains_corrupt_epub_and_reason` and
+  no manifestation or separate file copy. Checked by `capability_ingestion_owner_retains_corrupt_epub_and_reason` and
   `capability_ingestion_coordinator_import_duplicate_rejection_cleanup_and_restart_suppression`.
 - An unsafe archive name reaches the same irrecoverable outcome. The archive boundary is checked by
   `path_traversal_is_quarantined`; the ingestion handling applies to every irrecoverable outcome.
@@ -30,5 +30,5 @@ externally shared source bytes.
   `capability_ingestion_acquisition_rejected_candidate_never_publishes`.
 - An unchanged rejected generation remains suppressed across startup and an admin scan. A changed fingerprint restores
   eligibility as a new generation.
-- Validator execution failure is a separate trigger: `scan_once_validator_error_stores_failed_status` checks that the
-  accepted file can be registered with validation status `failed`.
+- Validator execution failure is a separate trigger: `capability_ingestion_owner_validator_error_stores_failed_status`
+  checks that the accepted file can be registered with validation status `failed`.

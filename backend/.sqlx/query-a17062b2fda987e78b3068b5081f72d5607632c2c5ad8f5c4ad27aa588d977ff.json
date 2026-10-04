@@ -1,0 +1,40 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT removal_cause, removed_at FROM ingestion_inputs WHERE id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "removal_cause",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "ingestion_inputs",
+            "name": "removal_cause"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "removed_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "ingestion_inputs",
+            "name": "removed_at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      true,
+      true
+    ]
+  },
+  "hash": "a17062b2fda987e78b3068b5081f72d5607632c2c5ad8f5c4ad27aa588d977ff"
+}

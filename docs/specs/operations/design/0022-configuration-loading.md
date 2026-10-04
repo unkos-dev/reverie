@@ -9,6 +9,7 @@ satisfies:
   - "REV-REQ-0064"
   - "REV-REQ-0066"
 governed-by:
+  - "REV-ADR-0012"
   - "REV-ADR-0023"
   - "REV-ADR-0051"
 ---
@@ -151,6 +152,13 @@ defaulting to EPUB, true and false. An empty accepted-format value accepts none.
 `REVERIE_ACCEPTED_FORMATS`, `REVERIE_CLEANUP_IMPORTED` and `REVERIE_CLEANUP_DUPLICATES`. The singleton settings row and
 monotonic live cache supply the worker's runtime values. Retry timings and budgets are internal constants. Quarantine
 has no configuration field or opened root.
+
+Before constructing that cache, `services::settings::seed_ingestion` uses the primary pool to conditionally seed the
+three ingestion fields from validated Config. Its transaction sets `ingestion_seeded`, advances revision and reads the
+winning row. A competing save supplying any ingestion field sets the marker, including empty or default values; saves of
+other fields do not. Restarts preserve seeded database values regardless of changed environment values. An unseeded row
+remains eligible at any revision. The marker is internal and has no configuration or API representation. Seed failure
+stops startup. Other worker settings retain their own loading behaviour.
 
 ## Runtime behaviour
 
