@@ -62,6 +62,9 @@ serve code unchanged. The two alternatives either open an XSS surface (pass-thro
 Rasterisation occurs at extraction, and the result is a PNG served through the existing raster path. The choice confines
 resource access to the EPUB and bounds input and render work.
 
+Text rendering is disabled because Standard Ebooks converts cover text to vector paths. This avoids font discovery,
+shaping dependencies and bundled fonts while retaining the canonical source's artwork.
+
 ### Consequences
 
 - Positive: the canonical Standard Ebooks covers render as real artwork across the REST and OPDS cover routes.
@@ -92,8 +95,8 @@ resource access to the EPUB and bounds input and render work.
 
 - Positive: no rendering dependency.
 - Negative: stored-XSS surface (SVG can carry script); needs a sanitisation story and CSP changes on the cover route.
-- Negative: collapses the thumbnail/full size tiers, since resizing an SVG means rasterizing it anyway, so this does not
-  avoid a renderer.
+- Negative: pass-through SVG does not produce the raster thumbnails used by the existing delivery path; retaining that
+  path still requires a renderer.
 
 ### Prefer the raster sibling only
 
