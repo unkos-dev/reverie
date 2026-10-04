@@ -1,9 +1,9 @@
 //! Cover serving errors. Maps to HTTP status at the handler boundary:
-//! `NoCover` and `ArchiveRejected` → 404, everything else → 500.
+//! `NoCover`, `ArchiveRejected` and missing I/O map to 404; other failures map to 500.
 
 /// All failure modes that can arise when serving a cover image.
 ///
-/// `NoCover` and `ArchiveRejected` map to 404, everything else to 500;
+/// `NoCover`, `ArchiveRejected` and missing I/O map to 404; other failures map to 500;
 /// variants carry enough context for structured log fields without leaking
 /// internals to the client.
 #[derive(Debug, thiserror::Error)]

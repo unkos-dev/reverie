@@ -10,6 +10,7 @@ satisfies:
 governed-by:
   - "REV-ADR-0024"
   - "REV-ADR-0025"
+  - "REV-ADR-0051"
 ---
 
 # Covers
@@ -20,10 +21,10 @@ with tier-dependent encoding, caching the result on disk under a content-address
 with a strong validator and cache headers, and the client's fallback to a generated cloth-bound spine when a cover fails
 to load.
 
-Cover request misses use the authorised row's library identity and checked relative location to open the source EPUB.
-Warming consumes an already-opened source handle. Cache publication and response-file opening use the configured ambient
-cache root; the [pipeline limitation](../../../../debt/2026-09-30-library-location-pipelines-incomplete.md) tracks those
-remaining owners.
+Cover requests select cache and source authority from the authorised row's library identity and checked relative
+location. Warming retains that identity and an already-opened accepted source.
+
+Both writers use capability-based cache publication. Responses stream an opened cache handle.
 
 ## Purpose and boundaries
 
@@ -68,8 +69,8 @@ It does not own the `manifestations.file_path` and `current_file_hash` columns t
 manifestations data model".
 
 Depends on: `manifestations.library_id`, `file_path` and `current_file_hash`, read inside an RLS-scoped transaction for
-every request-path lookup; `config.library_path`, which roots the cache directory; `config.opds.enabled`, which gates
-only the OPDS mount's runtime mount (the API mount is unconditional).
+every request-path lookup; immutable `LibraryFiles` bindings, which supply source and cache authority;
+`config.opds.enabled`, which gates only the OPDS mount's runtime mount (the API mount is unconditional).
 
 Depended on by: the library grid, the library table view, the book detail page, the book detail drawer, and the series
 page on the client, all of which request only the thumbnail tier; OPDS reader apps, which reach both tiers through the
@@ -81,27 +82,29 @@ calls this subject's pre-warm mechanism after a successful ingest.
 
 ### State-writer census
 
-The shared mutable state is the on-disk cache file at
-`{library_path}/_covers/cache/{manifestation_id}-{hash16}- {tier}.{ext}`. Two independent call paths can write the same
-path:
+The cache lives at `_covers/cache/{manifestation_id}-{hash16}-{tier}.{ext}` beneath the recorded owning library.
 
-| State item | Where it lives | Writers |
-| ---------- | -------------- | ------- |
-| Cached cover file | `{library_path}/_covers/cache/…` | `get_or_create` (request-path miss) and `warm_one` (background pre-warm) |
+| State item    | Where it lives                   | Writers                                 |
+| ------------- | -------------------------------- | --------------------------------------- |
+| Cached raster | Owning library's `_covers/cache` | Request misses and asynchronous warming |
 
-Both funnel through the one write primitive, `CoverCache::write_atomic`: a temporary file in the cache directory,
-written and flushed, then renamed into place, so a partial write is never visible at the final path. Neither writer
-takes a lock over the destination path, and nothing coordinates the two: a request-path miss racing a pre-warm task for
-the same `(manifestation_id, file_hash, size)`, or two concurrent request-path misses for the same cover, can both run
-the extract-resize-write pipeline and both call `write_atomic` for the same destination. This is safe only because the
-destination path is itself content-addressed: every writer computing the same key from the same source bytes produces
-the same output bytes, so the redundant write is a no-op in effect, and `write_atomic`'s own documentation records
-last-writer-wins on identical content as benign.
+Both writers call `generate_into_cache` and `CoverCache::publish`, sharing the same `publish_cover_bytes` primitive. It
+creates a `cap-tempfile` temporary in the opened directory, writes and flushes complete bytes, retains a rewound handle
+and replaces the final basename. Publication imposes no forced fsync or additional permission policy. Temporary
+ownership cleans up an unsuccessful publication; an obstructed destination retains its existing bytes.
 
-`cached_hit`, the read side both writers probe before generating, narrows this: the thumbnail tier probes only the `jpg`
-extension, so a `png` or `webp` file at a thumbnail cache path is never read back by either writer. Such a file is
-neither served nor removed; a fresh `jpg` copy is generated and cached alongside it. The full tier probes `jpg`, `png`,
-and `webp` in that order, so it does not have this gap.
+Each blocking operation creates and opens the lazy cache directory through its library capability. That operation
+retains the directory; no cache Dir survives for the process lifetime. Removal between completed operations is repaired
+by the next operation's normal directory creation. Removal during an operation can fail that operation; there is no
+retry or reader fallback.
+
+Concurrent writers may generate the same key. They take no destination lock: identical source bytes and tier produce
+identical encoded bytes, and complete last-writer-wins replacement is benign. An opened response handle remains tied to
+its file object after another writer replaces or removes the name.
+
+`CoverCache::open` probes only JPEG for thumbnails, and JPEG, PNG then WebP for full covers. Stale thumbnail PNG or WebP
+entries are neither read nor removed; generation publishes a JPEG alongside them. Only missing names are cache misses. A
+non-file entry or another contained-open error fails the operation.
 
 ### Component relationships
 
@@ -131,8 +134,8 @@ and `webp` in that order, so it does not have this gap.
   `warm_one` runs it from a background task, bounded by the `WARM_LIMIT` semaphore (three concurrent permits), which
   `spawn_warm_thumb` acquires before generating; nothing in the tree closes this semaphore.
 - `routes/opds/covers.rs::serve_cover` is the one handler body both HTTP mounts share. It calls `get_or_create`,
-  resolves the response by `CoverError` variant, checks a matching `If-None-Match` against the artifact's `ETag` before
-  opening the file, and attaches the cache headers on every response that carries a body.
+  resolves the response by `CoverError` variant and compares `If-None-Match` only after the artifact's file has been
+  opened. A match returns the validator and cache headers without streaming a body; a miss streams that same handle.
 - The two mounts differ only in extractor wrapping and runtime gating: `covers::opds_router()` builds
   `/opds/books/{id}/cover{,/thumb}` behind `BasicOnly`, mounted only when `config.opds.enabled` (though always
   documented in the OpenAPI spec); `covers::api_router()`, exposed as `routes::opds::covers_router()`, builds
@@ -154,11 +157,11 @@ and `webp` in that order, so it does not have this gap.
   `svg::rasterize_svg(svg_bytes, resolve_sibling) -> Result<Vec<u8>, CoverError>`;
   `svg::parses_as_svg(svg_bytes) -> bool`, called by the Design "EPUB validation and repair";
   `resize_cover(bytes, fmt, size) -> Result<(Vec<u8>, ImageFormat), CoverError>`.
-- `CoverCache::new(root)`, `::ensure_dir()`, `::cached_path(manifestation_id, file_hash_prefix, size, ext) -> PathBuf`,
-  `::write_atomic(dest, bytes)`.
+- `CoverCache::new(library: &Dir)` opens one operation's lazy cache; `open(id, hash, size)` returns an optional opened
+  artefact; `publish(id, hash, size, encoding, bytes)` publishes complete bytes and returns their opened handle.
 - `get_or_create(state, manifestation_id, user_id, size) -> Result<CoverArtifact, CoverError>`, the request-path entry
-  point; `spawn_warm_thumb(library_path, manifestation_id, file_hash, epub_file)`, the pre-warm entry point the Design
-  "Ingestion pipeline" calls.
+  point; `spawn_warm_thumb(files, library_id, manifestation_id, file_hash, epub_file)`, the pre-warm entry point the
+  Design "Ingestion pipeline" calls.
 - Four `GET` endpoints, documented in the OpenAPI spec generated from `routes/opds/covers.rs`: `/opds/books/{id}/cover`,
   `/opds/books/{id}/cover/thumb` (Basic auth), `/api/v1/books/{id}/cover`, `/api/v1/books/{id}/cover/thumb` (session
   cookie, device-token bearer, OIDC bearer, or Basic). Each returns the image bytes with `Cache-Control`, a strong
@@ -171,11 +174,11 @@ and `webp` in that order, so it does not have this gap.
 
 ## Data and state
 
-- **`CoverArtifact`**: `{ path: PathBuf, etag: String }`, the request-path result `get_or_create` returns; `etag` is
-  unquoted, `"{file_hash[..16]}-{full|thumb}"`.
-- **The cache key.** `cache.rs::cached_path` and `mod.rs::etag_for` derive the same sixteen-character
-  `current_file_hash` prefix and size tag independently but identically, so the validator and the cache filename change
-  together, exactly when a writeback changes the file's content hash.
+- **`CoverArtifact`**: `{ file: File, encoding: CoverEncoding, etag: String }`. The file is opened and rewound; the
+  closed encoding set is JPEG, PNG and WebP. The validator is unquoted, `"{file_hash[..16]}-{full|thumb}"`.
+- **The cache key.** A checked hexadecimal content hash supplies its first sixteen characters; the manifestation UUID,
+  tier and closed encoding supply the remaining basename. The validator uses that same prefix and tier. A writeback's
+  changed `current_file_hash` changes both key and validator.
 - **Size tiers.** `Full`: long edge capped at 1200 px, source format preserved. `Thumb`: long edge capped at 300 px,
   always JPEG at quality 82 (white-composited first, since JPEG carries no alpha channel).
 - **SVG hardening budgets** (`svg.rs`): input bytes capped at 4 MiB; a single embedded raster (sibling or data URI)
@@ -201,15 +204,14 @@ and `webp` in that order, so it does not have this gap.
    manifestation's `library_id`, `file_path` and `current_file_hash`, and drops the transaction immediately after.
 2. A row RLS hides, or that does not exist, yields the same `CoverError::NoCover` as a manifestation with no cover;
    `get_or_create` cannot tell the two apart, by construction.
-3. `cached_hit` probes the cache directory for an already-encoded file at this tier (`jpg` only for `Thumb`; `jpg`,
-   `png`, `webp` in order for `Full`). A hit returns immediately with no filesystem write and no archive access.
-4. A miss parses the checked relative location and enters `spawn_blocking`, opening through the recorded library before
-   `generate_into_cache`. `extract_cover_bytes` admits that opened archive and locates the cover (rasterising it first
-   if it is SVG-declared), `resize_cover` resizes and encodes for the tier, and `CoverCache::write_atomic` writes the
-   result under its content-addressed name.
-5. `serve_cover` compares a request's `If-None-Match` against the artifact's quoted `ETag`; a match returns `304` with
-   the cache headers and no body. Otherwise it opens the cached file, derives `Content-Type` from its extension, and
-   streams it with the cache headers and a `200`.
+3. The recorded path is parsed and `spawn_blocking` selects its library capability before any cache lookup. An unknown
+   identity cannot use a default cache. `CoverCache::new` opens the operation's lazy cache and `open` probes its tier. A
+   hit returns an opened file without source archive access.
+4. A miss opens the recorded source through that same library, then calls `generate_into_cache`. Extraction locates and
+   rasterises the cover as needed; resizing encodes the tier; shared publication returns a rewound file handle.
+5. `serve_cover` compares `If-None-Match` against the artefact's quoted validator. A match drops the already-opened file
+   and returns `304` with cache headers and no body. Otherwise it transfers the file into Tokio and streams it as `200`,
+   deriving `Content-Type` from the closed encoding. Missing or denied files fail before conditional matching.
 
 **Rasterising an SVG-declared cover**, inside step 4 above, entirely before any byte reaches the resize step:
 
@@ -230,11 +232,11 @@ and `webp` in that order, so it does not have this gap.
 
 **Pre-warming a thumbnail at ingestion**, off the request path: the Design "Ingestion pipeline", after a successful EPUB
 ingest, evaluates a gate predicate over the manifestation's format and its ingestion-time `has_embedded_cover` value
-and, when it passes, opens the known final copy through its library capability and calls `spawn_warm_thumb`. The call is
-detached (`tokio::spawn`) and best-effort: it acquires one of `WARM_LIMIT`'s three permits, runs `warm_one` (the same
-`cached_hit`-then-`generate_into_cache` sequence as the request path, but for the thumbnail tier only), and logs any
-outcome without returning it to the caller. Full-size covers are never pre-warmed; a full-size cover is generated on its
-first request instead.
+and, when it passes, opens the recorded final copy and passes its handle, library identity and `LibraryFiles` into
+`spawn_warm_thumb`. The call is detached (`tokio::spawn`) and best-effort: it acquires one of `WARM_LIMIT`'s three
+permits, runs `warm_one` (the same capability-selected cache-open and generation sequence as the request path, but for
+the thumbnail tier only), and logs any outcome without returning it to the caller. Full-size covers are never
+pre-warmed; a full-size cover is generated on its first request instead.
 
 **Reacting to a cover load on the client**: five surfaces render a server-supplied `cover_url` through their own `<img>`
 element; four of the five also hold their own local failure state. `cover_url` is always a non-empty, server-constructed
@@ -269,11 +271,11 @@ still names.
   `AppError::NotFound`, with neither a `Cache-Control` nor a `Vary` header attached by this subject or by anything the
   response passes through afterwards. An RLS-hidden manifestation is response-identical to a manifestation that
   genuinely has no cover, by the construction in Runtime behaviour above.
-- **A cover file missing from disk**, whether `get_or_create` resolved a stale cache entry that was removed before the
-  file could be opened, or the source EPUB itself has moved: this is a distinct `404` shape, `cover_miss_not_found()`,
-  carrying `Cache-Control: private, max-age=60` and the same `Vary` as a success, so a grid of missing covers is not
-  re-derived from disk on every navigation, but at a far shorter negative TTL than a real cover's day-long cache, since
-  the underlying file can reappear (a re-scan, a remounted library) with no `ETag` for the browser to re-check against.
+- **A missing source or a NotFound I/O failure during generation/publication.** This is a distinct `404` shape,
+  `cover_miss_not_found()`, carrying `Cache-Control: private, max-age=60` and the same `Vary` as a success, so a grid of
+  missing covers is not re-derived from disk on every navigation, but at a far shorter negative TTL than a real cover's
+  day-long cache, since the underlying file can reappear (a re-scan, a remounted library) with no `ETag` for the browser
+  to re-check against.
 - **Every other `CoverError`** is a server error (`AppError::Internal`, `500`), never a `404`: a decode failure, an
   unsupported format, a database error, a corrupt ZIP, or any SVG hardening rejection (which the whole SVG pipeline in
   Runtime behaviour surfaces only as `Decode`). The client cannot tell this apart from a `404` by its visible behaviour,
@@ -283,14 +285,14 @@ still names.
   logged and swallowed failure on the pre-warm path.
 - **A generation race.** Two writers computing the same content-addressed cache key at the same time (a request-path
   miss racing a pre-warm task, or two concurrent request-path misses) each run the full extract-resize-write pipeline
-  and each call `write_atomic` for the same destination; this is wasted work, not a correctness risk, since the two
-  writes produce identical bytes and the atomic rename leaves one intact file regardless of which finishes last.
-- **A `png` or `webp` file at a thumbnail cache path.** It is never matched by `cached_hit`'s `jpg`-only probe for that
-  tier; it is neither served nor removed, and a fresh `jpg` copy accumulates alongside it.
+  and each call `CoverCache::publish` for the same destination; this is wasted work, not a correctness risk, since the
+  two writes produce identical bytes and the atomic rename leaves one intact file regardless of which finishes last.
+- **A `png` or `webp` file at a thumbnail cache path.** It is never matched by `CoverCache::open`'s `jpg`-only probe for
+  that tier; it is neither served nor removed, and a fresh `jpg` copy accumulates alongside it.
 - **An orphaned cache file after a writeback.** A writeback that changes `current_file_hash` re-keys every subsequent
   cache lookup for that manifestation; the file cached under the old hash is not deleted by this rewrite, by
-  `write_atomic`, or by any other code in the tree. The file accumulates on disk indefinitely; only an operator removing
-  it by hand reclaims the space.
+  `CoverCache::publish`, or by any other code in the tree. The file accumulates on disk indefinitely; only an operator
+  removing it by hand reclaims the space.
 - **A `WARM_LIMIT` semaphore acquire failure.** `spawn_warm_thumb` skips the pre-warm task with a logged warning when
   `WARM_LIMIT.acquire()` fails; nothing in the tree closes the semaphore, so no code path causes this branch to fire. A
   missed pre-warm never fails the ingest it was attached to regardless, and the same cover generates on the first real
@@ -320,10 +322,11 @@ archive-rejected cases) carries neither directive at all; without an explicit `C
 a response is cacheable is left to each cache's own heuristic freshness calculation under RFC 9111 §4.2.2, not to
 anything this subject specifies.
 
-This subject introduces no configuration of its own beyond the two settings it depends on (`library_path`,
-`opds.enabled`), both owned elsewhere; the SVG hardening budgets, the size-tier pixel caps, the JPEG quality, the cache
-header lifetimes, and the `WARM_LIMIT` concurrency bound are all compile-time constants, changeable only by a code
-change.
+Library-root acquisition belongs to startup, which supplies immutable capability bindings. This subject uses only
+recorded library identities and locations; rendering title or author metadata never selects a source or cache root.
+Contained cache directory creation, opening and publication cannot read or mutate targets outside that authority.
+`opds.enabled` remains the mount setting owned elsewhere. SVG budgets, tier caps, JPEG quality, cache lifetimes and
+`WARM_LIMIT` are compile-time constants.
 
 ## More information
 

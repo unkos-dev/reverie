@@ -17,7 +17,7 @@ use crate::services::epub::{
     Severity, container_layer, cover_layer, is_safe_path, opf_layer, zip_layer,
 };
 
-/// Read the EPUB at `epub_path` and return its cover's raw bytes and detected
+/// Read the opened EPUB and return its cover's raw bytes and detected
 /// `ImageFormat`.
 ///
 /// Locates the cover via EPUB 3 `properties="cover-image"`, falling back to

@@ -296,24 +296,8 @@ async fn serve_cover(
             .map_err(|e| AppError::Internal(e.into()));
     }
 
-    let content_type = match artifact.path.extension().and_then(|e| e.to_str()) {
-        Some("jpg" | "jpeg") => "image/jpeg",
-        Some("png") => "image/png",
-        Some("webp") => "image/webp",
-        _ => "application/octet-stream",
-    };
-
-    let file = match File::open(&artifact.path).await {
-        Ok(f) => f,
-        // The cached artifact was present when `get_or_create` resolved it but
-        // was removed before this open (a cache-eviction race). Same reasoning
-        // as the miss-path branch above: a missing file is a 404, not a 500.
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-            tracing::warn!(%manifestation_id, ?size, "cover file missing on disk; serving 404");
-            return Ok(cover_miss_not_found());
-        }
-        Err(e) => return Err(AppError::Internal(e.into())),
-    };
+    let content_type = artifact.encoding.content_type();
+    let file = File::from_std(artifact.file);
     let stream = ReaderStream::new(file);
     let body = Body::from_stream(stream);
 

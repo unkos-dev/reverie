@@ -118,12 +118,7 @@ struct Active {
 }
 
 impl Active {
-    fn recommit(
-        mut pending: PendingResult,
-        config: Config,
-        pool: PgPool,
-        files: LibraryFiles,
-    ) -> Self {
+    fn recommit(mut pending: PendingResult, pool: PgPool, files: LibraryFiles) -> Self {
         use futures::FutureExt;
         let progress = match &pending.result {
             ProcessResult::Accepted(accepted) => accepted.candidate.progress(),
@@ -134,7 +129,6 @@ impl Active {
             if let ProcessResult::Accepted(accepted) = &mut pending.result {
                 match std::panic::AssertUnwindSafe(finish_accepted(
                     accepted,
-                    &config,
                     &pool,
                     &files,
                     Some((&pending.input, pending.job)),
@@ -781,7 +775,6 @@ impl Coordinator {
             if let ProcessResult::Accepted(accepted) = &mut result {
                 match std::panic::AssertUnwindSafe(finish_accepted(
                     accepted,
-                    &config,
                     &pool,
                     &files,
                     Some((&input, job)),
@@ -841,7 +834,6 @@ impl Coordinator {
                             }
                             return Ok(Some(Active::recommit(
                                 pending,
-                                self.config.clone(),
                                 self.pool.clone(),
                                 self.files.clone(),
                             )));
@@ -885,7 +877,6 @@ impl Coordinator {
         if let ProcessResult::Accepted(accepted) = &mut pending.result {
             let completed = finish_accepted(
                 accepted,
-                &self.config,
                 &self.pool,
                 &self.files,
                 Some((&pending.input, pending.job)),
@@ -1914,7 +1905,6 @@ async fn accepted_from_validation(
 
 async fn finish_accepted(
     accepted: &mut Accepted,
-    config: &Config,
     pool: &PgPool,
     files: &LibraryFiles,
     attempt: Option<(&crate::models::ingestion_input::Input, Uuid)>,
@@ -1936,7 +1926,7 @@ async fn finish_accepted(
             }
         }
     }
-    match finish_accepted_inner(accepted, config, pool, files, attempt).await {
+    match finish_accepted_inner(accepted, pool, files, attempt).await {
         Ok(result) => {
             if accepted.failure.is_none()
                 && matches!(
@@ -2096,7 +2086,6 @@ async fn prune_library_parents(accepted: &mut Accepted, pool: &PgPool) -> anyhow
 
 async fn finish_accepted_inner(
     accepted: &mut Accepted,
-    config: &Config,
     pool: &PgPool,
     files: &LibraryFiles,
     attempt: Option<(&crate::models::ingestion_input::Input, Uuid)>,
@@ -2127,7 +2116,7 @@ async fn finish_accepted_inner(
             location.library_id.as_uuid(), location.path.as_str(), &copied.sha256,
         ).fetch_optional(pool).await?;
         if let Some(row) = committed {
-            warm_accepted(accepted, config, files, row.id).await;
+            warm_accepted(accepted, files, row.id).await;
             return Ok(ProcessResult::Complete);
         }
     }
@@ -2136,7 +2125,7 @@ async fn finish_accepted_inner(
     {
         return Ok(result);
     }
-    commit_accepted(accepted, config, pool, files, attempt).await
+    commit_accepted(accepted, pool, files, attempt).await
 }
 
 async fn prepare_accepted_publication(
@@ -2293,7 +2282,6 @@ async fn publish_accepted(
 
 async fn commit_accepted(
     accepted: &mut Accepted,
-    config: &Config,
     pool: &PgPool,
     files: &LibraryFiles,
     attempt: Option<(&crate::models::ingestion_input::Input, Uuid)>,
@@ -2361,7 +2349,7 @@ async fn commit_accepted(
         Ok((work, manifestation)) => {
             accepted.created_directories.clear();
             tracing::info!(%work, %manifestation, "ingestion committed");
-            warm_accepted(accepted, config, files, manifestation).await;
+            warm_accepted(accepted, files, manifestation).await;
             Ok(ProcessResult::Complete)
         }
         Err(error) => {
@@ -2373,7 +2361,7 @@ async fn commit_accepted(
                 location.library_id.as_uuid(), location.path.as_str(), &copied.sha256,
             ).fetch_optional(pool).await?;
             if let Some(row) = committed {
-                warm_accepted(accepted, config, files, row.id).await;
+                warm_accepted(accepted, files, row.id).await;
                 return Ok(ProcessResult::Complete);
             }
             discard_publication(pool, files, location, copied.identity).await?;
@@ -2383,12 +2371,7 @@ async fn commit_accepted(
     }
 }
 
-async fn warm_accepted(
-    accepted: &Accepted,
-    config: &Config,
-    files: &LibraryFiles,
-    manifestation: Uuid,
-) {
+async fn warm_accepted(accepted: &Accepted, files: &LibraryFiles, manifestation: Uuid) {
     if !should_warm_cover(ManifestationFormat::Epub, accepted.has_embedded_cover) {
         return;
     }
@@ -2397,9 +2380,11 @@ async fn warm_accepted(
     };
     let phase_files = files.clone();
     let location = location.clone();
+    let library_id = location.library_id;
     match tokio::task::spawn_blocking(move || phase_files.open_source(&location)).await {
         Ok(Ok(opened)) => crate::services::covers::spawn_warm_thumb(
-            config.library_path.as_str().to_owned(),
+            files.clone(),
+            library_id,
             manifestation,
             accepted.current_hash.clone(),
             opened.file,
@@ -2989,7 +2974,7 @@ mod tests {
             .parse()
             .unwrap();
         assert!(matches!(
-            finish_accepted(&mut accepted, &config, &ing, &files, None)
+            finish_accepted(&mut accepted, &ing, &files, None)
                 .await
                 .unwrap(),
             ProcessResult::Operational(
@@ -3109,15 +3094,9 @@ mod tests {
         let root = owner.files.library(library_id).unwrap();
         let foreign = vec![b'x'; usize::try_from(publication.size).unwrap()];
         root.write(&publication.path, &foreign).unwrap();
-        let result = finish_accepted(
-            &mut accepted,
-            &owner.config,
-            &ing,
-            &owner.files,
-            Some((&input, job)),
-        )
-        .await
-        .unwrap();
+        let result = finish_accepted(&mut accepted, &ing, &owner.files, Some((&input, job)))
+            .await
+            .unwrap();
         assert!(matches!(
             result,
             ProcessResult::Operational(AttemptOutcome::NeedsChange, _)
@@ -3368,15 +3347,9 @@ mod tests {
         )
         .await
         .unwrap();
-        let result = finish_accepted(
-            &mut accepted,
-            &owner.config,
-            &ing,
-            &owner.files,
-            Some((&input, job)),
-        )
-        .await
-        .unwrap();
+        let result = finish_accepted(&mut accepted, &ing, &owner.files, Some((&input, job)))
+            .await
+            .unwrap();
         assert!(matches!(
             result,
             ProcessResult::Operational(AttemptOutcome::NeedsChange, _)
@@ -3428,15 +3401,9 @@ mod tests {
         let (input, job, mut accepted, publication) =
             published_attempt(&mut owner, "book.epub").await;
         assert!(matches!(
-            finish_accepted(
-                &mut accepted,
-                &owner.config,
-                &ing,
-                &owner.files,
-                Some((&input, job))
-            )
-            .await
-            .unwrap(),
+            finish_accepted(&mut accepted, &ing, &owner.files, Some((&input, job)))
+                .await
+                .unwrap(),
             ProcessResult::Complete
         ));
         let previous = accepted.published.as_ref().unwrap().0.clone();
@@ -3475,15 +3442,9 @@ mod tests {
         root.write(previous.path.as_path(), b"FOREIGN").unwrap();
         let bytes = root.read(destination.path.as_path()).unwrap();
         assert!(matches!(
-            finish_accepted(
-                &mut accepted,
-                &owner.config,
-                &ing,
-                &owner.files,
-                Some((&input, job))
-            )
-            .await
-            .unwrap(),
+            finish_accepted(&mut accepted, &ing, &owner.files, Some((&input, job)))
+                .await
+                .unwrap(),
             ProcessResult::Complete
         ));
         assert_eq!(root.read(previous.path.as_path()).unwrap(), b"FOREIGN");
@@ -3600,14 +3561,8 @@ mod tests {
             panic!("expected accepted input")
         };
         accepted.path = format!("{}.epub", "x".repeat(300)).parse().unwrap();
-        let completed = finish_accepted(
-            &mut accepted,
-            &owner.config,
-            &ing,
-            &owner.files,
-            Some((&input, job)),
-        )
-        .await;
+        let completed =
+            finish_accepted(&mut accepted, &ing, &owner.files, Some((&input, job))).await;
         assert!(
             matches!(
                 completed,
@@ -3770,7 +3725,7 @@ mod tests {
         let location = accepted.published.as_ref().unwrap().0.clone();
         ing.close().await;
         assert!(
-            finish_accepted(&mut accepted, &config, &ing, &files, Some((&input, job)))
+            finish_accepted(&mut accepted, &ing, &files, Some((&input, job)))
                 .await
                 .is_err()
         );
@@ -3832,14 +3787,8 @@ mod tests {
         let ProcessResult::Accepted(mut accepted) = result else {
             panic!("expected accepted input")
         };
-        let result = finish_accepted(
-            &mut accepted,
-            &config,
-            &ing,
-            &files,
-            Some((&input, Uuid::new_v4())),
-        )
-        .await;
+        let result =
+            finish_accepted(&mut accepted, &ing, &files, Some((&input, Uuid::new_v4()))).await;
         assert!(
             matches!(
                 result,
@@ -4403,7 +4352,7 @@ mod tests {
         accepted.published = Some((location.clone(), copied));
         ing.close().await;
         assert!(
-            finish_accepted(&mut accepted, &config, &ing, &files, Some((&input, job)))
+            finish_accepted(&mut accepted, &ing, &files, Some((&input, job)))
                 .await
                 .is_err()
         );
@@ -4418,15 +4367,9 @@ mod tests {
         assert!(source.path().join("book.epub").exists());
         let resumed = ingestion_pool_for(&pool).await;
         assert!(matches!(
-            finish_accepted(
-                &mut accepted,
-                &config,
-                &resumed,
-                &files,
-                Some((&input, job))
-            )
-            .await
-            .unwrap(),
+            finish_accepted(&mut accepted, &resumed, &files, Some((&input, job)))
+                .await
+                .unwrap(),
             ProcessResult::Complete
         ));
         assert_eq!(
@@ -4439,15 +4382,9 @@ mod tests {
         );
         let final_path = accepted.published.as_ref().unwrap().0.path.clone();
         assert!(matches!(
-            finish_accepted(
-                &mut accepted,
-                &config,
-                &resumed,
-                &files,
-                Some((&input, job))
-            )
-            .await
-            .unwrap(),
+            finish_accepted(&mut accepted, &resumed, &files, Some((&input, job)))
+                .await
+                .unwrap(),
             ProcessResult::Complete
         ));
         assert!(
@@ -4684,15 +4621,9 @@ mod tests {
         let (input, job, mut accepted, publication) =
             published_attempt(&mut owner, "book.epub").await;
         accepted.candidate.progress().cancel.cancel();
-        let result = finish_accepted(
-            &mut accepted,
-            &owner.config,
-            &ing,
-            &owner.files,
-            Some((&input, job)),
-        )
-        .await
-        .unwrap();
+        let result = finish_accepted(&mut accepted, &ing, &owner.files, Some((&input, job)))
+            .await
+            .unwrap();
         assert!(matches!(
             result,
             ProcessResult::Operational(

@@ -589,7 +589,8 @@
     {
       "governed-by": [
         "REV-ADR-0024",
-        "REV-ADR-0025"
+        "REV-ADR-0025",
+        "REV-ADR-0051"
       ],
       "id": "REV-DESIGN-0015",
       "kind": "design",
@@ -604,7 +605,8 @@
     {
       "governed-by": [
         "REV-ADR-0007",
-        "REV-ADR-0018"
+        "REV-ADR-0018",
+        "REV-ADR-0051"
       ],
       "id": "REV-DESIGN-0016",
       "kind": "design",

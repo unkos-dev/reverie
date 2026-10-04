@@ -306,9 +306,8 @@ requires a coordinated restart. Downloads classify paths through the root's cano
 capability, so replacing that directory can make downloads fail until restart. Provision and mount the library and
 ingestion roots before starting the server, and stop it before removing a mount: open directory handles can keep a mount
 busy. Directory existence cannot prove that the intended volume is mounted. Downloads use the owning capability after
-authorisation and never reopen an ambient path for streaming. The
-[incomplete producer and cover pipelines](../../../../debt/2026-09-30-library-location-pipelines-incomplete.md) retain
-their existing filesystem interfaces and block release readiness.
+authorisation and never reopen an ambient path for streaming. Ingestion, writeback, cover-source reads, cache
+publication and response opening use recorded locations through capabilities.
 
 When `auto_migrate` is unset or `false`, `run` never reads the migration DSN. Configuration loading forces
 `config.migration_database_url` to `None` whenever `auto_migrate` is `false` (covered by that subject, not restated
