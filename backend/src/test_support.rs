@@ -8,39 +8,42 @@ use crate::config::{
 use crate::models::manifestation_format::ManifestationFormat;
 use crate::state::AppState;
 
-pub fn test_library_files() -> crate::services::files::LibraryFiles {
-    let config = test_config();
-    test_library_files_at(
-        &config.library_path,
-        crate::models::storage_library::LibraryId::from_uuid(uuid::Uuid::new_v4()),
-    )
-}
-
 pub fn test_library_files_at(
     library: &crate::config::AbsoluteRootPath,
     id: crate::models::storage_library::LibraryId,
 ) -> crate::services::files::LibraryFiles {
+    test_storage_config(Some(library.as_path()), id).1
+}
+
+pub fn test_storage_config(
+    library: Option<&std::path::Path>,
+    id: crate::models::storage_library::LibraryId,
+) -> (Config, crate::services::files::LibraryFiles) {
     let staging = tempfile::tempdir().unwrap();
     let ingestion = staging.path().join("ingestion");
     let quarantine = staging.path().join("quarantine");
     std::fs::create_dir(&ingestion).unwrap();
     std::fs::create_dir(&quarantine).unwrap();
-    let mut fixtures = vec![staging];
-    let library = if library.as_str() == "/data/library" {
-        let fixture = tempfile::tempdir().unwrap();
-        let path = fixture.path().to_str().unwrap().parse().unwrap();
-        fixtures.push(fixture);
-        path
-    } else {
-        library.clone()
-    };
-    crate::services::files::LibraryFiles::open(
-        [(id, library)],
-        &ingestion.to_str().unwrap().parse().unwrap(),
-        &quarantine.to_str().unwrap().parse().unwrap(),
+    let library = library.map_or_else(
+        || {
+            let path = staging.path().join("library");
+            std::fs::create_dir(&path).unwrap();
+            path
+        },
+        std::path::Path::to_owned,
+    );
+    let mut config = test_config();
+    config.library_path = library.to_str().unwrap().parse().unwrap();
+    config.ingestion_path = ingestion.to_str().unwrap().parse().unwrap();
+    config.quarantine_path = quarantine.to_str().unwrap().parse().unwrap();
+    let files = crate::services::files::LibraryFiles::open(
+        [(id, config.library_path.clone())],
+        &config.ingestion_path,
+        &config.quarantine_path,
     )
     .unwrap()
-    .with_fixtures(fixtures)
+    .with_fixtures(vec![staging]);
+    (config, files)
 }
 
 pub fn test_config() -> Config {
@@ -208,17 +211,75 @@ pub fn test_settings() -> std::sync::Arc<tokio::sync::RwLock<crate::models::sett
 }
 
 pub fn test_state() -> AppState {
+    let (config, library_files) = test_storage_config(
+        None,
+        crate::models::storage_library::LibraryId::from_uuid(uuid::Uuid::new_v4()),
+    );
     AppState {
         pool: sqlx::PgPool::connect_lazy("postgres://invalid").unwrap(),
         ingestion_pool: sqlx::PgPool::connect_lazy("postgres://invalid").unwrap(),
-        library_files: crate::test_support::test_library_files(),
-        config: test_config(),
+        library_files,
+        config,
         oidc: Some(std::sync::Arc::new(test_oidc_runtime())),
         jwt_validator: None,
         login_limiter: test_login_limiter(),
         settings: test_settings(),
         last_settings_reload: std::sync::Arc::new(tokio::sync::RwLock::new(None)),
     }
+}
+
+#[tokio::test]
+async fn test_state_storage_roots_match_config_and_survive_cloning() {
+    let state = test_state();
+    for (dir, path) in [
+        (
+            state.library_files.ingestion(),
+            &state.config.ingestion_path,
+        ),
+        (
+            state.library_files.quarantine(),
+            &state.config.quarantine_path,
+        ),
+    ] {
+        dir.write("marker", b"fixture bytes").unwrap();
+        assert_eq!(
+            std::fs::read(path.as_path().join("marker")).unwrap(),
+            b"fixture bytes"
+        );
+    }
+    let roots = [
+        state.config.library_path.as_path().to_owned(),
+        state.config.ingestion_path.as_path().to_owned(),
+        state.config.quarantine_path.as_path().to_owned(),
+    ];
+    let clone = state.clone();
+    drop(state);
+    assert!(roots.iter().all(|root| root.is_dir()));
+    drop(clone);
+    assert!(roots.iter().all(|root| !root.exists()));
+}
+
+#[test]
+fn test_storage_config_preserves_caller_owned_library() {
+    let library = tempfile::tempdir().unwrap();
+    let id = crate::models::storage_library::LibraryId::from_uuid(uuid::Uuid::new_v4());
+    let (config, files) = test_storage_config(Some(library.path()), id);
+    files
+        .library(id)
+        .unwrap()
+        .write("marker", b"library bytes")
+        .unwrap();
+    assert_eq!(
+        std::fs::read(config.library_path.as_path().join("marker")).unwrap(),
+        b"library bytes"
+    );
+    let staging = config.ingestion_path.as_path().to_owned();
+    drop(files);
+    assert!(!staging.exists());
+    assert_eq!(
+        std::fs::read(library.path().join("marker")).unwrap(),
+        b"library bytes"
+    );
 }
 
 /// Build the full application router with auth layer (for route integration tests).
@@ -538,11 +599,15 @@ pub mod db {
         ingestion_pool: &PgPool,
     ) -> axum_test::TestServer {
         use crate::state::AppState;
+        let (config, library_files) = crate::test_support::test_storage_config(
+            None,
+            crate::models::storage_library::LibraryId::from_uuid(uuid::Uuid::new_v4()),
+        );
         let state = AppState {
             pool: app_pool.clone(),
             ingestion_pool: ingestion_pool.clone(),
-            library_files: crate::test_support::test_library_files(),
-            config: super::test_config(),
+            library_files,
+            config,
             oidc: Some(std::sync::Arc::new(super::test_oidc_runtime())),
             jwt_validator: None,
             login_limiter: super::test_login_limiter(),
@@ -570,7 +635,10 @@ pub mod db {
     ) -> axum_test::TestServer {
         use crate::state::AppState;
 
-        let mut config = super::test_config();
+        let (mut config, library_files) = super::test_storage_config(
+            None,
+            crate::models::storage_library::LibraryId::from_uuid(uuid::Uuid::new_v4()),
+        );
         config.resource_server_issuer = mock.issuer().to_string();
         config.resource_server_audience = audience.to_string();
         config.resource_server_jwks_url = mock.resource_server_jwks_url();
@@ -585,10 +653,7 @@ pub mod db {
         let state = AppState {
             pool: app_pool.clone(),
             ingestion_pool: ingestion_pool.clone(),
-            library_files: crate::test_support::test_library_files_at(
-                &config.library_path,
-                crate::models::storage_library::LibraryId::from_uuid(uuid::Uuid::new_v4()),
-            ),
+            library_files,
             config,
             oidc: Some(std::sync::Arc::new(super::test_oidc_runtime())),
             jwt_validator: Some(std::sync::Arc::new(validator)),
@@ -608,15 +673,15 @@ pub mod db {
         ingestion_pool: &PgPool,
     ) -> axum_test::TestServer {
         use crate::state::AppState;
-        let mut config = super::test_config();
+        let (mut config, library_files) = super::test_storage_config(
+            None,
+            crate::models::storage_library::LibraryId::from_uuid(uuid::Uuid::new_v4()),
+        );
         config.self_registration_enabled = true;
         let state = AppState {
             pool: app_pool.clone(),
             ingestion_pool: ingestion_pool.clone(),
-            library_files: crate::test_support::test_library_files_at(
-                &config.library_path,
-                crate::models::storage_library::LibraryId::from_uuid(uuid::Uuid::new_v4()),
-            ),
+            library_files,
             config,
             oidc: Some(std::sync::Arc::new(super::test_oidc_runtime())),
             jwt_validator: None,
@@ -641,15 +706,15 @@ pub mod db {
         per_min: u32,
     ) -> axum_test::TestServer {
         use crate::state::AppState;
-        let mut config = super::test_config();
+        let (mut config, library_files) = super::test_storage_config(
+            None,
+            crate::models::storage_library::LibraryId::from_uuid(uuid::Uuid::new_v4()),
+        );
         config.trusted_client_ip_header = Some("x-forwarded-for".to_owned());
         let state = AppState {
             pool: app_pool.clone(),
             ingestion_pool: ingestion_pool.clone(),
-            library_files: crate::test_support::test_library_files_at(
-                &config.library_path,
-                crate::models::storage_library::LibraryId::from_uuid(uuid::Uuid::new_v4()),
-            ),
+            library_files,
             config,
             oidc: Some(std::sync::Arc::new(super::test_oidc_runtime())),
             jwt_validator: None,
@@ -678,8 +743,12 @@ pub mod db {
         use crate::config::OpdsConfig;
         use crate::state::AppState;
 
-        let mut config = super::test_config();
-        config.library_path = library_path.to_str().unwrap().parse().unwrap();
+        let (mut config, library_files) = super::test_storage_config(
+            Some(library_path),
+            crate::models::storage_library::default_library_id(app_pool)
+                .await
+                .unwrap(),
+        );
         config.opds = OpdsConfig {
             enabled: true,
             page_size: 50,
@@ -689,12 +758,7 @@ pub mod db {
         let state = AppState {
             pool: app_pool.clone(),
             ingestion_pool: ingestion_pool.clone(),
-            library_files: crate::test_support::test_library_files_at(
-                &config.library_path,
-                crate::models::storage_library::default_library_id(app_pool)
-                    .await
-                    .unwrap(),
-            ),
+            library_files,
             config,
             oidc: Some(std::sync::Arc::new(super::test_oidc_runtime())),
             jwt_validator: None,
@@ -716,15 +780,15 @@ pub mod db {
         page_size: u32,
     ) -> axum_test::TestServer {
         use crate::state::AppState;
-        let mut config = super::test_config();
+        let (mut config, library_files) = super::test_storage_config(
+            None,
+            crate::models::storage_library::LibraryId::from_uuid(uuid::Uuid::new_v4()),
+        );
         config.opds.page_size = page_size;
         let state = AppState {
             pool: app_pool.clone(),
             ingestion_pool: ingestion_pool.clone(),
-            library_files: crate::test_support::test_library_files_at(
-                &config.library_path,
-                crate::models::storage_library::LibraryId::from_uuid(uuid::Uuid::new_v4()),
-            ),
+            library_files,
             config,
             oidc: Some(std::sync::Arc::new(super::test_oidc_runtime())),
             jwt_validator: None,
@@ -747,8 +811,12 @@ pub mod db {
         use crate::config::OpdsConfig;
         use crate::state::AppState;
 
-        let mut config = super::test_config();
-        config.library_path = library_path.to_str().unwrap().parse().unwrap();
+        let (mut config, library_files) = super::test_storage_config(
+            Some(library_path),
+            crate::models::storage_library::default_library_id(app_pool)
+                .await
+                .unwrap(),
+        );
         config.opds = OpdsConfig {
             enabled: true,
             page_size,
@@ -758,12 +826,7 @@ pub mod db {
         let state = AppState {
             pool: app_pool.clone(),
             ingestion_pool: ingestion_pool.clone(),
-            library_files: crate::test_support::test_library_files_at(
-                &config.library_path,
-                crate::models::storage_library::default_library_id(app_pool)
-                    .await
-                    .unwrap(),
-            ),
+            library_files,
             config,
             oidc: Some(std::sync::Arc::new(super::test_oidc_runtime())),
             jwt_validator: None,

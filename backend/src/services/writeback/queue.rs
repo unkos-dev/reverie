@@ -439,13 +439,19 @@ mod tests {
 
     use crate::test_support::db::{app_pool_for, ingestion_pool_for, writeback_pool_for};
 
-    fn test_config_with_max_attempts(max_attempts: u32) -> Config {
-        Config {
+    fn test_config_with_max_attempts(
+        max_attempts: u32,
+    ) -> (Config, crate::services::files::LibraryFiles) {
+        let (storage_config, files) = crate::test_support::test_storage_config(
+            None,
+            crate::models::storage_library::LibraryId::from_uuid(uuid::Uuid::new_v4()),
+        );
+        let config = Config {
             port: 3000,
             database_url: String::new(),
-            library_path: crate::config::Config::default().library_path,
-            ingestion_path: crate::config::Config::default().ingestion_path,
-            quarantine_path: crate::config::Config::default().quarantine_path,
+            library_path: storage_config.library_path,
+            ingestion_path: storage_config.ingestion_path,
+            quarantine_path: storage_config.quarantine_path,
             log_level: "info".into(),
             db_max_connections: 5,
             oidc_issuer_url: String::new(),
@@ -515,7 +521,8 @@ mod tests {
             hardcover_api_token: None,
             operator_contact: None,
             ingestion_dsn_defaulted: false,
-        }
+        };
+        (config, files)
     }
 
     /// Insert a minimal work + manifestation fixture and return ids.
@@ -867,7 +874,7 @@ mod tests {
         let (_work_id, m_id) = insert_fixture(&ing_pool, &marker).await;
         let job_id = insert_job(&ing_pool, m_id, "metadata").await;
 
-        let config = test_config_with_max_attempts(3);
+        let (config, _files) = test_config_with_max_attempts(3);
         mark_failed(&app_pool, job_id, 3, &config, Some("final"))
             .await
             .unwrap();
@@ -903,7 +910,7 @@ mod tests {
         let pool_for_spawn = app_pool.clone();
         let cancel = CancellationToken::new();
         let cancel_for_spawn = cancel.clone();
-        let cfg = test_config_with_max_attempts(3);
+        let (cfg, _files) = test_config_with_max_attempts(3);
         let handle = tokio::spawn(async move {
             spawn_worker(pool_for_spawn, cfg, cancel_for_spawn)
                 .await
@@ -948,7 +955,7 @@ mod tests {
 
         finish(
             &app_pool,
-            &test_config_with_max_attempts(3),
+            &test_config_with_max_attempts(3).0,
             job_id,
             1,
             Ok(RunOutcome::Success {
@@ -984,7 +991,7 @@ mod tests {
 
         finish(
             &app_pool,
-            &test_config_with_max_attempts(3),
+            &test_config_with_max_attempts(3).0,
             job_id,
             1, // well below max — still terminal for Skipped
             Ok(RunOutcome::Skipped {
@@ -1019,7 +1026,7 @@ mod tests {
 
         finish(
             &app_pool,
-            &test_config_with_max_attempts(3),
+            &test_config_with_max_attempts(3).0,
             job_id,
             1, // below max=3 → stays failed for retry
             Ok(RunOutcome::Failed {
@@ -1085,7 +1092,7 @@ mod tests {
 
         finish(
             &app_pool,
-            &test_config_with_max_attempts(3),
+            &test_config_with_max_attempts(3).0,
             job_id,
             1,
             outcome(),
@@ -1098,7 +1105,7 @@ mod tests {
         // attempt_count; same job + outcome → same event id.
         finish(
             &app_pool,
-            &test_config_with_max_attempts(3),
+            &test_config_with_max_attempts(3).0,
             job_id,
             2,
             outcome(),
@@ -1244,7 +1251,7 @@ mod tests {
 
         finish(
             &app_pool,
-            &test_config_with_max_attempts(3),
+            &test_config_with_max_attempts(3).0,
             job_id,
             1,
             Err(super::super::error::WritebackError::Persist(
@@ -1285,7 +1292,7 @@ mod tests {
 
         finish(
             &app_pool,
-            &test_config_with_max_attempts(3),
+            &test_config_with_max_attempts(3).0,
             job_id,
             1,
             Err(super::super::error::WritebackError::JobNotFound(job_id)),

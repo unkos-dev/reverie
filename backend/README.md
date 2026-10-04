@@ -134,7 +134,8 @@ policies. The `vite-plugins/csp-hash.ts` script hashes the inline `fouc.js` scri
 Reverie owns writes and reorganisation inside `REVERIE_LIBRARY_PATH`. Coordinate external tools with the application, or
 pause it before they change managed files. Relocating the root, replacing its directory or changing its mount requires a
 coordinated restart: an opened capability identifies the original directory object and does not follow a replacement
-path into another library.
+path into another library. Downloads classify paths through the root's canonical path before opening through the
+capability, so replacing that directory can make downloads fail until restart.
 
 `REVERIE_LIBRARY_PATH`, `REVERIE_INGESTION_PATH` and `REVERIE_QUARANTINE_PATH` must be absolute paths to provisioned
 directories. Mount the intended volumes before starting Reverie. The server opens all three roots before admin
