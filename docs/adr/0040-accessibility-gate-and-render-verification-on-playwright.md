@@ -52,6 +52,9 @@ The automated accessibility gate uses Playwright with axe against a product rout
 render verification uses Playwright, while manual audits retain responsibility for keyboard, screen-reader, focus, and
 motion behaviour that axe cannot establish.
 
+The manual accessibility pass remains due at every release tag and before any net-new view ships, covering the behaviour
+outside the automated gate's reach.
+
 ### Consequences
 
 - Positive: the gate runs on a vendor-supported test runner with a single lifecycle owner, on ARM64 and x86, and the

@@ -55,6 +55,9 @@ table since it is keyed to the one query both projections share.
 The drawer is the filter editing surface at every width; removable chips expose active conditions outside it. Search
 remains available in a shared toolbar, and the filter and book-detail drawers share an overlay slot.
 
+Closing the filter drawer preserves a distinction between cancelling and applying pending drafts: Escape abandons them,
+while the scrim or close button applies them. Focus returns to the control that opened the drawer.
+
 ### Consequences
 
 - Positive: removing one active filter condition now costs one click on its chip, reversing the two-click cost accepted
