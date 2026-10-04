@@ -32,7 +32,7 @@ async fn insert_epub_manifestation(
     let dest = library_root.join(format!("{marker}.epub"));
     std::fs::write(&dest, &epub_bytes).expect("write epub");
     let abs_path = std::fs::canonicalize(&dest).expect("canonicalize");
-    let file_path = abs_path.to_string_lossy().into_owned();
+    let file_path = format!("{marker}.epub");
 
     use sha2::{Digest, Sha256};
     let hash: String = Sha256::digest(&epub_bytes)
@@ -50,9 +50,9 @@ async fn insert_epub_manifestation(
 
     let m_id: Uuid = sqlx::query_scalar!(
         "INSERT INTO manifestations \
-            (work_id, format, file_path, ingestion_file_hash, current_file_hash, \
+            (library_id, work_id, format, file_path, ingestion_file_hash, current_file_hash, \
              file_size_bytes, ingestion_status, validation_status) \
-         VALUES ($1, 'epub'::manifestation_format, $2, $3, $3, $4, \
+         VALUES ((SELECT id FROM libraries WHERE configuration_key = 'default'), $1, 'epub'::manifestation_format, $2, $3, $3, $4, \
                  'complete'::ingestion_status, 'clean'::validation_status) \
          RETURNING id",
         work_id,
@@ -75,7 +75,8 @@ async fn root_feed_happy_path(pool: PgPool) {
     let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
     let (_admin, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
     let tmp = tempfile::TempDir::new().unwrap();
-    let server = test_support::db::server_with_opds_enabled(&app_pool, &ingestion_pool, tmp.path());
+    let server =
+        test_support::db::server_with_opds_enabled(&app_pool, &ingestion_pool, tmp.path()).await;
 
     let response = server.get("/opds").add_header(AUTHORIZATION, basic).await;
     assert_eq!(response.status_code(), StatusCode::OK);
@@ -104,7 +105,8 @@ async fn unauthenticated_returns_challenge(pool: PgPool) {
     let app_pool = test_support::db::app_pool_for(&pool).await;
     let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
     let tmp = tempfile::TempDir::new().unwrap();
-    let server = test_support::db::server_with_opds_enabled(&app_pool, &ingestion_pool, tmp.path());
+    let server =
+        test_support::db::server_with_opds_enabled(&app_pool, &ingestion_pool, tmp.path()).await;
 
     let response = server.get("/opds").await;
     assert_eq!(response.status_code(), StatusCode::UNAUTHORIZED);
@@ -132,7 +134,8 @@ async fn basic_only_db_failure_returns_500_not_challenge(pool: PgPool) {
     let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
     let (_admin, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
     let tmp = tempfile::TempDir::new().unwrap();
-    let server = test_support::db::server_with_opds_enabled(&app_pool, &ingestion_pool, tmp.path());
+    let server =
+        test_support::db::server_with_opds_enabled(&app_pool, &ingestion_pool, tmp.path()).await;
 
     // Close the app pool the server's state holds. A subsequent Basic auth
     // attempt drives verify_basic into a PoolClosed sqlx::Error that
@@ -168,7 +171,8 @@ async fn revoked_token_rejected(pool: PgPool) {
     .expect("revoke");
 
     let tmp = tempfile::TempDir::new().unwrap();
-    let server = test_support::db::server_with_opds_enabled(&app_pool, &ingestion_pool, tmp.path());
+    let server =
+        test_support::db::server_with_opds_enabled(&app_pool, &ingestion_pool, tmp.path()).await;
     let response = server.get("/opds").add_header(AUTHORIZATION, basic).await;
     assert_eq!(response.status_code(), StatusCode::UNAUTHORIZED);
     assert!(
@@ -188,7 +192,8 @@ async fn opensearch_descriptor_has_search_terms(pool: PgPool) {
     let (admin_id, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
     let shelf_id = test_support::db::create_shelf(&app_pool, admin_id, "favs").await;
     let tmp = tempfile::TempDir::new().unwrap();
-    let server = test_support::db::server_with_opds_enabled(&app_pool, &ingestion_pool, tmp.path());
+    let server =
+        test_support::db::server_with_opds_enabled(&app_pool, &ingestion_pool, tmp.path()).await;
 
     let response = server
         .get("/opds/library/opensearch.xml")
@@ -225,7 +230,8 @@ async fn search_roundtrip(pool: PgPool) {
         insert_epub_manifestation(&ingestion_pool, tmp.path(), marker, title).await;
     }
 
-    let server = test_support::db::server_with_opds_enabled(&app_pool, &ingestion_pool, tmp.path());
+    let server =
+        test_support::db::server_with_opds_enabled(&app_pool, &ingestion_pool, tmp.path()).await;
     let response = server
         .get("/opds/library/search?q=Neuromancer")
         .add_header(AUTHORIZATION, basic)
@@ -249,7 +255,8 @@ async fn search_folds_accents(pool: PgPool) {
     insert_epub_manifestation(&ingestion_pool, tmp.path(), "acc", "\u{c9}mile Zola").await;
     insert_epub_manifestation(&ingestion_pool, tmp.path(), "dec", "Unrelated Title").await;
 
-    let server = test_support::db::server_with_opds_enabled(&app_pool, &ingestion_pool, tmp.path());
+    let server =
+        test_support::db::server_with_opds_enabled(&app_pool, &ingestion_pool, tmp.path()).await;
 
     // OPDS assembles its own query, so the unaccent_english coupling between
     // works.search_vector and this endpoint's plainto_tsquery is pinned here,
@@ -300,7 +307,8 @@ async fn child_sees_only_whitelisted_manifestations(pool: PgPool) {
     test_support::db::add_to_shelf(&app_pool, shelf_a, m1).await;
     test_support::db::add_to_shelf(&app_pool, shelf_b, m2).await;
 
-    let server = test_support::db::server_with_opds_enabled(&app_pool, &ingestion_pool, tmp.path());
+    let server =
+        test_support::db::server_with_opds_enabled(&app_pool, &ingestion_pool, tmp.path()).await;
     let response = server
         .get("/opds/library/new")
         .add_header(AUTHORIZATION, basic)
@@ -335,7 +343,8 @@ async fn adult_shelf_scoped_feed(pool: PgPool) {
         test_support::db::add_to_shelf(&app_pool, shelf_b, m).await;
     }
 
-    let server = test_support::db::server_with_opds_enabled(&app_pool, &ingestion_pool, tmp.path());
+    let server =
+        test_support::db::server_with_opds_enabled(&app_pool, &ingestion_pool, tmp.path()).await;
 
     let response = server
         .get(&format!("/opds/shelves/{shelf_a}/new"))
@@ -366,7 +375,8 @@ async fn cross_user_shelf_returns_404(pool: PgPool) {
     let _ = adult_b_id;
 
     let tmp = tempfile::TempDir::new().unwrap();
-    let server = test_support::db::server_with_opds_enabled(&app_pool, &ingestion_pool, tmp.path());
+    let server =
+        test_support::db::server_with_opds_enabled(&app_pool, &ingestion_pool, tmp.path()).await;
 
     // A can reach their own shelf.
     let response = server
@@ -400,7 +410,8 @@ async fn xml_robustness_control_char(pool: PgPool) {
     )
     .await;
 
-    let server = test_support::db::server_with_opds_enabled(&app_pool, &ingestion_pool, tmp.path());
+    let server =
+        test_support::db::server_with_opds_enabled(&app_pool, &ingestion_pool, tmp.path()).await;
     let response = server
         .get("/opds/library/new")
         .add_header(AUTHORIZATION, basic)
@@ -427,7 +438,8 @@ async fn search_reflection_xss_safe(pool: PgPool) {
     let (_admin, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
     let tmp = tempfile::TempDir::new().unwrap();
 
-    let server = test_support::db::server_with_opds_enabled(&app_pool, &ingestion_pool, tmp.path());
+    let server =
+        test_support::db::server_with_opds_enabled(&app_pool, &ingestion_pool, tmp.path()).await;
     let response = server
         .get("/opds/library/search?q=%3Cscript%3Ealert(1)%3C%2Fscript%3E")
         .add_header(AUTHORIZATION, basic)
@@ -457,7 +469,7 @@ async fn download_streams_and_path_traversal_403(pool: PgPool) {
         insert_epub_manifestation(&ingestion_pool, &library_root, "dl", "The Book").await;
 
     let server =
-        test_support::db::server_with_opds_enabled(&app_pool, &ingestion_pool, &library_root);
+        test_support::db::server_with_opds_enabled(&app_pool, &ingestion_pool, &library_root).await;
 
     // Happy path: bytes stream.
     let response = server
@@ -483,8 +495,6 @@ async fn download_streams_and_path_traversal_403(pool: PgPool) {
     assert!(cd.contains("filename="));
     assert!(cd.contains("filename*=UTF-8''"));
 
-    // Path-traversal: insert a manifestation whose file_path is a real file
-    // OUTSIDE library_root. The canonicalisation guard rejects it with 403.
     let outside_dir = tempfile::TempDir::new().unwrap();
     let outside_file = outside_dir.path().join("outside.epub");
     std::fs::write(&outside_file, b"not real epub").unwrap();
@@ -496,12 +506,13 @@ async fn download_streams_and_path_traversal_403(pool: PgPool) {
     .fetch_one(&ingestion_pool)
     .await
     .unwrap();
-    let outside_path = outside_abs.to_string_lossy().into_owned();
+    let outside_path = "outside.epub";
+    std::os::unix::fs::symlink(&outside_abs, library_root.join(outside_path)).unwrap();
     let outside_m: Uuid = sqlx::query_scalar!(
         "INSERT INTO manifestations \
-            (work_id, format, file_path, ingestion_file_hash, current_file_hash, \
+            (library_id, work_id, format, file_path, ingestion_file_hash, current_file_hash, \
              file_size_bytes, ingestion_status, validation_status) \
-         VALUES ($1, 'epub'::manifestation_format, $2, 'outside-hash', 'outside-hash', 13, \
+         VALUES ((SELECT id FROM libraries WHERE configuration_key = 'default'), $1, 'epub'::manifestation_format, $2, 'outside-hash', 'outside-hash', 13, \
                  'complete'::ingestion_status, 'clean'::validation_status) \
          RETURNING id",
         work_id,
@@ -528,6 +539,311 @@ async fn download_streams_and_path_traversal_403(pool: PgPool) {
     assert_eq!(response.status_code(), StatusCode::NOT_FOUND);
 }
 
+enum DownloadTarget {
+    Regular,
+    RelativeLink,
+    AbsoluteLink,
+    OutsideLink,
+    Missing,
+    LinkLoop,
+}
+
+async fn assert_capability_download(pool: PgPool, target: DownloadTarget, status: StatusCode) {
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let (_admin, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+    let library = tempfile::tempdir().unwrap();
+    let outside = tempfile::tempdir().unwrap();
+    let (_, manifestation, _, path) =
+        insert_epub_manifestation(&ingestion_pool, library.path(), "capability", "Linked Book")
+            .await;
+    let expected = std::fs::read(&path).unwrap();
+    match target {
+        DownloadTarget::Regular => {}
+        DownloadTarget::RelativeLink | DownloadTarget::AbsoluteLink => {
+            let destination = path.with_file_name("target.epub");
+            std::fs::rename(&path, &destination).unwrap();
+            let link = match target {
+                DownloadTarget::RelativeLink => std::path::PathBuf::from("target.epub"),
+                _ => destination,
+            };
+            std::os::unix::fs::symlink(link, &path).unwrap();
+        }
+        DownloadTarget::OutsideLink => {
+            let destination = outside.path().join("outside.epub");
+            std::fs::write(&destination, b"outside bytes").unwrap();
+            std::fs::remove_file(&path).unwrap();
+            std::os::unix::fs::symlink(destination, &path).unwrap();
+        }
+        DownloadTarget::Missing => std::fs::remove_file(&path).unwrap(),
+        DownloadTarget::LinkLoop => {
+            std::fs::remove_file(&path).unwrap();
+            std::os::unix::fs::symlink(&path, &path).unwrap();
+        }
+    }
+    let server =
+        test_support::db::server_with_opds_enabled(&app_pool, &ingestion_pool, library.path())
+            .await;
+    let response = server
+        .get(&format!("/opds/books/{manifestation}/file"))
+        .add_header(AUTHORIZATION, basic)
+        .await;
+    assert_eq!(response.status_code(), status);
+    if status == StatusCode::OK {
+        assert_eq!(response.as_bytes().as_ref(), expected);
+        assert_eq!(
+            response.headers()[axum::http::header::CONTENT_LENGTH],
+            expected.len().to_string()
+        );
+    } else {
+        assert!(!response.text().contains("outside bytes"));
+        assert!(!response.text().contains(path.to_str().unwrap()));
+        if status == StatusCode::INTERNAL_SERVER_ERROR {
+            assert_eq!(
+                response.json::<serde_json::Value>()["detail"],
+                "An internal error occurred."
+            );
+        }
+    }
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn capability_download_regular_bytes_and_length(pool: PgPool) {
+    assert_capability_download(pool, DownloadTarget::Regular, StatusCode::OK).await;
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn capability_download_relative_link_inside(pool: PgPool) {
+    assert_capability_download(pool, DownloadTarget::RelativeLink, StatusCode::OK).await;
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn capability_download_absolute_link_inside(pool: PgPool) {
+    assert_capability_download(pool, DownloadTarget::AbsoluteLink, StatusCode::OK).await;
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn capability_download_outside_link_forbidden(pool: PgPool) {
+    assert_capability_download(pool, DownloadTarget::OutsideLink, StatusCode::FORBIDDEN).await;
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn capability_download_missing_target_not_found(pool: PgPool) {
+    assert_capability_download(pool, DownloadTarget::Missing, StatusCode::NOT_FOUND).await;
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn capability_download_io_error_is_generic(pool: PgPool) {
+    assert_capability_download(
+        pool,
+        DownloadTarget::LinkLoop,
+        StatusCode::INTERNAL_SERVER_ERROR,
+    )
+    .await;
+}
+
+#[tokio::test]
+async fn capability_download_permission_denied_is_generic() {
+    use crate::services::files::LibraryFileError;
+    use axum::response::IntoResponse;
+
+    let error = LibraryFileError::Io(std::io::Error::new(
+        std::io::ErrorKind::PermissionDenied,
+        "private filesystem detail",
+    ));
+    let response = super::download::download_error(error).into_response();
+    assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
+    let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let problem: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+    assert_eq!(problem["detail"], "An internal error occurred.");
+    assert!(!String::from_utf8_lossy(&bytes).contains("private filesystem detail"));
+}
+
+#[tokio::test]
+async fn capability_download_opened_handle_survives_path_replacement() {
+    assert_opened_download_survives_replacement().await;
+}
+
+async fn assert_opened_download_survives_replacement() {
+    let library = tempfile::tempdir().unwrap();
+    let path = library.path().join("book.epub");
+    std::fs::write(&path, b"original bytes").unwrap();
+    let id = crate::models::storage_library::LibraryId::from_uuid(Uuid::new_v4());
+    let files =
+        test_support::test_library_files_at(&library.path().to_str().unwrap().parse().unwrap(), id);
+    let location = crate::services::files::LibraryLocation {
+        library_id: id,
+        path: "book.epub".parse().unwrap(),
+    };
+    let opened = files.open_download(&location).await.unwrap();
+    let replacement = library.path().join("replacement.epub");
+    std::fs::write(&replacement, b"replacement with a different length").unwrap();
+    std::fs::rename(replacement, &path).unwrap();
+    let response = super::download::stream_download(opened, "Book", Uuid::new_v4()).unwrap();
+    assert_eq!(response.headers()[axum::http::header::CONTENT_LENGTH], "14");
+    let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    assert_eq!(bytes, b"original bytes".as_slice());
+}
+
+mod storage {
+    use super::*;
+
+    fn recorded_download_server(
+        app_pool: &PgPool,
+        ingestion_pool: &PgPool,
+        config: crate::config::Config,
+        files: crate::services::files::LibraryFiles,
+    ) -> axum_test::TestServer {
+        let mut state = test_support::test_state();
+        state.pool = app_pool.clone();
+        state.ingestion_pool = ingestion_pool.clone();
+        state.config = config;
+        state.library_files = files;
+        state.config.opds.enabled = true;
+        axum_test::TestServer::new(crate::build_router(state))
+    }
+
+    async fn insert_recorded_download(
+        pool: &PgPool,
+        library_id: crate::models::storage_library::LibraryId,
+        path: &str,
+        hash: &str,
+    ) -> (Uuid, Uuid) {
+        let work = sqlx::query_scalar!(
+        "INSERT INTO works (title, sort_title) VALUES ('Original title', 'original title') RETURNING id"
+    ).fetch_one(pool).await.unwrap();
+        let file = sqlx::query_scalar!(
+        "INSERT INTO manifestations
+         (library_id, work_id, file_path, format, ingestion_file_hash, current_file_hash, file_size_bytes)
+         VALUES ($1, $2, $3, 'epub', $4, $4, 12345) RETURNING id",
+        library_id.as_uuid(), work, path, hash,
+    ).fetch_one(pool).await.unwrap();
+        (work, file)
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn library_storage_download_nested_location_survives_metadata_change(pool: PgPool) {
+        let app_pool = test_support::db::app_pool_for(&pool).await;
+        let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+        let (_, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+        let library = tempfile::tempdir().unwrap();
+        std::fs::create_dir(library.path().join("Author")).unwrap();
+        std::fs::write(
+            library.path().join("Author/Recorded.epub"),
+            b"recorded bytes",
+        )
+        .unwrap();
+        let id = crate::models::storage_library::default_library_id(&pool)
+            .await
+            .unwrap();
+        let (work, file) =
+            insert_recorded_download(&ingestion_pool, id, "Author/Recorded.epub", "nested").await;
+        let (config, files) = test_support::test_storage_config(Some(library.path()), id);
+        let server = recorded_download_server(&app_pool, &ingestion_pool, config, files);
+        for title in ["Original title", "Renamed title"] {
+            sqlx::query!("UPDATE works SET title = $1 WHERE id = $2", title, work)
+                .execute(&ingestion_pool)
+                .await
+                .unwrap();
+            let response = server
+                .get(&format!("/opds/books/{file}/file"))
+                .add_header(AUTHORIZATION, basic.clone())
+                .await;
+            assert_eq!(response.status_code(), StatusCode::OK);
+            assert_eq!(response.as_bytes().as_ref(), b"recorded bytes");
+            assert_eq!(response.headers()[axum::http::header::CONTENT_LENGTH], "14");
+        }
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn library_storage_download_two_library_same_name(pool: PgPool) {
+        use crate::models::storage_library::{LibraryId, default_library_id};
+        use crate::services::files::LibraryFiles;
+        let app_pool = test_support::db::app_pool_for(&pool).await;
+        let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+        let (_, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+        let first = default_library_id(&pool).await.unwrap();
+        let second = LibraryId::from_uuid(
+            sqlx::query_scalar!(
+                "INSERT INTO libraries (configuration_key) VALUES ('second') RETURNING id"
+            )
+            .fetch_one(&pool)
+            .await
+            .unwrap(),
+        );
+        let a = tempfile::tempdir().unwrap();
+        let b = tempfile::tempdir().unwrap();
+        std::fs::write(a.path().join("book.epub"), b"first library").unwrap();
+        std::fs::write(b.path().join("book.epub"), b"second library").unwrap();
+        let root_a: crate::config::AbsoluteRootPath = a.path().to_str().unwrap().parse().unwrap();
+        let root_b = b.path().to_str().unwrap().parse().unwrap();
+        let files = LibraryFiles::open(
+            [(first, root_a.clone()), (second, root_b)],
+            &root_a,
+            &root_a,
+        )
+        .unwrap();
+        let mut config = test_support::test_config();
+        config.library_path = root_a.clone();
+        config.ingestion_path = root_a.clone();
+        config.quarantine_path = root_a;
+        let server = recorded_download_server(&app_pool, &ingestion_pool, config, files);
+        for (id, hash, expected) in [
+            (first, "first", b"first library".as_slice()),
+            (second, "second", b"second library".as_slice()),
+        ] {
+            let (_, file) = insert_recorded_download(&ingestion_pool, id, "book.epub", hash).await;
+            let response = server
+                .get(&format!("/opds/books/{file}/file"))
+                .add_header(AUTHORIZATION, basic.clone())
+                .await;
+            assert_eq!(response.status_code(), StatusCode::OK);
+            assert_eq!(response.as_bytes().as_ref(), expected);
+            assert_eq!(
+                response.headers()[axum::http::header::CONTENT_LENGTH],
+                expected.len().to_string()
+            );
+        }
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn library_storage_download_unknown_identity_is_generic(pool: PgPool) {
+        let app_pool = test_support::db::app_pool_for(&pool).await;
+        let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+        let (_, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+        let unbound = crate::models::storage_library::LibraryId::from_uuid(
+            sqlx::query_scalar!(
+                "INSERT INTO libraries (configuration_key) VALUES ('unbound') RETURNING id"
+            )
+            .fetch_one(&pool)
+            .await
+            .unwrap(),
+        );
+        let (_, file) =
+            insert_recorded_download(&ingestion_pool, unbound, "book.epub", "unknown").await;
+        let library = tempfile::tempdir().unwrap();
+        std::fs::write(library.path().join("book.epub"), b"wrong library bytes").unwrap();
+        let server =
+            test_support::db::server_with_opds_enabled(&app_pool, &ingestion_pool, library.path())
+                .await;
+        let response = server
+            .get(&format!("/opds/books/{file}/file"))
+            .add_header(AUTHORIZATION, basic)
+            .await;
+        assert_eq!(response.status_code(), StatusCode::INTERNAL_SERVER_ERROR);
+        assert_eq!(
+            response.json::<serde_json::Value>()["detail"],
+            "An internal error occurred."
+        );
+        assert!(!response.text().contains("wrong library bytes"));
+        assert!(!response.text().contains(&unbound.as_uuid().to_string()));
+    }
+}
+
 // ── Test 32: cover cache populates and serves ───────────────────────────
 
 #[sqlx::test(migrations = "./migrations")]
@@ -542,7 +858,7 @@ async fn cover_cache_populates_and_serves(pool: PgPool) {
         insert_epub_manifestation(&ingestion_pool, &library_root, "cov", "Covered").await;
 
     let server =
-        test_support::db::server_with_opds_enabled(&app_pool, &ingestion_pool, &library_root);
+        test_support::db::server_with_opds_enabled(&app_pool, &ingestion_pool, &library_root).await;
 
     // First request populates cache.
     let response = server
@@ -661,6 +977,11 @@ async fn insert_manifestation_with_path(
     file_path: &str,
     title: &str,
 ) -> Uuid {
+    let file_path = StdPath::new(file_path)
+        .file_name()
+        .unwrap()
+        .to_str()
+        .unwrap();
     let work_id: Uuid = sqlx::query_scalar!(
         "INSERT INTO works (title, sort_title) VALUES ($1, $1) RETURNING id",
         title,
@@ -671,9 +992,9 @@ async fn insert_manifestation_with_path(
 
     sqlx::query_scalar!(
         "INSERT INTO manifestations \
-            (work_id, format, file_path, ingestion_file_hash, current_file_hash, \
+            (library_id, work_id, format, file_path, ingestion_file_hash, current_file_hash, \
              file_size_bytes, ingestion_status, validation_status) \
-         VALUES ($1, 'epub'::manifestation_format, $2, $3, $3, $4, \
+         VALUES ((SELECT id FROM libraries WHERE configuration_key = 'default'), $1, 'epub'::manifestation_format, $2, $3, $3, $4, \
                  'complete'::ingestion_status, 'clean'::validation_status) \
          RETURNING id",
         work_id,
@@ -694,14 +1015,27 @@ async fn cover_missing_file_returns_404_problem_json(pool: PgPool) {
     let tmp = tempfile::TempDir::new().unwrap();
     let library_root = std::fs::canonicalize(tmp.path()).unwrap();
 
-    // The manifestation is RLS-visible, but its EPUB is absent on disk, so the
-    // cover cannot be generated or served.
-    let missing = library_root.join("gone.epub");
-    let missing_path = missing.to_string_lossy().into_owned();
-    let m = insert_manifestation_with_path(&ingestion_pool, &missing_path, "Ghost").await;
+    let source = library_root.join("gone.epub");
+    std::fs::write(
+        &source,
+        test_support::db::make_minimal_epub_with_cover_tagged("gone"),
+    )
+    .unwrap();
+    let m =
+        insert_manifestation_with_path(&ingestion_pool, source.to_str().unwrap(), "Ghost").await;
 
     let server =
-        test_support::db::server_with_opds_enabled(&app_pool, &ingestion_pool, &library_root);
+        test_support::db::server_with_opds_enabled(&app_pool, &ingestion_pool, &library_root).await;
+
+    for suffix in ["cover/thumb", "cover"] {
+        let response = server
+            .get(&format!("/api/v1/books/{m}/{suffix}"))
+            .add_header(AUTHORIZATION, basic.clone())
+            .await;
+        assert_eq!(response.status_code(), StatusCode::OK);
+    }
+    std::fs::remove_file(source).unwrap();
+    std::fs::remove_dir_all(library_root.join("_covers/cache")).unwrap();
 
     for suffix in ["cover/thumb", "cover"] {
         let response = server
@@ -774,7 +1108,7 @@ async fn cover_unreadable_file_returns_500(pool: PgPool) {
     }
 
     let server =
-        test_support::db::server_with_opds_enabled(&app_pool, &ingestion_pool, &library_root);
+        test_support::db::server_with_opds_enabled(&app_pool, &ingestion_pool, &library_root).await;
 
     let response = server
         .get(&format!("/api/v1/books/{m}/cover/thumb"))
@@ -799,8 +1133,7 @@ async fn insert_manifestation_bytes(
 ) -> Uuid {
     let dest = library_root.join(format!("{marker}.epub"));
     std::fs::write(&dest, epub_bytes).expect("write epub");
-    let abs_path = std::fs::canonicalize(&dest).expect("canonicalize");
-    let file_path = abs_path.to_string_lossy().into_owned();
+    let file_path = format!("{marker}.epub");
 
     use sha2::{Digest, Sha256};
     let hash: String = Sha256::digest(epub_bytes)
@@ -818,9 +1151,9 @@ async fn insert_manifestation_bytes(
 
     sqlx::query_scalar!(
         "INSERT INTO manifestations \
-            (work_id, format, file_path, ingestion_file_hash, current_file_hash, \
+            (library_id, work_id, format, file_path, ingestion_file_hash, current_file_hash, \
              file_size_bytes, ingestion_status, validation_status) \
-         VALUES ($1, 'epub'::manifestation_format, $2, $3, $3, $4, \
+         VALUES ((SELECT id FROM libraries WHERE configuration_key = 'default'), $1, 'epub'::manifestation_format, $2, $3, $3, $4, \
                  'complete'::ingestion_status, 'clean'::validation_status) \
          RETURNING id",
         work_id,
@@ -853,7 +1186,7 @@ async fn svg_cover_rasterizes_and_serves(pool: PgPool) {
     .await;
 
     let server =
-        test_support::db::server_with_opds_enabled(&app_pool, &ingestion_pool, &library_root);
+        test_support::db::server_with_opds_enabled(&app_pool, &ingestion_pool, &library_root).await;
 
     // Thumbnail: the SVG rasterizes to PNG internally, then re-encodes to
     // JPEG for the grid (still no SVG bytes ever served).
@@ -936,7 +1269,7 @@ async fn malformed_svg_cover_does_not_serve(pool: PgPool) {
         .await;
 
     let server =
-        test_support::db::server_with_opds_enabled(&app_pool, &ingestion_pool, &library_root);
+        test_support::db::server_with_opds_enabled(&app_pool, &ingestion_pool, &library_root).await;
 
     let response = server
         .get(&format!("/api/v1/books/{m}/cover/thumb"))
@@ -969,7 +1302,7 @@ async fn cover_dual_mount_serves_api_v1_and_opds(pool: PgPool) {
         insert_epub_manifestation(&ingestion_pool, &library_root, "dual", "Dual Mounted").await;
 
     let server =
-        test_support::db::server_with_opds_enabled(&app_pool, &ingestion_pool, &library_root);
+        test_support::db::server_with_opds_enabled(&app_pool, &ingestion_pool, &library_root).await;
 
     // API mount moved to /api/v1 (CurrentUser accepts Basic credentials).
     let api = server
@@ -1028,13 +1361,13 @@ async fn series_feed_renders_all_manifestations(pool: PgPool) {
         } else {
             "2020-01-01T00:00:00Z".parse().expect("valid timestamp")
         };
-        let file_path = format!("/tmp/series-{i}.epub");
+        let file_path = format!("fixtures/series-{i}.epub");
         let hash = format!("series-hash-{i}");
         let m_id: Uuid = sqlx::query_scalar!(
             "INSERT INTO manifestations \
-                (work_id, format, file_path, ingestion_file_hash, current_file_hash, \
+                (library_id, work_id, format, file_path, ingestion_file_hash, current_file_hash, \
                  file_size_bytes, ingestion_status, validation_status, created_at) \
-             VALUES ($1, 'epub'::manifestation_format, $2, $3, $3, 1000, \
+             VALUES ((SELECT id FROM libraries WHERE configuration_key = 'default'), $1, 'epub'::manifestation_format, $2, $3, $3, 1000, \
                      'complete'::ingestion_status, 'clean'::validation_status, $4) \
              RETURNING id",
             work_id,
@@ -1059,7 +1392,8 @@ async fn series_feed_renders_all_manifestations(pool: PgPool) {
         expected.push(m_id);
     }
 
-    let server = test_support::db::server_with_opds_enabled(&app_pool, &ingestion_pool, tmp.path());
+    let server =
+        test_support::db::server_with_opds_enabled(&app_pool, &ingestion_pool, tmp.path()).await;
     let response = server
         .get(&format!("/opds/library/series/{series_id}"))
         .add_header(AUTHORIZATION, basic)
@@ -1128,7 +1462,8 @@ async fn pagination_walk_125(pool: PgPool) {
         insert_epub_manifestation(&ingestion_pool, tmp.path(), &marker, &title).await;
     }
 
-    let server = test_support::db::server_with_opds_enabled(&app_pool, &ingestion_pool, tmp.path());
+    let server =
+        test_support::db::server_with_opds_enabled(&app_pool, &ingestion_pool, tmp.path()).await;
 
     let mut seen: HashSet<Uuid> = HashSet::new();
     let mut url = "/opds/library/new".to_string();
@@ -1184,7 +1519,8 @@ async fn invalid_cursor_returns_422(pool: PgPool) {
     // Any author UUID — the query parses the cursor before it runs.
     let author_id = Uuid::new_v4();
     let tmp = tempfile::TempDir::new().unwrap();
-    let server = test_support::db::server_with_opds_enabled(&app_pool, &ingestion_pool, tmp.path());
+    let server =
+        test_support::db::server_with_opds_enabled(&app_pool, &ingestion_pool, tmp.path()).await;
 
     let bad_cursor = "!!!not-base64url!!!";
     let paths = [
@@ -1214,7 +1550,8 @@ async fn empty_library_has_no_next_link(pool: PgPool) {
     let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
     let (_admin, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
     let tmp = tempfile::TempDir::new().unwrap();
-    let server = test_support::db::server_with_opds_enabled(&app_pool, &ingestion_pool, tmp.path());
+    let server =
+        test_support::db::server_with_opds_enabled(&app_pool, &ingestion_pool, tmp.path()).await;
 
     let response = server
         .get("/opds/library/new")
@@ -1249,13 +1586,13 @@ async fn exact_page_size_has_no_next_link(pool: PgPool) {
         .fetch_one(&ingestion_pool)
         .await
         .expect("insert work");
-        let file_path = format!("/tmp/exact-{i}.epub");
+        let file_path = format!("fixtures/exact-{i}.epub");
         let hash = format!("exact-hash-{i}");
         sqlx::query!(
             "INSERT INTO manifestations \
-                (work_id, format, file_path, ingestion_file_hash, current_file_hash, \
+                (library_id, work_id, format, file_path, ingestion_file_hash, current_file_hash, \
                  file_size_bytes, ingestion_status, validation_status) \
-             VALUES ($1, 'epub'::manifestation_format, $2, $3, $3, 1000, \
+             VALUES ((SELECT id FROM libraries WHERE configuration_key = 'default'), $1, 'epub'::manifestation_format, $2, $3, $3, 1000, \
                      'complete'::ingestion_status, 'clean'::validation_status)",
             work_id,
             file_path,
@@ -1266,7 +1603,8 @@ async fn exact_page_size_has_no_next_link(pool: PgPool) {
         .expect("insert manifestation");
     }
 
-    let server = test_support::db::server_with_opds_enabled(&app_pool, &ingestion_pool, tmp.path());
+    let server =
+        test_support::db::server_with_opds_enabled(&app_pool, &ingestion_pool, tmp.path()).await;
     let response = server
         .get("/opds/library/new")
         .add_header(AUTHORIZATION, basic)
@@ -1306,7 +1644,8 @@ async fn wrong_password_returns_challenge(pool: PgPool) {
     );
 
     let tmp = tempfile::TempDir::new().unwrap();
-    let server = test_support::db::server_with_opds_enabled(&app_pool, &ingestion_pool, tmp.path());
+    let server =
+        test_support::db::server_with_opds_enabled(&app_pool, &ingestion_pool, tmp.path()).await;
     let response = server
         .get("/opds")
         .add_header(AUTHORIZATION, bad_basic)
@@ -1425,7 +1764,8 @@ async fn authors_navigation_feed_paginates(pool: PgPool) {
     }
 
     let server =
-        test_support::db::server_with_opds_page_size(&app_pool, &ingestion_pool, tmp.path(), 2);
+        test_support::db::server_with_opds_page_size(&app_pool, &ingestion_pool, tmp.path(), 2)
+            .await;
 
     let pages = walk_navigation_feed(&server, &basic, "/opds/library/authors", &authors).await;
     assert_eq!(
@@ -1468,7 +1808,8 @@ async fn series_navigation_feed_paginates(pool: PgPool) {
     }
 
     let server =
-        test_support::db::server_with_opds_page_size(&app_pool, &ingestion_pool, tmp.path(), 2);
+        test_support::db::server_with_opds_page_size(&app_pool, &ingestion_pool, tmp.path(), 2)
+            .await;
 
     let pages = walk_navigation_feed(&server, &basic, "/opds/library/series", &series_names).await;
     assert_eq!(
@@ -1483,7 +1824,8 @@ async fn navigation_feeds_reject_malformed_cursor(pool: PgPool) {
     let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
     let (_admin, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
     let tmp = tempfile::TempDir::new().unwrap();
-    let server = test_support::db::server_with_opds_enabled(&app_pool, &ingestion_pool, tmp.path());
+    let server =
+        test_support::db::server_with_opds_enabled(&app_pool, &ingestion_pool, tmp.path()).await;
 
     for path in [
         "/opds/library/authors?cursor=!!!garbage!!!",
@@ -1518,7 +1860,8 @@ async fn query_handlers_reject_duplicate_key_with_problem_json(pool: PgPool) {
     let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
     let (_admin, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
     let tmp = tempfile::TempDir::new().unwrap();
-    let server = test_support::db::server_with_opds_enabled(&app_pool, &ingestion_pool, tmp.path());
+    let server =
+        test_support::db::server_with_opds_enabled(&app_pool, &ingestion_pool, tmp.path()).await;
 
     let sid = Uuid::new_v4();
     let author = Uuid::new_v4();
@@ -1565,7 +1908,8 @@ async fn empty_cursor_returns_first_page_not_422(pool: PgPool) {
     let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
     let (_admin, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
     let tmp = tempfile::TempDir::new().unwrap();
-    let server = test_support::db::server_with_opds_enabled(&app_pool, &ingestion_pool, tmp.path());
+    let server =
+        test_support::db::server_with_opds_enabled(&app_pool, &ingestion_pool, tmp.path()).await;
 
     let response = server
         .get("/opds/library/new?cursor=")

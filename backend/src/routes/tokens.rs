@@ -342,10 +342,15 @@ mod tests {
         .await
         .expect("create token");
 
+        let (config, library_files) = crate::test_support::test_storage_config(
+            None,
+            crate::models::storage_library::LibraryId::from_uuid(uuid::Uuid::new_v4()),
+        );
         let state = crate::state::AppState {
             pool: pool.clone(),
             ingestion_pool: pool.clone(),
-            config: test_support::test_config(),
+            library_files,
+            config,
             oidc: Some(std::sync::Arc::new(test_support::test_oidc_runtime())),
             jwt_validator: None,
             login_limiter: test_support::test_login_limiter(),

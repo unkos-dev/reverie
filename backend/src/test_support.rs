@@ -8,13 +8,51 @@ use crate::config::{
 use crate::models::manifestation_format::ManifestationFormat;
 use crate::state::AppState;
 
+pub fn test_library_files_at(
+    library: &crate::config::AbsoluteRootPath,
+    id: crate::models::storage_library::LibraryId,
+) -> crate::services::files::LibraryFiles {
+    test_storage_config(Some(library.as_path()), id).1
+}
+
+pub fn test_storage_config(
+    library: Option<&std::path::Path>,
+    id: crate::models::storage_library::LibraryId,
+) -> (Config, crate::services::files::LibraryFiles) {
+    let staging = tempfile::tempdir().unwrap();
+    let ingestion = staging.path().join("ingestion");
+    let quarantine = staging.path().join("quarantine");
+    std::fs::create_dir(&ingestion).unwrap();
+    std::fs::create_dir(&quarantine).unwrap();
+    let library = library.map_or_else(
+        || {
+            let path = staging.path().join("library");
+            std::fs::create_dir(&path).unwrap();
+            path
+        },
+        std::path::Path::to_owned,
+    );
+    let mut config = test_config();
+    config.library_path = library.to_str().unwrap().parse().unwrap();
+    config.ingestion_path = ingestion.to_str().unwrap().parse().unwrap();
+    config.quarantine_path = quarantine.to_str().unwrap().parse().unwrap();
+    let files = crate::services::files::LibraryFiles::open(
+        [(id, config.library_path.clone())],
+        &config.ingestion_path,
+        &config.quarantine_path,
+    )
+    .unwrap()
+    .with_fixtures(vec![staging]);
+    (config, files)
+}
+
 pub fn test_config() -> Config {
     Config {
         port: 3000,
         database_url: String::new(),
-        library_path: String::new(),
-        ingestion_path: String::new(),
-        quarantine_path: String::new(),
+        library_path: crate::config::Config::default().library_path,
+        ingestion_path: crate::config::Config::default().ingestion_path,
+        quarantine_path: crate::config::Config::default().quarantine_path,
         log_level: "info".into(),
         db_max_connections: 10,
         oidc_issuer_url: String::new(),
@@ -173,16 +211,75 @@ pub fn test_settings() -> std::sync::Arc<tokio::sync::RwLock<crate::models::sett
 }
 
 pub fn test_state() -> AppState {
+    let (config, library_files) = test_storage_config(
+        None,
+        crate::models::storage_library::LibraryId::from_uuid(uuid::Uuid::new_v4()),
+    );
     AppState {
         pool: sqlx::PgPool::connect_lazy("postgres://invalid").unwrap(),
         ingestion_pool: sqlx::PgPool::connect_lazy("postgres://invalid").unwrap(),
-        config: test_config(),
+        library_files,
+        config,
         oidc: Some(std::sync::Arc::new(test_oidc_runtime())),
         jwt_validator: None,
         login_limiter: test_login_limiter(),
         settings: test_settings(),
         last_settings_reload: std::sync::Arc::new(tokio::sync::RwLock::new(None)),
     }
+}
+
+#[tokio::test]
+async fn test_state_storage_roots_match_config_and_survive_cloning() {
+    let state = test_state();
+    for (dir, path) in [
+        (
+            state.library_files.ingestion(),
+            &state.config.ingestion_path,
+        ),
+        (
+            state.library_files.quarantine(),
+            &state.config.quarantine_path,
+        ),
+    ] {
+        dir.write("marker", b"fixture bytes").unwrap();
+        assert_eq!(
+            std::fs::read(path.as_path().join("marker")).unwrap(),
+            b"fixture bytes"
+        );
+    }
+    let roots = [
+        state.config.library_path.as_path().to_owned(),
+        state.config.ingestion_path.as_path().to_owned(),
+        state.config.quarantine_path.as_path().to_owned(),
+    ];
+    let clone = state.clone();
+    drop(state);
+    assert!(roots.iter().all(|root| root.is_dir()));
+    drop(clone);
+    assert!(roots.iter().all(|root| !root.exists()));
+}
+
+#[test]
+fn test_storage_config_preserves_caller_owned_library() {
+    let library = tempfile::tempdir().unwrap();
+    let id = crate::models::storage_library::LibraryId::from_uuid(uuid::Uuid::new_v4());
+    let (config, files) = test_storage_config(Some(library.path()), id);
+    files
+        .library(id)
+        .unwrap()
+        .write("marker", b"library bytes")
+        .unwrap();
+    assert_eq!(
+        std::fs::read(config.library_path.as_path().join("marker")).unwrap(),
+        b"library bytes"
+    );
+    let staging = config.ingestion_path.as_path().to_owned();
+    drop(files);
+    assert!(!staging.exists());
+    assert_eq!(
+        std::fs::read(library.path().join("marker")).unwrap(),
+        b"library bytes"
+    );
 }
 
 /// Build the full application router with auth layer (for route integration tests).
@@ -502,10 +599,15 @@ pub mod db {
         ingestion_pool: &PgPool,
     ) -> axum_test::TestServer {
         use crate::state::AppState;
+        let (config, library_files) = crate::test_support::test_storage_config(
+            None,
+            crate::models::storage_library::LibraryId::from_uuid(uuid::Uuid::new_v4()),
+        );
         let state = AppState {
             pool: app_pool.clone(),
             ingestion_pool: ingestion_pool.clone(),
-            config: super::test_config(),
+            library_files,
+            config,
             oidc: Some(std::sync::Arc::new(super::test_oidc_runtime())),
             jwt_validator: None,
             login_limiter: super::test_login_limiter(),
@@ -533,7 +635,10 @@ pub mod db {
     ) -> axum_test::TestServer {
         use crate::state::AppState;
 
-        let mut config = super::test_config();
+        let (mut config, library_files) = super::test_storage_config(
+            None,
+            crate::models::storage_library::LibraryId::from_uuid(uuid::Uuid::new_v4()),
+        );
         config.resource_server_issuer = mock.issuer().to_string();
         config.resource_server_audience = audience.to_string();
         config.resource_server_jwks_url = mock.resource_server_jwks_url();
@@ -548,6 +653,7 @@ pub mod db {
         let state = AppState {
             pool: app_pool.clone(),
             ingestion_pool: ingestion_pool.clone(),
+            library_files,
             config,
             oidc: Some(std::sync::Arc::new(super::test_oidc_runtime())),
             jwt_validator: Some(std::sync::Arc::new(validator)),
@@ -567,11 +673,15 @@ pub mod db {
         ingestion_pool: &PgPool,
     ) -> axum_test::TestServer {
         use crate::state::AppState;
-        let mut config = super::test_config();
+        let (mut config, library_files) = super::test_storage_config(
+            None,
+            crate::models::storage_library::LibraryId::from_uuid(uuid::Uuid::new_v4()),
+        );
         config.self_registration_enabled = true;
         let state = AppState {
             pool: app_pool.clone(),
             ingestion_pool: ingestion_pool.clone(),
+            library_files,
             config,
             oidc: Some(std::sync::Arc::new(super::test_oidc_runtime())),
             jwt_validator: None,
@@ -596,11 +706,15 @@ pub mod db {
         per_min: u32,
     ) -> axum_test::TestServer {
         use crate::state::AppState;
-        let mut config = super::test_config();
+        let (mut config, library_files) = super::test_storage_config(
+            None,
+            crate::models::storage_library::LibraryId::from_uuid(uuid::Uuid::new_v4()),
+        );
         config.trusted_client_ip_header = Some("x-forwarded-for".to_owned());
         let state = AppState {
             pool: app_pool.clone(),
             ingestion_pool: ingestion_pool.clone(),
+            library_files,
             config,
             oidc: Some(std::sync::Arc::new(super::test_oidc_runtime())),
             jwt_validator: None,
@@ -619,9 +733,9 @@ pub mod db {
     /// `opds.enabled = false` to match ordinary route tests.
     ///
     /// `library_path` is the absolute path to a real directory (usually a
-    /// `tempfile::TempDir`) — the download handler's canonicalisation guard
-    /// resolves `file_path` against this root.
-    pub fn server_with_opds_enabled(
+    /// `tempfile::TempDir`) — the download handler opens
+    /// `file_path` through this root's library capability.
+    pub async fn server_with_opds_enabled(
         app_pool: &PgPool,
         ingestion_pool: &PgPool,
         library_path: &std::path::Path,
@@ -629,8 +743,12 @@ pub mod db {
         use crate::config::OpdsConfig;
         use crate::state::AppState;
 
-        let mut config = super::test_config();
-        config.library_path = library_path.to_string_lossy().into_owned();
+        let (mut config, library_files) = super::test_storage_config(
+            Some(library_path),
+            crate::models::storage_library::default_library_id(app_pool)
+                .await
+                .unwrap(),
+        );
         config.opds = OpdsConfig {
             enabled: true,
             page_size: 50,
@@ -640,6 +758,7 @@ pub mod db {
         let state = AppState {
             pool: app_pool.clone(),
             ingestion_pool: ingestion_pool.clone(),
+            library_files,
             config,
             oidc: Some(std::sync::Arc::new(super::test_oidc_runtime())),
             jwt_validator: None,
@@ -661,11 +780,15 @@ pub mod db {
         page_size: u32,
     ) -> axum_test::TestServer {
         use crate::state::AppState;
-        let mut config = super::test_config();
+        let (mut config, library_files) = super::test_storage_config(
+            None,
+            crate::models::storage_library::LibraryId::from_uuid(uuid::Uuid::new_v4()),
+        );
         config.opds.page_size = page_size;
         let state = AppState {
             pool: app_pool.clone(),
             ingestion_pool: ingestion_pool.clone(),
+            library_files,
             config,
             oidc: Some(std::sync::Arc::new(super::test_oidc_runtime())),
             jwt_validator: None,
@@ -679,7 +802,7 @@ pub mod db {
 
     /// Same as [`server_with_opds_enabled`] but with a caller-chosen
     /// `opds.page_size` for navigation-feed pagination-walk tests.
-    pub fn server_with_opds_page_size(
+    pub async fn server_with_opds_page_size(
         app_pool: &PgPool,
         ingestion_pool: &PgPool,
         library_path: &std::path::Path,
@@ -688,8 +811,12 @@ pub mod db {
         use crate::config::OpdsConfig;
         use crate::state::AppState;
 
-        let mut config = super::test_config();
-        config.library_path = library_path.to_string_lossy().into_owned();
+        let (mut config, library_files) = super::test_storage_config(
+            Some(library_path),
+            crate::models::storage_library::default_library_id(app_pool)
+                .await
+                .unwrap(),
+        );
         config.opds = OpdsConfig {
             enabled: true,
             page_size,
@@ -699,6 +826,7 @@ pub mod db {
         let state = AppState {
             pool: app_pool.clone(),
             ingestion_pool: ingestion_pool.clone(),
+            library_files,
             config,
             oidc: Some(std::sync::Arc::new(super::test_oidc_runtime())),
             jwt_validator: None,
@@ -722,13 +850,13 @@ pub mod db {
         .fetch_one(ingestion_pool)
         .await
         .expect("insert work");
-        let file_path = format!("/tmp/admin-test-{marker}.epub");
+        let file_path = format!("fixtures/admin-test-{marker}.epub");
         let file_hash = format!("admin-test-hash-{marker}");
         let m_id: Uuid = sqlx::query_scalar!(
             "INSERT INTO manifestations \
-                (work_id, format, file_path, ingestion_file_hash, current_file_hash, \
+                (library_id, work_id, format, file_path, ingestion_file_hash, current_file_hash, \
                  file_size_bytes, ingestion_status, validation_status) \
-             VALUES ($1, 'epub'::manifestation_format, $2, $3, $3, 1000, \
+             VALUES ((SELECT id FROM libraries WHERE configuration_key = 'default'), $1, 'epub'::manifestation_format, $2, $3, $3, 1000, \
                      'complete'::ingestion_status, 'clean'::validation_status) \
              RETURNING id",
             work_id,

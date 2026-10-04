@@ -609,12 +609,12 @@ mod tests {
         let work_id1 = find_or_create(&pool, &meta1).await.unwrap();
 
         let isbn = "9780306406157";
-        let path = format!("/tmp/test-isbn-{work_id1}.epub");
+        let path = format!("fixtures/test-isbn-{work_id1}.epub");
         sqlx::query!(
             "INSERT INTO manifestations \
-             (work_id, isbn_13, format, file_path, ingestion_file_hash, current_file_hash, \
+             (library_id, work_id, isbn_13, format, file_path, ingestion_file_hash, current_file_hash, \
               file_size_bytes, ingestion_status, validation_status) \
-             VALUES ($1, $2, 'epub'::manifestation_format, $3, 'testhash', 'testhash', 1000, \
+             VALUES ((SELECT id FROM libraries WHERE configuration_key = 'default'), $1, $2, 'epub'::manifestation_format, $3, 'testhash', 'testhash', 1000, \
                      'complete'::ingestion_status, 'clean'::validation_status)",
             work_id1,
             isbn,
@@ -779,13 +779,13 @@ mod tests {
         isbn_13: Option<&str>,
         file_marker: &str,
     ) -> Uuid {
-        let path = format!("/tmp/rematch-{file_marker}.epub");
+        let path = format!("fixtures/rematch-{file_marker}.epub");
         let hash = format!("hash-{file_marker}");
         sqlx::query_scalar!(
             "INSERT INTO manifestations \
-               (work_id, isbn_13, format, file_path, ingestion_file_hash, current_file_hash, \
+               (library_id, work_id, isbn_13, format, file_path, ingestion_file_hash, current_file_hash, \
                 file_size_bytes, ingestion_status, validation_status) \
-             VALUES ($1, $2, 'epub'::manifestation_format, $3, $4, $4, 1000, \
+             VALUES ((SELECT id FROM libraries WHERE configuration_key = 'default'), $1, $2, 'epub'::manifestation_format, $3, $4, $4, 1000, \
                      'complete'::ingestion_status, 'clean'::validation_status) \
              RETURNING id",
             work_id,

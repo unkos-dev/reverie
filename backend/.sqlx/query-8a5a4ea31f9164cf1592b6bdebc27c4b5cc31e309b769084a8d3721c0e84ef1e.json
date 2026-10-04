@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "INSERT INTO manifestations (work_id, format, file_path, ingestion_file_hash, current_file_hash, file_size_bytes, ingestion_status, validation_status, enrichment_status, enrichment_attempt_count, enrichment_attempted_at) VALUES ($1, 'epub'::manifestation_format, $2, $3, $3, 1000, 'complete'::ingestion_status, 'clean'::validation_status, $4, $5, CASE WHEN $6::bigint IS NULL THEN NULL ELSE now() - ($6 || ' seconds')::interval END) RETURNING id",
+  "query": "INSERT INTO manifestations (library_id, work_id, format, file_path, ingestion_file_hash, current_file_hash, file_size_bytes, ingestion_status, validation_status, enrichment_status, enrichment_attempt_count, enrichment_attempted_at) VALUES ((SELECT id FROM libraries WHERE configuration_key = 'default'), $1, 'epub'::manifestation_format, $2, $3, $3, 1000, 'complete'::ingestion_status, 'clean'::validation_status, $4, $5, CASE WHEN $6::bigint IS NULL THEN NULL ELSE now() - ($6 || ' seconds')::interval END) RETURNING id",
   "describe": {
     "columns": [
       {
@@ -42,5 +42,5 @@
       false
     ]
   },
-  "hash": "e91ad3cf9cf4cb15dfbba4beaafdcc17be618a007272f28c6f5d8a80b7b27ccd"
+  "hash": "8a5a4ea31f9164cf1592b6bdebc27c4b5cc31e309b769084a8d3721c0e84ef1e"
 }

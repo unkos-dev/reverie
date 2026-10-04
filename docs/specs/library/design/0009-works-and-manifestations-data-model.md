@@ -8,6 +8,9 @@ satisfies:
   - "REV-REQ-0026"
   - "REV-REQ-0027"
   - "REV-REQ-0028"
+  - "REV-REQ-0065"
+governed-by:
+  - "REV-ADR-0051"
 ---
 
 # Works and manifestations data model
@@ -30,8 +33,8 @@ This subject owns the schema and its own structural guarantees for: `works` and 
 `tags` and their junctions `manifestation_genres`, `manifestation_moods` and `manifestation_tags`; the `set_updated_at`
 and `works_search_vector_update` triggers; and the foreign-key graph, unique constraints and CHECK constraints that
 bound all of the above. All of it lives in `backend/migrations/20260810000000_initial_schema.up.sql`, with the three
-vocabulary junctions' row-level-security policies added by
-`backend/migrations/20260903000000_junction_table_rls.up.sql`.
+vocabulary junctions' row-level-security policies added by `backend/migrations/20260903000000_junction_table_rls.up.sql`
+and library ownership defined by `backend/migrations/20260930000000_library_relative_file_locations.up.sql`.
 
 It does not own row-level security or the grants that decide who may query these tables at all; that mechanism, and the
 full policy grid for the tables in this model that carry it, is the Design "Row-level security and database context". It
@@ -68,7 +71,8 @@ columns this model owns.
 | `works` | One abstract title | `title`, `sort_title`, `subtitle`, `description`, `language`, `search_vector` |
 | `authors` | One author identity, unique by exact name | `name`, `sort_name` |
 | `work_authors` | Work-author membership, one row per work/author/role | `role`, `position`, `source_version_id` |
-| `manifestations` | One ingested file of one format | file-identity trio, three status enums, version pointers |
+| `libraries` | Persistent storage identity | `id`, unique non-empty `configuration_key` |
+| `manifestations` | One ingested file of one format | `library_id`, relative path, hashes, statuses, version pointers |
 | `series` | A series, with self-referential nesting | `name`, `sort_name`, `parent_id` |
 | `series_works` | Series membership, fractional ordering | `series_id`, `work_id`, `position`, `is_omnibus`, `note` |
 | `omnibus_contents` | Omnibus to its works | `omnibus_manifestation_id`, `contained_work_id`, `position` |
@@ -97,17 +101,25 @@ rejected outright, so the sort key never needs refreshing there.
 written by `find_or_create_series`'s caller in `backend/src/models/work.rs`. None of the three strips a leading article.
 
 **Manifestations.** `manifestations.work_id` is `NOT NULL`, `ON DELETE CASCADE` from `works`. The file-identity trio is
-`file_path` (`UNIQUE`), `ingestion_file_hash` (`UNIQUE`, `NOT NULL`), and `current_file_hash` (`NOT NULL`, no
-uniqueness). The three status enums (`validation_status`, `ingestion_status`, `enrichment_status`) each default to
-`pending`; this model carries them as manifestation columns, but their transition rules belong to the pipelines that
-drive them. `manifestations.ingestion_status` is the lifecycle of the manifestation row itself, once one exists;
-`ingestion_jobs`, owned by the Design "Ingestion pipeline", is a separate per-file row (`job_status`: `queued`,
+`library_id` with `file_path` (`UNIQUE` together), `ingestion_file_hash` (`UNIQUE`, `NOT NULL`), and `current_file_hash`
+(`NOT NULL`, no uniqueness). The three status enums (`validation_status`, `ingestion_status`, `enrichment_status`) each
+default to `pending`; this model carries them as manifestation columns, but their transition rules belong to the
+pipelines that drive them. `manifestations.ingestion_status` is the lifecycle of the manifestation row itself, once one
+exists; `ingestion_jobs`, owned by the Design "Ingestion pipeline", is a separate per-file row (`job_status`: `queued`,
 `running`, `complete`, `failed`, `skipped`) grouped by `batch_id` for one scan, written for every scanned file including
 one skipped as a duplicate or one that fails before any manifestation row is created, so the two need not agree.
 `content_rating`, the cover columns (`cover_path`, `cover_sha256`, `cover_size_bytes`, `cover_source`,
 `has_embedded_cover`), and `accessibility_metadata` are likewise columns this table carries for a neighbouring subject's
 semantics. `suspected_duplicate_work_id` (`ON DELETE SET NULL` to `works`) is the one column that points sideways, at a
 candidate duplicate rather than the owning work.
+
+**Library ownership.** `libraries.id` defaults to `uuidv7()`. Its unique, non-empty `configuration_key` binds an
+identity to deployment configuration; the migration seeds `default`. The row stores no root path or naming policy.
+`manifestations.library_id` is required and references it with `ON DELETE RESTRICT`. The path CHECK rejects empty paths,
+leading or trailing slashes, repeated slashes, backslashes, ASCII drive prefixes and dot or parent components. A path
+names the actual file beneath its owning root. Different libraries can use the same relative name, while the ingestion
+hash remains globally unique. Startup selects the default identity through `backend/src/models/storage_library.rs`;
+runtime roles can read identities but cannot create or edit them.
 
 **Series.** `series.parent_id` self-references `series.id` with `ON DELETE SET NULL`: deleting a parent orphans its
 children instead of cascading the delete through the tree. `series_works`'s primary key is `(series_id, work_id)`, so a
@@ -237,9 +249,9 @@ from the most recent write replaces the term's stored form. The `work_authors` i
 rather than erroring or updating.
 
 **The unique constraints on `manifestations` are a database-level backstop**, independent of whatever dedup check an
-upstream caller already ran: a second `INSERT` naming a `file_path` or `ingestion_file_hash` that already exists in the
-table is rejected by the constraint before the row can be created, and the resulting `sqlx::Error` is the caller's, the
-Design "Ingestion pipeline", to interpret.
+upstream caller already ran: a second `INSERT` naming an existing library/path pair or global ingestion hash is rejected
+by the constraint before the row can be created, and the resulting `sqlx::Error` is the caller's, the Design "Ingestion
+pipeline", to interpret.
 
 ## Failure and recovery
 
@@ -251,10 +263,10 @@ only `SET NULL` column: `suspected_duplicate_work_id` and every version-pointer 
 above.
 
 A `metadata_versions` deletion never fails a constraint on this side: because every pointer into it is `SET NULL`, there
-is no foreign-key error to recover from, only the silent attribution loss described above. A duplicate `file_path` or
-`ingestion_file_hash` insert does fail a constraint (`unique_violation`); this model guarantees the row is never created
-twice, but does not itself define what the caller does with the resulting error; that recovery path belongs to the
-Design "Ingestion pipeline".
+is no foreign-key error to recover from, only the silent attribution loss described above. A duplicate library/path pair
+or ingestion hash does fail a constraint (`unique_violation`); this model guarantees the row is never created twice, but
+does not itself define what the caller does with the resulting error; that recovery path belongs to the Design
+"Ingestion pipeline".
 
 `manifestations_pages_positive` and the `TIMESTAMPTZ` decode-range checks reject an out-of-range value at the database
 as a `CHECK` violation, a second layer behind whatever validation a calling handler already applied; a value that

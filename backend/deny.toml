@@ -67,6 +67,10 @@ allow = [
 crate = "reverie-api"
 allow = ["AGPL-3.0-or-later"]
 
+[[licenses.exceptions]]
+crate = "winx"
+allow = ["Apache-2.0 WITH LLVM-exception"]
+
 [bans]
 # Duplicate versions are reported but do not fail the build: the tree carries
 # legitimate transitional duplicates (e.g. r-efi 5/6, webpki-roots 0.26/1.0)

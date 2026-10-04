@@ -1,0 +1,12 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM manifestations",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": []
+  },
+  "hash": "4acfbf5cdd70b46170bcc49f5bfa825b60264e8331accb99ac40f6f49b37d07d"
+}

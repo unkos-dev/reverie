@@ -866,9 +866,9 @@ mod tests {
         Config {
             port: 3000,
             database_url: String::new(),
-            library_path: library.to_string(),
-            ingestion_path: ingestion.to_string(),
-            quarantine_path: quarantine.to_string(),
+            library_path: library.parse().unwrap(),
+            ingestion_path: ingestion.parse().unwrap(),
+            quarantine_path: quarantine.parse().unwrap(),
             log_level: "info".into(),
             db_max_connections: 5,
             oidc_issuer_url: String::new(),
@@ -974,7 +974,7 @@ mod tests {
         );
 
         // Manifestation row should exist
-        let dest_str = dest.to_str().unwrap();
+        let dest_str = dest.strip_prefix(library.path()).unwrap().to_str().unwrap();
         let count = sqlx::query_scalar!(
             "SELECT COUNT(*) AS \"count!\" FROM manifestations WHERE file_path = $1",
             dest_str,
@@ -1216,7 +1216,7 @@ mod tests {
         );
 
         // Verify work title
-        let dest_str = dest.to_str().unwrap();
+        let dest_str = dest.strip_prefix(library.path()).unwrap().to_str().unwrap();
         let title = sqlx::query_scalar!(
             "SELECT w.title FROM works w \
              JOIN manifestations m ON m.work_id = w.id \
@@ -1320,7 +1320,7 @@ mod tests {
         assert_eq!(result.processed, 1, "expected 1 processed");
 
         let dest = library.path().join("Tolkien/The Hobbit.epub");
-        let dest_str = dest.to_str().unwrap();
+        let dest_str = dest.strip_prefix(library.path()).unwrap().to_str().unwrap();
 
         let (subtitle, subtitle_version_id) = sqlx::query!(
             "SELECT w.subtitle, w.subtitle_version_id FROM works w \
@@ -1369,7 +1369,7 @@ mod tests {
         // typed enum (not ::text) so the assertion exercises the same
         // ValidationStatus sqlx decode the read paths rely on.
         use crate::models::validation_status::ValidationStatus;
-        let dest_str = dest.to_str().unwrap();
+        let dest_str = dest.strip_prefix(library.path()).unwrap().to_str().unwrap();
         let status = sqlx::query_scalar!(
             "SELECT validation_status AS \"validation_status!: ValidationStatus\" FROM manifestations WHERE file_path = $1",
             dest_str,
@@ -1413,7 +1413,7 @@ mod tests {
         assert_eq!(result.failed, 0);
 
         let dest = library.path().join("Cover/Present.epub");
-        let dest_str = dest.to_str().unwrap();
+        let dest_str = dest.strip_prefix(library.path()).unwrap().to_str().unwrap();
         let has_cover: Option<bool> = sqlx::query_scalar!(
             "SELECT has_embedded_cover FROM manifestations WHERE file_path = $1",
             dest_str,
@@ -1441,7 +1441,7 @@ mod tests {
         assert_eq!(result.failed, 0);
 
         let dest = library.path().join("Mended/Patchwork Quilt.epub");
-        let dest_str = dest.to_str().unwrap();
+        let dest_str = dest.strip_prefix(library.path()).unwrap().to_str().unwrap();
         let status = sqlx::query_scalar!(
             "SELECT validation_status AS \"validation_status!: ValidationStatus\" FROM manifestations WHERE file_path = $1",
             dest_str,
@@ -1508,7 +1508,7 @@ mod tests {
         assert_eq!(result.failed, 0);
 
         let dest = library.path().join("Fixed/Broken Mimetype.epub");
-        let dest_str = dest.to_str().unwrap();
+        let dest_str = dest.strip_prefix(library.path()).unwrap().to_str().unwrap();
 
         use crate::models::validation_status::ValidationStatus;
         let status = sqlx::query_scalar!(
@@ -1582,7 +1582,7 @@ mod tests {
         assert_eq!(result.failed, 0);
 
         let dest = library.path().join("Faded/Wilted Garden.epub");
-        let dest_str = dest.to_str().unwrap();
+        let dest_str = dest.strip_prefix(library.path()).unwrap().to_str().unwrap();
         let status = sqlx::query_scalar!(
             "SELECT validation_status AS \"validation_status!: ValidationStatus\" FROM manifestations WHERE file_path = $1",
             dest_str,
@@ -1616,7 +1616,7 @@ mod tests {
         assert_eq!(result.failed, 0, "validator error must not fail ingestion");
 
         let dest = library.path().join("Probe/force-validator-error.epub");
-        let dest_str = dest.to_str().unwrap();
+        let dest_str = dest.strip_prefix(library.path()).unwrap().to_str().unwrap();
         let status = sqlx::query_scalar!(
             "SELECT validation_status AS \"validation_status!: ValidationStatus\" FROM manifestations WHERE file_path = $1",
             dest_str,
@@ -1660,7 +1660,7 @@ mod tests {
         assert!(!dest.exists(), "corrupt EPUB must not remain in library");
 
         // No manifestation row must have been written
-        let dest_str = dest.to_str().unwrap();
+        let dest_str = dest.strip_prefix(library.path()).unwrap().to_str().unwrap();
         let count = sqlx::query_scalar!(
             "SELECT COUNT(*) AS \"count!\" FROM manifestations WHERE file_path = $1",
             dest_str,
@@ -1727,7 +1727,7 @@ mod tests {
         if !quarantine_available {
             let blocked = quarantine.path().join("blocked");
             std::fs::write(&blocked, b"not a directory").unwrap();
-            config.quarantine_path = blocked.display().to_string();
+            config.quarantine_path = blocked.to_str().unwrap().parse().unwrap();
         }
 
         let result = scan_once(&config, &pool).await.unwrap();
@@ -1829,7 +1829,7 @@ mod tests {
             pages: Option<i32>,
             pages_version_id: Option<uuid::Uuid>,
         }
-        let dest_str = dest.to_str().unwrap();
+        let dest_str = dest.strip_prefix(library.path()).unwrap().to_str().unwrap();
         let inv = sqlx::query_as!(
             Invariant,
             "SELECT w.title AS \"title?\", w.title_version_id, \
@@ -1950,7 +1950,7 @@ mod tests {
 
         // The work should have its title_version_id pointing at the heuristic
         // row, which must have source='opf', field_name='title', confidence=0.2.
-        let dest_str = dest.to_str().unwrap();
+        let dest_str = dest.strip_prefix(library.path()).unwrap().to_str().unwrap();
         let row = sqlx::query!(
             "SELECT w.title_version_id, w.title FROM works w \
              JOIN manifestations m ON m.work_id = w.id \
@@ -2008,7 +2008,7 @@ mod tests {
         // Every work_author row for this work must carry a source_version_id
         // pointing at a metadata_versions row with
         // field_name='contributors.author'.
-        let dest_str = dest.to_str().unwrap();
+        let dest_str = dest.strip_prefix(library.path()).unwrap().to_str().unwrap();
         let rows = sqlx::query!(
             "SELECT wa.author_id, wa.source_version_id \
              FROM work_authors wa \
