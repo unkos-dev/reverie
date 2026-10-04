@@ -2,9 +2,9 @@
 //!
 //! [`CoordinatorHandle`] submits discovery commands to [`run_watcher`].
 
-/// Source-file cleanup after a successful ingestion batch.
+/// Unchanged source cleanup and deletion-ancestor pruning.
 pub mod cleanup;
-/// Atomic, `SHA-256`-verified file copy from the ingestion drop-zone to the library.
+/// Independent source acquisition and contained candidate publication.
 pub mod copier;
 
 /// Library path template rendering and filename-heuristic extraction.
@@ -15,6 +15,4 @@ pub mod watcher;
 
 mod orchestrator;
 
-#[cfg(test)]
-pub(crate) use orchestrator::scan_once;
 pub use orchestrator::{CoordinatorHandle, DiscoveryResult, coordinator_channel, run_watcher};

@@ -627,7 +627,7 @@ CREATE TABLE public.ingestion_inputs (
     CONSTRAINT ingestion_inputs_completed_at_check CHECK (((completed_at >= '0001-01-01 00:00:00+00'::timestamp with time zone) AND (completed_at < '10000-01-01 00:00:00+00'::timestamp with time zone))),
     CONSTRAINT ingestion_inputs_generation_check CHECK ((generation > 0)),
     CONSTRAINT ingestion_inputs_observed_at_check CHECK (((observed_at >= '0001-01-01 00:00:00+00'::timestamp with time zone) AND (observed_at < '10000-01-01 00:00:00+00'::timestamp with time zone))),
-    CONSTRAINT ingestion_inputs_removal_cause_check CHECK ((removal_cause = ANY (ARRAY['automatic_cleanup'::text, 'admin_deletion'::text, 'external_disappearance'::text]))),
+    CONSTRAINT ingestion_inputs_removal_cause_check CHECK ((removal_cause = ANY (ARRAY['automatic_cleanup'::text, 'admin_deletion'::text, 'external_disappearance'::text, 'unattributed_disappearance'::text]))),
     CONSTRAINT ingestion_inputs_removed_at_check CHECK (((removed_at >= '0001-01-01 00:00:00+00'::timestamp with time zone) AND (removed_at < '10000-01-01 00:00:00+00'::timestamp with time zone))),
     CONSTRAINT ingestion_inputs_retry_reset_at_check CHECK (((retry_reset_at >= '0001-01-01 00:00:00+00'::timestamp with time zone) AND (retry_reset_at < '10000-01-01 00:00:00+00'::timestamp with time zone))),
     CONSTRAINT ingestion_inputs_source_path_check CHECK ((octet_length(source_path) > 0))
@@ -652,11 +652,25 @@ CREATE TABLE public.ingestion_jobs (
     input_id uuid,
     input_generation bigint,
     outcome public.ingestion_attempt_outcome,
+    publication_library_id uuid,
+    publication_path text,
+    publication_identity jsonb,
+    publication_hash text,
+    publication_size bigint,
+    publication_failure_class public.ingestion_attempt_outcome,
+    publication_failure_reason text,
     CONSTRAINT ingestion_jobs_completed_at_ts_decode_range CHECK (((completed_at >= '0001-01-01 00:00:00+00'::timestamp with time zone) AND (completed_at < '10000-01-01 00:00:00+00'::timestamp with time zone))),
     CONSTRAINT ingestion_jobs_created_at_ts_decode_range CHECK (((created_at >= '0001-01-01 00:00:00+00'::timestamp with time zone) AND (created_at < '10000-01-01 00:00:00+00'::timestamp with time zone))),
     CONSTRAINT ingestion_jobs_generation_positive CHECK ((input_generation > 0)),
     CONSTRAINT ingestion_jobs_input_pair CHECK (((input_id IS NULL) = (input_generation IS NULL))),
-    CONSTRAINT ingestion_jobs_started_at_ts_decode_range CHECK (((started_at >= '0001-01-01 00:00:00+00'::timestamp with time zone) AND (started_at < '10000-01-01 00:00:00+00'::timestamp with time zone)))
+    CONSTRAINT ingestion_jobs_publication_failure_class_check CHECK ((publication_failure_class = ANY (ARRAY['shared_dependency'::public.ingestion_attempt_outcome, 'transient_input'::public.ingestion_attempt_outcome, 'needs_change'::public.ingestion_attempt_outcome]))),
+    CONSTRAINT ingestion_jobs_publication_hash_check CHECK ((publication_hash ~ '^[0-9a-f]{64}$'::text)),
+    CONSTRAINT ingestion_jobs_publication_path_check CHECK (((publication_path <> ''::text) AND (publication_path !~ '(^/|/$|//|\\|^[A-Za-z]:|(^|/)[.]{1,2}(/|$))'::text))),
+    CONSTRAINT ingestion_jobs_publication_size_check CHECK ((publication_size >= 0)),
+    CONSTRAINT ingestion_jobs_started_at_ts_decode_range CHECK (((started_at >= '0001-01-01 00:00:00+00'::timestamp with time zone) AND (started_at < '10000-01-01 00:00:00+00'::timestamp with time zone))),
+    CONSTRAINT ingestion_publication_evidence_pair CHECK ((((publication_library_id IS NULL) = (publication_path IS NULL)) AND ((publication_library_id IS NULL) = (publication_identity IS NULL)) AND ((publication_library_id IS NULL) = (publication_hash IS NULL)) AND ((publication_library_id IS NULL) = (publication_size IS NULL)))),
+    CONSTRAINT ingestion_publication_failure_pair CHECK ((((publication_failure_class IS NULL) = (publication_failure_reason IS NULL)) AND ((publication_failure_class IS NULL) OR (publication_library_id IS NOT NULL)))),
+    CONSTRAINT ingestion_publication_linked CHECK (((publication_library_id IS NULL) OR (input_id IS NOT NULL)))
 );
 
 
@@ -1110,6 +1124,7 @@ CREATE TABLE public.settings (
     accepted_formats text[] DEFAULT '{epub}'::text[] NOT NULL,
     cleanup_imported boolean DEFAULT true NOT NULL,
     cleanup_duplicates boolean DEFAULT false NOT NULL,
+    ingestion_seeded boolean DEFAULT false NOT NULL,
     CONSTRAINT settings_accepted_formats_check CHECK ((accepted_formats <@ ARRAY['epub'::text])),
     CONSTRAINT settings_cover_download_timeout_secs_check CHECK ((cover_download_timeout_secs >= 1)),
     CONSTRAINT settings_cover_max_bytes_check CHECK ((cover_max_bytes >= 1)),
@@ -1953,6 +1968,13 @@ CREATE INDEX idx_ingestion_jobs_status ON public.ingestion_jobs USING btree (sta
 
 
 --
+-- Name: idx_ingestion_jobs_unresolved_publication; Type: INDEX; Schema: public; Owner: reverie_migrator
+--
+
+CREATE INDEX idx_ingestion_jobs_unresolved_publication ON public.ingestion_jobs USING btree (id) WHERE (publication_library_id IS NOT NULL);
+
+
+--
 -- Name: idx_library_path_claims_owner; Type: INDEX; Schema: public; Owner: reverie_migrator
 --
 
@@ -2585,6 +2607,14 @@ ALTER TABLE ONLY public.ingestion_inputs
 
 ALTER TABLE ONLY public.ingestion_jobs
     ADD CONSTRAINT ingestion_jobs_input_id_fkey FOREIGN KEY (input_id) REFERENCES public.ingestion_inputs(id);
+
+
+--
+-- Name: ingestion_jobs ingestion_jobs_publication_library_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: reverie_migrator
+--
+
+ALTER TABLE ONLY public.ingestion_jobs
+    ADD CONSTRAINT ingestion_jobs_publication_library_id_fkey FOREIGN KEY (publication_library_id) REFERENCES public.libraries(id);
 
 
 --

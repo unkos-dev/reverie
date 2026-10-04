@@ -1,0 +1,26 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT ingestion_seeded FROM settings WHERE id = true",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "ingestion_seeded",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "settings",
+            "name": "ingestion_seeded"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "ed609cfa57723a15f6c93c4f01a1877bf30a37b7d79e3ed1b43980a14be10a1c"
+}

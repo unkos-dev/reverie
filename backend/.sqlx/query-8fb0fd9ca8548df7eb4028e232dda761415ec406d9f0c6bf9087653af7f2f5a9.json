@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "UPDATE ingestion_jobs SET outcome = $2, completed_at = now(), error_message = $3,\n         status = CASE WHEN $2::ingestion_attempt_outcome = 'imported' THEN 'complete'::job_status\n                       WHEN $2::ingestion_attempt_outcome IN ('duplicate', 'changed') THEN 'skipped'::job_status ELSE 'failed'::job_status END\n         WHERE id = $1 AND input_id = $4 AND input_generation = $5",
+  "query": "UPDATE ingestion_jobs SET publication_failure_class = $2, publication_failure_reason = $3\n         WHERE id = $1 AND publication_library_id IS NOT NULL",
   "describe": {
     "columns": [],
     "parameters": {
@@ -23,12 +23,10 @@
             }
           }
         },
-        "Text",
-        "Uuid",
-        "Int8"
+        "Text"
       ]
     },
     "nullable": []
   },
-  "hash": "86a309d7eceb1a062b40a1978e3f80b522cf33910370b5520cd951dd97d9504c"
+  "hash": "8fb0fd9ca8548df7eb4028e232dda761415ec406d9f0c6bf9087653af7f2f5a9"
 }

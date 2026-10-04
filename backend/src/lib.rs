@@ -362,9 +362,9 @@ pub async fn run() -> anyhow::Result<()> {
         .await
         .map_err(|e| anyhow::anyhow!("failed to connect ingestion pool: {e}"))?;
 
-    let initial_settings = services::settings::load(&pool)
+    let initial_settings = services::settings::seed_ingestion(&pool, &config)
         .await
-        .map_err(|e| anyhow::anyhow!("failed to load settings from database: {e}"))?;
+        .map_err(|e| anyhow::anyhow!("failed to seed ingestion settings: {e}"))?;
     let settings = std::sync::Arc::new(tokio::sync::RwLock::new(initial_settings));
     let last_settings_reload = std::sync::Arc::new(tokio::sync::RwLock::new(None));
 

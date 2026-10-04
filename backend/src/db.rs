@@ -1334,6 +1334,12 @@ mod tests {
             include_str!("../migrations/20260930000000_library_relative_file_locations.up.sql");
         let mut tx = pool.begin().await.unwrap();
         sqlx::raw_sql(include_str!(
+            "../migrations/20261004000000_ingestion_publication.down.sql"
+        ))
+        .execute(&mut *tx)
+        .await
+        .unwrap();
+        sqlx::raw_sql(include_str!(
             "../migrations/20261003000000_library_path_claims.down.sql"
         ))
         .execute(&mut *tx)
@@ -1343,6 +1349,12 @@ mod tests {
         sqlx::raw_sql(up).execute(&mut *tx).await.unwrap();
         sqlx::raw_sql(include_str!(
             "../migrations/20261003000000_library_path_claims.up.sql"
+        ))
+        .execute(&mut *tx)
+        .await
+        .unwrap();
+        sqlx::raw_sql(include_str!(
+            "../migrations/20261004000000_ingestion_publication.up.sql"
         ))
         .execute(&mut *tx)
         .await

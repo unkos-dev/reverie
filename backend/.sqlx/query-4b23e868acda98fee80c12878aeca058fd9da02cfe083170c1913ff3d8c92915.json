@@ -1,0 +1,12 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE ingestion_inputs SET status = 'pending', reason = NULL, retry_reset_at = clock_timestamp()\n         WHERE status = 'processing' AND NOT EXISTS (SELECT 1 FROM ingestion_jobs j\n           WHERE j.input_id = ingestion_inputs.id AND j.publication_library_id IS NOT NULL)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": []
+  },
+  "hash": "4b23e868acda98fee80c12878aeca058fd9da02cfe083170c1913ff3d8c92915"
+}

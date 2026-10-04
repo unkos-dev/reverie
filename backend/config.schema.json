@@ -5,7 +5,7 @@
   "type": "object",
   "properties": {
     "accepted_formats": {
-      "description": "Accepted ingestion formats (`REVERIE_ACCEPTED_FORMATS`, comma-separated;\ndefault `epub`). An empty list suspends acquisition.",
+      "description": "Accepted ingestion formats (`REVERIE_ACCEPTED_FORMATS`, comma-separated;\ndefault `epub`). Seeds settings once; saved values win. An empty list suspends acquisition.",
       "type": "array",
       "default": [
         "epub"
@@ -20,12 +20,12 @@
       "default": false
     },
     "cleanup_duplicates": {
-      "description": "Remove duplicate sources (`REVERIE_CLEANUP_DUPLICATES`, default `false`).",
+      "description": "Initial duplicate-source cleanup setting (`REVERIE_CLEANUP_DUPLICATES`, default `false`); saved values win.",
       "type": "boolean",
       "default": false
     },
     "cleanup_imported": {
-      "description": "Remove imported sources (`REVERIE_CLEANUP_IMPORTED`, default `true`).",
+      "description": "Initial imported-source cleanup setting (`REVERIE_CLEANUP_IMPORTED`, default `true`); saved values win.",
       "type": "boolean",
       "default": true
     },

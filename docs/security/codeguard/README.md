@@ -167,8 +167,10 @@ function without parsing them.
 - Generated filenames for extracted content; never trust manifest-provided
   paths
 - Extracted content stored outside web root
-- EPUB parser runs on the ingestion pool with scoped RLS; with `DATABASE_URL_INGESTION` unset the pipeline runs as
+- The scheduling owner uses the ingestion pool with scoped RLS; with `DATABASE_URL_INGESTION` unset the pipeline runs as
   the application role and cannot write at all
+- The admin scan submits discovery to that owner; it does not run another import loop
+- Initial ingestion settings seeding uses the primary pool's existing settings grants before worker startup
 - Source cleanup uses opened ingestion authority, rejects symlink parents and rechecks the current generation and
   source fingerprint before deletion. Pruning starts only from a successful deletion and stops at the root.
 - Approved metadata-file exception: a deletion ancestor may discard regular `.DS_Store` and `Thumbs.db` files only

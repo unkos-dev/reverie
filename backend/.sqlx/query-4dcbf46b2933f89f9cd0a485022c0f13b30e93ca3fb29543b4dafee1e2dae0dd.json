@@ -1,0 +1,31 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT NOT row_security_active('public.library_path_claims') OR pg_has_role('reverie_ingestion', 'USAGE')\n           OR (pg_has_role('reverie_app', 'USAGE') AND COALESCE(current_setting('app.system_context', TRUE) = 'writeback', FALSE)) AS \"available!\",\n           ARRAY(SELECT path FROM UNNEST($2::text[]) AS directories(path)\n             WHERE EXISTS (SELECT 1 FROM library_path_claims c WHERE c.library_id = $1 AND starts_with(c.path, directories.path || '/'))) AS \"owned!\"",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "available!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 1,
+        "name": "owned!",
+        "type_info": "TextArray",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "TextArray"
+      ]
+    },
+    "nullable": [
+      null,
+      null
+    ]
+  },
+  "hash": "4dcbf46b2933f89f9cd0a485022c0f13b30e93ca3fb29543b4dafee1e2dae0dd"
+}

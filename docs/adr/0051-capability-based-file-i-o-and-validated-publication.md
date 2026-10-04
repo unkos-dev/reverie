@@ -66,6 +66,22 @@ Imported and duplicate cleanup are independent outcome options, with deletion re
 originals to quarantine remains a viable separation mechanism, but changes externally shared paths and requires another
 growing byte store. Retained originals keep correction with the operator and need explicit retry eligibility.
 
+Record possible ingestion publication on its existing linked attempt before making the final name visible. Persist the
+exact library/name, candidate identity, accepted hash and size, and acknowledge that transaction under shared path
+exclusion. Clear evidence with the imported outcome and manifestation claim in one transaction. Resolve lost
+acknowledgement from that exact attempt before inspecting a name writeback may already have changed. Startup reconciles
+evidence before reclaiming interrupted attempts; unavailable read or removal suspends its input while unrelated healthy
+inputs continue. Preserve foreign files and committed owners; remove only verified unregistered owned bytes.
+
+Reuse acquisition evidence when validation leaves bytes unchanged and finalised repair evidence when it rewrites them.
+Move the owned candidate directly on the same filesystem; stage and independently verify on the actual destination
+filesystem for EXDEV. Track only destination parents created by the attempt, removing them on disposal only while their
+identity matches, they are empty and no committed owner requires them. Preserve pre-existing folders.
+
+Use streaming, validation and publication phases within the existing progress owner. Only streaming accepts idle
+cancellation; protected phases finish without an idle timeout invalidating their result. Earlier shutdown requests stay
+effective between phases. Keep the existing drain budget and kernel-read limitation.
+
 The development catalogue is disposable and can be rebuilt and re-ingested. No conversion, legacy location reader or
 temporary writer adapter is part of this decision. Startup never resets the database.
 
