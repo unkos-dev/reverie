@@ -60,7 +60,7 @@ pub fn validate(handle: &ZipHandle, opf_data: Option<&OpfData>, issues: &mut Vec
 
     // Attempt to decode as a raster first. SVG-declared covers aren't
     // raster-decodable.
-    if image::load_from_memory(&bytes).is_ok() {
+    if raster_is_decodable(&bytes) {
         return true; // decodable raster, no issue
     }
     if crate::services::covers::svg::looks_like_svg(&bytes) {
@@ -72,6 +72,10 @@ pub fn validate(handle: &ZipHandle, opf_data: Option<&OpfData>, issues: &mut Vec
         kind: IssueKind::UndecodableCover { href },
     });
     false
+}
+
+pub(crate) fn raster_is_decodable(bytes: &[u8]) -> bool {
+    image::load_from_memory(bytes).is_ok()
 }
 
 /// Resolve the usability of an SVG-declared cover by rasterizing it exactly as

@@ -261,7 +261,7 @@ async fn serve_cover(
 ) -> Result<Response, AppError> {
     let artifact = match get_or_create(state, manifestation_id, user_id, size).await {
         Ok(a) => a,
-        // ArchiveRejected is already logged at warn where Layer 1 detected it.
+        // ArchiveRejected is already logged at warn in generate_into_cache.
         Err(CoverError::NoCover | CoverError::ArchiveRejected(_)) => {
             return Err(AppError::NotFound);
         }

@@ -138,11 +138,13 @@ writeback. There is no EXDEV fallback, replay or `cover_path` rewrite for this s
   insertion for series metadata, though no caller reaches it). Every other element is preserved byte-for-byte. The
   orchestrator always passes `series: None` today; no caller populates `Target::series`, so series membership is never
   written back through this path even though the routine that rewrites the `OPF` supports the field.
-- `backend/src/services/writeback/cover_embed.rs` (`plan_embed`) inspects the `OPF` manifest to decide whether a new
-  cover replaces an existing entry in place, is added under a fresh name because the format changed (the old entry then
-  becomes orphaned in the archive, an accepted trade-off with nothing reclaiming it afterwards), or is inserted where no
-  cover existed. It returns `OPF`-relative paths; the orchestrator translates them to `ZIP`-absolute paths by joining
-  with the `OPF`'s own directory before passing them to the repack helper.
+- `backend/src/services/writeback/cover_embed.rs` (`plan_embed`) checks replacement bytes with the raster decoder shared
+  with EPUB cover validation, refusing unknown formats and images that fail to decode before planning a mutation. It
+  inspects the `OPF` manifest to decide whether a new cover replaces an existing entry in place, is added under a fresh
+  name because the format changed (the old entry then becomes orphaned in the archive, an accepted trade-off with
+  nothing reclaiming it afterwards), or is inserted where no cover existed. It returns `OPF`-relative paths; the
+  orchestrator translates them to `ZIP`-absolute paths by joining with the `OPF`'s own directory before passing them to
+  the repack helper.
 - `backend/src/services/writeback/path_rename.rs` opens actual source/destination parents, uses no-replace rename and
   falls back only on EXDEV. The fallback streams through a 64 KiB buffer into `cap-tempfile`, verifies the published
   destination independently and then removes the source.
@@ -311,6 +313,8 @@ tests construct directly.
 
 ### No-overwrite relocation
 
+Destination selection preserves an already-owned bare name or canonical numeric suffix, regardless of its number.
+Otherwise, it probes the bare name and suffixes `(2)` through `(999)`, then returns a collision-exhaustion error.
 Numeric suffix probing selects a proposed destination before the accepted-content UPDATE stores intent. The final commit
 enforces refusal independently of that probe: an occupied file or dangling link is never replaced. Missing destination
 directories are created through contained operations, with each new entry's owning parent synced before relocation.

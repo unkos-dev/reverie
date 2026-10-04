@@ -61,6 +61,8 @@ pub struct CoverPlan {
 ///
 /// - `WritebackError::ValidationRegressed("unknown cover format: …")` — the
 ///   `image` crate cannot recognise `new_cover_bytes` as a supported format.
+/// - `WritebackError::ValidationRegressed("undecodable cover")`: the
+///   replacement image fails the raster decode check used by EPUB validation.
 /// - `WritebackError::Xml` — the `OPF` rewrite pass (branches 2 and 3)
 ///   encountered a `quick_xml` parse error.
 /// - `WritebackError::ValidationRegressed("opf has no <manifest>")` — the
@@ -68,6 +70,11 @@ pub struct CoverPlan {
 pub fn plan_embed(opf_bytes: &[u8], new_cover_bytes: &[u8]) -> Result<CoverPlan, WritebackError> {
     let fmt = image::guess_format(new_cover_bytes)
         .map_err(|e| WritebackError::ValidationRegressed(format!("unknown cover format: {e}")))?;
+    if !crate::services::epub::cover_layer::raster_is_decodable(new_cover_bytes) {
+        return Err(WritebackError::ValidationRegressed(
+            "undecodable cover".into(),
+        ));
+    }
     let (media_type, ext, compression) = media_for(fmt);
 
     let scan = scan_opf(opf_bytes);
@@ -365,20 +372,20 @@ const fn media_for(
 mod tests {
     use super::*;
 
-    // Tiny valid PNG: 1x1 black pixel.
-    const PNG_1X1: &[u8] = &[
-        0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44,
-        0x52, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x06, 0x00, 0x00, 0x00, 0x1F,
-        0x15, 0xC4, 0x89, 0x00, 0x00, 0x00, 0x0D, 0x49, 0x44, 0x41, 0x54, 0x78, 0x9C, 0x62, 0x00,
-        0x01, 0x00, 0x00, 0x05, 0x00, 0x01, 0x0D, 0x0A, 0x2D, 0xB4, 0x00, 0x00, 0x00, 0x00, 0x49,
-        0x45, 0x4E, 0x44, 0xAE, 0x42, 0x60, 0x82,
-    ];
+    #[test]
+    fn plan_rejects_recognisable_undecodable_cover() {
+        let bytes = b"\x89PNG\r\n\x1a\ninvalid image";
+        assert_eq!(image::guess_format(bytes).unwrap(), image::ImageFormat::Png);
+        assert!(matches!(
+            plan_embed(epub3_opf_with_cover().as_bytes(), bytes),
+            Err(WritebackError::ValidationRegressed(_))
+        ));
+    }
 
-    // Minimal JPEG: SOI + JFIF app0 + EOI.  `image::guess_format` only
-    // sniffs magic bytes, so we don't need a decodable frame.
-    const JPEG_MINIMAL: &[u8] = &[
-        0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x10, 0x4A, 0x46, 0x49, 0x46, 0x00, 0x01, 0x01, 0x00, 0x00,
-        0x01, 0x00, 0x01, 0x00, 0x00, 0xFF, 0xD9,
+    const PNG_1X1: &[u8] = &[
+        137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 13, 73, 72, 68, 82, 0, 0, 0, 1, 0, 0, 0, 1, 8, 2,
+        0, 0, 0, 144, 119, 83, 222, 0, 0, 0, 15, 73, 68, 65, 84, 120, 1, 1, 4, 0, 251, 255, 0, 10,
+        20, 30, 0, 104, 0, 61, 232, 12, 187, 131, 0, 0, 0, 0, 73, 69, 78, 68, 174, 66, 96, 130,
     ];
 
     fn epub3_opf_with_cover() -> String {
@@ -483,7 +490,11 @@ mod tests {
     #[test]
     fn plan_replaces_existing_epub2_same_media() {
         let opf = epub2_opf_with_cover();
-        let plan = plan_embed(opf.as_bytes(), JPEG_MINIMAL).unwrap();
+        let mut jpeg = std::io::Cursor::new(Vec::new());
+        image::DynamicImage::new_rgb8(1, 1)
+            .write_to(&mut jpeg, image::ImageFormat::Jpeg)
+            .unwrap();
+        let plan = plan_embed(opf.as_bytes(), jpeg.get_ref()).unwrap();
         assert!(
             plan.binary_replacements
                 .contains_key("images/old-cover.jpg"),
