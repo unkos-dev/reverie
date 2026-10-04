@@ -7,7 +7,7 @@
 //!
 //! Synchronous. Call from `tokio::task::spawn_blocking`.
 
-use std::path::Path;
+use std::fs::File;
 
 use image::ImageFormat;
 
@@ -33,9 +33,9 @@ use crate::services::epub::{
 /// archive structure, [`CoverError::NoCover`] if no cover is declared, the
 /// declared OPF or cover entry is missing, or [`CoverError::Decode`] if the
 /// cover bytes are neither a decodable raster format nor `SVG`.
-pub fn extract_cover_bytes(epub_path: &Path) -> Result<(Vec<u8>, ImageFormat), CoverError> {
+pub fn extract_cover_bytes(file: File) -> Result<(Vec<u8>, ImageFormat), CoverError> {
     let mut issues = Vec::new();
-    let handle = zip_layer::validate(epub_path, &mut issues).map_err(|e| match e {
+    let handle = zip_layer::validate(file, &mut issues).map_err(|e| match e {
         crate::services::epub::EpubError::Zip(z) => CoverError::Zip(z),
         crate::services::epub::EpubError::Io(io) => CoverError::Io(io),
         other => CoverError::Decode(other.to_string()),
@@ -46,7 +46,6 @@ pub fn extract_cover_bytes(epub_path: &Path) -> Result<(Vec<u8>, ImageFormat), C
     if issues.iter().any(|i| i.severity == Severity::Irrecoverable) {
         let kinds: Vec<_> = issues.iter().map(|i| &i.kind).collect();
         tracing::warn!(
-            path = %epub_path.display(),
             issues = ?kinds,
             "cover extraction: archive rejected by Layer 1 validation"
         );
@@ -128,7 +127,7 @@ mod tests {
         std::fs::write(&path, &bytes).unwrap();
 
         assert!(matches!(
-            extract_cover_bytes(&path),
+            extract_cover_bytes(std::fs::File::open(&path).unwrap()),
             Err(CoverError::ArchiveRejected(_))
         ));
     }

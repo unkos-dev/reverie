@@ -9,9 +9,11 @@ use walkdir::WalkDir;
 use crate::config::Config;
 use crate::models::ingestion_status::IngestionStatus;
 use crate::models::manifestation_format::ManifestationFormat;
+use crate::models::storage_library::LibraryId;
 use crate::models::validation_status::ValidationStatus;
 use crate::models::{ingestion_job, work};
 use crate::services::epub::{self, ValidationOutcome};
+use crate::services::files::LibraryFiles;
 use crate::services::ingestion::{cleanup, copier, format_filter, path_template, quarantine};
 use crate::services::metadata;
 
@@ -45,6 +47,7 @@ pub async fn run_watcher(
     config: Config,
     pool: PgPool,
     cancel: CancellationToken,
+    files: LibraryFiles,
 ) -> Result<(), anyhow::Error> {
     let (tx, mut rx) = mpsc::channel::<Vec<PathBuf>>(16);
     let ingestion_path = PathBuf::from(&config.ingestion_path);
@@ -67,7 +70,7 @@ pub async fn run_watcher(
                     // Watcher detected files — do a full scan of the ingestion dir.
                     // We scan rather than use the watcher's paths because walkdir
                     // gives us the complete picture (handles late-arriving files).
-                    let result = scan_once(&config, &pool).await;
+                    let result = scan_once(&config, &pool, &files).await;
                     match result {
                         Ok(r) => {
                             tracing::info!(
@@ -110,7 +113,11 @@ const SCAN_ADVISORY_LOCK_ID: i64 = 0x5265_7665_0000_0004; // "Reve" + step 4
 /// `spawn_blocking` tasks panic, or if a fatal database error occurs outside
 /// the per-file error path. Per-file failures are counted in `ScanResult::failed`
 /// and do not propagate as errors.
-pub async fn scan_once(config: &Config, pool: &PgPool) -> Result<ScanResult, anyhow::Error> {
+pub async fn scan_once(
+    config: &Config,
+    pool: &PgPool,
+    files: &LibraryFiles,
+) -> Result<ScanResult, anyhow::Error> {
     // Serialize scans — only one can run at a time. Uses a session-level advisory
     // lock (released when the connection returns to the pool) rather than a
     // transaction-level lock, because the scan spans many transactions.
@@ -119,7 +126,7 @@ pub async fn scan_once(config: &Config, pool: &PgPool) -> Result<ScanResult, any
         .fetch_one(&mut *lock_conn)
         .await?;
 
-    let result = scan_once_inner(config, pool).await;
+    let result = scan_once_inner(config, pool, files).await;
 
     // Release the advisory lock explicitly (also released on connection drop).
     // Log a warning if the unlock fails — the lock will still release on connection drop.
@@ -133,10 +140,13 @@ pub async fn scan_once(config: &Config, pool: &PgPool) -> Result<ScanResult, any
     result
 }
 
-async fn scan_once_inner(config: &Config, pool: &PgPool) -> Result<ScanResult, anyhow::Error> {
+async fn scan_once_inner(
+    config: &Config,
+    pool: &PgPool,
+    files: &LibraryFiles,
+) -> Result<ScanResult, anyhow::Error> {
+    let library_id = crate::models::storage_library::default_library_id(pool).await?;
     let ingestion_path = PathBuf::from(&config.ingestion_path);
-    let library_path = PathBuf::from(&config.library_path);
-    let quarantine_path = PathBuf::from(&config.quarantine_path);
     let format_priority = config.format_priority.clone();
 
     // Walk the ingestion directory and collect all regular files.
@@ -197,7 +207,7 @@ async fn scan_once_inner(config: &Config, pool: &PgPool) -> Result<ScanResult, a
         let job = ingestion_job::create(pool, batch_id, &source_str).await?;
         ingestion_job::mark_running(pool, job.id).await?;
 
-        match process_file(source, &library_path, &quarantine_path, pool).await {
+        match process_file(source, config, pool, files, library_id).await {
             ProcessResult::Complete => {
                 ingestion_job::mark_complete(pool, job.id).await?;
                 processed += 1;
@@ -259,17 +269,47 @@ enum ProcessResult {
 // `force-validator-error` short-circuits to `Err` so the validator-crash
 // arm can be exercised end-to-end. Compiled out of non-test
 // builds; no global state, so parallel tests cannot interfere.
-fn run_validator(path: &Path) -> Result<epub::ValidationReport, epub::EpubError> {
+fn run_validator(
+    files: &LibraryFiles,
+    library_id: LibraryId,
+    path: &crate::services::files::RelativeFilePath,
+) -> Result<epub::Validated, epub::EpubError> {
     #[cfg(test)]
-    if path
-        .file_name()
-        .is_some_and(|n| n.to_string_lossy().contains("force-validator-error"))
-    {
+    if path.as_str().contains("force-validator-error") {
         return Err(epub::EpubError::Io(std::io::Error::other(
             "forced validator error (test seam)",
         )));
     }
-    epub::validate_and_repair(path)
+    let root = files
+        .library(library_id)
+        .map_err(|error| epub::EpubError::Io(std::io::Error::other(error)))?;
+    let (parent, basename) = crate::services::writeback::path_rename::parent(root, path)?;
+    let file = root.open(path.as_path())?.into_std();
+    epub::validate_and_repair(file, &parent, &basename)
+}
+
+struct IngestionValidation {
+    result: Result<epub::Validated, epub::EpubError>,
+    current: Option<(String, u64)>,
+}
+
+fn reconcile_validation(
+    files: &LibraryFiles,
+    library_id: LibraryId,
+    path: &crate::services::files::RelativeFilePath,
+    result: Result<epub::Validated, epub::EpubError>,
+) -> Result<IngestionValidation, epub::EpubError> {
+    let current = if matches!(&result, Err(epub::EpubError::PublicationUncertain { .. })) {
+        let root = files
+            .library(library_id)
+            .map_err(|error| epub::EpubError::Io(std::io::Error::other(error)))?;
+        let mut file = root.open(path.as_path())?.into_std();
+        let hash = epub::repack::hash_file(&mut file)?;
+        Some((hash, file.metadata()?.len()))
+    } else {
+        None
+    };
+    Ok(IngestionValidation { result, current })
 }
 
 #[expect(
@@ -278,10 +318,13 @@ fn run_validator(path: &Path) -> Result<epub::ValidationReport, epub::EpubError>
 )]
 async fn process_file(
     source: &Path,
-    library_path: &Path,
-    quarantine_path: &Path,
+    config: &Config,
     pool: &PgPool,
+    files: &LibraryFiles,
+    library_id: LibraryId,
 ) -> ProcessResult {
+    let library_path = Path::new(config.library_path.as_str());
+    let quarantine_path = Path::new(config.quarantine_path.as_str());
     let source = source.to_path_buf();
     let library_path = library_path.to_path_buf();
     let quarantine_path = quarantine_path.to_path_buf();
@@ -396,8 +439,6 @@ async fn process_file(
     // validator for another format ships later, its files are already in
     // the truthful pre-validation state.
     //
-    // A Repaired outcome rewrites the library file, so only that arm replaces
-    // the copy's hash and size.
     let mut current_hash = copy_result.sha256.clone();
     let mut current_size = copy_result.file_size;
     let (validation_status, accessibility_metadata, opf_data, has_embedded_cover): (
@@ -411,12 +452,48 @@ async fn process_file(
     ) = if ext == "epub" {
         let lib_file = library_path.join(&final_relative);
         let validation = {
-            let lib_file = lib_file.clone();
-            tokio::task::spawn_blocking(move || run_validator(&lib_file)).await
+            let files = files.clone();
+            let relative = match final_relative
+                .to_str()
+                .ok_or_else(|| "non-UTF8 copied location".to_owned())
+                .and_then(|path| {
+                    path.parse()
+                        .map_err(|error: crate::services::files::LibraryFileError| {
+                            error.to_string()
+                        })
+                }) {
+                Ok(path) => path,
+                Err(error) => return ProcessResult::Failed(error),
+            };
+            tokio::task::spawn_blocking(move || {
+                let result = run_validator(&files, library_id, &relative);
+                reconcile_validation(&files, library_id, &relative, result)
+            })
+            .await
         };
+        let validation = match validation {
+            Ok(Ok(validation)) => validation,
+            Ok(Err(error)) => {
+                return ProcessResult::Failed(format!(
+                    "publication reconciliation failed: {error}"
+                ));
+            }
+            Err(error) => {
+                return ProcessResult::Failed(format!("spawn_blocking panicked: {error}"));
+            }
+        };
+        if let Some((hash, size)) = validation.current {
+            current_hash = hash;
+            current_size = size;
+        }
 
-        match validation {
-            Ok(Ok(report)) => {
+        match validation.result {
+            Ok(validated) => {
+                if let Some((hash, size)) = validated.rewritten {
+                    current_hash = hash;
+                    current_size = size;
+                }
+                let report = validated.report;
                 tracing::info!(
                     path = %lib_file.display(),
                     outcome = ?report.outcome,
@@ -455,49 +532,6 @@ async fn process_file(
                         (ValidationStatus::Clean, a11y, opf, Some(has_cover))
                     }
                     ValidationOutcome::Repaired => {
-                        // `ingestion_file_hash` keeps the copy hash: dedup keys on it
-                        // and it never changes after ingestion.
-                        let lib_file_for_hash = lib_file.clone();
-                        let rehash = tokio::task::spawn_blocking(
-                            move || -> Result<(String, u64), std::io::Error> {
-                                let hash = copier::hash_file(&lib_file_for_hash)?;
-                                let size = std::fs::metadata(&lib_file_for_hash)?.len();
-                                Ok((hash, size))
-                            },
-                        )
-                        .await;
-
-                        match rehash {
-                            Ok(Ok((hash, size))) => {
-                                current_hash = hash;
-                                current_size = size;
-                            }
-                            Ok(Err(e)) => {
-                                let lib_file_str = lib_file.display().to_string();
-                                if let Err(e) = tokio::task::spawn_blocking(move || {
-                                    if let Err(e) = std::fs::remove_file(&lib_file_str) {
-                                        tracing::warn!(
-                                            path = %lib_file_str,
-                                            error = %e,
-                                            "failed to remove library file after repaired EPUB re-hash failure"
-                                        );
-                                    }
-                                })
-                                .await
-                                {
-                                    tracing::warn!(error = %e, "cleanup spawn_blocking panicked for repaired EPUB re-hash failure");
-                                }
-                                let reason = format!("failed to re-hash repaired EPUB: {e}");
-                                quarantine_async(&source, &quarantine_path, &reason).await;
-                                return ProcessResult::Failed(reason);
-                            }
-                            Err(e) => {
-                                return ProcessResult::Failed(format!(
-                                    "spawn_blocking panicked: {e}"
-                                ));
-                            }
-                        }
-
                         (ValidationStatus::Repaired, a11y, opf, Some(has_cover))
                     }
                     ValidationOutcome::Degraded => {
@@ -505,17 +539,10 @@ async fn process_file(
                     }
                 }
             }
-            Ok(Err(e)) => {
-                // The validator itself failed to run (IO error, internal
-                // crash) — nothing is known about the file's structural
-                // quality, so don't borrow `degraded` ("validator ran,
-                // found tolerable issues"). `failed` is the monitorable
-                // validator-crash state; the file is still
-                // ingested and served.
+            Err(e) => {
                 tracing::warn!(error = %e, "epub validation error; storing validation_status=failed");
                 (ValidationStatus::Failed, None, None, None)
             }
-            Err(e) => return ProcessResult::Failed(format!("spawn_blocking panicked: {e}")),
         }
     } else {
         (ValidationStatus::Pending, None, None, None)
@@ -657,12 +684,43 @@ async fn process_file(
     // and concurrency-bounded. `current_hash` is `current_file_hash` (see
     // `commit_ingest`), which keys the cover cache.
     if should_warm_cover(format, has_embedded_cover) {
-        crate::services::covers::spawn_warm_thumb(
-            library_path.display().to_string(),
-            manifestation_id,
-            current_hash,
-            final_path_str.clone(),
-        );
+        let source_relative = Path::new(&final_path_str)
+            .strip_prefix(&library_path)
+            .map_err(|error| error.to_string())
+            .and_then(|path| {
+                path.to_str()
+                    .ok_or_else(|| "non-UTF8 warming source".to_owned())
+            })
+            .and_then(|path| {
+                path.parse()
+                    .map_err(|error: crate::services::files::LibraryFileError| error.to_string())
+            });
+        match source_relative {
+            Ok(path) => {
+                let files = files.clone();
+                let opened = tokio::task::spawn_blocking(move || {
+                    files.open_source(&crate::services::files::LibraryLocation { library_id, path })
+                })
+                .await;
+                match opened {
+                    Ok(Ok(opened)) => crate::services::covers::spawn_warm_thumb(
+                        library_path.display().to_string(),
+                        manifestation_id,
+                        current_hash,
+                        opened.file,
+                    ),
+                    Ok(Err(error)) => {
+                        tracing::warn!(%error, %manifestation_id, "opening cover warming source failed");
+                    }
+                    Err(error) => {
+                        tracing::warn!(%error, %manifestation_id, "cover warming source task failed");
+                    }
+                }
+            }
+            Err(error) => {
+                tracing::warn!(%error, %manifestation_id, "invalid cover warming location");
+            }
+        }
     }
 
     ProcessResult::Complete
@@ -850,6 +908,84 @@ async fn quarantine_async(source: &Path, quarantine_path: &Path, reason: &str) {
 )]
 mod tests {
     use super::*;
+
+    #[test]
+    fn candidate_publication_ingestion_uncertainty_reconciles_actual_bytes() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().to_str().unwrap().parse().unwrap();
+        let library_id = crate::models::storage_library::LibraryId::from_uuid(uuid::Uuid::new_v4());
+        let files = crate::test_support::test_library_files_at(&root, library_id);
+        let relative = "stored.epub".parse().unwrap();
+        let path = dir.path().join("stored.epub");
+        std::fs::write(&path, b"accepted candidate").unwrap();
+        let accepted_hash = super::copier::hash_file(&path).unwrap();
+        for bytes in [b"original".as_slice(), b"accepted candidate".as_slice()] {
+            std::fs::write(&path, bytes).unwrap();
+            let result = super::reconcile_validation(
+                &files,
+                library_id,
+                &relative,
+                Err(super::epub::EpubError::PublicationUncertain {
+                    hash: accepted_hash.clone(),
+                    error: Box::new(super::epub::EpubError::Io(std::io::Error::other(
+                        "uncertain",
+                    ))),
+                }),
+            )
+            .unwrap();
+            assert!(matches!(
+                result.result,
+                Err(super::epub::EpubError::PublicationUncertain { .. })
+            ));
+            assert_eq!(
+                result.current,
+                Some((super::copier::hash_file(&path).unwrap(), bytes.len() as u64))
+            );
+            assert_eq!(std::fs::read(&path).unwrap(), bytes);
+        }
+    }
+
+    #[test]
+    fn candidate_publication_ingestion_reconciliation_rejects_unreadable_uncertain_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().to_str().unwrap().parse().unwrap();
+        let library_id = crate::models::storage_library::LibraryId::from_uuid(uuid::Uuid::new_v4());
+        let files = crate::test_support::test_library_files_at(&root, library_id);
+        let relative = "missing.epub".parse().unwrap();
+        let result = super::reconcile_validation(
+            &files,
+            library_id,
+            &relative,
+            Err(super::epub::EpubError::PublicationUncertain {
+                hash: "candidate".into(),
+                error: Box::new(super::epub::EpubError::Io(std::io::Error::other(
+                    "uncertain",
+                ))),
+            }),
+        );
+        assert!(matches!(result, Err(super::epub::EpubError::Io(_))));
+        let result = super::reconcile_validation(
+            &files,
+            library_id,
+            &relative,
+            Err(super::epub::EpubError::Io(std::io::Error::other(
+                "validation",
+            ))),
+        )
+        .unwrap();
+        assert!(result.current.is_none());
+        assert!(matches!(result.result, Err(super::epub::EpubError::Io(_))));
+    }
+
+    async fn scan_once(config: &Config, pool: &PgPool) -> Result<ScanResult, anyhow::Error> {
+        let id = crate::models::storage_library::default_library_id(pool).await?;
+        let files = LibraryFiles::open(
+            [(id, config.library_path.clone())],
+            &config.ingestion_path,
+            &config.quarantine_path,
+        )?;
+        super::scan_once(config, pool, &files).await
+    }
     use crate::config::CleanupMode;
     use crate::test_support::db::ingestion_pool_for;
 

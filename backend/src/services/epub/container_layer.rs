@@ -98,8 +98,8 @@ mod tests {
     use crate::services::epub::zip_layer::ZipHandle;
 
     fn make_handle_with_entries(entries: &[(&str, Vec<u8>)]) -> ZipHandle {
-        ZipHandle {
-            bytes: {
+        ZipHandle::from_bytes(
+            &({
                 use std::io::Write;
                 let buf = std::io::Cursor::new(Vec::new());
                 let mut w = zip::ZipWriter::new(buf);
@@ -110,9 +110,8 @@ mod tests {
                     w.write_all(data).unwrap();
                 }
                 w.finish().unwrap().into_inner()
-            },
-            entries: entries.iter().map(|(n, _)| n.to_string()).collect(),
-        }
+            }),
+        )
     }
 
     #[test]

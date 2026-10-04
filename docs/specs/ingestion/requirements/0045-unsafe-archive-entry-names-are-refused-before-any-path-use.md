@@ -25,6 +25,8 @@ from surviving with the rest of its content still admitted to the library.
 
 ## Acceptance criteria
 
+The archive tests below consume opened temporary files through the file-backed admission path.
+
 - An entry name containing a literal parent-directory component ("..") causes the archive to be refused. Checked by
   `path_traversal_is_quarantined` in `backend/src/services/epub/zip_layer.rs`.
 - An entry name containing two consecutive dots that form no parent-directory component, such as `cover..jpg`, causes

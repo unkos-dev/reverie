@@ -867,10 +867,7 @@ mod tests {
         w.start_file("OEBPS/content.opf", opts).unwrap();
         w.write_all(opf_content).unwrap();
         let bytes = w.finish().unwrap().into_inner();
-        ZipHandle {
-            bytes,
-            entries: vec!["OEBPS/content.opf".to_string()],
-        }
+        ZipHandle::from_bytes(&bytes)
     }
 
     #[test]
