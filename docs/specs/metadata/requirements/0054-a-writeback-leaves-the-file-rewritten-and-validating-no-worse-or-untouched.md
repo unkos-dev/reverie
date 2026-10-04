@@ -30,8 +30,7 @@ Successful repair is recorded separately; unresolved severity determines whether
   rewritten archive. Checked by `run_once_finds_non_default_opf_and_updates_hash` in
   `backend/src/services/writeback/orchestrator.rs`.
 - A candidate that validates worse is rejected before replacement, leaving source bytes and the stored location/hash
-  unchanged. Checked by `candidate_publication_regression_preserves_source_and_row` in
-  `backend/src/services/writeback/orchestrator.rs` and `candidate_publication_rejects_regression_before_replacement` in
+  unchanged. Checked by `candidate_publication_rejects_regression_before_replacement` in
   `backend/src/services/epub/mod.rs`.
 - A validator or required repair error prevents publication and preserves the source. Checked by
   `candidate_publication_validator_error_leaves_source_untouched` and

@@ -1463,7 +1463,7 @@ mod tests {
     }
 
     #[sqlx::test(migrations = "./migrations")]
-    async fn candidate_publication_regression_preserves_source_and_row(pool: PgPool) {
+    async fn cover_writeback_input_refusal_preserves_source_and_row(pool: PgPool) {
         let app = writeback_pool_for(&pool).await;
         let ing = ingestion_pool_for(&pool).await;
         let mut png = std::io::Cursor::new(Vec::new());

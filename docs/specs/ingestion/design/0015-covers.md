@@ -275,8 +275,8 @@ still names.
   `AppError::NotFound`, with neither a `Cache-Control` nor a `Vary` header attached by this subject or by anything the
   response passes through afterwards. An RLS-hidden manifestation is response-identical to a manifestation that
   genuinely has no cover, by the construction in Runtime behaviour above. `generate_into_cache` logs an archive
-  rejection once at warning level with its manifestation identifier and validation issues; the extraction layer returns
-  the rejection without logging it.
+  rejection once per generation attempt at warning level with its manifestation identifier and validation issues; the
+  extraction layer returns the rejection without logging it.
 - **A missing source or a NotFound I/O failure during generation/publication.** This is a distinct `404` shape,
   `cover_miss_not_found()`, carrying `Cache-Control: private, max-age=60` and the same `Vary` as a success, so a grid of
   missing covers is not re-derived from disk on every navigation, but at a far shorter negative TTL than a real cover's

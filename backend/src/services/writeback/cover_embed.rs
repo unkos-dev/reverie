@@ -60,7 +60,9 @@ pub struct CoverPlan {
 /// # Errors
 ///
 /// - `WritebackError::ValidationRegressed("unknown cover format: …")` — the
-///   `image` crate cannot recognise `new_cover_bytes` as a supported format.
+///   `image` crate cannot recognise the format of `new_cover_bytes`.
+/// - `WritebackError::ValidationRegressed("unsupported cover format")`: the
+///   recognised format is not JPEG, PNG or WebP.
 /// - `WritebackError::ValidationRegressed("undecodable cover")`: the
 ///   replacement image fails the raster decode check used by EPUB validation.
 /// - `WritebackError::Xml` — the `OPF` rewrite pass (branches 2 and 3)
@@ -70,6 +72,14 @@ pub struct CoverPlan {
 pub fn plan_embed(opf_bytes: &[u8], new_cover_bytes: &[u8]) -> Result<CoverPlan, WritebackError> {
     let fmt = image::guess_format(new_cover_bytes)
         .map_err(|e| WritebackError::ValidationRegressed(format!("unknown cover format: {e}")))?;
+    if !matches!(
+        fmt,
+        image::ImageFormat::Jpeg | image::ImageFormat::Png | image::ImageFormat::WebP
+    ) {
+        return Err(WritebackError::ValidationRegressed(
+            "unsupported cover format".into(),
+        ));
+    }
     if !crate::services::epub::cover_layer::raster_is_decodable(new_cover_bytes) {
         return Err(WritebackError::ValidationRegressed(
             "undecodable cover".into(),
@@ -371,6 +381,17 @@ const fn media_for(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn plan_rejects_recognised_unsupported_cover_format() {
+        let bytes = b"GIF89a";
+        assert_eq!(image::guess_format(bytes).unwrap(), image::ImageFormat::Gif);
+        assert!(matches!(
+            plan_embed(epub3_opf_with_cover().as_bytes(), bytes),
+            Err(WritebackError::ValidationRegressed(message))
+                if message == "unsupported cover format"
+        ));
+    }
 
     #[test]
     fn plan_rejects_recognisable_undecodable_cover() {
