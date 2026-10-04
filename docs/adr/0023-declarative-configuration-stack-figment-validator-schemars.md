@@ -76,9 +76,14 @@ validation, and schemars derives the configuration schema and reference. Togethe
 the source of truth.
 
 Figment was chosen over config-rs because its errors retain the key path and source, and it can remap environment names
-that do not follow struct nesting. Config-rs's underscore-based nesting conflicts with snake_case field names. Validator
+that do not follow struct nesting. Using `_` as a nesting separator conflicts with snake_case field names; config-rs
+allows another separator, but that alone does not map the existing mixed environment names to nested fields. Validator
 was chosen over `garde` because wider adoption offered a stronger scrutiny signal for security-relevant configuration,
 despite the latter's cleaner cross-field API.
+
+Schemars was chosen over reusing utoipa or writing a custom schema harvester because it derives a reusable JSON Schema
+directly from configuration types. A custom harvester would retain brittle source parsing or require a bespoke
+procedural macro. Reusing the API's OpenAPI emitter would couple the configuration schema to an unrelated surface.
 
 ### Consequences
 
@@ -155,3 +160,6 @@ Related:
 (backend dependency-adoption precedent),
 [Persist operator-tunable settings to database with live reload](./0012-persist-operator-tunable-settings-to-database-with-live-reload.md)
 (distinct database-backed runtime-settings surface).
+
+[Config-rs environment separators](https://docs.rs/config/latest/config/struct.Environment.html#method.separator) are
+configurable; the existing environment-name mapping is the relevant constraint.
