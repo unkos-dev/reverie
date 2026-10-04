@@ -305,12 +305,14 @@ pub async fn run() -> anyhow::Result<()> {
     let library_id = models::storage_library::default_library_id(&pool)
         .await
         .context("selecting the configured library identity")?;
-    let root_config = config.clone();
+    let library_path = config.library_path.clone();
+    let ingestion_path = config.ingestion_path.clone();
+    let quarantine_path = config.quarantine_path.clone();
     let library_files = tokio::task::spawn_blocking(move || {
         services::files::LibraryFiles::open(
-            [(library_id, root_config.library_path)],
-            &root_config.ingestion_path,
-            &root_config.quarantine_path,
+            [(library_id, library_path)],
+            &ingestion_path,
+            &quarantine_path,
         )
     })
     .await

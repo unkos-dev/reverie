@@ -706,13 +706,17 @@ mod tests {
 
     use crate::test_support::db::{ingestion_pool_for, writeback_pool_for};
 
-    fn test_config() -> Config {
-        Config {
+    fn test_config(library: &Path) -> (Config, crate::services::files::LibraryFiles) {
+        let (storage_config, files) = crate::test_support::test_storage_config(
+            Some(library),
+            crate::models::storage_library::LibraryId::from_uuid(uuid::Uuid::new_v4()),
+        );
+        let config = Config {
             port: 3000,
             database_url: String::new(),
-            library_path: crate::config::Config::default().library_path,
-            ingestion_path: crate::config::Config::default().ingestion_path,
-            quarantine_path: crate::config::Config::default().quarantine_path,
+            library_path: storage_config.library_path,
+            ingestion_path: storage_config.ingestion_path,
+            quarantine_path: storage_config.quarantine_path,
             log_level: "info".into(),
             db_max_connections: 5,
             oidc_issuer_url: String::new(),
@@ -782,7 +786,8 @@ mod tests {
             hardcover_api_token: None,
             operator_contact: None,
             ingestion_dsn_defaulted: false,
-        }
+        };
+        (config, files)
     }
 
     /// Build an EPUB fixture whose container.xml points at a NON-default
@@ -925,7 +930,9 @@ mod tests {
         .await
         .unwrap();
 
-        let outcome = run_once(&app_pool, &test_config(), job_id).await.unwrap();
+        let outcome = run_once(&app_pool, &test_config(path.parent().unwrap()).0, job_id)
+            .await
+            .unwrap();
         assert!(
             matches!(outcome, RunOutcome::Success { .. }),
             "run_once should succeed: {outcome:?}"
@@ -992,7 +999,9 @@ mod tests {
         .fetch_one(&ing_pool)
         .await
         .unwrap();
-        run_once(&app_pool, &test_config(), j1).await.unwrap();
+        run_once(&app_pool, &test_config(path.parent().unwrap()).0, j1)
+            .await
+            .unwrap();
 
         let hash_after_first = sqlx::query_scalar!(
             "SELECT current_file_hash FROM manifestations WHERE id = $1",
@@ -1020,7 +1029,9 @@ mod tests {
         .fetch_one(&ing_pool)
         .await
         .unwrap();
-        run_once(&app_pool, &test_config(), j2).await.unwrap();
+        run_once(&app_pool, &test_config(path.parent().unwrap()).0, j2)
+            .await
+            .unwrap();
 
         let row = sqlx::query!(
             "SELECT current_file_hash, ingestion_file_hash FROM manifestations WHERE id = $1",
@@ -1103,7 +1114,7 @@ mod tests {
         .unwrap();
 
         // Use a config with the lib_dir as library_path so path-rename engages.
-        let mut cfg = test_config();
+        let (mut cfg, _files) = test_config(lib_dir.path());
         cfg.library_path = library_root.parse().unwrap();
 
         let outcome = run_once(&app_pool, &cfg, job_id).await.unwrap();
@@ -1273,7 +1284,13 @@ mod tests {
         .await
         .unwrap();
 
-        let outcome = run_once(&app_pool, &test_config(), job_id).await.unwrap();
+        let outcome = run_once(
+            &app_pool,
+            &test_config(src_path.parent().unwrap()).0,
+            job_id,
+        )
+        .await
+        .unwrap();
         assert!(
             matches!(outcome, RunOutcome::Success { .. }),
             "cover writeback should succeed: {outcome:?}"
@@ -1395,7 +1412,13 @@ mod tests {
         .await
         .unwrap();
 
-        let outcome = run_once(&app_pool, &test_config(), job_id).await.unwrap();
+        let outcome = run_once(
+            &app_pool,
+            &test_config(src_path.parent().unwrap()).0,
+            job_id,
+        )
+        .await
+        .unwrap();
         assert!(
             matches!(outcome, RunOutcome::Success { .. }),
             "cover writeback should succeed: {outcome:?}"
@@ -1484,7 +1507,7 @@ mod tests {
         .await
         .unwrap();
 
-        let mut cfg = test_config();
+        let (mut cfg, _files) = test_config(lib_dir.path());
         cfg.library_path = library_root.parse().unwrap();
         let outcome = run_once(&app_pool, &cfg, job_id).await.unwrap();
         assert!(

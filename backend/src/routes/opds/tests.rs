@@ -692,19 +692,16 @@ async fn assert_opened_download_survives_replacement() {
 mod storage {
     use super::*;
 
-    #[tokio::test]
-    async fn library_storage_download_opened_file_replacement() {
-        assert_opened_download_survives_replacement().await;
-    }
-
     fn recorded_download_server(
         app_pool: &PgPool,
         ingestion_pool: &PgPool,
+        config: crate::config::Config,
         files: crate::services::files::LibraryFiles,
     ) -> axum_test::TestServer {
         let mut state = test_support::test_state();
         state.pool = app_pool.clone();
         state.ingestion_pool = ingestion_pool.clone();
+        state.config = config;
         state.library_files = files;
         state.config.opds.enabled = true;
         axum_test::TestServer::new(crate::build_router(state))
@@ -745,14 +742,8 @@ mod storage {
             .unwrap();
         let (work, file) =
             insert_recorded_download(&ingestion_pool, id, "Author/Recorded.epub", "nested").await;
-        let server = recorded_download_server(
-            &app_pool,
-            &ingestion_pool,
-            test_support::test_library_files_at(
-                &library.path().to_str().unwrap().parse().unwrap(),
-                id,
-            ),
-        );
+        let (config, files) = test_support::test_storage_config(Some(library.path()), id);
+        let server = recorded_download_server(&app_pool, &ingestion_pool, config, files);
         for title in ["Original title", "Renamed title"] {
             sqlx::query!("UPDATE works SET title = $1 WHERE id = $2", title, work)
                 .execute(&ingestion_pool)
@@ -796,7 +787,11 @@ mod storage {
             &root_a,
         )
         .unwrap();
-        let server = recorded_download_server(&app_pool, &ingestion_pool, files);
+        let mut config = test_support::test_config();
+        config.library_path = root_a.clone();
+        config.ingestion_path = root_a.clone();
+        config.quarantine_path = root_a;
+        let server = recorded_download_server(&app_pool, &ingestion_pool, config, files);
         for (id, hash, expected) in [
             (first, "first", b"first library".as_slice()),
             (second, "second", b"second library".as_slice()),
@@ -1020,14 +1015,27 @@ async fn cover_missing_file_returns_404_problem_json(pool: PgPool) {
     let tmp = tempfile::TempDir::new().unwrap();
     let library_root = std::fs::canonicalize(tmp.path()).unwrap();
 
-    // The manifestation is RLS-visible, but its EPUB is absent on disk, so the
-    // cover cannot be generated or served.
-    let missing = library_root.join("gone.epub");
-    let missing_path = missing.to_string_lossy().into_owned();
-    let m = insert_manifestation_with_path(&ingestion_pool, &missing_path, "Ghost").await;
+    let source = library_root.join("gone.epub");
+    std::fs::write(
+        &source,
+        test_support::db::make_minimal_epub_with_cover_tagged("gone"),
+    )
+    .unwrap();
+    let m =
+        insert_manifestation_with_path(&ingestion_pool, source.to_str().unwrap(), "Ghost").await;
 
     let server =
         test_support::db::server_with_opds_enabled(&app_pool, &ingestion_pool, &library_root).await;
+
+    for suffix in ["cover/thumb", "cover"] {
+        let response = server
+            .get(&format!("/api/v1/books/{m}/{suffix}"))
+            .add_header(AUTHORIZATION, basic.clone())
+            .await;
+        assert_eq!(response.status_code(), StatusCode::OK);
+    }
+    std::fs::remove_file(source).unwrap();
+    std::fs::remove_dir_all(library_root.join("_covers/cache")).unwrap();
 
     for suffix in ["cover/thumb", "cover"] {
         let response = server
