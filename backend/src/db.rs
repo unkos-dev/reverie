@@ -706,6 +706,183 @@ mod tests {
     use super::*;
     use sqlx::postgres::PgConnectOptions;
 
+    async fn storage_manifestation(
+        pool: &PgPool,
+        library_id: Option<uuid::Uuid>,
+        path: &str,
+        hash: &str,
+    ) -> Result<(), sqlx::Error> {
+        let work = sqlx::query_scalar!(
+            "INSERT INTO works (title, sort_title) VALUES ('Storage', 'storage') RETURNING id"
+        )
+        .fetch_one(pool)
+        .await?;
+        sqlx::query!(
+            "INSERT INTO manifestations
+             (work_id, library_id, file_path, format, ingestion_file_hash, current_file_hash, file_size_bytes)
+             VALUES ($1, $2, $3, 'epub', $4, $4, 7)",
+            work,
+            library_id,
+            path,
+            hash,
+        )
+        .execute(pool)
+        .await?;
+        Ok(())
+    }
+
+    fn storage_sqlstate(error: &sqlx::Error) -> String {
+        error
+            .as_database_error()
+            .unwrap()
+            .code()
+            .unwrap()
+            .into_owned()
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn library_storage_schema_seeded_identity_and_required_owner(pool: PgPool) {
+        use crate::models::storage_library::default_library_id;
+        let id = default_library_id(&pool).await.unwrap();
+        assert_eq!(id, default_library_id(&pool).await.unwrap());
+        storage_manifestation(&pool, Some(id.as_uuid()), "author/book.epub", "valid")
+            .await
+            .unwrap();
+        let error = storage_manifestation(&pool, None, "missing.epub", "missing")
+            .await
+            .unwrap_err();
+        assert_eq!(storage_sqlstate(&error), "23502");
+        let error =
+            storage_manifestation(&pool, Some(uuid::Uuid::new_v4()), "unknown.epub", "unknown")
+                .await
+                .unwrap_err();
+        assert_eq!(storage_sqlstate(&error), "23503");
+        sqlx::query!("DELETE FROM manifestations")
+            .execute(&pool)
+            .await
+            .unwrap();
+        sqlx::query!("DELETE FROM libraries WHERE configuration_key = 'default'")
+            .execute(&pool)
+            .await
+            .unwrap();
+        assert!(matches!(
+            default_library_id(&pool).await,
+            Err(sqlx::Error::RowNotFound)
+        ));
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn library_storage_schema_canonical_relative_paths(pool: PgPool) {
+        let id = crate::models::storage_library::default_library_id(&pool)
+            .await
+            .unwrap();
+        for path in [
+            "",
+            "/book",
+            "book/",
+            "a//book",
+            "a\\book",
+            "C:book",
+            ".",
+            "..",
+            "./book",
+            "a/../book",
+            "a/./book",
+        ] {
+            let error = storage_manifestation(&pool, Some(id.as_uuid()), path, path)
+                .await
+                .unwrap_err();
+            assert_eq!(storage_sqlstate(&error), "23514", "{path:?}");
+        }
+        storage_manifestation(
+            &pool,
+            Some(id.as_uuid()),
+            "Author/Book: edition.epub",
+            "valid",
+        )
+        .await
+        .unwrap();
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn library_storage_schema_library_namespace_and_global_hash(pool: PgPool) {
+        let first = crate::models::storage_library::default_library_id(&pool)
+            .await
+            .unwrap()
+            .as_uuid();
+        let second = sqlx::query_scalar!(
+            "INSERT INTO libraries (configuration_key) VALUES ('second') RETURNING id"
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        storage_manifestation(&pool, Some(first), "book.epub", "first")
+            .await
+            .unwrap();
+        let error = storage_manifestation(&pool, Some(first), "book.epub", "duplicate-path")
+            .await
+            .unwrap_err();
+        assert_eq!(storage_sqlstate(&error), "23505");
+        storage_manifestation(&pool, Some(second), "book.epub", "second")
+            .await
+            .unwrap();
+        let error = storage_manifestation(&pool, Some(second), "other.epub", "first")
+            .await
+            .unwrap_err();
+        assert_eq!(storage_sqlstate(&error), "23505");
+        let error = sqlx::query!("DELETE FROM libraries WHERE id = $1", first)
+            .execute(&pool)
+            .await
+            .unwrap_err();
+        assert_eq!(storage_sqlstate(&error), "23001");
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn library_storage_schema_runtime_roles_read_only(pool: PgPool) {
+        let roles = [
+            crate::test_support::db::app_pool_for(&pool).await,
+            crate::test_support::db::ingestion_pool_for(&pool).await,
+            crate::test_support::db::readonly_pool_for(&pool).await,
+        ];
+        for role in roles {
+            crate::models::storage_library::default_library_id(&role)
+                .await
+                .unwrap();
+            let insert =
+                sqlx::query!("INSERT INTO libraries (configuration_key) VALUES ('forbidden')")
+                    .execute(&role)
+                    .await
+                    .unwrap_err();
+            assert_eq!(storage_sqlstate(&insert), "42501");
+            let update = sqlx::query!("UPDATE libraries SET configuration_key = 'forbidden'")
+                .execute(&role)
+                .await
+                .unwrap_err();
+            assert_eq!(storage_sqlstate(&update), "42501");
+            let delete = sqlx::query!("DELETE FROM libraries")
+                .execute(&role)
+                .await
+                .unwrap_err();
+            assert_eq!(storage_sqlstate(&delete), "42501");
+        }
+    }
+
+    #[sqlx::test(migrations = false)]
+    async fn library_storage_schema_fresh_up_down(pool: PgPool) {
+        run_migrations_inner(&pool).await.unwrap();
+        let down =
+            include_str!("../migrations/20260930000000_library_relative_file_locations.down.sql");
+        let up =
+            include_str!("../migrations/20260930000000_library_relative_file_locations.up.sql");
+        let mut tx = pool.begin().await.unwrap();
+        sqlx::raw_sql(down).execute(&mut *tx).await.unwrap();
+        sqlx::raw_sql(up).execute(&mut *tx).await.unwrap();
+        tx.commit().await.unwrap();
+        crate::models::storage_library::default_library_id(&pool)
+            .await
+            .unwrap();
+    }
+
     // Mirror a source's transport in the documented URI shape for each:
     // params-only for a socket (an authority would make sqlx's handling of
     // the mix ambiguous to readers), authority-form for TCP. Split out so

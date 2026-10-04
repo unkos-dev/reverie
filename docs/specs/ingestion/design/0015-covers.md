@@ -20,6 +20,11 @@ with tier-dependent encoding, caching the result on disk under a content-address
 with a strong validator and cache headers, and the client's fallback to a generated cloth-bound spine when a cover fails
 to load.
 
+Cover requests and warming still interpret manifestation paths through ambient filesystem interfaces. They do not yet
+resolve the required library identity and relative location. The
+[pipeline limitation](../../../../debt/2026-09-30-library-location-pipelines-incomplete.md) blocks successful extraction
+from these records; cache publication also retains its ambient interface.
+
 ## Purpose and boundaries
 
 This subject owns: cover-byte extraction from an EPUB archive, including the fallback into SVG rasterisation when the

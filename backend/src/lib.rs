@@ -302,6 +302,21 @@ pub async fn run() -> anyhow::Result<()> {
     // schema-dependent query before this runs.
     apply_or_verify_schema(&config, &pool).await?;
 
+    let library_id = models::storage_library::default_library_id(&pool)
+        .await
+        .context("selecting the configured library identity")?;
+    let root_config = config.clone();
+    let library_files = tokio::task::spawn_blocking(move || {
+        services::files::LibraryFiles::open(
+            [(library_id, root_config.library_path)],
+            &root_config.ingestion_path,
+            &root_config.quarantine_path,
+        )
+    })
+    .await
+    .context("acquiring storage roots in blocking work")?
+    .context("opening required storage roots before serving")?;
+
     // First-run env seed: create the first administrator from REVERIE_BOOTSTRAP_*
     // if configured and none exists. Idempotent; honours the single-admin gate.
     seed_admin_if_configured(&pool, config.password_min_length)
@@ -367,6 +382,7 @@ pub async fn run() -> anyhow::Result<()> {
     let state = AppState {
         pool,
         ingestion_pool,
+        library_files,
         config: config.clone(),
         oidc,
         jwt_validator,

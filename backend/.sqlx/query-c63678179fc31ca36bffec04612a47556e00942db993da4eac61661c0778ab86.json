@@ -1,0 +1,12 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE libraries SET configuration_key = 'forbidden'",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": []
+  },
+  "hash": "c63678179fc31ca36bffec04612a47556e00942db993da4eac61661c0778ab86"
+}

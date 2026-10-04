@@ -443,9 +443,9 @@ mod tests {
         Config {
             port: 3000,
             database_url: String::new(),
-            library_path: String::new(),
-            ingestion_path: String::new(),
-            quarantine_path: String::new(),
+            library_path: crate::config::Config::default().library_path,
+            ingestion_path: crate::config::Config::default().ingestion_path,
+            quarantine_path: crate::config::Config::default().quarantine_path,
             log_level: "info".into(),
             db_max_connections: 5,
             oidc_issuer_url: String::new(),
@@ -528,16 +528,16 @@ mod tests {
         .fetch_one(pool)
         .await
         .unwrap();
-        let file_path = format!("/tmp/wb-{marker}.epub");
+        let file_path = format!("fixtures/wb-{marker}.epub");
         let hash = format!("wb-hash-{marker}");
         let m_id = sqlx::query_scalar!(
             // Set enrichment_status = 'complete' so these fixtures don't
             // leak into the enrichment queue's claim_next under parallel
             // test execution (the column defaults to 'pending').
             "INSERT INTO manifestations \
-               (work_id, format, file_path, ingestion_file_hash, current_file_hash, \
+               (library_id, work_id, format, file_path, ingestion_file_hash, current_file_hash, \
                 file_size_bytes, ingestion_status, validation_status, enrichment_status) \
-             VALUES ($1, 'epub'::manifestation_format, $2, $3, $3, 1000, \
+             VALUES ((SELECT id FROM libraries WHERE configuration_key = 'default'), $1, 'epub'::manifestation_format, $2, $3, $3, 1000, \
                      'complete'::ingestion_status, 'clean'::validation_status, \
                      'complete'::enrichment_status) \
              RETURNING id",

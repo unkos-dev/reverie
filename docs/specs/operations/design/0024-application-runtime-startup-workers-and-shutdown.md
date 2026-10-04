@@ -3,8 +3,11 @@ type: DESIGN
 profile-version: 1
 id: "REV-DESIGN-0024"
 title: "Application runtime: startup, workers, and shutdown"
+satisfies:
+  - "REV-REQ-0066"
 governed-by:
   - "REV-ADR-0021"
+  - "REV-ADR-0051"
 ---
 
 # Application runtime: startup, workers, and shutdown
@@ -18,10 +21,10 @@ readiness probes, and the runtime stage of the container image that packages all
 
 This subject owns: CLI subcommand dispatch (`Command`, `parse_command`); the ordered, fallible setup sequence inside
 `run` (configuration load, CSP header finalisation, tracing, database pools, the schema apply-or-verify step, admin
-bootstrap, OIDC and JWT client construction, settings load, login limiter construction, `AppState` assembly, router
-build, listener bind); when and in what order the five background workers are spawned; the shared-deadline drain that
-awaits them on shutdown; the `/health` and `/health/ready` probes; and the `runtime` stage of `Dockerfile` (its
-`ENTRYPOINT`, `HEALTHCHECK`, `USER` and `EXPOSE`).
+storage-root acquisition, admin bootstrap, OIDC and JWT client construction, settings load, login limiter construction,
+`AppState` assembly, router build, listener bind); when and in what order the five background workers are spawned; the
+shared-deadline drain that awaits them on shutdown; the `/health` and `/health/ready` probes; and the `runtime` stage of
+`Dockerfile` (its `ENTRYPOINT`, `HEALTHCHECK`, `USER` and `EXPOSE`).
 
 It does not own: what each background worker does once running (the ingestion pipeline, the enrichment queue, the
 writeback pipeline, the settings live-reload mechanism and the session sweep are each their own subject); the meaning or
@@ -78,6 +81,8 @@ directly rather than assembling its own `AppState` and calling `build_router`.
 - `backend/src/state.rs::AppState` is the `Clone` handle `run` builds once and threads into the router, the request
   handlers and (via per-task clones of its constituent fields) the background workers. Its fields are documented in Data
   and state below.
+- `backend/src/services/files.rs::LibraryFiles` shares immutable library-identity bindings and opened ingestion and
+  quarantine directories across AppState clones. Startup opens all required capabilities before seeds or workers.
 - `backend/src/routes/health.rs` supplies `GET /health` (liveness: always `200 ok`) and `GET /health/ready` (readiness:
   pings the application pool with `SELECT 1`, returning `200 ok` or a `503` Problem Details body). Both are outside
   `/api/v1` and carry an explicit empty `security(())` OpenAPI annotation, opting out of the document-level
@@ -96,9 +101,10 @@ directly rather than assembling its own `AppState` and calling `build_router`.
 
 ### State-writer census
 
-The only piece of shared, mutable runtime-coordination state this subject owns is the shutdown `CancellationToken`
-created in `run`. Every other field `run` builds (`AppState`, the two pool handles, the OIDC and JWT clients) is written
-once at construction and never mutated again through this subject's own code.
+This subject owns the shutdown `CancellationToken` and the storage bindings created in `run`. The bindings have one
+writer: startup calls `LibraryFiles::open` before constructing AppState. Library, ingestion and quarantine capabilities
+are immutable for the lifetime of all AppState clones. Requests neither acquire nor replace roots. Other dependencies
+are written once at construction.
 
 The token is a local binding in `run`, cloned once per worker and once more into `shutdown_signal`. Two call sites write
 its cancelled flag: `shutdown_signal` (on `ctrl_c()` or SIGTERM) and `run` itself, unconditionally, immediately after
@@ -129,12 +135,12 @@ no-op. No worker, and no other part of this subject, calls `.cancel()`; every wo
 
 - **`AppState`** (`backend/src/state.rs`) is built exactly once in `run`, after every fallible setup step has succeeded,
   and is `Clone` for cheap distribution to handlers and workers: `pool` and `ingestion_pool` are `Arc`-backed `PgPool`s;
-  `config` is owned, cloned data; `oidc` and `jwt_validator` are `Option<Arc<_>>`s, `None` on an instance that has not
-  configured the corresponding identity mode; `login_limiter` is an `Arc<LoginLimiter>`; `last_settings_reload` is an
-  `Arc<RwLock<..>>` handle written only by the settings worker, not by this subject; `settings` is likewise an
-  `Arc<RwLock<..>>` handle, but it has a second writer outside this subject — the `PUT /api/v1/settings` route handler
-  also writes it directly, as an immediate local-cache update guarded by `apply_if_newer`'s revision check — so neither
-  writer belongs to this subject, but there is more than one.
+  `config` is owned, cloned data; `library_files` is a cheap shared `LibraryFiles` handle; `oidc` and `jwt_validator`
+  are `Option<Arc<_>>`s, `None` on an instance that has not configured the corresponding identity mode; `login_limiter`
+  is an `Arc<LoginLimiter>`; `last_settings_reload` is an `Arc<RwLock<..>>` handle written only by the settings worker,
+  not by this subject; `settings` is likewise an `Arc<RwLock<..>>` handle, but it has a second writer outside this
+  subject — the `PUT /api/v1/settings` route handler also writes it directly, as an immediate local-cache update guarded
+  by `apply_if_newer`'s revision check — so neither writer belongs to this subject, but there is more than one.
 - **The writeback pool** (`backend/src/db.rs::init_writeback_pool`) is built after `AppState` and is deliberately not
   one of its fields: it is handed directly to the writeback worker's `tokio::spawn` closure and nowhere else. No request
   handler receives it, because no request handler receives anything not reachable through `AppState`.
@@ -166,24 +172,34 @@ no-op. No worker, and no other part of this subject, calls `.cancel()`; every wo
    that pool; the opt-in branch re-derives `config.migration_database_url` behind its own defensive `.context(...)?`
    guard — the configuration gate already guarantees the value is present whenever `auto_migrate` is `true`, so this is
    a second, redundant check — before calling `db::run_migrations` against it. Either branch's failure stops startup.
-6. `seed_admin_if_configured` creates the first administrator from `REVERIE_BOOTSTRAP_*` when configured and no
+6. The application pool selects the default library identity. A blocking task opens its configured library root and the
+   ingestion and quarantine roots through `LibraryFiles::open`. Missing identity, missing or non-directory roots, and
+   acquisition failures stop startup with context. Root configuration is absolute; parsing does not access disk.
+7. `seed_admin_if_configured` creates the first administrator from `REVERIE_BOOTSTRAP_*` when configured and no
    administrator yet exists; it is a no-op otherwise.
-7. One bounded HTTPS OIDC transport is built when either identity mode is configured; local-only mode builds none. The
+8. One bounded HTTPS OIDC transport is built when either identity mode is configured; local-only mode builds none. The
    interactive runtime pairs the discovered client with that transport when `config.oidc_configured()` is true,
    otherwise `AppState.oidc` stays `None`. The resource-server JWT validator is constructed independently when
    `config.resource_server_configured()` is true, using the same transport. A configured role without a transport fails
    startup. [OIDC outbound transport](../../accounts/design/0025-oidc-outbound-transport.md) describes the shared client
    policy and request paths.
-8. `db::init_pool` opens the ingestion pool; `services::settings::load` reads the initial settings row; the login rate
+9. `db::init_pool` opens the ingestion pool; `services::settings::load` reads the initial settings row; the login rate
    limiter is built from `config.login_rate_per_min`.
-9. `AppState` is assembled and `build_router` is called on a clone of it.
-10. `db::init_writeback_pool` opens the writeback pool, and the TCP listener is bound. One more fallible call follows
+10. `AppState` is assembled with the opened `LibraryFiles`, and `build_router` is called on a clone of it.
+11. `db::init_writeback_pool` opens the writeback pool, and the TCP listener is bound. One more fallible call follows
     immediately: `listener.local_addr()` is read back to log the bound address. Nothing has been spawned yet at this
     point, so an early return from any of these steps cannot leak a running task.
-11. A `CancellationToken` is created, and the five workers are spawned in this order: the settings listener, the
+12. A `CancellationToken` is created, and the five workers are spawned in this order: the settings listener, the
     ingestion watcher, the enrichment queue, the session sweep, then the writeback worker. Each receives its own clone
     of the token and (where relevant) its own clone of the pools and configuration it needs.
-12. `axum::serve` begins accepting connections, wrapped in `with_graceful_shutdown(shutdown_signal(...))`.
+13. `axum::serve` begins accepting connections, wrapped in `with_graceful_shutdown(shutdown_signal(...))`.
+
+**An authorised OPDS download:** the handler first accepts its database/RLS lookup, then calls
+`LibraryFiles::open_download` with the recorded library identity and checked relative path. Unknown identities never
+fall back to another library. Path classification, contained opening and handle metadata run in `spawn_blocking`.
+Classification supports relative and absolute links resolving inside the owning library; the resulting relative target
+is opened through its pinned directory. `tokio::fs::File::from_std` supplies ReaderStream with that same file, and its
+metadata supplies Content-Length.
 
 **A graceful shutdown**, triggered by SIGTERM or Ctrl+C while serving:
 
@@ -230,6 +246,11 @@ is never reached.
   them can leave a worker running with nothing left to drain it. `axum::serve` also returns its error to `main.rs`, but
   it runs after the workers are spawned; that path is the unclean shutdown in Runtime behaviour, where the workers are
   drained before `run` returns.
+- **Storage-root acquisition failing.** Startup stops before seeds, workers or requests. Configuration errors name the
+  root variable; acquisition errors identify the required directory. No request retries acquisition.
+- **Download access failing.** Established escapes map to 403, missing files to 404, and unknown library identities,
+  invalid locations and other I/O or blocking-task failures to generic 500 responses. PermissionDenied from the
+  contained open is ambiguous and maps to 500 rather than an inferred escape.
 - **CLI dispatch of an unrecognised or malformed subcommand.** A single unknown token, or an unexpected trailing
   argument after a recognised one, is rejected with a message naming the bad token or the expected usage, rather than
   falling through to `Serve`; both directions are pinned by `parse_command_maps_args_rejects_unknown_and_trailing`.
@@ -253,6 +274,15 @@ is never reached.
   logged and the worker is left for the Tokio runtime to tear down when the process itself exits.
 
 ## Security and operations
+
+Reverie owns managed-library writes and reorganisation. External tools coordinate or pause the application before
+changing managed files. An opened root remains tied to its directory object; replacing or relocating the configured root
+requires a coordinated restart. Provision and mount all three absolute roots before starting the server, and stop it
+before removing a mount: open directory handles can keep a mount busy. Directory existence cannot prove that the
+intended volume is mounted. Downloads use the owning capability after authorisation and never reopen an ambient path for
+streaming. The
+[incomplete producer and cover pipelines](../../../../debt/2026-09-30-library-location-pipelines-incomplete.md) retain
+their existing filesystem interfaces and block release readiness.
 
 When `auto_migrate` is unset or `false`, `run` never reads the migration DSN. Configuration loading forces
 `config.migration_database_url` to `None` whenever `auto_migrate` is `false` (covered by that subject, not restated

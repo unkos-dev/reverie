@@ -68,15 +68,15 @@ async fn seed_manifestation_with_cover(
     has_embedded_cover: Option<bool>,
     with_cover_path: bool,
 ) -> Uuid {
-    let file_path = format!("/tmp/dash-{marker}.bin");
+    let file_path = format!("fixtures/dash-{marker}.bin");
     let hash = format!("dash-hash-{marker}");
     let cover_path = with_cover_path.then(|| format!("/tmp/dash-{marker}-cover.jpg"));
     sqlx::query_scalar!(
         "INSERT INTO manifestations \
-            (work_id, format, file_path, ingestion_file_hash, current_file_hash, \
+            (library_id, work_id, format, file_path, ingestion_file_hash, current_file_hash, \
              file_size_bytes, ingestion_status, validation_status, has_embedded_cover, \
              cover_path) \
-         VALUES ($1, ($2::text)::manifestation_format, $3, $4, $4, $5, \
+         VALUES ((SELECT id FROM libraries WHERE configuration_key = 'default'), $1, ($2::text)::manifestation_format, $3, $4, $4, $5, \
                  'complete'::ingestion_status, ($6::text)::validation_status, $7, $8) \
          RETURNING id",
         work_id,
