@@ -106,10 +106,15 @@ ownership or visibility check of its own on the `writeback_jobs` insert; the vis
 happened on the caller's read of the manifestation before the pointer move.
 
 The dormant download helper publishes pending sidecars; the dormant cover branch promotes them. Neither has a live
-production input. `move_cover_sidecar` selects the manifestation's library, opens pending and accepted directories,
-checks the pending suffix and renames between opened parents with replacing semantics. This is separate from managed
-EPUB publication and relocation. Promotion is best-effort: failure logs a warning without changing successful writeback.
-There is no EXDEV fallback, replay or `cover_path` rewrite for this sidecar movement.
+production input. The cover-read branch constructs a private `PendingCover` containing the owning library identity and
+checked suffix. The source path is derived from that suffix under `_covers/pending/`; source reads use the owning
+library capability. Successful rewrite returns this value alongside accepted publication evidence for promotion, without
+parsing the stored location again. `move_cover_sidecar` opens the pending directory and the suffix's source parent
+before creating accepted destination directories, then renames between opened parents with replacing semantics. Failure
+to open either source directory does not create accepted directories. Opening the parent does not establish that the
+file exists; a missing file can still leave destination directories behind when rename fails. This is separate from
+managed EPUB publication and relocation. Promotion is best-effort: failure logs a warning without changing successful
+writeback. There is no EXDEV fallback, replay or `cover_path` rewrite for this sidecar movement.
 
 ### Component relationships
 
