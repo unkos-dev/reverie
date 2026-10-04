@@ -149,7 +149,7 @@ jobs:
       # its own because Renovate reads it as the ref to resolve.
       - name: Remote build cache (kache)
         if: env.R2_CONFIGURED == 'true'
-        uses: kunobi-ninja/kache-action@96e5a8e6ce1344fd9604eadf8c85a5288f50ba90 # main
+        uses: kunobi-ninja/kache-action@1a33fb2ff51be23eb9e87abeae6edb65be78f71c # main
         with:
           # renovate: datasource=github-releases depName=kunobi-ninja/kache extractVersion=^v(?<version>.+)$
           version: "0.28.1"
