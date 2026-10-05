@@ -97,6 +97,11 @@ test name is the spec, and a docstring restating it is noise. `test_support/` mo
 helper's purpose is non-obvious; the helpers themselves stay bare unless they encode a WHY a future reader would not
 infer.
 
+Backend documentation presence uses a compiler-enforced floor on a library crate, because a binary-only crate does not
+expose public API to the missing-documentation lint. The initial backfill uses a per-module ratchet: each completed
+module loses its temporary exemption, so later omissions fail the build. Frontend documentation remains a reviewed
+convention after the removal of its docstring-presence lint.
+
 ### Consequences
 
 - Positive: security auditors are served directly. Explicit threat-model annotations on security-critical code let an
