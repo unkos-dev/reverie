@@ -1,6 +1,6 @@
 use std::process::{Command, Output};
 
-fn invoke(args: &[&str], ingestion_url: Option<&str>) -> Output {
+fn invoke(args: &[&str], ingestion_url: Option<&str>) -> std::io::Result<Output> {
     let mut command = Command::new(env!("CARGO_BIN_EXE_reverie-api"));
     command
         .args(args)
@@ -10,35 +10,36 @@ fn invoke(args: &[&str], ingestion_url: Option<&str>) -> Output {
     if let Some(url) = ingestion_url {
         command.env("DATABASE_URL_INGESTION", url);
     }
-    command.output().unwrap()
+    command.output()
 }
 
-fn assert_missing_ingestion(ingestion_url: Option<&str>) {
-    let output = invoke(&[], ingestion_url);
+fn assert_missing_ingestion(ingestion_url: Option<&str>) -> Result<(), Box<dyn std::error::Error>> {
+    let output = invoke(&[], ingestion_url)?;
     assert!(!output.status.success());
-    let stderr = String::from_utf8(output.stderr).unwrap();
+    let stderr = String::from_utf8(output.stderr)?;
     assert!(
         stderr.contains("missing required environment variable: DATABASE_URL_INGESTION"),
         "{stderr}"
     );
     assert!(!stderr.contains("invalid-app-dsn-private-marker"));
     assert!(output.stdout.is_empty());
+    Ok(())
 }
 
 #[test]
 fn ingestion_startup_missing_refuses_before_runtime_setup() {
-    assert_missing_ingestion(None);
+    assert_missing_ingestion(None).unwrap();
 }
 
 #[test]
 fn ingestion_startup_empty_refuses_before_runtime_setup() {
-    assert_missing_ingestion(Some(""));
+    assert_missing_ingestion(Some("")).unwrap();
 }
 
 #[test]
 fn ingestion_startup_whitespace_refuses_before_runtime_setup() {
     for value in ["   ", "\t\r\n", "\u{2003}"] {
-        assert_missing_ingestion(Some(value));
+        assert_missing_ingestion(Some(value)).unwrap();
     }
 }
 
@@ -47,7 +48,8 @@ fn ingestion_startup_configured_role_reaches_database_setup() {
     let output = invoke(
         &[],
         Some("postgres://reverie_ingestion@localhost/reverie_dev"),
-    );
+    )
+    .unwrap();
     assert!(!output.status.success());
     let stderr = String::from_utf8(output.stderr).unwrap();
     assert!(stderr.contains("failed to connect to database"), "{stderr}");
@@ -62,7 +64,7 @@ fn ingestion_startup_admin_commands_do_not_require_ingestion_credentials() {
         vec!["unlock-account", "operator@example.com"],
     ] {
         for value in [None, Some(""), Some(" \t\n")] {
-            let output = invoke(&args, value);
+            let output = invoke(&args, value).unwrap();
             assert!(!output.status.success());
             let stderr = String::from_utf8(output.stderr).unwrap();
             assert!(
@@ -76,7 +78,7 @@ fn ingestion_startup_admin_commands_do_not_require_ingestion_credentials() {
 
 #[test]
 fn ingestion_startup_migration_requires_only_its_own_credentials() {
-    let output = invoke(&["migrate"], None);
+    let output = invoke(&["migrate"], None).unwrap();
     assert!(!output.status.success());
     let stderr = String::from_utf8(output.stderr).unwrap();
     assert!(stderr.contains("DATABASE_URL_MIGRATION"), "{stderr}");
@@ -103,6 +105,7 @@ async fn ingestion_startup_configured_roles_serve_ready(pool: sqlx::PgPool) {
     use sqlx::ConnectOptions as _;
     use std::process::Stdio;
     use std::time::Duration;
+    use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
 
     let library = tempfile::tempdir().unwrap();
     let ingestion = tempfile::tempdir().unwrap();
@@ -137,23 +140,22 @@ async fn ingestion_startup_configured_roles_serve_ready(pool: sqlx::PgPool) {
         .kill_on_drop(true)
         .spawn()
         .unwrap();
-    let client = reqwest::Client::builder()
-        .timeout(Duration::from_secs(1))
-        .build()
-        .unwrap();
     tokio::time::timeout(Duration::from_secs(10), async {
         loop {
             assert!(
                 child.try_wait().unwrap().is_none(),
                 "server exited during startup"
             );
-            if let Ok(response) = client
-                .get(format!("http://127.0.0.1:{port}/health/ready"))
-                .send()
-                .await
-                && response.status().is_success()
-            {
-                break;
+            if let Ok(mut stream) = tokio::net::TcpStream::connect(("127.0.0.1", port)).await {
+                stream
+                    .write_all(b"GET /health/ready HTTP/1.1\r\nHost: localhost\r\nUser-Agent: Reverie-startup-test\r\nConnection: close\r\n\r\n")
+                    .await
+                    .unwrap();
+                let mut status = [0; b"HTTP/1.1 200 ".len()];
+                stream.read_exact(&mut status).await.unwrap();
+                if &status == b"HTTP/1.1 200 " {
+                    break;
+                }
             }
             tokio::time::sleep(Duration::from_millis(20)).await;
         }
