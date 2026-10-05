@@ -64,9 +64,9 @@ Kache owns compiled Rust artifacts in object storage; the existing tarball cache
 requests receive read-only remote cache access, while writes are limited to the default branch to protect the shared
 cache from pull request writes.
 
-The initial rollout covers Backend checks, the largest compile without coverage instrumentation. Coverage remains on the
-tarball cache because instrumentation creates a separate key space: including it would roughly double stored artifacts
-for a compile phase that is a minority of that job's runtime.
+At the time of the decision, the initial rollout targeted Backend checks, the largest compile without coverage
+instrumentation. Coverage stayed on the tarball cache because instrumentation created a separate key space: including it
+would roughly double stored artifacts for a compile phase that was a minority of that job's runtime.
 
 ### Consequences
 
