@@ -257,13 +257,14 @@ order rather than by the test itself, which observes only the returned variant.
   only on `setup`) whenever a client IP resolves; and the per-account backoff, checked only inside `local_login`'s
   failed-attempt branch, which a verified login bypasses entirely regardless of the window's state.
 - **Password policy rejection.** `enforce`'s `PolicyError` variants map to `AppError::Validation` (`422`) with the
-  error's `Display` text as the response's `detail` field, for four of its five callers (registration, admin create,
-  admin reset, self-service change): `TooShort`/`TooLong` name the configured bound, `TooWeak` carries zxcvbn's feedback
-  (or a generic message when zxcvbn returns none), and `Breached` returns the fixed sentence "this password has appeared
-  in a known data breach; choose a password you have not used elsewhere". The fifth caller, PIN reset (the account
-  recovery subject), discards the `PolicyError` entirely and answers its own fixed generic message instead, so there a
-  weak password reads identically to a bad PIN. `register_weak_password_returns_422` and
-  `register_invalid_email_returns_422` cover the client-visible shape of a registration rejection.
+  error's `Display` text as the response's `detail` field for HTTP setup, registration, administrator create/reset and
+  self-service change: `TooShort`/`TooLong` name the configured bound, `TooWeak` carries zxcvbn's feedback (or a generic
+  message when zxcvbn returns none), and `Breached` returns the fixed sentence "this password has appeared in a known
+  data breach; choose a password you have not used elsewhere". PIN reset (the account recovery subject), discards the
+  `PolicyError` entirely and answers its own fixed generic message instead, so there a weak password reads identically
+  to a bad PIN. CLI bootstrap and startup seeding propagate policy rejection as a process error before creating the
+  administrator. `register_weak_password_returns_422` and `register_invalid_email_returns_422` cover the client-visible
+  shape of a registration rejection.
 - **HIBP unreachable, slow, or erroring.** `check_breached` treats a transport error, any non-2xx status (including a
   `429` or `503` from HIBP itself), an unreadable response body, and a count that cannot be parsed on the one matching
   suffix line, all identically: log a `warn` and return `false` (not breached). `enforce` then proceeds on strength
