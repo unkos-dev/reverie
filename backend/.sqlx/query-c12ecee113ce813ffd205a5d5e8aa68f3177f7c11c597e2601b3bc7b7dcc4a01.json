@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE works SET title = $2 WHERE id = (SELECT work_id FROM manifestations WHERE id = $1)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "c12ecee113ce813ffd205a5d5e8aa68f3177f7c11c597e2601b3bc7b7dcc4a01"
+}

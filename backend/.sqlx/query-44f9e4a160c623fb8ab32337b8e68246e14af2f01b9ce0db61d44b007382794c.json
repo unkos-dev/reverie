@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO writeback_jobs (manifestation_id, reason, status, attempt_count) VALUES ($1, 'relocation', 'skipped', 10), ($1, 'metadata', 'pending', 1), ($1, 'cover', 'failed', 2)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "44f9e4a160c623fb8ab32337b8e68246e14af2f01b9ce0db61d44b007382794c"
+}

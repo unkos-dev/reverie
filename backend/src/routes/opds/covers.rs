@@ -261,17 +261,11 @@ async fn serve_cover(
 ) -> Result<Response, AppError> {
     let artifact = match get_or_create(state, manifestation_id, user_id, size).await {
         Ok(a) => a,
-        // ArchiveRejected is already logged at warn where Layer 1 detected it.
+        // ArchiveRejected is already logged at warn in generate_into_cache.
         Err(CoverError::NoCover | CoverError::ArchiveRejected(_)) => {
             return Err(AppError::NotFound);
         }
-        // A cover file that has vanished from disk (the source EPUB moved, an
-        // evicted cache entry, an unmounted library) is a 404, not a 500: the
-        // manifestation was already RLS-gated inside `get_or_create`, so this
-        // discloses nothing the caller's own list row did not, and RFC 9110
-        // §15.5.5 is the correct status. It also replaces the per-request
-        // `Internal` ERROR, which floods the log once per thumbnail when a whole
-        // shelf of files is missing on a grid load, with a single WARN.
+        // THREAT: RLS authorisation precedes the short-cached missing-file response.
         Err(CoverError::Io(e)) if e.kind() == std::io::ErrorKind::NotFound => {
             tracing::warn!(%manifestation_id, ?size, error = %e, "cover file missing on disk; serving 404");
             return Ok(cover_miss_not_found());
@@ -296,24 +290,8 @@ async fn serve_cover(
             .map_err(|e| AppError::Internal(e.into()));
     }
 
-    let content_type = match artifact.path.extension().and_then(|e| e.to_str()) {
-        Some("jpg" | "jpeg") => "image/jpeg",
-        Some("png") => "image/png",
-        Some("webp") => "image/webp",
-        _ => "application/octet-stream",
-    };
-
-    let file = match File::open(&artifact.path).await {
-        Ok(f) => f,
-        // The cached artifact was present when `get_or_create` resolved it but
-        // was removed before this open (a cache-eviction race). Same reasoning
-        // as the miss-path branch above: a missing file is a 404, not a 500.
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-            tracing::warn!(%manifestation_id, ?size, "cover file missing on disk; serving 404");
-            return Ok(cover_miss_not_found());
-        }
-        Err(e) => return Err(AppError::Internal(e.into())),
-    };
+    let content_type = artifact.encoding.content_type();
+    let file = File::from_std(artifact.file);
     let stream = ReaderStream::new(file);
     let body = Body::from_stream(stream);
 

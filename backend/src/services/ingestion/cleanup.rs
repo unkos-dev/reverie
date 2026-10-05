@@ -1,386 +1,230 @@
-//! Post-ingestion cleanup: remove processed source files and prune empty directories.
-//!
-//! Cleanup follows completed and skipped file outcomes under the configured mode.
-//! Failed groups retain their sources and siblings outside existing quarantine handling.
-//! The ingestion root bounds directory removal and is never deleted.
+//! Remove unchanged, eligible source files and prune only their ancestors.
 
-use std::collections::HashSet;
-use std::path::{Path, PathBuf};
-
-use crate::config::CleanupMode;
-
-pub(super) fn eligible_paths(
-    mode: CleanupMode,
-    successful: &[PathBuf],
-    all_source_files: &[PathBuf],
-) -> Vec<PathBuf> {
-    match mode {
-        CleanupMode::None => Vec::new(),
-        CleanupMode::Ingested => successful.to_vec(),
-        CleanupMode::All => {
-            let groups: HashSet<_> = successful
-                .iter()
-                .filter_map(|path| {
-                    Some((path.parent(), path.file_stem()?.to_str()?.to_lowercase()))
-                })
-                .collect();
-            all_source_files
-                .iter()
-                .filter(|path| {
-                    path.file_stem()
-                        .and_then(|stem| stem.to_str())
-                        .is_some_and(|stem| groups.contains(&(path.parent(), stem.to_lowercase())))
-                })
-                .cloned()
-                .collect()
-        }
+pub(crate) fn remove_verified(
+    root: &cap_std::fs::Dir,
+    path: &crate::models::ingestion_input::InputPath,
+    expected: &crate::models::ingestion_input::Fingerprint,
+) -> std::io::Result<bool> {
+    use crate::models::ingestion_input::Fingerprint;
+    use crate::services::ingestion::copier;
+    use cap_std::fs::MetadataExt;
+    let metadata = match copier::input_metadata(root, path) {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(false),
+        Err(error) => return Err(error),
+    };
+    if !metadata.is_file() || Fingerprint::from_metadata(&metadata) != *expected {
+        return Ok(false);
     }
+    let (parent, name) = copier::source_parent(root, path)?;
+    // THREAT: Recheck the owned object immediately before unlink; external replacement remains possible between syscalls.
+    let current = parent.symlink_metadata(&name)?;
+    if !current.is_file() || (current.dev(), current.ino()) != (expected.device, expected.inode) {
+        return Ok(false);
+    }
+    parent.remove_file(&name)?;
+    if let Err(error) = prune_ancestors(root, &path.path()) {
+        tracing::warn!(kind = ?error.kind(), "ingestion ancestor pruning stopped");
+    }
+    Ok(true)
 }
 
-/// Counts of filesystem objects removed during a cleanup pass.
-#[derive(Debug)]
-pub struct CleanupResult {
-    /// Number of individual source files successfully deleted.
-    pub removed_files: usize,
-    /// Number of now-empty parent directories successfully pruned.
-    pub removed_dirs: usize,
-}
-
-/// Delete eligible source files, then prune empty parent directories.
-///
-/// `ingestion_root` bounds both file deletion and directory removal: only paths
-/// resolving inside the ingestion tree are touched, and the root itself is never
-/// deleted. Missing files are treated as success (handles TOCTOU races).
-///
-/// # Errors
-///
-/// Returns `Err` if a file deletion fails for any reason other than the file
-/// already being absent (`ErrorKind::NotFound`). Directory removal and
-/// canonicalisation failures are logged and skipped, not propagated.
-pub fn cleanup_batch(
-    paths: &[PathBuf],
-    ingestion_root: &Path,
-) -> Result<CleanupResult, std::io::Error> {
-    // Resolve the ingestion root once; both the file-deletion and
-    // directory-pruning loops bound their writes to descendants of it.
-    let canonical_root = ingestion_root.canonicalize().unwrap_or_else(|e| {
-        // THREAT: a non-canonical root is an abnormal condition. Containment
-        // checks below compare a fully-canonicalised left operand against this
-        // root, so an unresolved root fails closed (over-skips legitimate
-        // in-tree paths) rather than admitting out-of-tree ones — but the
-        // degraded mode is surfaced here so an operator can audit and fix it.
-        tracing::warn!(
-            path = %ingestion_root.display(),
-            error = %e,
-            "failed to canonicalize ingestion root; cleanup containment guard may be weakened"
-        );
-        ingestion_root.to_path_buf()
-    });
-
-    let mut removed_files = 0;
-    for path in paths {
-        // Defence in depth: only delete files whose parent resolves inside the
-        // ingestion tree. Canonicalising the parent (not the file) preserves the
-        // NotFound-is-success contract — a file is in-tree iff its parent is, and
-        // the parent still exists when the file has already been removed.
-        // THREAT: arbitrary file deletion if a caller passes an out-of-tree path.
-        // Each failure mode warns distinctly so an operator can tell a genuine
-        // out-of-tree path from a transient canonicalisation fault.
-        let Some(parent) = path.parent() else {
-            tracing::warn!(path = %path.display(), "skipping file with no parent component during cleanup");
-            continue;
-        };
-        let canonical_parent = match parent.canonicalize() {
-            Ok(canonical_parent) => canonical_parent,
-            Err(e) => {
-                tracing::warn!(path = %path.display(), error = %e, "skipping file whose parent failed to canonicalize during cleanup");
-                continue;
+fn prune_ancestors(root: &cap_std::fs::Dir, path: &std::path::Path) -> std::io::Result<()> {
+    use crate::models::ingestion_input::InputPath;
+    use crate::services::ingestion::copier;
+    use cap_std::fs::MetadataExt;
+    let mut ancestor = path.parent();
+    while let Some(path) = ancestor.filter(|path| !path.as_os_str().is_empty()) {
+        let location = InputPath::from_path(&path.join("entry"))?;
+        let (directory, _) = copier::source_parent(root, &location)?;
+        let mut metadata_files = Vec::new();
+        for entry in directory.entries()? {
+            let entry = entry?;
+            let name = entry.file_name();
+            if (name != ".DS_Store" && name != "Thumbs.db") || !entry.file_type()?.is_file() {
+                return Ok(());
             }
-        };
-        if !canonical_parent.starts_with(&canonical_root) {
-            tracing::warn!(path = %path.display(), "skipping file outside ingestion root during cleanup");
-            continue;
-        }
-        match std::fs::remove_file(path) {
-            Ok(()) => removed_files += 1,
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-                // Already gone — not an error
+            let metadata = directory.symlink_metadata(&name)?;
+            if !metadata.is_file() {
+                return Ok(());
             }
-            Err(e) => return Err(e),
+            metadata_files.push((name, metadata.dev(), metadata.ino()));
         }
-    }
-
-    // Collect unique parent directories, ordered deepest-first for bottom-up removal
-    let mut dirs: Vec<PathBuf> = paths
-        .iter()
-        .filter_map(|p| p.parent().map(std::path::Path::to_path_buf))
-        .collect();
-    dirs.sort();
-    dirs.dedup();
-    // Sort longest path first (deepest directories first)
-    dirs.sort_by_key(|b| std::cmp::Reverse(b.components().count()));
-
-    let mut removed_dirs = 0;
-    for dir in &dirs {
-        let canonical_dir = match dir.canonicalize() {
-            Ok(canonical_dir) => canonical_dir,
-            Err(e) => {
-                // Cannot confirm containment without a canonical path; skipping is
-                // strictly safer than pruning an unverified directory.
-                tracing::warn!(path = %dir.display(), error = %e, "skipping directory that failed to canonicalize during cleanup");
-                continue;
+        for (name, device, inode) in metadata_files {
+            // THREAT: Only the fixed regular metadata files can be removed while pruning an owned deletion's ancestors.
+            let metadata = directory.symlink_metadata(&name)?;
+            if !metadata.is_file() || (metadata.dev(), metadata.ino()) != (device, inode) {
+                return Ok(());
             }
-        };
-        if canonical_dir == canonical_root {
-            continue;
+            directory.remove_file(name)?;
         }
-        // Defence in depth: never prune a directory outside the ingestion
-        // tree, even if a caller passes a stray path. Bounds removal to
-        // descendants of the root — blocking both ancestor (upward) and
-        // sibling (lateral) paths — regardless of caller correctness.
-        // THREAT: arbitrary directory deletion if a path escapes the ingestion root.
-        if !canonical_dir.starts_with(&canonical_root) {
-            tracing::warn!(path = %dir.display(), "skipping directory outside ingestion root during cleanup");
-            continue;
-        }
-        // Only remove if truly empty
-        if let Ok(mut entries) = std::fs::read_dir(dir)
-            && entries.next().is_none()
-        {
-            match std::fs::remove_dir(dir) {
-                Ok(()) => removed_dirs += 1,
-                Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
-                Err(e) => {
-                    tracing::warn!(path = %dir.display(), error = %e, "failed to remove directory during cleanup");
-                }
+        let location = InputPath::from_path(path)?;
+        let (parent, name) = copier::source_parent(root, &location)?;
+        match parent.remove_dir(name) {
+            Ok(()) => ancestor = path.parent(),
+            Err(error) if error.kind() == std::io::ErrorKind::DirectoryNotEmpty => break,
+            Err(error) => {
+                tracing::warn!(kind = ?error.kind(), "ingestion ancestor pruning stopped");
+                break;
             }
         }
     }
-
-    Ok(CleanupResult {
-        removed_files,
-        removed_dirs,
-    })
+    Ok(())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::path::Path;
 
     #[test]
-    fn cleanup_modes_preserve_failed_and_unselected_groups() {
-        for mode in [CleanupMode::None, CleanupMode::Ingested, CleanupMode::All] {
-            let root = tempfile::tempdir().unwrap();
-            let names = [
-                "completed.epub",
-                "COMPLETED.pdf",
-                "skipped.epub",
-                "skipped.pdf",
-                "failed.epub",
-                "failed.pdf",
-                "unselected.txt",
-            ];
-            let paths: Vec<_> = names.iter().map(|name| root.path().join(name)).collect();
-            for path in &paths {
-                std::fs::write(path, b"keep unless eligible").unwrap();
-            }
-            let successful = vec![paths[0].clone(), paths[2].clone()];
-            let eligible = eligible_paths(mode, &successful, &paths);
-            let result = cleanup_batch(&eligible, root.path()).unwrap();
+    fn capability_ingestion_cleanup_nested_ancestors_fixed_metadata_and_root_preserved() {
+        use crate::models::ingestion_input::{Fingerprint, InputPath};
+        let root_dir = tempfile::tempdir().unwrap();
+        let root =
+            cap_std::fs::Dir::open_ambient_dir(root_dir.path(), cap_std::ambient_authority())
+                .unwrap();
+        root.create_dir_all("a/b").unwrap();
+        root.create_dir("unrelated").unwrap();
+        root.write("a/b/book.epub", b"source").unwrap();
+        root.write("a/b/.DS_Store", b"metadata").unwrap();
+        root.write("a/Thumbs.db", b"metadata").unwrap();
+        let path = InputPath::from_path(Path::new("a/b/book.epub")).unwrap();
+        let fingerprint = Fingerprint::from_metadata(
+            &crate::services::ingestion::copier::input_metadata(&root, &path).unwrap(),
+        );
+        assert!(remove_verified(&root, &path, &fingerprint).unwrap());
+        assert!(!root.try_exists("a").unwrap());
+        assert!(root.try_exists("unrelated").unwrap());
+        assert!(root_dir.path().is_dir());
+    }
 
-            let expected_count = match mode {
-                CleanupMode::None => 0,
-                CleanupMode::Ingested => 2,
-                CleanupMode::All => 4,
-            };
-            assert_eq!(result.removed_files, expected_count);
-            for index in [0, 2] {
-                assert_eq!(paths[index].exists(), mode == CleanupMode::None);
+    #[test]
+    fn capability_ingestion_cleanup_sidecars_hidden_files_and_symlinks_preserve_ancestors() {
+        use crate::models::ingestion_input::{Fingerprint, InputPath};
+        for remaining in [
+            "cover.jpg",
+            ".private",
+            "subdirectory",
+            ".DS_Store",
+            "Thumbs.db",
+        ] {
+            let root_dir = tempfile::tempdir().unwrap();
+            let outside = tempfile::tempdir().unwrap();
+            let root =
+                cap_std::fs::Dir::open_ambient_dir(root_dir.path(), cap_std::ambient_authority())
+                    .unwrap();
+            root.create_dir("a").unwrap();
+            root.write("a/book.epub", b"source").unwrap();
+            if remaining == "subdirectory" {
+                root.create_dir("a/subdirectory").unwrap();
+            } else if remaining == ".DS_Store" || remaining == "Thumbs.db" {
+                std::fs::write(outside.path().join("target"), b"outside").unwrap();
+                std::os::unix::fs::symlink(
+                    outside.path().join("target"),
+                    root_dir.path().join("a").join(remaining),
+                )
+                .unwrap();
+            } else {
+                root.write(Path::new("a").join(remaining), b"retain")
+                    .unwrap();
             }
-            for index in [1, 3] {
-                assert_eq!(paths[index].exists(), mode != CleanupMode::All);
-            }
-            for path in &paths[4..] {
-                assert_eq!(std::fs::read(path).unwrap(), b"keep unless eligible");
-            }
-            assert!(root.path().exists());
+            let path = InputPath::from_path(Path::new("a/book.epub")).unwrap();
+            let fingerprint = Fingerprint::from_metadata(
+                &crate::services::ingestion::copier::input_metadata(&root, &path).unwrap(),
+            );
+            assert!(remove_verified(&root, &path, &fingerprint).unwrap());
+            assert!(
+                root_dir
+                    .path()
+                    .join("a")
+                    .join(remaining)
+                    .symlink_metadata()
+                    .is_ok()
+            );
+            assert!(root.try_exists("a").unwrap());
         }
     }
 
     #[test]
-    fn cleanup_all_with_no_successful_group_preserves_every_file() {
-        let root = tempfile::tempdir().unwrap();
-        let source = root.path().join("failed.epub");
-        std::fs::write(&source, b"keep failed source").unwrap();
-        let eligible = eligible_paths(CleanupMode::All, &[], std::slice::from_ref(&source));
-        let result = cleanup_batch(&eligible, root.path()).unwrap();
-        assert_eq!(result.removed_files, 0);
-        assert_eq!(std::fs::read(source).unwrap(), b"keep failed source");
-    }
-
-    #[test]
-    fn cleanup_removes_files_and_empty_dirs() {
-        let root = tempfile::tempdir().unwrap();
-        let sub = root.path().join("author");
-        std::fs::create_dir_all(&sub).unwrap();
-
-        let f1 = sub.join("book.epub");
-        let f2 = sub.join("book.pdf");
-        std::fs::write(&f1, b"1").unwrap();
-        std::fs::write(&f2, b"2").unwrap();
-
-        let result = cleanup_batch(&[f1.clone(), f2.clone()], root.path()).unwrap();
-        assert_eq!(result.removed_files, 2);
-        assert_eq!(result.removed_dirs, 1);
-        assert!(!f1.exists());
-        assert!(!f2.exists());
-        assert!(!sub.exists());
-        // Root still exists
-        assert!(root.path().exists());
-    }
-
-    #[test]
-    fn cleanup_missing_file_is_ok() {
-        let root = tempfile::tempdir().unwrap();
-        let missing = root.path().join("gone.epub");
-
-        let result = cleanup_batch(&[missing], root.path()).unwrap();
-        assert_eq!(result.removed_files, 0);
-    }
-
-    #[test]
-    fn cleanup_skips_directory_outside_ingestion_root() {
-        // An empty directory living entirely outside the ingestion root must
-        // never be pruned, even when a caller passes a path rooted there.
-        let root = tempfile::tempdir().unwrap();
+    fn capability_ingestion_cleanup_changed_source_and_outside_symlink_boundary_preserved() {
+        use crate::models::ingestion_input::{Fingerprint, InputPath};
+        let root_dir = tempfile::tempdir().unwrap();
         let outside = tempfile::tempdir().unwrap();
-        let stray = outside.path().join("evil.epub");
-
-        // File never existed (NotFound is treated as success); the parent of
-        // `stray` is `outside`, which is empty and outside the root.
-        let result = cleanup_batch(std::slice::from_ref(&stray), root.path()).unwrap();
-
-        assert_eq!(result.removed_files, 0);
-        assert_eq!(result.removed_dirs, 0);
-        assert!(outside.path().exists());
-    }
-
-    #[test]
-    fn cleanup_skips_sibling_with_shared_name_prefix() {
-        // A sibling directory whose name textually extends the root's
-        // (`ingest` vs `ingest-evil`) shares a string prefix but is NOT a
-        // descendant. Locks the component-wise `starts_with` semantics against
-        // a future refactor to a naive string comparison.
-        let base = tempfile::tempdir().unwrap();
-        let root = base.path().join("ingest");
-        let evil = base.path().join("ingest-evil");
-        std::fs::create_dir_all(&root).unwrap();
-        std::fs::create_dir_all(&evil).unwrap();
-
-        let stray = evil.join("book.epub");
-        let result = cleanup_batch(std::slice::from_ref(&stray), &root).unwrap();
-
-        assert_eq!(result.removed_dirs, 0);
-        assert!(evil.exists());
-    }
-
-    #[test]
-    fn cleanup_skips_existing_file_outside_ingestion_root() {
-        // A real file living outside the ingestion root must never be deleted,
-        // even when a caller passes its path. Unlike the NotFound case, this
-        // file exists on disk, so only a containment guard prevents removal.
-        let root = tempfile::tempdir().unwrap();
-        let outside = tempfile::tempdir().unwrap();
-        let stray = outside.path().join("evil.epub");
-        std::fs::write(&stray, b"keep me").unwrap();
-
-        let result = cleanup_batch(std::slice::from_ref(&stray), root.path()).unwrap();
-
-        assert_eq!(result.removed_files, 0);
-        assert_eq!(result.removed_dirs, 0);
-        assert!(stray.exists(), "file outside ingestion root must survive");
-        assert!(
-            outside.path().exists(),
-            "directory outside ingestion root must survive"
+        let root =
+            cap_std::fs::Dir::open_ambient_dir(root_dir.path(), cap_std::ambient_authority())
+                .unwrap();
+        root.write("book.epub", b"source").unwrap();
+        let path = InputPath::from_path(Path::new("book.epub")).unwrap();
+        let fingerprint = Fingerprint::from_metadata(
+            &crate::services::ingestion::copier::input_metadata(&root, &path).unwrap(),
         );
+        root.write("book.epub", b"changed bytes").unwrap();
+        assert!(!remove_verified(&root, &path, &fingerprint).unwrap());
+        std::fs::write(outside.path().join("book.epub"), b"outside").unwrap();
+        std::os::unix::fs::symlink(outside.path(), root_dir.path().join("link")).unwrap();
+        let escape = InputPath::from_path(Path::new("link/book.epub")).unwrap();
+        assert!(remove_verified(&root, &escape, &fingerprint).is_err());
+        assert_eq!(
+            std::fs::read(outside.path().join("book.epub")).unwrap(),
+            b"outside"
+        );
+        assert_eq!(root.read("book.epub").unwrap(), b"changed bytes");
     }
 
     #[test]
-    fn cleanup_deletes_in_root_file_and_spares_outside_file_in_same_batch() {
-        // Per-path guard, not batch-global: an in-root file is removed while an
-        // out-of-root file in the same call is left untouched.
-        let root = tempfile::tempdir().unwrap();
-        let outside = tempfile::tempdir().unwrap();
-
-        let inside = root.path().join("book.epub");
-        let stray = outside.path().join("evil.epub");
-        std::fs::write(&inside, b"1").unwrap();
-        std::fs::write(&stray, b"2").unwrap();
-
-        let result = cleanup_batch(&[inside.clone(), stray.clone()], root.path()).unwrap();
-
-        assert_eq!(result.removed_files, 1);
-        assert!(!inside.exists());
-        assert!(stray.exists(), "file outside ingestion root must survive");
+    fn capability_ingestion_cleanup_multiple_sources_preserve_retained_file_and_root() {
+        use crate::models::ingestion_input::{Fingerprint, InputPath};
+        let directory = tempfile::tempdir().unwrap();
+        let root =
+            cap_std::fs::Dir::open_ambient_dir(directory.path(), cap_std::ambient_authority())
+                .unwrap();
+        root.create_dir("author").unwrap();
+        root.write("author/book.epub", b"1").unwrap();
+        root.write("author/book.pdf", b"2").unwrap();
+        for (name, remains) in [("author/book.epub", true), ("author/book.pdf", false)] {
+            let path = InputPath::from_path(Path::new(name)).unwrap();
+            let fingerprint = Fingerprint::from_metadata(
+                &crate::services::ingestion::copier::input_metadata(&root, &path).unwrap(),
+            );
+            assert!(remove_verified(&root, &path, &fingerprint).unwrap());
+            assert_eq!(root.try_exists("author").unwrap(), remains);
+        }
+        assert!(directory.path().is_dir());
     }
 
     #[test]
-    fn cleanup_skips_real_file_in_sibling_prefix_directory() {
-        // A real file in a sibling whose name extends the root's (`ingest-evil`
-        // vs `ingest`) must survive. Locks the file guard to component-wise
-        // matching — the same property the dir guard's sibling-prefix test locks.
-        let base = tempfile::tempdir().unwrap();
-        let root = base.path().join("ingest");
-        let evil = base.path().join("ingest-evil");
-        std::fs::create_dir_all(&root).unwrap();
-        std::fs::create_dir_all(&evil).unwrap();
-
-        let stray = evil.join("book.epub");
-        std::fs::write(&stray, b"keep me").unwrap();
-
-        let result = cleanup_batch(std::slice::from_ref(&stray), &root).unwrap();
-
-        assert_eq!(result.removed_files, 0);
-        assert!(stray.exists(), "file in sibling-prefix dir must survive");
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn cleanup_skips_file_whose_parent_symlinks_outside_root() {
-        // A symlinked directory inside the root resolving outside it must not let
-        // a file escape the bound. This is the exact scenario the parent
-        // canonicalisation exists for: a naive `starts_with` on the raw path
-        // would see `root/link/...` as in-tree and delete the external target.
-        let root = tempfile::tempdir().unwrap();
-        let outside = tempfile::tempdir().unwrap();
-        let target = outside.path().join("real.epub");
-        std::fs::write(&target, b"do not delete").unwrap();
-
-        let link_dir = root.path().join("link");
-        std::os::unix::fs::symlink(outside.path(), &link_dir).unwrap();
-
-        let path_via_link = link_dir.join("real.epub");
-        let result = cleanup_batch(std::slice::from_ref(&path_via_link), root.path()).unwrap();
-
-        assert_eq!(result.removed_files, 0);
-        assert!(target.exists(), "real file behind symlink must survive");
-    }
-
-    #[test]
-    fn cleanup_preserves_non_empty_dirs() {
-        let root = tempfile::tempdir().unwrap();
-        let sub = root.path().join("author");
-        std::fs::create_dir_all(&sub).unwrap();
-
-        let f1 = sub.join("book.epub");
-        let f2 = sub.join("other.epub");
-        std::fs::write(&f1, b"1").unwrap();
-        std::fs::write(&f2, b"2").unwrap();
-
-        // Only remove f1 — f2 keeps the dir alive
-        let result = cleanup_batch(std::slice::from_ref(&f1), root.path()).unwrap();
-        assert_eq!(result.removed_files, 1);
-        assert_eq!(result.removed_dirs, 0);
-        assert!(sub.exists());
+    fn capability_ingestion_cleanup_uncontained_and_missing_sources_preserve_outside_files() {
+        use crate::models::ingestion_input::{Fingerprint, InputPath};
+        let directory = tempfile::tempdir().unwrap();
+        let inside = directory.path().join("ingest");
+        let sibling = directory.path().join("ingest-evil");
+        std::fs::create_dir(&inside).unwrap();
+        std::fs::create_dir(&sibling).unwrap();
+        std::fs::write(sibling.join("book.epub"), b"outside").unwrap();
+        let root =
+            cap_std::fs::Dir::open_ambient_dir(&inside, cap_std::ambient_authority()).unwrap();
+        root.write("book.epub", b"inside").unwrap();
+        let path = InputPath::from_path(Path::new("book.epub")).unwrap();
+        let fingerprint = Fingerprint::from_metadata(
+            &crate::services::ingestion::copier::input_metadata(&root, &path).unwrap(),
+        );
+        for invalid in [
+            sibling.join("book.epub"),
+            directory.path().join("missing.epub"),
+            std::path::PathBuf::from("../ingest-evil/book.epub"),
+            std::path::PathBuf::new(),
+        ] {
+            assert!(InputPath::from_path(&invalid).is_err());
+        }
+        let absent = InputPath::from_path(Path::new("missing.epub")).unwrap();
+        assert!(!remove_verified(&root, &absent, &fingerprint).unwrap());
+        assert_eq!(
+            std::fs::read(sibling.join("book.epub")).unwrap(),
+            b"outside"
+        );
+        assert_eq!(root.read("book.epub").unwrap(), b"inside");
+        assert!(sibling.is_dir());
+        assert!(inside.is_dir());
     }
 }

@@ -41,7 +41,7 @@ async fn get_settings_as_admin_returns_200(pool: PgPool) {
     let body: serde_json::Value = r.json();
     assert!(body["enrichment_enabled"].is_boolean());
     assert!(body["enrichment_concurrency"].is_number());
-    assert!(body["format_priority"].is_array());
+    assert!(body["accepted_formats"].is_array());
     assert!(body["restart_required_fields"].is_array());
     test_support::assert_rfc3339(&body, "updated_at");
     assert!(
@@ -157,7 +157,7 @@ async fn put_settings_empty_body_returns_422(pool: PgPool) {
 }
 
 #[sqlx::test(migrations = "./migrations")]
-async fn put_settings_invalid_format_priority_returns_422(pool: PgPool) {
+async fn put_settings_invalid_accepted_formats_returns_422(pool: PgPool) {
     let app_pool = test_support::db::app_pool_for(&pool).await;
     let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
     let (_admin_id, admin_basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
@@ -166,7 +166,7 @@ async fn put_settings_invalid_format_priority_returns_422(pool: PgPool) {
     let r = server
         .put("/api/v1/settings")
         .add_header(axum::http::header::AUTHORIZATION, admin_basic)
-        .json(&serde_json::json!({"format_priority": ["epub", "banana"]}))
+        .json(&serde_json::json!({"accepted_formats": ["epub", "banana"]}))
         .await;
     test_support::assert_problem(
         &r,
@@ -176,7 +176,7 @@ async fn put_settings_invalid_format_priority_returns_422(pool: PgPool) {
 }
 
 #[sqlx::test(migrations = "./migrations")]
-async fn put_settings_valid_format_priority_persists(pool: PgPool) {
+async fn put_settings_valid_accepted_formats_persists(pool: PgPool) {
     let app_pool = test_support::db::app_pool_for(&pool).await;
     let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
     let (_admin_id, admin_basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
@@ -185,7 +185,7 @@ async fn put_settings_valid_format_priority_persists(pool: PgPool) {
     let r = server
         .put("/api/v1/settings")
         .add_header(axum::http::header::AUTHORIZATION, admin_basic.clone())
-        .json(&serde_json::json!({"format_priority": ["pdf", "epub"]}))
+        .json(&serde_json::json!({"accepted_formats": ["epub"]}))
         .await;
     assert_eq!(r.status_code(), StatusCode::OK);
 
@@ -194,17 +194,17 @@ async fn put_settings_valid_format_priority_persists(pool: PgPool) {
         .add_header(axum::http::header::AUTHORIZATION, admin_basic)
         .await;
     let body: serde_json::Value = r2.json();
-    let fp = body["format_priority"]
+    let fp = body["accepted_formats"]
         .as_array()
         .unwrap()
         .iter()
         .map(|v| v.as_str().unwrap().to_owned())
         .collect::<Vec<_>>();
-    assert_eq!(fp, vec!["pdf", "epub"]);
+    assert_eq!(fp, vec!["epub"]);
 }
 
 #[sqlx::test(migrations = "./migrations")]
-async fn put_settings_invalid_cleanup_mode_returns_422(pool: PgPool) {
+async fn put_settings_invalid_cleanup_imported_returns_422(pool: PgPool) {
     let app_pool = test_support::db::app_pool_for(&pool).await;
     let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
     let (_admin_id, admin_basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
@@ -213,7 +213,7 @@ async fn put_settings_invalid_cleanup_mode_returns_422(pool: PgPool) {
     let r = server
         .put("/api/v1/settings")
         .add_header(axum::http::header::AUTHORIZATION, admin_basic)
-        .json(&serde_json::json!({"cleanup_mode": "yeet"}))
+        .json(&serde_json::json!({"cleanup_imported": "yeet"}))
         .await;
     assert_eq!(r.status_code(), StatusCode::UNPROCESSABLE_ENTITY);
 }
@@ -243,7 +243,7 @@ async fn put_settings_multiple_fields_at_once(pool: PgPool) {
 }
 
 #[sqlx::test(migrations = "./migrations")]
-async fn put_settings_duplicate_format_priority_returns_422(pool: PgPool) {
+async fn put_settings_duplicate_accepted_formats_returns_422(pool: PgPool) {
     let app_pool = test_support::db::app_pool_for(&pool).await;
     let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
     let (_admin_id, admin_basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
@@ -252,7 +252,7 @@ async fn put_settings_duplicate_format_priority_returns_422(pool: PgPool) {
     let r = server
         .put("/api/v1/settings")
         .add_header(axum::http::header::AUTHORIZATION, admin_basic)
-        .json(&serde_json::json!({"format_priority": ["epub", "epub", "pdf"]}))
+        .json(&serde_json::json!({"accepted_formats": ["epub", "epub"]}))
         .await;
     assert_eq!(r.status_code(), StatusCode::UNPROCESSABLE_ENTITY);
 
@@ -265,7 +265,7 @@ async fn put_settings_duplicate_format_priority_returns_422(pool: PgPool) {
 }
 
 #[sqlx::test(migrations = "./migrations")]
-async fn put_settings_empty_format_priority_returns_422(pool: PgPool) {
+async fn put_settings_empty_accepted_formats_persists(pool: PgPool) {
     let app_pool = test_support::db::app_pool_for(&pool).await;
     let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
     let (_admin_id, admin_basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
@@ -274,9 +274,9 @@ async fn put_settings_empty_format_priority_returns_422(pool: PgPool) {
     let r = server
         .put("/api/v1/settings")
         .add_header(axum::http::header::AUTHORIZATION, admin_basic)
-        .json(&serde_json::json!({"format_priority": []}))
+        .json(&serde_json::json!({"accepted_formats": []}))
         .await;
-    assert_eq!(r.status_code(), StatusCode::UNPROCESSABLE_ENTITY);
+    assert_eq!(r.status_code(), StatusCode::OK);
 }
 
 #[sqlx::test(migrations = "./migrations")]

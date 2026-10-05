@@ -1,113 +1,279 @@
-//! Shared `ZIP` repack helper for `EPUB` mutations.
+//! Candidate publication and file-backed ZIP repack for EPUB mutations.
 //!
-//! Preserves the `EPUB` spec's mimetype-first / stored constraint, copies
-//! every untouched entry through with its compressed bytes and metadata
-//! intact, and offers three mutation knobs: `OPF` replacement, arbitrary
-//! binary-entry replacement (e.g. cover image), and new-entry additions
-//! (e.g. regenerated `container.xml` or a freshly-inserted cover manifest
-//! target).
-//!
-//! Callers are responsible for the final atomic rename of the returned
-//! `NamedTempFile` onto the destination path.
+//! Untouched entries retain their compressed payload and metadata. The maintained
+//! replacement operation validates and hashes a finished candidate, then syncs,
+//! replaces and syncs its opened parent.
 
+use super::{EpubError, Severity, ValidationReport, repair::RepairPlan, zip_layer::ZipHandle};
+use cap_std::fs::Dir;
+use cap_std_ext::dirext::CapStdExtDirExt;
+use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::hash::BuildHasher;
-use std::io::Write;
-use std::path::Path;
-
-use tempfile::NamedTempFile;
+use std::io::{Read, Seek, Write};
 use zip::write::{ExtendedFileOptions, FileOptions};
 use zip::{ZipArchive, ZipWriter};
-
-use super::EpubError;
 
 pub(super) const MIMETYPE_ENTRY: &str = "mimetype";
 pub(super) const MIMETYPE_CONTENT: &[u8] = b"application/epub+zip";
 
-/// Re-package the `EPUB` at `src_path` applying the provided mutations.
-///
-/// Writes to a fresh `NamedTempFile` in `dest_dir` (so the caller can
-/// persist to a different directory on path-rename, or back to `src_path`'s
-/// directory for in-place updates).  The caller owns the atomic rename.
-///
-/// - `opf_path` + `opf_replacement`: when both are Some, the `ZIP` entry whose
-///   name equals `opf_path` is replaced with `opf_replacement` bytes.
-/// - `binary_replacements`: entry-name → bytes overrides for any non-`OPF`
-///   entry (e.g. a cover image). Entries in this map REPLACE existing
-///   entries; they do not add new ones.
-/// - `additions`: new `ZIP` entries to append after all existing entries have
-///   been copied.  Use this for entries absent from the source (e.g. a
-///   regenerated `META-INF/container.xml` or a freshly-inserted cover
-///   manifest target).
-///
-/// Untouched entries are copied with their compressed bytes and metadata
-/// intact. A replaced entry keeps the source entry's compression method.
+/// Evidence derived from the finished, accepted candidate.
+pub struct Published {
+    /// Pure validation of the final bytes.
+    pub report: ValidationReport,
+    /// SHA-256 of the final archive.
+    pub hash: String,
+    /// Length from the candidate handle.
+    pub size: u64,
+}
+
+/// Stream a seekable file's SHA-256 from its beginning.
 ///
 /// # Errors
+/// Returns seek or read errors.
+pub fn hash_file(file: &mut std::fs::File) -> std::io::Result<String> {
+    file.rewind()?;
+    let mut buffer = vec![0; 64 * 1024];
+    let mut hasher = Sha256::new();
+    loop {
+        let n = file.read(&mut buffer)?;
+        if n == 0 {
+            break;
+        }
+        hasher.update(&buffer[..n]);
+    }
+    let mut hash = String::with_capacity(64);
+    for byte in hasher.finalize() {
+        use std::fmt::Write;
+        write!(hash, "{byte:02x}").map_err(std::io::Error::other)?;
+    }
+    Ok(hash)
+}
+
+fn remaining_severity(report: &ValidationReport) -> u8 {
+    if report
+        .issues
+        .iter()
+        .any(|issue| issue.severity == Severity::Irrecoverable)
+    {
+        2
+    } else {
+        u8::from(
+            report
+                .issues
+                .iter()
+                .any(|issue| issue.severity == Severity::Degraded),
+        )
+    }
+}
+
+/// Build, validate and publish one candidate beneath its opened parent.
 ///
-/// Returns [`EpubError::Io`] if `src_path` cannot be read or if the temp file
-/// cannot be created in `dest_dir`. Returns [`EpubError::Zip`] if
-/// `ZipArchive::new` fails to parse the source archive or if `ZipWriter`
-/// encounters an error while writing an entry.
+/// # Errors
+/// Candidate errors leave the source untouched. An error after acceptance reports publication uncertainty.
+pub fn publish(
+    parent: &Dir,
+    basename: &std::ffi::OsStr,
+    source: &ValidationReport,
+    build: impl FnOnce(&mut cap_std::fs::File) -> Result<(), EpubError>,
+) -> Result<Published, EpubError> {
+    publish_with_validator(parent, basename, source, build, super::validate)
+}
+
+pub(super) fn publish_with_validator(
+    parent: &Dir,
+    basename: &std::ffi::OsStr,
+    source: &ValidationReport,
+    build: impl FnOnce(&mut cap_std::fs::File) -> Result<(), EpubError>,
+    validate: impl FnOnce(std::fs::File) -> Result<ValidationReport, EpubError>,
+) -> Result<Published, EpubError> {
+    let mut accepted_hash = None;
+    let result =
+        parent.atomic_replace_with(basename, |candidate| -> Result<Published, EpubError> {
+            build(candidate.get_mut().as_file_mut())?;
+            candidate.flush()?;
+            let mut file = candidate.get_ref().as_file().try_clone()?.into_std();
+            let report = validate(file.try_clone()?)?;
+            if remaining_severity(&report) == 2
+                || remaining_severity(&report) > remaining_severity(source)
+                || report
+                    .issues
+                    .iter()
+                    .any(|issue| issue.severity == Severity::Repaired)
+            {
+                return Err(EpubError::CandidateRejected(format!(
+                    "source={:?} candidate={:?}",
+                    source.outcome, report.outcome
+                )));
+            }
+            let hash = hash_file(&mut file)?;
+            let size = file.metadata()?.len();
+            accepted_hash = Some(hash.clone());
+            Ok(Published { report, hash, size })
+        });
+    match (result, accepted_hash) {
+        (Ok(published), _) => Ok(published),
+        (Err(error), Some(hash)) => Err(EpubError::PublicationUncertain {
+            hash,
+            error: Box::new(error),
+        }),
+        (Err(error), None) => Err(error),
+    }
+}
+
+/// Repack an admitted archive into the caller's random-access candidate.
+///
+/// # Errors
+/// Returns source read, repair or ZIP writing errors before publication.
 pub fn with_modifications<S: BuildHasher>(
-    src_path: &Path,
-    dest_dir: &Path,
+    source: &ZipHandle,
+    candidate: &mut (impl Write + Seek),
     opf_path: Option<&str>,
     opf_replacement: Option<&[u8]>,
     binary_replacements: &HashMap<String, Vec<u8>, S>,
     additions: &[(String, Vec<u8>, FileOptions<ExtendedFileOptions>)],
-) -> Result<NamedTempFile, EpubError> {
-    let bytes = std::fs::read(src_path)?;
-    let temp = NamedTempFile::new_in(dest_dir)?;
-    {
-        let cursor = std::io::Cursor::new(&bytes[..]);
-        let mut archive = ZipArchive::new(cursor)?;
-        let mut writer = ZipWriter::new(&temp);
-
-        // mimetype MUST be first and stored per EPUB spec.
-        let stored: FileOptions<ExtendedFileOptions> =
-            FileOptions::default().compression_method(zip::CompressionMethod::Stored);
-        writer.start_file(MIMETYPE_ENTRY, stored)?;
-        writer.write_all(MIMETYPE_CONTENT)?;
-
-        for i in 0..archive.len() {
-            let file = archive.by_index(i)?;
-            let name = file.name().to_string();
-            if name == MIMETYPE_ENTRY {
-                continue;
-            }
-
-            let compression = file.compression();
-            if opf_path == Some(name.as_str())
-                && let Some(repl) = opf_replacement
-            {
-                let opts: FileOptions<ExtendedFileOptions> =
-                    FileOptions::default().compression_method(compression);
-                writer.start_file(&name, opts)?;
-                writer.write_all(repl)?;
-            } else if let Some(replacement) = binary_replacements.get(&name) {
-                let opts: FileOptions<ExtendedFileOptions> =
-                    FileOptions::default().compression_method(compression);
-                writer.start_file(&name, opts)?;
-                writer.write_all(replacement)?;
-            } else {
-                writer.raw_copy_file(file)?;
-            }
+    repairs: &RepairPlan,
+) -> Result<(), EpubError> {
+    let mut file = source.file()?;
+    file.rewind()?;
+    let mut archive = ZipArchive::new(file)?;
+    let mut writer = ZipWriter::new(candidate);
+    let stored = FileOptions::<ExtendedFileOptions>::default()
+        .compression_method(zip::CompressionMethod::Stored);
+    writer.start_file(MIMETYPE_ENTRY, stored)?;
+    writer.write_all(MIMETYPE_CONTENT)?;
+    for i in 0..archive.len() {
+        let file = archive.by_index(i)?;
+        let name = file.name().to_owned();
+        if name == MIMETYPE_ENTRY {
+            continue;
         }
-
-        for (name, entry_bytes, opts) in additions {
-            writer.start_file(name, opts.clone())?;
-            writer.write_all(entry_bytes)?;
+        let replacement = if opf_path == Some(name.as_str()) {
+            opf_replacement.map(<[u8]>::to_vec)
+        } else {
+            None
+        };
+        let replacement = match replacement.or_else(|| binary_replacements.get(&name).cloned()) {
+            Some(bytes) => Some(bytes),
+            None => repairs.replacement(source, &name)?,
+        };
+        if let Some(bytes) = replacement {
+            let options = FileOptions::<ExtendedFileOptions>::default()
+                .compression_method(file.compression());
+            writer.start_file(&name, options)?;
+            writer.write_all(&bytes)?;
+        } else {
+            writer.raw_copy_file(file)?;
         }
-        writer.finish()?;
     }
-    Ok(temp)
+    if let Some(container) = repairs.container_addition(source) {
+        writer.start_file(
+            "META-INF/container.xml",
+            FileOptions::<ExtendedFileOptions>::default(),
+        )?;
+        writer.write_all(&container)?;
+    }
+    for (name, bytes, options) in additions {
+        writer.start_file(name, options.clone())?;
+        writer.write_all(bytes)?;
+    }
+    writer.finish()?;
+    Ok(())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::io::{Cursor, Read};
+    use std::path::Path;
+    use tempfile::NamedTempFile;
+
+    fn with_modifications<S: BuildHasher>(
+        path: &Path,
+        dest: &Path,
+        opf: Option<&str>,
+        bytes: Option<&[u8]>,
+        replacements: &HashMap<String, Vec<u8>, S>,
+        additions: &[(String, Vec<u8>, FileOptions<ExtendedFileOptions>)],
+    ) -> Result<NamedTempFile, EpubError> {
+        let handle =
+            super::super::zip_layer::validate(std::fs::File::open(path)?, &mut Vec::new())?;
+        let mut candidate = NamedTempFile::new_in(dest)?;
+        super::with_modifications(
+            &handle,
+            candidate.as_file_mut(),
+            opf,
+            bytes,
+            replacements,
+            additions,
+            &RepairPlan::default(),
+        )?;
+        Ok(candidate)
+    }
+
+    #[test]
+    fn candidate_publication_maintained_handle_qualification() {
+        use cap_std_ext::dirext::CapStdExtDirExt;
+        use sha2::{Digest, Sha256};
+        use std::io::{Seek, SeekFrom};
+
+        let tmp = tempfile::tempdir().unwrap();
+        let parent =
+            cap_std::fs::Dir::open_ambient_dir(tmp.path(), cap_std::ambient_authority()).unwrap();
+        for content in [b"creation".as_slice(), b"replacement".as_slice()] {
+            let mut accepted = None;
+            parent
+                .atomic_replace_with("book.epub", |candidate| -> std::io::Result<()> {
+                    let mut writer = ZipWriter::new(candidate.get_mut().as_file_mut());
+                    writer.start_file(
+                        MIMETYPE_ENTRY,
+                        FileOptions::<ExtendedFileOptions>::default()
+                            .compression_method(zip::CompressionMethod::Stored),
+                    )?;
+                    writer.write_all(MIMETYPE_CONTENT)?;
+                    writer
+                        .start_file("chapter.txt", FileOptions::<ExtendedFileOptions>::default())?;
+                    writer.write_all(content)?;
+                    writer.finish()?;
+                    candidate.flush()?;
+                    let mut file = candidate.get_ref().as_file().try_clone()?.into_std();
+                    let mut buffer = vec![0; rawzip::RECOMMENDED_BUFFER_SIZE];
+                    let archive =
+                        rawzip::ZipArchive::with_max_search_space(MAX_EOCD_SEARCH_SPACE_FOR_TEST)
+                            .locate_in_file(file.try_clone()?, &mut buffer)
+                            .map_err(|(_, e)| std::io::Error::other(e))?;
+                    assert_eq!(archive.entries_hint(), 2);
+                    file.seek(SeekFrom::Start(0))?;
+                    let mut hasher = Sha256::new();
+                    let mut hash_buffer = vec![0; 64 * 1024];
+                    loop {
+                        let n = file.read(&mut hash_buffer)?;
+                        if n == 0 {
+                            break;
+                        }
+                        hasher.update(&hash_buffer[..n]);
+                    }
+                    accepted = Some((hasher.finalize().to_vec(), file.metadata()?.len()));
+                    Ok(())
+                })
+                .unwrap();
+            let persisted = parent.read("book.epub").unwrap();
+            assert_eq!(
+                accepted.unwrap(),
+                (Sha256::digest(&persisted).to_vec(), persisted.len() as u64)
+            );
+            let mut archive = ZipArchive::new(Cursor::new(persisted)).unwrap();
+            let mut actual = Vec::new();
+            archive
+                .by_name("chapter.txt")
+                .unwrap()
+                .read_to_end(&mut actual)
+                .unwrap();
+            assert_eq!(actual, content);
+        }
+    }
+
+    const MAX_EOCD_SEARCH_SPACE_FOR_TEST: u64 = 22 + 65_535;
 
     fn write_entry(
         w: &mut ZipWriter<Cursor<Vec<u8>>>,
@@ -328,7 +494,7 @@ mod tests {
     }
 
     #[test]
-    fn untouched_entries_are_copied_verbatim() {
+    fn file_backed_epub_untouched_entries_are_copied_verbatim() {
         // A historical timestamp and a non-default compression level, distinct
         // from what a fresh `start_file` write would produce, so this test
         // cannot pass by both sides coincidentally landing on the same "now"
@@ -517,7 +683,11 @@ mod tests {
         let out_path = temp.path().to_path_buf();
 
         let mut issues = Vec::new();
-        crate::services::epub::zip_layer::validate(&out_path, &mut issues).unwrap();
+        crate::services::epub::zip_layer::validate(
+            std::fs::File::open(&out_path).unwrap(),
+            &mut issues,
+        )
+        .unwrap();
         assert!(
             issues.is_empty(),
             "repacked archive should validate clean: {issues:?}"

@@ -62,6 +62,8 @@ serve code unchanged. The two alternatives either open an XSS surface (pass-thro
 Rasterisation occurs at extraction, and the result is a PNG served through the existing raster path. The choice confines
 resource access to the EPUB and bounds input and render work.
 
+Text rendering is disabled to avoid font discovery, shaping dependencies and bundled fonts.
+
 ### Consequences
 
 - Positive: the canonical Standard Ebooks covers render as real artwork across the REST and OPDS cover routes.
@@ -69,8 +71,8 @@ resource access to the EPUB and bounds input and render work.
   CSP are unchanged.
 - Negative: a new rendering dependency (around 23 transitive crates) and untrusted-XML parsing enter the tree, mitigated
   by the bounded, EPUB-contained rendering and the maintained crate.
-- Negative: SVG covers relying on live `<text>` lose that text (no `text` feature); acceptable for the canonical source
-  and documented as a known limitation.
+- Negative: SVG covers relying on live `<text>` lose that text (no `text` feature), including Standard Ebooks covers
+  that use live title and author lettering.
 - Negative: an SVG cover that legitimately uses filters renders via the spine fallback rather than as artwork (filters
   are rejected as a render-cost bomb); acceptable, since the canonical Standard Ebooks covers use none.
 - Negative: a cover whose SVG carries a DOCTYPE is rejected (spine fallback). Parsing uses `allow_dtd: false` because
@@ -92,8 +94,8 @@ resource access to the EPUB and bounds input and render work.
 
 - Positive: no rendering dependency.
 - Negative: stored-XSS surface (SVG can carry script); needs a sanitisation story and CSP changes on the cover route.
-- Negative: collapses the thumbnail/full size tiers, since resizing an SVG means rasterizing it anyway, so this does not
-  avoid a renderer.
+- Negative: pass-through SVG does not produce the raster thumbnails used by the existing delivery path; retaining that
+  path still requires a renderer.
 
 ### Prefer the raster sibling only
 

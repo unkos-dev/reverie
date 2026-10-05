@@ -129,6 +129,125 @@ policies. The `vite-plugins/csp-hash.ts` script hashes the inline `fouc.js` scri
 - **Timeouts.** Configure a timeout for every request, connection pool acquire, database statement, and outbound HTTP
   call.
 
+## Ingestion readiness and retries
+
+One coordinator discovers inputs, waits for readiness and runs one attempt at a time. Startup, watcher events and admin
+scans share that owner. An input needs ten seconds of observed unchanged size and modification time. A scan returns HTTP
+202 after discovery with queued, deferred and suppressed counts and `/api/v1/dashboard/activity` as its monitor. These
+counts describe discovery; they do not identify a separate import batch or promise completed imports.
+
+Startup and admin scans discover the full tree. Watcher events recheck affected names and directory trees, and
+finalisation refreshes only its source. Unchanged observations do not rewrite database rows or restart readiness.
+
+EPUB is the only accepted format and the default. An empty accepted-format set accepts nothing. Hidden entries and
+`Thumbs.db` are ignored; other files, including sidecars, remain independent inputs. Rejection preserves the original,
+records its reason and creates neither a manifestation nor a quarantine copy. Unchanged rejected inputs remain
+suppressed across restart. A changed fingerprint creates a new generation. Content duplicates link the existing work; a
+destination-path collision selects a suffix and does not establish duplication.
+
+The three ingestion environment values seed settings once before startup completes. Saved database values then control
+acceptance and cleanup through the existing settings API and live reload, including empty acceptance and default values.
+Changing those environment values on restart does not overwrite saved settings. Imported-source cleanup defaults to
+enabled; duplicate-source cleanup defaults to disabled. Cleanup requires an unchanged source and uses the current
+settings snapshot. Rejected and unaccepted files are retained. Upward pruning starts only from a successful deletion,
+stops at the ingestion root and preserves unrelated empty directories. A directory can be pruned only if every remaining
+entry is a regular `.DS_Store` or `Thumbs.db` file. Sidecars, other hidden files, directories and symlinks prevent
+pruning. The old format-priority, cleanup-mode and quarantine-root settings are removed.
+
+A local cleanup error preserves the completed import or duplicate and its work link; other inputs continue. Successful
+deletion whose state update fails retains a live receipt for recommit. Absence without that receipt records
+`unattributed_disappearance`, including after restart, because absence alone cannot identify the actor.
+
+Attempts use a child of the worker's shutdown cancellation token and a progress counter. Source hashing and streaming
+check cancellation between 64 KiB chunks and advance progress after each chunk. There is no total-duration deadline.
+After 120 seconds without streaming progress, the coordinator requests cancellation. Validation and publication are
+protected from idle cancellation; phase transitions reset idle observation and preserve earlier shutdown requests.
+Cancellation discards the owned candidate and preserves the source. Attempt ownership lasts until the blocking closure
+returns. After five minutes without progress, a stall warning repeats every five minutes until that return. A read
+blocked inside the kernel cannot observe cancellation. Shutdown cancellation records no terminal outcome; startup
+reclaims interrupted attempts. A progressing large copy can exceed two minutes, and a blocked read can outlast the
+shared 30-second shutdown drain budget.
+
+Operational failures have three classes:
+
+- **Shared dependency:** An unavailable database or a failed probe of the opened ingestion or library root pauses new
+  attempts. Root failures include EIO, ENOTCONN, ESTALE, EHOSTDOWN and ENOSPC on the destination root. Probes run after
+  30 seconds, one minute, two minutes and then every five minutes until successful. Observation and readiness continue
+  where ingestion authority permits. Completed results whose outcome commit failed are retained and recommitted on this
+  schedule. Pause and resume are each logged once. These failures consume no input retry budget.
+- **Transient input:** With both roots probing healthy, input-specific EIO, an idle stall, a panic, an unchanged-source
+  hash mismatch and other unlisted I/O errors are transient. Hash mismatch first rechecks the source fingerprint; a
+  changed source discards the candidate and schedules another check without recording a failure. Unlisted I/O errors,
+  including WriteZero and UnexpectedEof, record their error kind in the attempt reason. Five automatic retries follow
+  the initial attempt, after five minutes, 30 minutes, two hours, eight hours and 24 hours, without `jitter`. The sixth
+  failed transient attempt exhausts the generation and leaves operational failure without a deadline. Counts come from
+  linked attempt history since the last persisted retry reset, excluding shared-dependency and interrupted outcomes.
+- **Needs change:** Source EACCES or EPERM, ENAMETOOLONG, a non-regular file, ELOOP and an unrepresentable path do not
+  retry automatically.
+
+Before final publication, the linked attempt durably records its exact library/name, candidate identity, accepted hash
+and size. The imported transaction clears this evidence with the manifestation claim and outcome. Startup reconciles
+unresolved evidence before reclaiming interrupted attempts. It preserves committed owners, including files relocated by
+writeback, and foreign content; only a verified unregistered owned name can be removed. Unavailable ownership, read,
+removal or required sync retains evidence and suspends that input while healthy unrelated inputs continue. Correct the
+obstruction and request a scan. Shared failures retain the global probe schedule.
+
+A new generation, startup reconstruction or an admin scan resets exhausted and needs-change inputs to eligibility,
+subject to readiness, and persists the retry-reset marker. Rejection suppression is unchanged. Retry timings and budgets
+are internal constants; no settings configure them. An outage can leave inputs waiting until authority becomes healthy
+again. Operators currently manage retained originals on disk and request another scan after a correction; dedicated
+input-management, retry UI and retention controls remain deferred.
+
+## Managed library files
+
+Reverie owns writes and reorganisation inside `REVERIE_LIBRARY_PATH`. Coordinate external tools with the application, or
+pause it before they change managed files. Relocating the root, replacing its directory or changing its mount requires a
+coordinated restart: an opened capability identifies the original directory object and does not follow a replacement
+path into another library. Downloads classify paths through the root's canonical path before opening through the
+capability, so replacing that directory can make downloads fail until restart.
+
+`REVERIE_LIBRARY_PATH` and `REVERIE_INGESTION_PATH` must be absolute paths to provisioned directories. Mount the
+intended volumes before starting Reverie. The server opens both roots before admin bootstrap, workers or requests;
+empty, relative, missing and non-directory roots fail startup. It does not create these directories or retry acquisition
+during requests. The `reverie migrate` command does not require storage roots. Stop Reverie before removing a mount,
+since its open directory handles can keep a mount busy. Directory existence alone does not establish that the intended
+volume is mounted.
+
+Each manifestation records a library identity and a canonical path relative to that library. Startup binds the seeded
+`default` identity to `REVERIE_LIBRARY_PATH`; downloads select that immutable binding, and unknown identities never fall
+back. Changing metadata or a future organisation policy does not change the recorded file location. Relative and
+absolute symlink targets resolving inside the owning library remain supported. Path resolution classifies the target;
+the actual open uses a relative target through the pinned directory. The opened file supplies both Content-Length and
+streamed bytes. Established escapes return 403, missing files return 404, and other failures, including unknown library
+identities and ambiguous I/O denial, return generic 500 responses.
+
+A library can reside on a NAS separate from the Linux container host when its mounted filesystem supplies contained file
+access, atomic content replacement and useful sync/error semantics. Writeback relocation needs no-replace rename or hard
+links. Only EINVAL or ENOSYS from no-replace rename enables the hard-link fallback; collision, permission and ambiguous
+network errors remain failures. Unsupported operations preserve the source. This contract does not promise that every
+NFS or SMB server supplies the required behaviour.
+
+Hard-link relocation syncs the destination parent before removing the source, then syncs the source parent. A failed
+link or destination sync retains the source; removal failure may leave both names. EXDEV copies stage inside an owned
+directory on the actual destination filesystem, refuse occupied final names and independently verify the destination
+before removing the original. Normal completion removes staging, but abrupt exit may leave bare UUID directory names
+visible on the share. No cleanup sweep runs.
+
+A successful sync after a reported failure does not prove that failed writes became durable. Filesystem relocation and
+SQL location updates remain separate. Accepted hash/size and exact source/destination intent persist before movement;
+forward recovery verifies that evidence before adopting a destination, resuming movement or preserving a foreign file.
+SQL failure retains intent without moving bytes back. Startup and periodic recovery carriers use the existing claimed
+writeback owner. These guarantees do not establish a NAS server's acknowledgement or flush behaviour; representative
+mounted-share verification is still needed.
+
+Ingestion records the owning library and actual relative destination with accepted content evidence and input outcomes.
+Requests and asynchronous cover warming select that same authority; cache responses stream an opened handle. Rebuildable
+covers use complete atomic replacement without forced sync.
+
+Development catalogues are disposable. Resolve the owned development database before using `just db-reset`, then run
+`just db-migrate` and re-ingest source copies. No automatic reset, preserving upgrade or legacy-path fallback is
+provided.
+
 ## Project Structure
 
 ```text

@@ -26,8 +26,8 @@ keeps the cover route raster-only.
 ### Limitations
 
 - **Text must be outlined.** Reverie renders SVG covers without a font engine, so any cover that relies on live `<text>`
-  elements renders without that text. Standard Ebooks convert cover text to vector paths at build time, so their covers
-  are unaffected. If you author your own SVG cover, convert text to paths.
+  elements renders without that text. This includes Standard Ebooks covers that use live title and author lettering. If
+  you author your own SVG cover, convert text to paths.
 - **Gzip-compressed `.svgz` is not supported.** Only uncompressed SVG is recognised as a cover.
 - A cover that fails to render (malformed SVG, or one whose only content is an image that cannot be resolved) falls back
   to the generated cloth-bound cover, exactly as a missing cover does.

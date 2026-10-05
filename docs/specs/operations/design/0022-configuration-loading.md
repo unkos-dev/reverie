@@ -7,8 +7,11 @@ satisfies:
   - "REV-REQ-0060"
   - "REV-REQ-0061"
   - "REV-REQ-0064"
+  - "REV-REQ-0066"
 governed-by:
+  - "REV-ADR-0012"
   - "REV-ADR-0023"
+  - "REV-ADR-0051"
 ---
 
 # Configuration loading
@@ -43,7 +46,7 @@ surfaces as whatever error the consuming code produces, not a `ConfigError`.
 
 Depends on: the process environment, populated by the operator before the binary starts (a container's declared
 environment, or a sourced dev env file); `backend/src/models/manifestation_format.rs` for the `ManifestationFormat` enum
-`format_priority` deserialises into; `backend/src/security/dist_validation.rs` and `backend/src/security/csp.rs`, which
+`accepted_formats` deserialises into; `backend/src/security/dist_validation.rs` and `backend/src/security/csp.rs`, which
 `crate::run` calls after this pipeline to finalise the two CSP header fields this subject leaves `None`.
 
 Depended on by: `crate::run`, which builds the primary, ingestion and writeback pools, the OIDC client and the router
@@ -66,12 +69,12 @@ point; it builds a `Figment` from `EnvProvider::from_process_env()` and calls `C
 
 `EnvProvider` (`backend/src/config/provider.rs`) is the `figment::Provider` this subject substitutes for the stock
 `figment::providers::Env`. Its `data()` method walks a list of raw `(key, value)` pairs (`from_process_env` for
-production, `from_pairs` for tests), drops any pair whose value is empty, looks each key up in `ENV_MAP`, parses the raw
-string into a typed `figment::Value` the same way stock `Env` does, and nests it onto a dotted path. Two behaviours are
-specific to this provider rather than inherited from figment: the `RUST_LOG`/`REVERIE_LOG_LEVEL` cascade (both map to
-`log_level`; a present `REVERIE_LOG_LEVEL` pair causes the `RUST_LOG` pair to be skipped, independent of pair order),
-and the flat-versus-nested split driven entirely by `ENV_MAP`'s explicit dotted paths rather than a separator
-convention, because `REVERIE_DB_MAX_CONNECTIONS` must land on the flat `db_max_connections` field while
+production, `from_pairs` for tests), drops empty values except the three storage roots, looks each key up in `ENV_MAP`,
+parses the raw string into a typed `figment::Value` the same way stock `Env` does, and nests it onto a dotted path. Two
+behaviours are specific to this provider rather than inherited from figment: the `RUST_LOG`/`REVERIE_LOG_LEVEL` cascade
+(both map to `log_level`; a present `REVERIE_LOG_LEVEL` pair causes the `RUST_LOG` pair to be skipped, independent of
+pair order), and the flat-versus-nested split driven entirely by `ENV_MAP`'s explicit dotted paths rather than a
+separator convention, because `REVERIE_DB_MAX_CONNECTIONS` must land on the flat `db_max_connections` field while
 `REVERIE_ENRICHMENT_CONCURRENCY` must nest under `enrichment.concurrency`, and no single splitting rule produces both.
 
 Four registries in `backend/src/config/mod.rs` and `provider.rs` together decide what varies and what is required, and
@@ -109,6 +112,11 @@ Markdown table row; `config_schema_json` serialises the schema directly. `backen
 `backend/tests/gen_config_schema.rs` are the drift gates comparing a fresh render against the committed
 `website/src/content/docs/reference/configuration.mdx` and `backend/config.schema.json`.
 
+The library and ingestion fields use `AbsoluteRootPath` from `backend/src/config/path.rs`. Parsing rejects empty and
+relative strings without accessing the filesystem; the JSON Schema remains string-shaped. Their existing variable names
+and `/data` defaults are unchanged. Actual directory readiness belongs to startup, so an unavailable absolute path can
+parse successfully. Explicitly empty root variables reach this parser instead of selecting defaults.
+
 ## Interfaces and dependencies
 
 - `Config::from_env() -> Result<Config, ConfigError>` (`backend/src/config/mod.rs`) is the sole production entry point;
@@ -139,14 +147,28 @@ so a caller embedding the library and skipping `crate::run` must perform that fi
 emits no `Content-Security-Policy` header. Nothing else in the process mutates a built `Config`; `AppState::config`
 (`backend/src/state.rs`) holds a clone no later request handler writes back.
 
+The ingestion configuration exposes an EPUB-only accepted-format set and independent imported/duplicate cleanup options,
+defaulting to EPUB, true and false. An empty accepted-format value accepts none. The environment names are
+`REVERIE_ACCEPTED_FORMATS`, `REVERIE_CLEANUP_IMPORTED` and `REVERIE_CLEANUP_DUPLICATES`. The singleton settings row and
+monotonic live cache supply the worker's runtime values. Retry timings and budgets are internal constants. Quarantine
+has no configuration field or opened root.
+
+Before constructing that cache, `services::settings::seed_ingestion` uses the primary pool to conditionally seed the
+three ingestion fields from validated Config. Its transaction sets `ingestion_seeded`, advances revision and reads the
+winning row. A competing save supplying any ingestion field sets the marker, including empty or default values; saves of
+other fields do not. Restarts preserve seeded database values regardless of changed environment values. An unseeded row
+remains eligible at any revision. The marker is internal and has no configuration or API representation. Seed failure
+stops startup. Other worker settings retain their own loading behaviour.
+
 ## Runtime behaviour
 
 **A minimal load: `DATABASE_URL` set, `REVERIE_OPDS_ENABLED=false`, nothing else**, driven by `Config::from_env`:
 
 1. `EnvProvider::from_process_env` collects every process environment variable into raw pairs.
-2. `EnvProvider::data` drops any pair whose value is empty, keeps only pairs whose key appears in `ENV_MAP`, parses each
-   surviving value into a typed `figment::Value` (a numeric string becomes `Num`, exactly `true`/`false` becomes `Bool`,
-   everything else stays `Str`), and nests each onto the dotted path `ENV_MAP` names.
+2. `EnvProvider::data` drops empty values except storage roots and the accepted-format set, keeps only pairs whose key
+   appears in `ENV_MAP`, parses each surviving value into a typed `figment::Value` (a numeric string becomes `Num`,
+   exactly `true`/`false` becomes `Bool`, everything else stays `Str`), and nests each onto the dotted path `ENV_MAP`
+   names.
 3. `figment.extract()` deserialises the accumulated dict into `Config`; every field this load supplies no value for
    takes the value the container's `#[serde(default)]` reads off `Config::default()` (and each sub-struct's own
    `Default`).

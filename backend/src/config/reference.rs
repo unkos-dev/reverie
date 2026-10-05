@@ -82,7 +82,7 @@ fn node_for_path<'a>(schema: &'a Value, defs: &'a Value, path: &str) -> Option<&
 fn type_label(node: &Value, defs: &Value) -> String {
     let resolved = resolve(node, defs);
 
-    // Enum: a `oneOf` of string `const`s (e.g. CleanupMode).
+    // Enum: a `oneOf` of string `const`s.
     if let Some(variants) = resolved.get("oneOf").and_then(Value::as_array) {
         let consts: Vec<String> = variants
             .iter()

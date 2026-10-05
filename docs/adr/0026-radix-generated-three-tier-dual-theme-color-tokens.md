@@ -28,7 +28,7 @@ one governable place, and decorative color cannot leak into UI chrome?
 ## Decision drivers
 
 - Light and dark must derive from one source and stay in lockstep, with no independently hand-maintained second palette.
-- WCAG 2.2 AA contrast for text and non-text UI roles, guaranteed by construction rather than per-value review.
+- WCAG 2.2 AA contrast for text and non-text UI roles, checked through shared role pairs rather than one-off values.
 - A single origin for raw color; everything else references named semantic roles.
 - Tailwind v4 with `@theme inline` and no `tailwind.config.ts`.
 - No new runtime dependency; the color system must be CSP-clean (no external fetch).
@@ -44,18 +44,20 @@ one governable place, and decorative color cannot leak into UI chrome?
 ## Decision outcome
 
 Chosen option: **Radix Colors generated scales**, consumed through a three-tier contract of generated primitives, a
-semantic role layer, and a sealed atmosphere tier, because it satisfies every driver at once. The generator produces
-matched light and dark 12-step scales from the same anchors, with per-step roles whose contrast holds by construction,
-so AA is structural and the two themes cannot drift, and its output is plain CSS custom properties, vendored as a static
-file, so there is no runtime dependency and nothing to fetch.
+semantic role layer, and a sealed atmosphere tier, because it produces matched light and dark scales from the same
+anchors and gives each step an intended UI role. Its output is plain CSS custom properties, vendored as a static file,
+so there is no runtime dependency and nothing to fetch. The generated scales support contrast-aware role selection; they
+do not guarantee WCAG AA for every foreground and background combination.
 
 The chosen contract has generated light and dark primitive scales, semantic role tokens for interface components, and a
 separate sealed atmosphere palette. Components consume semantic roles; decorative colours do not become state colours.
+Semantic mappings stay the same across themes while the primitive layer switches. Contract tests check that semantic
+roles resolve to existing primitives and that the selected foreground and background pairs meet their contrast floors.
 
 ### Consequences
 
-- Positive: contrast for each role holds by construction in both themes: no per-value AA bookkeeping and no light/dark
-  drift.
+- Positive: both themes share one role mapping, with contrast checks on the selected pairs rather than independently
+  maintained palettes.
 - Positive: raw color is confined to one generated file, lint-enforceable, and the rest of the UI is `var()` references
   to named roles.
 - Positive: there is no runtime dependency: the generated scales are static CSS, CSP-clean, and shadcn components
@@ -63,13 +65,14 @@ separate sealed atmosphere palette. Components consume semantic roles; decorativ
 - Negative: changing or adding a color requires regenerating the scales rather than a quick one-off hex edit, and the
   generated primitive file is large and not meant to be hand-edited.
 - Negative: the system gains a generation step that runs out-of-band, with its output vendored into the repository.
+- Negative: new role combinations still need contrast verification; a generated step number alone does not establish
+  accessibility.
 
 ## Pros and cons of the options
 
 ### Radix Colors generated scales
 
-- Positive: step number is a fixed UI role with contrast guaranteed by construction, and both themes come from one
-  generation.
+- Positive: step numbers have intended UI roles, and both themes come from one generation.
 - Positive: the output is plain CSS custom properties (vendorable, no runtime dependency), framework-agnostic.
 - Neutral: it introduces a regeneration step (output vendored).
 - Negative: it is color only; focus-ring and other remedies are layered on top in the semantic tier.
@@ -95,3 +98,6 @@ which governs the `--danger` family this architecture carries. The brand color a
 documented in the brand identity reference (`reverie-branding/identity.md`). Reading-surface color tokens and
 cover-spine textures are intentionally out of scope here and reserved to their own surfaces. Revisit if Radix's
 generator or color package changes its scale semantics, or if a third theme is introduced.
+
+[Radix's scale guidance](https://www.radix-ui.com/colors/docs/palette-composition/understanding-the-scale) describes the
+intended pairings and their limits; it does not certify arbitrary role combinations against WCAG 2.2 AA.

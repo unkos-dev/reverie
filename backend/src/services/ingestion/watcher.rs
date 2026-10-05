@@ -5,10 +5,8 @@
 //! filesystem events — common when large files are copied — are coalesced into a
 //! single batch so the orchestrator is not triggered before writes complete.
 //!
-//! Only `Create` and `Modify` events on regular files are forwarded; directory events
-//! and deletions are ignored. Symlinks are not followed (`follow_links(false)` is
-//! set in the orchestrator's `WalkDir` call) to prevent an attacker with write access
-//! to the drop-zone from escaping the ingestion root via a crafted symlink.
+//! Deletion and rename events bypass the delay. The coordinator rechecks names
+//! through ingestion authority; event kinds do not establish file existence.
 
 use notify::{Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use std::path::PathBuf;
@@ -31,19 +29,23 @@ pub async fn watch(
     tx: mpsc::Sender<Vec<PathBuf>>,
     cancel: CancellationToken,
 ) -> Result<(), anyhow::Error> {
-    let (notify_tx, mut notify_rx) = mpsc::channel::<Vec<PathBuf>>(64);
+    let (notify_tx, mut notify_rx) = mpsc::channel::<(Vec<PathBuf>, bool)>(64);
 
     let mut watcher = {
         let notify_tx = notify_tx.clone();
         RecommendedWatcher::new(
             move |res: Result<Event, notify::Error>| {
                 if let Ok(event) = res {
+                    let immediate = matches!(
+                        event.kind,
+                        EventKind::Remove(_)
+                            | EventKind::Modify(notify::event::ModifyKind::Name(_))
+                    );
                     match event.kind {
-                        EventKind::Create(_) | EventKind::Modify(_) => {
-                            let paths: Vec<PathBuf> =
-                                event.paths.into_iter().filter(|p| p.is_file()).collect();
+                        EventKind::Create(_) | EventKind::Modify(_) | EventKind::Remove(_) => {
+                            let paths = event.paths;
                             if !paths.is_empty()
-                                && let Err(e) = notify_tx.blocking_send(paths)
+                                && let Err(e) = notify_tx.blocking_send((paths, immediate))
                             {
                                 tracing::warn!(error = ?e, "watcher: notify channel closed; stopping event forwarding");
                             }
@@ -71,8 +73,9 @@ pub async fn watch(
                     tracing::info!("watcher cancelled (idle)");
                     break;
                 }
-                Some(paths) = notify_rx.recv() => {
+                Some((paths, immediate)) = notify_rx.recv() => {
                     pending.extend(paths);
+                    if immediate && tx.send(std::mem::take(&mut pending)).await.is_err() { break; }
                 }
             }
         } else {
@@ -86,8 +89,9 @@ pub async fn watch(
                     }
                     break;
                 }
-                Some(paths) = notify_rx.recv() => {
+                Some((paths, immediate)) = notify_rx.recv() => {
                     pending.extend(paths);
+                    if immediate && tx.send(std::mem::take(&mut pending)).await.is_err() { break; }
                 }
                 () = tokio::time::sleep(debounce) => {
                     // Debounce complete — send batch
@@ -116,6 +120,31 @@ pub async fn watch(
 )]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn capability_ingestion_coordinator_delete_and_rename_bypass_create_modify_delay() {
+        for rename in [true, false] {
+            let directory = tempfile::tempdir().unwrap();
+            let source = directory.path().join("book.epub");
+            std::fs::write(&source, b"source").unwrap();
+            let (tx, mut rx) = mpsc::channel(8);
+            let cancel = CancellationToken::new();
+            let worker = tokio::spawn(watch(directory.path().to_owned(), tx, cancel.clone()));
+            tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+            if rename {
+                std::fs::rename(&source, directory.path().join("renamed.epub")).unwrap();
+            } else {
+                std::fs::remove_file(&source).unwrap();
+            }
+            let batch = tokio::time::timeout(std::time::Duration::from_secs(1), rx.recv())
+                .await
+                .unwrap()
+                .unwrap();
+            assert!(batch.contains(&source));
+            cancel.cancel();
+            worker.await.unwrap().unwrap();
+        }
+    }
 
     #[tokio::test]
     async fn watcher_detects_new_file() {

@@ -22,8 +22,8 @@ information. Which crates should serve those three needs?
 
 ## Decision drivers
 
-- The built-in `axum::Query` extractor decodes repeated query keys into only the last value, not a `Vec`, so filter
-  parameters need a different extractor.
+- The built-in `axum::Query` extractor does not collect repeated query keys into a `Vec` field, so filter parameters
+  need a different extractor.
 - Bare serde's `Option<Option<T>>` collapses "field absent" and "field present as `null`" into the same `None` value,
   which breaks Merge Patch semantics.
 - A timing difference in a secret-vs-presented comparison lets an attacker who can issue many requests narrow the
@@ -59,8 +59,8 @@ hand-written security code.
 - Negative: `serde_with` is a large crate carrying many helpers this decision does not use; the compile-time and
   binary-size cost is accepted in exchange for not hand-rolling a Merge Patch decoder. Enabling further `serde_with`
   features, such as `"macros"`, needs its own justification.
-- Negative: the `axum-extra` `"query"` feature pulls in `serde_qs` transitively, growing the lockfile by one indirect
-  dependency.
+- Negative: the `axum-extra` `"query"` feature pulls in `serde_html_form` transitively, growing the lockfile by one
+  indirect dependency.
 
 ## Pros and cons of the options
 

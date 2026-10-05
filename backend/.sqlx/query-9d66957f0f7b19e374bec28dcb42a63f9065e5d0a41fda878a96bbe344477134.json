@@ -1,0 +1,254 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT\n            enrichment_enabled,\n            enrichment_concurrency,\n            enrichment_poll_idle_secs,\n            enrichment_fetch_budget_secs,\n            cover_max_bytes,\n            cover_download_timeout_secs,\n            cover_min_long_edge_px,\n            cover_redirect_limit,\n            writeback_enabled,\n            writeback_concurrency,\n            writeback_poll_idle_secs,\n            writeback_max_attempts,\n            opds_enabled,\n            opds_page_size,\n            accepted_formats,\n            cleanup_imported,\n            cleanup_duplicates,\n            provider_visibility,\n            revision,\n            updated_at\n        FROM settings\n        WHERE id = true",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "enrichment_enabled",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "settings",
+            "name": "enrichment_enabled"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "enrichment_concurrency",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "settings",
+            "name": "enrichment_concurrency"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "enrichment_poll_idle_secs",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "settings",
+            "name": "enrichment_poll_idle_secs"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "enrichment_fetch_budget_secs",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "settings",
+            "name": "enrichment_fetch_budget_secs"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "cover_max_bytes",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "settings",
+            "name": "cover_max_bytes"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "cover_download_timeout_secs",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "settings",
+            "name": "cover_download_timeout_secs"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "cover_min_long_edge_px",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "settings",
+            "name": "cover_min_long_edge_px"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "cover_redirect_limit",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "settings",
+            "name": "cover_redirect_limit"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "writeback_enabled",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "settings",
+            "name": "writeback_enabled"
+          }
+        }
+      },
+      {
+        "ordinal": 9,
+        "name": "writeback_concurrency",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "settings",
+            "name": "writeback_concurrency"
+          }
+        }
+      },
+      {
+        "ordinal": 10,
+        "name": "writeback_poll_idle_secs",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "settings",
+            "name": "writeback_poll_idle_secs"
+          }
+        }
+      },
+      {
+        "ordinal": 11,
+        "name": "writeback_max_attempts",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "settings",
+            "name": "writeback_max_attempts"
+          }
+        }
+      },
+      {
+        "ordinal": 12,
+        "name": "opds_enabled",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "settings",
+            "name": "opds_enabled"
+          }
+        }
+      },
+      {
+        "ordinal": 13,
+        "name": "opds_page_size",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "settings",
+            "name": "opds_page_size"
+          }
+        }
+      },
+      {
+        "ordinal": 14,
+        "name": "accepted_formats",
+        "type_info": "TextArray",
+        "origin": {
+          "Table": {
+            "table": "settings",
+            "name": "accepted_formats"
+          }
+        }
+      },
+      {
+        "ordinal": 15,
+        "name": "cleanup_imported",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "settings",
+            "name": "cleanup_imported"
+          }
+        }
+      },
+      {
+        "ordinal": 16,
+        "name": "cleanup_duplicates",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "settings",
+            "name": "cleanup_duplicates"
+          }
+        }
+      },
+      {
+        "ordinal": 17,
+        "name": "provider_visibility",
+        "type_info": "Jsonb",
+        "origin": {
+          "Table": {
+            "table": "settings",
+            "name": "provider_visibility"
+          }
+        }
+      },
+      {
+        "ordinal": 18,
+        "name": "revision",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "settings",
+            "name": "revision"
+          }
+        }
+      },
+      {
+        "ordinal": 19,
+        "name": "updated_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "settings",
+            "name": "updated_at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "9d66957f0f7b19e374bec28dcb42a63f9065e5d0a41fda878a96bbe344477134"
+}

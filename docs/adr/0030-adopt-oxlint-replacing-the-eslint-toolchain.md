@@ -26,8 +26,8 @@ engine, and is forward-aligned with TypeScript 7. Its type-aware linter, `oxlint
 the same native engine as the TypeScript 7 compiler.
 
 The constraint: the swap must preserve every enforcement that is a genuine industry standard while shedding rules that
-were unexamined house-style. Three frontend enforcements had no mechanical oxlint port and forced a real decision: the
-object-literal `as`-cast ban, docstring-presence linting, and the React rule layer.
+were unexamined house-style. Three frontend enforcements needed explicit evaluation during the port: the object-literal
+`as`-cast ban, docstring-presence linting, and the React rule layer.
 
 ## Decision drivers
 
@@ -51,9 +51,15 @@ Chosen option: **oxlint, native rules only, with config-driven type-aware via `o
 the full removal of ESLint while preserving every enforcement that is a genuine industry standard. The JS-plugin bridge
 option is rejected because it fails the full-removal driver; staying on ESLint is rejected by the toolchain direction.
 
-The native rules retain the type-aware safety checks, fetch centralisation, and React correctness baseline.
-Docstring-presence enforcement and the opinionated React plugin layer are dropped; the enum restriction remains with the
-type checker. These are deliberate changes to the lint policy, not replacements hidden behind a compatibility bridge.
+The native rules retain the object-literal `as`-cast ban, type-aware safety checks, fetch centralisation, and React
+correctness baseline. Docstring-presence enforcement and the opinionated React plugin layer are dropped; the enum
+restriction remains with the type checker. These are deliberate changes to the lint policy, not replacements hidden
+behind a compatibility bridge.
+
+Requiring a docblock on every export encouraged boilerplate that restated the type signature, so docstrings remain a
+reviewed convention. The `@eslint-react` class-component rules added no coverage in a function-component-only codebase;
+the remaining concerns rely on the retained native React rules, runtime checks and reviewed cleanup conventions. Those
+conventions do not provide the same enforcement as a lint rule.
 
 ### Consequences
 

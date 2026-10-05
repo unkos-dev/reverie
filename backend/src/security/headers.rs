@@ -344,11 +344,16 @@ mod tests {
     /// surfaces don't trip that today, but the latent break is one new test
     /// away.
     fn test_server_with_security(security: SecurityConfig) -> TestServer {
-        let mut config = test_support::test_config();
+        let (mut config, library_files) = test_support::test_storage_config(
+            None,
+            crate::models::storage_library::LibraryId::from_uuid(uuid::Uuid::new_v4()),
+        );
         config.security = security;
         let state = crate::state::AppState {
             pool: sqlx::PgPool::connect_lazy("postgres://invalid").unwrap(),
             ingestion_pool: sqlx::PgPool::connect_lazy("postgres://invalid").unwrap(),
+            ingestion: crate::services::ingestion::coordinator_channel().0,
+            library_files,
             config,
             oidc: Some(std::sync::Arc::new(test_support::test_oidc_runtime())),
             jwt_validator: None,

@@ -13,6 +13,7 @@ pub mod enrichment;
 /// EPUB layered reader/writer: zip-level entry IO, container, OPF,
 /// cover injection, XHTML extraction, repack, and validation/repair.
 pub mod epub;
+pub mod files;
 pub mod ingestion;
 /// Metadata extraction, drafting, sanitisation, ISBN normalisation,
 /// and the value-vs-canonical inversion helpers.

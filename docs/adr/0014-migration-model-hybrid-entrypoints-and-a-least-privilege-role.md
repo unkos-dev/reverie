@@ -21,8 +21,8 @@ define the model: under what database **identity** migrations run, through what 
 The answer is shaped by the audience and threat model. Operators run Reverie as Docker Compose (the majority for a
 Postgres-backed app), bare `docker run`, or Kubernetes; the common upgrade must stay one-command. The instance is
 treated as exposed and multi-user, so the long-lived web process must not carry database credentials more powerful than
-it needs at runtime. And because migration failures are inevitable over a project's life, recovery must be as simple as
-pinning the previous image tag and restarting.
+it needs at runtime. And because migration failures are inevitable over a project's life, a failed transactional batch
+must allow recovery by pinning the previous image tag and restarting.
 
 ## Decision drivers
 
@@ -34,8 +34,8 @@ pinning the previous image tag and restarting.
 - One-command upgrades for the compose majority: `docker compose up -d` must remain the whole upgrade procedure.
 - Compose contract stability: the shipped compose topology is a contract; changing it post-release forces every operator
   to hand-edit on upgrade, and pre-release is the only cost-free moment to fix the v1 shape.
-- Recoverable failures: a failed migration must leave the database untouched so recovery is "pin the old tag and
-  restart".
+- Recoverable failures: a failed transactional batch must leave the database untouched so recovery is "pin the old tag
+  and restart"; migrations that cannot join the transaction need separate recovery.
 
 ## Considered options
 
@@ -55,8 +55,7 @@ pinning the previous image tag and restarting.
 
 Chosen option:
 **dedicated `reverie_migrator` role, hybrid invocation, all-or-nothing batch transaction, and schema-ahead detection**,
-because each dimension independently satisfies its own decision driver while the four share one migration runner and one
-failure story.
+because each dimension addresses its own decision driver while the four share one migration runner.
 
 ### Identity
 
@@ -86,14 +85,18 @@ than the database refuses to serve with a clear message instead of cryptic SQL e
 Chosen option: **all-or-nothing batch transaction**, because a partial failure (for example three of five migrations
 applied) would leave the database in a state where neither the old nor the new image works, requiring manual SQL, and
 PostgreSQL's transactional DDL makes an all-or-nothing batch reliable. A custom runner wraps sqlx's embedded `Migrator`;
-all pending migrations execute in one `BEGIN`/`COMMIT`, and any failure rolls the batch back to the pre-migration state.
-With all-or-nothing, the operator pins the previous tag, restarts, and the app works because the database was never
-mutated.
+all pending transactional migrations execute in one `BEGIN`/`COMMIT`, and a failure within that batch rolls it back to
+the pre-migration state. After a rolled-back batch, the operator can pin the previous tag and restart because the batch
+left the database unchanged.
 
 Migrations marked `-- no-transaction` (for `CREATE INDEX CONCURRENTLY` and some `ALTER TYPE ... ADD VALUE`) run
 individually after the batch commits. Transactional migrations run first in version order, then no-transaction
 migrations in version order; an interleaving such as `[M1(tx), M2(no-tx), M3(tx)]` is safe only when M3 does not depend
 on M2, which is enforced at review when a `-- no-transaction` migration is added.
+
+The rollback guarantee does not cover this second phase. A failure there leaves the transactional batch and any earlier
+successful no-transaction migrations applied; restoring the old image alone does not restore the database. Successful
+SQL followed by a failed tracking write also needs recovery of the applied-migration record.
 
 Per-migration transactions and dry-run preflight were rejected for partial-state failure and doubled migration time
 respectively (see Pros and cons of the options).
@@ -118,12 +121,14 @@ scattered runtime SQL failures against missing columns rather than a single legi
 - Positive: the common upgrade path stays one command.
 - Positive: a failed migration surfaces as a non-zero migrate-service exit with isolated logs, not an app crash-loop
   with the error buried in startup output.
-- Positive: all-or-nothing rollback and schema-ahead detection keep recovery to "pin the old tag and restart".
+- Positive: a rolled-back transactional batch leaves the prior schema available for recovery with the old image.
 - Positive: the v1 compose contract is settled pre-release.
 - Negative: bare `docker run` operators must run two steps on a migration upgrade or set `REVERIE_AUTO_MIGRATE` (then
   carry the migration credential in the app environ).
 - Negative: two invocation paths exist over one runner, which is more surface than a single always-on path.
 - Negative: the custom runner couples to sqlx's `_sqlx_migrations` schema and must be re-verified on sqlx bumps.
+- Negative: a failure after the batch commits can require operator repair; schema-divergence detection may then prevent
+  the old image from starting.
 - Negative: a version-skew window exists if `depends_on` ordering is bypassed (a manual "restart just the app");
   mitigated by the bidirectional schema-divergence check and backward-compatible migration discipline. The advisory lock
   serialises only migration runners, so the startup version check can run while a migration is in flight.
@@ -160,7 +165,7 @@ scattered runtime SQL failures against missing columns rather than a single legi
 
 ### All-or-nothing batch transaction
 
-- Positive: failure leaves the database untouched, so pinning the old image is enough to recover.
+- Positive: failure within the transactional batch leaves its changes unapplied, so the old image can recover service.
 - Neutral: adds roughly 60-80 lines of custom runner code.
 - Negative: `-- no-transaction` migrations cannot join the batch.
 

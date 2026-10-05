@@ -26,6 +26,8 @@ archive's file size on disk catches the same threat earlier still, before any of
 
 ## Acceptance criteria
 
+The archive tests below consume opened temporary files through the file-backed admission path.
+
 Each bound below is enforced against the declared value named, not against a size verified by reading the archive:
 
 | Bound                                                   | Limit                       |

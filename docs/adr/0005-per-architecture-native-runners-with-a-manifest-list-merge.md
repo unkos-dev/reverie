@@ -52,24 +52,24 @@ the two-channel publication policy and the CI runtime the earlier record establi
 ## Decision outcome
 
 Chosen option: **native runners per architecture, merged into a manifest list**, because it removes QEMU emulation from
-every build, keeps the `main`-push arm64 build and the `v*`-tag release boundary fully native, and lets wall-clock time
-on tag pushes drop to the slower of the two per-architecture builds instead of their sum.
+every build, keeps the `main`-push arm64 build and the `v*`-tag release boundary fully native, and lets the parallel
+build phase on tag pushes take the time of the slower architecture instead of their sum.
 
 The release build uses native amd64 and arm64 runners before publishing a manifest list. Main-branch staging builds only
 arm64. The existing publication channels remain unchanged.
 
 ### Consequences
 
-- Positive: wall-clock time on tag pushes is `max(amd64, arm64)`, not their sum, since the per-arch builds run in
-  parallel on native runners.
+- Positive: the parallel build phase on tag pushes takes `max(amd64, arm64)`, rather than their sum, before the manifest
+  merge.
 - Positive: the `main`-push arm64 build runs natively rather than under QEMU emulation, eliminating the 30-minute-plus
   baseline and making the staging image cadence acceptable.
 - Positive: the release boundary (`v*` tag) is fully native on both architectures, so self-hosters pulling a versioned
   tag receive images built without emulation on either leg.
 - Positive: `provenance: mode=max` and `sbom: true` on each per-arch build carry through `imagetools create` onto the
   resulting manifest list, keeping a path to future image signing open.
-- Negative: four jobs run per publish instead of one (`prepare-matrix`, one or two `build` jobs, `merge`); total
-  runner-minutes on tag pushes stay close to the QEMU baseline, since the arm64 leg dominates either way.
+- Negative: preparing the matrix and merging the per-architecture digests add job orchestration and artifact-transfer
+  overhead around the native builds.
 - Negative: the workflow depends on continued GitHub free-tier ARM64 runner availability; a pricing or capacity change
   would slow or break the build.
 
@@ -77,7 +77,7 @@ arm64. The existing publication channels remain unchanged.
 
 ### Native runners per architecture, merged into a manifest list
 
-- Positive: wall-clock on tag pushes is the slower of the two per-arch builds, not their sum.
+- Positive: parallel native builds shorten the build phase to the slower architecture before the manifest merge.
 - Positive: no QEMU dependency; the `main`-push arm64 build runs natively, eliminating the 30-minute-plus baseline.
 - Negative: depends on continued GitHub free-tier ARM64 runner availability.
 
@@ -113,6 +113,13 @@ arm64. The existing publication channels remain unchanged.
 This record replaces the build-shape decision of the earlier record, Decouple staging Docker image publication from
 semver release tags (retired; history holds the record). That record's two-channel publication policy and its decision
 to leave `:latest` unassigned remain in force here.
+
+The publication channels separate staging from stable releases without consuming the first semver tag for scaffolding.
+Pointing `:latest` at an unreleased main build was rejected because a default pull should identify a stable release.
+Manual local publication would lose the workflow-run and commit-SHA provenance of each image, while a manual trigger as
+the primary path would interrupt automated staging delivery. A separate staging workflow would duplicate the build and
+action-upgrade surface; a separate registry would add credentials and retention policy without improving on two tag
+channels in one package.
 
 Related:
 [Single-image distribution with central CSP enforcement](./0003-single-image-distribution-with-central-csp-enforcement.md),

@@ -200,14 +200,14 @@ url = "https://github.com/snyk/cli/releases/download/v1.1307.4/snyk-linux"
 url_api = "https://api.github.com/repos/snyk/cli/releases/assets/584104972"
 
 [[tools.trivy]]
-version = "0.74.0"
+version = "0.75.0"
 backend = "aqua:aquasecurity/trivy"
-specifiers = ["0.74.0"]
+specifiers = ["0.75.0"]
 
 [tools.trivy."platforms.linux-x64"]
-checksum = "sha256:2ae6fe3ee734b7fdf11335663e18c75ea12dccc76062f09f164a3b0f8be4371a"
-url = "https://github.com/aquasecurity/trivy/releases/download/v0.74.0/trivy_0.74.0_Linux-64bit.tar.gz"
-url_api = "https://api.github.com/repos/aquasecurity/trivy/releases/assets/514339431"
+checksum = "sha256:c6e65abddb348e25f10549df887045629cf28cc72453cd1c63acb717316b3f3f"
+url = "https://github.com/aquasecurity/trivy/releases/download/v0.75.0/trivy_0.75.0_Linux-64bit.tar.gz"
+url_api = "https://api.github.com/repos/aquasecurity/trivy/releases/assets/603335432"
 provenance = "cosign"
 
 [[tools.typos]]
@@ -232,14 +232,14 @@ url_api = "https://api.github.com/repos/daveshanley/vacuum/releases/assets/56597
 provenance = "cosign"
 
 [[tools.vale]]
-version = "3.23.0"
+version = "3.24.0"
 backend = "aqua:vale-cli/vale"
-specifiers = ["3.23.0"]
+specifiers = ["3.24.0"]
 
 [tools.vale."platforms.linux-x64"]
-checksum = "sha256:cc35445a45186b8f0b01e11c01359694cf941e72cf6ab0fc44774f0e54c9d5fc"
-url = "https://github.com/vale-cli/vale/releases/download/v3.23.0/vale_3.23.0_Linux_64-bit.tar.gz"
-url_api = "https://api.github.com/repos/vale-cli/vale/releases/assets/589026726"
+checksum = "sha256:867534ddb678abca7f214bc4706ead0922bd5252ffe8035fc227013f66c8b214"
+url = "https://github.com/vale-cli/vale/releases/download/v3.24.0/vale_3.24.0_Linux_64-bit.tar.gz"
+url_api = "https://api.github.com/repos/vale-cli/vale/releases/assets/603879404"
 
 [[tools.zizmor]]
 version = "1.30.1"

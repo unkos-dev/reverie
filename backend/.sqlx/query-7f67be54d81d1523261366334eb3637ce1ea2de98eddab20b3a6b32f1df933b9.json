@@ -1,0 +1,18 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "WITH changed AS (UPDATE manifestations SET current_file_hash = $1, file_size_bytes = $2, relocation_source_path = $3, relocation_destination_path = $4 WHERE id = $5 RETURNING *), removed AS (DELETE FROM library_path_claims c USING changed m WHERE c.manifestation_id = m.id AND c.library_id <> m.library_id) INSERT INTO library_path_claims (library_id, path, manifestation_id) SELECT library_id, file_path AS path, id FROM changed UNION SELECT library_id, relocation_source_path, id FROM changed WHERE relocation_source_path IS NOT NULL UNION SELECT library_id, relocation_destination_path, id FROM changed WHERE relocation_destination_path IS NOT NULL ON CONFLICT (library_id, path) DO NOTHING",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Int8",
+        "Text",
+        "Text",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "7f67be54d81d1523261366334eb3637ce1ea2de98eddab20b3a6b32f1df933b9"
+}

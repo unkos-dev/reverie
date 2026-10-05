@@ -60,7 +60,7 @@ pub fn validate(handle: &ZipHandle, opf_data: Option<&OpfData>, issues: &mut Vec
 
     // Attempt to decode as a raster first. SVG-declared covers aren't
     // raster-decodable.
-    if image::load_from_memory(&bytes).is_ok() {
+    if raster_is_decodable(&bytes) {
         return true; // decodable raster, no issue
     }
     if crate::services::covers::svg::looks_like_svg(&bytes) {
@@ -72,6 +72,10 @@ pub fn validate(handle: &ZipHandle, opf_data: Option<&OpfData>, issues: &mut Vec
         kind: IssueKind::UndecodableCover { href },
     });
     false
+}
+
+pub(crate) fn raster_is_decodable(bytes: &[u8]) -> bool {
+    image::load_from_memory(bytes).is_ok()
 }
 
 /// Resolve the usability of an SVG-declared cover by rasterizing it exactly as
@@ -166,10 +170,7 @@ mod tests {
         w.start_file("OEBPS/cover.jpg", opts).unwrap();
         w.write_all(cover_bytes).unwrap();
         let bytes = w.finish().unwrap().into_inner();
-        ZipHandle {
-            bytes,
-            entries: vec!["OEBPS/cover.jpg".to_string()],
-        }
+        ZipHandle::from_bytes(&bytes)
     }
 
     fn make_opf_data(manifest_id: &str, href: &str) -> OpfData {
@@ -237,8 +238,8 @@ mod tests {
 
     #[test]
     fn missing_cover_file_emits_degraded() {
-        let handle = ZipHandle {
-            bytes: {
+        let handle = ZipHandle::from_bytes(
+            &({
                 use std::io::Write;
                 let buf = std::io::Cursor::new(Vec::new());
                 let mut w = zip::ZipWriter::new(buf);
@@ -247,9 +248,8 @@ mod tests {
                 w.start_file("OEBPS/content.opf", opts).unwrap();
                 w.write_all(b"<package/>").unwrap();
                 w.finish().unwrap().into_inner()
-            },
-            entries: vec!["OEBPS/content.opf".to_string()],
-        };
+            }),
+        );
         let opf = make_opf_data("cover", "cover.jpg");
         let mut issues = Vec::new();
         let has_cover = validate(&handle, Some(&opf), &mut issues);
@@ -281,10 +281,7 @@ mod tests {
         w.start_file("OEBPS/cover.svg", opts).unwrap();
         w.write_all(svg_bytes).unwrap();
         let bytes = w.finish().unwrap().into_inner();
-        ZipHandle {
-            bytes,
-            entries: vec!["OEBPS/cover.svg".to_string()],
-        }
+        ZipHandle::from_bytes(&bytes)
     }
 
     // Real Standard Ebooks shape: cover declared via properties="cover-image"
@@ -360,10 +357,7 @@ mod tests {
         w.start_file(&sibling_path, opts).unwrap();
         w.write_all(sibling_bytes).unwrap();
         let bytes = w.finish().unwrap().into_inner();
-        ZipHandle {
-            bytes,
-            entries: vec!["OEBPS/cover.svg".to_string(), sibling_path],
-        }
+        ZipHandle::from_bytes(&bytes)
     }
 
     #[test]

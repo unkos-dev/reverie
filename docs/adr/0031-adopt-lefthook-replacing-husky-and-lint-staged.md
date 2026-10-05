@@ -46,6 +46,9 @@ parallel-capable configuration, and it removes the Node-only staged-file layer t
 Lefthook owns the repository hooks, with matching semantics that cover nested files, formatter changes staged before
 commit, and read-only checks run without index races. Frontend linting is included in the local hook surface.
 
+Formatters run sequentially before the parallel read-only checks. Staging formatter output writes the shared Git index,
+so concurrent formatters could race its lock; checks also need to read the final formatted bytes.
+
 ### Consequences
 
 - Positive: one binary owns all three hooks, the configuration is declarative, and the read-only checks run in parallel.

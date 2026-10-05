@@ -7,7 +7,7 @@
 //!
 //! Synchronous. Call from `tokio::task::spawn_blocking`.
 
-use std::path::Path;
+use std::fs::File;
 
 use image::ImageFormat;
 
@@ -17,7 +17,7 @@ use crate::services::epub::{
     Severity, container_layer, cover_layer, is_safe_path, opf_layer, zip_layer,
 };
 
-/// Read the EPUB at `epub_path` and return its cover's raw bytes and detected
+/// Read the opened EPUB and return its cover's raw bytes and detected
 /// `ImageFormat`.
 ///
 /// Locates the cover via EPUB 3 `properties="cover-image"`, falling back to
@@ -33,23 +33,16 @@ use crate::services::epub::{
 /// archive structure, [`CoverError::NoCover`] if no cover is declared, the
 /// declared OPF or cover entry is missing, or [`CoverError::Decode`] if the
 /// cover bytes are neither a decodable raster format nor `SVG`.
-pub fn extract_cover_bytes(epub_path: &Path) -> Result<(Vec<u8>, ImageFormat), CoverError> {
+pub fn extract_cover_bytes(file: File) -> Result<(Vec<u8>, ImageFormat), CoverError> {
     let mut issues = Vec::new();
-    let handle = zip_layer::validate(epub_path, &mut issues).map_err(|e| match e {
+    let handle = zip_layer::validate(file, &mut issues).map_err(|e| match e {
         crate::services::epub::EpubError::Zip(z) => CoverError::Zip(z),
         crate::services::epub::EpubError::Io(io) => CoverError::Io(io),
         other => CoverError::Decode(other.to_string()),
     })?;
 
-    // The rejection is logged here at warn because the file is already in
-    // the library and nothing else on this call path would otherwise see it.
     if issues.iter().any(|i| i.severity == Severity::Irrecoverable) {
         let kinds: Vec<_> = issues.iter().map(|i| &i.kind).collect();
-        tracing::warn!(
-            path = %epub_path.display(),
-            issues = ?kinds,
-            "cover extraction: archive rejected by Layer 1 validation"
-        );
         return Err(CoverError::ArchiveRejected(format!("{kinds:?}")));
     }
 
@@ -128,7 +121,7 @@ mod tests {
         std::fs::write(&path, &bytes).unwrap();
 
         assert!(matches!(
-            extract_cover_bytes(&path),
+            extract_cover_bytes(std::fs::File::open(&path).unwrap()),
             Err(CoverError::ArchiveRejected(_))
         ));
     }

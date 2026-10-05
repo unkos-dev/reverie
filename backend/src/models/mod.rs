@@ -17,12 +17,13 @@ pub mod external_identifier;
 pub mod external_rating;
 /// Closed value set for the `identity_provider` Postgres `ENUM`.
 pub mod identity_provider;
-/// Per-file ingestion job rows produced by the import pipeline.
-pub mod ingestion_job;
+pub(crate) mod ingestion_input;
 /// Closed value set for the `ingestion_status` Postgres `ENUM`.
 pub mod ingestion_status;
 /// Response DTOs for the JSON library API (`/api/v1/books`, `/api/v1/works`).
 pub mod library;
+/// Transaction-bound managed path ownership.
+pub mod library_path_claim;
 /// Local password credentials (seam for local-account login).
 pub mod local_credentials;
 /// DB-backed per-account login throttle (escalating backoff, CLI-clearable).
@@ -44,6 +45,8 @@ pub mod series;
 pub mod settings;
 /// Response DTOs for the shelves CRUD API (`/api/v1/shelves*`).
 pub mod shelf;
+/// Persistent identity of each configured managed library.
+pub mod storage_library;
 /// Closed value set for the `theme_preference` Postgres `ENUM`.
 pub mod theme_preference;
 /// User accounts and OIDC-driven upsert flow.

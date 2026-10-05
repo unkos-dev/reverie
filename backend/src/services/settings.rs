@@ -8,15 +8,20 @@ use chrono::{DateTime, Utc};
 use sqlx::PgPool;
 use tokio::sync::RwLock;
 
-use crate::models::settings::{Settings, UpdateSettings};
+use crate::models::settings::{IngestionSettings, Settings, UpdateSettings};
 
 /// Load the singleton settings row from the database.
 ///
 /// # Errors
 /// Returns `sqlx::Error` on connection or query failure.
 pub async fn load(pool: &PgPool) -> Result<Settings, sqlx::Error> {
-    sqlx::query_as!(
-        Settings,
+    read(pool).await
+}
+
+async fn read<'a>(
+    executor: impl sqlx::Executor<'a, Database = sqlx::Postgres>,
+) -> Result<Settings, sqlx::Error> {
+    sqlx::query!(
         r#"SELECT
             enrichment_enabled,
             enrichment_concurrency,
@@ -32,16 +37,66 @@ pub async fn load(pool: &PgPool) -> Result<Settings, sqlx::Error> {
             writeback_max_attempts,
             opds_enabled,
             opds_page_size,
-            format_priority,
-            cleanup_mode,
+            accepted_formats,
+            cleanup_imported,
+            cleanup_duplicates,
             provider_visibility,
             revision,
             updated_at
         FROM settings
         WHERE id = true"#,
     )
-    .fetch_one(pool)
+    .fetch_one(executor)
     .await
+    .map(|row| Settings {
+        enrichment_enabled: row.enrichment_enabled,
+        enrichment_concurrency: row.enrichment_concurrency,
+        enrichment_poll_idle_secs: row.enrichment_poll_idle_secs,
+        enrichment_fetch_budget_secs: row.enrichment_fetch_budget_secs,
+        cover_max_bytes: row.cover_max_bytes,
+        cover_download_timeout_secs: row.cover_download_timeout_secs,
+        cover_min_long_edge_px: row.cover_min_long_edge_px,
+        cover_redirect_limit: row.cover_redirect_limit,
+        writeback_enabled: row.writeback_enabled,
+        writeback_concurrency: row.writeback_concurrency,
+        writeback_poll_idle_secs: row.writeback_poll_idle_secs,
+        writeback_max_attempts: row.writeback_max_attempts,
+        opds_enabled: row.opds_enabled,
+        opds_page_size: row.opds_page_size,
+        ingestion: IngestionSettings {
+            accepted_formats: row.accepted_formats,
+            cleanup_imported: row.cleanup_imported,
+            cleanup_duplicates: row.cleanup_duplicates,
+        },
+        provider_visibility: row.provider_visibility,
+        revision: row.revision,
+        updated_at: row.updated_at,
+    })
+}
+
+pub(crate) async fn seed_ingestion(
+    pool: &PgPool,
+    config: &crate::config::Config,
+) -> Result<Settings, sqlx::Error> {
+    let formats = config
+        .accepted_formats
+        .iter()
+        .map(ToString::to_string)
+        .collect::<Vec<_>>();
+    let mut tx = pool.begin().await?;
+    sqlx::query!(
+        "UPDATE settings SET accepted_formats = $1, cleanup_imported = $2, cleanup_duplicates = $3,
+         ingestion_seeded = true, revision = revision + 1, updated_at = now()
+         WHERE id = true AND NOT ingestion_seeded",
+        &formats,
+        config.cleanup_imported,
+        config.cleanup_duplicates,
+    )
+    .execute(&mut *tx)
+    .await?;
+    let settings = read(&mut *tx).await?;
+    tx.commit().await?;
+    Ok(settings)
 }
 
 /// Install `candidate` into the cache slot only when its `revision` is newer
@@ -189,14 +244,24 @@ pub async fn save(pool: &PgPool, req: &UpdateSettings) -> Result<Settings, sqlx:
         separated.push("opds_page_size = ");
         separated.push_bind_unseparated(v);
     }
-    if let Some(ref v) = req.format_priority {
+    if let Some(ref v) = req.accepted_formats {
         let strings: Vec<String> = v.iter().map(ToString::to_string).collect();
-        separated.push("format_priority = ");
+        separated.push("accepted_formats = ");
         separated.push_bind_unseparated(strings);
     }
-    if let Some(ref v) = req.cleanup_mode {
-        separated.push("cleanup_mode = ");
-        separated.push_bind_unseparated(v.as_str().to_owned());
+    if let Some(v) = req.cleanup_imported {
+        separated.push("cleanup_imported = ");
+        separated.push_bind_unseparated(v);
+    }
+    if let Some(v) = req.cleanup_duplicates {
+        separated.push("cleanup_duplicates = ");
+        separated.push_bind_unseparated(v);
+    }
+    if req.accepted_formats.is_some()
+        || req.cleanup_imported.is_some()
+        || req.cleanup_duplicates.is_some()
+    {
+        separated.push("ingestion_seeded = true");
     }
     if let Some(ref v) = req.provider_visibility {
         let obj: serde_json::Map<String, serde_json::Value> = v
@@ -213,7 +278,7 @@ pub async fn save(pool: &PgPool, req: &UpdateSettings) -> Result<Settings, sqlx:
     separated.push("revision = revision + 1");
     separated.push("updated_at = now()");
 
-    qb.push(" WHERE id = true RETURNING enrichment_enabled, enrichment_concurrency, enrichment_poll_idle_secs, enrichment_fetch_budget_secs, cover_max_bytes, cover_download_timeout_secs, cover_min_long_edge_px, cover_redirect_limit, writeback_enabled, writeback_concurrency, writeback_poll_idle_secs, writeback_max_attempts, opds_enabled, opds_page_size, format_priority, cleanup_mode, provider_visibility, revision, updated_at");
+    qb.push(" WHERE id = true RETURNING enrichment_enabled, enrichment_concurrency, enrichment_poll_idle_secs, enrichment_fetch_budget_secs, cover_max_bytes, cover_download_timeout_secs, cover_min_long_edge_px, cover_redirect_limit, writeback_enabled, writeback_concurrency, writeback_poll_idle_secs, writeback_max_attempts, opds_enabled, opds_page_size, accepted_formats, cleanup_imported, cleanup_duplicates, provider_visibility, revision, updated_at");
 
     qb.build_query_as::<Settings>().fetch_one(pool).await
 }
@@ -328,10 +393,141 @@ mod tests {
             writeback_max_attempts: None,
             opds_enabled: None,
             opds_page_size: None,
-            format_priority: None,
-            cleanup_mode: None,
+            accepted_formats: None,
+            cleanup_imported: None,
+            cleanup_duplicates: None,
             provider_visibility: None,
         }
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn capability_ingestion_seed_default_and_restart_precedence(pool: PgPool) {
+        let before = load(&pool).await.unwrap();
+        let seeded = seed_ingestion(&pool, &crate::config::Config::default())
+            .await
+            .unwrap();
+        assert_eq!(seeded.ingestion.accepted_formats, ["epub"]);
+        assert!(seeded.ingestion.cleanup_imported);
+        assert!(!seeded.ingestion.cleanup_duplicates);
+        assert_eq!(seeded.revision, before.revision + 1);
+        let changed = crate::config::Config {
+            accepted_formats: vec![],
+            cleanup_imported: false,
+            cleanup_duplicates: true,
+            ..Default::default()
+        };
+        let restarted = seed_ingestion(&pool, &changed).await.unwrap();
+        assert_eq!(restarted.revision, seeded.revision);
+        assert_eq!(restarted.ingestion.accepted_formats, ["epub"]);
+        assert!(restarted.ingestion.cleanup_imported);
+        assert!(!restarted.ingestion.cleanup_duplicates);
+        let wire = serde_json::to_value(restarted).unwrap();
+        assert!(wire.get("ingestion_seeded").is_none());
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn capability_ingestion_seed_empty_environment_and_unrelated_save(pool: PgPool) {
+        let mut request = empty_update();
+        request.opds_page_size = Some(77);
+        let saved = save(&pool, &request).await.unwrap();
+        let config = crate::config::Config {
+            accepted_formats: vec![],
+            cleanup_imported: false,
+            cleanup_duplicates: true,
+            ..Default::default()
+        };
+        let seeded = seed_ingestion(&pool, &config).await.unwrap();
+        assert_eq!(seeded.ingestion.accepted_formats, Vec::<String>::new());
+        assert!(!seeded.ingestion.cleanup_imported);
+        assert!(seeded.ingestion.cleanup_duplicates);
+        assert_eq!(seeded.opds_page_size, 77);
+        assert_eq!(seeded.revision, saved.revision + 1);
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn capability_ingestion_seed_saved_default_or_empty_prevents_environment_override(
+        pool: PgPool,
+    ) {
+        for formats in [
+            vec![crate::models::manifestation_format::ManifestationFormat::Epub],
+            vec![],
+        ] {
+            let mut request = empty_update();
+            request.accepted_formats = Some(formats.clone());
+            let saved = save(&pool, &request).await.unwrap();
+            let config = crate::config::Config {
+                accepted_formats: vec![],
+                cleanup_imported: false,
+                cleanup_duplicates: true,
+                ..Default::default()
+            };
+            let seeded = seed_ingestion(&pool, &config).await.unwrap();
+            assert_eq!(seeded.revision, saved.revision);
+            assert_eq!(
+                seeded.ingestion.accepted_formats,
+                formats.iter().map(ToString::to_string).collect::<Vec<_>>()
+            );
+            assert!(seeded.ingestion.cleanup_imported);
+            assert!(!seeded.ingestion.cleanup_duplicates);
+        }
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn capability_ingestion_seed_concurrent_save_and_monotonic_reload(pool: PgPool) {
+        let config = crate::config::Config {
+            cleanup_imported: false,
+            cleanup_duplicates: true,
+            ..Default::default()
+        };
+        let mut request = empty_update();
+        request.accepted_formats = Some(vec![]);
+        request.cleanup_imported = Some(true);
+        request.cleanup_duplicates = Some(false);
+        let (seeded, saved) = tokio::join!(seed_ingestion(&pool, &config), save(&pool, &request));
+        let seeded = seeded.unwrap();
+        let saved = saved.unwrap();
+        let latest = load(&pool).await.unwrap();
+        assert_eq!(latest.ingestion.accepted_formats, Vec::<String>::new());
+        assert!(latest.ingestion.cleanup_imported);
+        assert!(!latest.ingestion.cleanup_duplicates);
+        let mut resident = seeded;
+        apply_if_newer(&mut resident, saved);
+        apply_if_newer(&mut resident, latest.clone());
+        assert_eq!(resident.revision, latest.revision);
+        assert_eq!(resident.ingestion.accepted_formats, Vec::<String>::new());
+        pool.close().await;
+        assert!(seed_ingestion(&pool, &config).await.is_err());
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn capability_ingestion_seed_nonzero_unseeded_revision_uses_environment_on_startup(
+        pool: PgPool,
+    ) {
+        let migrator = sqlx::migrate!("./migrations");
+        migrator.undo(&pool, 20_261_004_010_000).await.unwrap();
+        let mut request = empty_update();
+        request.opds_page_size = Some(77);
+        let saved = save(&pool, &request).await.unwrap();
+        migrator.run(&pool).await.unwrap();
+        assert!(saved.revision > 0);
+        assert!(
+            !sqlx::query_scalar!("SELECT ingestion_seeded FROM settings WHERE id = true")
+                .fetch_one(&pool)
+                .await
+                .unwrap()
+        );
+        let config = crate::config::Config {
+            accepted_formats: vec![],
+            cleanup_imported: false,
+            cleanup_duplicates: true,
+            ..Default::default()
+        };
+        let seeded = seed_ingestion(&pool, &config).await.unwrap();
+        assert_eq!(seeded.revision, saved.revision + 1);
+        assert_eq!(seeded.ingestion.accepted_formats, Vec::<String>::new());
+        assert!(!seeded.ingestion.cleanup_imported);
+        assert!(seeded.ingestion.cleanup_duplicates);
+        assert_eq!(seeded.opds_page_size, 77);
     }
 
     #[sqlx::test(migrations = "./migrations")]

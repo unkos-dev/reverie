@@ -1,0 +1,12 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "WITH inserted AS (INSERT INTO manifestations (library_id, work_id, format, file_path, ingestion_file_hash, current_file_hash, file_size_bytes, ingestion_status, validation_status) SELECT (SELECT id FROM libraries WHERE configuration_key = 'default'), w.id, 'epub'::manifestation_format, 'fixtures/bulk-' || w.id, 'bulk-hash-' || w.id, 'bulk-hash-' || w.id, 1000, 'complete'::ingestion_status, 'clean'::validation_status FROM works w RETURNING *) INSERT INTO library_path_claims (library_id, path, manifestation_id) SELECT library_id, file_path, id FROM inserted",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": []
+  },
+  "hash": "4017a5fed21c30d1fd44e7f3844129c0b68af399d7e19d9906a622540e4f8346"
+}

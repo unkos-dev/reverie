@@ -1,11 +1,11 @@
 //! `EPUB` structural validation and auto-repair pipeline.
 //!
-//! Entry point: `validate_and_repair`. Runs 5 sequential layers
-//! (`ZIP` → container → `OPF` → `XHTML` → cover) and optionally re-packages
-//! the archive if repairs were made. Each layer appends `Issue`s to a
-//! shared `Vec`; the overall `ValidationOutcome` is derived from the
-//! worst-severity issue across all layers.
+//! Pure opened-file inspection runs five layers: ZIP, container, OPF, XHTML and cover.
+//! Repair instructions and metadata changes compose into one candidate. Publication
+//! validates and hashes the finished archive before replacing the source.
 
+use std::fs::File;
+#[cfg(test)]
 use std::path::Path;
 
 /// `META-INF/container.xml` parsing and `OPF` path location (Layer 2).
@@ -16,8 +16,7 @@ pub mod cover_layer;
 pub mod opf_layer;
 /// Low-level `ZIP` repack helper used by the repair layer.
 pub mod repack;
-/// High-level repair orchestrator: applies `Repaired`-severity fixes and atomically
-/// replaces the source file.
+/// Entry repair instructions applied during candidate repack.
 pub mod repair;
 /// `XHTML` spine-document encoding and well-formedness checks (Layer 4).
 pub mod xhtml_layer;
@@ -42,9 +41,20 @@ pub enum EpubError {
     /// `quick_xml` parse error surfaced during repack `XML` rewriting.
     #[error("XML parse error: {0}")]
     Xml(#[from] quick_xml::Error),
-    /// `tempfile` persist error when atomically replacing the source file.
-    #[error("tempfile error: {0}")]
-    TempFile(#[from] tempfile::PersistError),
+    /// Candidate validation rejected the rewrite before publication.
+    #[error("candidate validation regressed: {0}")]
+    CandidateRejected(String),
+    /// A required repair could not produce its promised entry.
+    #[error("required repair failed: {0}")]
+    Repair(String),
+    /// Replacement returned an error after the candidate was accepted.
+    #[error("publication or durability uncertain for accepted hash {hash}: {error}")]
+    PublicationUncertain {
+        /// Hash of the accepted candidate.
+        hash: String,
+        /// Error returned by the maintained replacement operation.
+        error: Box<Self>,
+    },
 }
 
 // ── Issue types ───────────────────────────────────────────────────────────────
@@ -67,7 +77,7 @@ pub enum Layer {
 /// How serious an `Issue` is and whether it has been resolved.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Severity {
-    /// File cannot be used; must be quarantined.
+    /// File cannot be used; ingestion preserves the original with a rejection reason.
     Irrecoverable,
     /// Issue was automatically repaired.
     Repaired,
@@ -298,51 +308,43 @@ pub const MAX_ARCHIVE_BYTES: u64 = MAX_AGGREGATE_UNCOMPRESSED_BYTES;
 
 // ── Entry point ───────────────────────────────────────────────────────────────
 
-/// Validate and optionally repair an `EPUB` at the given path.
+/// Inspect an opened archive without changing its bytes.
 ///
-/// This function is synchronous — call it from `tokio::task::spawn_blocking`.
-///
-/// # Return value
-///
-/// Returns a [`ValidationReport`] describing all issues found and the overall
-/// outcome. `Quarantined` means the caller must move the file to quarantine.
-/// `Repaired` means the file at `path` has been atomically replaced with the
-/// repaired version. `Degraded` and `Clean` leave the file untouched.
+/// Repairable findings are instructions, not evidence of completed repair.
 ///
 /// # Errors
-///
-/// Returns [`EpubError::Io`] if the file at `path` cannot be read from the
-/// filesystem. Returns [`EpubError::Zip`] only when the repair pass
-/// ([`repair::repackage`]) hits a `ZIP` failure while rewriting the archive;
-/// structural archive invalidity detected by the Layer 1 scan is recorded as
-/// an `Irrecoverable` issue and surfaced via [`ValidationOutcome::Quarantined`]
-/// rather than as an error. Returns [`EpubError::TempFile`] if the repaired
-/// archive cannot be atomically persisted over `path`.
-pub fn validate_and_repair(path: &Path) -> Result<ValidationReport, EpubError> {
+/// Returns an I/O error if the source handle cannot be inspected.
+pub fn inspect(file: File) -> Result<(zip_layer::ZipHandle, ValidationReport), EpubError> {
     let mut issues: Vec<Issue> = Vec::new();
 
     // Layer 1: ZIP integrity
-    let zip_result = zip_layer::validate(path, &mut issues)?;
+    let zip_result = zip_layer::validate(file, &mut issues)?;
     if issues.iter().any(|i| i.severity == Severity::Irrecoverable) {
-        return Ok(ValidationReport {
-            issues,
-            outcome: ValidationOutcome::Quarantined,
-            accessibility_metadata: None,
-            opf_data: None,
-            has_usable_embedded_cover: false,
-        });
+        return Ok((
+            zip_result,
+            ValidationReport {
+                issues,
+                outcome: ValidationOutcome::Quarantined,
+                accessibility_metadata: None,
+                opf_data: None,
+                has_usable_embedded_cover: false,
+            },
+        ));
     }
 
     // Layer 2: container.xml
     let opf_path = container_layer::validate(&zip_result, &mut issues);
     if issues.iter().any(|i| i.severity == Severity::Irrecoverable) {
-        return Ok(ValidationReport {
-            issues,
-            outcome: ValidationOutcome::Quarantined,
-            accessibility_metadata: None,
-            opf_data: None,
-            has_usable_embedded_cover: false,
-        });
+        return Ok((
+            zip_result,
+            ValidationReport {
+                issues,
+                outcome: ValidationOutcome::Quarantined,
+                accessibility_metadata: None,
+                opf_data: None,
+                has_usable_embedded_cover: false,
+            },
+        ));
     }
 
     // Layer 3: OPF
@@ -361,49 +363,110 @@ pub fn validate_and_repair(path: &Path) -> Result<ValidationReport, EpubError> {
     let has_degraded = issues.iter().any(|i| i.severity == Severity::Degraded);
 
     if has_irrecoverable {
-        return Ok(ValidationReport {
-            issues,
-            outcome: ValidationOutcome::Quarantined,
-            accessibility_metadata: None,
-            opf_data: None,
-            has_usable_embedded_cover: false,
-        });
+        return Ok((
+            zip_result,
+            ValidationReport {
+                issues,
+                outcome: ValidationOutcome::Quarantined,
+                accessibility_metadata: None,
+                opf_data: None,
+                has_usable_embedded_cover: false,
+            },
+        ));
     }
 
     let accessibility_metadata = opf_data
         .as_ref()
         .and_then(|d| d.accessibility_metadata.clone());
 
-    if has_repairable {
-        let opf_path_str = opf_data.as_ref().map(|d| d.opf_path.as_str());
-        repair::repackage(path, &issues, opf_path_str)?;
-        return Ok(ValidationReport {
-            issues,
-            outcome: ValidationOutcome::Repaired,
-            accessibility_metadata,
-            opf_data,
-            has_usable_embedded_cover,
-        });
-    }
-
-    let outcome = if has_degraded {
+    let outcome = if has_repairable {
+        ValidationOutcome::Repaired
+    } else if has_degraded {
         ValidationOutcome::Degraded
     } else {
         ValidationOutcome::Clean
     };
 
-    Ok(ValidationReport {
-        issues,
-        outcome,
-        accessibility_metadata,
-        opf_data,
-        has_usable_embedded_cover,
+    Ok((
+        zip_result,
+        ValidationReport {
+            issues,
+            outcome,
+            accessibility_metadata,
+            opf_data,
+            has_usable_embedded_cover,
+        },
+    ))
+}
+
+/// Validate an opened archive without modifying it.
+///
+/// # Errors
+/// Returns an I/O error if the opened source cannot be inspected.
+pub fn validate(file: File) -> Result<ValidationReport, EpubError> {
+    inspect(file).map(|(_, report)| report)
+}
+
+/// Validation with optional evidence of a completed repair publication.
+pub struct Validated {
+    /// Final report, retaining repaired status when repair was published.
+    pub report: ValidationReport,
+    /// Candidate hash and size, available only after successful publication.
+    pub rewritten: Option<(String, u64)>,
+}
+
+/// Validate and, when required, publish one repaired candidate.
+///
+/// # Errors
+/// Returns validation, repair, candidate rejection or publication errors.
+pub fn validate_and_repair(
+    file: File,
+    parent: &cap_std::fs::Dir,
+    basename: &std::ffi::OsStr,
+) -> Result<Validated, EpubError> {
+    let (handle, report) = inspect(file)?;
+    if report.outcome != ValidationOutcome::Repaired {
+        return Ok(Validated {
+            report,
+            rewritten: None,
+        });
+    }
+    let repairs = repair::RepairPlan::from_report(&report);
+    let mut published = repack::publish(parent, basename, &report, |candidate| {
+        repack::with_modifications(
+            &handle,
+            candidate,
+            None,
+            None,
+            &std::collections::HashMap::new(),
+            &[],
+            &repairs,
+        )
+    })?;
+    published.report.outcome = ValidationOutcome::Repaired;
+    published.report.issues.extend(
+        report
+            .issues
+            .into_iter()
+            .filter(|issue| issue.severity == Severity::Repaired),
+    );
+    Ok(Validated {
+        report: published.report,
+        rewritten: Some((published.hash, published.size)),
     })
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    fn validate_and_repair(path: &Path) -> Result<ValidationReport, EpubError> {
+        let parent = cap_std::fs::Dir::open_ambient_dir(
+            path.parent().unwrap(),
+            cap_std::ambient_authority(),
+        )?;
+        super::validate_and_repair(File::open(path)?, &parent, path.file_name().unwrap())
+            .map(|published| published.report)
+    }
     use std::io::{Read, Write};
     use zip::write::{ExtendedFileOptions, FileOptions};
     use zip::{ZipArchive, ZipWriter};
@@ -422,6 +485,388 @@ mod tests {
   <spine/>
 </package>"#;
 
+    fn file_fixture(
+        chapters: &[(&str, &[u8])],
+        broken: bool,
+        bad_mimetype: bool,
+    ) -> (tempfile::TempDir, std::path::PathBuf) {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("book.epub");
+        let mut writer = ZipWriter::new(File::create(&path).unwrap());
+        let options = FileOptions::<ExtendedFileOptions>::default();
+        writer
+            .start_file(
+                "mimetype",
+                options.clone().compression_method(if bad_mimetype {
+                    zip::CompressionMethod::Deflated
+                } else {
+                    zip::CompressionMethod::Stored
+                }),
+            )
+            .unwrap();
+        writer.write_all(repack::MIMETYPE_CONTENT).unwrap();
+        writer
+            .start_file("META-INF/container.xml", options.clone())
+            .unwrap();
+        writer.write_all(CONTAINER_XML).unwrap();
+        let mut manifest = String::new();
+        let mut spine = String::new();
+        for (i, (name, _)) in chapters.iter().enumerate() {
+            use std::fmt::Write;
+            write!(
+                manifest,
+                "<item id=\"ch{i}\" href=\"{name}\" media-type=\"application/xhtml+xml\"/>"
+            )
+            .unwrap();
+            write!(spine, "<itemref idref=\"ch{i}\"/>").unwrap();
+        }
+        let broken = if broken {
+            "<itemref idref=\"missing\"/>"
+        } else {
+            ""
+        };
+        let opf = format!(
+            "<package xmlns:dc=\"http://purl.org/dc/elements/1.1/\"><metadata><dc:title>Old</dc:title></metadata><manifest>{manifest}</manifest><spine>{spine}{broken}</spine></package>"
+        );
+        writer
+            .start_file("OEBPS/content.opf", options.clone())
+            .unwrap();
+        writer.write_all(opf.as_bytes()).unwrap();
+        for (name, bytes) in chapters {
+            writer
+                .start_file(format!("OEBPS/{name}"), options.clone())
+                .unwrap();
+            writer.write_all(bytes).unwrap();
+        }
+        writer.finish().unwrap();
+        (dir, path)
+    }
+
+    #[test]
+    fn file_backed_epub_admitted_index_and_refused_archive() {
+        let (_dir, path) = file_fixture(&[("chapter.xhtml", b"<html/>")], false, false);
+        let (handle, report) = inspect(File::open(&path).unwrap()).unwrap();
+        assert_eq!(report.outcome, ValidationOutcome::Clean);
+        assert_eq!(
+            zip_layer::read_entry(&handle, "OEBPS/chapter.xhtml").unwrap(),
+            b"<html/>"
+        );
+        assert!(zip_layer::read_entry(&handle, "unadmitted").is_none());
+        File::options()
+            .write(true)
+            .open(&path)
+            .unwrap()
+            .set_len(MAX_ARCHIVE_BYTES + 1)
+            .unwrap();
+        let report = super::validate(File::open(&path).unwrap()).unwrap();
+        assert_eq!(report.outcome, ValidationOutcome::Quarantined);
+        assert!(matches!(
+            report.issues[0].kind,
+            IssueKind::ArchiveTooLarge { .. }
+        ));
+    }
+
+    #[test]
+    fn file_backed_epub_multiple_encoding_repairs() {
+        let first =
+            b"<?xml version=\"1.0\" encoding=\"ISO-8859-1\"?><html><body>\xe9</body></html>";
+        let second = b"<?xml version=\"1.0\" encoding=\"windows-1252\"?><html><body>\x93hello\x94</body></html>";
+        let (dir, path) = file_fixture(
+            &[("first.xhtml", first), ("second.xhtml", second)],
+            false,
+            false,
+        );
+        let parent =
+            cap_std::fs::Dir::open_ambient_dir(dir.path(), cap_std::ambient_authority()).unwrap();
+        let result = super::validate_and_repair(
+            File::open(&path).unwrap(),
+            &parent,
+            path.file_name().unwrap(),
+        )
+        .unwrap();
+        assert_eq!(result.report.outcome, ValidationOutcome::Repaired);
+        assert!(result.rewritten.is_some());
+        let (handle, report) = inspect(File::open(&path).unwrap()).unwrap();
+        assert_eq!(report.outcome, ValidationOutcome::Clean);
+        for (name, content) in [("first.xhtml", "é"), ("second.xhtml", "“hello”")] {
+            let bytes = zip_layer::read_entry(&handle, &format!("OEBPS/{name}")).unwrap();
+            let text = std::str::from_utf8(&bytes).unwrap();
+            assert!(text.contains("encoding=\"UTF-8\""));
+            assert!(text.contains(content));
+        }
+    }
+
+    #[test]
+    fn file_backed_epub_ambiguous_encoding_stays_degraded_without_rewrite() {
+        let (dir, path) = file_fixture(&[("chapter.xhtml", b"\xe9\xe0\xf3")], false, false);
+        let original = std::fs::read(&path).unwrap();
+        let parent =
+            cap_std::fs::Dir::open_ambient_dir(dir.path(), cap_std::ambient_authority()).unwrap();
+        let result = super::validate_and_repair(
+            File::open(&path).unwrap(),
+            &parent,
+            path.file_name().unwrap(),
+        )
+        .unwrap();
+        assert_eq!(result.report.outcome, ValidationOutcome::Degraded);
+        assert!(result.rewritten.is_none());
+        assert_eq!(std::fs::read(&path).unwrap(), original);
+    }
+
+    #[test]
+    fn file_backed_epub_mixed_repair_and_degraded_is_accepted() {
+        let (dir, path) = file_fixture(&[("chapter.xhtml", b"<html><body></html>")], false, true);
+        let parent =
+            cap_std::fs::Dir::open_ambient_dir(dir.path(), cap_std::ambient_authority()).unwrap();
+        let result = super::validate_and_repair(
+            File::open(&path).unwrap(),
+            &parent,
+            path.file_name().unwrap(),
+        )
+        .unwrap();
+        assert_eq!(result.report.outcome, ValidationOutcome::Repaired);
+        assert!(
+            result
+                .report
+                .issues
+                .iter()
+                .any(|issue| issue.severity == Severity::Degraded)
+        );
+        assert_eq!(
+            super::validate(File::open(&path).unwrap()).unwrap().outcome,
+            ValidationOutcome::Degraded
+        );
+    }
+
+    #[test]
+    fn file_backed_epub_spine_repair_composes_metadata() {
+        let (dir, path) = file_fixture(&[("chapter.xhtml", b"<html/>")], true, false);
+        let (handle, source) = inspect(File::open(&path).unwrap()).unwrap();
+        let repairs = repair::RepairPlan::from_report(&source);
+        let opf = repairs
+            .replacement(&handle, "OEBPS/content.opf")
+            .unwrap()
+            .unwrap();
+        let opf = crate::services::writeback::opf_rewrite::transform(
+            &opf,
+            &crate::services::writeback::opf_rewrite::Target {
+                title: Some("New"),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        let parent =
+            cap_std::fs::Dir::open_ambient_dir(dir.path(), cap_std::ambient_authority()).unwrap();
+        repack::publish(&parent, path.file_name().unwrap(), &source, |file| {
+            repack::with_modifications(
+                &handle,
+                file,
+                Some("OEBPS/content.opf"),
+                Some(&opf),
+                &std::collections::HashMap::new(),
+                &[],
+                &repairs,
+            )
+        })
+        .unwrap();
+        let (handle, report) = inspect(File::open(&path).unwrap()).unwrap();
+        assert_eq!(report.outcome, ValidationOutcome::Clean);
+        let final_opf =
+            String::from_utf8(zip_layer::read_entry(&handle, "OEBPS/content.opf").unwrap())
+                .unwrap();
+        assert!(final_opf.contains("<dc:title>New</dc:title>"));
+        assert!(!final_opf.contains("idref=\"missing\""));
+    }
+
+    #[test]
+    fn file_backed_epub_source_handle_survives_replacement() {
+        let (_dir, path) =
+            file_fixture(&[("chapter.xhtml", b"<html>original</html>")], false, false);
+        let (handle, _) = inspect(File::open(&path).unwrap()).unwrap();
+        let replacement = path.with_extension("replacement");
+        std::fs::write(&replacement, b"new object").unwrap();
+        std::fs::rename(&replacement, &path).unwrap();
+        assert_eq!(
+            zip_layer::read_entry(&handle, "OEBPS/chapter.xhtml").unwrap(),
+            b"<html>original</html>"
+        );
+    }
+
+    #[test]
+    fn candidate_publication_accepts_final_archive_and_hash() {
+        let (dir, path) = file_fixture(&[("chapter.xhtml", b"<html/>")], false, false);
+        let (handle, source) = inspect(File::open(&path).unwrap()).unwrap();
+        let parent =
+            cap_std::fs::Dir::open_ambient_dir(dir.path(), cap_std::ambient_authority()).unwrap();
+        let opf = crate::services::writeback::opf_rewrite::transform(
+            &zip_layer::read_entry(&handle, "OEBPS/content.opf").unwrap(),
+            &crate::services::writeback::opf_rewrite::Target {
+                title: Some("Published"),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        let published = repack::publish(&parent, path.file_name().unwrap(), &source, |file| {
+            repack::with_modifications(
+                &handle,
+                file,
+                Some("OEBPS/content.opf"),
+                Some(&opf),
+                &std::collections::HashMap::new(),
+                &[],
+                &repair::RepairPlan::default(),
+            )
+        })
+        .unwrap();
+        assert_eq!(published.report.outcome, ValidationOutcome::Clean);
+        assert_eq!(
+            published.report.opf_data.unwrap().title.as_deref(),
+            Some("Published")
+        );
+        let mut final_file = File::open(&path).unwrap();
+        assert_eq!(published.hash, repack::hash_file(&mut final_file).unwrap());
+        assert_eq!(published.size, final_file.metadata().unwrap().len());
+    }
+
+    #[test]
+    fn candidate_publication_rejects_regression_before_replacement() {
+        let (dir, path) = file_fixture(&[("chapter.xhtml", b"<html/>")], false, false);
+        let original = std::fs::read(&path).unwrap();
+        let (handle, source) = inspect(File::open(&path).unwrap()).unwrap();
+        let parent =
+            cap_std::fs::Dir::open_ambient_dir(dir.path(), cap_std::ambient_authority()).unwrap();
+        let replacements = std::collections::HashMap::from([(
+            "OEBPS/chapter.xhtml".into(),
+            b"<html><body></html>".to_vec(),
+        )]);
+        let result = repack::publish(&parent, path.file_name().unwrap(), &source, |file| {
+            repack::with_modifications(
+                &handle,
+                file,
+                None,
+                None,
+                &replacements,
+                &[],
+                &repair::RepairPlan::default(),
+            )
+        });
+        assert!(matches!(result, Err(EpubError::CandidateRejected(_))));
+        assert_eq!(std::fs::read(&path).unwrap(), original);
+    }
+
+    #[test]
+    fn candidate_publication_validator_error_leaves_source_untouched() {
+        let (dir, path) = file_fixture(&[], false, false);
+        let original = std::fs::read(&path).unwrap();
+        let (handle, source) = inspect(File::open(&path).unwrap()).unwrap();
+        let parent =
+            cap_std::fs::Dir::open_ambient_dir(dir.path(), cap_std::ambient_authority()).unwrap();
+        let result = repack::publish_with_validator(
+            &parent,
+            path.file_name().unwrap(),
+            &source,
+            |file| {
+                repack::with_modifications(
+                    &handle,
+                    file,
+                    None,
+                    None,
+                    &std::collections::HashMap::new(),
+                    &[],
+                    &repair::RepairPlan::default(),
+                )
+            },
+            |_| Err(std::io::Error::other("validator failed").into()),
+        );
+        assert!(matches!(result, Err(EpubError::Io(_))));
+        assert_eq!(std::fs::read(&path).unwrap(), original);
+    }
+
+    #[test]
+    fn candidate_publication_required_repair_error_leaves_source_untouched() {
+        let (dir, path) = file_fixture(&[("chapter.xhtml", b"<html/>")], false, false);
+        let original = std::fs::read(&path).unwrap();
+        let (handle, mut source) = inspect(File::open(&path).unwrap()).unwrap();
+        source.issues.push(Issue {
+            layer: Layer::Xhtml,
+            severity: Severity::Repaired,
+            kind: IssueKind::EncodingMismatch {
+                entry_name: "OEBPS/chapter.xhtml".into(),
+                declared: "unsupported-encoding".into(),
+                detected: "UTF-8".into(),
+            },
+        });
+        let repairs = repair::RepairPlan::from_report(&source);
+        let parent =
+            cap_std::fs::Dir::open_ambient_dir(dir.path(), cap_std::ambient_authority()).unwrap();
+        let result = repack::publish(&parent, path.file_name().unwrap(), &source, |file| {
+            repack::with_modifications(
+                &handle,
+                file,
+                None,
+                None,
+                &std::collections::HashMap::new(),
+                &[],
+                &repairs,
+            )
+        });
+        assert!(matches!(result, Err(EpubError::Repair(_))));
+        assert_eq!(std::fs::read(&path).unwrap(), original);
+    }
+
+    #[test]
+    fn file_backed_epub_unreadable_container_is_replaced_once() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("book.epub");
+        let mut writer = ZipWriter::new(File::create(&path).unwrap());
+        writer
+            .start_file(
+                "mimetype",
+                FileOptions::<ExtendedFileOptions>::default()
+                    .compression_method(zip::CompressionMethod::Stored),
+            )
+            .unwrap();
+        writer.write_all(repack::MIMETYPE_CONTENT).unwrap();
+        writer
+            .start_file(
+                "META-INF/container.xml",
+                FileOptions::<ExtendedFileOptions>::default(),
+            )
+            .unwrap();
+        writer.write_all(b"unreadable container").unwrap();
+        writer
+            .start_file(
+                "OEBPS/content.opf",
+                FileOptions::<ExtendedFileOptions>::default(),
+            )
+            .unwrap();
+        writer.write_all(CONTENT_OPF).unwrap();
+        writer.finish().unwrap();
+        let mut bytes = std::fs::read(&path).unwrap();
+        let offset = bytes
+            .windows(4)
+            .enumerate()
+            .find_map(|(offset, signature)| {
+                (signature == [0x50, 0x4b, 1, 2]
+                    && bytes.get(offset + 46..offset + 68) == Some(b"META-INF/container.xml"))
+                .then_some(offset)
+            })
+            .unwrap();
+        bytes[offset + 16] ^= 1;
+        std::fs::write(&path, bytes).unwrap();
+        let report = validate_and_repair(&path).unwrap();
+        assert_eq!(report.outcome, ValidationOutcome::Repaired);
+        let (handle, final_report) = inspect(File::open(&path).unwrap()).unwrap();
+        assert_eq!(final_report.outcome, ValidationOutcome::Clean);
+        assert_eq!(
+            handle
+                .entries
+                .iter()
+                .filter(|name| name.as_str() == "META-INF/container.xml")
+                .count(),
+            1
+        );
+    }
     /// A structurally otherwise-valid `EPUB` whose only problem is a
     /// `mimetype` entry that is neither first nor stored, so the mimetype
     /// rules are the sole source of the `Repaired` issues.

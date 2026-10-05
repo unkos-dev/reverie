@@ -1380,10 +1380,16 @@ mod tests {
 
         // Shared session store so the test can read what /auth/oidc/login wrote.
         let store = MemoryStore::default();
+        let (config, library_files) = crate::test_support::test_storage_config(
+            None,
+            crate::models::storage_library::LibraryId::from_uuid(uuid::Uuid::new_v4()),
+        );
         let state = AppState {
             pool: app_pool.clone(),
             ingestion_pool,
-            config: test_support::test_config(),
+            ingestion: crate::services::ingestion::coordinator_channel().0,
+            library_files,
+            config,
             oidc,
             jwt_validator: None,
             login_limiter: test_support::test_login_limiter(),
@@ -1574,10 +1580,16 @@ mod tests {
             mock.runtime("http://localhost:3000/auth/callback"),
         ));
         let store = MemoryStore::default();
+        let (config, library_files) = crate::test_support::test_storage_config(
+            None,
+            crate::models::storage_library::LibraryId::from_uuid(uuid::Uuid::new_v4()),
+        );
         let state = AppState {
             pool: app_pool.clone(),
             ingestion_pool,
-            config: test_support::test_config(),
+            ingestion: crate::services::ingestion::coordinator_channel().0,
+            library_files,
+            config,
             oidc,
             jwt_validator: None,
             login_limiter: test_support::test_login_limiter(),
@@ -1725,10 +1737,16 @@ mod tests {
             mock.runtime("http://localhost:3000/auth/callback"),
         ));
         let store = MemoryStore::default();
+        let (config, library_files) = crate::test_support::test_storage_config(
+            None,
+            crate::models::storage_library::LibraryId::from_uuid(uuid::Uuid::new_v4()),
+        );
         let state = AppState {
             pool: app_pool.clone(),
             ingestion_pool,
-            config: test_support::test_config(),
+            ingestion: crate::services::ingestion::coordinator_channel().0,
+            library_files,
+            config,
             oidc,
             jwt_validator: None,
             login_limiter: test_support::test_login_limiter(),
@@ -1846,10 +1864,16 @@ mod tests {
             mock.runtime("http://localhost:3000/auth/callback"),
         ));
         let store = MemoryStore::default();
+        let (config, library_files) = crate::test_support::test_storage_config(
+            None,
+            crate::models::storage_library::LibraryId::from_uuid(uuid::Uuid::new_v4()),
+        );
         let state = AppState {
             pool: app_pool.clone(),
             ingestion_pool,
-            config: test_support::test_config(),
+            ingestion: crate::services::ingestion::coordinator_channel().0,
+            library_files,
+            config,
             oidc,
             jwt_validator: None,
             login_limiter: test_support::test_login_limiter(),
@@ -1964,10 +1988,16 @@ mod tests {
             mock.runtime("http://localhost:3000/auth/callback"),
         ));
         let store = MemoryStore::default();
+        let (config, library_files) = crate::test_support::test_storage_config(
+            None,
+            crate::models::storage_library::LibraryId::from_uuid(uuid::Uuid::new_v4()),
+        );
         let state = AppState {
             pool: app_pool.clone(),
             ingestion_pool,
-            config: test_support::test_config(),
+            ingestion: crate::services::ingestion::coordinator_channel().0,
+            library_files,
+            config,
             oidc,
             jwt_validator: None,
             login_limiter: test_support::test_login_limiter(),

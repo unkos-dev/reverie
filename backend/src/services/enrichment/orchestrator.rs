@@ -1373,7 +1373,7 @@ mod tests {
         reason = "bare reqwest::Client::new() against wiremock on loopback is ADR-exempt (docs/adr/0007-outbound-http-clients-send-an-explicit-user-agent.md): wiremock does not score User-Agents and no WAF sits in the path"
     )]
     use super::*;
-    use crate::config::{CleanupMode, CoverConfig, EnrichmentConfig};
+    use crate::config::{CoverConfig, EnrichmentConfig};
     use crate::models::manifestation_format::ManifestationFormat;
     use serde_json::json;
     use wiremock::matchers::{method, path};
@@ -1489,9 +1489,8 @@ mod tests {
         Config {
             port: 3000,
             database_url: String::new(),
-            library_path: String::new(),
-            ingestion_path: String::new(),
-            quarantine_path: String::new(),
+            library_path: crate::config::Config::default().library_path,
+            ingestion_path: crate::config::Config::default().ingestion_path,
             log_level: "info".into(),
             db_max_connections: 5,
             oidc_issuer_url: String::new(),
@@ -1517,8 +1516,9 @@ mod tests {
             migration_database_url: None,
             auto_migrate: false,
             ingestion_database_url: String::new(),
-            format_priority: vec![ManifestationFormat::Epub],
-            cleanup_mode: CleanupMode::None,
+            accepted_formats: vec![ManifestationFormat::Epub],
+            cleanup_imported: false,
+            cleanup_duplicates: false,
             enrichment: EnrichmentConfig {
                 enabled: true,
                 concurrency: 1,
@@ -1573,15 +1573,15 @@ mod tests {
         .fetch_one(pool)
         .await
         .unwrap();
-        let path = format!("/tmp/orch-{marker}.epub");
+        let path = format!("fixtures/orch-{marker}.epub");
         let hash = format!("orch-hash-{marker}");
         let manifestation_id = sqlx::query_scalar!(
-            "INSERT INTO manifestations \
-               (work_id, isbn_13, format, file_path, ingestion_file_hash, current_file_hash, \
+            "WITH inserted AS (INSERT INTO manifestations \
+               (library_id, work_id, isbn_13, format, file_path, ingestion_file_hash, current_file_hash, \
                 file_size_bytes, ingestion_status, validation_status) \
-             VALUES ($1, $2, 'epub'::manifestation_format, $3, $4, $4, 1000, \
+             VALUES ((SELECT id FROM libraries WHERE configuration_key = 'default'), $1, $2, 'epub'::manifestation_format, $3, $4, $4, 1000, \
                      'complete'::ingestion_status, 'clean'::validation_status) \
-             RETURNING id",
+             RETURNING *), claimed AS (INSERT INTO library_path_claims (library_id, path, manifestation_id) SELECT library_id, file_path, id FROM inserted) SELECT id AS \"id!\" FROM inserted",
             work_id,
             isbn_13,
             path,
@@ -1609,15 +1609,15 @@ mod tests {
         .fetch_one(&pool)
         .await
         .unwrap();
-        let path = format!("/tmp/snap-{marker}.epub");
+        let path = format!("fixtures/snap-{marker}.epub");
         let hash = format!("snap-hash-{marker}");
         let m_id = sqlx::query_scalar!(
-            "INSERT INTO manifestations \
-               (work_id, format, file_path, ingestion_file_hash, current_file_hash, \
+            "WITH inserted AS (INSERT INTO manifestations \
+               (library_id, work_id, format, file_path, ingestion_file_hash, current_file_hash, \
                 file_size_bytes, ingestion_status, validation_status) \
-             VALUES ($1, 'epub'::manifestation_format, $2, $3, $3, 1000, \
+             VALUES ((SELECT id FROM libraries WHERE configuration_key = 'default'), $1, 'epub'::manifestation_format, $2, $3, $3, 1000, \
                      'complete'::ingestion_status, 'clean'::validation_status) \
-             RETURNING id",
+             RETURNING *), claimed AS (INSERT INTO library_path_claims (library_id, path, manifestation_id) SELECT library_id, file_path, id FROM inserted) SELECT id AS \"id!\" FROM inserted",
             work_id,
             path,
             hash,
@@ -2969,15 +2969,15 @@ mod tests {
         .fetch_one(pool)
         .await
         .unwrap();
-        let path = format!("/tmp/orch-extid-{marker}.epub");
+        let path = format!("fixtures/orch-extid-{marker}.epub");
         let hash = format!("orch-extid-hash-{marker}");
         let manifestation_id = sqlx::query_scalar!(
-            "INSERT INTO manifestations \
-               (work_id, format, file_path, ingestion_file_hash, current_file_hash, \
+            "WITH inserted AS (INSERT INTO manifestations \
+               (library_id, work_id, format, file_path, ingestion_file_hash, current_file_hash, \
                 file_size_bytes, ingestion_status, validation_status) \
-             VALUES ($1, 'epub'::manifestation_format, $2, $3, $3, 1000, \
+             VALUES ((SELECT id FROM libraries WHERE configuration_key = 'default'), $1, 'epub'::manifestation_format, $2, $3, $3, 1000, \
                      'complete'::ingestion_status, 'clean'::validation_status) \
-             RETURNING id",
+             RETURNING *), claimed AS (INSERT INTO library_path_claims (library_id, path, manifestation_id) SELECT library_id, file_path, id FROM inserted) SELECT id AS \"id!\" FROM inserted",
             work_id,
             path,
             hash,
@@ -3397,15 +3397,15 @@ mod tests {
         );
         let marker = Uuid::new_v4().simple().to_string();
         let (work_id, m1) = insert_isbnless_fixture(&pool, &marker).await;
-        let path2 = format!("/tmp/orch-extid-b-{marker}.epub");
+        let path2 = format!("fixtures/orch-extid-b-{marker}.epub");
         let hash2 = format!("orch-extid-b-hash-{marker}");
         let m2: Uuid = sqlx::query_scalar!(
-            "INSERT INTO manifestations \
-               (work_id, format, file_path, ingestion_file_hash, current_file_hash, \
+            "WITH inserted AS (INSERT INTO manifestations \
+               (library_id, work_id, format, file_path, ingestion_file_hash, current_file_hash, \
                 file_size_bytes, ingestion_status, validation_status) \
-             VALUES ($1, 'epub'::manifestation_format, $2, $3, $3, 1000, \
+             VALUES ((SELECT id FROM libraries WHERE configuration_key = 'default'), $1, 'epub'::manifestation_format, $2, $3, $3, 1000, \
                      'complete'::ingestion_status, 'clean'::validation_status) \
-             RETURNING id",
+             RETURNING *), claimed AS (INSERT INTO library_path_claims (library_id, path, manifestation_id) SELECT library_id, file_path, id FROM inserted) SELECT id AS \"id!\" FROM inserted",
             work_id,
             path2,
             hash2,
@@ -3726,15 +3726,15 @@ mod tests {
         );
         let marker = Uuid::new_v4().simple().to_string();
         let (work_id, m1) = insert_isbnless_fixture(&pool, &marker).await;
-        let path2 = format!("/tmp/orch-conc-{marker}.epub");
+        let path2 = format!("fixtures/orch-conc-{marker}.epub");
         let hash2 = format!("orch-conc-hash-{marker}");
         let m2: Uuid = sqlx::query_scalar!(
-            "INSERT INTO manifestations \
-               (work_id, format, file_path, ingestion_file_hash, current_file_hash, \
+            "WITH inserted AS (INSERT INTO manifestations \
+               (library_id, work_id, format, file_path, ingestion_file_hash, current_file_hash, \
                 file_size_bytes, ingestion_status, validation_status) \
-             VALUES ($1, 'epub'::manifestation_format, $2, $3, $3, 1000, \
+             VALUES ((SELECT id FROM libraries WHERE configuration_key = 'default'), $1, 'epub'::manifestation_format, $2, $3, $3, 1000, \
                      'complete'::ingestion_status, 'clean'::validation_status) \
-             RETURNING id",
+             RETURNING *), claimed AS (INSERT INTO library_path_claims (library_id, path, manifestation_id) SELECT library_id, file_path, id FROM inserted) SELECT id AS \"id!\" FROM inserted",
             work_id,
             path2,
             hash2,

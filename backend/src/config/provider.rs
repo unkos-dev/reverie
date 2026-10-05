@@ -46,7 +46,6 @@ pub const ENV_MAP: &[(&str, &str)] = &[
     ("REVERIE_PORT", "port"),
     ("REVERIE_LIBRARY_PATH", "library_path"),
     ("REVERIE_INGESTION_PATH", "ingestion_path"),
-    ("REVERIE_QUARANTINE_PATH", "quarantine_path"),
     // Cascade resolved in `EnvProvider::data` (GOTCHA-CASCADE): both map to
     // `log_level`; `REVERIE_LOG_LEVEL` wins when both are set.
     ("REVERIE_LOG_LEVEL", "log_level"),
@@ -79,8 +78,9 @@ pub const ENV_MAP: &[(&str, &str)] = &[
         "trusted_client_ip_header",
     ),
     ("REVERIE_AUTO_MIGRATE", "auto_migrate"),
-    ("REVERIE_FORMAT_PRIORITY", "format_priority"),
-    ("REVERIE_CLEANUP_MODE", "cleanup_mode"),
+    ("REVERIE_ACCEPTED_FORMATS", "accepted_formats"),
+    ("REVERIE_CLEANUP_IMPORTED", "cleanup_imported"),
+    ("REVERIE_CLEANUP_DUPLICATES", "cleanup_duplicates"),
     ("REVERIE_GOOGLEBOOKS_API_KEY", "googlebooks_api_key"),
     ("REVERIE_HARDCOVER_API_TOKEN", "hardcover_api_token"),
     ("REVERIE_OPERATOR_CONTACT", "operator_contact"),
@@ -151,8 +151,8 @@ pub const ENV_MAP: &[(&str, &str)] = &[
 /// variables.
 ///
 /// Maps each known env-var name to its dotted field path via
-/// `ENV_MAP`, parses values into typed figment `Value`s, and drops empties
-/// (empty-as-unset). Unmapped vars (`PATH`, `HOME`, …) are ignored.
+/// `ENV_MAP` and parses values into typed figment `Value`s. Empty storage roots
+/// reach their checked parser; other empty values are unset. Unmapped vars are ignored.
 ///
 /// # Why a custom provider rather than stock [`figment::providers::Env`]
 ///
@@ -223,8 +223,13 @@ impl Provider for EnvProvider {
         let mut dict = Dict::new();
 
         for (key, val) in &self.pairs {
-            // Empty string == unset (GOTCHA-EMPTY).
-            if val.is_empty() {
+            // Empty roots reach their checked type; other empty values are unset.
+            if val.is_empty()
+                && !matches!(
+                    key.as_str(),
+                    "REVERIE_LIBRARY_PATH" | "REVERIE_INGESTION_PATH" | "REVERIE_ACCEPTED_FORMATS"
+                )
+            {
                 continue;
             }
             // Only process keys we know about; ignore PATH, HOME, etc.

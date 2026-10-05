@@ -2,7 +2,8 @@
 //!
 //! `download` fetches a remote URL, validates the content (content-type,
 //! magic bytes, dimensions) against configurable limits, then writes the file
-//! atomically to a staging directory under `{library_root}/_covers/pending/`.
+//! through the selected library capability to `_covers/pending/`.
+//! The helper has no production caller.
 //!
 //! # Security model
 //!
@@ -12,11 +13,9 @@
 //! responses — a direct request to an internal address is never intercepted by
 //! the callback.
 
-// Phase D: the orchestrator does not yet call this module. Keep
-// the scaffolding (and its tests) in-tree until the cover-apply
-// path is wired up. Re-evaluate at Phase D merge.
-
-use std::path::{Path, PathBuf};
+use crate::models::storage_library::LibraryId;
+use crate::services::covers::cache::publish_cover_bytes;
+use crate::services::files::{LibraryFileError, LibraryFiles, LibraryLocation};
 
 use futures::TryStreamExt;
 use image::ImageFormat;
@@ -52,8 +51,8 @@ impl CoverFormat {
 /// A successfully staged cover image.
 #[derive(Debug, Clone)]
 pub struct CoverArtifact {
-    /// Absolute path to the staged file.
-    pub path: PathBuf,
+    /// Recorded pending location in the selected owning library.
+    pub location: LibraryLocation,
     /// `SHA-256` digest of the raw bytes as written to disk.
     pub sha256: Vec<u8>,
     /// Number of bytes written.
@@ -68,9 +67,6 @@ pub struct CoverArtifact {
 
 /// Configuration for a single cover download.
 pub struct DownloadConfig {
-    /// Root of the ebook library; covers are staged under
-    /// `{library_root}/_covers/pending/`.
-    pub library_root: PathBuf,
     /// Maximum number of bytes to accept.  The download is aborted
     /// mid-stream if this limit is exceeded.
     pub max_bytes: u64,
@@ -102,6 +98,12 @@ pub enum CoverError {
     /// A filesystem `I/O` error while staging the file.
     #[error(transparent)]
     Io(#[from] std::io::Error),
+    /// Library identity or relative location was rejected.
+    #[error(transparent)]
+    Library(#[from] LibraryFileError),
+    /// Blocking publication failed to complete.
+    #[error(transparent)]
+    Task(#[from] tokio::task::JoinError),
     /// A `reqwest` network error (connection failure, redirect policy rejection, etc.).
     #[error(transparent)]
     Network(#[from] reqwest::Error),
@@ -117,6 +119,8 @@ pub enum CoverError {
 
 /// Fetch a cover image from `url`, validate it, and stage it atomically.
 ///
+/// The supplied library identity is resolved before any network `I/O`.
+///
 /// Steps performed (in order):
 /// 1. `SSRF`-check the initial `URL`.
 /// 2. Send the request.
@@ -125,10 +129,10 @@ pub enum CoverError {
 /// 5. Verify the magic bytes match the declared content-type.
 /// 6. Decode the image and check dimensions.
 /// 7. Compute `SHA-256`.
-/// 8. Write atomically via `tempfile` + `persist`.
+/// 8. Publish through `cap-tempfile` beneath the owning library capability.
 ///
 /// The staging path is:
-/// `{library_root}/_covers/pending/{manifestation_id}-{version_id_short}.{ext}`
+/// `_covers/pending/{manifestation_id}-{version_id_short}.{ext}`
 /// where `version_id_short` is the first 8 hex characters of `version_id`
 /// (no dashes).
 ///
@@ -138,14 +142,18 @@ pub enum CoverError {
 /// # Errors
 ///
 /// Returns a [`CoverError`] variant for each failure class — see the enum for details.
-#[instrument(skip(client, config), fields(url, %manifestation_id))]
+#[instrument(skip(client, config, files), fields(url, %manifestation_id))]
 pub async fn download(
     url: &str,
     client: &reqwest::Client,
     config: &DownloadConfig,
+    files: &LibraryFiles,
+    library_id: LibraryId,
     manifestation_id: Uuid,
     version_id: Uuid,
 ) -> Result<CoverArtifact, CoverError> {
+    files.library(library_id)?;
+
     // Step 1: SSRF-check the initial URL before any network I/O.
     //
     // Bypassable via `DownloadConfig::allow_private_hosts = true` for in-process
@@ -217,34 +225,29 @@ pub async fn download(
     let version_id_short = &version_id.simple().to_string()[..8];
     let ext = declared_format.extension();
     let filename = format!("{manifestation_id}-{version_id_short}.{ext}");
-    let pending_dir = config.library_root.join("_covers").join("pending");
-    std::fs::create_dir_all(&pending_dir)?;
-
-    let artifact_path = write_atomically(&pending_dir, &filename, &buf)?;
+    let location = LibraryLocation {
+        library_id,
+        path: format!("_covers/pending/{filename}").parse()?,
+    };
+    let files = files.clone();
+    tokio::task::spawn_blocking(move || -> Result<(), CoverError> {
+        // THREAT: Staging authority is selected only by the supplied library identity.
+        let library = files.library(library_id)?;
+        library.create_dir_all("_covers/pending")?;
+        let pending = library.open_dir("_covers/pending")?;
+        publish_cover_bytes(&pending, &filename, &buf)?;
+        Ok(())
+    })
+    .await??;
 
     Ok(CoverArtifact {
-        path: artifact_path,
+        location,
         sha256,
         size_bytes,
         width,
         height,
         format: declared_format,
     })
-}
-
-/// Write `data` to `dir/filename` atomically using a temp file + rename.
-fn write_atomically(dir: &Path, filename: &str, data: &[u8]) -> Result<PathBuf, std::io::Error> {
-    use std::io::Write;
-
-    let tmp = tempfile::NamedTempFile::new_in(dir)?;
-    let (mut file, tmp_path) = tmp.into_parts();
-    file.write_all(data)?;
-    file.flush()?;
-    drop(file);
-
-    let dest = dir.join(filename);
-    tmp_path.persist(&dest).map_err(|e| e.error)?;
-    Ok(dest)
 }
 
 // ── Tests ──────────────────────────────────────────────────────────────────
@@ -285,9 +288,33 @@ mod tests {
         buf.into_inner()
     }
 
-    fn default_config(tmp: &TempDir) -> DownloadConfig {
+    async fn download_fixture(
+        url: &str,
+        client: &reqwest::Client,
+        config: &DownloadConfig,
+        tmp: &TempDir,
+        manifestation_id: Uuid,
+        version_id: Uuid,
+    ) -> Result<CoverArtifact, CoverError> {
+        let id = LibraryId::from_uuid(Uuid::new_v4());
+        let files = crate::test_support::test_library_files_at(
+            &tmp.path().to_str().unwrap().parse().unwrap(),
+            id,
+        );
+        download(
+            url,
+            client,
+            config,
+            &files,
+            id,
+            manifestation_id,
+            version_id,
+        )
+        .await
+    }
+
+    fn default_config() -> DownloadConfig {
         DownloadConfig {
-            library_root: tmp.path().to_path_buf(),
             max_bytes: 10 * 1024 * 1024, // 10 MiB
             min_long_edge_px: 200,
             allow_private_hosts: true, // wiremock runs on 127.0.0.1
@@ -299,6 +326,44 @@ mod tests {
     }
 
     // ── Happy path ────────────────────────────────────────────────────────
+
+    #[tokio::test]
+    async fn capability_cover_staging_unknown_library_makes_no_request() {
+        let tmp = TempDir::new().unwrap();
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_bytes(make_png(240, 320))
+                    .insert_header("content-type", "image/png"),
+            )
+            .mount(&server)
+            .await;
+        let known = LibraryId::from_uuid(Uuid::new_v4());
+        let unknown = LibraryId::from_uuid(Uuid::new_v4());
+        let files = crate::test_support::test_library_files_at(
+            &tmp.path().to_str().unwrap().parse().unwrap(),
+            known,
+        );
+        let result = download(
+            &server.uri(),
+            &client(),
+            &default_config(),
+            &files,
+            unknown,
+            Uuid::new_v4(),
+            Uuid::new_v4(),
+        )
+        .await;
+        assert!(matches!(
+            result,
+            Err(CoverError::Library(
+                crate::services::files::LibraryFileError::UnknownLibrary
+            ))
+        ));
+        assert!(server.received_requests().await.unwrap().is_empty());
+        assert!(!tmp.path().join("_covers").exists());
+    }
 
     #[tokio::test]
     async fn valid_jpeg_fetched_and_staged() {
@@ -320,12 +385,13 @@ mod tests {
 
         let manifestation_id = Uuid::new_v4();
         let version_id = Uuid::new_v4();
-        let config = default_config(&tmp);
+        let config = default_config();
 
-        let artifact = download(
+        let artifact = download_fixture(
             &server.uri(),
             &client(),
             &config,
+            &tmp,
             manifestation_id,
             version_id,
         )
@@ -337,7 +403,7 @@ mod tests {
         assert_eq!(artifact.height, 1800);
         assert_eq!(artifact.size_bytes, content_length as u64);
         assert_eq!(artifact.sha256.len(), 32);
-        assert!(artifact.path.exists());
+        assert!(tmp.path().join(artifact.location.path.as_path()).exists());
 
         // Verify SHA-256 is correct.
         let expected_sha256 = Sha256::digest(&jpeg_bytes).to_vec();
@@ -347,7 +413,14 @@ mod tests {
         let version_short = &version_id.simple().to_string()[..8];
         let expected_name = format!("{manifestation_id}-{version_short}.jpg");
         assert_eq!(
-            artifact.path.file_name().unwrap().to_str().unwrap(),
+            artifact
+                .location
+                .path
+                .as_path()
+                .file_name()
+                .unwrap()
+                .to_str()
+                .unwrap(),
             expected_name
         );
     }
@@ -371,16 +444,16 @@ mod tests {
             .await;
 
         let config = DownloadConfig {
-            library_root: tmp.path().to_path_buf(),
             max_bytes: 1024,
             min_long_edge_px: 1,
             allow_private_hosts: true,
         };
 
-        let result = download(
+        let result = download_fixture(
             &server.uri(),
             &client(),
             &config,
+            &tmp,
             Uuid::new_v4(),
             Uuid::new_v4(),
         )
@@ -408,10 +481,11 @@ mod tests {
             .mount(&server)
             .await;
 
-        let result = download(
+        let result = download_fixture(
             &server.uri(),
             &client(),
-            &default_config(&tmp),
+            &default_config(),
+            &tmp,
             Uuid::new_v4(),
             Uuid::new_v4(),
         )
@@ -440,10 +514,11 @@ mod tests {
             .mount(&server)
             .await;
 
-        let result = download(
+        let result = download_fixture(
             &server.uri(),
             &client(),
-            &default_config(&tmp),
+            &default_config(),
+            &tmp,
             Uuid::new_v4(),
             Uuid::new_v4(),
         )
@@ -473,16 +548,16 @@ mod tests {
             .await;
 
         let config = DownloadConfig {
-            library_root: tmp.path().to_path_buf(),
             max_bytes: 10 * 1024 * 1024,
             min_long_edge_px: 1000,
             allow_private_hosts: true,
         };
 
-        let result = download(
+        let result = download_fixture(
             &server.uri(),
             &client(),
             &config,
+            &tmp,
             Uuid::new_v4(),
             Uuid::new_v4(),
         )
@@ -501,16 +576,16 @@ mod tests {
     async fn initial_url_loopback_blocked_without_allow_private_hosts() {
         let tmp = TempDir::new().unwrap();
         let config = DownloadConfig {
-            library_root: tmp.path().to_path_buf(),
             max_bytes: 10 * 1024 * 1024,
             min_long_edge_px: 1,
             allow_private_hosts: false,
         };
 
-        let result = download(
+        let result = download_fixture(
             "http://127.0.0.1:1/cover.jpg",
             &client(),
             &config,
+            &tmp,
             Uuid::new_v4(),
             Uuid::new_v4(),
         )
@@ -553,17 +628,17 @@ mod tests {
         // past the pre-check.  The redirect policy is separate and always
         // validates each hop.
         let config = DownloadConfig {
-            library_root: tmp.path().to_path_buf(),
             max_bytes: 10 * 1024 * 1024,
             min_long_edge_px: 1,
             allow_private_hosts: true,
         };
 
         let ssrf_client = cover_client(3, 10, "reverie-tests/0 (cover-download)");
-        let result = download(
+        let result = download_fixture(
             &server.uri(),
             &ssrf_client,
             &config,
+            &tmp,
             Uuid::new_v4(),
             Uuid::new_v4(),
         )
@@ -575,5 +650,152 @@ mod tests {
             matches!(result, Err(CoverError::Network(_))),
             "expected Network error (redirect blocked by SSRF guard), got {result:?}"
         );
+    }
+
+    #[tokio::test]
+    async fn capability_cover_staging_validated_formats_and_replacement() {
+        let tmp = TempDir::new().unwrap();
+        let server = MockServer::start().await;
+        let id = LibraryId::from_uuid(Uuid::new_v4());
+        let files = crate::test_support::test_library_files_at(
+            &tmp.path().to_str().unwrap().parse().unwrap(),
+            id,
+        );
+        let manifestation = Uuid::new_v4();
+        let version = Uuid::new_v4();
+        for (mime, bytes, format) in [
+            ("image/jpeg", make_jpeg(240, 320), CoverFormat::Jpeg),
+            ("image/png", make_png(240, 320), CoverFormat::Png),
+        ] {
+            server.reset().await;
+            Mock::given(method("GET"))
+                .respond_with(
+                    ResponseTemplate::new(200)
+                        .set_body_bytes(bytes.clone())
+                        .insert_header("content-type", mime),
+                )
+                .mount(&server)
+                .await;
+            for _ in 0..2 {
+                let artifact = download(
+                    &server.uri(),
+                    &client(),
+                    &default_config(),
+                    &files,
+                    id,
+                    manifestation,
+                    version,
+                )
+                .await
+                .unwrap();
+                assert_eq!(artifact.location.library_id, id);
+                assert!(
+                    artifact
+                        .location
+                        .path
+                        .as_str()
+                        .starts_with("_covers/pending/")
+                );
+                assert_eq!(artifact.format, format);
+                assert_eq!(
+                    files
+                        .library(id)
+                        .unwrap()
+                        .read(artifact.location.path.as_path())
+                        .unwrap(),
+                    bytes
+                );
+                image::load_from_memory(&bytes).unwrap();
+            }
+        }
+        assert_eq!(
+            std::fs::read_dir(tmp.path().join("_covers/pending"))
+                .unwrap()
+                .count(),
+            2
+        );
+    }
+
+    #[tokio::test]
+    async fn capability_cover_staging_rejects_unvalidated_bytes_and_outside_directory() {
+        let tmp = TempDir::new().unwrap();
+        let outside = TempDir::new().unwrap();
+        let server = MockServer::start().await;
+        let id = LibraryId::from_uuid(Uuid::new_v4());
+        let files = crate::test_support::test_library_files_at(
+            &tmp.path().to_str().unwrap().parse().unwrap(),
+            id,
+        );
+        let png = make_png(240, 320);
+        Mock::given(method("GET"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_bytes(png.clone())
+                    .insert_header("content-type", "image/jpeg"),
+            )
+            .mount(&server)
+            .await;
+        assert!(matches!(
+            download(
+                &server.uri(),
+                &client(),
+                &default_config(),
+                &files,
+                id,
+                Uuid::new_v4(),
+                Uuid::new_v4()
+            )
+            .await,
+            Err(CoverError::MagicByteMismatch)
+        ));
+        assert!(!tmp.path().join("_covers").exists());
+        server.reset().await;
+        Mock::given(method("GET"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_bytes(png)
+                    .insert_header("content-type", "image/png"),
+            )
+            .mount(&server)
+            .await;
+        let limited = DownloadConfig {
+            max_bytes: 1,
+            ..default_config()
+        };
+        assert!(matches!(
+            download(
+                &server.uri(),
+                &client(),
+                &limited,
+                &files,
+                id,
+                Uuid::new_v4(),
+                Uuid::new_v4()
+            )
+            .await,
+            Err(CoverError::TooLarge)
+        ));
+        assert!(!tmp.path().join("_covers").exists());
+        std::fs::create_dir(tmp.path().join("_covers")).unwrap();
+        std::fs::write(outside.path().join("sentinel"), b"outside").unwrap();
+        std::os::unix::fs::symlink(outside.path(), tmp.path().join("_covers/pending")).unwrap();
+        assert!(
+            download(
+                &server.uri(),
+                &client(),
+                &default_config(),
+                &files,
+                id,
+                Uuid::new_v4(),
+                Uuid::new_v4()
+            )
+            .await
+            .is_err()
+        );
+        assert_eq!(
+            std::fs::read(outside.path().join("sentinel")).unwrap(),
+            b"outside"
+        );
+        assert_eq!(std::fs::read_dir(outside.path()).unwrap().count(), 1);
     }
 }

@@ -1733,15 +1733,15 @@
           "ingestion"
         ],
         "summary": "Scan the ingestion directory",
-        "description": "Synchronously scans the ingestion directory and returns per-outcome file counts: processed, failed, and skipped. Admin only.",
+        "description": "Discovers current ingestion inputs and reports queued, deferred and suppressed counts with the activity monitor. Admin only.",
         "operationId": "scan",
         "responses": {
-          "200": {
-            "description": "Scan complete; per-outcome file counts. Admin only.",
+          "202": {
+            "description": "Discovery complete; processing follows readiness. Admin only.",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ScanResponse"
+                  "$ref": "#/components/schemas/DiscoveryResult"
                 }
               }
             }
@@ -5936,7 +5936,7 @@
           "opds"
         ],
         "summary": "Download an EPUB",
-        "description": "Streams the EPUB file for a manifestation, with a `Content-Disposition: attachment` header carrying a title-derived filename. Requires HTTP Basic authentication. Returns 403 if the file's on-disk path escapes the configured library root.",
+        "description": "Streams one opened EPUB file for a manifestation, with Content-Length from that handle and a `Content-Disposition: attachment` header carrying a title-derived filename. Requires HTTP Basic authentication. Relative and absolute links resolving inside the library are supported. Established escapes return 403, missing files return 404, and other filesystem failures return a generic 500.",
         "operationId": "download_epub",
         "parameters": [
           {
@@ -5979,6 +5979,16 @@
           },
           "404": {
             "description": "Manifestation missing, RLS-hidden, or file absent on disk",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error; filesystem and database details are hidden",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -7806,15 +7816,6 @@
           }
         }
       },
-      "CleanupMode": {
-        "type": "string",
-        "description": "Source cleanup eligibility after a scan's per-file outcomes are recorded.\n\nWire format (JSON, DB `text` column): lowercase string, one of\n`\"all\"` | `\"ingested\"` | `\"none\"`.\n\nDeliberately NOT `#[non_exhaustive]`: the ingestion watcher matches it\nexhaustively, so adding a variant is a compile error at the match site\nrather than a silent fall-through, the same property the `Command` enum\nrelies on.",
-        "enum": [
-          "all",
-          "ingested",
-          "none"
-        ]
-      },
       "ContentRating": {
         "type": "string",
         "description": "The audience-suitability classification of a manifestation's content.\n\nWire-format invariant: variants serialise to the `snake_case` forms\ndeclared in the `#[serde]` and `#[sqlx]` attributes. Unknown DB variants\nfail decode loudly at the boundary instead of coercing into a string,\nmatching [`crate::models::validation_status::ValidationStatus`].",
@@ -8002,6 +8003,40 @@
           "role": {
             "$ref": "#/components/schemas/Role",
             "description": "Role for the new account. `child` and `admin` accounts are created only\nhere, by an existing administrator."
+          }
+        }
+      },
+      "DiscoveryResult": {
+        "type": "object",
+        "description": "Classification counts from discovery, before ingestion completes.",
+        "required": [
+          "queued",
+          "deferred",
+          "suppressed",
+          "monitor"
+        ],
+        "properties": {
+          "deferred": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Inputs awaiting readiness or a retry deadline.",
+            "minimum": 0
+          },
+          "monitor": {
+            "type": "string",
+            "description": "Existing activity resource for observing attempts."
+          },
+          "queued": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Inputs ready for the coordinator's attempt queue.",
+            "minimum": 0
+          },
+          "suppressed": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Inputs whose current generation is ineligible.",
+            "minimum": 0
           }
         }
       },
@@ -8225,6 +8260,32 @@
           "manifestation"
         ]
       },
+      "IngestionSettings": {
+        "type": "object",
+        "description": "Live acquisition and source-cleanup policy.",
+        "required": [
+          "accepted_formats",
+          "cleanup_imported",
+          "cleanup_duplicates"
+        ],
+        "properties": {
+          "accepted_formats": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ManifestationFormat"
+            },
+            "description": "Formats accepted for ingestion; currently only EPUB is supported."
+          },
+          "cleanup_duplicates": {
+            "type": "boolean",
+            "description": "Remove a duplicate source after its outcome is committed."
+          },
+          "cleanup_imported": {
+            "type": "boolean",
+            "description": "Remove an imported source after its outcome is committed."
+          }
+        }
+      },
       "IngestionStatus": {
         "type": "string",
         "description": "Lifecycle state of a single manifestation's ingestion pipeline run.\n\nWire-format invariant: variants serialise to the lowercase forms\ndeclared in the `#[serde]` and `#[sqlx]` attributes; unknown DB\nvariants fail decode loudly instead of coercing into a string.",
@@ -8291,7 +8352,7 @@
       },
       "ManifestationFormat": {
         "type": "string",
-        "description": "Canonical file format of a manifestation.\n\nClosed set shared by the Postgres `manifestation_format` `ENUM`, the\n`REVERIE_FORMAT_PRIORITY` env-var parser, and download-path content\nnegotiation. Extending the set requires both a Rust variant and a\nmatching `ALTER TYPE … ADD VALUE` migration.",
+        "description": "Canonical file format of a manifestation.\n\nClosed set shared by the Postgres `manifestation_format` `ENUM`, the\n`REVERIE_ACCEPTED_FORMATS` env-var parser, and download-path content\nnegotiation. Extending the set requires both a Rust variant and a\nmatching `ALTER TYPE … ADD VALUE` migration.",
         "enum": [
           "epub",
           "pdf",
@@ -8923,35 +8984,6 @@
           "child"
         ]
       },
-      "ScanResponse": {
-        "type": "object",
-        "description": "Per-outcome file counts for one synchronous scan pass.",
-        "required": [
-          "processed",
-          "failed",
-          "skipped"
-        ],
-        "properties": {
-          "failed": {
-            "type": "integer",
-            "format": "int64",
-            "description": "Files that errored during ingestion.",
-            "minimum": 0
-          },
-          "processed": {
-            "type": "integer",
-            "format": "int64",
-            "description": "Files ingested successfully.",
-            "minimum": 0
-          },
-          "skipped": {
-            "type": "integer",
-            "format": "int64",
-            "description": "Files skipped as duplicates of an existing manifestation.",
-            "minimum": 0
-          }
-        }
-      },
       "Scope": {
         "type": "string",
         "description": "Credential capability, one of the authorization axes alongside [`Role`]\n(identity gating) and ownership (resource axis).\n\nThe variants are declared in ascending capability order, so the derived\n[`Ord`] is the scope hierarchy: `Read < Write < Admin`. A floor check\ncompares against this order rather than testing set membership.",
@@ -9141,123 +9173,118 @@
         }
       },
       "Settings": {
-        "type": "object",
-        "description": "Runtime-tunable settings loaded from the `settings` table.\n\nFields map 1:1 to the singleton row columns. The struct is held in\n`AppState` behind an `Arc<RwLock<Settings>>` and refreshed via\nLISTEN/NOTIFY + 60-second fallback poll.",
-        "required": [
-          "enrichment_enabled",
-          "enrichment_concurrency",
-          "enrichment_poll_idle_secs",
-          "enrichment_fetch_budget_secs",
-          "cover_max_bytes",
-          "cover_download_timeout_secs",
-          "cover_min_long_edge_px",
-          "cover_redirect_limit",
-          "writeback_enabled",
-          "writeback_concurrency",
-          "writeback_poll_idle_secs",
-          "writeback_max_attempts",
-          "opds_enabled",
-          "opds_page_size",
-          "format_priority",
-          "cleanup_mode",
-          "provider_visibility",
-          "revision",
-          "updated_at"
-        ],
-        "properties": {
-          "cleanup_mode": {
-            "$ref": "#/components/schemas/CleanupMode",
-            "description": "Post-ingestion cleanup mode (`all`, `ingested`, or `none`)."
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/IngestionSettings",
+            "description": "Ingestion policy exposed as flat settings fields."
           },
-          "cover_download_timeout_secs": {
-            "type": "integer",
-            "format": "int32",
-            "description": "Cover download timeout in seconds."
-          },
-          "cover_max_bytes": {
-            "type": "integer",
-            "format": "int64",
-            "description": "Maximum cover image size in bytes."
-          },
-          "cover_min_long_edge_px": {
-            "type": "integer",
-            "format": "int32",
-            "description": "Minimum cover long-edge resolution in pixels."
-          },
-          "cover_redirect_limit": {
-            "type": "integer",
-            "format": "int32",
-            "description": "Maximum HTTP redirects when fetching covers."
-          },
-          "enrichment_concurrency": {
-            "type": "integer",
-            "format": "int32",
-            "description": "Maximum concurrent enrichment workers (1–10)."
-          },
-          "enrichment_enabled": {
-            "type": "boolean",
-            "description": "Whether the enrichment pipeline is active."
-          },
-          "enrichment_fetch_budget_secs": {
-            "type": "integer",
-            "format": "int32",
-            "description": "Per-source HTTP fetch budget in seconds."
-          },
-          "enrichment_poll_idle_secs": {
-            "type": "integer",
-            "format": "int32",
-            "description": "Seconds the enrichment poller sleeps when the queue is empty."
-          },
-          "format_priority": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/ManifestationFormat"
-            },
-            "description": "Ranked format preference for ingestion (`[\"epub\",\"pdf\",…]`)."
-          },
-          "opds_enabled": {
-            "type": "boolean",
-            "description": "Whether the OPDS catalogue is mounted."
-          },
-          "opds_page_size": {
-            "type": "integer",
-            "format": "int32",
-            "description": "OPDS feed page size (1–500)."
-          },
-          "provider_visibility": {
+          {
             "type": "object",
-            "description": "Per-provider display visibility for external identifiers and ratings\n(`{\"googlebooks\": false}` hides that provider from projections).\nKeys are validated on write against the union of `identifier_schemes`\nand `rating_sources`; absent keys mean visible. Display-only: hiding\na provider never gates fetching."
-          },
-          "revision": {
-            "type": "integer",
-            "format": "int64",
-            "description": "DB-generated monotonic row version, incremented inside every settings\nUPDATE. Cache writers only install a snapshot whose revision exceeds\nthe resident one, which makes the shared settings cache independent\nof lock-acquisition order and transaction-start timestamps\n(`updated_at` is transaction-start time and can move backwards across\nconcurrent writers). Not operator-settable."
-          },
-          "updated_at": {
-            "type": "string",
-            "format": "date-time",
-            "description": "DB-assigned (`now()` on every UPDATE); not operator-settable."
-          },
-          "writeback_concurrency": {
-            "type": "integer",
-            "format": "int32",
-            "description": "Maximum concurrent writeback workers (1–10)."
-          },
-          "writeback_enabled": {
-            "type": "boolean",
-            "description": "Whether the writeback worker is active."
-          },
-          "writeback_max_attempts": {
-            "type": "integer",
-            "format": "int32",
-            "description": "Maximum writeback retry attempts per job."
-          },
-          "writeback_poll_idle_secs": {
-            "type": "integer",
-            "format": "int32",
-            "description": "Seconds the writeback poller sleeps when the queue is empty."
+            "required": [
+              "enrichment_enabled",
+              "enrichment_concurrency",
+              "enrichment_poll_idle_secs",
+              "enrichment_fetch_budget_secs",
+              "cover_max_bytes",
+              "cover_download_timeout_secs",
+              "cover_min_long_edge_px",
+              "cover_redirect_limit",
+              "writeback_enabled",
+              "writeback_concurrency",
+              "writeback_poll_idle_secs",
+              "writeback_max_attempts",
+              "opds_enabled",
+              "opds_page_size",
+              "provider_visibility",
+              "revision",
+              "updated_at"
+            ],
+            "properties": {
+              "cover_download_timeout_secs": {
+                "type": "integer",
+                "format": "int32",
+                "description": "Cover download timeout in seconds."
+              },
+              "cover_max_bytes": {
+                "type": "integer",
+                "format": "int64",
+                "description": "Maximum cover image size in bytes."
+              },
+              "cover_min_long_edge_px": {
+                "type": "integer",
+                "format": "int32",
+                "description": "Minimum cover long-edge resolution in pixels."
+              },
+              "cover_redirect_limit": {
+                "type": "integer",
+                "format": "int32",
+                "description": "Maximum HTTP redirects when fetching covers."
+              },
+              "enrichment_concurrency": {
+                "type": "integer",
+                "format": "int32",
+                "description": "Maximum concurrent enrichment workers (1–10)."
+              },
+              "enrichment_enabled": {
+                "type": "boolean",
+                "description": "Whether the enrichment pipeline is active."
+              },
+              "enrichment_fetch_budget_secs": {
+                "type": "integer",
+                "format": "int32",
+                "description": "Per-source HTTP fetch budget in seconds."
+              },
+              "enrichment_poll_idle_secs": {
+                "type": "integer",
+                "format": "int32",
+                "description": "Seconds the enrichment poller sleeps when the queue is empty."
+              },
+              "opds_enabled": {
+                "type": "boolean",
+                "description": "Whether the OPDS catalogue is mounted."
+              },
+              "opds_page_size": {
+                "type": "integer",
+                "format": "int32",
+                "description": "OPDS feed page size (1–500)."
+              },
+              "provider_visibility": {
+                "type": "object",
+                "description": "Per-provider display visibility for external identifiers and ratings\n(`{\"googlebooks\": false}` hides that provider from projections).\nKeys are validated on write against the union of `identifier_schemes`\nand `rating_sources`; absent keys mean visible. Display-only: hiding\na provider never gates fetching."
+              },
+              "revision": {
+                "type": "integer",
+                "format": "int64",
+                "description": "DB-generated monotonic row version, incremented inside every settings\nUPDATE. Cache writers only install a snapshot whose revision exceeds\nthe resident one, which makes the shared settings cache independent\nof lock-acquisition order and transaction-start timestamps\n(`updated_at` is transaction-start time and can move backwards across\nconcurrent writers). Not operator-settable."
+              },
+              "updated_at": {
+                "type": "string",
+                "format": "date-time",
+                "description": "DB-assigned (`now()` on every UPDATE); not operator-settable."
+              },
+              "writeback_concurrency": {
+                "type": "integer",
+                "format": "int32",
+                "description": "Maximum concurrent writeback workers (1–10)."
+              },
+              "writeback_enabled": {
+                "type": "boolean",
+                "description": "Whether the writeback worker is active."
+              },
+              "writeback_max_attempts": {
+                "type": "integer",
+                "format": "int32",
+                "description": "Maximum writeback retry attempts per job."
+              },
+              "writeback_poll_idle_secs": {
+                "type": "integer",
+                "format": "int32",
+                "description": "Seconds the writeback poller sleeps when the queue is empty."
+              }
+            }
           }
-        }
+        ],
+        "description": "Runtime-tunable settings loaded from the `settings` table.\n\nFields map 1:1 to the singleton row columns. The struct is held in\n`AppState` behind an `Arc<RwLock<Settings>>` and refreshed via\nLISTEN/NOTIFY + 60-second fallback poll."
       },
       "SettingsResponse": {
         "allOf": [
@@ -9997,18 +10024,31 @@
       },
       "UpdateSettings": {
         "type": "object",
-        "description": "Partial update request for `PUT /api/v1/settings`.\n\nAll fields optional — absent fields are left unchanged (JSON Merge\nPatch semantics per RFC 7396). `CleanupMode` and\n`ManifestationFormat` are validated at deserialization time by serde;\ncollection invariants (non-empty, no duplicates) are checked by\n[`validate_update`].",
+        "description": "Partial update request for `PUT /api/v1/settings`.\n\nAll fields optional — absent fields are left unchanged (JSON Merge\nPatch semantics per RFC 7396). `ManifestationFormat` is validated at\ndeserialization time; EPUB-only membership and duplicates are checked by\n[`validate_update`].",
         "properties": {
-          "cleanup_mode": {
-            "oneOf": [
-              {
-                "$ref": "#/components/schemas/CleanupMode",
-                "description": "Post-ingestion cleanup mode."
-              },
-              {
-                "type": "null"
-              }
-            ]
+          "accepted_formats": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/ManifestationFormat"
+            },
+            "description": "Formats accepted for ingestion; an empty list suspends acquisition."
+          },
+          "cleanup_duplicates": {
+            "type": [
+              "boolean",
+              "null"
+            ],
+            "description": "Remove duplicate source files."
+          },
+          "cleanup_imported": {
+            "type": [
+              "boolean",
+              "null"
+            ],
+            "description": "Remove imported source files."
           },
           "cover_download_timeout_secs": {
             "type": [
@@ -10072,16 +10112,6 @@
             ],
             "format": "int32",
             "description": "Seconds the enrichment poller sleeps when the queue is empty."
-          },
-          "format_priority": {
-            "type": [
-              "array",
-              "null"
-            ],
-            "items": {
-              "$ref": "#/components/schemas/ManifestationFormat"
-            },
-            "description": "Ranked format preference for ingestion."
           },
           "opds_enabled": {
             "type": [
