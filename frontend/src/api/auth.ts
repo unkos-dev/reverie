@@ -40,8 +40,8 @@ const SetupStatusSchema = z.object({
   setup_required: z.boolean(),
   local_auth_enabled: z.boolean(),
   oidc_enabled: z.boolean(),
-  password_min_length: z.number().int().min(15),
-  password_max_length: z.number().int().min(64),
+  password_min_length: z.number().int().positive(),
+  password_max_length: z.number().int().positive(),
 });
 
 /** First-run and provider state used by the auth screens and the redirect. */

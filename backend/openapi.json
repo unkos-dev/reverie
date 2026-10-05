@@ -5704,11 +5704,11 @@
           "auth"
         ],
         "summary": "Get setup status",
-        "description": "Returns whether initial setup is required and which sign-in providers are enabled, for the sign-in page to decide what to show. No authentication is required to call it.",
+        "description": "Returns whether initial setup is required, which sign-in providers are enabled, and the configured minimum and maximum new-password lengths. Sign-in and password-setting forms use this state. No authentication is required to call it.",
         "operationId": "setup_status",
         "responses": {
           "200": {
-            "description": "Setup and provider state",
+            "description": "Setup, provider and password-length policy state",
             "content": {
               "application/json": {
                 "schema": {

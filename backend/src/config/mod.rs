@@ -160,7 +160,8 @@ pub struct Config {
     /// ([`Self::password_min_zxcvbn_score`]), and the HIBP breach check
     /// ([`Self::password_breach_check_enabled`]) together form the password
     /// policy applied at bootstrap, registration, recovery, admin create/reset,
-    /// and self-service change. Existing credentials remain valid.
+    /// and self-service change. Existing credentials remain valid. Must not
+    /// exceed [`Self::password_max_length`].
     #[validate(range(min = 15, message = "must be at least 15"))]
     pub password_min_length: usize,
     /// Maximum length for a local-account password, in characters
@@ -547,6 +548,12 @@ impl Config {
 
         // Declarative validation (range + cross-field). Aggregated.
         cfg.validate().map_err(|e| map_validation_errors(&e))?;
+        if cfg.password_min_length > cfg.password_max_length {
+            return Err(ConfigError::Invalid {
+                var: "REVERIE_PASSWORD_MIN_LENGTH".into(),
+                reason: "must not exceed REVERIE_PASSWORD_MAX_LENGTH".into(),
+            });
+        }
 
         Ok(cfg)
     }
@@ -1750,6 +1757,17 @@ mod tests {
                 config.password_min_length,
                 minimum.parse::<usize>().unwrap()
             );
+        }
+        let vars = with_overrides(&[("REVERIE_PASSWORD_MIN_LENGTH", "300")]);
+        let error = cfg_from_owned(&vars).unwrap_err();
+        assert!(error.to_string().contains("REVERIE_PASSWORD_MIN_LENGTH"));
+        assert!(error.to_string().contains("REVERIE_PASSWORD_MAX_LENGTH"));
+        for (minimum, maximum) in [("256", "256"), ("300", "300"), ("24", "64")] {
+            let vars = with_overrides(&[
+                ("REVERIE_PASSWORD_MIN_LENGTH", minimum),
+                ("REVERIE_PASSWORD_MAX_LENGTH", maximum),
+            ]);
+            assert!(cfg_from_owned(&vars).is_ok());
         }
     }
 

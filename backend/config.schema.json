@@ -164,7 +164,7 @@
       "minimum": 64
     },
     "password_min_length": {
-      "description": "Minimum length for a local-account password\n(`REVERIE_PASSWORD_MIN_LENGTH`, default `15`, the single-factor\nfloor). The length floor, the zxcvbn strength floor\n([`Self::password_min_zxcvbn_score`]), and the HIBP breach check\n([`Self::password_breach_check_enabled`]) together form the password\npolicy applied at bootstrap, registration, recovery, admin create/reset,\nand self-service change. Existing credentials remain valid.",
+      "description": "Minimum length for a local-account password\n(`REVERIE_PASSWORD_MIN_LENGTH`, default `15`, the single-factor\nfloor). The length floor, the zxcvbn strength floor\n([`Self::password_min_zxcvbn_score`]), and the HIBP breach check\n([`Self::password_breach_check_enabled`]) together form the password\npolicy applied at bootstrap, registration, recovery, admin create/reset,\nand self-service change. Existing credentials remain valid. Must not\nexceed [`Self::password_max_length`].",
       "type": "integer",
       "format": "uint",
       "default": 15,

@@ -176,17 +176,21 @@ decision on the local-password side.
   process restart clears every key's accrued state, unlike `local_login_throttle`, which survives one.
 - **Configuration.** `login_rate_per_min` (default 10/min), `login_throttle_base_secs` (default 2) and
   `login_throttle_cap_secs` (default 900) shape the two throttles; `password_min_length` (default 15, validated to at
-  least 15), `password_max_length` (default 256, validated to at least 64), `password_min_zxcvbn_score` (default 2),
-  `password_breach_check_enabled` (default `true`) shape the policy; `self_registration_enabled` (default `false`) gates
-  `register`; `trusted_client_ip_header` (default unset) opts a deployment into trusting a forwarded-for header. None of
-  these reload at runtime; each is read once from `Config` at the point of use.
+  least 15 and no greater than the maximum), `password_max_length` (default 256, validated to at least 64),
+  `password_min_zxcvbn_score` (default 2), `password_breach_check_enabled` (default `true`) shape the policy;
+  `self_registration_enabled` (default `false`) gates `register`; `trusted_client_ip_header` (default unset) opts a
+  deployment into trusting a forwarded-for header. None of these reload at runtime; each is read once from `Config` at
+  the point of use.
 
 `GET /auth/setup/status` exposes the configured minimum and maximum alongside provider/bootstrap state.
 `usePasswordPolicy` shares the setup-status query key with the setup and sign-in screens. Setup, registration, recovery,
 self-service change and administrator create/reset forms count Unicode scalar values and show those bounds. They disable
-password submission while policy loads or fails, and show a reload instruction on failure. Request-body schemas validate
-presence and format; the server always enforces strength and breach policy. Login and current-password verification
-accept existing credentials independently of new-password policy, including passwords shorter than 15.
+password submission until an effective policy is available, and show a reload instruction when the initial fetch fails.
+A failed background refetch retains the cached effective policy and permits submission under those bounds. The shared
+hint and validator use the same policy; the administrator users page owns one observer for its create and reset dialogs.
+Request-body schemas validate presence and format; the server always enforces strength and breach policy. Login and
+current-password verification accept existing credentials independently of new-password policy, including passwords
+shorter than 15.
 
 ## Runtime behaviour
 

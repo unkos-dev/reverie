@@ -146,10 +146,10 @@ around `/auth/callback`); this subject's write authority over `data` is limited 
   name (`id`), path (`/`), and observed `Max-Age` (24 hours, renewed on each request) as the canonical reference for
   self-hosters; this Design does not restate it as a second source.
 
-The profile's `has_local_password` predicate comes from the presence of a local credential, independently of external
-identities. The shell shows "Change password" for local and dual-capability accounts and hides it for OIDC-only
-accounts. The password-change endpoint still rejects an account without a local credential. The client requires the
-capability field in its Zod schema rather than assuming it when absent.
+The profile's `has_local_password` predicate uses a credential-existence query without reading the password hash,
+independently of external identities. The shell shows "Change password" for local and dual-capability accounts and hides
+it for OIDC-only accounts. The password-change endpoint still rejects an account without a local credential. The client
+requires the capability field in its Zod schema rather than assuming it when absent.
 
 ## Data and state
 

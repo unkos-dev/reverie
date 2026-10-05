@@ -19,7 +19,8 @@ import { ApiError } from "@/api";
 import { fetchSetupStatus, setupAdmin, type SetupStatus } from "@/api/auth";
 import { displayNameField, emailField, newPasswordField } from "@/api/auth.schemas";
 import { Button } from "@/components/ui/button";
-import { Field, FieldDescription, FieldError, FieldLabel } from "@/components/ui/field";
+import { PasswordPolicyHint } from "@/components/PasswordPolicyHint";
+import { Field, FieldError, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { formString } from "@/lib/form";
 import { queryKeys } from "@/lib/query/keys";
@@ -155,10 +156,7 @@ export function Component(): ReactElement {
             required
             aria-invalid={error !== null || undefined}
           />
-          <FieldDescription>
-            Use {status.password_min_length} to {status.password_max_length} characters. Avoid
-            common words or passwords from known data breaches.
-          </FieldDescription>
+          <PasswordPolicyHint policy={status} failed={false} />
         </Field>
         {error !== null ? <FieldError>{error}</FieldError> : null}
         <Button type="submit" disabled={setupMutation.isPending}>

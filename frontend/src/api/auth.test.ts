@@ -62,9 +62,29 @@ describe("logout", () => {
 });
 
 describe("fetchSetupStatus", () => {
+  test("validates policy shape without duplicating server configuration floors", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          setup_required: false,
+          local_auth_enabled: true,
+          oidc_enabled: false,
+          password_min_length: 8,
+          password_max_length: 32,
+        }),
+        { status: 200 },
+      ),
+    );
+    await expect(fetchSetupStatus()).resolves.toMatchObject({
+      password_min_length: 8,
+      password_max_length: 32,
+    });
+  });
+
   test.each([
     {},
-    { password_min_length: 14, password_max_length: 256 },
+    { password_min_length: 0, password_max_length: 256 },
+    { password_min_length: 15.5, password_max_length: 256 },
     { password_min_length: 24, password_max_length: "256" },
   ])("refuses missing or malformed password policy %j", async (policy) => {
     vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(

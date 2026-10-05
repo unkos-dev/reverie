@@ -460,11 +460,11 @@ struct SetupStatusResponse {
     get,
     path = "/auth/setup/status",
     summary = "Get setup status",
-    description = "Returns whether initial setup is required and which sign-in providers are enabled, for the sign-in page to decide what to show. No authentication is required to call it.",
+    description = "Returns whether initial setup is required, which sign-in providers are enabled, and the configured minimum and maximum new-password lengths. Sign-in and password-setting forms use this state. No authentication is required to call it.",
     tag = "auth",
     security(()),
     responses(
-        (status = 200, description = "Setup and provider state", body = SetupStatusResponse),
+        (status = 200, description = "Setup, provider and password-length policy state", body = SetupStatusResponse),
     )
 )]
 async fn setup_status(
@@ -1018,10 +1018,9 @@ async fn me(
         .get("csrf_token")
         .await
         .map_err(|e| AppError::Internal(e.into()))?;
-    let has_local_password = crate::models::local_credentials::find_by_user_id(&state.pool, u.id)
+    let has_local_password = crate::models::local_credentials::exists_for_user(&state.pool, u.id)
         .await
-        .map_err(|e| AppError::Internal(e.into()))?
-        .is_some();
+        .map_err(|e| AppError::Internal(e.into()))?;
     Ok(Json(MeResponse {
         id: u.id,
         display_name: u.display_name,
@@ -2495,27 +2494,6 @@ mod tests {
     }
 
     #[sqlx::test(migrations = "./migrations")]
-    async fn setup_enforces_password_min_length(pool: sqlx::PgPool) {
-        let app_pool = test_support::db::app_pool_for(&pool).await;
-        let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
-        let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
-
-        let resp = server
-            .post("/auth/setup")
-            .json(&serde_json::json!({
-                "email": "admin@example.com",
-                "display_name": "Admin",
-                "password": "short",
-            }))
-            .await;
-        assert_eq!(
-            resp.status_code(),
-            StatusCode::UNPROCESSABLE_ENTITY,
-            "a password below the minimum length is rejected"
-        );
-    }
-
-    #[sqlx::test(migrations = "./migrations")]
     async fn setup_applies_shared_policy_and_exposes_configured_bounds(pool: sqlx::PgPool) {
         let app_pool = test_support::db::app_pool_for(&pool).await;
         let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
@@ -2706,6 +2684,92 @@ mod tests {
             "a consumed PIN is single-use"
         );
         // The successful reset already removed the PIN file; nothing to clean up.
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn reset_password_serializes_with_administrator_reset(pool: sqlx::PgPool) {
+        let app_pool = test_support::db::app_pool_for(&pool).await;
+        let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+        let user_id = test_support::db::create_adult_with_password(
+            &app_pool,
+            "recover-race",
+            "recover-race@example.com",
+            "old",
+        )
+        .await;
+        let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+        server
+            .post("/auth/forgot-password")
+            .json(&serde_json::json!({"email": "recover-race@example.com"}))
+            .await
+            .assert_status_ok();
+        let pin_path = std::path::Path::new(&test_support::test_config().recovery_pin_dir)
+            .join(format!("{user_id}.pin"));
+        let contents = std::fs::read_to_string(&pin_path).unwrap();
+        let pin = contents
+            .lines()
+            .find_map(|line| line.strip_prefix("pin: "))
+            .unwrap()
+            .to_owned();
+        let administrator_hash =
+            crate::auth::password::hash_password(b"amber thistle vault ridge").unwrap();
+        let mut administrator = app_pool.begin().await.unwrap();
+        sqlx::query_scalar!(
+            "SELECT id FROM users WHERE id = $1 FOR NO KEY UPDATE",
+            user_id,
+        )
+        .fetch_one(&mut *administrator)
+        .await
+        .unwrap();
+        let recovery = tokio::spawn(async move {
+            server
+                .post("/auth/reset-password")
+                .json(&serde_json::json!({
+                    "email": "recover-race@example.com",
+                    "pin": pin,
+                    "new_password": "lithe cobalt meadow drift",
+                }))
+                .await
+        });
+        test_support::wait_for_blocked_query(&pool, "%users%", 1).await;
+        crate::models::local_credentials::set_password(
+            &mut *administrator,
+            user_id,
+            &administrator_hash,
+        )
+        .await
+        .unwrap();
+        crate::models::user::increment_session_version(&mut *administrator, user_id)
+            .await
+            .unwrap();
+        administrator.commit().await.unwrap();
+        recovery.await.unwrap().assert_status_ok();
+        let credential = crate::models::local_credentials::find_by_user_id(&app_pool, user_id)
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(
+            crate::auth::password::verify_password(
+                b"lithe cobalt meadow drift",
+                &credential.password_hash,
+            )
+            .is_ok()
+        );
+        assert_eq!(
+            crate::models::user::find_by_id(&app_pool, user_id)
+                .await
+                .unwrap()
+                .unwrap()
+                .session_version,
+            2
+        );
+        assert!(
+            crate::models::password_reset_pin::find_active_by_user(&app_pool, user_id)
+                .await
+                .unwrap()
+                .is_none()
+        );
+        assert!(!pin_path.exists());
     }
 
     #[sqlx::test(migrations = "./migrations")]

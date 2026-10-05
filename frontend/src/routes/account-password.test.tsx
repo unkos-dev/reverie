@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen } from "@testing-library/react";
+import { act, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vite-plus/test";
 import { RouterProvider, createMemoryRouter, type RouteObject } from "react-router";
@@ -8,6 +8,7 @@ import type { ReactElement } from "react";
 
 import { ApiError } from "@/api";
 import { fetchSetupStatus, changeOwnPassword } from "@/api/auth";
+import { queryKeys } from "@/lib/query/keys";
 
 import { Component as AccountPassword } from "./account-password";
 
@@ -17,7 +18,7 @@ vi.mock("@/lib/theme/ThemeProvider", () => ({
 vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn(), info: vi.fn() } }));
 vi.mock("@/api/auth");
 
-function renderChange(): void {
+function renderChange(): QueryClient {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   const routes: RouteObject[] = [
     { path: "/account/password", element: <AccountPassword /> },
@@ -33,6 +34,7 @@ function renderChange(): void {
     );
   }
   render(<Wrapper />);
+  return client;
 }
 
 beforeEach(() => {
@@ -51,6 +53,30 @@ afterEach(() => {
 });
 
 describe("account-password", () => {
+  test("retains the loaded server policy when a background refetch fails", async () => {
+    vi.mocked(fetchSetupStatus)
+      .mockResolvedValueOnce({
+        setup_required: false,
+        local_auth_enabled: true,
+        oidc_enabled: false,
+        password_min_length: 24,
+        password_max_length: 64,
+      })
+      .mockRejectedValue(new Error("temporary outage"));
+    const client = renderChange();
+    expect(await screen.findByText(/Use 24 to 64 characters/)).toBeInTheDocument();
+    await act(async () => {
+      await client.invalidateQueries({ queryKey: queryKeys.auth.setupStatus() });
+    });
+    expect(screen.getByRole("button", { name: "Change password" })).toBeEnabled();
+    expect(screen.queryByText(/Could not load the password policy/)).not.toBeInTheDocument();
+    const user = userEvent.setup();
+    await user.type(screen.getByLabelText("Current password"), "old");
+    await user.type(screen.getByLabelText("New password"), "sixteen-letters!!");
+    await user.click(screen.getByRole("button", { name: "Change password" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("Use at least 24 characters.");
+    expect(changeOwnPassword).not.toHaveBeenCalled();
+  });
   test("uses stricter configured bounds and leaves a short current password usable", async () => {
     vi.mocked(fetchSetupStatus).mockResolvedValue({
       setup_required: false,

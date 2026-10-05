@@ -1252,25 +1252,12 @@ async fn change_own_password_does_not_overwrite_concurrent_reset(pool: PgPool) {
             .json(&json!({"current_password": OLD_PW, "new_password": STRONG_PW}))
             .await
     });
-    tokio::time::timeout(std::time::Duration::from_secs(10), async {
-        loop {
-            let blocked = sqlx::query_scalar!(
-                "SELECT EXISTS (SELECT 1 FROM pg_stat_activity \
-                 WHERE datname = current_database() AND query LIKE $1 \
-                 AND cardinality(pg_blocking_pids(pid)) > 0) AS \"blocked!\"",
-                "%",
-            )
-            .fetch_one(&pool)
-            .await
-            .unwrap();
-            if blocked {
-                break;
-            }
-            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
-        }
-    })
-    .await
-    .expect("the change must reach a credential write lock after verification");
+    test_support::wait_for_blocked_query(
+        &pool,
+        "SELECT id FROM users WHERE id = $1 FOR NO KEY UPDATE%",
+        1,
+    )
+    .await;
     reset.commit().await.unwrap();
     let response = change.await.unwrap();
     assert_eq!(response.status_code(), StatusCode::UNPROCESSABLE_ENTITY);
@@ -1316,24 +1303,12 @@ async fn change_own_password_accepts_only_one_concurrent_change(pool: PgPool) {
             })
         })
         .collect();
-    tokio::time::timeout(std::time::Duration::from_secs(10), async {
-        loop {
-            let blocked = sqlx::query_scalar!(
-                "SELECT COUNT(*) AS \"blocked!\" FROM pg_stat_activity \
-                 WHERE datname = current_database() \
-                 AND cardinality(pg_blocking_pids(pid)) > 0",
-            )
-            .fetch_one(&pool)
-            .await
-            .unwrap();
-            if blocked == 2 {
-                break;
-            }
-            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
-        }
-    })
-    .await
-    .expect("both changes must finish verification before either credential write");
+    test_support::wait_for_blocked_query(
+        &pool,
+        "SELECT id FROM users WHERE id = $1 FOR NO KEY UPDATE%",
+        2,
+    )
+    .await;
     blocker.commit().await.unwrap();
     let mut statuses = Vec::new();
     for request in requests {

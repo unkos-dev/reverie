@@ -377,6 +377,29 @@ pub fn assert_rfc3339(body: &serde_json::Value, field: &str) -> chrono::DateTime
         .with_timezone(&chrono::Utc)
 }
 
+/// Wait for matching requests to reach a database lock in the isolated test database.
+pub async fn wait_for_blocked_query(pool: &sqlx::PgPool, query_pattern: &str, count: i64) {
+    tokio::time::timeout(std::time::Duration::from_secs(30), async {
+        loop {
+            let blocked = sqlx::query_scalar!(
+                r#"SELECT COUNT(*) AS "blocked!" FROM pg_stat_activity
+                 WHERE datname = current_database() AND query LIKE $1
+                 AND cardinality(pg_blocking_pids(pid)) > 0"#,
+                query_pattern,
+            )
+            .fetch_one(pool)
+            .await
+            .unwrap();
+            if blocked >= count {
+                return;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("matching requests must reach their database lock");
+}
+
 /// Real-DB helpers for tests that exercise the live schema + RLS policies.
 ///
 /// Tests use `#[sqlx::test(migrations = "./migrations")]`, which provisions

@@ -36,6 +36,19 @@ impl std::fmt::Debug for LocalCredential {
     }
 }
 
+/// Whether a user has a local credential, without reading its secret hash.
+///
+/// # Errors
+/// Returns [`sqlx::Error`] from the existence query.
+pub async fn exists_for_user(pool: &PgPool, user_id: Uuid) -> Result<bool, sqlx::Error> {
+    sqlx::query_scalar!(
+        "SELECT EXISTS (SELECT 1 FROM local_credentials WHERE user_id = $1) AS \"exists!\"",
+        user_id,
+    )
+    .fetch_one(pool)
+    .await
+}
+
 /// Fetch a user's local credential. Returns `Ok(None)` when the user has no
 /// password set (OIDC-only account).
 ///

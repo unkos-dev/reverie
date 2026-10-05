@@ -3308,28 +3308,6 @@ mod tests {
         assert_eq!(job_count, 0, "rejected accept must not enqueue writeback");
     }
 
-    async fn wait_for_blocked_metadata_query(pool: &sqlx::PgPool, query_prefix: &str) {
-        tokio::time::timeout(std::time::Duration::from_secs(30), async {
-            loop {
-                let blocked = sqlx::query_scalar!(
-                    "SELECT EXISTS (SELECT 1 FROM pg_stat_activity \
-                     WHERE datname = current_database() AND query LIKE $1 \
-                     AND cardinality(pg_blocking_pids(pid)) > 0) AS \"blocked!\"",
-                    query_prefix,
-                )
-                .fetch_one(pool)
-                .await
-                .unwrap();
-                if blocked {
-                    return;
-                }
-                tokio::time::sleep(std::time::Duration::from_millis(10)).await;
-            }
-        })
-        .await
-        .expect("request should reach its database lock");
-    }
-
     #[sqlx::test(migrations = "./migrations")]
     async fn accept_waits_for_concurrent_rejection(pool: sqlx::PgPool) {
         let app_pool = test_support::db::app_pool_for(&pool).await;
@@ -3363,7 +3341,7 @@ mod tests {
         });
         tokio::select! {
             response = &mut rejection => panic!("reject bypassed barrier: {:?}", response.unwrap().status_code()),
-            () = wait_for_blocked_metadata_query(&pool, "UPDATE metadata_versions SET status = 'rejected'%") => {}
+            () = test_support::wait_for_blocked_query(&pool, "UPDATE metadata_versions SET status = 'rejected'%", 1) => {}
         }
         let server = test_support::db::server_with_real_pools(&app_pool, &ing_pool);
         let mut acceptance = tokio::spawn(async move {
@@ -3375,7 +3353,7 @@ mod tests {
         });
         tokio::select! {
             response = &mut acceptance => panic!("accept finished before rejection committed: {:?}", response.unwrap().status_code()),
-            () = wait_for_blocked_metadata_query(&pool, "SELECT pg_advisory_xact_lock%") => {}
+            () = test_support::wait_for_blocked_query(&pool, "SELECT pg_advisory_xact_lock%", 1) => {}
         }
         barrier.commit().await.unwrap();
         assert_eq!(rejection.await.unwrap().status_code(), StatusCode::OK);
@@ -3426,7 +3404,7 @@ mod tests {
         });
         tokio::select! {
             response = &mut acceptance => panic!("accept bypassed writeback barrier: {:?}", response.unwrap().status_code()),
-            () = wait_for_blocked_metadata_query(&pool, "INSERT INTO writeback_jobs%") => {}
+            () = test_support::wait_for_blocked_query(&pool, "INSERT INTO writeback_jobs%", 1) => {}
         }
         let server = test_support::db::server_with_real_pools(&app_pool, &ing_pool);
         let mut rejection = tokio::spawn(async move {
@@ -3438,7 +3416,7 @@ mod tests {
         });
         tokio::select! {
             response = &mut rejection => panic!("reject finished before acceptance committed: {:?}", response.unwrap().status_code()),
-            () = wait_for_blocked_metadata_query(&pool, "SELECT pg_advisory_xact_lock%") => {}
+            () = test_support::wait_for_blocked_query(&pool, "SELECT pg_advisory_xact_lock%", 1) => {}
         }
         writeback_barrier.commit().await.unwrap();
         assert_eq!(acceptance.await.unwrap().status_code(), StatusCode::OK);
