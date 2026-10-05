@@ -67,6 +67,10 @@ its root, names the value set correctly, and costs a one-time pre-release migrat
 The shared vocabulary is pending, clean, repaired, and degraded. Clean means no issues found; repaired and degraded
 remain usable outcomes. Quarantined is not added.
 
+Calling only the issue-free outcome `valid` misleadingly suggests that repaired and degraded files are invalid, even
+though all three outcomes are stored and served. `clean` names the distinction without implying that the other usable
+outcomes are invalid.
+
 ### Consequences
 
 - Positive: closes the `sqlx::Type` enum series; the storage string, the domain enum, and the wire union all agree; the

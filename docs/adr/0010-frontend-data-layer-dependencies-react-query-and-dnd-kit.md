@@ -72,7 +72,8 @@ dnd-kit handles accessible drag-to-reorder.
 
 - Positive: request deduplication, mutation-driven invalidation, Suspense integration, and route-loader prefetch come
   from one actively maintained library with an official react-router integration pattern.
-- Positive: dnd-kit ships keyboard accessibility built in, satisfying WCAG 2.2 AA without a hand-rolled wrapper.
+- Positive: dnd-kit provides keyboard interaction and screen-reader primitives without a hand-rolled sensor. WCAG 2.2 AA
+  conformance still depends on the application's integration and verification.
 - Negative: three new top-level dependencies to track for updates and audits.
 
 ### SWR instead of React Query
@@ -81,9 +82,8 @@ SWR is the lighter-weight alternative: a smaller bundle (around 4KB versus React
 Vercel-maintained, actively released, and React 19 compatible.
 
 - Positive: smaller bundle, simpler API surface.
-- Negative: no `onError` callback on a `QueryCache`-level global error handler; SWR exposes `onError` only per
-  `useSWR()` call or via an `SWRConfig` provider whose `onError` runs per request rather than as a cache-level handler,
-  so 401-redirect wiring would have to be threaded through every hook.
+- Neutral: SWR can centralise error handling through `SWRConfig.onError`, so 401 handling does not require wiring every
+  hook. That callback is part of the hook configuration; React Query provides a separate `QueryCache`-level handler.
 - Negative: no first-class react-router loader integration; SWR's prefetch pattern is less documented and less stable
   across react-router data-mode updates than React Query's officially blessed `prefetchQuery` pattern.
 
@@ -124,3 +124,7 @@ This decision was recorded alongside the
 [JSON REST API conventions](./0011-json-api-conventions-for-the-browser-facing-rest-surface.md) decision and the
 [backend auxiliary crates](./0009-backend-auxiliary-crates-axum-extra-serde-with-and-subtle.md) decision, for the same
 body of work.
+
+[SWR's global error handling](https://swr.vercel.app/docs/error-handling#global-error-report) and
+[dnd-kit's accessibility guidance](https://docs.dndkit.com/guides/accessibility) describe the scope of these
+capabilities.
