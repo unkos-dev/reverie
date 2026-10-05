@@ -303,9 +303,9 @@ is never reached.
 Reverie owns managed-library writes and reorganisation. External tools coordinate or pause the application before
 changing managed files. An opened root remains tied to its directory object; replacing or relocating the configured root
 requires a coordinated restart. Downloads classify paths through the root's canonical path before opening through the
-capability, so replacing that directory can make downloads fail until restart. Provision and mount the library and ingestion
-roots before starting the server, and stop it before removing a mount: open directory handles can keep a mount busy.
-Directory existence cannot prove that the intended volume is mounted. Downloads use the owning capability after
+capability, so replacing that directory can make downloads fail until restart. Provision and mount the library and
+ingestion roots before starting the server, and stop it before removing a mount: open directory handles can keep a mount
+busy. Directory existence cannot prove that the intended volume is mounted. Downloads use the owning capability after
 authorisation and never reopen an ambient path for streaming. The
 [incomplete producer and cover pipelines](../../../../debt/2026-09-30-library-location-pipelines-incomplete.md) retain
 their existing filesystem interfaces and block release readiness.

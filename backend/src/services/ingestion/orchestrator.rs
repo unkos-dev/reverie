@@ -29,10 +29,13 @@ pub struct CoordinatorHandle {
 #[derive(Debug, serde::Serialize, utoipa::ToSchema)]
 pub struct DiscoveryResult {
     /// Inputs ready for the coordinator's attempt queue.
+    #[schema(format = Int64)]
     pub queued: usize,
     /// Inputs awaiting readiness or a retry deadline.
+    #[schema(format = Int64)]
     pub deferred: usize,
     /// Inputs whose current generation is ineligible.
+    #[schema(format = Int64)]
     pub suppressed: usize,
     /// Existing activity resource for observing attempts.
     pub monitor: &'static str,

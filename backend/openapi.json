@@ -8018,6 +8018,7 @@
         "properties": {
           "deferred": {
             "type": "integer",
+            "format": "int64",
             "description": "Inputs awaiting readiness or a retry deadline.",
             "minimum": 0
           },
@@ -8027,11 +8028,13 @@
           },
           "queued": {
             "type": "integer",
+            "format": "int64",
             "description": "Inputs ready for the coordinator's attempt queue.",
             "minimum": 0
           },
           "suppressed": {
             "type": "integer",
+            "format": "int64",
             "description": "Inputs whose current generation is ineligible.",
             "minimum": 0
           }
