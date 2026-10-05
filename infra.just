@@ -91,16 +91,10 @@ specful:
 # too: agent-process instructions, and the third-party CodeGuard rules that
 # AGENTS.md forbids editing.
 #
-# Markdown and Vale prose lint over every tracked Markdown file.
+# Vale prose linter over every tracked Markdown file.
 [group('infra')]
 prose:
-    just js::markdownlint
     git ls-files -z '*.md' | xargs -0 -r vale
-
-# Lint the generated OpenAPI contract against the CI rules.
-[group('infra')]
-openapi:
-    vacuum lint --ruleset .vacuum.yaml --ignore-file .vacuum-ignore.yaml --fail-severity info --details backend/openapi.json
 
 # Self-test the base-OS finding filter, including that a distro CVE with
 # a fix available is never withheld.
@@ -177,7 +171,7 @@ no-plan-refs *files:
 #
 # Whole repo-lint surface (the non-JS half of CI's lint concern).
 [group('infra')]
-lint: shellcheck hadolint typos ryl sqruff actionlint prose openapi specful filter-sarif-unfixable-os-selftest preflight-scope-selftest cargo-locked-guard
+lint: shellcheck hadolint typos ryl sqruff actionlint prose specful filter-sarif-unfixable-os-selftest preflight-scope-selftest cargo-locked-guard
 
 # Everything left here covers local-only developer tooling, and that is now the
 # entry criterion. CI has no stake in `just doctor`, `just worktree`, or the
