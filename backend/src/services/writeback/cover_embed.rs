@@ -469,7 +469,7 @@ mod tests {
             plan.binary_replacements
                 .contains_key("images/old-cover.png")
         );
-        assert!(plan.additions.is_empty());
+        assert_eq!(plan.additions, []);
         // Same media-type → no OPF rewrite needed.
         assert!(plan.opf_replacement.is_none());
     }

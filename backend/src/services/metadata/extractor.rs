@@ -367,10 +367,6 @@ fn map_relator(code: &str) -> Option<&'static str> {
 }
 
 #[cfg(test)]
-#[expect(
-    clippy::float_cmp,
-    reason = "test code: both sides are the same f32 literal propagated through identical rounding, so bitwise comparison is reliable"
-)]
 mod tests {
     use super::*;
     use crate::services::epub::opf_layer::{Creator, OpfData, SeriesMeta};
