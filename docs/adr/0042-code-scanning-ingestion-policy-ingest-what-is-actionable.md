@@ -15,9 +15,9 @@ decision-makers:
 ## Context and problem statement
 
 Adding Snyk alongside the incumbent scanners took the open code-scanning alert count to 155. Six were surfaced as
-critical, and none of the six was a vulnerability: four were Debian base-layer CVEs that Snyk itself rates low and
-GitHub relabelled critical by reading the raw NVD score out of the SARIF `security-severity` property, and two were
-CodeQL hard-coded-secret findings on a randomly filled buffer and on test fixtures.
+critical: four were Debian base-layer CVEs that Snyk itself rates low and GitHub relabelled critical by reading the raw
+NVD score out of the SARIF `security-severity` property, and two were CodeQL hard-coded-secret findings on a randomly
+filled buffer and on test fixtures.
 
 Of the remainder, 88 are Snyk Container findings and every one of them reports that no fixed version exists in Debian
 13, and 47 are Snyk Code findings carrying a `<rule>/test` rule ID, the variant Snyk emits when it places a finding in
@@ -50,17 +50,16 @@ and conflating them is how suppression turns into blindness.
 
 ## Decision outcome
 
-Chosen option: **filter the uploaded SARIF, leaving the scans untouched**, because it is the only option that reduces
-the alert queue without reducing analysis, and because both filters can be written as predicates over the current scan
-rather than as lists that need maintaining.
+Chosen option: **filter the uploaded SARIF, leaving the scans untouched**, because it reduces the alert queue without
+reducing analysis and applies predicates to the current scan rather than maintaining a list of individual findings.
 
 Two predicates, one per lane.
 
 **Snyk Code** withholds results whose rule ID appears in `.github/snyk-code-test-rule-allowlist.txt`. The filter keys on
 rule ID and never on file path. Snyk emits a distinct `<rule>/test` ID for findings it places in test code, so
-withholding those IDs cannot suppress a rule class that has no `/test` form: a genuine defect in a test file arrives
-under its ordinary rule ID and still opens an alert. A `/test` rule ID absent from the allowlist fails the job, so the
-scope only widens by a reviewed commit.
+withholding those IDs leaves ordinary rule IDs visible even when they occur in test files. The rule ID is an ingestion
+criterion, not proof that a finding is a false positive; the unfiltered SARIF remains available for review. A `/test`
+rule ID absent from the allowlist fails the job, so the scope only widens by a reviewed commit.
 
 **Snyk Container** withholds a result only when its rule ID is in the distro namespace (`SNYK-DEBIAN<n>-`) and that
 rule's remediation text states no fixed version exists for the release named in that same rule ID. An application-layer
@@ -85,11 +84,13 @@ as one would be the dishonest version of this decision.
 - Positive: the dashboard becomes a queue someone can work rather than an inventory nobody reads.
 - Positive: analysis coverage is untouched: Snyk Code still walks every test file, so a taint trace running from a test
   helper into production code is still found.
-- Positive: neither filter holds state that can drift out of date.
+- Positive: neither filter needs per-finding expiry state; the test-rule allowlist remains a reviewed policy surface.
 - Positive: both filters fail closed. An unclassifiable finding is ingested, so a reworded remediation section produces
   a burst of alerts rather than silence.
 - Negative: an unfixable base-OS CVE is now visible only in the Snyk monitor baseline, the retained SARIF artifact, and
   the step summary, not in the code-scanning dashboard.
+- Negative: findings under allowlisted test-rule IDs are withheld regardless of their individual validity; reviewing
+  those findings requires the retained scan output.
 - Positive: the published SBOM continues to list every base-layer package regardless of what the dashboard ingests.
 
 ## More information
