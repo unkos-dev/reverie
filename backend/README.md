@@ -234,17 +234,19 @@ before removing the original. Normal completion removes staging, but abrupt exit
 visible on the share. No cleanup sweep runs.
 
 A successful sync after a reported failure does not prove that failed writes became durable. Filesystem relocation and
-SQL location updates remain separate, with move-back on SQL failure. A crash between them can leave the recorded
-location stale without automatic reconciliation. These guarantees do not establish a NAS server's acknowledgement or
-flush behaviour; representative mounted-share verification is still needed.
+SQL location updates remain separate. Accepted hash/size and exact source/destination intent persist before movement;
+forward recovery verifies that evidence before adopting a destination, resuming movement or preserving a foreign file.
+SQL failure retains intent without moving bytes back. Startup and periodic recovery carriers use the existing claimed
+writeback owner. These guarantees do not establish a NAS server's acknowledgement or flush behaviour; representative
+mounted-share verification is still needed.
 
-This is a draft checkpoint. Initial ingestion does not yet supply the required library identity. The remaining
-[pipeline limitations](../debt/2026-09-30-library-location-pipelines-incomplete.md) prevent end-to-end use and release
-readiness. Their tests remain active.
+Ingestion records the owning library and actual relative destination with accepted content evidence and input outcomes.
+Requests and asynchronous cover warming select that same authority; cache responses stream an opened handle. Rebuildable
+covers use complete atomic replacement without forced sync.
 
 Development catalogues are disposable. Resolve the owned development database before using `just db-reset`, then run
-`just db-migrate`. Re-ingest from source copies after the producer pipelines support the location contract. No automatic
-reset, preserving upgrade or legacy-path fallback is provided.
+`just db-migrate` and re-ingest source copies. No automatic reset, preserving upgrade or legacy-path fallback is
+provided.
 
 ## Project Structure
 

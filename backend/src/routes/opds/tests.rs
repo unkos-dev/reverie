@@ -994,7 +994,7 @@ async fn insert_manifestation_with_path(
          RETURNING *), claimed AS (INSERT INTO library_path_claims (library_id, path, manifestation_id) SELECT library_id, file_path, id FROM inserted) SELECT id AS \"id!\" FROM inserted",
         work_id,
         file_path,
-        "missinghash0000missinghash0000ab",
+        "0123456789abcdef0123456789abcdef",
         1000_i64,
     )
     .fetch_one(ingestion_pool)
@@ -1911,4 +1911,217 @@ async fn empty_cursor_returns_first_page_not_422(pool: PgPool) {
         .add_header(AUTHORIZATION, basic)
         .await;
     assert_eq!(response.status_code(), StatusCode::OK);
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn capability_cover_route_headers_authorisation_and_conditional_open(pool: PgPool) {
+    use axum::http::header::{CACHE_CONTROL, ETAG, IF_NONE_MATCH, VARY};
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let (_, admin) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+    let (_, child) =
+        test_support::db::create_child_user_and_basic_auth(&app_pool, "cover-child").await;
+    let library = tempfile::tempdir().unwrap();
+    let (_, file, _, source) =
+        insert_epub_manifestation(&ingestion_pool, library.path(), "cap-route", "Covered").await;
+    let server =
+        test_support::db::server_with_opds_enabled(&app_pool, &ingestion_pool, library.path())
+            .await;
+    for mount in ["/opds", "/api/v1"] {
+        for suffix in ["cover", "cover/thumb"] {
+            let url = format!("{mount}/books/{file}/{suffix}");
+            let response = server
+                .get(&url)
+                .add_header(AUTHORIZATION, admin.clone())
+                .await;
+            assert_eq!(response.status_code(), StatusCode::OK);
+            image::load_from_memory(response.as_bytes()).unwrap();
+            let etag = response.headers()[ETAG].to_str().unwrap().to_owned();
+            assert!(etag.starts_with('"') && etag.ends_with('"'));
+            assert!(etag.ends_with(if suffix.ends_with("thumb") {
+                "-thumb\""
+            } else {
+                "-full\""
+            }));
+            assert_eq!(response.headers()[CACHE_CONTROL], "private, max-age=86400");
+            assert_eq!(response.headers()[VARY], "Authorization, Cookie");
+            let conditional = server
+                .get(&url)
+                .add_header(AUTHORIZATION, admin.clone())
+                .add_header(IF_NONE_MATCH, etag.clone())
+                .await;
+            assert_eq!(conditional.status_code(), StatusCode::NOT_MODIFIED);
+            assert_eq!(conditional.headers()[ETAG], etag);
+            assert_eq!(
+                conditional.headers()[CACHE_CONTROL],
+                "private, max-age=86400"
+            );
+            assert_eq!(conditional.headers()[VARY], "Authorization, Cookie");
+            assert!(conditional.as_bytes().is_empty());
+            let hidden = server
+                .get(&url)
+                .add_header(AUTHORIZATION, child.clone())
+                .add_header(IF_NONE_MATCH, etag.clone())
+                .await;
+            assert_eq!(hidden.status_code(), StatusCode::NOT_FOUND);
+            assert!(hidden.headers().get(CACHE_CONTROL).is_none());
+            assert!(hidden.headers().get(VARY).is_none());
+        }
+    }
+    let response = server
+        .get(&format!("/opds/books/{file}/cover"))
+        .add_header(AUTHORIZATION, admin.clone())
+        .await;
+    let etag = response.headers()[ETAG].to_str().unwrap().to_owned();
+    std::fs::remove_file(&source).unwrap();
+    let cache = library.path().join("_covers/cache");
+    for entry in std::fs::read_dir(&cache).unwrap() {
+        std::fs::remove_file(entry.unwrap().path()).unwrap();
+    }
+    let missing = server
+        .get(&format!("/opds/books/{file}/cover"))
+        .add_header(AUTHORIZATION, admin.clone())
+        .add_header(IF_NONE_MATCH, etag.clone())
+        .await;
+    assert_eq!(missing.status_code(), StatusCode::NOT_FOUND);
+    assert_eq!(missing.headers()[CACHE_CONTROL], "private, max-age=60");
+    assert_eq!(missing.headers()[VARY], "Authorization, Cookie");
+    let outside = tempfile::tempdir().unwrap();
+    std::fs::remove_dir(&cache).unwrap();
+    std::os::unix::fs::symlink(outside.path(), &cache).unwrap();
+    for mount in ["/opds", "/api/v1"] {
+        let denied = server
+            .get(&format!("{mount}/books/{file}/cover"))
+            .add_header(AUTHORIZATION, admin.clone())
+            .add_header(IF_NONE_MATCH, etag.clone())
+            .await;
+        assert_eq!(denied.status_code(), StatusCode::INTERNAL_SERVER_ERROR);
+        assert_eq!(
+            denied.json::<serde_json::Value>()["detail"],
+            "An internal error occurred."
+        );
+        assert!(denied.headers().get(CACHE_CONTROL).is_none());
+    }
+    assert_eq!(std::fs::read_dir(outside.path()).unwrap().count(), 0);
+    std::fs::remove_file(&cache).unwrap();
+    let outside_source = outside.path().join("book.epub");
+    let outside_bytes = test_support::db::make_minimal_epub_with_cover_tagged("outside");
+    std::fs::write(&outside_source, &outside_bytes).unwrap();
+    std::os::unix::fs::symlink(&outside_source, &source).unwrap();
+    for mount in ["/opds", "/api/v1"] {
+        let denied = server
+            .get(&format!("{mount}/books/{file}/cover"))
+            .add_header(AUTHORIZATION, admin.clone())
+            .add_header(IF_NONE_MATCH, etag.clone())
+            .await;
+        assert_eq!(denied.status_code(), StatusCode::INTERNAL_SERVER_ERROR);
+        assert_eq!(
+            denied.json::<serde_json::Value>()["detail"],
+            "An internal error occurred."
+        );
+    }
+    assert_eq!(std::fs::read(outside_source).unwrap(), outside_bytes);
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn capability_cover_route_svg_and_uncached_failures(pool: PgPool) {
+    use axum::http::header::{CACHE_CONTROL, CONTENT_TYPE, VARY};
+    use std::io::Write;
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let (_, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+    let library = tempfile::tempdir().unwrap();
+    let svg = insert_manifestation_bytes(
+        &ingestion_pool,
+        library.path(),
+        "cap-svg",
+        "SVG",
+        &test_support::db::make_minimal_epub_with_svg_cover_sibling_ref("cap-svg"),
+    )
+    .await;
+    let malformed = insert_manifestation_bytes(
+        &ingestion_pool,
+        library.path(),
+        "cap-bad-svg",
+        "Malformed SVG",
+        &test_support::db::make_minimal_epub_with_malformed_svg_cover("cap-bad-svg"),
+    )
+    .await;
+    let mut writer = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+    writer
+        .start_file(
+            "mimetype",
+            zip::write::SimpleFileOptions::default()
+                .compression_method(zip::CompressionMethod::Stored),
+        )
+        .unwrap();
+    writer.write_all(b"application/epub+zip").unwrap();
+    let coverless_bytes = writer.finish().unwrap().into_inner();
+    let coverless = insert_manifestation_bytes(
+        &ingestion_pool,
+        library.path(),
+        "cap-no-cover",
+        "No cover",
+        &coverless_bytes,
+    )
+    .await;
+    let mut rejected_bytes = coverless_bytes;
+    rejected_bytes.push(0xaa);
+    let rejected = insert_manifestation_bytes(
+        &ingestion_pool,
+        library.path(),
+        "cap-rejected",
+        "Rejected",
+        &rejected_bytes,
+    )
+    .await;
+    let server =
+        test_support::db::server_with_opds_enabled(&app_pool, &ingestion_pool, library.path())
+            .await;
+    for mount in ["/opds", "/api/v1"] {
+        for suffix in ["cover", "cover/thumb"] {
+            let raster = server
+                .get(&format!("{mount}/books/{svg}/{suffix}"))
+                .add_header(AUTHORIZATION, basic.clone())
+                .await;
+            assert_eq!(raster.status_code(), StatusCode::OK);
+            let expected = if suffix.ends_with("thumb") {
+                "image/jpeg"
+            } else {
+                "image/png"
+            };
+            assert_eq!(raster.headers()[CONTENT_TYPE], expected);
+            image::load_from_memory(raster.as_bytes()).unwrap();
+            for (id, status) in [
+                (coverless, StatusCode::NOT_FOUND),
+                (rejected, StatusCode::NOT_FOUND),
+                (malformed, StatusCode::INTERNAL_SERVER_ERROR),
+            ] {
+                let failure = server
+                    .get(&format!("{mount}/books/{id}/{suffix}"))
+                    .add_header(AUTHORIZATION, basic.clone())
+                    .await;
+                assert_eq!(failure.status_code(), status);
+                assert!(failure.headers().get(CACHE_CONTROL).is_none());
+                assert!(failure.headers().get(VARY).is_none());
+                assert!(
+                    failure.headers()[CONTENT_TYPE]
+                        .to_str()
+                        .unwrap()
+                        .contains("application/problem+json")
+                );
+            }
+        }
+    }
+    for entry in std::fs::read_dir(library.path().join("_covers/cache")).unwrap() {
+        let path = entry.unwrap().path();
+        assert!(
+            path.file_name()
+                .unwrap()
+                .to_str()
+                .unwrap()
+                .starts_with(&svg.to_string())
+        );
+        image::load_from_memory(&std::fs::read(path).unwrap()).unwrap();
+    }
 }

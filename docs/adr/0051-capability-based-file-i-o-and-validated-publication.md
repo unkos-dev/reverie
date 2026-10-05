@@ -209,8 +209,12 @@ durable storage or adding a third persisted error state.
 
 OPDS downloads, writeback relocation and initial ingestion publication apply the capability boundary. Ingestion
 validates independently owned staged bytes before publication and reconciles input, attempt and manifestation outcomes.
-Cover-cache publication remains incomplete. No representative NAS behaviour or server flush guarantee is established by
-source inspection or injected error-code tests.
+Cover-cache reads, publication and response opening use the same recorded library authority; downloaded-cover staging
+and sidecar promotion retain that authority within their dormant interfaces. Rebuildable raster publication uses
+cap-tempfile replacement without forced sync or an additional permission policy. Cache and pending-cover files use the
+crate's Unix creation mode, `0o666 & !umask`; filesystem access depends on `umask`, directory permissions and storage
+access controls. No representative NAS behaviour or server flush guarantee is established by source inspection or
+injected error-code tests.
 
 - [cap-std capability model](https://github.com/bytecodealliance/cap-std/blob/v4.0.3/README.md).
 - [cap-std-ext replacement implementation](https://github.com/coreos/cap-std-ext/blob/v5.1.2/src/dirext.rs).

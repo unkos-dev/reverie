@@ -90,7 +90,9 @@ links the existing work. A path collision chooses a suffix and never establishes
 final publication. The recorded final library identity and relative path, accepted hash and length describe the bytes
 actually published; the ingestion hash remains immutable. Unchanged validation reuses acquisition evidence; repair
 reuses its finalised hash and size. Uncertain repair, independent destination copies and recovery verify actual bytes.
-Cover warming opens that recorded location. Final-name probes use the opened actual parent before evidence persistence.
+Cover warming opens that recorded location and passes the accepted handle, recorded library identity and shared
+`LibraryFiles` into the detached thumbnail task. Cache authority follows that identity. Final-name probes use the opened
+actual parent before evidence persistence.
 
 Cleanup reads the current settings snapshot and rechecks the current generation and source fingerprint. A successful
 source deletion records automatic cleanup and preserves attempt history. Local deletion failure preserves the completed

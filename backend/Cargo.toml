@@ -96,7 +96,6 @@ sqlx = { version = "0.9.0", features = [
   "macros",
   "migrate",
 ] }
-tempfile = "3.27.0"
 thiserror = "2.0.18"
 # Boundary-only. First-party code uses chrono; `time` is declared because three
 # third-party signatures take its types directly (tower-sessions `Expiry` and
@@ -140,6 +139,7 @@ zip = { version = "8.6.0", default-features = false, features = ["deflate-flate2
 zxcvbn = "3"
 
 [dev-dependencies]
+tempfile = "3.27.0"
 tokio = { version = "1.52.3", features = ["test-util"] }
 axum-test = "21.0.0"
 rand_core_06 = { package = "rand_core", version = "0.6", features = ["std", "getrandom"] }

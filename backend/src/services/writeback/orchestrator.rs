@@ -104,6 +104,32 @@ pub struct RelocationIntent {
     pub destination: RelativeFilePath,
 }
 
+struct PendingCover {
+    library_id: LibraryId,
+    suffix: RelativeFilePath,
+}
+
+impl PendingCover {
+    const PREFIX: &str = "_covers/pending/";
+
+    fn new(library_id: LibraryId, path: &str) -> Result<Self, WritebackError> {
+        let suffix = path
+            .strip_prefix(Self::PREFIX)
+            .ok_or(crate::services::files::LibraryFileError::InvalidLocation)?
+            .parse()?;
+        Ok(Self { library_id, suffix })
+    }
+
+    fn source_path(&self) -> PathBuf {
+        Path::new(Self::PREFIX).join(self.suffix.as_path())
+    }
+}
+
+struct RewriteResult {
+    publication: repack::Published,
+    pending_cover: Option<PendingCover>,
+}
+
 struct JobSnapshot {
     manifestation_id: Uuid,
     reason: JobReason,
@@ -174,9 +200,13 @@ pub async fn run_once(
             skip_reason: format!("file_missing: {}", snap.file_path.as_str()),
         });
     };
-    let new_hash = published.hash;
-    let post_has_cover = published.report.has_usable_embedded_cover;
-    let size = i64::try_from(published.size)
+    let RewriteResult {
+        publication,
+        pending_cover,
+    } = published;
+    let new_hash = publication.hash;
+    let post_has_cover = publication.report.has_usable_embedded_cover;
+    let size = i64::try_from(publication.size)
         .map_err(|error| WritebackError::Persist(error.to_string()))?;
     let mut tx = pool.begin().await?;
     let mut selection = tx.begin().await?;
@@ -214,12 +244,10 @@ pub async fn run_once(
             error: format!("relocation durability uncertain: {error}"),
         });
     }
-    if snap.reason == JobReason::Cover
-        && let Some(pending) = &snap.cover_path
-    {
-        let pending = pending.clone();
+    if let Some(pending) = pending_cover {
+        let files = files.clone();
         if let Err(error) = blocking_phase(Arc::clone(&permit), move || {
-            move_cover_sidecar(&pending).map_err(WritebackError::Io)
+            move_cover_sidecar(&files, &pending)
         })
         .await
         {
@@ -247,7 +275,7 @@ pub(super) async fn blocking_phase<T: Send + 'static>(
 fn rewrite(
     snap: &JobSnapshot,
     files: &LibraryFiles,
-) -> Result<Option<repack::Published>, WritebackError> {
+) -> Result<Option<RewriteResult>, WritebackError> {
     let location = LibraryLocation {
         library_id: snap.library_id,
         path: snap.file_path.clone(),
@@ -289,12 +317,18 @@ fn rewrite(
         series: None,
     };
     let new_opf = opf_rewrite::transform(&opf_bytes, &target)?;
-    let cover_plan = if snap.reason == JobReason::Cover
-        && let Some(path) = snap.cover_path.as_deref()
+    let (pending_cover, cover_plan) = if snap.reason == JobReason::Cover
+        && let Some(path) = snap.cover_path.as_ref()
     {
-        Some(cover_embed::plan_embed(&new_opf, &std::fs::read(path)?)?)
+        let pending = PendingCover::new(snap.library_id, path)?;
+        // THREAT: Pending cover bytes are opened only in the manifestation's owning library.
+        let bytes = files
+            .library(pending.library_id)?
+            .read(pending.source_path())?;
+        let plan = cover_embed::plan_embed(&new_opf, &bytes)?;
+        (Some(pending), Some(plan))
     } else {
-        None
+        (None, None)
     };
     let final_opf = cover_plan
         .as_ref()
@@ -329,7 +363,10 @@ fn rewrite(
             &repairs,
         )
     }) {
-        Ok(published) => Ok(Some(published)),
+        Ok(publication) => Ok(Some(RewriteResult {
+            publication,
+            pending_cover,
+        })),
         Err(error @ epub::EpubError::PublicationUncertain { .. }) => {
             tracing::error!(%error, manifestation_id = %snap.manifestation_id, "writeback publication uncertain; no relocation or row-success update");
             Err(error.into())
@@ -804,16 +841,23 @@ fn resolve_opf_relative(opf_dir: &str, href: &str) -> Result<String, WritebackEr
     Ok(format!("{opf_dir}/{stripped}"))
 }
 
-fn move_cover_sidecar(pending_path: &str) -> std::io::Result<()> {
-    if !pending_path.contains("_covers/pending/") {
-        return Ok(());
+fn move_cover_sidecar(files: &LibraryFiles, cover: &PendingCover) -> Result<(), WritebackError> {
+    let library = files.library(cover.library_id)?;
+    let pending = library.open_dir("_covers/pending")?;
+    let (source, source_name) = path_rename::parent(&pending, &cover.suffix)?;
+    library.create_dir_all("_covers/accepted")?;
+    let accepted = library.open_dir("_covers/accepted")?;
+    if let Some(parent) = cover
+        .suffix
+        .as_path()
+        .parent()
+        .filter(|path| !path.as_os_str().is_empty())
+    {
+        accepted.create_dir_all(parent)?;
     }
-    let accepted = pending_path.replace("_covers/pending/", "_covers/accepted/");
-    let accepted_path = Path::new(&accepted);
-    if let Some(parent) = accepted_path.parent() {
-        std::fs::create_dir_all(parent)?;
-    }
-    std::fs::rename(pending_path, accepted_path)
+    let (destination, destination_name) = path_rename::parent(&accepted, &cover.suffix)?;
+    source.rename(source_name, &destination, destination_name)?;
+    Ok(())
 }
 
 #[cfg(test)]
@@ -1380,11 +1424,12 @@ mod tests {
         let original = std::fs::read(&path).unwrap();
         let hash = initial_hex_sha256(&original);
         let (_, id) = insert_fixture(&ing, "reject", path.to_str().unwrap(), &hash).await;
-        let pending = dir.path().join("invalid.png");
+        let pending = dir.path().join("_covers/pending/invalid.png");
+        std::fs::create_dir_all(pending.parent().unwrap()).unwrap();
         std::fs::write(&pending, b"\x89PNG\r\n\x1a\ninvalid image").unwrap();
         sqlx::query!(
             "UPDATE manifestations SET cover_path = $1 WHERE id = $2",
-            pending.to_str().unwrap(),
+            "_covers/pending/invalid.png",
             id
         )
         .execute(&ing)
@@ -1563,7 +1608,7 @@ mod tests {
         let mut snap = load_snapshot(&app, job).await.unwrap();
         let root = dir.path().to_str().unwrap().parse().unwrap();
         let files = crate::test_support::test_library_files_at(&root, snap.library_id);
-        let published = rewrite(&snap, &files).unwrap().unwrap();
+        let published = rewrite(&snap, &files).unwrap().unwrap().publication;
         let accepted_bytes = std::fs::read(&path).unwrap();
         let intent = RelocationIntent {
             source: snap.file_path.clone(),
@@ -1845,7 +1890,7 @@ mod tests {
         sqlx::query!(
             "UPDATE manifestations SET cover_path = $2 WHERE id = $1",
             snap.manifestation_id,
-            sidecar.to_str().unwrap()
+            "_covers/pending/cover.png"
         )
         .execute(&wb)
         .await
@@ -1896,7 +1941,16 @@ mod tests {
             sqlx::query!(
                 "UPDATE manifestations SET cover_path = $2 WHERE id = $1",
                 snap.manifestation_id,
-                sidecar.to_str().unwrap()
+                "_covers/pending/cover.png"
+            )
+            .execute(&wb)
+            .await
+            .unwrap();
+        } else {
+            sqlx::query!(
+                "UPDATE manifestations SET cover_path = $2 WHERE id = $1",
+                snap.manifestation_id,
+                "/unused-cover.jpg"
             )
             .execute(&wb)
             .await
@@ -1914,6 +1968,9 @@ mod tests {
         assert!(matches!(outcome, RunOutcome::Success { reason: actual, .. } if actual == reason));
         let fresh = load_snapshot(&wb, job).await.unwrap();
         assert!(fresh.relocation.is_none());
+        if reason == "metadata" {
+            assert_eq!(fresh.cover_path.as_deref(), Some("/unused-cover.jpg"));
+        }
         assert_eq!(
             sqlx::query_scalar!(
                 "SELECT attempt_count FROM writeback_jobs WHERE id = $1",
@@ -1950,6 +2007,44 @@ mod tests {
     #[sqlx::test(migrations = "./migrations")]
     async fn relocation_recovery_newer_metadata_job_reloads_and_continues(pool: PgPool) {
         continuation_fixture(pool, "metadata").await;
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn relocation_recovery_carrier_ignores_invalid_unused_cover_path(pool: PgPool) {
+        let wb = writeback_pool_for(&pool).await;
+        let (dir, files, job, snap) = recovery_fixture(&pool, "relocation").await;
+        let original = std::fs::read(dir.path().join("fixture.epub")).unwrap();
+        sqlx::query!(
+            "UPDATE manifestations SET cover_path = $2 WHERE id = $1",
+            snap.manifestation_id,
+            "/unused-cover.jpg"
+        )
+        .execute(&wb)
+        .await
+        .unwrap();
+        let outcome = run_once(
+            &wb,
+            &test_config(dir.path()).0,
+            &files,
+            job,
+            fixture_permit().await,
+        )
+        .await
+        .unwrap();
+        assert!(matches!(
+            outcome,
+            RunOutcome::Success { reason, .. } if reason == "relocation"
+        ));
+        let fresh = load_snapshot(&wb, job).await.unwrap();
+        assert!(fresh.relocation.is_none());
+        assert_eq!(fresh.file_path.as_str(), "recovered.epub");
+        assert_eq!(fresh.current_file_hash, snap.current_file_hash);
+        assert_eq!(fresh.cover_path.as_deref(), Some("/unused-cover.jpg"));
+        assert_eq!(
+            std::fs::read(dir.path().join("recovered.epub")).unwrap(),
+            original
+        );
+        assert!(!dir.path().join("_covers").exists());
     }
 
     #[sqlx::test(migrations = "./migrations")]
@@ -2663,8 +2758,7 @@ mod tests {
         let original_hash = initial_hex_sha256(&original_bytes);
 
         // Pending cover sidecar under `_covers/pending/`.
-        let cover_dir = tempfile::tempdir().unwrap();
-        let pending_dir = cover_dir.path().join("_covers").join("pending");
+        let pending_dir = src_path.parent().unwrap().join("_covers").join("pending");
         std::fs::create_dir_all(&pending_dir).unwrap();
         let cover_filename = format!("{marker}.png");
         let pending_path = pending_dir.join(&cover_filename);
@@ -2677,7 +2771,7 @@ mod tests {
             &original_hash,
         )
         .await;
-        let pending_str = pending_path.to_str().unwrap();
+        let pending_str = format!("_covers/pending/{cover_filename}");
         sqlx::query!(
             "UPDATE manifestations SET cover_path = $1 WHERE id = $2",
             pending_str,
@@ -2723,8 +2817,9 @@ mod tests {
         );
 
         // Sidecar moved pending → accepted.
-        let accepted_path = cover_dir
-            .path()
+        let accepted_path = src_path
+            .parent()
+            .unwrap()
             .join("_covers")
             .join("accepted")
             .join(&cover_filename);
@@ -2792,8 +2887,7 @@ mod tests {
         let original_bytes = std::fs::read(&src_path).unwrap();
         let original_hash = initial_hex_sha256(&original_bytes);
 
-        let cover_dir = tempfile::tempdir().unwrap();
-        let pending_dir = cover_dir.path().join("_covers").join("pending");
+        let pending_dir = src_path.parent().unwrap().join("_covers").join("pending");
         std::fs::create_dir_all(&pending_dir).unwrap();
         let cover_filename = format!("{marker}.png");
         let pending_path = pending_dir.join(&cover_filename);
@@ -2806,7 +2900,7 @@ mod tests {
             &original_hash,
         )
         .await;
-        let pending_str = pending_path.to_str().unwrap();
+        let pending_str = format!("_covers/pending/{cover_filename}");
         sqlx::query!(
             // Simulate a manifestation ingested before this cover was
             // embedded: has_embedded_cover = false, sidecar pending.
@@ -3077,5 +3171,309 @@ mod tests {
         assert!(resolve_opf_relative("OEBPS", "images/..").is_err());
         // Even with empty opf_dir
         assert!(resolve_opf_relative("", "../evil").is_err());
+    }
+
+    async fn sidecar_missing_parent_after_publication(pool: &PgPool, pending: &str) {
+        use tracing::instrument::WithSubscriber;
+        let wb = writeback_pool_for(pool).await;
+        let ing = ingestion_pool_for(pool).await;
+        let (dir, path) = make_fixture_epub("Original");
+        let original = std::fs::read(&path).unwrap();
+        let hash = initial_hex_sha256(&original);
+        let (_, id) = insert_fixture(&ing, "sidecar-parent", path.to_str().unwrap(), &hash).await;
+        let source = dir.path().join(pending);
+        std::fs::create_dir_all(source.parent().unwrap()).unwrap();
+        let mut bytes = std::io::Cursor::new(Vec::new());
+        image::DynamicImage::new_rgb8(10, 10)
+            .write_to(&mut bytes, image::ImageFormat::Png)
+            .unwrap();
+        std::fs::write(&source, bytes.into_inner()).unwrap();
+        sqlx::query!(
+            "UPDATE manifestations SET cover_path = $1 WHERE id = $2",
+            pending,
+            id
+        )
+        .execute(&ing)
+        .await
+        .unwrap();
+        let job = sqlx::query_scalar!("INSERT INTO writeback_jobs (manifestation_id, reason) VALUES ($1, 'cover') RETURNING id", id).fetch_one(&ing).await.unwrap();
+        let snap = load_snapshot(&wb, job).await.unwrap();
+        let files = crate::test_support::test_library_files_at(
+            &dir.path().to_str().unwrap().parse().unwrap(),
+            snap.library_id,
+        );
+        let mut lock = ing.begin().await.unwrap();
+        sqlx::query!(
+            "UPDATE manifestations SET cover_path = $1 WHERE id = $2",
+            pending,
+            id
+        )
+        .execute(&mut *lock)
+        .await
+        .unwrap();
+        let log = tempfile::NamedTempFile::new().unwrap();
+        let output = log.reopen().unwrap();
+        let subscriber = tracing_subscriber::fmt()
+            .without_time()
+            .with_ansi(false)
+            .with_max_level(tracing::Level::WARN)
+            .with_writer(move || output.try_clone().unwrap())
+            .finish();
+        let (config, _files) = test_config(dir.path());
+        let writeback =
+            run_once(&wb, &config, &files, job, fixture_permit().await).with_subscriber(subscriber);
+        let remove_parent = async {
+            tokio::time::timeout(std::time::Duration::from_secs(5), async {
+                while std::fs::read(&path).unwrap() == original {
+                    tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+                }
+            })
+            .await
+            .unwrap();
+            std::fs::remove_dir_all(source.parent().unwrap()).unwrap();
+            lock.commit().await.unwrap();
+        };
+        let (outcome, ()) = tokio::join!(writeback, remove_parent);
+        assert!(matches!(outcome.unwrap(), RunOutcome::Success { .. }));
+        assert!(
+            std::fs::read_to_string(log.path())
+                .unwrap()
+                .contains("cover sidecar move failed")
+        );
+        assert!(!dir.path().join("_covers/accepted").exists());
+        let fresh = load_snapshot(&wb, job).await.unwrap();
+        assert_ne!(fresh.current_file_hash, hash);
+        assert!(
+            epub::validate(
+                std::fs::File::open(dir.path().join(fresh.file_path.as_path())).unwrap()
+            )
+            .unwrap()
+            .has_usable_embedded_cover
+        );
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn capability_cover_sidecar_missing_pending_logs_failure_after_success(pool: PgPool) {
+        sidecar_missing_parent_after_publication(&pool, "_covers/pending/cover.png").await;
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn capability_cover_sidecar_missing_nested_parent_logs_failure_after_success(
+        pool: PgPool,
+    ) {
+        sidecar_missing_parent_after_publication(&pool, "_covers/pending/nested/cover.png").await;
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn capability_cover_sidecar_same_library_embed_and_logged_promotion_failure(
+        pool: PgPool,
+    ) {
+        use tracing::instrument::WithSubscriber;
+        let wb = writeback_pool_for(&pool).await;
+        let ing = ingestion_pool_for(&pool).await;
+        let (dir, path) = make_fixture_epub("Original");
+        let original = std::fs::read(&path).unwrap();
+        let original_hash = initial_hex_sha256(&original);
+        let (_, id) = insert_fixture(
+            &ing,
+            "sidecar-owner",
+            path.to_str().unwrap(),
+            &original_hash,
+        )
+        .await;
+        let library = crate::models::storage_library::default_library_id(&pool)
+            .await
+            .unwrap();
+        let other = LibraryId::from_uuid(Uuid::new_v4());
+        let second = tempfile::tempdir().unwrap();
+        let pending = "_covers/pending/nested/cover.png";
+        let accepted = "_covers/accepted/nested/cover.png";
+        for root in [dir.path(), second.path()] {
+            std::fs::create_dir_all(root.join("_covers/pending/nested")).unwrap();
+        }
+        let image = image::DynamicImage::new_rgb8(10, 10);
+        let mut bytes = std::io::Cursor::new(Vec::new());
+        image.write_to(&mut bytes, image::ImageFormat::Png).unwrap();
+        let bytes = bytes.into_inner();
+        std::fs::create_dir(dir.path().join("images")).unwrap();
+        std::fs::write(dir.path().join("images/cover.png"), &bytes).unwrap();
+        std::os::unix::fs::symlink("../../../images/cover.png", dir.path().join(pending)).unwrap();
+        std::fs::write(second.path().join(pending), b"other library").unwrap();
+        let first_root: crate::config::AbsoluteRootPath =
+            dir.path().to_str().unwrap().parse().unwrap();
+        let second_root = second.path().to_str().unwrap().parse().unwrap();
+        let files = LibraryFiles::open(
+            [(library, first_root.clone()), (other, second_root)],
+            &first_root,
+        )
+        .unwrap();
+        sqlx::query!(
+            "UPDATE manifestations SET cover_path = $1 WHERE id = $2",
+            pending,
+            id
+        )
+        .execute(&ing)
+        .await
+        .unwrap();
+        let job = sqlx::query_scalar!("INSERT INTO writeback_jobs (manifestation_id, reason) VALUES ($1, 'cover') RETURNING id", id).fetch_one(&ing).await.unwrap();
+        std::fs::write(dir.path().join("_covers/accepted"), b"obstruction").unwrap();
+        let log = tempfile::NamedTempFile::new().unwrap();
+        let output = log.reopen().unwrap();
+        let subscriber = tracing_subscriber::fmt()
+            .without_time()
+            .with_ansi(false)
+            .with_max_level(tracing::Level::WARN)
+            .with_writer(move || output.try_clone().unwrap())
+            .finish();
+        let outcome = run_once(
+            &wb,
+            &test_config(dir.path()).0,
+            &files,
+            job,
+            fixture_permit().await,
+        )
+        .with_subscriber(subscriber)
+        .await
+        .unwrap();
+        assert!(matches!(outcome, RunOutcome::Success { .. }));
+        assert!(
+            std::fs::read_to_string(log.path())
+                .unwrap()
+                .contains("cover sidecar move failed")
+        );
+        let fresh = load_snapshot(&wb, job).await.unwrap();
+        let published = files
+            .library(library)
+            .unwrap()
+            .read(fresh.file_path.as_path())
+            .unwrap();
+        assert_ne!(published, original);
+        assert_ne!(fresh.current_file_hash, original_hash);
+        assert!(
+            epub::validate(
+                std::fs::File::open(dir.path().join(fresh.file_path.as_path())).unwrap()
+            )
+            .unwrap()
+            .has_usable_embedded_cover
+        );
+        assert_eq!(std::fs::read(dir.path().join(pending)).unwrap(), bytes);
+        assert_eq!(
+            std::fs::read(second.path().join(pending)).unwrap(),
+            b"other library"
+        );
+        std::fs::remove_file(dir.path().join("_covers/accepted")).unwrap();
+        move_cover_sidecar(&files, &PendingCover::new(library, pending).unwrap()).unwrap();
+        assert!(!dir.path().join(pending).exists());
+        assert!(
+            std::fs::symlink_metadata(dir.path().join(accepted))
+                .unwrap()
+                .is_symlink()
+        );
+        assert_eq!(std::fs::read(dir.path().join(accepted)).unwrap(), bytes);
+        std::fs::write(dir.path().join(pending), &bytes).unwrap();
+        move_cover_sidecar(&files, &PendingCover::new(library, pending).unwrap()).unwrap();
+        assert_eq!(std::fs::read(dir.path().join(accepted)).unwrap(), bytes);
+        assert_eq!(
+            std::fs::read(second.path().join(pending)).unwrap(),
+            b"other library"
+        );
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn capability_cover_sidecar_invalid_missing_and_outside_sources_preserve_epub(
+        pool: PgPool,
+    ) {
+        let wb = writeback_pool_for(&pool).await;
+        let ing = ingestion_pool_for(&pool).await;
+        let (dir, path) = make_fixture_epub("Original");
+        let original = std::fs::read(&path).unwrap();
+        let hash = initial_hex_sha256(&original);
+        let (_, id) = insert_fixture(&ing, "sidecar-rejected", path.to_str().unwrap(), &hash).await;
+        let job = sqlx::query_scalar!("INSERT INTO writeback_jobs (manifestation_id, reason) VALUES ($1, 'cover') RETURNING id", id).fetch_one(&ing).await.unwrap();
+        for value in [
+            "/tmp/outside.png",
+            "../outside.png",
+            "ordinary.png",
+            "_covers/accepted/cover.png",
+            "_covers/pending/",
+            "_covers/pending/nested/../cover.png",
+            "_covers/pending/C:/cover.png",
+            "_covers/pending/missing.png",
+        ] {
+            sqlx::query!(
+                "UPDATE manifestations SET cover_path = $1 WHERE id = $2",
+                value,
+                id
+            )
+            .execute(&ing)
+            .await
+            .unwrap();
+            assert!(
+                run_fixture(&wb, &test_config(dir.path()).0, job, dir.path())
+                    .await
+                    .is_err()
+            );
+            assert_eq!(std::fs::read(&path).unwrap(), original);
+            let row = sqlx::query!("SELECT file_path, current_file_hash, ingestion_file_hash FROM manifestations WHERE id = $1", id)
+                .fetch_one(&wb).await.unwrap();
+            assert_eq!(row.current_file_hash, hash);
+            assert_eq!(row.ingestion_file_hash, hash);
+        }
+        let outside = tempfile::tempdir().unwrap();
+        let outside_file = outside.path().join("cover.png");
+        std::fs::write(&outside_file, b"outside bytes").unwrap();
+        std::fs::create_dir_all(dir.path().join("_covers/pending")).unwrap();
+        std::os::unix::fs::symlink(&outside_file, dir.path().join("_covers/pending/cover.png"))
+            .unwrap();
+        sqlx::query!(
+            "UPDATE manifestations SET cover_path = $1 WHERE id = $2",
+            "_covers/pending/cover.png",
+            id
+        )
+        .execute(&ing)
+        .await
+        .unwrap();
+        assert!(
+            run_fixture(&wb, &test_config(dir.path()).0, job, dir.path())
+                .await
+                .is_err()
+        );
+        assert_eq!(std::fs::read(&path).unwrap(), original);
+        assert_eq!(std::fs::read(&outside_file).unwrap(), b"outside bytes");
+        let library = crate::models::storage_library::default_library_id(&pool)
+            .await
+            .unwrap();
+        let files = crate::test_support::test_library_files_at(
+            &dir.path().to_str().unwrap().parse().unwrap(),
+            library,
+        );
+        std::fs::remove_file(dir.path().join("_covers/pending/cover.png")).unwrap();
+        std::fs::write(dir.path().join("_covers/pending/cover.png"), b"owned").unwrap();
+        std::os::unix::fs::symlink(outside.path(), dir.path().join("_covers/accepted")).unwrap();
+        assert!(
+            move_cover_sidecar(
+                &files,
+                &PendingCover::new(library, "_covers/pending/cover.png").unwrap()
+            )
+            .is_err()
+        );
+        assert_eq!(
+            std::fs::read(dir.path().join("_covers/pending/cover.png")).unwrap(),
+            b"owned"
+        );
+        assert_eq!(std::fs::read(&outside_file).unwrap(), b"outside bytes");
+        assert_eq!(std::fs::read_dir(outside.path()).unwrap().count(), 1);
+        std::fs::remove_file(dir.path().join("_covers/accepted")).unwrap();
+        std::fs::remove_file(dir.path().join("_covers/pending/cover.png")).unwrap();
+        std::fs::remove_dir(dir.path().join("_covers/pending")).unwrap();
+        std::os::unix::fs::symlink(outside.path(), dir.path().join("_covers/pending")).unwrap();
+        assert!(
+            move_cover_sidecar(
+                &files,
+                &PendingCover::new(library, "_covers/pending/cover.png").unwrap()
+            )
+            .is_err()
+        );
+        assert_eq!(std::fs::read(&outside_file).unwrap(), b"outside bytes");
     }
 }

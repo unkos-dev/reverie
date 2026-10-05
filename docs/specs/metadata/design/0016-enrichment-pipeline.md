@@ -9,6 +9,7 @@ satisfies:
 governed-by:
   - "REV-ADR-0007"
   - "REV-ADR-0018"
+  - "REV-ADR-0051"
 ---
 
 # Enrichment pipeline
@@ -165,6 +166,11 @@ locks arbitrate canonical writes. The two re-queue call sites share the same cla
 
 ## Interfaces and dependencies
 
+The dormant `cover_download::download` interface accepts the guarded HTTP client, validation configuration,
+`LibraryFiles`, a library identity and manifestation/version identities. Its `CoverArtifact` returns a `LibraryLocation`
+beneath `_covers/pending`, raw SHA-256, byte count, dimensions and the detected closed raster format. It returns no
+ambient path and has no production caller.
+
 - `POST /api/v1/manifestations/{id}/enrichment/trigger`: requires write scope and a non-child caller
   (`CurrentUser::require_scope(Scope::Write)`, `require_not_child`); opens `db::acquire_with_rls` on `state.pool` before
   its one `UPDATE`, so a manifestation the caller cannot see resolves to `AppError::NotFound` rather than leaking
@@ -190,6 +196,11 @@ locks arbitrate canonical writes. The two re-queue call sites share the same cla
   identifier-editing behaviour from a user's perspective; this Design links it rather than restating its prose.
 
 ## Data and state
+
+Pending raster names use `{manifestation_id}-{version_id_short}.{ext}`, with the first eight version UUID characters
+after removing dashes. The dormant download helper is the staging writer; the dormant writeback cover branch promotes a
+sidecar within the same library. Neither has a live production input. Staging does not write
+`manifestations.cover_path`.
 
 - `manifestations.enrichment_status` is a five-value enum (`Pending`, `InProgress`, `Complete`, `Failed`, `Skipped`),
   backed by the partial index `idx_manifestations_enrichment_queue` that `claim_next` reads (on `enrichment_status` and
@@ -225,6 +236,14 @@ locks arbitrate canonical writes. The two re-queue call sites share the same cla
   re-reads it only when the process restarts, picking up the new environment value if one was set to match.
 
 ## Runtime behaviour
+
+**Dormant cover staging**, exercised by its embedded tests, resolves the supplied library identity before any network
+work. It checks the initial URL, declared MIME type, streamed byte limit, magic-byte agreement and decoded dimensions
+before hashing or publication. Blocking work selects that library, creates and opens `_covers/pending`, then calls the
+cover cache module's shared `publish_cover_bytes` primitive. Complete `cap-tempfile` replacement has no forced sync or
+additional permission policy. Repeated names use the existing replacing semantics. Network, validation, unknown-library,
+contained I/O and blocking-task errors propagate without publishing an invalid raster or supplying an ambient
+compatibility path.
 
 **A background pass**, once `claim_next` claims a row:
 

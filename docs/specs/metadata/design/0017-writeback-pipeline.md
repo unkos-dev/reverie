@@ -47,14 +47,15 @@ renderer this subject reuses for post-writeback file relocation (`backend/src/se
 which is the Design "Ingestion pipeline". It does not own the enrichment-downloaded sidecar cover at
 `manifestations.cover_path`, the `SSRF`-guarded remote-cover `HTTP` client, or the `_covers/pending` and
 `_covers/accepted` staging directories: the Design "Covers" assigns that download and staging area to the Design
-"Enrichment pipeline". This subject only reads the sidecar bytes at the path a job's row carries and, on a successful
-cover-reason job, promotes the file from `_covers/pending/` to `_covers/accepted/` with a bare rename. No code path
-anywhere in `backend/src` writes `manifestations.cover_path`, so this subject's cover-embed step never runs against real
-sidecar bytes in a live system; see Interfaces and dependencies and Runtime behaviour for the fuller picture, including
-why a cover-reason job cannot be created at all today. `webhooks` and `webhook_deliveries` have tables and row-level
-security enabled but carry no policy and no handler anywhere in `backend/src`; this subject's only connection to
-webhooks is the duplicate-suppression table it shares a name prefix with and the `tracing`-emit stub that stands in for
-delivery, both described below as what exists today.
+"Enrichment pipeline". After relocation reconciliation, cover jobs parse the row's sidecar location as a checked
+relative path, require the `_covers/pending/` namespace and read through the manifestation's owning library capability.
+Metadata jobs and relocation carriers ignore the unused sidecar location. Successful cover jobs promote it within that
+same library to `_covers/accepted/`. No code path anywhere in `backend/src` writes `manifestations.cover_path`, so this
+subject's cover-embed step never runs against real sidecar bytes in a live system; see Interfaces and dependencies and
+Runtime behaviour for the fuller picture, including why a cover-reason job cannot be created at all today. `webhooks`
+and `webhook_deliveries` have tables and row-level security enabled but carry no policy and no handler anywhere in
+`backend/src`; this subject's only connection to webhooks is the duplicate-suppression table it shares a name prefix
+with and the `tracing`-emit stub that stands in for delivery, both described below as what exists today.
 
 Depends on: the two enqueue call sites named above, each of which inserts a `writeback_jobs` row inside the same
 transaction that moves a canonical pointer; the `EPUB` validation and repack service the Design "EPUB validation and
@@ -104,13 +105,16 @@ orchestrator's enqueue call relies on); `reverie_readonly` holds `SELECT` on bot
 ownership or visibility check of its own on the `writeback_jobs` insert; the visibility check, when one applies, already
 happened on the caller's read of the manifestation before the pointer move.
 
-One state item has no single owner in the sense the census above otherwise holds to: the on-disk cover sidecar under
-`_covers/pending/`. On a successful cover-reason job, `orchestrator::move_cover_sidecar` promotes it to
-`_covers/accepted/` with a bare `std::fs::rename`, independently of managed EPUB publication and relocation. This is the
-one file mutation in the pipeline that bypasses the atomic-commit helpers; it is deliberately best-effort (a failure is
-logged at `warn!` and does not fail the job), and the file it moves is a sidecar, never the managed `EPUB` itself. As
-noted in Purpose and boundaries, nothing in the current system writes the sidecar this function reads, so the function
-has no live input to act on outside its own tests.
+The dormant download helper publishes pending sidecars; the dormant cover branch promotes them. Neither has a live
+production input. The cover-read branch constructs a private `PendingCover` containing the owning library identity and
+checked suffix. The source path is derived from that suffix under `_covers/pending/`; source reads use the owning
+library capability. Successful rewrite returns this value alongside accepted publication evidence for promotion, without
+parsing the stored location again. `move_cover_sidecar` opens the pending directory and the suffix's source parent
+before creating accepted destination directories, then renames between opened parents with replacing semantics. Failure
+to open either source directory does not create accepted directories. Opening the parent does not establish that the
+file exists; a missing file can still leave destination directories behind when rename fails. This is separate from
+managed EPUB publication and relocation. Promotion is best-effort: failure logs a warning without changing successful
+writeback. There is no EXDEV fallback, replay or `cover_path` rewrite for this sidecar movement.
 
 ### Component relationships
 
@@ -217,7 +221,8 @@ has no live input to act on outside its own tests.
   evidence clears it with terminal job bookkeeping in `queue::finish`'s transaction.
 - **The on-disk `EPUB` file.** `epub::repack::publish` replaces its bytes using a finished, validated candidate.
   `path_rename::move_existing` relocates it beneath the owning library through same-filesystem rename or a bounded
-  copy-sync-verify-unlink fallback on EXDEV. The cover sidecar's bare rename remains a separate, best-effort mutation.
+  copy-sync-verify-unlink fallback on EXDEV. The cover sidecar's contained rename remains a separate, best-effort
+  mutation.
 - **`WritebackConfig`.** `enabled` (default `true`) gates whether `spawn_worker` ever claims a job; when `false`, the
   worker parks on the cancellation token and returns without calling `revert_in_progress`, so rows already `pending` or
   `failed` simply accumulate unclaimed, and a row left `in_progress` by an earlier run stays `in_progress`; only
@@ -297,10 +302,12 @@ events, including after recovery. Open intents retain five-minute spacing and ca
 **A cover-reason job** follows the same shape with one difference at step 5: `reason == "cover"` routes through
 `cover_embed::plan_embed` against the pending cover sidecar's bytes, producing binary replacements and/or new `ZIP`
 entries that the orchestrator translates to `ZIP`-absolute paths (joining with the `OPF`'s directory) before repack. On
-success, `move_cover_sidecar` promotes the sidecar from `_covers/pending/` to `_covers/accepted/` with a bare rename, as
-described in the state-writer census; a failure there is logged and does not affect the job's outcome. As Interfaces and
-dependencies notes, no enqueue call site reaches this shape in a running system: this paragraph describes what the code
-does when a `'cover'`-reason row and a `cover_path` exist, the state this module's own tests construct directly.
+success, `move_cover_sidecar` promotes the checked pending suffix through opened directories in the same owning library,
+as described in the state-writer census. Invalid absolute, traversal or non-pending locations, missing sources and
+outside symlinks fail before EPUB publication. Promotion errors after successful writeback are logged without changing
+its outcome. As Interfaces and dependencies notes, no enqueue call site reaches this shape in a running system: this
+paragraph describes what the code does when a `'cover'`-reason row and a `cover_path` exist, the state this module's own
+tests construct directly.
 
 ### No-overwrite relocation
 
