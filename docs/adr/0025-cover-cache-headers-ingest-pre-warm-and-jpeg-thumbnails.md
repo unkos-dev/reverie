@@ -41,7 +41,7 @@ roughly 100 KB PNG where a JPEG of the same 300 px thumb is roughly 15 KB.
   bounded.
 - Request timeouts apply everywhere and no blocking IO runs on the async runtime, so warming must not stall the
   synchronous scan request nor run image work on a runtime thread.
-- `image` 0.25 ships WebP decode-only, with no encoder.
+- The existing image stack supplies JPEG and lossless WebP encoding; WebP with adjustable quality needs another encoder.
 
 ## Considered options
 
@@ -59,21 +59,23 @@ Chosen option: **cacheable private headers with a strong ETag**, because repeat 
 user-scoped content in a shared cache.
 
 Chosen option: **pre-warm thumbnails at ingest**, because the first grid view should not generate them on the request
-path. Full-size covers remain lazy.
+path. Warming is bounded, detached and best-effort so a cover failure does not fail ingestion. Full-size covers remain
+lazy.
 
 Chosen option: **JPEG-only thumbnails**, because they reduce payload size. Transparent source regions are composited
 before encoding.
 
 ### Consequences
 
-- Positive: repeat grid views serve from the browser cache; cold first views are eliminated by warming; thumbnail
-  payloads shrink by roughly 6 to 8 times.
+- Positive: repeat grid views serve from the browser cache; completed warming avoids cold generation on the first view;
+  thumbnail payloads shrink by roughly 6 to 8 times.
 - Positive: the shared-browser cross-user replay threat, a cached RLS-scoped cover served to a different account after a
   switch on the same browser, is closed by `Vary: Authorization, Cookie`, which partitions the private cache by
   credential. Credentials are stable within a session, so per-session caching is preserved while the cross-user replay
   is blocked.
 - Negative: a writeback within the `max-age` window shows a stale cover for up to a day. This is accepted because covers
   change rarely (enrichment), and the `ETag` makes it self-correct on the next revalidation.
+- Negative: a view can arrive before warming completes, or after warming fails, and still need lazy generation.
 
 ## Pros and cons of the options
 
@@ -92,7 +94,8 @@ before encoding.
 
 ### Pre-warm thumbnails at ingest
 
-- Positive: the first grid view after a scan is a warm hit instead of a cold generation on the request path.
+- Positive: when warming completes before the first grid view, that view uses a warm hit instead of generating the
+  thumbnail on the request path.
 - Positive: detached, semaphore-bounded warming cannot stall the synchronous scan request or thundering-herd the
   blocking pool.
 - Neutral: full-size covers stay lazy, since the reader view loads only one at a time.
@@ -109,7 +112,8 @@ before encoding.
 
 ### WebP thumbnails
 
-- Negative: `image` 0.25 ships WebP decode-only, with no encoder, so this option is unavailable.
+- Neutral: `image` 0.25 supplies a lossless WebP encoder that preserves alpha. WebP with adjustable quality needs a
+  separate encoder; the PNG-to-JPEG measurements do not establish a size comparison with lossless WebP.
 
 ### Preserve source format for thumbnails
 
@@ -122,4 +126,5 @@ Builds directly on
 [Rasterize SVG-declared EPUB covers to PNG](./0024-rasterize-svg-declared-epub-covers-to-png-via-resvg.md): the
 rasterization is unchanged; this decision governs how the result is cached, warmed, and encoded for delivery. Revisit if
 cover serving moves behind a CDN, since the `private`/`ETag` contract would need re-evaluation, or if a WebP encoder
-becomes available in the image stack.
+with adjustable quality becomes available in the image stack. The existing lossless encoder is documented in
+[`image`'s WebP module](https://docs.rs/image/0.25.8/image/codecs/webp/struct.WebPEncoder.html).

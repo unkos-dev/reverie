@@ -20,7 +20,7 @@ in `/srv/frontend` at image-build time, and the backend reads `REVERIE_FRONTEND_
 fallback router. This shape was introduced when the Dockerfile was first written and became load-bearing when
 Content-Security-Policy (CSP) enforcement was added: a build-time `cspHashPlugin` in Vite emits `dist/csp-hashes.json`,
 and the backend reads that sidecar on startup and serves `index.html` with a strict CSP header containing those exact
-script and style hashes.
+script hashes. Styles use a separate `style-src 'self' 'unsafe-inline'` policy.
 
 This coupling had never been recorded as a decision. It resurfaced while planning a staging deployment, where a
 reasonable-looking default for "deploy a frontend with hot iteration" is to split frontend and backend into separate
