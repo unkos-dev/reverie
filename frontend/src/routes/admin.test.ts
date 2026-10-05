@@ -21,6 +21,7 @@ function authMe(role: AuthMe["role"]): AuthMe {
     email: "admin@example.com",
     role,
     is_child: false,
+    has_local_password: true,
     theme_preference: "system",
     csrf_token: null,
   };

@@ -446,6 +446,10 @@ struct SetupStatusResponse {
     /// Whether OIDC is configured (computed from the issuer). Drives
     /// the SPA's provider-aware redirect and the "Sign in with OIDC" action.
     oidc_enabled: bool,
+    /// Minimum new-password length in Unicode scalar values.
+    password_min_length: usize,
+    /// Maximum new-password length in Unicode scalar values.
+    password_max_length: usize,
 }
 
 /// `GET /auth/setup/status`: public provider/bootstrap state for the SPA.
@@ -473,6 +477,8 @@ async fn setup_status(
         setup_required: !admin,
         local_auth_enabled: state.config.local_auth_enabled,
         oidc_enabled: state.config.oidc_configured(),
+        password_min_length: state.config.password_min_length,
+        password_max_length: state.config.password_max_length,
     }))
 }
 
@@ -483,7 +489,7 @@ struct SetupRequest {
     email: String,
     /// Display name.
     display_name: String,
-    /// Plaintext password; enforced against `password_min_length`, then hashed.
+    /// Plaintext password; checked against the shared password policy, then hashed.
     password: String,
 }
 
@@ -507,7 +513,7 @@ struct SetupRequest {
 /// - [`AppError::RateLimited`] (429) when the per-source limit is exceeded.
 /// - [`AppError::SetupAlreadyComplete`] (409) when an administrator already
 ///   exists (fast-reject or the marker-row race).
-/// - [`AppError::Validation`] (422) on a malformed email or too-short password.
+/// - [`AppError::Validation`] (422) on a malformed email or rejected password.
 /// - [`AppError::Internal`] on hashing or database failure.
 #[utoipa::path(
     post,
@@ -542,12 +548,13 @@ async fn setup(
     if !user::is_addr_spec(&body.email) {
         return Err(AppError::Validation("invalid email address".to_owned()));
     }
-    if body.password.chars().count() < state.config.password_min_length {
-        return Err(AppError::Validation(format!(
-            "password must be at least {} characters",
-            state.config.password_min_length
-        )));
-    }
+    crate::auth::password_policy::enforce_from_config(
+        &state.config,
+        &body.password,
+        &[&body.email, &body.display_name],
+    )
+    .await
+    .map_err(|e| AppError::Validation(e.to_string()))?;
     let phc = crate::auth::password::hash_password(body.password.as_bytes())
         .map_err(|e| AppError::Internal(anyhow::anyhow!("password hash failed: {e}")))?;
 
@@ -872,6 +879,18 @@ async fn reset_password(
             .await
             .map_err(|e| AppError::Internal(e.into()))?;
 
+        // THREAT: lock the user before PIN and credential rows to match the other password writers.
+        let exists = sqlx::query_scalar!(
+            "SELECT id FROM users WHERE id = $1 FOR NO KEY UPDATE",
+            user.id
+        )
+        .fetch_optional(&mut *tx)
+        .await
+        .map_err(|e| AppError::Internal(e.into()))?;
+        if exists.is_none() {
+            return Err(generic());
+        }
+
         // Single-use: consume first (race-safe). A losing concurrent reset gets
         // `false`; rolling back keeps that branch a no-op.
         let consumed = crate::models::password_reset_pin::consume(&mut *tx, pin.id)
@@ -951,6 +970,8 @@ struct MeResponse {
     role: crate::models::role::Role,
     /// Whether child content-visibility rules apply.
     is_child: bool,
+    /// Whether this account has a local password, independently of OIDC identities.
+    has_local_password: bool,
     /// Persisted UI theme preference.
     theme_preference: ThemePreference,
     /// Session-bound CSRF synchronizer token to echo as `X-CSRF-Token` on
@@ -997,12 +1018,17 @@ async fn me(
         .get("csrf_token")
         .await
         .map_err(|e| AppError::Internal(e.into()))?;
+    let has_local_password = crate::models::local_credentials::find_by_user_id(&state.pool, u.id)
+        .await
+        .map_err(|e| AppError::Internal(e.into()))?
+        .is_some();
     Ok(Json(MeResponse {
         id: u.id,
         display_name: u.display_name,
         email: u.email,
         role: u.role,
         is_child: u.is_child,
+        has_local_password,
         theme_preference: u.theme_preference,
         csrf_token,
     }))
@@ -2487,6 +2513,84 @@ mod tests {
             StatusCode::UNPROCESSABLE_ENTITY,
             "a password below the minimum length is rejected"
         );
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn setup_applies_shared_policy_and_exposes_configured_bounds(pool: sqlx::PgPool) {
+        let app_pool = test_support::db::app_pool_for(&pool).await;
+        let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+        let mut config = test_support::test_config();
+        config.password_min_length = 24;
+        config.password_max_length = 64;
+        let server = test_support::db::server_with_config(&app_pool, &ingestion_pool, config);
+        let status: serde_json::Value = server.get("/auth/setup/status").await.json();
+        assert_eq!(status["password_min_length"], 24);
+        assert_eq!(status["password_max_length"], 64);
+        for password in [
+            "strong-enough-but-short".to_owned(),
+            "a".repeat(24),
+            "x".repeat(65),
+        ] {
+            let response = server
+                .post("/auth/setup")
+                .json(&serde_json::json!({
+                    "email": "admin@example.com", "display_name": "Admin", "password": password,
+                }))
+                .await;
+            assert_eq!(response.status_code(), StatusCode::UNPROCESSABLE_ENTITY);
+            assert!(!crate::models::user::admin_exists(&app_pool).await.unwrap());
+        }
+        let response = server
+            .post("/auth/setup")
+            .json(&serde_json::json!({
+                "email": "admin@example.com", "display_name": "Admin",
+                "password": "correct-horse-battery-staple-7!",
+            }))
+            .await;
+        assert_eq!(response.status_code(), StatusCode::CREATED);
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn me_exposes_local_password_independently_of_oidc(pool: sqlx::PgPool) {
+        let app_pool = test_support::db::app_pool_for(&pool).await;
+        let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+        let (id, basic) =
+            test_support::db::create_adult_and_basic_auth(&app_pool, "capability").await;
+        let mut server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+        let me: serde_json::Value = server
+            .get("/auth/me")
+            .add_header("authorization", &basic)
+            .await
+            .json();
+        assert_eq!(me["has_local_password"], false);
+        let hash = crate::auth::password::hash_password(b"old").unwrap();
+        crate::models::local_credentials::set_password(&app_pool, id, &hash)
+            .await
+            .unwrap();
+        let me: serde_json::Value = server
+            .get("/auth/me")
+            .add_header("authorization", &basic)
+            .await
+            .json();
+        assert_eq!(me["has_local_password"], true);
+
+        crate::models::user::create_local(
+            &app_pool,
+            "local@example.com",
+            "Local",
+            crate::models::role::Role::Adult,
+            Some(&hash),
+        )
+        .await
+        .unwrap();
+        server.save_cookies();
+        let login = server
+            .post("/auth/local/login")
+            .json(&serde_json::json!({ "email": "local@example.com", "password": "old" }))
+            .await;
+        assert_eq!(login.status_code(), StatusCode::NO_CONTENT);
+        let me: serde_json::Value = server.get("/auth/me").await.json();
+        assert_eq!(me["has_local_password"], true);
     }
 
     #[sqlx::test(migrations = "./migrations")]

@@ -25,6 +25,7 @@ import { displayNameField, emailField, newPasswordField } from "@/api/auth.schem
 import { Button } from "@/components/ui/button";
 import { Field, FieldDescription, FieldError, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
+import { usePasswordPolicy } from "@/hooks/usePasswordPolicy";
 import { formString } from "@/lib/form";
 
 import { AuthShell } from "./auth-shell";
@@ -39,6 +40,7 @@ type FormError = { field: "display" | "email" | "password" | "form"; message: st
 
 /** Route component for `/register`. */
 export function Component(): ReactElement {
+  const { policy, isPending: policyPending, isError: policyError } = usePasswordPolicy();
   const navigate = useNavigate();
   const [error, setError] = useState<FormError | null>(null);
 
@@ -66,6 +68,7 @@ export function Component(): ReactElement {
 
   function handleSubmit(e: SyntheticEvent<HTMLFormElement>): void {
     e.preventDefault();
+    if (policy === undefined || policyError) return;
     setError(null);
     const data = new FormData(e.currentTarget);
     const displayName = displayNameField.safeParse(formString(data, "display_name"));
@@ -78,9 +81,12 @@ export function Component(): ReactElement {
       setError({ field: "email", message: "Enter a valid email address." });
       return;
     }
-    const password = newPasswordField.safeParse(formString(data, "password"));
+    const password = newPasswordField(policy).safeParse(formString(data, "password"));
     if (!password.success) {
-      setError({ field: "password", message: "Use at least 8 characters for the password." });
+      setError({
+        field: "password",
+        message: password.error.issues[0]?.message ?? "Check the password length.",
+      });
       return;
     }
     registerMutation.mutate({
@@ -133,12 +139,21 @@ export function Component(): ReactElement {
             required
             aria-invalid={error?.field === "password" || undefined}
           />
-          <FieldDescription>
-            Use at least 8 characters. Avoid common words or passwords from known data breaches.
+          <FieldDescription role={policyError ? "alert" : undefined}>
+            {policyError
+              ? "Could not load the password policy. Reload to try again."
+              : policyPending || policy === undefined
+                ? "Loading password policy…"
+                : `Use ${String(policy.password_min_length)} to ${String(policy.password_max_length)} characters. Avoid common words or passwords from known data breaches.`}
           </FieldDescription>
         </Field>
         {error ? <FieldError>{error.message}</FieldError> : null}
-        <Button type="submit" disabled={registerMutation.isPending}>
+        <Button
+          type="submit"
+          disabled={
+            registerMutation.isPending || policyPending || policyError || policy === undefined
+          }
+        >
           Create account
         </Button>
       </form>

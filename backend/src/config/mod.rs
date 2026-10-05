@@ -155,13 +155,13 @@ pub struct Config {
     #[validate(range(min = 1, message = "must be at least 1"))]
     pub login_throttle_cap_secs: i32,
     /// Minimum length for a local-account password
-    /// (`REVERIE_PASSWORD_MIN_LENGTH`, default `8`, the NIST SP 800-63B basic
+    /// (`REVERIE_PASSWORD_MIN_LENGTH`, default `15`, the single-factor
     /// floor). The length floor, the zxcvbn strength floor
     /// ([`Self::password_min_zxcvbn_score`]), and the HIBP breach check
     /// ([`Self::password_breach_check_enabled`]) together form the password
-    /// policy applied at registration, admin create/reset, and self-service
-    /// change.
-    #[validate(range(min = 8, message = "must be at least 8 (NIST SP 800-63B)"))]
+    /// policy applied at bootstrap, registration, recovery, admin create/reset,
+    /// and self-service change. Existing credentials remain valid.
+    #[validate(range(min = 15, message = "must be at least 15"))]
     pub password_min_length: usize,
     /// Maximum length for a local-account password, in characters
     /// (`REVERIE_PASSWORD_MAX_LENGTH`, default `256`). A denial-of-service cap,
@@ -767,7 +767,7 @@ impl Default for Config {
             login_rate_per_min: 10,
             login_throttle_base_secs: 2,
             login_throttle_cap_secs: 900,
-            password_min_length: 8,
+            password_min_length: 15,
             password_max_length: 256,
             password_min_zxcvbn_score: 2,
             password_breach_check_enabled: true,
@@ -1732,6 +1732,25 @@ mod tests {
         let cfg = cfg_from(BASE_VARS).unwrap();
         assert!(cfg.ingestion_dsn_defaulted);
         assert_eq!(cfg.ingestion_database_url, cfg.database_url);
+    }
+
+    #[test]
+    fn password_policy_default_and_configurable_floor() {
+        assert_eq!(Config::default().password_min_length, 15);
+        for minimum in ["0", "8", "14"] {
+            let vars = with_overrides(&[("REVERIE_PASSWORD_MIN_LENGTH", minimum)]);
+            let error = cfg_from_owned(&vars).unwrap_err();
+            assert!(error.to_string().contains("REVERIE_PASSWORD_MIN_LENGTH"));
+            assert!(error.to_string().contains("at least 15"));
+        }
+        for minimum in ["15", "24"] {
+            let vars = with_overrides(&[("REVERIE_PASSWORD_MIN_LENGTH", minimum)]);
+            let config = cfg_from_owned(&vars).unwrap();
+            assert_eq!(
+                config.password_min_length,
+                minimum.parse::<usize>().unwrap()
+            );
+        }
     }
 
     #[test]

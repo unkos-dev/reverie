@@ -7,7 +7,7 @@ import { toast } from "sonner";
 import type { ReactElement } from "react";
 
 import { ApiError } from "@/api";
-import { register } from "@/api/auth";
+import { fetchSetupStatus, register } from "@/api/auth";
 
 import { Component as AuthRegister } from "./auth-register";
 
@@ -37,6 +37,13 @@ function renderRegister(): void {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  vi.mocked(fetchSetupStatus).mockResolvedValue({
+    setup_required: false,
+    local_auth_enabled: true,
+    oidc_enabled: false,
+    password_min_length: 15,
+    password_max_length: 256,
+  });
 });
 
 afterEach(() => {
@@ -51,11 +58,11 @@ describe("auth-register", () => {
 
     await user.type(screen.getByLabelText("Display name"), "Ada");
     await user.type(screen.getByLabelText("Email"), "ada@example.com");
-    await user.type(screen.getByLabelText("Password"), "hunter2hunter2");
+    await user.type(screen.getByLabelText("Password"), "hunter2hunter2hunter2");
     await user.click(screen.getByRole("button", { name: "Create account" }));
 
     expect(await screen.findByTestId("login-page")).toBeInTheDocument();
-    expect(register).toHaveBeenCalledWith("ada@example.com", "Ada", "hunter2hunter2");
+    expect(register).toHaveBeenCalledWith("ada@example.com", "Ada", "hunter2hunter2hunter2");
   });
 
   test("surfaces an inline error and toast when registration is disabled", async () => {
@@ -67,7 +74,7 @@ describe("auth-register", () => {
 
     await user.type(screen.getByLabelText("Display name"), "Ada");
     await user.type(screen.getByLabelText("Email"), "ada@example.com");
-    await user.type(screen.getByLabelText("Password"), "hunter2hunter2");
+    await user.type(screen.getByLabelText("Password"), "hunter2hunter2hunter2");
     await user.click(screen.getByRole("button", { name: "Create account" }));
 
     expect(await screen.findByRole("alert")).toHaveTextContent("Registration is disabled.");
@@ -79,7 +86,7 @@ describe("auth-register", () => {
     const user = userEvent.setup();
 
     await user.type(screen.getByLabelText("Email"), "ada@example.com");
-    await user.type(screen.getByLabelText("Password"), "hunter2hunter2");
+    await user.type(screen.getByLabelText("Password"), "hunter2hunter2hunter2");
     await user.click(screen.getByRole("button", { name: "Create account" }));
 
     expect(await screen.findByRole("alert")).toBeInTheDocument();

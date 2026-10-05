@@ -667,7 +667,7 @@ async fn admin_reset_password(
 
     // Feed the target's own email and display name to the strength estimator so a
     // password echoing them is penalized. The authoritative existence check is the
-    // FOR UPDATE below; this read only supplies the context words.
+    // row lock below; this read only supplies the context words.
     let target = crate::models::user::find_by_id(&state.pool, id)
         .await
         .map_err(|e| AppError::Internal(e.into()))?
@@ -686,7 +686,7 @@ async fn admin_reset_password(
         .await
         .map_err(|e| AppError::Internal(e.into()))?;
 
-    let exists = sqlx::query_scalar!("SELECT id FROM users WHERE id = $1 FOR UPDATE", id)
+    let exists = sqlx::query_scalar!("SELECT id FROM users WHERE id = $1 FOR NO KEY UPDATE", id)
         .fetch_optional(&mut *tx)
         .await
         .map_err(|e| AppError::Internal(e.into()))?;
@@ -730,20 +730,21 @@ struct ChangePasswordRequest {
 /// - [`AppError::Unauthorized`] when unauthenticated.
 /// - [`AppError::Validation`] (422) when the current password is wrong, the new
 ///   password fails the policy, or the account has no local credential (it signs
-///   in through an identity provider).
+///   in through an identity provider), or the verified credential changed
+///   concurrently.
 /// - [`AppError::Internal`] on database errors.
 #[utoipa::path(
     post,
     path = "/api/v1/account/password",
     summary = "Change your own password",
-    description = "Verifies the caller's current password and sets a new one, invalidating all of the caller's sessions including the one making this request. Returns 422 if the current password is wrong or the account has no local credential.",
+    description = "Verifies the caller's current password and sets a new one only if that credential is unchanged, invalidating all of the caller's sessions including the one making this request. Returns 422 for a wrong current password, a rejected new password, no local credential, or a concurrent credential change.",
     tag = "users",
     security(("session_cookie" = ["write"]), ("device_token_bearer" = ["write"]), ("oidc_jwt_bearer" = ["write"]), ("opds_basic" = ["write"])),
     request_body = ChangePasswordRequest,
     responses(
         (status = 200, description = "Password changed; all of the caller's sessions are invalidated."),
         (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
-        (status = 422, description = "Wrong current password, new password rejected by the policy, or no local credential", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
+        (status = 422, description = "Wrong current password, rejected new password, no local credential, or concurrent credential change", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
     )
 )]
 async fn change_own_password(
@@ -794,9 +795,29 @@ async fn change_own_password(
         .begin()
         .await
         .map_err(|e| AppError::Internal(e.into()))?;
-    crate::models::local_credentials::set_password(&mut *tx, user_id, &phc)
-        .await
-        .map_err(|e| AppError::Internal(e.into()))?;
+    // THREAT: user-before-credential locking prevents inversion with administrator resets.
+    sqlx::query_scalar!(
+        "SELECT id FROM users WHERE id = $1 FOR NO KEY UPDATE",
+        user_id
+    )
+    .fetch_optional(&mut *tx)
+    .await
+    .map_err(|e| AppError::Internal(e.into()))?
+    .ok_or(AppError::Unauthorized)?;
+    let replaced = crate::models::local_credentials::replace_verified_password(
+        &mut *tx,
+        user_id,
+        &credential.password_hash,
+        &phc,
+    )
+    .await
+    .map_err(|e| AppError::Internal(e.into()))?;
+    if !replaced {
+        return Err(AppError::Validation(
+            "password changed while this request was in progress; sign in again before retrying"
+                .to_owned(),
+        ));
+    }
     crate::models::user::increment_session_version(&mut *tx, user_id)
         .await
         .map_err(|e| AppError::Internal(e.into()))?;

@@ -62,7 +62,7 @@ pub fn test_config() -> Config {
         login_rate_per_min: 10,
         login_throttle_base_secs: 2,
         login_throttle_cap_secs: 900,
-        password_min_length: 8,
+        password_min_length: 15,
         password_max_length: 256,
         password_min_zxcvbn_score: 2,
         // Off in tests so endpoint tests exercise length + zxcvbn deterministically
@@ -576,11 +576,21 @@ pub mod db {
         app_pool: &PgPool,
         ingestion_pool: &PgPool,
     ) -> axum_test::TestServer {
+        server_with_config(app_pool, ingestion_pool, super::test_config())
+    }
+
+    pub fn server_with_config(
+        app_pool: &PgPool,
+        ingestion_pool: &PgPool,
+        mut config: crate::config::Config,
+    ) -> axum_test::TestServer {
         use crate::state::AppState;
-        let (config, library_files) = crate::test_support::test_storage_config(
+        let (storage_config, library_files) = crate::test_support::test_storage_config(
             None,
             crate::models::storage_library::LibraryId::from_uuid(uuid::Uuid::new_v4()),
         );
+        config.library_path = storage_config.library_path;
+        config.ingestion_path = storage_config.ingestion_path;
         let state = AppState {
             pool: app_pool.clone(),
             ingestion_pool: ingestion_pool.clone(),

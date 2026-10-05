@@ -7,7 +7,7 @@ import { toast } from "sonner";
 import type { ReactElement } from "react";
 
 import { ApiError } from "@/api";
-import { changeOwnPassword } from "@/api/auth";
+import { fetchSetupStatus, changeOwnPassword } from "@/api/auth";
 
 import { Component as AccountPassword } from "./account-password";
 
@@ -37,6 +37,13 @@ function renderChange(): void {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  vi.mocked(fetchSetupStatus).mockResolvedValue({
+    setup_required: false,
+    local_auth_enabled: true,
+    oidc_enabled: false,
+    password_min_length: 15,
+    password_max_length: 256,
+  });
 });
 
 afterEach(() => {
@@ -44,17 +51,44 @@ afterEach(() => {
 });
 
 describe("account-password", () => {
+  test("uses stricter configured bounds and leaves a short current password usable", async () => {
+    vi.mocked(fetchSetupStatus).mockResolvedValue({
+      setup_required: false,
+      local_auth_enabled: true,
+      oidc_enabled: true,
+      password_min_length: 24,
+      password_max_length: 64,
+    });
+    renderChange();
+    expect(await screen.findByText(/Use 24 to 64 characters/)).toBeInTheDocument();
+    const user = userEvent.setup();
+    await user.type(screen.getByLabelText("Current password"), "old");
+    await user.type(screen.getByLabelText("New password"), "sixteen-letters!!");
+    await user.click(screen.getByRole("button", { name: "Change password" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("Use at least 24 characters.");
+    expect(changeOwnPassword).not.toHaveBeenCalled();
+  });
+
+  test("disables submission while policy loads and reports a load failure", async () => {
+    vi.mocked(fetchSetupStatus).mockRejectedValue(new Error("unavailable"));
+    renderChange();
+    expect(screen.getByRole("button", { name: "Change password" })).toBeDisabled();
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Could not load the password policy",
+    );
+    expect(changeOwnPassword).not.toHaveBeenCalled();
+  });
   test("submitting changes the password then routes to /login", async () => {
     vi.mocked(changeOwnPassword).mockResolvedValue(undefined);
     renderChange();
     const user = userEvent.setup();
 
     await user.type(screen.getByLabelText("Current password"), "old-password-1");
-    await user.type(screen.getByLabelText("New password"), "new-password-2");
+    await user.type(screen.getByLabelText("New password"), "new-password-two-2");
     await user.click(screen.getByRole("button", { name: "Change password" }));
 
     expect(await screen.findByTestId("login-page")).toBeInTheDocument();
-    expect(changeOwnPassword).toHaveBeenCalledWith("old-password-1", "new-password-2");
+    expect(changeOwnPassword).toHaveBeenCalledWith("old-password-1", "new-password-two-2");
   });
 
   test("surfaces an inline error and toast when the current password is wrong", async () => {
@@ -65,7 +99,7 @@ describe("account-password", () => {
     const user = userEvent.setup();
 
     await user.type(screen.getByLabelText("Current password"), "wrong-password");
-    await user.type(screen.getByLabelText("New password"), "new-password-2");
+    await user.type(screen.getByLabelText("New password"), "new-password-two-2");
     await user.click(screen.getByRole("button", { name: "Change password" }));
 
     expect(await screen.findByRole("alert")).toHaveTextContent("Current password is incorrect.");
@@ -76,7 +110,7 @@ describe("account-password", () => {
     renderChange();
     const user = userEvent.setup();
 
-    await user.type(screen.getByLabelText("New password"), "new-password-2");
+    await user.type(screen.getByLabelText("New password"), "new-password-two-2");
     await user.click(screen.getByRole("button", { name: "Change password" }));
 
     expect(await screen.findByRole("alert")).toBeInTheDocument();
@@ -111,7 +145,7 @@ describe("account-password", () => {
 
     // A blank current password marks only the current input, never new.
     await user.clear(next);
-    await user.type(next, "new-password-2");
+    await user.type(next, "new-password-two-2");
     await user.clear(current);
     await user.click(screen.getByRole("button", { name: "Change password" }));
     await screen.findByRole("alert");

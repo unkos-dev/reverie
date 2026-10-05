@@ -13,6 +13,7 @@ const STUB_ME = {
   email: "alice@example.com",
   role: "admin" as const,
   is_child: false,
+  has_local_password: true,
   theme_preference: "system",
   csrf_token: null,
 } satisfies AuthMe;

@@ -18,6 +18,7 @@ import { currentPasswordField, newPasswordField } from "@/api/auth.schemas";
 import { Button } from "@/components/ui/button";
 import { Field, FieldDescription, FieldError, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
+import { usePasswordPolicy } from "@/hooks/usePasswordPolicy";
 import { formString } from "@/lib/form";
 
 import { AuthShell } from "./auth-shell";
@@ -32,6 +33,7 @@ type FormError = { field: "current" | "new" | "form"; message: string };
 
 /** Route component for `/account/password`. */
 export function Component(): ReactElement {
+  const { policy, isPending: policyPending, isError: policyError } = usePasswordPolicy();
   const navigate = useNavigate();
   const [error, setError] = useState<FormError | null>(null);
 
@@ -59,6 +61,7 @@ export function Component(): ReactElement {
 
   function handleSubmit(e: SyntheticEvent<HTMLFormElement>): void {
     e.preventDefault();
+    if (policy === undefined || policyError) return;
     setError(null);
     const data = new FormData(e.currentTarget);
     const currentPassword = currentPasswordField.safeParse(formString(data, "current_password"));
@@ -66,9 +69,12 @@ export function Component(): ReactElement {
       setError({ field: "current", message: "Enter your current password." });
       return;
     }
-    const newPassword = newPasswordField.safeParse(formString(data, "new_password"));
+    const newPassword = newPasswordField(policy).safeParse(formString(data, "new_password"));
     if (!newPassword.success) {
-      setError({ field: "new", message: "Use at least 8 characters for the new password." });
+      setError({
+        field: "new",
+        message: newPassword.error.issues[0]?.message ?? "Check the password length.",
+      });
       return;
     }
     changeMutation.mutate({
@@ -109,12 +115,21 @@ export function Component(): ReactElement {
             required
             aria-invalid={error?.field === "new" || undefined}
           />
-          <FieldDescription>
-            Use at least 8 characters. Avoid common words or passwords from known data breaches.
+          <FieldDescription role={policyError ? "alert" : undefined}>
+            {policyError
+              ? "Could not load the password policy. Reload to try again."
+              : policyPending || policy === undefined
+                ? "Loading password policy…"
+                : `Use ${String(policy.password_min_length)} to ${String(policy.password_max_length)} characters. Avoid common words or passwords from known data breaches.`}
           </FieldDescription>
         </Field>
         {error ? <FieldError>{error.message}</FieldError> : null}
-        <Button type="submit" disabled={changeMutation.isPending}>
+        <Button
+          type="submit"
+          disabled={
+            changeMutation.isPending || policyPending || policyError || policy === undefined
+          }
+        >
           Change password
         </Button>
       </form>

@@ -43,6 +43,7 @@ function authState(role: "admin" | "adult" | "child" | undefined): ReturnType<ty
       email: null,
       role,
       is_child: role === "child",
+      has_local_password: true,
       theme_preference: "system",
       csrf_token: null,
     },

@@ -95,6 +95,7 @@ function meFixture(overrides: Partial<AuthMe> = {}): AuthMe {
     email: null,
     role: "admin",
     is_child: false,
+    has_local_password: true,
     theme_preference: "system",
     csrf_token: null,
     ...overrides,

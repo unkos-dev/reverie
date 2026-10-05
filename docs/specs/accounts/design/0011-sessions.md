@@ -133,8 +133,9 @@ around `/auth/callback`); this subject's write authority over `data` is limited 
 - `auth::session::login(session: &Session, user: &User) -> Result<(), tower_sessions::session::Error>` and
   `auth::session::logout(session: &Session) -> Result<(), tower_sessions::session::Error>`, called by the sign-in and
   sign-out handlers respectively.
-- `GET /auth/me` (`MeResponse`: `id`, `display_name`, `email`, `role`, `is_child`, `theme_preference`, `csrf_token`) and
-  `POST /auth/logout` (`204 No Content`), documented in the OpenAPI spec generated from `backend/src/routes/auth.rs`.
+- `GET /auth/me` (`MeResponse`: `id`, `display_name`, `email`, `role`, `is_child`, `has_local_password`,
+  `theme_preference`, `csrf_token`) and `POST /auth/logout` (`204 No Content`), documented in the OpenAPI spec generated
+  from `backend/src/routes/auth.rs`.
 - `frontend/src/hooks/useAuthMe.ts` exports `useAuthMe`, returning `{ data, isLoading, isError }` over a Zod-validated
   `AuthMe`; the query function returns `null` on a `401` or `403` response, and the hook exposes that as
   `data: undefined` (`data ?? undefined`) so callers treat it as the ordinary "logged out" state rather than an
@@ -144,6 +145,11 @@ around `/auth/callback`); this subject's write authority over `data` is limited 
 - The operator-facing cookie table in `docs/security/content-security-policy.md` documents the session cookie's wire
   name (`id`), path (`/`), and observed `Max-Age` (24 hours, renewed on each request) as the canonical reference for
   self-hosters; this Design does not restate it as a second source.
+
+The profile's `has_local_password` predicate comes from the presence of a local credential, independently of external
+identities. The shell shows "Change password" for local and dual-capability accounts and hides it for OIDC-only
+accounts. The password-change endpoint still rejects an account without a local credential. The client requires the
+capability field in its Zod schema rather than assuming it when absent.
 
 ## Data and state
 

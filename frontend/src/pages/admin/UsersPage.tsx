@@ -23,6 +23,7 @@ import {
 import type { User, Role, CreateUserInput } from "@/api/users";
 import { ApiError } from "@/api";
 import { displayNameField, emailField, newPasswordField } from "@/api/auth.schemas";
+import { usePasswordPolicy } from "@/hooks/usePasswordPolicy";
 import { formString } from "@/lib/form";
 import {
   Table,
@@ -49,7 +50,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
-import { Field, FieldError, FieldLabel } from "@/components/ui/field";
+import { Field, FieldDescription, FieldError, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
@@ -301,6 +302,7 @@ type CreateUserDialogProps = {
 };
 
 function CreateUserDialog({ onCreated }: Readonly<CreateUserDialogProps>): ReactElement {
+  const { policy, isPending: policyPending, isError: policyError } = usePasswordPolicy();
   const [open, setOpen] = useState(false);
   const [role, setRole] = useState<Role>("adult");
   const [error, setError] = useState<string | null>(null);
@@ -331,6 +333,7 @@ function CreateUserDialog({ onCreated }: Readonly<CreateUserDialogProps>): React
 
   function handleSubmit(e: SyntheticEvent<HTMLFormElement>): void {
     e.preventDefault();
+    if (policy === undefined || policyError) return;
     setError(null);
     const data = new FormData(e.currentTarget);
     const displayName = displayNameField.safeParse(formString(data, "display_name"));
@@ -343,9 +346,9 @@ function CreateUserDialog({ onCreated }: Readonly<CreateUserDialogProps>): React
       setError("Enter a valid email address.");
       return;
     }
-    const password = newPasswordField.safeParse(formString(data, "password"));
+    const password = newPasswordField(policy).safeParse(formString(data, "password"));
     if (!password.success) {
-      setError("Use at least 8 characters for the password.");
+      setError(password.error.issues[0]?.message ?? "Check the password length.");
       return;
     }
     mutation.mutate({
@@ -407,6 +410,13 @@ function CreateUserDialog({ onCreated }: Readonly<CreateUserDialogProps>): React
               autoComplete="new-password"
               required
             />
+            <FieldDescription role={policyError ? "alert" : undefined}>
+              {policyError
+                ? "Could not load the password policy. Reload to try again."
+                : policyPending || policy === undefined
+                  ? "Loading password policy…"
+                  : `Use ${String(policy.password_min_length)} to ${String(policy.password_max_length)} characters. Avoid common words or passwords from known data breaches.`}
+            </FieldDescription>
           </Field>
           {error ? <FieldError>{error}</FieldError> : null}
           <DialogFooter>
@@ -415,7 +425,10 @@ function CreateUserDialog({ onCreated }: Readonly<CreateUserDialogProps>): React
                 Cancel
               </Button>
             </DialogClose>
-            <Button type="submit" disabled={mutation.isPending}>
+            <Button
+              type="submit"
+              disabled={mutation.isPending || policyPending || policyError || policy === undefined}
+            >
               Create
             </Button>
           </DialogFooter>
@@ -434,6 +447,7 @@ function ResetPasswordDialog({
   userId,
   displayName,
 }: Readonly<ResetPasswordDialogProps>): ReactElement {
+  const { policy, isPending: policyPending, isError: policyError } = usePasswordPolicy();
   const [open, setOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -457,11 +471,12 @@ function ResetPasswordDialog({
 
   function handleSubmit(e: SyntheticEvent<HTMLFormElement>): void {
     e.preventDefault();
+    if (policy === undefined || policyError) return;
     setError(null);
     const data = new FormData(e.currentTarget);
-    const password = newPasswordField.safeParse(formString(data, "password"));
+    const password = newPasswordField(policy).safeParse(formString(data, "password"));
     if (!password.success) {
-      setError("Use at least 8 characters for the password.");
+      setError(password.error.issues[0]?.message ?? "Check the password length.");
       return;
     }
     mutation.mutate(password.data);
@@ -492,6 +507,13 @@ function ResetPasswordDialog({
               autoComplete="new-password"
               required
             />
+            <FieldDescription role={policyError ? "alert" : undefined}>
+              {policyError
+                ? "Could not load the password policy. Reload to try again."
+                : policyPending || policy === undefined
+                  ? "Loading password policy…"
+                  : `Use ${String(policy.password_min_length)} to ${String(policy.password_max_length)} characters. Avoid common words or passwords from known data breaches.`}
+            </FieldDescription>
           </Field>
           {error ? <FieldError>{error}</FieldError> : null}
           <DialogFooter>
@@ -500,7 +522,10 @@ function ResetPasswordDialog({
                 Cancel
               </Button>
             </DialogClose>
-            <Button type="submit" disabled={mutation.isPending}>
+            <Button
+              type="submit"
+              disabled={mutation.isPending || policyPending || policyError || policy === undefined}
+            >
               Reset
             </Button>
           </DialogFooter>

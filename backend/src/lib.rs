@@ -316,7 +316,7 @@ pub async fn run() -> anyhow::Result<()> {
 
     // First-run env seed: create the first administrator from REVERIE_BOOTSTRAP_*
     // if configured and none exists. Idempotent; honours the single-admin gate.
-    seed_admin_if_configured(&pool, config.password_min_length)
+    seed_admin_if_configured(&pool, &config)
         .await
         .context("bootstrap the first administrator from the environment seed")?;
 
@@ -828,12 +828,9 @@ fn read_bootstrap_seed() -> Option<(String, String, String)> {
 ///
 /// # Errors
 ///
-/// Returns an error on an invalid seed email, a too-short password, hashing
+/// Returns an error on an invalid seed email, a rejected password, hashing
 /// failure, or a database error other than the benign already-bootstrapped race.
-async fn seed_admin_if_configured(
-    pool: &sqlx::PgPool,
-    password_min_length: usize,
-) -> anyhow::Result<bool> {
+async fn seed_admin_if_configured(pool: &sqlx::PgPool, config: &Config) -> anyhow::Result<bool> {
     if models::user::admin_exists(pool)
         .await
         .context("check for an existing administrator")?
@@ -846,11 +843,9 @@ async fn seed_admin_if_configured(
     if !models::user::is_addr_spec(&email) {
         anyhow::bail!("REVERIE_BOOTSTRAP_EMAIL is not a valid email address");
     }
-    if password.chars().count() < password_min_length {
-        anyhow::bail!(
-            "REVERIE_BOOTSTRAP_PASSWORD must be at least {password_min_length} characters"
-        );
-    }
+    auth::password_policy::enforce_from_config(config, &password, &[&email, &display_name])
+        .await
+        .context("REVERIE_BOOTSTRAP_PASSWORD rejected by the password policy")?;
     let phc = auth::password::hash_password(password.as_bytes())
         .map_err(|e| anyhow::anyhow!("failed to hash the bootstrap password: {e}"))?;
     match models::user::create_first_admin(pool, &email, &display_name, &phc).await {
@@ -879,7 +874,7 @@ pub async fn run_bootstrap() -> anyhow::Result<()> {
     let pool = db::init_pool(&config.database_url, 1)
         .await
         .context("connect to the database")?;
-    if seed_admin_if_configured(&pool, config.password_min_length).await? {
+    if seed_admin_if_configured(&pool, &config).await? {
         return Ok(());
     }
     if models::user::admin_exists(&pool).await? {

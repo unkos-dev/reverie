@@ -92,6 +92,7 @@ export function Component(): ReactElement {
 
   function handleSubmit(e: SyntheticEvent<HTMLFormElement>): void {
     e.preventDefault();
+    if (status === undefined) return;
     setError(null);
     const data = new FormData(e.currentTarget);
     const displayName = displayNameField.safeParse(formString(data, "display_name"));
@@ -104,9 +105,9 @@ export function Component(): ReactElement {
       setError("Enter a valid email address.");
       return;
     }
-    const password = newPasswordField.safeParse(formString(data, "password"));
+    const password = newPasswordField(status).safeParse(formString(data, "password"));
     if (!password.success) {
-      setError("Use at least 8 characters for the password.");
+      setError(password.error.issues[0]?.message ?? "Check the password length.");
       return;
     }
     setupMutation.mutate({
@@ -154,7 +155,10 @@ export function Component(): ReactElement {
             required
             aria-invalid={error !== null || undefined}
           />
-          <FieldDescription>Use at least 8 characters.</FieldDescription>
+          <FieldDescription>
+            Use {status.password_min_length} to {status.password_max_length} characters. Avoid
+            common words or passwords from known data breaches.
+          </FieldDescription>
         </Field>
         {error !== null ? <FieldError>{error}</FieldError> : null}
         <Button type="submit" disabled={setupMutation.isPending}>

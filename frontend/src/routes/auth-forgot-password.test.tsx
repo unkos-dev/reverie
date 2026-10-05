@@ -7,7 +7,7 @@ import { toast } from "sonner";
 import type { ReactElement } from "react";
 
 import { ApiError } from "@/api";
-import { requestPasswordReset, resetPassword } from "@/api/auth";
+import { fetchSetupStatus, requestPasswordReset, resetPassword } from "@/api/auth";
 
 import { Component as AuthForgot } from "./auth-forgot-password";
 
@@ -38,6 +38,13 @@ function renderForgot(): void {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  vi.mocked(fetchSetupStatus).mockResolvedValue({
+    setup_required: false,
+    local_auth_enabled: true,
+    oidc_enabled: false,
+    password_min_length: 15,
+    password_max_length: 256,
+  });
 });
 
 afterEach(() => {
@@ -58,11 +65,15 @@ describe("auth-forgot-password", () => {
     expect(vi.mocked(toast.info)).toHaveBeenCalled();
 
     await user.type(await screen.findByLabelText("Recovery PIN"), "12345678");
-    await user.type(screen.getByLabelText("New password"), "newpassw0rd!");
+    await user.type(screen.getByLabelText("New password"), "new-password-passphrase!");
     await user.click(screen.getByRole("button", { name: "Reset password" }));
 
     expect(await screen.findByTestId("login-page")).toBeInTheDocument();
-    expect(resetPassword).toHaveBeenCalledWith("ada@example.com", "12345678", "newpassw0rd!");
+    expect(resetPassword).toHaveBeenCalledWith(
+      "ada@example.com",
+      "12345678",
+      "new-password-passphrase!",
+    );
   });
 
   test("surfaces an inline error and toast when the request fails", async () => {

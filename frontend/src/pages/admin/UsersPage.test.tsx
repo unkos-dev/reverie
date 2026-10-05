@@ -8,8 +8,19 @@ import type { ReactElement } from "react";
 import { queryKeys } from "@/lib/query/keys";
 import type { User } from "@/api/users";
 import * as usersApi from "@/api/users";
+import { fetchSetupStatus } from "@/api/auth";
 
 import { UsersPage } from "./UsersPage";
+
+vi.mock("@/api/auth", () => ({
+  fetchSetupStatus: vi.fn().mockResolvedValue({
+    setup_required: false,
+    local_auth_enabled: true,
+    oidc_enabled: false,
+    password_min_length: 15,
+    password_max_length: 256,
+  }),
+}));
 
 vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn(), info: vi.fn() } }));
 
@@ -24,6 +35,7 @@ const ADMIN_ME = {
   email: "alice@example.com",
   role: "admin" as const,
   is_child: false,
+  has_local_password: true,
   theme_preference: "system",
   csrf_token: null,
 };
@@ -173,6 +185,42 @@ describe("UsersPage", () => {
     expect(screen.queryByRole("button", { name: "Disable" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Enable" })).not.toBeInTheDocument();
   });
+
+  test.each(["create", "reset"] as const)(
+    "%s dialog enforces stricter operator bounds",
+    async (mode) => {
+      vi.mocked(fetchSetupStatus).mockResolvedValueOnce({
+        setup_required: false,
+        local_auth_enabled: true,
+        oidc_enabled: false,
+        password_min_length: 24,
+        password_max_length: 64,
+      });
+      const create = vi.spyOn(usersApi, "createUser").mockResolvedValue(makeUser());
+      const reset = vi.spyOn(usersApi, "adminResetPassword").mockResolvedValue(undefined);
+      renderUsersPage(ADMIN_ME, [makeUser()]);
+      const user = userEvent.setup();
+      await user.click(
+        await screen.findByRole("button", {
+          name: mode === "create" ? "Create user" : "Reset password",
+        }),
+      );
+      if (mode === "create") {
+        await user.type(screen.getByLabelText("Display name"), "Carol");
+        await user.type(screen.getByLabelText("Email"), "carol@example.com");
+      }
+      await user.type(
+        screen.getByLabelText(mode === "create" ? "Initial password" : "New password"),
+        "a".repeat(23),
+      );
+      await user.click(
+        screen.getByRole("button", { name: mode === "create" ? "Create" : "Reset" }),
+      );
+      expect(await screen.findByRole("alert")).toHaveTextContent("Use at least 24 characters.");
+      expect(create).not.toHaveBeenCalled();
+      expect(reset).not.toHaveBeenCalled();
+    },
+  );
 
   test("create-user dialog submits the new account", async () => {
     vi.spyOn(usersApi, "listUsers").mockResolvedValue([]);

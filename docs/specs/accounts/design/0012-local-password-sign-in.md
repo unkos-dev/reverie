@@ -18,8 +18,8 @@ governed-by:
 This Design covers email-and-password sign-in for a local Reverie account: the `/auth/local/login` handler, the Argon2id
 hashing and verification it calls, the two independent rate-limiting mechanisms that guard it, the
 enumeration-resistance techniques that make a wrong password and an unknown email indistinguishable, the shared
-password-strength policy that every credential-setting path applies (and the three bootstrap paths that do not), and the
-`/auth/register` self-service path as a thin caller of that policy. It also covers the two client-side sign-in forms.
+password-strength policy that every credential-setting path applies, including bootstrap, and the `/auth/register`
+self-service path as a thin caller of that policy. It also covers the two client-side sign-in forms.
 
 ## Purpose and boundaries
 
@@ -43,9 +43,8 @@ consumption (`backend/src/auth/recovery.rs`, `backend/src/models/password_reset_
 calls this subject's password policy as an interface. It does not own first-run bootstrap: the `setup_status` and
 `setup` handlers in `backend/src/routes/auth.rs`, the `run_bootstrap`, `seed_admin_if_configured` and
 `read_bootstrap_seed` functions in `backend/src/lib.rs`, and `user::create_first_admin` / `user::admin_exists` in
-`backend/src/models/user.rs` are the first-run bootstrap subject; `setup` enforces only `password_min_length` on its
-candidate password inline rather than calling this subject's policy, and the other two bootstrap entry points share that
-narrower check through the same `seed_admin_if_configured` function. It does not own the account administration surface:
+`backend/src/models/user.rs` are the first-run bootstrap subject; all three entry points call this subject's shared
+policy with the administrator's email and display name as context. It does not own the account administration surface:
 `create_user`, `admin_reset_password` and `change_own_password` in `backend/src/routes/users/mod.rs` mutate
 `local_credentials` and are call sites of this subject's password policy, but the surface itself (role and child-status
 mutation, session-version invalidation policy, the last-admin lock order) is the account administration subject.
@@ -58,9 +57,9 @@ SSRF-resistant HTTP client the breach check sends its outbound request through; 
 `self_registration_enabled` fields.
 
 Depended on by: `routes/users/mod.rs`'s `create_user`, `admin_reset_password` and `change_own_password`, and
-`routes/auth.rs`'s `reset_password`, each of which calls `password_policy::enforce_from_config` before writing a
-credential; the `reverie unlock-account <email>` CLI subcommand (`run_unlock_account` in `backend/src/lib.rs`), which
-clears a per-account backoff out of band; and the sign-in page.
+`routes/auth.rs`'s `reset_password` and `setup`, and `lib.rs`'s `seed_admin_if_configured`, each of which calls
+`password_policy::enforce_from_config` before writing a credential; the `reverie unlock-account <email>` CLI subcommand
+(`run_unlock_account` in `backend/src/lib.rs`), which clears a per-account backoff out of band; and the sign-in page.
 
 ADR-0029 fixes local password sign-in as a co-equal authentication mode alongside OIDC, resolving to the same identity
 and session model with no path to administrator other than bootstrap; this Design is the mechanism that realises that
@@ -79,17 +78,13 @@ decision on the local-password side.
   `min_zxcvbn_score`, `breach_check_enabled`, `breach_check_url`), `PolicyError` (`TooShort`, `TooLong`, `TooWeak`,
   `Breached`), `check_strength` (zxcvbn, penalising any password containing one of the caller-supplied context words
   such as the account's email or display name), `check_breached` (the HIBP Pwned Passwords k-anonymity query), and
-  `enforce`. Five credential-setting paths call `enforce` (directly or through `enforce_from_config`, the
-  request-handler convenience that builds the `PasswordPolicy` and the breach client from `Config`): registration
-  (`register`), admin create (`create_user`), admin reset (`admin_reset_password`), self-service change
-  (`change_own_password`), and PIN reset (`reset_password`, the account recovery subject). Three further paths that also
-  write a first credential check only the configured length floor and never call `enforce`: the HTTP `setup` handler's
-  own inline check, and the CLI bootstrap subcommand and the server's own startup environment seed, both of which call
-  the same `seed_admin_if_configured` function (`backend/src/lib.rs`) and its identical length-only check.
-  `PolicyError`'s `Display` text becomes the RFC 9457 problem body's `detail` field for four of the five `enforce`
-  callers (registration, admin create, admin reset, self-service change); the fifth, PIN reset, discards the
-  `PolicyError` and answers its own fixed generic message instead, so a weak password there reads identically to a bad
-  PIN.
+  `enforce`. Registration, administrator creation/reset, self-service change, PIN recovery, API setup, CLI bootstrap and
+  the startup environment seed all call `enforce_from_config` before hashing and database mutation. Setup and both
+  headless variants supply the administrator's email and display name as context. Registration and administrator
+  creation also supply both; administrator reset and self-service change use the target's current name and optional
+  email. Recovery supplies the submitted email before resolving an account to preserve enumeration resistance. HTTP
+  callers return policy feedback in the RFC 9457 `detail` field, except PIN recovery, which returns its fixed generic
+  reset error. Headless bootstrap reports a policy rejection without logging the password.
 - `backend/src/auth/rate_limit.rs` holds `PeerAddr` (a never-rejecting `FromRequestParts` wrapper around
   `ConnectInfo<SocketAddr>`, `None` when the test harness supplies no peer), the `LoginLimiter` type alias over
   `governor::DefaultKeyedRateLimiter<IpAddr>`, `build_login_limiter` (quota `per_min` per minute per key, burst equal to
@@ -102,12 +97,13 @@ decision on the local-password side.
   first value written directly by `user::create_first_admin` and `user::create_local`, both of which insert into
   `local_credentials` inline inside their own transaction rather than calling `set_password`. `set_password` is not a
   replacement-only operation: `admin_reset_password`'s precondition is only that the target `users` row exists (a
-  `FOR UPDATE` existence check on `users`, not on `local_credentials`), so it can write a first credential onto an
-  OIDC-only account exactly as `create_first_admin`/`create_local` do; `reset_password`'s precondition (the account
+  `FOR NO KEY UPDATE` existence check on `users`, not on `local_credentials`), so it can write a first credential onto
+  an OIDC-only account exactly as `create_first_admin`/`create_local` do; `reset_password`'s precondition (the account
   recovery subject) is only an active, unexpired PIN, so it too can write a first credential onto an OIDC-only account.
   Only `change_own_password` requires an existing `local_credentials` row up front: it calls `find_by_user_id` and
   answers a `422` ("this account has no password to change; it signs in through an identity provider") when there is
-  none, before it ever reaches `set_password`.
+  none. Its write uses `replace_verified_password`, an UPDATE conditional on the hash verified before the transaction,
+  so it cannot overwrite a concurrent change or insert a missing credential.
 - `backend/src/models/login_throttle.rs` holds `record_failure`, `reset` and `backoff_until`, all keyed on
   `email.to_lowercase()` rather than `user_id`, so the throttle exists independent of whether the email resolves to an
   account. `record_failure` upserts a capped-exponential-backoff window, `min(cap, base * 2^prior_failures)`, where
@@ -125,9 +121,9 @@ decision on the local-password side.
 - `frontend/src/routes/auth-login.tsx` is an uncontrolled `FormData` form that reads `GET /auth/setup/status` to decide
   whether to render the local form, an OIDC action, or both, and calls `loginLocal` on submit.
   `frontend/src/routes/auth-register.tsx` is the equivalent form for `register`, client-validated through
-  `frontend/src/api/auth.schemas.ts`'s `displayNameField`, `emailField` and `newPasswordField` (a bare
-  `z.string().min(8)`, a hard-coded floor rather than a mirror of the server's own configured minimum) before the
-  request is sent; a rejection from the server surfaces through `ApiError.detail`.
+  `frontend/src/api/auth.schemas.ts`'s `displayNameField`, `emailField` and `newPasswordField(policy)` (configured
+  Unicode scalar-value bounds from setup status) before the request is sent; a rejection from the server surfaces
+  through `ApiError.detail`.
 
 ## Interfaces and dependencies
 
@@ -144,8 +140,8 @@ decision on the local-password side.
 - `password_policy::enforce_from_config(config, password, user_inputs)` is the interface every other credential-setting
   handler calls: `routes/users/mod.rs`'s `create_user`, `admin_reset_password` and `change_own_password` (each through a
   local `enforce_password_policy` wrapper that maps `PolicyError` to `AppError::Validation`), and `routes/auth.rs`'s
-  `reset_password`. Each caller supplies its own `user_inputs` (typically the target's email and display name) so zxcvbn
-  penalises a password that echoes them.
+  `reset_password` and `setup`, plus the environment/CLI bootstrap helper. Each caller supplies its own `user_inputs`
+  (typically the target's email and display name) so zxcvbn penalises a password that echoes them.
 - The HIBP Pwned Passwords range API (`https://api.pwnedpasswords.com/range`, the only supported endpoint) is queried
   with only a 5-character SHA-1 prefix of the candidate password, and with an `Add-Padding` header so the response size
   does not itself reveal whether the prefix had real hits. The request runs against the shared client's own 10-second
@@ -158,15 +154,15 @@ decision on the local-password side.
 
 ## Data and state
 
-- **`local_credentials.password_hash`.** One row per `user_id`; an Argon2id PHC string; never serialised, never logged,
-  and the table is granted to `reverie_app` only (no `reverie_readonly` grant, matching `device_tokens`). It has three
-  writer functions across four subjects: `user::create_first_admin` (first-run bootstrap) and `user::create_local`
-  (`register`, in this Design; `create_user`, in the account administration subject) both insert the first value
-  directly; `local_credentials::set_password` (in this Design's model) writes for `admin_reset_password` and
-  `change_own_password` (the account administration subject) and for `reset_password` (the account recovery subject). As
-  the Structure section describes, only `change_own_password` requires an existing row first; `admin_reset_password` and
-  `reset_password` each write a first credential onto an OIDC-only account exactly as the two `create_*` functions do.
-  No writer here reads the row back to compare against the incoming value; every write is unconditional.
+- **`local_credentials.password_hash`.** One Argon2id PHC per user, never serialised or logged; only the application
+  role can access it. `user::create_first_admin` inserts for API setup, CLI bootstrap and environment seed.
+  `user::create_local` inserts for registration and administrator creation. `local_credentials::set_password` upserts
+  for administrator reset and PIN recovery, including a first credential for an OIDC-only account.
+  `replace_verified_password` updates for self-service change only when the stored hash still matches the verified hash.
+  Existing-account writers lock the user with `FOR NO KEY UPDATE` before touching credentials; recovery then consumes
+  its PIN before setting the password. The non-key lock permits PIN issuance's foreign-key key-share lock. A successful
+  change increments `session_version` in the same transaction. A stale self-service write returns 422 without changing
+  the credential or session version. Policy checks and hashing run before any locked transaction.
 - **`local_login_throttle`.** Keyed on `email_lower`; a row exists only once a failure has been recorded for that key,
   and `reset` deletes it outright rather than zeroing a counter. `record_failure` runs only for a failed `local_login`
   attempt whose email is not already inside an active backoff window: `local_login`'s failed-attempt branch checks
@@ -179,11 +175,18 @@ decision on the local-password side.
   from `login_rate_per_min` (validated `>= 1` before `build_login_limiter` is called); it holds no database row, so a
   process restart clears every key's accrued state, unlike `local_login_throttle`, which survives one.
 - **Configuration.** `login_rate_per_min` (default 10/min), `login_throttle_base_secs` (default 2) and
-  `login_throttle_cap_secs` (default 900) shape the two throttles; `password_min_length` (default 8, validated to at
-  least 8), `password_max_length` (default 256, validated to at least 64), `password_min_zxcvbn_score` (default 2),
+  `login_throttle_cap_secs` (default 900) shape the two throttles; `password_min_length` (default 15, validated to at
+  least 15), `password_max_length` (default 256, validated to at least 64), `password_min_zxcvbn_score` (default 2),
   `password_breach_check_enabled` (default `true`) shape the policy; `self_registration_enabled` (default `false`) gates
   `register`; `trusted_client_ip_header` (default unset) opts a deployment into trusting a forwarded-for header. None of
   these reload at runtime; each is read once from `Config` at the point of use.
+
+`GET /auth/setup/status` exposes the configured minimum and maximum alongside provider/bootstrap state.
+`usePasswordPolicy` shares the setup-status query key with the setup and sign-in screens. Setup, registration, recovery,
+self-service change and administrator create/reset forms count Unicode scalar values and show those bounds. They disable
+password submission while policy loads or fails, and show a reload instruction on failure. Request-body schemas validate
+presence and format; the server always enforces strength and breach policy. Login and current-password verification
+accept existing credentials independently of new-password policy, including passwords shorter than 15.
 
 ## Runtime behaviour
 
@@ -307,11 +310,9 @@ role value supplied in the request body is silently ignored rather than causing 
 `create_local` with `Role::Adult` as a literal argument, so privilege escalation through this path would require a
 source change to that literal, not a crafted request body.
 
-`enforce` is the strength-and-breach gate for five callers (registration, admin create, admin reset, self-service
-change, PIN reset). Three further paths bypass it and check only the configured length floor: the HTTP `setup` handler's
-own inline check, and the CLI bootstrap subcommand and the server's own startup environment seed, both of which call the
-same `seed_admin_if_configured` function and its identical length-only check. The first, highest-privilege account on an
-instance is consequently the one local credential that `enforce`'s zxcvbn and breach-check legs never screen.
+`enforce` screens every new local credential, including the first administrator created through HTTP setup, CLI
+bootstrap or the startup environment seed. Policy rejection precedes hashing and credential mutation; existing
+credentials remain usable without a forced reset.
 
 CodeGuard deviation 5 in `docs/security/codeguard/README.md` records that Reverie ships no first-party MFA and that the
 local password path is single-factor, listing Argon2id hashing, the two rate-limiting mechanisms and constant-work
