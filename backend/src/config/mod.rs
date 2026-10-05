@@ -333,10 +333,11 @@ pub struct Config {
     /// whole lifetime, so it is an opt-in escape hatch only. Requires
     /// [`Self::migration_database_url`] to be set.
     pub auto_migrate: bool,
-    /// Ingestion-pipeline DSN (`DATABASE_URL_INGESTION`); falls back to
-    /// `database_url` when unset. Connections run as
-    /// `reverie_ingestion` against the `*_ingestion_full_access` RLS
-    /// policies.
+    /// Ingestion-pipeline DSN (`DATABASE_URL_INGESTION`), required for normal
+    /// server startup; missing, empty or whitespace-only values refuse startup.
+    /// Use the dedicated `reverie_ingestion` role for the
+    /// `*_ingestion_full_access` RLS policies. One-shot administrative commands
+    /// do not require this credential.
     pub ingestion_database_url: String,
     /// Accepted ingestion formats (`REVERIE_ACCEPTED_FORMATS`, comma-separated;
     /// default `epub`). Seeds settings once; saved values win. An empty list suspends acquisition.
@@ -376,13 +377,6 @@ pub struct Config {
     /// the outbound `User-Agent` to claim `OpenLibrary`'s identified
     /// 3 req/s rate-limit tier (vs. 1 req/s anonymous).
     pub operator_contact: Option<String>,
-    /// `true` when `DATABASE_URL_INGESTION` was blank and the ingestion DSN
-    /// fell back to `database_url`. Not env-sourced; [`crate::run`] warns at
-    /// startup because the application role cannot insert manifestations,
-    /// so every scan fails at commit.
-    #[serde(skip)]
-    #[schemars(skip)]
-    pub ingestion_dsn_defaulted: bool,
 }
 
 /// Configuration-load failure mode. Surfaces missing required vars and
@@ -437,6 +431,22 @@ impl Config {
         Self::from_figment(&Figment::from(EnvProvider::from_process_env()))
     }
 
+    /// Check the credentials required by normal server startup.
+    ///
+    /// One-shot administrative commands use the shared loader without this check.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ConfigError::MissingVar`] when `DATABASE_URL_INGESTION` is
+    /// absent, empty or whitespace-only.
+    pub fn validate_server(&self) -> Result<(), ConfigError> {
+        // THREAT: Substituting application credentials removes ingestion's RLS access.
+        if self.ingestion_database_url.trim().is_empty() {
+            return Err(ConfigError::MissingVar("DATABASE_URL_INGESTION".into()));
+        }
+        Ok(())
+    }
+
     /// Load configuration from a prepared [`Figment`].
     ///
     /// The pipeline is: figment `extract` (typed deserialization, with
@@ -453,8 +463,6 @@ impl Config {
     ///    back to `None` so the long-lived server never carries the migrator
     ///    credential; when on, an absent/blank DSN is a `MissingVar`. See
     ///    `docs/adr/0014-migration-model-hybrid-entrypoints-and-a-least-privilege-role.md`.
-    /// 2. **Ingestion-DSN fallback**: a blank `ingestion_database_url` clones
-    ///    `database_url` (role-scoped DSN, defaults to the app DSN).
     /// 3. **Required-field check**: a blank required field (`DATABASE_URL`,
     ///    `OIDC_*`) is a `MissingVar` — distinct from `Invalid` so the
     ///    operator message says "set the var", not "fix the value".
@@ -480,15 +488,6 @@ impl Config {
             }
         } else {
             cfg.migration_database_url = None;
-        }
-
-        // Gate 2 — ingestion DSN falls back to the app DSN when blank. Record
-        // the fallback so `run()` can warn once tracing is live: this collapses
-        // the reverie_ingestion/reverie_app role separation and must be
-        // auditable, not silent.
-        if cfg.ingestion_database_url.trim().is_empty() {
-            cfg.ingestion_database_url = cfg.database_url.clone();
-            cfg.ingestion_dsn_defaulted = true;
         }
 
         // Gate 3 — required fields blank => MissingVar (NOT Invalid). Name and
@@ -802,7 +801,6 @@ impl Default for Config {
             googlebooks_api_key: None,
             hardcover_api_token: None,
             operator_contact: None,
-            ingestion_dsn_defaulted: false,
         }
     }
 }
@@ -912,8 +910,7 @@ mod tests {
     /// Guards the [`ENV_MAP`] consistency invariant: an example var
     /// whose name diverges from the loader either hard-fails startup with a
     /// misleading `MissingVar` (loud) or is silently ignored while a fallback
-    /// takes over (silent — e.g. ingestion DSN falling back to the app role,
-    /// collapsing the documented role-separation threat model). The example
+    /// takes over. The example
     /// file is an intentional *subset* of all knobs, so the check is one-way:
     /// example keys ⊆ [`ENV_MAP`] keys, not the reverse.
     #[test]
@@ -954,11 +951,7 @@ mod tests {
         // unset (off), so the DSN is intentionally NOT carried into Config.
         assert_eq!(config.migration_database_url, None);
         assert!(!config.auto_migrate);
-        // Falls back to DATABASE_URL when DATABASE_URL_INGESTION is unset
-        assert_eq!(
-            config.ingestion_database_url,
-            "postgres://test@localhost/reverie_dev"
-        );
+        assert!(config.ingestion_database_url.is_empty());
         assert_eq!(config.accepted_formats, vec![ManifestationFormat::Epub]);
         assert!(config.cleanup_imported);
         assert!(!config.cleanup_duplicates);
@@ -1726,26 +1719,41 @@ mod tests {
     }
 
     #[test]
-    fn ingestion_dsn_blank_flags_defaulted_fallback() {
-        // BASE_VARS omits DATABASE_URL_INGESTION → Gate 2 falls back to the app
-        // DSN and flags it so `run()` can warn about the role-separation collapse.
-        let cfg = cfg_from(BASE_VARS).unwrap();
-        assert!(cfg.ingestion_dsn_defaulted);
-        assert_eq!(cfg.ingestion_database_url, cfg.database_url);
+    fn ingestion_dsn_blank_is_preserved_for_admin_configuration() {
+        for vars in [
+            BASE_VARS
+                .iter()
+                .map(|(k, v)| (k.to_string(), v.to_string()))
+                .collect(),
+            with_overrides(&[("DATABASE_URL_INGESTION", "")]),
+            with_overrides(&[("DATABASE_URL_INGESTION", " \t\n")]),
+        ] {
+            let cfg = cfg_from_owned(&vars).unwrap();
+            assert!(cfg.ingestion_database_url.trim().is_empty());
+            assert_ne!(cfg.ingestion_database_url, cfg.database_url);
+            let error = cfg.validate_server().unwrap_err();
+            assert!(
+                matches!(&error, ConfigError::MissingVar(var) if var == "DATABASE_URL_INGESTION")
+            );
+            assert_eq!(
+                error.to_string(),
+                "missing required environment variable: DATABASE_URL_INGESTION"
+            );
+        }
     }
 
     #[test]
-    fn ingestion_dsn_explicit_clears_defaulted_flag() {
+    fn ingestion_dsn_configured_role_passes_server_validation() {
         let vars = with_overrides(&[(
             "DATABASE_URL_INGESTION",
             "postgres://reverie_ingestion@localhost/reverie_dev",
         )]);
         let cfg = cfg_from_owned(&vars).unwrap();
-        assert!(!cfg.ingestion_dsn_defaulted);
         assert_eq!(
             cfg.ingestion_database_url,
             "postgres://reverie_ingestion@localhost/reverie_dev"
         );
+        cfg.validate_server().unwrap();
     }
 
     #[test]

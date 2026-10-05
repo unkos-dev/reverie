@@ -231,6 +231,9 @@ fn resolve_log_filter(configured_level: &str) -> (EnvFilter, Option<String>) {
 pub async fn run() -> anyhow::Result<()> {
     let mut config =
         Config::from_env().map_err(|e| anyhow::anyhow!("invalid configuration: {e}"))?;
+    config
+        .validate_server()
+        .map_err(|e| anyhow::anyhow!("invalid configuration: {e}"))?;
 
     // Finalise CSP headers once at startup. API CSP has no dynamic inputs
     // besides the optional report endpoint. HTML CSP consumes the script-src
@@ -280,14 +283,6 @@ pub async fn run() -> anyhow::Result<()> {
         tracing::warn!(
             "REVERIE_OPERATOR_CONTACT unset — OpenLibrary requests will run at the 1 req/s anonymous tier. \
              Set REVERIE_OPERATOR_CONTACT=<email-or-url> to unlock the identified 3 req/s tier."
-        );
-    }
-
-    if config.ingestion_dsn_defaulted {
-        tracing::warn!(
-            "DATABASE_URL_INGESTION unset: the ingestion pipeline runs as the application role, \
-             which row-level security refuses to insert manifestations, so every scan will fail \
-             at commit. Set DATABASE_URL_INGESTION to the reverie_ingestion DSN."
         );
     }
 

@@ -127,12 +127,12 @@ fn scalar_label(base: &str, node: &Value) -> String {
 }
 
 /// `Yes` for unconditionally-required vars, `Conditional` for the migration DSN
-/// and the OIDC block (required together only when OIDC is configured),
+/// and ingestion DSN (normal server only), and the OIDC block (when configured),
 /// `No` otherwise.
 fn required_label(var: &str) -> &'static str {
     if REQUIRED_FIELDS.iter().any(|(name, _)| *name == var) {
         "Yes"
-    } else if var == "DATABASE_URL_MIGRATION"
+    } else if matches!(var, "DATABASE_URL_MIGRATION" | "DATABASE_URL_INGESTION")
         || super::OIDC_FIELDS.iter().any(|(name, _)| *name == var)
     {
         "Conditional"

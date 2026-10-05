@@ -66,7 +66,7 @@
       "default": null
     },
     "ingestion_database_url": {
-      "description": "Ingestion-pipeline DSN (`DATABASE_URL_INGESTION`); falls back to\n`database_url` when unset. Connections run as\n`reverie_ingestion` against the `*_ingestion_full_access` RLS\npolicies.",
+      "description": "Ingestion-pipeline DSN (`DATABASE_URL_INGESTION`), required for normal\nserver startup; missing, empty or whitespace-only values refuse startup.\nUse the dedicated `reverie_ingestion` role for the\n`*_ingestion_full_access` RLS policies. One-shot administrative commands\ndo not require this credential.",
       "type": "string",
       "default": ""
     },
