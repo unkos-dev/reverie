@@ -67,8 +67,20 @@ echo '{"query": "SELECT 1", "hash": "deadbeef"}' >"${fixture}/backend/.sqlx/quer
 # branch of the container-health, app-login, and mise-pin checks is
 # reachable without a real daemon.
 link_real() { # <dir> <name>
-  local dir="$1" name="$2"
-  ln -s "$(command -v "${name}")" "${dir}/${name}"
+  local dir="$1" name="$2" entry search_path="" executable
+  local shims="${MISE_DATA_DIR:-${XDG_DATA_HOME:-${HOME}/.local/share}/mise}/shims"
+  local -a entries
+  IFS=: read -r -a entries <<< "${PATH}"
+  for entry in "${entries[@]}"; do
+    if [ "${entry%/}" != "${shims}" ]; then
+      search_path+="${entry}:"
+    fi
+  done
+  if [ -z "${search_path}" ] || ! executable="$(PATH="${search_path%:}" command -v "${name}")"; then
+    printf 'Cannot resolve real executable: %s\n' "${name}" >&2
+    return 1
+  fi
+  ln -s "${executable}" "${dir}/${name}"
 }
 
 noop_stub() { # <dir> <name>
@@ -204,6 +216,29 @@ expect_not_contains() { # <name> <needle>
     echo "ok   ${name}"
   fi
 }
+
+resolver_fixture="${tmp}/resolver"
+mkdir -p "${resolver_fixture}/mise/shims" "${resolver_fixture}/real" "${resolver_fixture}/linked" "${resolver_fixture}/missing"
+printf '#!/usr/bin/env bash\nexit 99\n' > "${resolver_fixture}/mise/shims/probe"
+printf '#!/usr/bin/env bash\nexit 0\n' > "${resolver_fixture}/real/probe"
+chmod +x "${resolver_fixture}/mise/shims/probe" "${resolver_fixture}/real/probe"
+if MISE_DATA_DIR="${resolver_fixture}/mise" PATH="${resolver_fixture}/mise/shims:${resolver_fixture}/real:${PATH}" \
+  link_real "${resolver_fixture}/linked" probe && "${resolver_fixture}/linked/probe"; then
+  echo 'ok   real-command resolver skips a leading mise shim'
+else
+  echo 'FAIL real-command resolver skips a leading mise shim'
+  fail=1
+fi
+if MISE_DATA_DIR="${resolver_fixture}/mise" PATH="${resolver_fixture}/mise/shims" \
+  link_real "${resolver_fixture}/missing" probe 2> "${resolver_fixture}/missing.log"; then
+  echo 'FAIL real-command resolver rejects a shim with no real executable'
+  fail=1
+elif [ ! -e "${resolver_fixture}/missing/probe" ] && grep -qF 'Cannot resolve real executable: probe' "${resolver_fixture}/missing.log"; then
+  echo 'ok   real-command resolver rejects a shim with no real executable'
+else
+  echo 'FAIL real-command resolver reports the missing executable'
+  fail=1
+fi
 
 # --- fully-stubbed happy path: every check passes, exit 0 ---
 
