@@ -55,7 +55,8 @@ fn source_error(error: LibraryFileError) -> CoverError {
 /// Extract, resize and publish one cover in blocking work.
 ///
 /// # Errors
-/// Returns extraction, rasterisation, encoding or cache publication errors.
+/// Returns extraction, rasterisation, encoding or cache publication errors; an archive rejection
+/// is logged with its manifestation identifier.
 fn generate_into_cache(
     cache: &CoverCache,
     manifestation_id: Uuid,
@@ -63,7 +64,15 @@ fn generate_into_cache(
     epub_file: std::fs::File,
     size: CoverSize,
 ) -> Result<CoverArtifact, CoverError> {
-    let (raw_bytes, in_fmt) = extract::extract_cover_bytes(epub_file)?;
+    let (raw_bytes, in_fmt) = extract::extract_cover_bytes(epub_file).inspect_err(|error| {
+        if let CoverError::ArchiveRejected(issues) = error {
+            tracing::warn!(
+                %manifestation_id,
+                %issues,
+                "cover extraction: archive rejected by Layer 1 validation"
+            );
+        }
+    })?;
     let (resized, out_fmt) = resize::resize_cover(&raw_bytes, in_fmt, size)?;
     cache.publish(
         manifestation_id,
@@ -188,6 +197,86 @@ pub fn spawn_warm_thumb(
 mod tests {
     use super::*;
     use sqlx::PgPool;
+
+    #[test]
+    fn cache_generation_logs_rejected_archive_once_with_manifestation_id() {
+        use std::sync::Arc;
+
+        #[derive(Clone)]
+        struct Capture(Arc<std::sync::Mutex<Vec<u8>>>);
+
+        impl std::io::Write for Capture {
+            fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+                self.0.lock().unwrap().extend_from_slice(bytes);
+                Ok(bytes.len())
+            }
+
+            fn flush(&mut self) -> std::io::Result<()> {
+                Ok(())
+            }
+        }
+
+        let output = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let writer = Capture(Arc::clone(&output));
+        let subscriber = tracing_subscriber::fmt()
+            .without_time()
+            .with_ansi(false)
+            .with_writer(move || writer.clone())
+            .finish();
+        let tmp = tempfile::tempdir().unwrap();
+        let library_id = LibraryId::from_uuid(Uuid::new_v4());
+        let root = tmp.path().to_str().unwrap().parse().unwrap();
+        let files = crate::test_support::test_library_files_at(&root, library_id);
+        let cache = CoverCache::new(files.library(library_id).unwrap()).unwrap();
+        let id = Uuid::from_u128(0xfeed_face);
+        let valid_hash = "0123456789abcdef0123456789abcdef";
+        let rejected_hash = "fedcba9876543210fedcba9876543210";
+        let mut bytes =
+            crate::test_support::db::make_minimal_epub_with_cover_tagged("rejection-log");
+        tracing::subscriber::with_default(subscriber, || {
+            let path = write_epub(tmp.path(), &bytes);
+            generate_into_cache(
+                &cache,
+                id,
+                valid_hash,
+                std::fs::File::open(path).unwrap(),
+                CoverSize::Thumb,
+            )
+            .unwrap();
+            assert!(
+                cache
+                    .open(id, valid_hash, CoverSize::Thumb)
+                    .unwrap()
+                    .is_some()
+            );
+            bytes.push(0xAA);
+            let path = write_epub(tmp.path(), &bytes);
+            assert!(matches!(
+                extract::extract_cover_bytes(std::fs::File::open(&path).unwrap()),
+                Err(CoverError::ArchiveRejected(_))
+            ));
+            assert!(matches!(
+                generate_into_cache(
+                    &cache,
+                    id,
+                    rejected_hash,
+                    std::fs::File::open(path).unwrap(),
+                    CoverSize::Thumb,
+                ),
+                Err(CoverError::ArchiveRejected(_))
+            ));
+            assert!(
+                cache
+                    .open(id, rejected_hash, CoverSize::Thumb)
+                    .unwrap()
+                    .is_none()
+            );
+        });
+        let log = String::from_utf8(output.lock().unwrap().clone()).unwrap();
+        assert_eq!(log.matches("WARN").count(), 1, "{log}");
+        assert!(log.contains(&format!("manifestation_id={id}")), "{log}");
+        assert!(log.contains("CorruptEntry"), "{log}");
+    }
 
     /// Write generated EPUB bytes into `dir` and return the path as a string.
     /// Tests generate EPUBs in-memory (the committed-fixture tree is not

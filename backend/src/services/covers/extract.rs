@@ -41,14 +41,8 @@ pub fn extract_cover_bytes(file: File) -> Result<(Vec<u8>, ImageFormat), CoverEr
         other => CoverError::Decode(other.to_string()),
     })?;
 
-    // The rejection is logged here at warn because the file is already in
-    // the library and nothing else on this call path would otherwise see it.
     if issues.iter().any(|i| i.severity == Severity::Irrecoverable) {
         let kinds: Vec<_> = issues.iter().map(|i| &i.kind).collect();
-        tracing::warn!(
-            issues = ?kinds,
-            "cover extraction: archive rejected by Layer 1 validation"
-        );
         return Err(CoverError::ArchiveRejected(format!("{kinds:?}")));
     }
 

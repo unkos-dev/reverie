@@ -403,7 +403,7 @@ async fn select_destination(
     if owned_candidate(&snap.file_path, &candidate) {
         return Ok(None);
     }
-    for suffix in 1.. {
+    for suffix in 1..=999 {
         let path = path_template::collision_candidate(&candidate, suffix)?;
         let location = LibraryLocation {
             library_id: snap.library_id,
@@ -1413,7 +1413,57 @@ mod tests {
     }
 
     #[sqlx::test(migrations = "./migrations")]
-    async fn candidate_publication_regression_preserves_source_and_row(pool: PgPool) {
+    async fn relocation_collision_selects_999_then_reports_exhaustion(pool: PgPool) {
+        let wb = writeback_pool_for(&pool).await;
+        let (dir, files, job, mut snap) = recovery_fixture(&pool, "metadata").await;
+        let intent = snap.relocation.as_ref().unwrap().clone();
+        finalise_location(&wb, snap.manifestation_id, &intent, &intent.source)
+            .await
+            .unwrap();
+        snap = load_snapshot(&wb, job).await.unwrap();
+        snap.title = Some("Title".into());
+        snap.primary_author = Some("Author".into());
+        let candidate = "Author/Title.epub".parse().unwrap();
+        std::fs::create_dir(dir.path().join("Author")).unwrap();
+        for suffix in 1..999 {
+            let path = path_template::collision_candidate(&candidate, suffix).unwrap();
+            std::fs::write(dir.path().join(path.as_path()), b"foreign bytes").unwrap();
+        }
+        let mut tx = wb.begin().await.unwrap();
+        let selected = select_destination(
+            &mut tx,
+            &snap,
+            &test_config(dir.path()).0,
+            &files,
+            fixture_permit().await,
+        )
+        .await
+        .unwrap()
+        .unwrap();
+        assert_eq!(selected.as_str(), "Author/Title (999).epub");
+        tx.rollback().await.unwrap();
+        std::fs::write(dir.path().join(selected.as_path()), b"foreign bytes").unwrap();
+        let mut tx = wb.begin().await.unwrap();
+        assert!(matches!(
+            select_destination(
+                &mut tx, &snap, &test_config(dir.path()).0, &files, fixture_permit().await,
+            ).await,
+            Err(WritebackError::Persist(message)) if message == "collision suffix exhausted"
+        ));
+        tx.rollback().await.unwrap();
+        assert!(!dir.path().join("Author/Title (1000).epub").exists());
+        assert!(dir.path().join("fixture.epub").exists());
+        for suffix in 1..=999 {
+            let path = path_template::collision_candidate(&candidate, suffix).unwrap();
+            assert_eq!(
+                std::fs::read(dir.path().join(path.as_path())).unwrap(),
+                b"foreign bytes"
+            );
+        }
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn cover_writeback_input_refusal_preserves_source_and_row(pool: PgPool) {
         let app = writeback_pool_for(&pool).await;
         let ing = ingestion_pool_for(&pool).await;
         let mut png = std::io::Cursor::new(Vec::new());
@@ -1439,13 +1489,107 @@ mod tests {
         let result = run_fixture(&app, &test_config(dir.path()).0, job, dir.path()).await;
         assert!(matches!(
             result,
-            Err(WritebackError::Epub(epub::EpubError::CandidateRejected(_)))
+            Err(WritebackError::ValidationRegressed(_))
         ));
         assert_eq!(std::fs::read(&path).unwrap(), original);
         let row = sqlx::query!("SELECT file_path, current_file_hash, ingestion_file_hash FROM manifestations WHERE id = $1", id).fetch_one(&app).await.unwrap();
         assert_eq!(row.file_path, "fixture.epub");
         assert_eq!(row.current_file_hash, hash);
         assert_eq!(row.ingestion_file_hash, hash);
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn cover_writeback_rejects_undecodable_replacement_on_degraded_source(pool: PgPool) {
+        let app = writeback_pool_for(&pool).await;
+        let ing = ingestion_pool_for(&pool).await;
+        let mut png = std::io::Cursor::new(Vec::new());
+        image::DynamicImage::new_rgb8(1, 1)
+            .write_to(&mut png, image::ImageFormat::Png)
+            .unwrap();
+        let (dir, path) = make_fixture_epub_with_cover("Original", &png.into_inner());
+        let handle =
+            epub::zip_layer::validate(std::fs::File::open(&path).unwrap(), &mut Vec::new())
+                .unwrap();
+        let replacements = std::collections::HashMap::from([(
+            "OEBPS/nav.xhtml".to_owned(),
+            b"<html>\xff</html>".to_vec(),
+        )]);
+        let mut degraded = std::io::Cursor::new(Vec::new());
+        epub::repack::with_modifications(
+            &handle,
+            &mut degraded,
+            None,
+            None,
+            &replacements,
+            &[],
+            &epub::repair::RepairPlan::default(),
+        )
+        .unwrap();
+        std::fs::write(&path, degraded.into_inner()).unwrap();
+        let report = epub::validate(std::fs::File::open(&path).unwrap()).unwrap();
+        assert!(report.has_usable_embedded_cover);
+        assert!(
+            report
+                .issues
+                .iter()
+                .any(|issue| matches!(issue.kind, epub::IssueKind::AmbiguousEncoding { .. }))
+        );
+        let original = std::fs::read(&path).unwrap();
+        let hash = initial_hex_sha256(&original);
+        let (_, id) = insert_fixture(&ing, "degraded-cover", path.to_str().unwrap(), &hash).await;
+        sqlx::query!(
+            "UPDATE manifestations SET current_file_hash = $1, has_embedded_cover = $3, file_size_bytes = $4, relocation_source_path = $5, relocation_destination_path = $6 WHERE id = $2",
+            hash,
+            id,
+            true,
+            i64::try_from(original.len()).unwrap(),
+            Option::<&str>::None,
+            Option::<&str>::None,
+        )
+        .execute(&app)
+        .await
+        .unwrap();
+        let pending = dir.path().join("_covers/pending/invalid.png");
+        std::fs::create_dir_all(pending.parent().unwrap()).unwrap();
+        let invalid = b"\x89PNG\r\n\x1a\ninvalid image";
+        std::fs::write(&pending, invalid).unwrap();
+        sqlx::query!(
+            "UPDATE manifestations SET cover_path = $1 WHERE id = $2",
+            "_covers/pending/invalid.png",
+            id
+        )
+        .execute(&ing)
+        .await
+        .unwrap();
+        let job = sqlx::query_scalar!("INSERT INTO writeback_jobs (manifestation_id, reason) VALUES ($1, 'cover') RETURNING id", id).fetch_one(&ing).await.unwrap();
+        let before = sqlx::query_scalar!(
+            "SELECT has_embedded_cover FROM manifestations WHERE id = $1",
+            id
+        )
+        .fetch_one(&app)
+        .await
+        .unwrap();
+        assert_eq!(before, Some(true));
+        assert!(matches!(
+            run_fixture(&app, &test_config(dir.path()).0, job, dir.path()).await,
+            Err(WritebackError::ValidationRegressed(_))
+        ));
+        assert_eq!(std::fs::read(&path).unwrap(), original);
+        assert_eq!(std::fs::read(&pending).unwrap(), invalid);
+        let row = sqlx::query!("SELECT file_path, current_file_hash, ingestion_file_hash FROM manifestations WHERE id = $1", id).fetch_one(&app).await.unwrap();
+        assert_eq!(row.file_path, "fixture.epub");
+        assert_eq!(row.current_file_hash, hash);
+        assert_eq!(row.ingestion_file_hash, hash);
+        assert_eq!(
+            sqlx::query_scalar!(
+                "SELECT has_embedded_cover FROM manifestations WHERE id = $1",
+                id
+            )
+            .fetch_one(&app)
+            .await
+            .unwrap(),
+            before
+        );
     }
 
     #[sqlx::test(migrations = "./migrations")]
@@ -2665,7 +2809,7 @@ mod tests {
     }
 
     /// Build a fixture EPUB that already carries an EPUB 3
-    /// `cover-image` manifest entry + placeholder PNG bytes.  Enables
+    /// `cover-image` manifest entry and the supplied PNG bytes. Enables
     /// the cover-reason writeback to take the *same-media* branch of
     /// `plan_embed` — a binary replacement on the existing manifest
     /// item with no OPF rewrite — so the post-validation doesn't
@@ -2727,23 +2871,17 @@ mod tests {
     /// path through `plan_embed` + sidecar move).
     #[sqlx::test(migrations = "./migrations")]
     async fn run_once_cover_embeds_and_moves_sidecar(pool: PgPool) {
-        // Tiny valid PNG: 1x1 black pixel.  Two variants so we can tell
-        // the original from the replacement when inspecting the ZIP.
         const PNG_ORIGINAL: &[u8] = &[
-            0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x0D, 0x49, 0x48,
-            0x44, 0x52, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x06, 0x00, 0x00,
-            0x00, 0x1F, 0x15, 0xC4, 0x89, 0x00, 0x00, 0x00, 0x0D, 0x49, 0x44, 0x41, 0x54, 0x78,
-            0x9C, 0x62, 0x00, 0x01, 0x00, 0x00, 0x05, 0x00, 0x01, 0x0D, 0x0A, 0x2D, 0xB4, 0x00,
-            0x00, 0x00, 0x00, 0x49, 0x45, 0x4E, 0x44, 0xAE, 0x42, 0x60, 0x82,
+            137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 13, 73, 72, 68, 82, 0, 0, 0, 1, 0, 0, 0, 1,
+            8, 2, 0, 0, 0, 144, 119, 83, 222, 0, 0, 0, 15, 73, 68, 65, 84, 120, 1, 1, 4, 0, 251,
+            255, 0, 10, 20, 30, 0, 104, 0, 61, 232, 12, 187, 131, 0, 0, 0, 0, 73, 69, 78, 68, 174,
+            66, 96, 130,
         ];
-        // Same minimal PNG structure but with a sentinel in the IDAT
-        // payload so we can prove the bytes were swapped.
         const PNG_REPLACEMENT: &[u8] = &[
-            0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x0D, 0x49, 0x48,
-            0x44, 0x52, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x06, 0x00, 0x00,
-            0x00, 0x1F, 0x15, 0xC4, 0x89, 0x00, 0x00, 0x00, 0x0D, 0x49, 0x44, 0x41, 0x54, 0x78,
-            0x9C, 0x62, 0xFF, 0xFF, 0xFF, 0x7F, 0x00, 0x05, 0xFE, 0x02, 0xFE, 0xDC, 0xCC, 0x59,
-            0xE7, 0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4E, 0x44, 0xAE, 0x42, 0x60, 0x82,
+            137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 13, 73, 72, 68, 82, 0, 0, 0, 1, 0, 0, 0, 1,
+            8, 2, 0, 0, 0, 144, 119, 83, 222, 0, 0, 0, 15, 73, 68, 65, 84, 120, 1, 1, 4, 0, 251,
+            255, 0, 200, 100, 50, 3, 86, 1, 95, 58, 122, 172, 164, 0, 0, 0, 0, 73, 69, 78, 68, 174,
+            66, 96, 130,
         ];
 
         let app_pool = writeback_pool_for(&pool).await;
@@ -2860,11 +2998,6 @@ mod tests {
     /// written, not discarded.
     #[sqlx::test(migrations = "./migrations")]
     async fn run_once_cover_writeback_updates_has_embedded_cover_flag(pool: PgPool) {
-        // Real `image`-crate-encoded 1x1 PNG images (unlike the placeholder bytes
-        // in `make_fixture_epub_with_cover`'s sibling test above, which are
-        // deliberately undecodable and never exercise Layer 5's decode
-        // check). This test needs a cover that genuinely decodes so
-        // `has_usable_embedded_cover` comes back `true` post-writeback.
         const PNG_ORIGINAL: &[u8] = &[
             137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 13, 73, 72, 68, 82, 0, 0, 0, 1, 0, 0, 0, 1,
             8, 2, 0, 0, 0, 144, 119, 83, 222, 0, 0, 0, 15, 73, 68, 65, 84, 120, 1, 1, 4, 0, 251,
