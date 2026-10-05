@@ -323,7 +323,7 @@ pub async fn run() -> anyhow::Result<()> {
 
     // OIDC is optional: discover the client only when configured.
     // A local-only instance carries no OIDC runtime and the initiate/callback
-    // handlers 404. Gate 4 has already guaranteed at least one provider is usable.
+    // handlers 404. Gate 3 has already guaranteed at least one provider is usable.
     let oidc = if config.oidc_configured() {
         let transport = oidc_transport
             .as_ref()

@@ -100,17 +100,110 @@ fn ingestion_startup_schema_printing_requires_no_credentials() {
     );
 }
 
-#[sqlx::test(migrations = "./migrations")]
-async fn ingestion_startup_configured_roles_serve_ready(pool: sqlx::PgPool) {
-    use sqlx::ConnectOptions as _;
-    use std::process::Stdio;
+fn redact_startup_output(output: &str, credentials: &[&str]) -> String {
+    credentials
+        .iter()
+        .filter(|value| !value.is_empty())
+        .fold(output.to_owned(), |text, value| {
+            text.replace(value, "[redacted]")
+        })
+}
+
+#[test]
+fn ingestion_startup_diagnostics_redact_credentials() {
+    let output = "connection postgres://role:private-marker@localhost/db failed: private-marker";
+    assert_eq!(
+        redact_startup_output(
+            output,
+            &[
+                "postgres://role:private-marker@localhost/db",
+                "private-marker",
+                ""
+            ]
+        ),
+        "connection [redacted] failed: [redacted]"
+    );
+    assert_eq!(
+        redact_startup_output("server exited", &[""]),
+        "server exited"
+    );
+}
+
+async fn wait_for_readiness(
+    child: &mut tokio::process::Child,
+    log_path: &std::path::Path,
+) -> std::io::Result<()> {
     use std::time::Duration;
     use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
 
+    let mut port = None;
+    loop {
+        if let Some(status) = child.try_wait()? {
+            return Err(std::io::Error::other(format!(
+                "server exited during startup: {status}"
+            )));
+        }
+        if port.is_none() {
+            let output = std::fs::read_to_string(log_path)?;
+            for line in output.lines() {
+                if let Some((_, address)) = line.split_once("listening on ") {
+                    let address =
+                        address
+                            .trim()
+                            .parse::<std::net::SocketAddr>()
+                            .map_err(|error| {
+                                std::io::Error::new(std::io::ErrorKind::InvalidData, error)
+                            })?;
+                    port = Some(address.port());
+                    break;
+                }
+            }
+        }
+        if let Some(port) = port {
+            let mut stream = tokio::net::TcpStream::connect(("127.0.0.1", port)).await?;
+            stream.write_all(b"GET /health/ready HTTP/1.1\r\nHost: localhost\r\nUser-Agent: Reverie-startup-test\r\nConnection: close\r\n\r\n").await?;
+            let mut status = [0; b"HTTP/1.1 200 ".len()];
+            stream.read_exact(&mut status).await?;
+            if &status == b"HTTP/1.1 200 " {
+                return Ok(());
+            }
+        }
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+}
+
+#[tokio::test]
+async fn ingestion_startup_readiness_reports_early_exit() {
+    let log = tempfile::NamedTempFile::new().unwrap();
+    let mut child = tokio::process::Command::new(env!("CARGO_BIN_EXE_reverie-api"))
+        .env_clear()
+        .env("DATABASE_URL", "invalid-app-dsn-private-marker")
+        .env("REVERIE_OPDS_ENABLED", "false")
+        .stdout(log.as_file().try_clone().unwrap())
+        .stderr(log.as_file().try_clone().unwrap())
+        .kill_on_drop(true)
+        .spawn()
+        .unwrap();
+    let result = tokio::time::timeout(
+        std::time::Duration::from_secs(1),
+        wait_for_readiness(&mut child, log.path()),
+    )
+    .await;
+    assert!(matches!(result, Ok(Err(_))), "{result:?}");
+    assert!(!child.wait().await.unwrap().success());
+    let output = std::fs::read_to_string(log.path()).unwrap();
+    assert!(output.contains("missing required environment variable: DATABASE_URL_INGESTION"));
+    assert!(!output.contains("invalid-app-dsn-private-marker"));
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn ingestion_startup_configured_roles_serve_ready(pool: sqlx::PgPool) {
+    use sqlx::ConnectOptions as _;
+    use std::time::Duration;
+
     let library = tempfile::tempdir().unwrap();
     let ingestion = tempfile::tempdir().unwrap();
-    let socket = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
-    let port = socket.local_addr().unwrap().port();
+    let log = tempfile::NamedTempFile::new().unwrap();
     let app_password =
         std::env::var("REVERIE_APP_PASSWORD").unwrap_or_else(|_| "reverie_app".into());
     let ingestion_password =
@@ -123,44 +216,42 @@ async fn ingestion_startup_configured_roles_serve_ready(pool: sqlx::PgPool) {
         .clone()
         .username("reverie_ingestion")
         .password(&ingestion_password);
-    drop(socket);
+    let app_url = app_options.to_url_lossy();
+    let ingestion_url = ingestion_options.to_url_lossy();
     let mut child = tokio::process::Command::new(env!("CARGO_BIN_EXE_reverie-api"))
         .env_clear()
-        .env("DATABASE_URL", app_options.to_url_lossy().as_str())
-        .env(
-            "DATABASE_URL_INGESTION",
-            ingestion_options.to_url_lossy().as_str(),
-        )
-        .env("REVERIE_PORT", port.to_string())
+        .env("DATABASE_URL", app_url.as_str())
+        .env("DATABASE_URL_INGESTION", ingestion_url.as_str())
+        .env("REVERIE_PORT", "0")
         .env("REVERIE_OPDS_ENABLED", "false")
         .env("REVERIE_LIBRARY_PATH", library.path())
         .env("REVERIE_INGESTION_PATH", ingestion.path())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
+        .stdout(log.as_file().try_clone().unwrap())
+        .stderr(log.as_file().try_clone().unwrap())
         .kill_on_drop(true)
         .spawn()
         .unwrap();
-    tokio::time::timeout(Duration::from_secs(10), async {
-        loop {
-            assert!(
-                child.try_wait().unwrap().is_none(),
-                "server exited during startup"
-            );
-            if let Ok(mut stream) = tokio::net::TcpStream::connect(("127.0.0.1", port)).await {
-                stream
-                    .write_all(b"GET /health/ready HTTP/1.1\r\nHost: localhost\r\nUser-Agent: Reverie-startup-test\r\nConnection: close\r\n\r\n")
-                    .await
-                    .unwrap();
-                let mut status = [0; b"HTTP/1.1 200 ".len()];
-                stream.read_exact(&mut status).await.unwrap();
-                if &status == b"HTTP/1.1 200 " {
-                    break;
-                }
-            }
-            tokio::time::sleep(Duration::from_millis(20)).await;
-        }
-    })
-    .await
-    .expect("configured runtime roles must reach readiness");
-    child.kill().await.unwrap();
+    let result = tokio::time::timeout(
+        Duration::from_secs(10),
+        wait_for_readiness(&mut child, log.path()),
+    )
+    .await;
+    if child.try_wait().unwrap().is_none() {
+        child.kill().await.unwrap();
+    }
+    let status = child.wait().await.unwrap();
+    let output = std::fs::read_to_string(log.path()).unwrap();
+    let diagnostics = redact_startup_output(
+        &output,
+        &[
+            app_url.as_str(),
+            ingestion_url.as_str(),
+            &app_password,
+            &ingestion_password,
+        ],
+    );
+    assert!(
+        matches!(result, Ok(Ok(()))),
+        "readiness failed: {result:?}; child status: {status}; output:\n{diagnostics}"
+    );
 }

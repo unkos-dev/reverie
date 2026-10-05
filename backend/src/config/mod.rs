@@ -50,14 +50,14 @@ use validator::{Validate, ValidationErrors, ValidationErrorsKind};
 type RequiredFieldAccessor = fn(&Config) -> &str;
 
 /// Environment variables that must be present and non-blank for the server to
-/// start (the Gate 3 check in [`Config::from_figment`]). Single source of truth
+/// start (the Gate 2 check in [`Config::from_figment`]). Single source of truth
 /// shared with the generated config reference ([`reference_markdown`]) so the
 /// "Required" column can never drift from the startup contract — the schema's
 /// own `required` array is empty because every config struct is
 /// `#[serde(default)]`, so it cannot serve as that source.
 ///
 /// Each entry pairs the env-var name (the reference's "Required" column reads
-/// these) with an accessor for the resolved field value (Gate 3 rejects a blank
+/// these) with an accessor for the resolved field value (Gate 2 rejects a blank
 /// one). Pairing name and accessor in one entry makes them structurally
 /// impossible to misalign — adding a required variable is a single edit here,
 /// with no parallel list to keep in lockstep.
@@ -68,12 +68,18 @@ type RequiredFieldAccessor = fn(&Config) -> &str;
 pub(crate) const REQUIRED_FIELDS: &[(&str, RequiredFieldAccessor)] =
     &[("DATABASE_URL", |c| c.database_url.as_str())];
 
+/// Fields required by normal server startup, shared with the configuration reference.
+pub(crate) const SERVER_REQUIRED_FIELDS: &[(&str, RequiredFieldAccessor)] =
+    &[("DATABASE_URL_INGESTION", |c| {
+        c.ingestion_database_url.as_str()
+    })];
+
 /// OIDC fields that become required *together* once OIDC is configured (the
 /// issuer URL is present). OIDC is enabled iff configured; there is no separate
 /// `oidc_enabled` flag, so these are conditionally, not
 /// unconditionally, required: a fully-unset OIDC block is valid (local-only
 /// instance), but a partially-configured one (issuer set, secret missing) is a
-/// `MissingVar` for the absent field. Gate 4 in [`Config::from_figment`] enforces
+/// `MissingVar` for the absent field. Gate 3 in [`Config::from_figment`] enforces
 /// this; the issuer accessor is listed first so an issuer-only block still
 /// reports the next missing field rather than itself.
 const OIDC_FIELDS: &[(&str, RequiredFieldAccessor)] = &[
@@ -228,13 +234,13 @@ pub struct Config {
     /// (hard rule 7).
     pub oidc_client_secret: String,
     /// OIDC redirect URI (`OIDC_REDIRECT_URI`). Required when OIDC is configured
-    /// (Gate 4); must match the value registered with the issuer.
+    /// (Gate 3); must match the value registered with the issuer.
     pub oidc_redirect_uri: String,
     /// Whether local email+password authentication is enabled
     /// (`REVERIE_LOCAL_AUTH_ENABLED`, default `true`). Reverie is local-first out
     /// of the box (`docs/adr/0029-unified-identity-with-pluggable-authentication-providers.md`), so this
     /// defaults on. Setting it `false` without configuring OIDC is rejected at
-    /// startup (Gate 4): at least one auth provider must remain usable or the
+    /// startup (Gate 3): at least one auth provider must remain usable or the
     /// instance locks everyone out.
     pub local_auth_enabled: bool,
     /// OIDC issuer URL for resource-server JWT validation
@@ -441,8 +447,10 @@ impl Config {
     /// absent, empty or whitespace-only.
     pub fn validate_server(&self) -> Result<(), ConfigError> {
         // THREAT: Substituting application credentials removes ingestion's RLS access.
-        if self.ingestion_database_url.trim().is_empty() {
-            return Err(ConfigError::MissingVar("DATABASE_URL_INGESTION".into()));
+        for &(var, field) in SERVER_REQUIRED_FIELDS {
+            if field(self).trim().is_empty() {
+                return Err(ConfigError::MissingVar(var.into()));
+            }
         }
         Ok(())
     }
@@ -463,7 +471,7 @@ impl Config {
     ///    back to `None` so the long-lived server never carries the migrator
     ///    credential; when on, an absent/blank DSN is a `MissingVar`. See
     ///    `docs/adr/0014-migration-model-hybrid-entrypoints-and-a-least-privilege-role.md`.
-    /// 3. **Required-field check**: a blank required field (`DATABASE_URL`,
+    /// 2. **Required-field check**: a blank required field (`DATABASE_URL`,
     ///    `OIDC_*`) is a `MissingVar` — distinct from `Invalid` so the
     ///    operator message says "set the var", not "fix the value".
     ///
@@ -490,7 +498,7 @@ impl Config {
             cfg.migration_database_url = None;
         }
 
-        // Gate 3 — required fields blank => MissingVar (NOT Invalid). Name and
+        // Gate 2 — required fields blank => MissingVar (NOT Invalid). Name and
         // field accessor are paired in REQUIRED_FIELDS (shared with the config
         // reference), so the two can never drift out of alignment.
         for &(var, field) in REQUIRED_FIELDS {
@@ -499,7 +507,7 @@ impl Config {
             }
         }
 
-        // Gate 4: provider availability. OIDC is enabled iff
+        // Gate 3: provider availability. OIDC is enabled iff
         // configured (its issuer is set); a partially-configured OIDC block is a
         // MissingVar for the absent field, so an instance never half-enables a
         // provider. At least one provider (local or OIDC) must remain usable, or
@@ -520,7 +528,7 @@ impl Config {
             });
         }
 
-        // Gate 5: resource-server fields required together. Deliberately
+        // Gate 4: resource-server fields required together. Deliberately
         // NOT folded into the interactive-provider guard above: JWTs
         // cannot establish a session, so a resource-server-only config
         // (no local auth, no OIDC login) still refuses to start there.
@@ -532,7 +540,7 @@ impl Config {
             }
         }
 
-        // Gate 6: the operator contact is embedded verbatim in the outbound
+        // Gate 5: the operator contact is embedded verbatim in the outbound
         // `User-Agent`, and reqwest refuses to build a client whose UA is not
         // a valid header value. Rejecting it here turns a per-request panic in
         // the UA-setting constructors into a startup error.
@@ -553,7 +561,7 @@ impl Config {
     /// Whether the OIDC authentication path is enabled. OIDC is enabled iff it is
     /// configured, signalled by a non-blank issuer URL; there is no
     /// separate `oidc_enabled` flag that could disagree with the actual config.
-    /// Gate 4 guarantees that when this is `true`, all four `OIDC_*` fields are
+    /// Gate 3 guarantees that when this is `true`, all four `OIDC_*` fields are
     /// present, so callers can treat a configured instance as fully usable.
     pub fn oidc_configured(&self) -> bool {
         !self.oidc_issuer_url.trim().is_empty()
@@ -561,7 +569,7 @@ impl Config {
 
     /// Whether resource-server JWT Bearer authentication is enabled,
     /// signalled by a non-blank issuer URL; mirrors [`Self::oidc_configured`].
-    /// Gate 5 in [`Self::from_figment`] guarantees that when this is `true`,
+    /// Gate 4 in [`Self::from_figment`] guarantees that when this is `true`,
     /// `resource_server_audience` is also present. Does NOT count toward the
     /// interactive-provider guard: a resource-server-only instance still
     /// requires local auth or OIDC login to be usable at all.
@@ -779,9 +787,9 @@ impl Default for Config {
             oidc_client_id: String::new(),
             oidc_client_secret: String::new(),
             oidc_redirect_uri: String::new(),
-            // Local-first default; Gate 4 guards the lock-out case.
+            // Local-first default; Gate 3 guards the lock-out case.
             local_auth_enabled: true,
-            // REQUIRED-TOGETHER — empty sentinels (Gate 5).
+            // REQUIRED-TOGETHER — empty sentinels (Gate 4).
             resource_server_issuer: String::new(),
             resource_server_audience: String::new(),
             resource_server_jwks_url: String::new(),
@@ -902,17 +910,6 @@ mod tests {
             .collect()
     }
 
-    /// Every `KEY=` line in `docker/staging.env.runtime.example` must be a
-    /// variable the loader actually reads — now expressed as a key in the
-    /// declarative [`ENV_MAP`] (the structured replacement for the former
-    /// textual `get("KEY")` source scan).
-    ///
-    /// Guards the [`ENV_MAP`] consistency invariant: an example var
-    /// whose name diverges from the loader either hard-fails startup with a
-    /// misleading `MissingVar` (loud) or is silently ignored while a fallback
-    /// takes over. The example
-    /// file is an intentional *subset* of all knobs, so the check is one-way:
-    /// example keys ⊆ [`ENV_MAP`] keys, not the reverse.
     #[test]
     fn staging_runtime_example_keys_are_in_env_map() {
         // Compile-time embed: a missing file fails the build rather than
@@ -1411,7 +1408,7 @@ mod tests {
 
     #[test]
     fn every_required_field_omitted_yields_missing_var() {
-        // Drives Gate 3 across all of REQUIRED_FIELDS: omitting any one required
+        // Drives Gate 2 across all of REQUIRED_FIELDS: omitting any one required
         // variable must surface MissingVar naming that exact variable. Proves the
         // name<->accessor pairing is correct for every entry, not just the two
         // with bespoke tests above, and guards against a future entry whose
@@ -1470,7 +1467,7 @@ mod tests {
     #[test]
     fn required_fields_are_known_and_mapped() {
         // REQUIRED_FIELDS is the shared source of required-ness for both the
-        // Gate 3 startup check and the generated config reference. Every entry
+        // Gate 2 startup check and the generated config reference. Every entry
         // must be a real ENV_MAP var name, or the reference would mark a
         // non-existent variable required.
         assert!(!REQUIRED_FIELDS.is_empty());
@@ -1522,7 +1519,7 @@ mod tests {
     #[test]
     fn partial_oidc_block_is_rejected_when_configured() {
         // Once the issuer is set OIDC is "configured", so each remaining OIDC
-        // field becomes required together (Gate 4): a half-configured block is a
+        // field becomes required together (Gate 3): a half-configured block is a
         // MissingVar for the absent field, never a silent half-enable.
         for var in ["OIDC_CLIENT_ID", "OIDC_CLIENT_SECRET", "OIDC_REDIRECT_URI"] {
             let vars = without_keys(&[var]); // issuer stays set via BASE_VARS
@@ -1563,9 +1560,9 @@ mod tests {
 
     #[test]
     fn resource_server_audience_missing_is_rejected_when_issuer_set() {
-        // Gate 5: once the issuer is set, resource-server JWT validation is
+        // Gate 4: once the issuer is set, resource-server JWT validation is
         // "configured", so audience becomes required together — mirrors
-        // partial_oidc_block_is_rejected_when_configured (Gate 4).
+        // partial_oidc_block_is_rejected_when_configured (Gate 3).
         let vars = with_overrides(&[("REVERIE_RESOURCE_SERVER_ISSUER", "https://idp.example.com")]);
         let err = cfg_from_owned(&vars).unwrap_err();
         assert!(

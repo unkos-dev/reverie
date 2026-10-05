@@ -17,8 +17,8 @@
 use anyhow::{Context as _, anyhow};
 use serde_json::Value;
 
-use super::REQUIRED_FIELDS;
 use super::provider::ENV_MAP;
+use super::{REQUIRED_FIELDS, SERVER_REQUIRED_FIELDS};
 
 /// Render the full Configuration reference page (frontmatter + table).
 ///
@@ -132,7 +132,8 @@ fn scalar_label(base: &str, node: &Value) -> String {
 fn required_label(var: &str) -> &'static str {
     if REQUIRED_FIELDS.iter().any(|(name, _)| *name == var) {
         "Yes"
-    } else if matches!(var, "DATABASE_URL_MIGRATION" | "DATABASE_URL_INGESTION")
+    } else if var == "DATABASE_URL_MIGRATION"
+        || SERVER_REQUIRED_FIELDS.iter().any(|(name, _)| *name == var)
         || super::OIDC_FIELDS.iter().any(|(name, _)| *name == var)
     {
         "Conditional"

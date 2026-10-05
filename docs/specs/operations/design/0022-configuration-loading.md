@@ -77,18 +77,21 @@ pair order), and the flat-versus-nested split driven entirely by `ENV_MAP`'s exp
 separator convention, because `REVERIE_DB_MAX_CONNECTIONS` must land on the flat `db_max_connections` field while
 `REVERIE_ENRICHMENT_CONCURRENCY` must nest under `enrichment.concurrency`, and no single splitting rule produces both.
 
-Four registries in `backend/src/config/mod.rs` and `provider.rs` together decide what varies and what is required, and
+Six registries in `backend/src/config/mod.rs` and `provider.rs` together decide what varies and what is required, and
 each has a distinct shape and a distinct completeness check:
 
 - `ENV_MAP` (`provider.rs`): every operator-facing variable name paired with the dotted field path it feeds. This is the
-  widest registry; the reference generator and `EnvProvider::data` both iterate it, and it is the only one of the four
-  checked in both directions (see Failure and recovery).
+  widest registry; the reference generator and `EnvProvider::data` both iterate it, and it is the only registry checked
+  in both directions (see Failure and recovery).
 - `REQUIRED_FIELDS` (`mod.rs`): variable name paired with a `RequiredFieldAccessor` function reading the resolved field
   back off a built `Config`, the single entry `("DATABASE_URL", |c| c.database_url.as_str())`. Pairing the name and its
   field reader in one tuple, rather than keeping two parallel lists, is what the module comment calls structurally
   impossible to get out of step: adding a required field is one new entry, not two lists kept aligned by hand.
-  `reference.rs::required_label` reads the same list to render the reference's "Required" column, so Gate 3's startup
+  `reference.rs::required_label` reads the same list to render the reference's "Required" column, so Gate 2's startup
   contract and the documented contract cannot diverge.
+- `SERVER_REQUIRED_FIELDS` (`mod.rs`): the same name-plus-accessor shape, read by `Config::validate_server` and
+  `reference.rs::required_label`. Its ingestion DSN entry is required for normal server startup and rendered as
+  conditional in the reference; administrative commands do not run that validation.
 - `OIDC_FIELDS` and `RESOURCE_SERVER_FIELDS` (`mod.rs`): the same name-plus-accessor shape as `REQUIRED_FIELDS`, but
   conditionally required together once a trigger field (`oidc_issuer_url`, `resource_server_issuer`) is non-blank.
   `OIDC_FIELDS` lists the issuer field first deliberately, so an issuer-only block reports the next missing field rather
@@ -97,12 +100,12 @@ each has a distinct shape and a distinct completeness check:
   `oidc_client_secret`, `googlebooks_api_key`, `hardcover_api_token`) consulted only by `map_figment_error`, to scrub a
   deserialise-phase error before it can echo a secret's value.
 
-A fifth required-together rule exists outside this list-and-loop pattern entirely: `OpdsConfig`
-(`backend/src/config/opds.rs`) defaults `enabled` to `true` and requires `public_url` whenever it is, enforced by
-`validate_opds_config`, a `#[validate(schema(function = ...))]` struct-level function that runs during the final
-`cfg.validate()` call rather than as one of `Config::from_figment`'s five numbered gates. Because `enabled` defaults to
-`true`, this rule fires on a load that sets no OPDS variable at all, not only on one that sets
-`REVERIE_OPDS_ENABLED=true` explicitly (see Runtime behaviour).
+A required-together rule exists outside this list-and-loop pattern entirely: `OpdsConfig` (`backend/src/config/opds.rs`)
+defaults `enabled` to `true` and requires `public_url` whenever it is, enforced by `validate_opds_config`, a
+`#[validate(schema(function = ...))]` struct-level function that runs during the final `cfg.validate()` call rather than
+as one of `Config::from_figment`'s five numbered gates. Because `enabled` defaults to `true`, this rule fires on a load
+that sets no OPDS variable at all, not only on one that sets `REVERIE_OPDS_ENABLED=true` explicitly (see Runtime
+behaviour).
 
 `reference.rs` and the `config_schema_json` function in `backend/src/lib.rs` both start from the same
 `schemars::schema_for!(Config)` value, so a field's doc comment, default and range constraint are declared once and
@@ -174,11 +177,11 @@ stops startup. Other worker settings retain their own loading behaviour.
    `Default`).
 4. Gate 1 runs: `auto_migrate` is `false` by default, so it forces `migration_database_url` to `None`.
    `ingestion_database_url` retains its empty default.
-5. Gate 3 checks `REQUIRED_FIELDS`; `database_url` is non-blank because the operator set it, so it passes.
-6. Gate 4 checks `oidc_configured()` (a non-blank `oidc_issuer_url`); by default it is blank, so the OIDC-fields loop is
+5. Gate 2 checks `REQUIRED_FIELDS`; `database_url` is non-blank because the operator set it, so it passes.
+6. Gate 3 checks `oidc_configured()` (a non-blank `oidc_issuer_url`); by default it is blank, so the OIDC-fields loop is
    skipped, and the `local_auth_enabled`-or-`oidc_configured()` check passes because `local_auth_enabled` defaults to
    `true`.
-7. Gate 5 checks `resource_server_configured()`; blank by default, so it is skipped. Gate 6 builds the `User-Agent`
+7. Gate 4 checks `resource_server_configured()`; blank by default, so it is skipped. Gate 5 builds the `User-Agent`
    string from `operator_contact` (`None` by default) and confirms it parses as a valid header value.
 8. `cfg.validate()` runs the `#[validate(range(...))]` attributes and the struct-level cross-field functions
    (`validate_security_config`, `validate_opds_config`); every range-checked field's default satisfies its own range,
@@ -200,17 +203,17 @@ either disable OPDS or supply `REVERIE_PUBLIC_URL`.
 
 **An issuer-only OIDC block**, `OIDC_ISSUER_URL` set with the other three `OIDC_*` variables unset: `extract()`
 deserialises `oidc_issuer_url` to the supplied value and the other three OIDC fields to their blank `String::new()`
-defaults. Gate 4's `oidc_configured()` reads `true` because the issuer is non-blank, so the `OIDC_FIELDS` loop runs;
+defaults. Gate 3's `oidc_configured()` reads `true` because the issuer is non-blank, so the `OIDC_FIELDS` loop runs;
 because the loop iterates `OIDC_FIELDS` in the order the constant declares it and the issuer field is listed first, the
 loop's own field (the issuer) is checked and passes immediately, and the loop reports `MissingVar("OIDC_CLIENT_ID")` on
 the next entry rather than naming the issuer that is in fact present.
 
-**`REVERIE_LOCAL_AUTH_ENABLED=false` with no OIDC configured and no resource server configured**: Gate 4's OIDC branch
+**`REVERIE_LOCAL_AUTH_ENABLED=false` with no OIDC configured and no resource server configured**: Gate 3's OIDC branch
 is skipped (`oidc_configured()` is `false`), but the following check,
 `!cfg.local_auth_enabled && !cfg.oidc_configured()`, is true, so `from_figment` returns
 `ConfigError::Invalid { var: "REVERIE_LOCAL_AUTH_ENABLED", reason: "at least one auth provider must be enabled: ..." }`.
 Configuring `resource_server_issuer` and `resource_server_audience` in the same scenario does not change the outcome:
-Gate 5 (resource-server-fields-required-together) is a separate check from the interactive-provider guard above it,
+Gate 4 (resource-server-fields-required-together) is a separate check from the interactive-provider guard above it,
 because a resource-server JWT authenticates an API caller without ever establishing a session, so it cannot itself
 satisfy "at least one usable auth provider".
 
@@ -235,7 +238,7 @@ failure across the whole struct tree into `ConfigError::Multiple`, via `collect_
 on the `ValidationError`, because those failures key under the tree's synthetic `"__all__"` entry, which no dotted path
 resolves.
 
-A required variable left unset is always `ConfigError::MissingVar`, never `Invalid`: Gate 3, the OIDC-fields loop and
+A required variable left unset is always `ConfigError::MissingVar`, never `Invalid`: Gate 2, the OIDC-fields loop and
 the resource-server-fields loop each check this before any other gate can turn the same absence into a different error,
 so the operator-facing message says "set the variable" rather than "fix the value" for every field these three gates
 cover.
