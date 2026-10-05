@@ -1518,7 +1518,7 @@ mod tests {
         // Gate 3 startup check and the generated config reference. Every entry
         // must be a real ENV_MAP var name, or the reference would mark a
         // non-existent variable required.
-        assert!(!REQUIRED_FIELDS.is_empty());
+        assert_ne!(REQUIRED_FIELDS, []);
         let mapped: std::collections::HashSet<&str> =
             ENV_MAP.iter().map(|(name, _)| *name).collect();
         for (var, _) in REQUIRED_FIELDS {

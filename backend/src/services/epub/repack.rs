@@ -479,7 +479,7 @@ mod tests {
         assert_eq!(f.size(), 0);
         let mut buf = Vec::new();
         f.read_to_end(&mut buf).unwrap();
-        assert!(buf.is_empty());
+        assert_eq!(buf, Vec::<u8>::new());
     }
 
     #[test]

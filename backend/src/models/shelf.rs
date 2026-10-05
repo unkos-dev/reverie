@@ -6,7 +6,7 @@
 //!
 //! # `ETag` + If-Match contract
 //!
-//! Every shelf read endpoint emits ``ETag`: "<updated_at RFC3339>"`.
+//! Every shelf read endpoint emits `ETag: "<updated_at RFC3339>"`.
 //! The `PUT /api/v1/shelves/{id}/items` reorder endpoint requires the
 //! caller to echo that value as `If-Match`; mutation handlers issue
 //! an `UPDATE shelves SET updated_at = now() WHERE id = $1` in the

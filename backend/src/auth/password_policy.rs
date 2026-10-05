@@ -440,7 +440,7 @@ mod tests {
         )
         .await;
         match result {
-            Err(PolicyError::TooWeak(detail)) => assert!(!detail.is_empty()),
+            Err(PolicyError::TooWeak(detail)) => assert_ne!(detail, ""),
             other => panic!("expected TooWeak, got {other:?}"),
         }
     }

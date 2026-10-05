@@ -92,7 +92,7 @@ mod tests {
     fn no_matching_format() {
         let files = vec![PathBuf::from("a.docx"), PathBuf::from("b.txt")];
         let result = select_by_priority(&files, &priority());
-        assert!(result.is_empty());
+        assert_eq!(result, Vec::<PathBuf>::new());
     }
 
     #[test]

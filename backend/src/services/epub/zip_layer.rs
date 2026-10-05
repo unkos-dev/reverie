@@ -669,8 +669,8 @@ mod tests {
                             && *limit == MAX_ZIP_ENTRIES
                 )
         }));
-        assert!(handle.entries.is_empty());
-        assert!(handle.bytes.is_empty());
+        assert_eq!(handle.entries, Vec::<String>::new());
+        assert_eq!(handle.bytes, Vec::<u8>::new());
     }
 
     #[test]
@@ -695,7 +695,7 @@ mod tests {
                             && *limit == MAX_ZIP_ENTRIES
                 )
         }));
-        assert!(handle.bytes.is_empty());
+        assert_eq!(handle.bytes, Vec::<u8>::new());
     }
 
     #[test]
@@ -714,7 +714,7 @@ mod tests {
                         if *size == MAX_ARCHIVE_BYTES + 1 && *limit == MAX_ARCHIVE_BYTES
                 )
         }));
-        assert!(handle.bytes.is_empty());
+        assert_eq!(handle.bytes, Vec::<u8>::new());
     }
 
     fn zip64_eocd_tail(total_entries: u64) -> Vec<u8> {
@@ -771,7 +771,7 @@ mod tests {
                 .iter()
                 .any(|i| matches!(&i.kind, IssueKind::CorruptEntry { .. }))
         );
-        assert!(handle.bytes.is_empty());
+        assert_eq!(handle.bytes, Vec::<u8>::new());
     }
 
     #[test]
@@ -821,7 +821,7 @@ mod tests {
                 ..
             }
         ));
-        assert!(handle.entries.is_empty());
+        assert_eq!(handle.entries, Vec::<String>::new());
     }
 
     #[test]
@@ -906,7 +906,7 @@ mod tests {
             i.severity == Severity::Irrecoverable
                 && matches!(&i.kind, IssueKind::CorruptEntry { .. })
         }));
-        assert!(handle.bytes.is_empty());
+        assert_eq!(handle.bytes, Vec::<u8>::new());
     }
 
     #[test]
@@ -920,7 +920,7 @@ mod tests {
             i.severity == Severity::Irrecoverable
                 && matches!(&i.kind, IssueKind::CorruptEntry { .. })
         }));
-        assert!(handle.bytes.is_empty());
+        assert_eq!(handle.bytes, Vec::<u8>::new());
     }
 
     #[test]
@@ -969,7 +969,7 @@ mod tests {
             i.severity == Severity::Irrecoverable
                 && matches!(&i.kind, IssueKind::CorruptEntry { .. })
         }));
-        assert!(handle.bytes.is_empty());
+        assert_eq!(handle.bytes, Vec::<u8>::new());
     }
 
     #[test]
@@ -987,7 +987,7 @@ mod tests {
             i.severity == Severity::Irrecoverable
                 && matches!(&i.kind, IssueKind::CorruptEntry { .. })
         }));
-        assert!(handle.bytes.is_empty());
+        assert_eq!(handle.bytes, Vec::<u8>::new());
     }
 
     #[test]
@@ -1005,7 +1005,7 @@ mod tests {
             i.severity == Severity::Irrecoverable
                 && matches!(&i.kind, IssueKind::CorruptEntry { .. })
         }));
-        assert!(handle.bytes.is_empty());
+        assert_eq!(handle.bytes, Vec::<u8>::new());
     }
 
     #[test]
@@ -1019,7 +1019,7 @@ mod tests {
             i.severity == Severity::Irrecoverable
                 && matches!(&i.kind, IssueKind::PreludeBeforeArchive { bytes } if *bytes == 4)
         }));
-        assert!(handle.bytes.is_empty());
+        assert_eq!(handle.bytes, Vec::<u8>::new());
     }
 
     #[test]
@@ -1038,7 +1038,7 @@ mod tests {
             i.severity == Severity::Irrecoverable
                 && matches!(&i.kind, IssueKind::DuplicateEntry { entry_name } if entry_name == "a.txt")
         }));
-        assert!(handle.bytes.is_empty());
+        assert_eq!(handle.bytes, Vec::<u8>::new());
     }
 
     #[test]
@@ -1055,7 +1055,7 @@ mod tests {
             i.severity == Severity::Irrecoverable
                 && matches!(&i.kind, IssueKind::CorruptEntry { .. })
         }));
-        assert!(handle.bytes.is_empty());
+        assert_eq!(handle.bytes, Vec::<u8>::new());
     }
 
     /// Sets the compression-method field to `method` on the first
@@ -1092,7 +1092,7 @@ mod tests {
                         if entry_name == "a.txt" && *method == 12
                 )
         }));
-        assert!(handle.bytes.is_empty());
+        assert_eq!(handle.bytes, Vec::<u8>::new());
     }
 
     /// Sets the general-purpose "encrypted" bit (bit 0) on the first
@@ -1124,7 +1124,7 @@ mod tests {
                         if entry_name == "a.txt"
                 )
         }));
-        assert!(handle.bytes.is_empty());
+        assert_eq!(handle.bytes, Vec::<u8>::new());
     }
 
     #[test]

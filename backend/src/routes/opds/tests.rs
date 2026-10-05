@@ -588,7 +588,7 @@ async fn cover_cache_populates_and_serves(pool: PgPool) {
         "Vary covers both credential channels: {vary}"
     );
     let first_bytes = response.as_bytes().to_vec();
-    assert!(!first_bytes.is_empty());
+    assert_ne!(first_bytes, Vec::<u8>::new());
 
     // Cache directory exists with the cover.
     let cache_dir = library_root.join("_covers").join("cache");
