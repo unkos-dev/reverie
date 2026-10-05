@@ -1387,6 +1387,7 @@ mod tests {
         let state = AppState {
             pool: app_pool.clone(),
             ingestion_pool,
+            ingestion: crate::services::ingestion::coordinator_channel().0,
             library_files,
             config,
             oidc,
@@ -1586,6 +1587,7 @@ mod tests {
         let state = AppState {
             pool: app_pool.clone(),
             ingestion_pool,
+            ingestion: crate::services::ingestion::coordinator_channel().0,
             library_files,
             config,
             oidc,
@@ -1742,6 +1744,7 @@ mod tests {
         let state = AppState {
             pool: app_pool.clone(),
             ingestion_pool,
+            ingestion: crate::services::ingestion::coordinator_channel().0,
             library_files,
             config,
             oidc,
@@ -1868,6 +1871,7 @@ mod tests {
         let state = AppState {
             pool: app_pool.clone(),
             ingestion_pool,
+            ingestion: crate::services::ingestion::coordinator_channel().0,
             library_files,
             config,
             oidc,
@@ -1991,6 +1995,7 @@ mod tests {
         let state = AppState {
             pool: app_pool.clone(),
             ingestion_pool,
+            ingestion: crate::services::ingestion::coordinator_channel().0,
             library_files,
             config,
             oidc,

@@ -23,5 +23,5 @@ the same filenames; the global ingestion hash catches duplicate content even aft
 - The same library and relative path cannot appear twice, but different libraries can use the same path with different
   hashes. Checked by `library_storage_schema_library_namespace_and_global_hash`.
 - An ingestion hash cannot appear twice, including across libraries. The same schema test exercises this constraint.
-- Ingesting a duplicate skips it without another row. Checked by `scan_once_skips_duplicate_on_second_run` in
-  `backend/src/services/ingestion/orchestrator.rs`.
+- Ingesting a duplicate skips it without another row. Checked by
+  `capability_ingestion_owner_skips_duplicate_on_second_run` in `backend/src/services/ingestion/orchestrator.rs`.

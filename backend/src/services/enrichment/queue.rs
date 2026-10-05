@@ -363,7 +363,7 @@ mod tests {
     fn test_config_with_max_attempts(
         max_attempts: u32,
     ) -> (Config, crate::services::files::LibraryFiles) {
-        use crate::config::{CleanupMode, CoverConfig, EnrichmentConfig};
+        use crate::config::{CoverConfig, EnrichmentConfig};
         use crate::models::manifestation_format::ManifestationFormat;
 
         let (storage_config, files) = crate::test_support::test_storage_config(
@@ -375,7 +375,6 @@ mod tests {
             database_url: String::new(),
             library_path: storage_config.library_path,
             ingestion_path: storage_config.ingestion_path,
-            quarantine_path: storage_config.quarantine_path,
             log_level: "info".into(),
             db_max_connections: 5,
             oidc_issuer_url: String::new(),
@@ -401,8 +400,9 @@ mod tests {
             migration_database_url: None,
             auto_migrate: false,
             ingestion_database_url: String::new(),
-            format_priority: vec![ManifestationFormat::Epub],
-            cleanup_mode: CleanupMode::None,
+            accepted_formats: vec![ManifestationFormat::Epub],
+            cleanup_imported: false,
+            cleanup_duplicates: false,
             enrichment: EnrichmentConfig {
                 enabled: true,
                 concurrency: 2,

@@ -6,7 +6,7 @@
 //!
 //! - The DB schema and Rust both reference the same closed set; renaming a
 //!   variant compile-errors at every consuming site.
-//! - The env-var parser (`REVERIE_FORMAT_PRIORITY`) rejects unknown values
+//! - The env-var parser (`REVERIE_ACCEPTED_FORMATS`) rejects unknown values
 //!   loudly via `FromStr` instead of silently coercing.
 //! - `sqlx::Type` decode of an unknown DB variant returns an error rather
 //!   than fabricating a string.
@@ -23,7 +23,7 @@ use std::str::FromStr;
 /// Canonical file format of a manifestation.
 ///
 /// Closed set shared by the Postgres `manifestation_format` `ENUM`, the
-/// `REVERIE_FORMAT_PRIORITY` env-var parser, and download-path content
+/// `REVERIE_ACCEPTED_FORMATS` env-var parser, and download-path content
 /// negotiation. Extending the set requires both a Rust variant and a
 /// matching `ALTER TYPE … ADD VALUE` migration.
 #[derive(

@@ -398,3 +398,34 @@ fn spec_covers_series_dashboard_routes() {
         );
     }
 }
+
+#[test]
+fn discovery_counts_have_non_negative_int64_schemas() {
+    let rendered = reverie_api::openapi::spec_json().expect("serialize OpenAPI spec");
+    let doc: serde_json::Value = serde_json::from_str(&rendered).expect("valid JSON");
+    let properties = &doc["components"]["schemas"]["DiscoveryResult"]["properties"];
+    for name in ["queued", "deferred", "suppressed"] {
+        let schema = &properties[name];
+        assert_eq!(schema["type"], "integer", "{name}");
+        assert_eq!(schema["format"], "int64", "{name}");
+        assert_eq!(schema["minimum"], 0, "{name}");
+    }
+}
+
+#[test]
+fn discovery_counts_serialize_zero_and_large_values() {
+    use reverie_api::services::ingestion::DiscoveryResult;
+
+    for count in [0, i32::MAX as usize + 1] {
+        let result = DiscoveryResult {
+            queued: count,
+            deferred: count,
+            suppressed: count,
+            monitor: "/api/v1/activity",
+        };
+        let value = serde_json::to_value(result).expect("serialize discovery counts");
+        for name in ["queued", "deferred", "suppressed"] {
+            assert_eq!(value[name], count);
+        }
+    }
+}

@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE ingestion_inputs SET status = 'pending', reason = NULL\n         FROM UNNEST($1::uuid[], $2::bigint[]) AS selected(input_id, input_generation)\n         WHERE id = selected.input_id AND generation = selected.input_generation AND status = 'not_accepted'",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "UuidArray",
+        "Int8Array"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "b8fe5dd12ea1b5bbb955ee9453fca8302e6211b8a2453b0c7936448e64a1d079"
+}

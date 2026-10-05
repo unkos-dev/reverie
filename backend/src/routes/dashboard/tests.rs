@@ -322,6 +322,80 @@ async fn activity_endpoint_admin_lists_batches(pool: PgPool) {
 }
 
 #[sqlx::test(migrations = "./migrations")]
+async fn capability_ingestion_owner_activity_reads_linked_running_and_terminal_jobs(pool: PgPool) {
+    use crate::models::ingestion_input::{
+        self, AttemptOutcome, Fingerprint, InputPath, InputStatus,
+    };
+    let app = test_support::db::app_pool_for(&pool).await;
+    let ing = test_support::db::ingestion_pool_for(&pool).await;
+    let (_, auth) = test_support::db::create_admin_and_basic_auth(&app).await;
+    let server = test_support::db::server_with_real_pools(&app, &ing);
+    let directory = tempfile::tempdir().unwrap();
+    let batch = Uuid::new_v4();
+    for (index, name, outcome, status, reason) in [
+        (
+            0,
+            "duplicate.epub",
+            AttemptOutcome::Duplicate,
+            InputStatus::Duplicate,
+            None,
+        ),
+        (
+            1,
+            "rejected.epub",
+            AttemptOutcome::Rejected,
+            InputStatus::Rejected,
+            Some("EPUB rejected"),
+        ),
+    ] {
+        let source = directory.path().join(name);
+        std::fs::write(&source, b"input").unwrap();
+        let path = InputPath::from_path(std::path::Path::new(name)).unwrap();
+        let fingerprint = Fingerprint::from_metadata(&std::fs::metadata(&source).unwrap());
+        let input = ingestion_input::observe(&ing, &[path], &[fingerprint])
+            .await
+            .unwrap()
+            .remove(0);
+        let job = ingestion_input::begin_attempt(&ing, &input, batch)
+            .await
+            .unwrap();
+        let response = server
+            .get("/api/v1/dashboard/activity")
+            .add_header(AUTHORIZATION, auth.clone())
+            .await;
+        assert_eq!(response.status_code(), StatusCode::OK);
+        let activity: Value = response.json();
+        assert_eq!(activity["batches"][0]["total"], index + 1);
+        assert_eq!(activity["batches"][0]["in_progress"], 1);
+        assert!(activity["batches"][0]["ended_at"].is_null());
+        let mut tx = ing.begin().await.unwrap();
+        ingestion_input::finish(&mut tx, &input, job, outcome, status, reason, None)
+            .await
+            .unwrap();
+        tx.commit().await.unwrap();
+        assert_eq!(
+            ingestion_input::current(&ing, input.id)
+                .await
+                .unwrap()
+                .unwrap()
+                .reason
+                .as_deref(),
+            reason
+        );
+    }
+    let response = server
+        .get("/api/v1/dashboard/activity")
+        .add_header(AUTHORIZATION, auth)
+        .await;
+    let activity: Value = response.json();
+    assert_eq!(activity["batches"][0]["total"], 2);
+    assert_eq!(activity["batches"][0]["skipped"], 1);
+    assert_eq!(activity["batches"][0]["failed"], 1);
+    assert_eq!(activity["batches"][0]["in_progress"], 0);
+    assert!(!activity["batches"][0]["ended_at"].is_null());
+}
+
+#[sqlx::test(migrations = "./migrations")]
 async fn activity_in_progress_sums_to_total(pool: PgPool) {
     let app_pool = test_support::db::app_pool_for(&pool).await;
     let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;

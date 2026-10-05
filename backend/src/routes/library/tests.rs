@@ -34,6 +34,7 @@ fn server_with_page_size(app_pool: &PgPool, ingestion_pool: &PgPool, page_size: 
     let state = AppState {
         pool: app_pool.clone(),
         ingestion_pool: ingestion_pool.clone(),
+        ingestion: crate::services::ingestion::coordinator_channel().0,
         library_files,
         config,
         oidc: Some(std::sync::Arc::new(test_support::test_oidc_runtime())),

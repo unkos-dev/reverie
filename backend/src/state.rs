@@ -36,6 +36,8 @@ pub struct AppState {
     /// and exercise the `*_ingestion_full_access` RLS policies. Used by
     /// the watcher, dry-run handlers, and metadata fetchers.
     pub ingestion_pool: PgPool,
+    /// Shared discovery command handle for the ingestion owner.
+    pub ingestion: crate::services::ingestion::CoordinatorHandle,
     /// Resolved configuration loaded once at startup. Includes finalised
     /// CSP `HeaderValue`s on `config.security` (built in `run` before this
     /// state is constructed).
