@@ -129,6 +129,54 @@ policies. The `vite-plugins/csp-hash.ts` script hashes the inline `fouc.js` scri
 - **Timeouts.** Configure a timeout for every request, connection pool acquire, database statement, and outbound HTTP
   call.
 
+## Managed library files
+
+Reverie owns writes and reorganisation inside `REVERIE_LIBRARY_PATH`. Coordinate external tools with the application, or
+pause it before they change managed files. Relocating the root, replacing its directory or changing its mount requires a
+coordinated restart: an opened capability identifies the original directory object and does not follow a replacement
+path into another library. Downloads classify paths through the root's canonical path before opening through the
+capability, so replacing that directory can make downloads fail until restart.
+
+`REVERIE_LIBRARY_PATH`, `REVERIE_INGESTION_PATH` and `REVERIE_QUARANTINE_PATH` must be absolute paths to provisioned
+directories. Mount the intended volumes before starting Reverie. The server opens all three roots before admin
+bootstrap, workers or requests; empty, relative, missing and non-directory roots fail startup. It does not create these
+directories or retry acquisition during requests. The `reverie migrate` command does not require storage roots. Stop
+Reverie before removing a mount, since its open directory handles can keep a mount busy. Directory existence alone does
+not establish that the intended volume is mounted.
+
+Each manifestation records a library identity and a canonical path relative to that library. Startup binds the seeded
+`default` identity to `REVERIE_LIBRARY_PATH`; downloads select that immutable binding, and unknown identities never fall
+back. Changing metadata or a future organisation policy does not change the recorded file location. Relative and
+absolute symlink targets resolving inside the owning library remain supported. Path resolution classifies the target;
+the actual open uses a relative target through the pinned directory. The opened file supplies both Content-Length and
+streamed bytes. Established escapes return 403, missing files return 404, and other failures, including unknown library
+identities and ambiguous I/O denial, return generic 500 responses.
+
+A library can reside on a NAS separate from the Linux container host when its mounted filesystem supplies contained file
+access, atomic content replacement and useful sync/error semantics. Writeback relocation needs no-replace rename or hard
+links. Only EINVAL or ENOSYS from no-replace rename enables the hard-link fallback; collision, permission and ambiguous
+network errors remain failures. Unsupported operations preserve the source. This contract does not promise that every
+NFS or SMB server supplies the required behaviour.
+
+Hard-link relocation syncs the destination parent before removing the source, then syncs the source parent. A failed
+link or destination sync retains the source; removal failure may leave both names. EXDEV copies stage inside an owned
+directory on the actual destination filesystem, refuse occupied final names and independently verify the destination
+before removing the original. Normal completion removes staging, but abrupt exit may leave bare UUID directory names
+visible on the share. No cleanup sweep runs.
+
+A successful sync after a reported failure does not prove that failed writes became durable. Filesystem relocation and
+SQL location updates remain separate, with move-back on SQL failure. A crash between them can leave the recorded
+location stale without automatic reconciliation. These guarantees do not establish a NAS server's acknowledgement or
+flush behaviour; representative mounted-share verification is still needed.
+
+This is a draft checkpoint. Initial ingestion does not yet supply the required library identity. The remaining
+[pipeline limitations](../debt/2026-09-30-library-location-pipelines-incomplete.md) prevent end-to-end use and release
+readiness. Their tests remain active.
+
+Development catalogues are disposable. Resolve the owned development database before using `just db-reset`, then run
+`just db-migrate`. Re-ingest from source copies after the producer pipelines support the location contract. No automatic
+reset, preserving upgrade or legacy-path fallback is provided.
+
 ## Project Structure
 
 ```text

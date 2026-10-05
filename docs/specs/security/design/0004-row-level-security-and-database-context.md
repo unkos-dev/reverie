@@ -11,6 +11,7 @@ satisfies:
 governed-by:
   - "REV-ADR-0028"
   - "REV-ADR-0017"
+  - "REV-ADR-0052"
 ---
 
 # Row-level security and database context
@@ -28,7 +29,9 @@ that caller's rows: the `app.current_user_id` and `app.system_context` settings 
 the role each pool connects as, the roles themselves (`docker/init-roles.sql`), and every policy and grant the
 migrations create (`backend/migrations/20260810000000_initial_schema.up.sql`,
 `backend/migrations/20260903000000_junction_table_rls.up.sql` and
-`backend/migrations/20260911000000_readonly_session_id_grant.up.sql`).
+`backend/migrations/20260911000000_readonly_session_id_grant.up.sql` and
+`backend/migrations/20260930000000_library_relative_file_locations.up.sql` and
+`backend/migrations/20261003000000_library_path_claims.up.sql`).
 
 It does not own the migration runner or the `reverie_migrator` identity that runs it (`run_migrations` and
 `verify_schema_current` in `backend/src/db.rs`, and the `reverie migrate` entry point in `backend/src/lib.rs`), which
@@ -97,7 +100,7 @@ each call `db::acquire_with_rls` with `CurrentUser::user_id` before their first 
 
 ### Policy census
 
-Twelve tables enable row-level security. They fall into four groups.
+Thirteen tables enable row-level security. They fall into five groups.
 
 **`manifestations`** has eight policies:
 
@@ -115,6 +118,13 @@ Twelve tables enable row-level security. They fall into four groups.
 A `child` caller has no INSERT, UPDATE or DELETE policy on `manifestations`: children change what they can see through
 their own `shelf_items` rows, never by editing a manifestation. The policies read the caller's `users.role` only;
 `users.is_child` is kept consistent with `role` by a CHECK constraint on `users`, and no policy reads it.
+
+**`library_path_claims`** has two ALL policies. `library_path_claims_ingestion` admits every row for
+`reverie_ingestion`; `library_path_claims_writeback` admits reads and writes for `reverie_app` only when
+`app.system_context = 'writeback'`. Both roles hold SELECT, INSERT, UPDATE and DELETE grants. Ordinary application
+sessions have no matching policy, including sessions scoped to an admin; `reverie_readonly` has no grant. The table
+owner retains the existing migration-owner exemption. Claim access uses the same ingestion pool and writeback GUC; there
+is no user-facing claim endpoint.
 
 **Junction and per-manifestation tables** (`manifestation_genres`, `manifestation_moods`, `manifestation_tags`,
 `manifestation_external_identifiers` and `work_external_identifiers`) share one shape: a SELECT policy for `reverie_app`
@@ -142,6 +152,9 @@ alone. Because `reverie_readonly` holds only `SELECT` grants, a connection as th
 `reverie_readonly` connection made by hand, though: nothing stops it setting `app.current_user_id` to any account, so
 its grants are what limit it.
 
+Path claims have separate pipeline-only ALL policies and no readonly grant. Ownership lookup rejects a context without
+unfiltered claim visibility rather than treating policy-hidden rows as absent claims.
+
 ### The grant boundary
 
 Row-level security decides which rows a query sees; the grant decides whether the role may run the query at all, and the
@@ -151,22 +164,28 @@ two checks are independent. Six tables have no policy and are granted to `reveri
 and `local_credentials`, which hold hashed token and password material, the missing `reverie_readonly` grant is the
 whole boundary against a reporting connection; there is no policy on either table to narrow or widen.
 
-`reverie_app` holds `SELECT`, `INSERT`, `UPDATE` and `DELETE` on every table it is granted except eight: `SELECT` only
-on `identifier_schemes`, `metadata_sources`, `rating_sources`, `manifestation_external_ratings` and the migration
-history table `_sqlx_migrations`; `SELECT` and `UPDATE` on `settings`; `SELECT` and `INSERT` on `instance_bootstrap`;
-and everything except `DELETE` on `user_preferences`.
+`reverie_app` holds `SELECT`, `INSERT`, `UPDATE` and `DELETE` on every table it is granted except nine: `SELECT` only on
+`libraries`, `identifier_schemes`, `metadata_sources`, `rating_sources`, `manifestation_external_ratings` and the
+migration history table `_sqlx_migrations`; `SELECT` and `UPDATE` on `settings`; `SELECT` and `INSERT` on
+`instance_bootstrap`; and everything except `DELETE` on `user_preferences`.
+
+Library identities have no row-level policy: they contain only a UUID and a configuration key. All three runtime roles
+hold SELECT only; migration ownership controls their mutation. Manifestation access remains subject to its existing
+policies, so knowing a library identity does not authorise a book lookup. The
+`library_storage_schema_runtime_roles_read_only` test exercises successful reads and denied INSERT, UPDATE and DELETE
+operations for each role.
 
 The session store sits outside row-level security. `reverie_app` holds `USAGE` on the `tower_sessions` schema and
 `SELECT`, `INSERT`, `UPDATE` and `DELETE` on `tower_sessions.session`. `reverie_readonly` holds `USAGE` on the schema
 and `SELECT` on the table's `expiry_date` column alone, so it can count and age sessions but cannot read a session ID,
 the credential the session cookie carries. `reverie_ingestion` has no grant in the schema.
 
-`reverie_ingestion` is granted the catalogue and pipeline tables: `works`, `authors`, `work_authors`, `manifestations`,
-`series`, `series_works`, `omnibus_contents`, `metadata_versions`, `metadata_sources`, `field_locks`, `tags`,
-`manifestation_tags`, `genres`, `manifestation_genres`, `moods`, `manifestation_moods`, `api_cache`, `ingestion_jobs`,
-`writeback_jobs`, `identifier_schemes`, `rating_sources`, `manifestation_external_identifiers`,
-`manifestation_external_ratings` and `work_external_identifiers`. It has no grant on any account, credential, shelf,
-reading, preference, settings or webhook table.
+`reverie_ingestion` has SELECT on `libraries` and is granted the catalogue and pipeline tables: `works`, `authors`,
+`work_authors`, `manifestations`, `library_path_claims`, `series`, `series_works`, `omnibus_contents`,
+`metadata_versions`, `metadata_sources`, `field_locks`, `tags`, `manifestation_tags`, `genres`, `manifestation_genres`,
+`moods`, `manifestation_moods`, `api_cache`, `ingestion_jobs`, `writeback_jobs`, `identifier_schemes`, `rating_sources`,
+`manifestation_external_identifiers`, `manifestation_external_ratings` and `work_external_identifiers`. It has no grant
+on any account, credential, shelf, reading, preference, settings or webhook table.
 
 ## Interfaces and dependencies
 
@@ -258,7 +277,7 @@ policies with no user context set, and fail in one of the two ways above.
 
 ## Security and operations
 
-The `manifestations_*_system` policies are the only policies that read `app.system_context` instead of
+The `manifestations_*_system` and `library_path_claims_writeback` policies read `app.system_context` instead of
 `app.current_user_id`, and outside test support only the connection setup in `init_writeback_pool` sets that value. No
 request-handling path sets it, so no request, whatever its credential, role or scope, reaches the system-context
 policies. The database does not prevent a `reverie_app` connection from setting the value; the guarantee rests on the

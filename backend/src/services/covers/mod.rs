@@ -20,7 +20,7 @@ pub mod resize;
 /// Hardened SVG-to-PNG rasterization for SVG-declared covers.
 pub mod svg;
 
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use uuid::Uuid;
 
@@ -43,7 +43,7 @@ fn cover_cache_root(library_path: &str) -> PathBuf {
 }
 
 fn cache_root(state: &AppState) -> PathBuf {
-    cover_cache_root(&state.config.library_path)
+    cover_cache_root(state.config.library_path.as_str())
 }
 
 const fn ext_for_format(fmt: image::ImageFormat) -> &'static str {
@@ -118,10 +118,10 @@ fn generate_into_cache(
     cache: &CoverCache,
     manifestation_id: Uuid,
     file_hash: &str,
-    epub_path: &Path,
+    epub_file: std::fs::File,
     size: CoverSize,
 ) -> Result<PathBuf, CoverError> {
-    let (raw_bytes, in_fmt) = extract::extract_cover_bytes(epub_path)?;
+    let (raw_bytes, in_fmt) = extract::extract_cover_bytes(epub_file)?;
     let (resized, out_fmt) = resize::resize_cover(&raw_bytes, in_fmt, size)?;
     let ext = ext_for_format(out_fmt);
     let dest = cache.cached_path(manifestation_id, file_hash, size, ext);
@@ -153,7 +153,7 @@ pub async fn get_or_create(
         .map_err(|e| CoverError::Db(format!("covers: {e}")))?;
 
     let row = sqlx::query!(
-        "SELECT file_path, current_file_hash FROM manifestations WHERE id = $1",
+        "SELECT library_id, file_path, current_file_hash FROM manifestations WHERE id = $1",
         manifestation_id,
     )
     .fetch_optional(&mut *tx)
@@ -161,8 +161,8 @@ pub async fn get_or_create(
     .map_err(|e| CoverError::Db(format!("covers: {e}")))?;
     drop(tx);
 
-    let (file_path, current_file_hash) = row
-        .map(|r| (r.file_path, r.current_file_hash))
+    let (library_id, file_path, current_file_hash) = row
+        .map(|r| (r.library_id, r.file_path, r.current_file_hash))
         .ok_or(CoverError::NoCover)?;
 
     let etag = etag_for(&current_file_hash, size);
@@ -175,13 +175,23 @@ pub async fn get_or_create(
 
     // Cache miss — generate. extract + resize + write are all CPU/IO-bound and
     // must not run on the async runtime thread.
-    let epub_path = PathBuf::from(file_path);
+    let location = crate::services::files::LibraryLocation {
+        library_id: crate::models::storage_library::LibraryId::from_uuid(library_id),
+        path: file_path.parse()?,
+    };
+    let files = state.library_files.clone();
     let path = tokio::task::spawn_blocking(move || {
         generate_into_cache(
             &cache,
             manifestation_id,
             &current_file_hash,
-            &epub_path,
+            files
+                .open_source(&location)
+                .map_err(|error| match error {
+                    crate::services::files::LibraryFileError::Io(error) => CoverError::Io(error),
+                    error => CoverError::Library(error),
+                })?
+                .file,
             size,
         )
     })
@@ -202,7 +212,7 @@ async fn warm_one(
     library_path: &str,
     manifestation_id: Uuid,
     file_hash: &str,
-    epub_path: &str,
+    epub_file: std::fs::File,
     size: CoverSize,
 ) -> Result<PathBuf, CoverError> {
     let cache = CoverCache::new(cover_cache_root(library_path));
@@ -212,10 +222,9 @@ async fn warm_one(
         return Ok(path);
     }
 
-    let epub_path = PathBuf::from(epub_path);
     let file_hash = file_hash.to_owned();
     tokio::task::spawn_blocking(move || {
-        generate_into_cache(&cache, manifestation_id, &file_hash, &epub_path, size)
+        generate_into_cache(&cache, manifestation_id, &file_hash, epub_file, size)
     })
     .await
     .map_err(|e| CoverError::Decode(format!("cover warm task failed: {e}")))?
@@ -233,7 +242,7 @@ pub fn spawn_warm_thumb(
     library_path: String,
     manifestation_id: Uuid,
     file_hash: String,
-    epub_path: String,
+    epub_file: std::fs::File,
 ) {
     tokio::spawn(async move {
         // WARM_LIMIT is a process-static semaphore that is never closed, so
@@ -246,7 +255,7 @@ pub fn spawn_warm_thumb(
             &library_path,
             manifestation_id,
             &file_hash,
-            &epub_path,
+            epub_file,
             CoverSize::Thumb,
         )
         .await
@@ -301,9 +310,15 @@ mod tests {
         let id = Uuid::from_u128(0x0123_4567_89ab_cdef);
         let hash = "abcd1234abcd1234abcd1234abcd1234";
 
-        let path = warm_one(&lib, id, hash, &epub, CoverSize::Thumb)
-            .await
-            .expect("warm thumb should succeed");
+        let path = warm_one(
+            &lib,
+            id,
+            hash,
+            std::fs::File::open(&epub).unwrap(),
+            CoverSize::Thumb,
+        )
+        .await
+        .expect("warm thumb should succeed");
 
         assert!(path.exists());
         assert_eq!(path.extension().and_then(|e| e.to_str()), Some("jpg"));
@@ -314,9 +329,15 @@ mod tests {
         );
 
         // Second call is a cache hit — same path, no regeneration.
-        let again = warm_one(&lib, id, hash, &epub, CoverSize::Thumb)
-            .await
-            .unwrap();
+        let again = warm_one(
+            &lib,
+            id,
+            hash,
+            std::fs::File::open(&epub).unwrap(),
+            CoverSize::Thumb,
+        )
+        .await
+        .unwrap();
         assert_eq!(again, path);
     }
 
@@ -333,9 +354,15 @@ mod tests {
         let id = Uuid::from_u128(0xfeed_face);
         let hash = "00112233445566778899aabbccddeeff";
 
-        let path = warm_one(&lib, id, hash, &epub, CoverSize::Full)
-            .await
-            .expect("warm full should succeed");
+        let path = warm_one(
+            &lib,
+            id,
+            hash,
+            std::fs::File::open(&epub).unwrap(),
+            CoverSize::Full,
+        )
+        .await
+        .expect("warm full should succeed");
         assert_eq!(path.extension().and_then(|e| e.to_str()), Some("png"));
     }
 }

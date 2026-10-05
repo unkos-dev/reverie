@@ -360,16 +360,22 @@ mod tests {
     // fixture INSERT queue rows with `RETURNING id`.  See the orchestrator
     // tests for the companion grant migration on `field_locks`.
 
-    fn test_config_with_max_attempts(max_attempts: u32) -> Config {
+    fn test_config_with_max_attempts(
+        max_attempts: u32,
+    ) -> (Config, crate::services::files::LibraryFiles) {
         use crate::config::{CleanupMode, CoverConfig, EnrichmentConfig};
         use crate::models::manifestation_format::ManifestationFormat;
 
-        Config {
+        let (storage_config, files) = crate::test_support::test_storage_config(
+            None,
+            crate::models::storage_library::LibraryId::from_uuid(uuid::Uuid::new_v4()),
+        );
+        let config = Config {
             port: 3000,
             database_url: String::new(),
-            library_path: String::new(),
-            ingestion_path: String::new(),
-            quarantine_path: String::new(),
+            library_path: storage_config.library_path,
+            ingestion_path: storage_config.ingestion_path,
+            quarantine_path: storage_config.quarantine_path,
             log_level: "info".into(),
             db_max_connections: 5,
             oidc_issuer_url: String::new(),
@@ -439,7 +445,8 @@ mod tests {
             hardcover_api_token: None,
             operator_contact: None,
             ingestion_dsn_defaulted: false,
-        }
+        };
+        (config, files)
     }
 
     /// Insert a work + manifestation pair with a given enrichment state and
@@ -461,19 +468,19 @@ mod tests {
         .await
         .unwrap();
 
-        let path = format!("/tmp/queue-{marker}.epub");
+        let path = format!("fixtures/queue-{marker}.epub");
         let hash = format!("queue-hash-{marker}");
         let manifestation_id = sqlx::query_scalar!(
-            "INSERT INTO manifestations \
-               (work_id, format, file_path, ingestion_file_hash, current_file_hash, \
+            "WITH inserted AS (INSERT INTO manifestations \
+               (library_id, work_id, format, file_path, ingestion_file_hash, current_file_hash, \
                 file_size_bytes, ingestion_status, validation_status, \
                 enrichment_status, enrichment_attempt_count, enrichment_attempted_at) \
-             VALUES ($1, 'epub'::manifestation_format, $2, $3, $3, 1000, \
+             VALUES ((SELECT id FROM libraries WHERE configuration_key = 'default'), $1, 'epub'::manifestation_format, $2, $3, $3, 1000, \
                      'complete'::ingestion_status, 'clean'::validation_status, \
                      $4, $5, \
                      CASE WHEN $6::bigint IS NULL THEN NULL \
                           ELSE now() - ($6 || ' seconds')::interval END) \
-             RETURNING id",
+             RETURNING *), claimed AS (INSERT INTO library_path_claims (library_id, path, manifestation_id) SELECT library_id, file_path, id FROM inserted) SELECT id AS \"id!\" FROM inserted",
             work_id,
             path,
             hash,
@@ -548,7 +555,7 @@ mod tests {
     async fn max_attempts_transitions_to_skipped(pool: PgPool) {
         let pool = ingestion_pool_for(&pool).await;
         let max_attempts: u32 = 3;
-        let config = test_config_with_max_attempts(max_attempts);
+        let (config, _files) = test_config_with_max_attempts(max_attempts);
 
         // Row is `in_progress` at the Nth attempt (as if just claimed).
         let (_work_id, m_id, _) = insert_queue_fixture(
@@ -639,7 +646,7 @@ mod tests {
 
         let cancel = CancellationToken::new();
         let cancel_for_worker = cancel.clone();
-        let mut config = test_config_with_max_attempts(3);
+        let (mut config, _files) = test_config_with_max_attempts(3);
         config.enrichment.poll_idle_secs = 3_600;
         let handle = tokio::spawn({
             let pool = pool.clone();
@@ -678,7 +685,7 @@ mod tests {
         let (_, m_id, _) =
             insert_queue_fixture(&pool, EnrichmentStatus::InProgress, 1, Some(60)).await;
         let attempted_at = queue_row_state(&pool, m_id).await.attempted_at;
-        let mut config = test_config_with_max_attempts(3);
+        let (mut config, _files) = test_config_with_max_attempts(3);
         config.enrichment.enabled = false;
         let cancel = CancellationToken::new();
         cancel.cancel();
@@ -708,7 +715,7 @@ mod tests {
         let pool = ingestion_pool_for(&pool).await;
         let (_, panic_id, _) =
             insert_queue_fixture(&pool, EnrichmentStatus::Pending, 0, None).await;
-        let mut config = test_config_with_max_attempts(3);
+        let (mut config, _files) = test_config_with_max_attempts(3);
         config.enrichment.concurrency = 1;
         config.enrichment.poll_idle_secs = 1;
         let cancel = CancellationToken::new();
@@ -758,7 +765,7 @@ mod tests {
         let pool = ingestion_pool_for(pool).await;
         let (_, id, _) =
             insert_queue_fixture(&pool, EnrichmentStatus::Failed, 2, Some(7_201)).await;
-        let mut config = test_config_with_max_attempts(3);
+        let (mut config, _files) = test_config_with_max_attempts(3);
         config.enrichment.poll_idle_secs = 3_600;
         let cancel = CancellationToken::new();
         let worker = tokio::spawn(queue_with_runner(
@@ -946,7 +953,7 @@ mod tests {
     async fn mark_failed_requeues_when_rerun_requested(pool: PgPool) {
         let pool = ingestion_pool_for(&pool).await;
         let max_attempts: u32 = 3;
-        let config = test_config_with_max_attempts(max_attempts);
+        let (config, _files) = test_config_with_max_attempts(max_attempts);
 
         // Attempt cap reached — without the flag this row would go `skipped`.
         let (_work_id, m_capped, _) = insert_queue_fixture(

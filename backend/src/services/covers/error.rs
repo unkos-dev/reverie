@@ -33,6 +33,9 @@ pub enum CoverError {
     /// the `zip` crate via `#[from]`).
     #[error("zip: {0}")]
     Zip(#[from] zip::result::ZipError),
+    /// Recorded source cannot be opened in its owning library.
+    #[error("library source: {0}")]
+    Library(#[from] crate::services::files::LibraryFileError),
     /// Underlying filesystem `IO` failure (e.g. cache directory creation,
     /// atomic-write rename) propagated via `#[from]`.
     #[error("io: {0}")]

@@ -11,7 +11,7 @@
 -- bypasses RLS on `manifestations` -- no session GUCs are required.
 --
 -- WARNING: seeded rows are catalog stubs only. `manifestations.file_path`
--- points at a `/seed/` path that does not exist on disk and no cover is
+-- points at a `seed/` path that does not exist on disk and no cover is
 -- generated, so grid-view cover thumbnails 404 on every seeded book. Use
 -- table/list view, or the `/design/grid-spike` harness, to inspect this
 -- data; do not expect covers to render.
@@ -84,19 +84,26 @@ WHERE w.title LIKE 'Seeded Tome %';
 -- per work makes the work id equally unique per row.
 INSERT INTO manifestations
 (
-    work_id, format, file_path, ingestion_file_hash, current_file_hash,
+    library_id, work_id, format, file_path, ingestion_file_hash, current_file_hash,
     file_size_bytes, ingestion_status, validation_status
 )
 SELECT
+    (SELECT id FROM libraries WHERE configuration_key = 'default') AS library_id,
     w.id AS work_id,
     'epub'::manifestation_format AS format,
-    '/seed/seed-' || w.id || '.epub' AS file_path,
+    'seed/seed-' || w.id || '.epub' AS file_path,
     'seed-hash-' || w.id AS ingestion_file_hash,
     'seed-hash-' || w.id AS current_file_hash,
     1000 AS file_size_bytes,
     'complete'::ingestion_status AS ingestion_status,
     'clean'::validation_status AS validation_status
 FROM works AS w
+WHERE w.title LIKE 'Seeded Tome %';
+
+INSERT INTO library_path_claims (library_id, path, manifestation_id)
+SELECT m.library_id, m.file_path, m.id
+FROM manifestations AS m
+JOIN works AS w ON w.id = m.work_id
 WHERE w.title LIKE 'Seeded Tome %';
 
 ANALYZE works, manifestations, work_authors;

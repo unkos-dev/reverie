@@ -76,7 +76,7 @@ pub struct TerminalEvent<'a> {
     /// Target manifestation (sentinel `Uuid::nil()` when the job row
     /// vanished before lookup).
     pub manifestation_id: Uuid,
-    /// Writeback reason (`metadata` / `cover`; `unknown` on the error path).
+    /// Stored reason (`metadata`, `cover` or `relocation`); `unknown` only when lookup fails.
     pub reason: &'a str,
     /// Attempt count at dispatch time.  Payload detail only — deliberately
     /// NOT part of the event id, because a crash-recovery re-claim

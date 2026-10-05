@@ -1,0 +1,31 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "WITH inserted AS (INSERT INTO manifestations (library_id, work_id, isbn_13, format, file_path, ingestion_file_hash, current_file_hash, file_size_bytes, ingestion_status, validation_status) VALUES ((SELECT id FROM libraries WHERE configuration_key = 'default'), $1, $2, 'epub'::manifestation_format, $3, $4, $4, 1000, 'complete'::ingestion_status, 'clean'::validation_status) RETURNING *), claimed AS (INSERT INTO library_path_claims (library_id, path, manifestation_id) SELECT library_id, file_path, id FROM inserted) SELECT id AS \"id!\" FROM inserted",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id!",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "manifestations",
+            "name": "id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "9414abcee98bf409d8ebef8c19212ca47e95f8d82258ceff1dc1a5e734338a88"
+}

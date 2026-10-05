@@ -1,183 +1,126 @@
-//! High-level repair orchestrator for the `EPUB` validation pipeline.
+//! Entry repair instructions for candidate repack.
 //!
-//! Reads the `Repaired`-severity `Issue`s produced by the earlier pipeline
-//! layers and applies the corresponding fixes: broken spine-ref removal (by
-//! rewriting the `OPF` `XML`), `META-INF/container.xml` regeneration, and
-//! encoding transcoding. All mutations go through [`repack::with_modifications`]
-//! so the repacked archive is always written to a temp file and then atomically
-//! renamed over the source.
+//! Encoding conversion is produced one entry at a time. Required spine and container
+//! repairs compose with metadata changes before candidate validation.
 
-use std::collections::HashMap;
-use std::path::Path;
-use zip::write::{ExtendedFileOptions, FileOptions};
+use super::{EpubError, Issue, IssueKind, Severity, ValidationReport, zip_layer};
 
-use super::repack;
-use super::{EpubError, Issue, IssueKind, zip_layer};
+/// Instructions for one candidate, without retaining converted chapters.
+#[derive(Default)]
+pub struct RepairPlan {
+    broken_refs: Vec<String>,
+    encodings: Vec<(String, String)>,
+    container_opf: Option<String>,
+    opf_path: Option<String>,
+}
 
-/// Re-package the `EPUB` at `path` applying all `Repaired`-severity issues.
-///
-/// Writes to a temp file in the same directory, then `rename()`s over `path`
-/// atomically. If re-packaging fails, `path` is left untouched.
-///
-/// # Errors
-///
-/// Returns [`EpubError::Io`] if the archive bytes cannot be read from `path`.
-/// Returns [`EpubError::Zip`] if the `OPF` entry needed for the spine rewrite
-/// is missing or unreadable (absent, unsupported method, encrypted, or
-/// failing its declared CRC or size). The encoding-only `OPF` rewrite path
-/// (taken when no broken spine refs exist) and the non-`OPF` encoding-fix
-/// loop both treat such an entry as "no fix available" and skip it rather
-/// than propagating. Returns [`EpubError::TempFile`] if the repacked temp
-/// file cannot be atomically persisted over `path`.
-pub fn repackage(path: &Path, issues: &[Issue], opf_path: Option<&str>) -> Result<(), EpubError> {
-    let dir = path.parent().unwrap_or_else(|| Path::new("."));
-
-    let broken_refs: Vec<String> = issues
-        .iter()
-        .filter_map(|i| {
-            if let IssueKind::BrokenSpineRef { idref } = &i.kind {
-                Some(idref.clone())
-            } else {
-                None
-            }
-        })
-        .collect();
-
-    let encoding_fixes: Vec<(String, String)> = issues
-        .iter()
-        .filter_map(|i| {
-            if let IssueKind::EncodingMismatch {
-                entry_name,
-                declared,
-                ..
-            } = &i.kind
-            {
-                Some((entry_name.clone(), declared.clone()))
-            } else {
-                None
-            }
-        })
-        .collect();
-
-    let missing_container = issues
-        .iter()
-        .any(|i| matches!(&i.kind, IssueKind::MissingContainer { .. }));
-
-    let opf_candidate: Option<String> = issues.iter().find_map(|i| {
-        if let IssueKind::MissingContainer { opf_candidate } = &i.kind {
-            opf_candidate.clone()
-        } else {
-            None
-        }
-    });
-
-    // Build a `binary_replacements` map for encoding fixes applied to
-    // non-OPF entries.  OPF encoding fixes are folded into the rewritten_opf
-    // below, so they are NOT added to this map.
-    let mut binary_replacements: HashMap<String, Vec<u8>> = HashMap::new();
-    let bytes = std::fs::read(path)?;
-    for (entry_name, declared_enc) in &encoding_fixes {
-        if Some(entry_name.as_str()) == opf_path {
-            continue;
-        }
-        let entry_bytes = zip_layer::read_entry_from_bytes(&bytes, entry_name);
-        if let Some(raw) = entry_bytes
-            && let Some(transcoded) = transcode_to_utf8(&raw, declared_enc)
-        {
-            binary_replacements.insert(entry_name.clone(), transcoded);
-        }
+impl RepairPlan {
+    /// Capture existing repair instructions from a source report.
+    #[must_use]
+    pub fn from_report(report: &ValidationReport) -> Self {
+        Self::from_issues(
+            &report.issues,
+            report.opf_data.as_ref().map(|opf| opf.opf_path.as_str()),
+        )
     }
 
-    // OPF replacement: chain encoding fix + spine rewrite when both apply.
-    let rewritten_opf: Option<Vec<u8>> = if !broken_refs.is_empty() {
-        if let Some(opf) = opf_path {
-            let opf_bytes = zip_layer::read_entry_from_bytes(&bytes, opf)
-                .ok_or(zip::result::ZipError::FileNotFound)?;
-            let opf_bytes = if let Some((_, enc)) = encoding_fixes.iter().find(|(n, _)| n == opf) {
-                transcode_to_utf8(&opf_bytes, enc).unwrap_or(opf_bytes)
-            } else {
-                opf_bytes
-            };
-            Some(rewrite_opf_remove_broken_spine(&opf_bytes, &broken_refs))
-        } else {
-            None
-        }
-    } else if let Some(opf) = opf_path {
-        // No spine rewrite but OPF may still need an encoding fix.
-        encoding_fixes
+    fn from_issues(issues: &[Issue], opf_path: Option<&str>) -> Self {
+        let mut plan = Self {
+            opf_path: opf_path.map(str::to_owned),
+            ..Self::default()
+        };
+        for issue in issues
             .iter()
-            .find(|(n, _)| n == opf)
-            .and_then(|(_, enc)| {
-                let opf_bytes = zip_layer::read_entry_from_bytes(&bytes, opf)?;
-                transcode_to_utf8(&opf_bytes, enc)
-            })
-    } else {
-        None
-    };
-
-    // Regenerated container.xml is appended as an addition when missing.
-    let mut additions: Vec<(String, Vec<u8>, FileOptions<ExtendedFileOptions>)> = Vec::new();
-    if missing_container && let Some(opf_path_str) = &opf_candidate {
-        let container_xml = generate_container_xml(opf_path_str);
-        let opts: FileOptions<ExtendedFileOptions> = FileOptions::default();
-        additions.push((
-            "META-INF/container.xml".to_string(),
-            container_xml.into_bytes(),
-            opts,
-        ));
+            .filter(|issue| issue.severity == Severity::Repaired)
+        {
+            match &issue.kind {
+                IssueKind::BrokenSpineRef { idref } => plan.broken_refs.push(idref.clone()),
+                IssueKind::EncodingMismatch {
+                    entry_name,
+                    declared,
+                    ..
+                } => plan.encodings.push((entry_name.clone(), declared.clone())),
+                IssueKind::MissingContainer { opf_candidate } => {
+                    plan.container_opf.clone_from(opf_candidate);
+                }
+                _ => {}
+            }
+        }
+        plan
     }
 
-    // Release the bytes borrow before the helper re-reads the source.
-    drop(bytes);
+    /// Produce the repair for one entry and release its conversion after writing.
+    ///
+    /// # Errors
+    /// Returns an error when a required source entry or conversion is unavailable.
+    pub fn replacement(
+        &self,
+        handle: &zip_layer::ZipHandle,
+        name: &str,
+    ) -> Result<Option<Vec<u8>>, EpubError> {
+        if name == "META-INF/container.xml"
+            && let Some(opf) = &self.container_opf
+        {
+            return Ok(Some(generate_container_xml(opf).into_bytes()));
+        }
+        let encoding = self.encodings.iter().find(|(entry, _)| entry == name);
+        let spine = self.opf_path.as_deref() == Some(name) && !self.broken_refs.is_empty();
+        if encoding.is_none() && !spine {
+            return Ok(None);
+        }
+        let raw = zip_layer::read_entry(handle, name)
+            .ok_or_else(|| EpubError::Repair(format!("unreadable entry {name}")))?;
+        let bytes = if let Some((_, encoding)) = encoding {
+            transcode_to_utf8(&raw, encoding).ok_or_else(|| {
+                EpubError::Repair(format!("encoding conversion failed for {name}"))
+            })?
+        } else {
+            raw
+        };
+        if spine {
+            Ok(Some(rewrite_opf_remove_broken_spine(
+                &bytes,
+                &self.broken_refs,
+            )?))
+        } else {
+            Ok(Some(bytes))
+        }
+    }
 
-    let temp = repack::with_modifications(
-        path,
-        dir,
-        opf_path,
-        rewritten_opf.as_deref(),
-        &binary_replacements,
-        &additions,
-    )?;
-    temp.persist(path).map_err(EpubError::TempFile)?;
-    Ok(())
+    /// Missing container instructions, emitted only when no source entry exists.
+    pub(super) fn container_addition(&self, handle: &zip_layer::ZipHandle) -> Option<Vec<u8>> {
+        (!handle
+            .entries
+            .iter()
+            .any(|name| name == "META-INF/container.xml"))
+        .then(|| {
+            self.container_opf
+                .as_ref()
+                .map(|opf| generate_container_xml(opf).into_bytes())
+        })
+        .flatten()
+    }
 }
 
 /// Rewrite `OPF` `XML` removing `<itemref>` elements whose `idref` is in `broken_refs`.
-fn rewrite_opf_remove_broken_spine(opf_bytes: &[u8], broken_refs: &[String]) -> Vec<u8> {
-    let Ok(xml) = std::str::from_utf8(opf_bytes) else {
-        return opf_bytes.to_vec();
-    };
+fn rewrite_opf_remove_broken_spine(
+    opf_bytes: &[u8],
+    broken_refs: &[String],
+) -> Result<Vec<u8>, EpubError> {
+    let xml =
+        std::str::from_utf8(opf_bytes).map_err(|error| EpubError::Repair(error.to_string()))?;
     let mut reader = quick_xml::Reader::from_str(xml);
     reader.config_mut().trim_text(false);
     let mut output = quick_xml::Writer::new(Vec::new());
-    // C6: use a depth counter instead of a bool so that malformed OPF with nested
-    // <itemref> elements (impossible in valid EPUB but possible in corrupted input)
-    // does not reset the skip flag prematurely on the first end tag.
-    let mut skip_depth: u32 = 0;
+    let mut skip_depth = 0_u32;
     loop {
-        match reader.read_event() {
-            Ok(quick_xml::events::Event::Empty(e)) if e.name().as_ref() == "itemref" => {
-                if skip_depth > 0 {
-                    continue; // inside a skipped subtree
-                }
-                let idref = e
-                    .attributes()
-                    .flatten()
-                    .find(|a| a.key.as_ref() == "idref")
-                    .map(|a| a.value.into_owned());
-                if idref
-                    .as_deref()
-                    .is_some_and(|id| broken_refs.iter().any(|r| r == id))
-                {
-                    continue;
-                }
-                // Writing to Vec<u8> is infallible; the Result is discarded intentionally.
-                if let Err(e) = output.write_event(quick_xml::events::Event::Empty(e.into_owned()))
-                {
-                    tracing::warn!(error = ?e, "opf rewrite: unexpected write error (infallible sink)");
-                }
-            }
-            Ok(quick_xml::events::Event::Start(e)) if e.name().as_ref() == "itemref" => {
+        let event = reader
+            .read_event()
+            .map_err(|error| EpubError::Repair(error.to_string()))?;
+        match event {
+            quick_xml::events::Event::Empty(ref e) | quick_xml::events::Event::Start(ref e)
+                if e.name().as_ref() == "itemref" =>
+            {
                 let idref = e
                     .attributes()
                     .flatten()
@@ -188,34 +131,28 @@ fn rewrite_opf_remove_broken_spine(opf_bytes: &[u8], broken_refs: &[String]) -> 
                         .as_deref()
                         .is_some_and(|id| broken_refs.iter().any(|r| r == id))
                 {
-                    skip_depth += 1;
-                } else if let Err(e) =
-                    output.write_event(quick_xml::events::Event::Start(e.into_owned()))
-                {
-                    tracing::warn!(error = ?e, "opf rewrite: unexpected write error (infallible sink)");
+                    if matches!(event, quick_xml::events::Event::Start(_)) {
+                        skip_depth += 1;
+                    }
+                    continue;
                 }
             }
-            Ok(quick_xml::events::Event::End(e)) if e.name().as_ref() == "itemref" => {
-                if skip_depth > 0 {
-                    skip_depth -= 1;
-                } else if let Err(e) =
-                    output.write_event(quick_xml::events::Event::End(e.into_owned()))
-                {
-                    tracing::warn!(error = ?e, "opf rewrite: unexpected write error (infallible sink)");
-                }
+            quick_xml::events::Event::End(ref e)
+                if e.name().as_ref() == "itemref" && skip_depth > 0 =>
+            {
+                skip_depth -= 1;
+                continue;
             }
-            Ok(quick_xml::events::Event::Eof) => break,
-            Ok(e) => {
-                if skip_depth == 0
-                    && let Err(e) = output.write_event(e.into_owned())
-                {
-                    tracing::warn!(error = ?e, "opf rewrite: unexpected write error (infallible sink)");
-                }
-            }
-            Err(_) => return opf_bytes.to_vec(),
+            quick_xml::events::Event::Eof => break,
+            _ => {}
+        }
+        if skip_depth == 0 {
+            output
+                .write_event(event.into_owned())
+                .map_err(|error| EpubError::Repair(error.to_string()))?;
         }
     }
-    output.into_inner()
+    Ok(output.into_inner())
 }
 
 fn transcode_to_utf8(bytes: &[u8], declared_enc: &str) -> Option<Vec<u8>> {
@@ -263,6 +200,28 @@ fn generate_container_xml(opf_path: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::path::Path;
+    use zip::write::{ExtendedFileOptions, FileOptions};
+    fn repackage(path: &Path, issues: &[Issue], opf_path: Option<&str>) -> Result<(), EpubError> {
+        let (handle, report) = super::super::inspect(std::fs::File::open(path)?)?;
+        let plan = RepairPlan::from_issues(issues, opf_path);
+        let parent = cap_std::fs::Dir::open_ambient_dir(
+            path.parent().unwrap(),
+            cap_std::ambient_authority(),
+        )?;
+        super::super::repack::publish(&parent, path.file_name().unwrap(), &report, |file| {
+            super::super::repack::with_modifications(
+                &handle,
+                file,
+                None,
+                None,
+                &std::collections::HashMap::new(),
+                &[],
+                &plan,
+            )
+        })?;
+        Ok(())
+    }
     use crate::services::epub::repack::MIMETYPE_ENTRY;
     use crate::services::epub::{IssueKind, Layer, Severity};
     use std::io::Write;
@@ -337,7 +296,7 @@ mod tests {
 <itemref idref="ch2"/>
 </spine>
 </package>"#;
-        let result = rewrite_opf_remove_broken_spine(opf, &["ch2".to_string()]);
+        let result = rewrite_opf_remove_broken_spine(opf, &["ch2".to_string()]).unwrap();
         let result_str = std::str::from_utf8(&result).unwrap();
         assert!(result_str.contains("ch1"));
         assert!(!result_str.contains("ch2"));

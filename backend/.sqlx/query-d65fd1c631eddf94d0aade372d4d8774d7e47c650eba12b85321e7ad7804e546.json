@@ -1,0 +1,31 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT m.id FROM manifestations m JOIN writeback_jobs wj ON wj.manifestation_id = m.id\n         WHERE wj.id = $1 AND wj.status = 'in_progress' AND m.id = $2\n         AND m.relocation_source_path = $3 AND m.relocation_destination_path = $4\n         FOR UPDATE OF m, wj",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "manifestations",
+            "name": "id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "d65fd1c631eddf94d0aade372d4d8774d7e47c650eba12b85321e7ad7804e546"
+}

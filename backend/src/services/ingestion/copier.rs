@@ -1,34 +1,34 @@
 //! Atomic, integrity-verified file copy from the ingestion drop-zone to the library.
 //!
-//! Files are written to a `tempfile` on the same filesystem as the destination, then
-//! renamed atomically. A `SHA-256` digest is computed inline during the write and
-//! compared against the pre-computed source hash — any corruption introduced during
-//! the copy causes `copy_verified` to return `CopyError::HashMismatch` before the
-//! rename, leaving no partial file in the library directory.
+//! Destination-parent staging holds the streamed bytes until their inline `SHA-256`
+//! matches the source hash. Contained publication refuses an occupied final name.
 
 use std::fmt::Write as _;
 
+use crate::services::files::RelativeFilePath;
+use crate::services::writeback::path_rename;
+use cap_std::fs::{Dir, MetadataExt};
+use cap_tempfile::{TempDir, TempFile};
 use sha2::{Digest, Sha256};
 use std::io::{BufReader, BufWriter, Read, Write};
 use std::path::{Path, PathBuf};
-use tempfile::NamedTempFile;
 
 const BUF_SIZE: usize = 64 * 1024;
 
-/// Outcome of a successful [`copy_verified`] call.
+/// Outcome of a successful [`copy_verified_into`] call.
 #[derive(Debug)]
 pub struct CopyResult {
-    /// Path of the file as it now exists in the library directory
-    /// (`dest_dir.join(dest_relative)`; absolute only if `dest_dir` was
-    /// absolute — `copy_verified` does not canonicalise).
+    /// Relative location beneath the supplied library capability.
     pub dest_path: PathBuf,
     /// Lowercase hex `SHA-256` digest of the copied bytes, verified against the source.
     pub sha256: String,
     /// File size in bytes, read from source metadata before copying.
     pub file_size: u64,
+    /// Device and inode of the published candidate.
+    pub identity: (u64, u64),
 }
 
-/// Errors returned by [`copy_verified`] and [`hash_file`].
+/// Errors returned by [`copy_verified_into`] and [`hash_file`].
 #[derive(Debug, thiserror::Error)]
 pub enum CopyError {
     /// An underlying I/O failure (open, read, write, rename, or metadata).
@@ -45,9 +45,9 @@ pub enum CopyError {
         /// streaming write — diverges from `source_hash` on transit corruption.
         dest_hash: String,
     },
-    /// `tempfile` failed to rename the temp file to the final destination path.
+    /// Contained preparation or no-overwrite publication failed.
     #[error("tempfile persist failed: {0}")]
-    Persist(#[from] tempfile::PersistError),
+    Persist(#[from] crate::services::writeback::error::WritebackError),
 }
 
 /// Hash a file using streaming `SHA-256` with a 64 KB buffer.
@@ -103,27 +103,45 @@ pub fn hash_file(path: &Path) -> Result<String, std::io::Error> {
 /// - `CopyError::HashMismatch` — the digest of the written bytes does not match
 ///   `source_hash`; the temp file is discarded before returning.
 /// - `CopyError::Persist` — the atomic rename of the temp file to the final path fails.
-pub fn copy_verified(
+#[cfg(test)]
+fn copy_verified(
     source: &Path,
     dest_dir: &Path,
     dest_relative: &Path,
     source_hash: &str,
 ) -> Result<CopyResult, CopyError> {
-    let final_path = dest_dir.join(dest_relative);
+    let root = Dir::open_ambient_dir(dest_dir, cap_std::ambient_authority())?;
+    let relative: RelativeFilePath = dest_relative
+        .to_str()
+        .ok_or_else(|| std::io::Error::other("non-UTF8 copied location"))?
+        .parse()
+        .map_err(std::io::Error::other)?;
+    let mut result = copy_verified_into(source, &root, &relative, source_hash)?;
+    result.dest_path = dest_dir.join(dest_relative);
+    Ok(result)
+}
 
-    // Ensure parent directories exist
-    if let Some(parent) = final_path.parent() {
-        std::fs::create_dir_all(parent)?;
-    }
+/// Copy verified bytes into a contained name without replacing an occupied destination.
+///
+/// # Errors
+/// Returns source, integrity, contained lookup or publication failures.
+pub fn copy_verified_into(
+    source: &Path,
+    root: &Dir,
+    relative: &RelativeFilePath,
+    source_hash: &str,
+) -> Result<CopyResult, CopyError> {
+    path_rename::prepare_destination(root, relative)?;
+    let (parent, name) = path_rename::parent(root, relative)?;
 
     let source_meta = std::fs::metadata(source)?;
     let file_size = source_meta.len();
 
-    // Create temp file in dest_dir (for same-filesystem atomic rename)
-    let temp = NamedTempFile::new_in(dest_dir)?;
+    let staging = TempDir::new_in(&parent)?;
+    let mut temp = TempFile::new(&staging)?;
 
     let dest_hash = {
-        let mut writer = BufWriter::new(&temp);
+        let mut writer = BufWriter::new(&mut temp);
         let mut reader = BufReader::with_capacity(BUF_SIZE, std::fs::File::open(source)?);
         let mut dest_hasher = Sha256::new();
         #[expect(
@@ -160,13 +178,16 @@ pub fn copy_verified(
         });
     }
 
-    // Atomic rename
-    temp.persist(&final_path)?;
+    let metadata = temp.as_file().metadata()?;
+    let identity = (metadata.dev(), metadata.ino());
+    path_rename::persist(temp, &staging, &parent, &name)?;
+    staging.close()?;
 
     Ok(CopyResult {
-        dest_path: final_path,
+        dest_path: relative.as_path().to_owned(),
         sha256: dest_hash,
         file_size,
+        identity,
     })
 }
 

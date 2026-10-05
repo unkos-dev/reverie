@@ -151,8 +151,8 @@ pub const ENV_MAP: &[(&str, &str)] = &[
 /// variables.
 ///
 /// Maps each known env-var name to its dotted field path via
-/// `ENV_MAP`, parses values into typed figment `Value`s, and drops empties
-/// (empty-as-unset). Unmapped vars (`PATH`, `HOME`, …) are ignored.
+/// `ENV_MAP` and parses values into typed figment `Value`s. Empty storage roots
+/// reach their checked parser; other empty values are unset. Unmapped vars are ignored.
 ///
 /// # Why a custom provider rather than stock [`figment::providers::Env`]
 ///
@@ -223,8 +223,13 @@ impl Provider for EnvProvider {
         let mut dict = Dict::new();
 
         for (key, val) in &self.pairs {
-            // Empty string == unset (GOTCHA-EMPTY).
-            if val.is_empty() {
+            // Empty roots reach their checked type; other empty values are unset.
+            if val.is_empty()
+                && !matches!(
+                    key.as_str(),
+                    "REVERIE_LIBRARY_PATH" | "REVERIE_INGESTION_PATH" | "REVERIE_QUARANTINE_PATH"
+                )
+            {
                 continue;
             }
             // Only process keys we know about; ignore PATH, HOME, etc.

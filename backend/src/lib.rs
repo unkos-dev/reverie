@@ -302,6 +302,23 @@ pub async fn run() -> anyhow::Result<()> {
     // schema-dependent query before this runs.
     apply_or_verify_schema(&config, &pool).await?;
 
+    let library_id = models::storage_library::default_library_id(&pool)
+        .await
+        .context("selecting the configured library identity")?;
+    let library_path = config.library_path.clone();
+    let ingestion_path = config.ingestion_path.clone();
+    let quarantine_path = config.quarantine_path.clone();
+    let library_files = tokio::task::spawn_blocking(move || {
+        services::files::LibraryFiles::open(
+            [(library_id, library_path)],
+            &ingestion_path,
+            &quarantine_path,
+        )
+    })
+    .await
+    .context("acquiring storage roots in blocking work")?
+    .context("opening required storage roots before serving")?;
+
     // First-run env seed: create the first administrator from REVERIE_BOOTSTRAP_*
     // if configured and none exists. Idempotent; honours the single-admin gate.
     seed_admin_if_configured(&pool, config.password_min_length)
@@ -367,6 +384,7 @@ pub async fn run() -> anyhow::Result<()> {
     let state = AppState {
         pool,
         ingestion_pool,
+        library_files,
         config: config.clone(),
         oidc,
         jwt_validator,
@@ -414,9 +432,15 @@ pub async fn run() -> anyhow::Result<()> {
     let watcher_token = cancel_token.clone();
     let watcher_config = config.clone();
     let watcher_pool = state.ingestion_pool.clone();
+    let watcher_files = state.library_files.clone();
     let watcher_worker = tokio::spawn(async move {
-        if let Err(e) =
-            services::ingestion::run_watcher(watcher_config, watcher_pool, watcher_token).await
+        if let Err(e) = services::ingestion::run_watcher(
+            watcher_config,
+            watcher_pool,
+            watcher_token,
+            watcher_files,
+        )
+        .await
         {
             tracing::error!(error = %e, "ingestion watcher exited with error");
         }
@@ -444,10 +468,15 @@ pub async fn run() -> anyhow::Result<()> {
     // above, before any spawn.
     let writeback_token = cancel_token.clone();
     let writeback_config = config.clone();
+    let writeback_files = state.library_files.clone();
     let writeback_worker = tokio::spawn(async move {
-        if let Err(e) =
-            services::writeback::spawn_worker(writeback_pool, writeback_config, writeback_token)
-                .await
+        if let Err(e) = services::writeback::spawn_worker(
+            writeback_pool,
+            writeback_config,
+            writeback_token,
+            writeback_files,
+        )
+        .await
         {
             tracing::error!(error = %e, "writeback worker exited with error");
         }

@@ -723,10 +723,9 @@ mod tests {
             zip::write::FileOptions::default();
         w.start_file("OEBPS/content.opf", opts).unwrap();
         w.write_all(opf_bytes).unwrap();
-        let handle = crate::services::epub::zip_layer::ZipHandle {
-            bytes: w.finish().unwrap().into_inner(),
-            entries: vec!["OEBPS/content.opf".to_string()],
-        };
+        let handle = crate::services::epub::zip_layer::ZipHandle::from_bytes(
+            &(w.finish().unwrap().into_inner()),
+        );
         let mut issues = Vec::new();
         crate::services::epub::opf_layer::validate(&handle, Some("OEBPS/content.opf"), &mut issues)
             .unwrap()

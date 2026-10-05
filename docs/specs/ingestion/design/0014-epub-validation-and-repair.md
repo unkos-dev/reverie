@@ -19,34 +19,32 @@ This Design covers the five-layer structural check every EPUB file passes throug
 integrity read through `rawzip`, `META-INF/container.xml` and `OPF` package-document parsing, `XHTML` spine-document
 well-formedness, and cover-image decoding. It covers the shared `Issue` vocabulary those layers append to, the severity
 tiers that decide whether a finding is automatically repaired, tolerated, or fatal, and the repair pass that rewrites
-and atomically replaces an archive carrying only repairable findings.
+and publishes a validated candidate combining repairable findings with any tolerated degraded content.
 
 ## Purpose and boundaries
 
-This subject owns: the entry point `validate_and_repair` and its `ValidationReport`/`ValidationOutcome` result types
-(`backend/src/services/epub/mod.rs`); the `Issue`/`IssueKind`/`Severity`/`Layer` vocabulary every layer appends findings
-to, and the shared `is_safe_path` traversal check guarding every archive-relative path before it is used, whether a
-layer applies it directly to the path it resolves or, as Layer 5 does for its primary cover path, inherits it from an
-earlier layer's check on that same href (Layer 3's, made at manifest insertion), applying the check itself only to an
-SVG cover's sibling-image path; Layer 1's ZIP integrity read and its `ZipHandle` backing store, built on `rawzip`
-(`zip_layer.rs`); Layer 2's `container.xml` parse and OPF-path discovery, including regeneration when `container.xml`
-cannot be read (`container_layer.rs`); Layer 3's OPF package-document parse into `OpfData`, the manifest, spine, Dublin
-Core fields, W3C accessibility metadata, and series metadata (`opf_layer.rs`); Layer 4's XHTML spine-document encoding
-and well-formedness checks (`xhtml_layer.rs`); Layer 5's cover-image decoding check (`cover_layer.rs`); the repair
-orchestrator that applies every `Repaired`-severity finding and atomically replaces the source file (`repair.rs`); and
-the low-level repack helper that rebuilds a ZIP archive with the `mimetype` entry first and stored, copying every
-untouched entry verbatim (`repack.rs`).
+This subject owns: pure opened-file `inspect` and `validate`, the repairing `validate_and_repair` entry point, and their
+result types (`backend/src/services/epub/mod.rs`); the `Issue`/`IssueKind`/`Severity`/`Layer` vocabulary every layer
+appends findings to, and the shared `is_safe_path` traversal check guarding every archive-relative path before it is
+used, whether a layer applies it directly to the path it resolves or, as Layer 5 does for its primary cover path,
+inherits it from an earlier layer's check on that same href (Layer 3's, made at manifest insertion), applying the check
+itself only to an SVG cover's sibling-image path; Layer 1's ZIP integrity read and its `ZipHandle` backing store, built
+on `rawzip` (`zip_layer.rs`); Layer 2's `container.xml` parse and OPF-path discovery, including regeneration when
+`container.xml` cannot be read (`container_layer.rs`); Layer 3's OPF package-document parse into `OpfData`, the
+manifest, spine, Dublin Core fields, W3C accessibility metadata, and series metadata (`opf_layer.rs`); Layer 4's XHTML
+spine-document encoding and well-formedness checks (`xhtml_layer.rs`); Layer 5's cover-image decoding check
+(`cover_layer.rs`); the repair plan that records `Repaired`-severity entry instructions (`repair.rs`); and the low-level
+repack helper that rebuilds a ZIP archive with the `mimetype` entry first and stored, copying every untouched entry
+verbatim (`repack.rs`).
 
 It does not own what a caller does with a `Quarantined` outcome, and the three production callers do three different
 things with it. The Design "Ingestion pipeline" removes the just-copied library file, moves the drop-zone original to
-quarantine with a sidecar, and never commits a manifestation row for it. The Design "Writeback pipeline" never sees a
-fresh `Quarantined` outcome from a file it is writing back to (the file already carried a manifestation row and a
-non-quarantined outcome before the job started); it treats a `Quarantined` result from its own post-write validation
-call as a regression and atomically restores the pre-write bytes, leaving the existing row's `file_path` and
-`current_file_hash` exactly as they were before that run. On-demand cover extraction in the Design "Covers"
-(`backend/src/services/covers/extract.rs`) does not call this subject's entry point at all; it re-runs Layer 1 alone and
-turns any `Irrecoverable` finding into `CoverError::ArchiveRejected`. This subject owns only the production of the
-`Quarantined` value and the issues behind it, not any of those three dispositions.
+quarantine with a sidecar, and never commits a manifestation row for it. The Design "Writeback pipeline" rejects a
+quarantined source or candidate before publication, leaving rejected content's source bytes and stored hash/location
+untouched. On-demand cover extraction in the Design "Covers" (`backend/src/services/covers/extract.rs`) does not call
+this subject's entry point at all; it re-runs Layer 1 alone and turns any `Irrecoverable` finding into
+`CoverError::ArchiveRejected`. This subject owns only the production of the `Quarantined` value and the issues behind
+it, not any of those three dispositions.
 
 It does not own committing a validation outcome to the database. The `validation_status` column, its Postgres enum, and
 the `ValidationStatus` Rust type that maps one-to-one onto this subject's own `ValidationOutcome` variants
@@ -70,53 +68,48 @@ Depends on: `rawzip` for Layer 1's lazy, allocation-bounded central-directory re
 decompression during Layer 1's probes and full entry reads; the `zip` crate, built with only the
 `deflate-flate2-zlib-rs` and `time` features, for the repack write path; `quick_xml` for `container.xml`, OPF, and XHTML
 parsing; `encoding_rs` for XHTML transcoding; `image`, plus `rasterize_svg`, `looks_like_svg`, and `parses_as_svg`,
-owned by the Design "Covers", for cover decoding; and `tempfile` for the atomic rename `repack::with_modifications`
-performs. This subject opens no database connection of its own; every check and repair runs against a byte buffer read
-from, and (on repair) written back to, the filesystem path the caller supplies.
+owned by the Design "Covers", for cover decoding; and `cap-std-ext` and `cap-tempfile` for durable replacement beneath
+an opened parent. This subject opens no database connection.
 
-Depended on by: the Design "Ingestion pipeline", which calls `validate_and_repair` once per freshly copied EPUB file and
-branches on the returned `ValidationOutcome`; the Design "Writeback pipeline", which calls `validate_and_repair` twice
-per job (once before its own rewrite, to record a baseline outcome, and once after, to detect a regression), and which
-also calls this subject's own `repack::with_modifications` and `zip_layer::read_entry_from_bytes` directly to build and
-read its own rewritten archive, independently of `validate_and_repair`; and the Design "Covers", whose on-demand cover
-extraction calls `zip_layer::validate`, `container_layer::validate`, and `opf_layer::validate` directly, and calls
-`cover_layer::find_cover_href` to locate the same cover Layer 5 would check, without ever calling Layer 5's own
-`validate` function. Layer 5 in turn depends on SVG helpers owned by the Design "Covers" to judge whether an
-SVG-declared cover renders anything visible, the one place this subject's own validation logic calls into a neighbouring
-subject's code rather than the reverse.
+Ingestion passes an opened copied-library file to `validate_and_repair` with its actual parent capability and basename.
+Writeback uses `inspect`, builds entry repairs and metadata changes together, then calls `repack::publish`. Cover
+extraction consumes an opened file through Layers 1 to 3 and shares cover-path and SVG helpers with Layer 5.
 
 ## Structure
 
-**Outcome derivation runs in three stages, and only the first two can quarantine.** `validate_and_repair` runs Layer 1,
-checks for an `Irrecoverable` issue, and returns `Quarantined` immediately if one exists; runs Layer 2 and repeats the
-same check; then runs Layers 3, 4, and 5 together before a final severity sweep. Every `Severity::Irrecoverable` push
-site in the module lives in Layer 1 (`zip_layer.rs`) or Layer 2 (`container_layer.rs`); no push site in Layer 3, 4, or 5
-ever constructs an `Irrecoverable` issue. The third `has_irrecoverable` check inside `validate_and_repair`, after Layers
-3 to 5 have run, therefore has nothing to find under today's issue vocabulary; a maintainer adding a Layer 3, 4, or 5
-refusal is the first code to make that check reachable. Below the `Irrecoverable` tier, the outcome is `Repaired` if any
-issue carries `Severity::Repaired` (repair runs and, on success, replaces the outcome's severity gate), else `Degraded`
-if any issue carries `Severity::Degraded`, else `Clean`.
+**Outcome derivation runs in three stages, and only the first two can quarantine.** `inspect` runs Layer 1, checks for
+an `Irrecoverable` issue, and returns `Quarantined` immediately if one exists; runs Layer 2 and repeats the same check;
+then runs Layers 3, 4, and 5 together before a final severity sweep. Every `Severity::Irrecoverable` push site in the
+module lives in Layer 1 (`zip_layer.rs`) or Layer 2 (`container_layer.rs`); no push site in Layer 3, 4, or 5 ever
+constructs an `Irrecoverable` issue. The third `has_irrecoverable` check inside `inspect`, after Layers 3 to 5 have run,
+therefore has nothing to find under today's issue vocabulary; a maintainer adding a Layer 3, 4, or 5 refusal is the
+first code to make that check reachable. Below the `Irrecoverable` tier, the source outcome is `Repaired` when any issue
+supplies a repair instruction, otherwise `Degraded` when degraded issues remain, otherwise `Clean`. Pure checking
+applies no repairs. Successful repair publication retains `Repaired` status and the successful repair issues separately
+from the final candidate's unresolved issues. Remaining severity, not successful repair status, governs candidate
+acceptance.
 
-**Layer 1: ZIP integrity (`zip_layer.rs`).** Checks the file's size against `MAX_ARCHIVE_BYTES` with a `stat` call
-before reading any bytes. Reads the whole file, locates the archive with `rawzip::ZipArchive::with_max_search_space`
-bounded to the fixed 22-byte end-of-central-directory record plus the ZIP format's maximum 65,535-byte comment, and
-rejects the file outright if the locator fails, if trailing bytes follow the located end (a short comment or garbage
-after the archive), or if the end record's declared entry count exceeds `MAX_ZIP_ENTRIES` before any header is parsed. A
-module-level comment states the rationale directly: every ambiguity the locator tolerates instead of rejecting, such as
-a comment ending early or a directory-offset error the locator defers to iteration time, is treated as an outright
-rejection here, because the entry-count guard is sound only if this layer never opens an archive interpretation the
-writer side would not itself have produced. The central directory is then walked as a counted iteration, refusing the
-moment the count exceeds `MAX_ZIP_ENTRIES` regardless of what the end record declared (the backstop for an end record
-that understates the true count). Per entry, in order: the name must decode as UTF-8 and pass `is_safe_path` before
-anything else runs against it (the traversal test matches two consecutive dots anywhere in the name, so `cover..jpg`
-fails it as surely as `../x`); the name must not repeat a name already seen (case-sensitive, exact string); the entry
-must not be encrypted and must declare Stored or Deflate compression; its declared uncompressed size must not exceed
-`MAX_ENTRY_UNCOMPRESSED_BYTES`, and the running sum of declared sizes must not exceed
-`MAX_AGGREGATE_UNCOMPRESSED_BYTES`; the entry's local header must be found and, when small enough, a bounded
-decompression probe confirms its actual size is consistent with what it declared. After the loop, the smallest recorded
-local-header offset across every entry must be zero (rejecting any prelude before the true first entry), and the counted
-total must equal the declared count in both directions (catching a central directory that is either longer or shorter
-than the end record claims).
+**Layer 1: ZIP integrity (`zip_layer.rs`).** Checks opened-handle metadata against `MAX_ARCHIVE_BYTES` before reading
+any bytes. Locates the file-backed archive with `rawzip::ZipArchive::with_max_search_space` bounded to the fixed 22-byte
+end-of-central-directory record plus the ZIP format's maximum 65,535-byte comment, and rejects the file outright if the
+locator fails, if trailing bytes follow the located end (a short comment or garbage after the archive), or if the end
+record's declared entry count exceeds `MAX_ZIP_ENTRIES` before any header is parsed. A module-level comment states the
+rationale directly: every ambiguity the locator tolerates instead of rejecting, such as a comment ending early or a
+directory-offset error the locator defers to iteration time, is treated as an outright rejection here, because the
+entry-count guard is sound only if this layer never opens an archive interpretation the writer side would not itself
+have produced. The central directory is then walked as a counted iteration, refusing the moment the count exceeds
+`MAX_ZIP_ENTRIES` regardless of what the end record declared (the backstop for an end record that understates the true
+count). Per entry, in order: the name must decode as UTF-8 and pass `is_safe_path` before anything else runs against it
+(the traversal test matches two consecutive dots anywhere in the name, so `cover..jpg` fails it as surely as `../x`);
+the name must not repeat a name already seen (case-sensitive, exact string); the entry must not be encrypted and must
+declare Stored or Deflate compression; its declared uncompressed size must not exceed `MAX_ENTRY_UNCOMPRESSED_BYTES`,
+and the running sum of declared sizes must not exceed `MAX_AGGREGATE_UNCOMPRESSED_BYTES`; the entry's local header must
+be found and, when small enough, a bounded decompression probe confirms its actual size is consistent with what it
+declared. After the loop, the smallest recorded local-header offset across every entry must be zero (rejecting any
+prelude before the true first entry), and the counted total must equal the declared count in both directions (catching a
+central directory that is either longer or shorter than the end record claims). Admitted names map to owned
+`ZipArchiveEntryWayfinder` values and compression methods in a bounded index; entry reads use that index without walking
+the central directory again.
 
 **The `mimetype` entry's OCF container rules are checked last, and only once the archive has already passed every check
 above.** A compliant archive is guaranteed to have at least one entry at offset zero by that point; the `mimetype` check
@@ -184,49 +177,36 @@ nothing visible (empty, or referencing an unresolved sibling) is treated the sam
 all. The layer returns a plain boolean, `true` only when a cover both exists and renders at serve time, which the
 calling pipeline persists directly instead of re-deriving it on each subsequent read.
 
-**Repair and repack (`repair.rs`, `repack.rs`).** `repair::repackage` collects every `Repaired`-severity issue by kind
-(broken spine references, non-OPF encoding fixes, the missing-container flag and its candidate) and builds the inputs
-`repack::with_modifications` needs: an optional OPF replacement (spine refs removed, an encoding fix applied, or both,
-chained in that order when both apply to the same entry), a map of non-OPF binary replacements for their own encoding
-fixes, and a regenerated `META-INF/container.xml` addition when the container was missing and a safe candidate was
-found. `repack::with_modifications` always writes a compliant `mimetype` entry first and Stored, regardless of which
-mutation was requested, then copies every other source entry through unchanged with `raw_copy_file` (compressed bytes,
-compression method, and timestamp preserved) except an entry named in the OPF replacement or the binary-replacement map,
-then appends any additions. The whole result is written to a fresh `tempfile::NamedTempFile` in the source file's own
-directory and persisted over the source path with an atomic rename; any failure before that final persist leaves the
-source path completely untouched.
+**Repair and repack (`repair.rs`, `repack.rs`).** `RepairPlan` records entry names, declared encoding labels, broken
+spine references and a discoverable container target. It converts each requested entry during repack and releases that
+payload after writing. An OPF repair precedes metadata transformation. A regenerated container replaces an unreadable
+existing entry; it is added only when absent.
+
+`with_modifications` consumes an admitted `ZipHandle` and a random-access candidate file. The `zip` reader parses the
+source only after rawzip admission. The writer emits compliant mimetype first and Stored, writes replacements and
+additions, and raw-copies untouched compressed payloads and metadata. It finishes before checking or hashing output.
 
 ## Interfaces and dependencies
 
-The public entry point is `validate_and_repair(path: &Path) -> Result<ValidationReport, EpubError>`, synchronous, and
-documented as intended for a caller to run inside `tokio::task::spawn_blocking`. `ValidationReport` carries `issues`
-(every finding, in discovery order), `outcome`, `accessibility_metadata`, `opf_data`, and `has_usable_embedded_cover`
-(forced `false` alongside `None` accessibility metadata and OPF data on a `Quarantined` outcome, whether or not Layer 5
-ran). This function is not read-only: any call that finds a `Repaired`-severity issue mutates the file at `path` in
-place before returning, including the second, post-write call the Design "Writeback pipeline" makes, whose nominal
-purpose is only to check for a regression against the pre-write outcome; that call can itself trigger a repack before
-the caller hashes the file, so the hash the caller ultimately records reflects whatever this subject's own repair pass
-produced, not necessarily the exact bytes the caller's own rewrite wrote.
+`inspect(File)` returns an admitted handle and report; `validate(File)` returns the pure report.
+`validate_and_repair(File, &Dir, &OsStr)` returns `Validated` with the report and optional accepted hash/size. These
+synchronous interfaces run on blocking workers. `repack::publish` accepts the actual parent and basename, a source
+report and a build closure, returning the final report, SHA-256 and handle-derived size only after replacement succeeds.
 
-Beyond the entry point, three functions are reused directly by callers outside this subject's own internal call graph:
-`zip_layer::read_entry_from_bytes` and `repack::with_modifications` are both called by the Design "Writeback pipeline"
-on bytes and paths it holds itself, independently of `validate_and_repair`; and `cover_layer::find_cover_href` is
-exported specifically so that cover extraction owned by the Design "Covers" locates the same cover this subject's Layer
-5 checks, since any divergence between the two is a silent correctness hazard. `is_safe_path` is likewise called
-directly by sibling-path resolution owned by the Design "Covers", re-validating a joined path built from
-attacker-controlled SVG content rather than trusting that the path it was joined from was already safe.
+The publication callback builds and flushes the candidate, validates a cloned final-file handle without repair, and
+hashes its final bytes. It rejects irrecoverable content, worse remaining severity, or unresolved repair instructions.
+`atomic_replace_with` then synchronises the candidate, replaces the basename and synchronises its parent. Callers reuse
+the returned hash and size.
 
-No `ValidationReport` or `Issue` list is ever persisted as a whole. The Design "Ingestion pipeline" extracts four fields
-from the report it receives: `outcome` (mapped to the `validation_status` column), `accessibility_metadata`,
-`has_usable_embedded_cover` (mapped to `has_embedded_cover`), and `opf_data`, which it hands to the metadata extractor
-and, from there, to the metadata-based file rename, rather than storing it raw; every other caller, including on-demand
-cover extraction in the Design "Covers", re-runs the relevant layers fresh from the file on disk rather than consulting
-a stored result.
+`zip_layer::read_entry` reads admitted indexed entries. `cover_layer::find_cover_href` and `is_safe_path` are shared
+with cover extraction and SVG sibling resolution. Ingestion stores selected report fields; other callers inspect the
+opened file afresh rather than consulting persisted validation evidence.
 
 ## Data and state
 
-This subject holds no state beyond a single validation call's own local buffers, and writes nothing but the one file at
-the `path` it was given, in place, only on a `Repaired` outcome. The bounds enforced across the five layers, all named
+A `ZipHandle` owns the opened archive, a cloned source handle for repack, admitted names and their bounded index. A
+repair plan retains instructions rather than a collection of converted chapters. Pure checks mutate no files;
+publication replaces one basename beneath its opened parent. The bounds enforced across the five layers, all named
 constants in `mod.rs` or `zip_layer.rs`:
 
 | Constant | Value | What it bounds |
@@ -244,7 +224,7 @@ The per-entry and aggregate caps bound the *declared* size a central-directory r
 size. Layer 1's own probe only catches a declared-size lie for an entry small enough that `declared + 1` is at most
 4,096 bytes; above that, the probe cap itself is the limiting factor and a larger lie is not distinguished from a
 truthful declaration at this layer. The bound that verifies an entry's actual size against its true content is
-`read_entry`/`read_entry_from_bytes`, used by every layer past Layer 1 to fetch entry bytes: it caps the read at
+`read_entry`, used by every layer past Layer 1 to fetch entry bytes: it caps the read at
 `MAX_ENTRY_UNCOMPRESSED_BYTES + 1` bytes and requires the wrapped CRC-32 verification over that capped read to succeed,
 returning nothing on any mismatch. Layer 1's own per-entry probe reads through a plain, unverified reader; it never
 checks the CRC-32 the central directory declares. Consequently, an entry that decompresses without an I/O error and
@@ -263,25 +243,25 @@ declared. No issue is recorded; the outcome is `Clean`, and the file is never to
 
 **An EPUB whose only problem is a non-conformant `mimetype` entry.** Layer 1 records one or more `Repaired`
 `InvalidMimetype` findings (for example, the entry is Deflated and not first) and nothing else. `has_repairable` is
-true, so `repair::repackage` runs: no broken spine refs, no encoding fixes, and no missing container mean the only
-effective mutation is `repack::with_modifications`'s own unconditional compliant-`mimetype`-first rewrite. The repacked
-file is persisted atomically over the source, and a second validation pass over the same path finds no `InvalidMimetype`
-issue and an outcome of `Clean`.
+true, so `RepairPlan` runs: no broken spine refs, no encoding fixes, and no missing container mean the only effective
+mutation is `repack::with_modifications`'s own unconditional compliant-`mimetype`-first rewrite. The repacked file is
+persisted atomically over the source, and a second validation pass over the same path finds no `InvalidMimetype` issue
+and an outcome of `Clean`.
 
 **An EPUB with a broken spine reference.** Layer 3 removes the dangling spine reference from `spine_idrefs` and records
-a `Repaired` `BrokenSpineRef`. `repair::repackage` rewrites the OPF, removing the matching `<itemref>` element (matched
-by a depth counter rather than a boolean, so a malformed OPF with nested `itemref` elements cannot prematurely clear the
-skip state), and the repacked archive is persisted atomically. If the same run's Layer 1 also found a non-conformant
+a `Repaired` `BrokenSpineRef`. `RepairPlan` rewrites the OPF, removing the matching `<itemref>` element (matched by a
+depth counter rather than a boolean, so a malformed OPF with nested `itemref` elements cannot prematurely clear the skip
+state), and the repacked archive is persisted atomically. If the same run's Layer 1 also found a non-conformant
 `mimetype` entry, both fixes land in the same repack.
 
 **A `container.xml` entry that cannot be read at all, with a discoverable `.opf` file in the archive.** Layer 2 records
-a `Repaired` `MissingContainer` with the discovered candidate path. `repair::repackage` regenerates
-`META-INF/container.xml` from that candidate (escaping the path for safe XML interpolation) and adds it to the repacked
-archive; Layer 3 onward already ran against the regenerated path within the same validation pass, since Layer 2 returns
+a `Repaired` `MissingContainer` with the discovered candidate path. `RepairPlan` regenerates `META-INF/container.xml`
+from that candidate (escaping the path for safe XML interpolation) and replaces the existing entry or adds it when
+absent; Layer 3 onward already ran against the regenerated path within the same validation pass, since Layer 2 returns
 the candidate immediately once it is confirmed safe. If no `.opf` file exists anywhere in the archive, the same
 `Repaired` `MissingContainer` issue is still recorded (its severity does not depend on whether a candidate was found),
-the outcome is still `Repaired`, but `repackage` adds no container addition (there is no candidate to regenerate from),
-and the only effective change to the archive is again the unconditional `mimetype` rewrite.
+the outcome is still `Repaired`, but the repair plan cannot regenerate a container. Candidate validation still finds the
+instruction and refuses publication.
 
 **An archive shaped to exhaust memory or CPU.** An end-of-central-directory record declaring more entries than
 `MAX_ZIP_ENTRIES` is rejected before any header is parsed. A central directory that in fact holds more entries than it
@@ -298,36 +278,18 @@ the same immediate `Quarantined` result.
 
 ## Failure and recovery
 
-`EpubError` has four variants. `Io` covers a filesystem read failure on the source path itself. `TempFile` covers a
-failed atomic persist during repack, reachable from `repair.rs`'s own `temp.persist(path)` call. `Xml` wraps a
-`quick_xml::Error` by `#[from]`, but no code path in the module constructs one: `repair.rs`'s own routine that rewrites
-the OPF (`rewrite_opf_remove_broken_spine`) discards every `write_event` failure with a warning instead of propagating
-it, and falls back to the original, unmodified bytes on a read failure; the variant exists in the type but nothing in
-the code produces it. `Zip` is documented as a `zip`-crate error such as a corrupt central directory, but Layer 1's own
-structural findings, corrupt central directory included, are always represented as `Irrecoverable` issues inside a
-successful `Ok(ValidationReport)`, never as this error variant; in the code, `Zip` surfaces from
-`repack::with_modifications`'s own use of the `zip` crate, both re-opening the source archive and from `start_file`,
-`raw_copy_file`, and `finish` on the writer it builds, or from a `zip::result::ZipError::FileNotFound` value `repair.rs`
-constructs by hand as a generic not-found sentinel on a path that in fact used `rawzip`, not the `zip` crate, to read
-the entry that could not be found.
+Structural findings remain issues inside a successful report; irrecoverable findings produce `Quarantined`. Source I/O,
+ZIP writing, required repair and validator errors propagate. A required entry read or conversion cannot be silently
+omitted. Before callback acceptance, failures discard the candidate and leave source bytes untouched.
 
-A `Repaired`-severity issue that repair cannot actually apply is not always visible in the outcome. If
-`repair::repackage` itself fails partway (an unreadable OPF entry needed for a spine rewrite, a `ZipWriter` failure, a
-failed atomic persist), the error propagates out of `validate_and_repair` as `Err(EpubError)` rather than as a
-`ValidationReport`; the file at `path` is left completely untouched, since the failure happens before the atomic
-persist. The Design "Ingestion pipeline" treats this the same as any other validator crash: it stores
-`validation_status = failed` and still ingests the file with its original bytes, not repaired, rather than quarantining
-it or not handling it at all. Separately, an `EncodingMismatch` fix on a non-OPF entry can be recorded as `Repaired` at
-validation time yet silently not applied at repair time: `repackage` re-reads and re-transcodes the entry independently
-of the check that decided the fix was safe, and if that re-derivation fails for any reason, the entry is simply left out
-of the binary replacements `repackage` builds and is copied through unchanged, while the outcome the caller sees is
-still `Repaired`.
+An error returned by the maintained replacement operation after callback acceptance means publication or durability is
+uncertain. `PublicationUncertain` carries the accepted hash and underlying error; callers perform no content rollback,
+relocation or row-success update on that result. A retry inspects the recorded source afresh. No phase is inferred from
+an upstream error string.
 
-A repacked archive can end up with two entries sharing the same name in at least one path: a `MissingContainer` repair
-adds a regenerated `META-INF/container.xml` as a new entry, and the raw-copy loop that carries every other source entry
-through unchanged has no case that skips an entry sharing an addition's name, so it also copies the original entry
-through when that original `container.xml` entry exists in the archive but fails Layer 1's CRC-and-size-verified read (a
-genuinely absent entry leaves nothing for the raw-copy loop to carry through).
+The ingestion caller retains its validator-error policy: `validation_status = failed` and continued ingestion. Writeback
+sends candidate rejection and errors to its existing failed/retry path. A missing or unreadable container with a
+discoverable OPF is repaired once, without duplicate container entries.
 
 ## Security and operations
 

@@ -1,0 +1,30 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO library_path_claims (library_id, path, manifestation_id) VALUES ($1, $2, $3)\n         ON CONFLICT (library_id, path) DO UPDATE SET manifestation_id = library_path_claims.manifestation_id\n         WHERE library_path_claims.manifestation_id = EXCLUDED.manifestation_id\n         RETURNING manifestation_id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "manifestation_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "library_path_claims",
+            "name": "manifestation_id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "a985ac605e2d6121eb2015b6aacb7dd13f7698f4d27b86f406b796a59f20a355"
+}

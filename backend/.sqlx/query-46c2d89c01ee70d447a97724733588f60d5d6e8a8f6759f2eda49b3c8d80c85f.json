@@ -1,0 +1,12 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM libraries WHERE configuration_key = 'default'",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": []
+  },
+  "hash": "46c2d89c01ee70d447a97724733588f60d5d6e8a8f6759f2eda49b3c8d80c85f"
+}

@@ -64,9 +64,10 @@ async fn scan(
     current_user.require_scope(Scope::Admin)?;
     current_user.require_admin()?;
 
-    let result = services::ingestion::scan_once(&state.config, &state.ingestion_pool)
-        .await
-        .map_err(AppError::Internal)?;
+    let result =
+        services::ingestion::scan_once(&state.config, &state.ingestion_pool, &state.library_files)
+            .await
+            .map_err(AppError::Internal)?;
 
     Ok(Json(ScanResponse {
         processed: result.processed,

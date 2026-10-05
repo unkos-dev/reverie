@@ -117,6 +117,13 @@ by definition active debt, the roadmap reads the directory as-is: no status filt
 
 <!-- listed most-stale first; new entries go to the top -->
 
+- [Ingestion can retain an unregistered library copy](2026-10-03-unregistered-ingestion-copy.md): lifts when staged
+  validation and outcome reconciliation leave no unregistered copy from a newly failed terminal attempt and never remove
+  a committed owner's file.
+- [CV11 reports ordinary functions as casts](2026-09-30-cv11-non-cast-functions.md): lifts when a corrected `sqruff`
+  release passes SQL lint and schema checks with the six line annotations removed.
+- [Library location pipelines are incomplete](2026-09-30-library-location-pipelines-incomplete.md): lifts when
+  ingestion, writeback and covers use capabilities and the full backend suite and scoped preflight pass.
 - [SQL lint exclusions preserve the initial schema rollup](2026-09-17-sqruff-schema-rollup-exclusions.md): lifts when
   the next schema rollup passes SQL lint without the CV11, RF01, RF03, and ST09 exclusions.
 - [Zizmor self-repository audit disabled](2026-09-16-zizmor-self-repository.md): lifts when the pinned `actionlint`

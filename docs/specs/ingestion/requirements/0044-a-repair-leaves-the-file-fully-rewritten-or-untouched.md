@@ -15,11 +15,9 @@ at that location, whether the repair succeeds or fails.
 
 ## Rationale
 
-The ingestion pipeline invokes this repair while first building the library's copy of a file, and the Writeback pipeline
-subject invokes it again afterward, against a file a reader may already be opening, solely to detect a regression in its
-own edit. A half-applied repair would corrupt the archive with no indication that anything failed, and a reader, or a
-repair or validation pass run against the same file afterwards, could encounter it before anyone notices. This guarantee
-is what stands between a failure at any point during the repair and a manifestation whose file no reader can open.
+Repair can change a file a reader already has open. Publishing an unfinished archive would corrupt that reader's next
+open and conceal whether the repair completed. A finished candidate checked before replacement keeps repair failures
+from exposing partial or rejected content.
 
 ## Acceptance criteria
 
@@ -27,10 +25,10 @@ is what stands between a failure at any point during the repair and a manifestat
   fix applied in that one pass. Checked by `invalid_mimetype_is_repaired_end_to_end` in
   `backend/src/services/epub/mod.rs` and `repackage_mimetype_is_first_and_stored` in
   `backend/src/services/epub/repair.rs`.
-- A repair that fails partway, for example because an entry it needs to rewrite cannot be read back from the source
-  archive, propagates that failure rather than returning a partially rewritten result, and leaves the file at the
-  original location unmodified. Not checked by any automated test: no test induces a mid-repair failure and then
-  inspects the original file.
-- A failure between finishing the rewritten copy and putting it in place of the original leaves the original file
-  exactly as it was, never a mixture of the two. Not checked by any automated test: nothing in the repository interrupts
-  a repair at that exact point.
+- A required repair that cannot read or convert an entry propagates its failure and leaves the original location
+  unchanged. Checked by `candidate_publication_required_repair_error_leaves_source_untouched` in
+  `backend/src/services/epub/mod.rs`.
+- Rejection of the finished candidate leaves the original file exactly as it was. Pre-publication validator refusal is
+  checked by `candidate_publication_validator_error_leaves_source_untouched` in `backend/src/services/epub/mod.rs`. An
+  error after callback acceptance is reported as publication uncertainty; the source may be the complete candidate. No
+  automated test interrupts file replacement or parent sync.

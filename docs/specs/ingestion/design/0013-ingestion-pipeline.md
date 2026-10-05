@@ -7,6 +7,7 @@ satisfies:
   - "REV-REQ-0043"
 governed-by:
   - "REV-ADR-0020"
+  - "REV-ADR-0052"
 ---
 
 # Ingestion pipeline
@@ -16,6 +17,10 @@ filesystem watcher and its settle window, the one-shot scan that discovers and f
 duplicate check, atomic SHA-256-verified copy into the library tree, the transaction that creates or updates the work
 and manifestation rows, quarantine of a file the pipeline cannot ingest, post-batch source cleanup, the Postgres
 advisory lock that serialises concurrent scans, and the admin-only HTTP trigger that starts a scan on demand.
+
+Ingestion persists its explicit library identity and actual relative location with an owner-correct path claim. It
+copies into the library before validation and registration. Failed or uncertain registration and cleanup can retain an
+[unregistered library copy](../../../../debt/2026-10-03-unregistered-ingestion-copy.md).
 
 ## Purpose and boundaries
 
@@ -47,11 +52,11 @@ exactly one production caller, this pipeline: `extractor::extract` and `draft::w
 Depends on: the `validate_and_repair` entry point the Design "EPUB validation and repair" owns, called against the
 copied library file for every `epub`-extension candidate; the Works and manifestations data model's
 `work::match_existing`, `work::create_stub`, and `work::upgrade_stub`, and the unique constraints on
-`manifestations.file_path` and `ingestion_file_hash` as a database-level backstop behind this pipeline's own duplicate
-check; the metadata extractor and draft writer that turn a validated `OpfData` (or a heuristic fallback) into the
-`ExtractedMetadata` and `metadata_versions` rows this pipeline's transaction points its canonical columns at; a Postgres
-session-level advisory lock keyed to a fixed integer id; and the operator-set filesystem paths, format-priority order,
-and cleanup mode carried by the `Config` the Design "Configuration loading" assembles.
+`manifestations.(library_id, file_path)` and `ingestion_file_hash` as a database-level backstop behind this pipeline's
+own duplicate check; the metadata extractor and draft writer that turn a validated `OpfData` (or a heuristic fallback)
+into the `ExtractedMetadata` and `metadata_versions` rows this pipeline's transaction points its canonical columns at; a
+Postgres session-level advisory lock keyed to a fixed integer id; and the operator-set filesystem paths, format-priority
+order, and cleanup mode carried by the `Config` the Design "Configuration loading" assembles.
 
 Depended on by: the Design "Covers", whose thumbnail pre-warm this pipeline triggers directly from a successful commit;
 the Design "Enrichment pipeline", which discovers a newly committed manifestation only because this pipeline leaves
@@ -72,17 +77,20 @@ surface; and an administrator, through the scan trigger this subject exposes as 
 | Advisory lock id `0x5265_7665_0000_0004` | Postgres session-level advisory lock (not a Reverie table) | `orchestrator::scan_once`; acquired and released around every call |
 | A new `manifestations`/`works` row for one ingested file | `manifestations`, `works` tables | `orchestrator::commit_ingest`, the only production site that inserts a `manifestations` row |
 | `work_authors` and `authors` rows for a newly created work's extracted creators | `work_authors`, `authors` tables | `work::upgrade_stub` (via `find_or_create_author`), called from `orchestrator::commit_ingest` only when a new work stub is created and OPF metadata names at least one creator |
-| Library file at the rendered destination path | Filesystem under `library_path` | Created by `copier::copy_verified`; removed on a subsequent-step failure by four separate sites inside `process_file` |
+| Library file at the rendered destination path | Owning library capability | No-overwrite copy and metadata move; three failure exits use protected candidate cleanup |
+| `library_path_claims` | PostgreSQL | `commit_ingest`; shared with writeback and owner deletion cascade |
 | Drop-zone source file and its parent directories | Filesystem under `ingestion_path` | Deleted by `cleanup::cleanup_batch` for eligible sources and siblings; moved by `quarantine::quarantine_file` on per-file failures |
 
-No item above has more than one writer inside this subject. Two of them are shared more broadly. A `manifestations` row
-this pipeline creates is mutated afterwards by the Design "Enrichment pipeline", the Design "Writeback pipeline", and
-the Design "Metadata review and editing", each owning its own writes to that row; this subject's write authority is
-limited to the row's creation and the canonical columns it sets from a validated or heuristic source at that moment. The
-library directory tree is similarly shared with the Design "Writeback pipeline", which renames a file after a rewrite
-using the same `path_template::render` and `resolve_collision` functions this subject defines; the two never write to
-the same manifestation's file at the same time, because a manifestation reaches the Design "Writeback pipeline" only
-once this subject's own commit has completed.
+Three state items are shared more broadly. A `manifestations` row this pipeline creates is mutated afterwards by the
+Design "Enrichment pipeline", the Design "Writeback pipeline", and the Design "Metadata review and editing", each owning
+its own writes to that row; this subject's write authority is limited to the row's creation and the canonical columns it
+sets from a validated or heuristic source at that moment. The library directory tree is similarly shared with the Design
+"Writeback pipeline", which renames a file after a rewrite using the same `path_template::render` and
+`collision_candidate` functions this subject defines; the two never write to the same manifestation's file at the same
+time, because a manifestation reaches the Design "Writeback pipeline" only once this subject's own commit has completed.
+
+Path claims are shared with writeback and owner deletion. Both publishers take transaction-level exclusion for the same
+library and relative name; failed-ingestion cleanup holds that exclusion until its blocking mutation finishes.
 
 Call sites that dispatch to those owners:
 
@@ -101,13 +109,14 @@ Call sites that dispatch to those owners:
   and inserts a `work_authors` row per creator (`ON CONFLICT (work_id, author_id, role) DO NOTHING`), but only on the
   branch where `commit_ingest` just created a new work stub and OPF extraction named at least one creator; a matched
   existing work, or an extraction with no creators, writes neither table.
-- Library file removal: four distinct sites inside `process_file`, each a best-effort `remove_file` logged at `warn` on
-  its own failure rather than propagated: an unsupported extension detected after copy, an EPUB the structural validator
-  quarantines, a repaired EPUB whose re-hash fails, and a `commit_ingest` error.
+- Library file removal: unsupported format, EPUB rejection and commit errors call `cleanup_candidate`. It holds path
+  exclusion through the blocking mutation, including cancellation; refuses committed or claimed names; and verifies the
+  copied candidate's device/inode identity before removal. Unavailable ownership checks or changed identity retain bytes
+  and append an operational failure. Validation reconciliation errors return failure without blind removal.
 - Source cleanup and quarantine: `cleanup_batch` runs at most once, after the whole per-file loop, for files eligible
-  under the configured mode based on completed and skipped outcomes; `quarantine_file` runs per file, at up to four
-  sites (preparation failure, copy failure, an EPUB quarantine outcome, and a repaired EPUB whose re-hash fails), moving
-  only that one file immediately rather than waiting for the batch to finish.
+  under the configured mode based on completed and skipped outcomes; `quarantine_file` runs per file, at three sites
+  (preparation failure, copy failure and an EPUB quarantine outcome), moving only that one file immediately rather than
+  waiting for the batch to finish.
 
 ### Component relationships
 
@@ -126,21 +135,21 @@ Call sites that dispatch to those owners:
   sits between the hash and the copy; `epub::validate_and_repair`, owned by the Design "EPUB validation and repair",
   runs only for an `epub` extension, against the file this pipeline has already copied into the library, not the
   drop-zone original; the metadata extractor turns a validated `OpfData` into `ExtractedMetadata`, which can trigger a
-  second path-template render and an in-place rename when the metadata-derived path disagrees with the filename
-  heuristic; `commit_ingest` performs the database write; and `quarantine_file` is the exit for the failure classes
-  described in the state-writer census above.
+  second path-template render and a contained no-overwrite move when the metadata-derived path disagrees with the
+  filename heuristic; `commit_ingest` performs the database write; and `quarantine_file` is the exit for the failure
+  classes described in the state-writer census above.
 - `covers::spawn_warm_thumb`, owned by the Design "Covers", is fired without being awaited after a successful
-  `commit_ingest`, keyed on the copy's verified hash, a hand-off this pipeline does not follow further.
+  `commit_ingest`, keyed on the accepted copy's current hash, a hand-off this pipeline does not follow further.
 
 ## Interfaces and dependencies
 
 - The module's public surface (`backend/src/services/ingestion/mod.rs`): `ScanResult { processed, failed, skipped }`,
-  `run_watcher(config: Config, pool: PgPool, cancel: CancellationToken) -> Result<(), anyhow::Error>`, and
-  `scan_once(config: &Config, pool: &PgPool) -> Result<ScanResult, anyhow::Error>`. Every other item the child modules
-  export (`copier::{hash_file, copy_verified}`, `quarantine::quarantine_file`,
+  `run_watcher(config: Config, pool: PgPool, cancel: CancellationToken, files: LibraryFiles) -> Result<(), anyhow::Error>`,
+  and `scan_once(config: &Config, pool: &PgPool, files: &LibraryFiles) -> Result<ScanResult, anyhow::Error>`. Every
+  other item the child modules export (`copier::{hash_file, copy_verified_into}`, `quarantine::quarantine_file`,
   `cleanup::{eligible_paths, cleanup_batch}`, and `format_filter::select_by_priority`) has no caller outside this module
-  in production code; `path_template::render` and `path_template::resolve_collision` are the one exception, reused by
-  the Design "Writeback pipeline".
+  in production code; `path_template::render` and `path_template::collision_candidate` are the exception, reused by the
+  Design "Writeback pipeline".
 - `run_watcher` is spawned exactly once, at startup by `crate::run` (`backend/src/lib.rs`), the subject of the Design
   "Application runtime: startup, workers, and shutdown", sharing the process-wide shutdown `CancellationToken` and the
   same drain budget as the other background workers (see Failure and recovery).
@@ -152,9 +161,10 @@ Call sites that dispatch to those owners:
   `find_by_batch`; every one of them is called only from this pipeline's own orchestrator or its own test module.
   `find_by_batch` specifically has no caller anywhere outside `models/ingestion_job.rs`'s own tests.
 - The Postgres role this pipeline connects as is `reverie_ingestion`, which carries an unconditional row-level-security
-  policy (`USING (true) WITH CHECK (true)`) on `manifestations`; the other tables its commit touches (`works`,
-  `work_authors`, `authors`, `metadata_versions`) have no row-level security and grant both roles the same access. When
-  `DATABASE_URL_INGESTION` is unset the pipeline connects as `reverie_app` instead (see Security and operations).
+  policy (`USING (true) WITH CHECK (true)`) on `manifestations` and `library_path_claims`; the other tables its commit
+  touches (`works`, `work_authors`, `authors`, `metadata_versions`) have no row-level security and grant both roles the
+  same access. When `DATABASE_URL_INGESTION` is unset the pipeline connects as `reverie_app` instead (see Security and
+  operations).
 
 ## Data and state
 
@@ -173,10 +183,9 @@ Call sites that dispatch to those owners:
   `commit_ingest` opens and closes during the scan it guards.
 - **The library file-identity trio.** `file_path` (the rendered, sanitised, collision-resolved destination, relative to
   `library_path`), `ingestion_file_hash` (the source `SHA-256`, computed once and reused for both the duplicate check
-  and the copy's own integrity verification), and `current_file_hash` (set equal to `ingestion_file_hash` at this
-  pipeline's insert; a different value belongs to the Design "Writeback pipeline"). Both `file_path` and
-  `ingestion_file_hash` carry a `UNIQUE` constraint at the database, a backstop behind this pipeline's own pre-copy
-  duplicate check.
+  and the copy's own integrity verification), and `current_file_hash` (the accepted library bytes, including a repair).
+  The explicit `library_id` and actual relative `file_path` form a unique location. `ingestion_file_hash` is globally
+  unique. Each manifestation and its owner-correct location claim commit together.
 - **`has_embedded_cover`.** Set from the EPUB structural validator's cover finding for an `epub` extension; `NULL` for
   every non-`epub` format (no validator exists to check it), for a manifestation ingested before this column existed,
   and for a manifestation whose validator failed to run. The dashboard's cover-coverage metric and the Design "Covers"
@@ -202,47 +211,42 @@ scan's `processed`, `failed`, or `skipped` totals.
 **Per file, in the order below** (`process_file`), once `ingestion_job::create` and `mark_running` have written that
 file's row:
 
-1. A filename heuristic (`Author - Title.ext`) supplies path-template variables; the template renders to a relative
-   library path, and `resolve_collision` appends a numeric suffix, `(N)` with a leading space and parentheses before the
-   extension, if a file already sits at that exact path on disk. The source file is hashed (`SHA-256`) in the same step.
+1. A filename heuristic (`Author - Title.ext`) supplies path-template variables and a checked relative candidate. The
+   source is hashed with SHA-256. Selection checks persistent claims and contained filesystem occupancy under path
+   exclusion, appending a numeric suffix when either is occupied. The transaction stays alive through publication.
 2. A single query checks `manifestations` for an existing row whose `ingestion_file_hash` matches the freshly computed
-   hash, or whose `file_path` matches the rendered destination from step 1. Either match skips the file: no copy, no
-   database write for it. The path half can only match when nothing occupies that exact path on disk (step 1's collision
-   check already ran against the filesystem, not the database), so it fires only when a manifestation's recorded file is
-   absent from the library directory while its row still exists. The hash half is the only one available for a
-   manifestation whose stored path was itself the product of a metadata-driven rename, because this comparison always
-   uses the heuristic path from step 1, never a metadata-derived path a subsequent step in this same run might compute.
-3. The file is copied into the library with `copier::copy_verified`: written to a temporary file in the destination
-   directory, hashed inline during the write, and renamed into place only if the inline hash matches the value from step
-   1; a mismatch leaves the temporary file to drop automatically, so no partial file appears at the destination path (an
-   already created empty parent directory, however, is not itself removed on this path).
+   hash, or whose explicit library identity and relative path match the selected destination. Either match skips the
+   file without copying or creating a manifestation.
+3. `copier::copy_verified_into` writes and hashes an independently owned temporary file beneath the destination
+   capability. Matching bytes are published without overwriting the final name and synchronised through the shared
+   relocation primitive. A mismatch drops the temporary file. Empty parent directories can remain.
 4. The extension is re-parsed into a `ManifestationFormat`, a defence against a bypass of step 1's format-priority
-   selection; on failure, the just-copied library file is removed and the file fails without quarantine (see Failure and
+   selection; on failure, protected candidate cleanup runs and the file fails without quarantine (see Failure and
    recovery).
-5. For an `epub` extension only, the copied library file, not the drop-zone original, is handed to
-   `epub::validate_and_repair`, owned by the Design "EPUB validation and repair". A `Quarantined` outcome removes the
-   library file and moves the drop-zone original to quarantine with a sidecar; `Repaired` and `Degraded` outcomes carry
-   accessibility metadata and parsed `OPF` data alongside their status. A `Repaired` outcome also re-reads the rewritten
-   library file for its hash and size, so `current_file_hash` and `file_size_bytes` describe the repaired bytes while
-   the ingestion hash keeps the original's; a failure to re-read it removes the library file and quarantines the
-   drop-zone original like a `Quarantined` outcome. A validator that fails to run (an I/O or internal error, not a
-   structural finding) stores `validation_status = failed` and still proceeds to commit, so the file is ingested and
-   served, with the failure surfaced only as a status value an operator can watch. A non-`epub` format leaves
-   `validation_status` at its `pending` default, since no validator exists for it.
+5. For an `epub` extension only, a blocking phase opens the known copied relative location beneath its library
+   capability and passes the file, actual parent and basename to `epub::validate_and_repair`. A `Quarantined` outcome
+   requests protected cleanup of the library copy and moves the drop-zone original to quarantine with a sidecar. A
+   completed repair returns its final report, hash and size; the caller reuses that evidence for `current_file_hash` and
+   `file_size_bytes`, retaining the original ingestion hash. Successful repair status remains separate from unresolved
+   degraded issues. Publication uncertainty reopens the copied relative location through its library capability and
+   measures its actual hash and size. These values describe the stored bytes; the accepted candidate's hash does not
+   establish that replacement occurred. Validation remains `failed`, and the ingestion hash remains unchanged. An
+   unreadable uncertain file fails ingestion before persistence or source cleanup. Other validator errors retain
+   `validation_status = failed` and ingestion continues. Non-EPUB files keep `pending` validation status.
 6. Any `OpfData` recovered in step 5 is extracted into `ExtractedMetadata`. If the extracted title or an author differs
-   from the filename heuristic enough to render a different library path, the file is renamed on disk (with its own
-   collision resolution) to the metadata-derived path; a rename failure is logged, and the heuristic path is kept rather
-   than failing the file at this step.
+   from the filename heuristic enough to render a different library path, claim-aware selection and a contained
+   no-overwrite move select the metadata-derived name. Visible publication with uncertain sync retains the actual
+   destination for persistence; a refused move logs its failure and retains the heuristic location.
 7. `commit_ingest` runs the database write in one transaction: match an existing work by the extracted metadata, or
    create a placeholder work; insert the `manifestations` row (canonical fields still `NULL`, `ingestion_status` set to
    `complete`); write `metadata_versions` draft rows from the extracted metadata, or a synthetic low-confidence draft
    built from the filename heuristic when no `OPF` metadata was recovered; on a newly created work, populate its
    canonical columns and version pointers from those drafts; then update the manifestation's ISBN, publisher,
    publication date, and page-count columns and their own version pointers from the extracted metadata. The whole
-   sequence commits together or not at all.
-8. On a successful commit, and only for an `epub` extension whose validator did not positively rule out a usable
-   embedded cover, a cover thumbnail pre-warm is fired on the cache the Design "Covers" owns, keyed by the manifestation
-   id and the copy's verified hash; this pipeline does not wait for it.
+   sequence, explicit library-relative location and owner-correct claim commit together or not at all.
+8. After a successful commit, EPUBs not ruled out as having no usable cover pass an opened handle for the known final
+   copy to thumbnail warming, keyed by the copy's current hash. Source opening uses the library capability; cache
+   publication remains owned by the Design "Covers". Warming is best-effort and does not affect ingest success.
 
 **Cleanup, once every selected file in the batch has reached a terminal outcome.** The orchestrator records a source as
 eligible only after its job is marked complete or skipped. Under `ingested`, cleanup deletes those selected sources,
@@ -260,28 +264,26 @@ through symlinks.
 
 ## Failure and recovery
 
-An irrecoverable EPUB never reaches step 7: the `Quarantined` outcome from step 5 removes the copied library file, moves
-the drop-zone original to quarantine with its sidecar, and returns before `commit_ingest` runs, so no `manifestations`
-row is created for it.
+An irrecoverable EPUB never reaches step 7: the `Quarantined` outcome from step 5 requests protected candidate cleanup,
+moves the drop-zone original to quarantine with its sidecar, and returns before `commit_ingest` runs, so no
+`manifestations` row is created for it.
 
-- **Preparation, copy, EPUB-quarantine, or post-repair re-hash failure.** These four failure classes move the drop-zone
-  source file to quarantine with a JSON sidecar recording the failure reason and a timestamp; a filename collision
-  inside the quarantine directory appends a Unix-timestamp suffix rather than overwriting. The fourth arises when the
-  library file cannot be re-read to compute its post-repair hash; the just-repaired library file is removed as well.
-  Every other failure class below leaves the source file exactly where the walk found it.
+- **Preparation, copy or EPUB-quarantine failure.** These three failure classes move the drop-zone source file to
+  quarantine with a JSON sidecar recording the failure reason and a timestamp; a filename collision inside the
+  quarantine directory appends a Unix-timestamp suffix rather than overwriting. Every other failure class below leaves
+  the source file exactly where the walk found it.
 - **A duplicate-check query failure.** Treated as a failure of the file, not a silent pass-through: the pipeline does
   not proceed to copy a file whose duplicate status it could not determine, so a transient database error cannot disable
   deduplication for that file. The source is left in place, not quarantined.
-- **An unsupported-format failure after copy.** Removes the just-copied library file and fails the file without
+- **An unsupported-format failure after copy.** Requests protected candidate cleanup and fails the file without
   quarantine; a bypass of the format-priority selection is the only way this path is reached, since every file that
   selection admits already carries a parseable extension.
-- **A database commit failure.** `commit_ingest` returning an error removes the just-copied library file (a best-effort
-  `remove_file`, logged rather than propagated on its own failure) and fails the file; the source is neither quarantined
-  nor deleted, so it remains a candidate for a subsequent scan, which recomputes its hash and re-attempts it from the
-  start, since no `manifestations` row was ever committed for it. This handled-error path is distinct from an abrupt
-  termination of the process itself: nothing in this pipeline detects or compensates for a kill between a successful
-  copy and a transaction that never gets the chance to commit or roll back; the transaction's own atomicity, not this
-  pipeline's own error handling, decides what such a kill leaves behind.
+- **A database commit failure.** `commit_ingest` returning an error fails the file and requests protected cleanup. A
+  committed manifestation or claim prevents removal, including a commit whose acknowledgement was lost. Cleanup also
+  retains bytes when ownership checks are unavailable or the candidate's device/inode identity changed, and appends that
+  failure to the operational diagnosis. A repair can change identity and leave an unregistered copy. The source remains
+  available for a later scan. Abrupt termination between copy and registration has no reconciliation owner; the
+  [unregistered-copy debt](../../../../debt/2026-10-03-unregistered-ingestion-copy.md) records this gap.
 - **An `ingestion_jobs` write failure.** Every call into that model carries `?`, so a database error writing a job's
   `queued`, `running`, or terminal state propagates out of the whole scan immediately: the scan stops, files already
   committed in that scan stay committed, files the loop had not reached receive no job row, and cleanup for the batch
@@ -336,9 +338,9 @@ row is created for it.
   as `reverie_app` instead of `reverie_ingestion`. `reverie_app` carries `LOGIN` only, with no `BYPASSRLS` attribute,
   and its `manifestations_insert` policy's `WITH CHECK` clause requires `app.current_user_id` to resolve, through a join
   to `users`, to a user holding the `admin` or `adult` role; this pipeline sets neither `app.current_user_id` nor
-  `app.system_context` on any connection it opens. Every manifestation insert on the fallback path is therefore refused
-  by row-level security: `commit_ingest` returns an error, the just-copied library file is removed, and the file's job
-  is marked failed. The startup warning is the only signal that ingestion is failing this way.
+  `app.system_context` on any connection it opens. The fallback cannot establish path ownership, so selection fails
+  before copying and the file's job is marked failed. Protected cleanup also refuses unavailable ownership evidence
+  rather than treating policy-hidden claims as names without owners.
 - **The admin gate is the only access control this subject's HTTP entry point applies for itself.** `scan` calls
   `CurrentUser::require_scope(Scope::Admin)` and `require_admin` before doing any work; like any other
   session-authenticated mutating request, a caller presenting a session cookie also needs a valid CSRF token to reach

@@ -2,10 +2,9 @@
 //!
 //! Lookups run inside `acquire_with_rls` so unauthorised users (or child
 //! accounts where the manifestation isn't on one of their shelves) get
-//! `NotFound` via RLS. A subsequent canonicalisation guard prevents any
-//! on-disk `file_path` from escaping `library_path`.
-
-use std::path::PathBuf;
+//! `NotFound` via RLS. Authorised paths open through the pinned library
+//! capability; the opened handle supplies both metadata and streamed bytes.
+//! Relative and absolute links resolving inside the library remain supported.
 
 use axum::body::Body;
 use axum::extract::State;
@@ -22,6 +21,8 @@ use crate::auth::basic_only::BasicOnly;
 use crate::db;
 use crate::error::AppError;
 use crate::extract::ApiPath;
+use crate::models::storage_library::LibraryId;
+use crate::services::files::{LibraryFileError, LibraryLocation, OpenedLibraryFile};
 use crate::state::AppState;
 
 use super::feed::EPUB_MIME;
@@ -41,13 +42,14 @@ pub fn router() -> OpenApiRouter<AppState> {
 /// - [`AppError::NotFound`] when the manifestation is missing, RLS-hidden,
 ///   or its file is gone from disk.
 /// - [`AppError::Forbidden`] when the on-disk path escapes the configured
-///   library root (canonicalisation guard).
-/// - [`AppError::Internal`] on database or file IO errors.
+///   library root during classification.
+/// - [`AppError::Internal`] on database or other filesystem errors, including
+///   ambiguous `PermissionDenied` from the contained open. Internal details are hidden.
 #[utoipa::path(
     get,
     path = "/opds/books/{id}/file",
     summary = "Download an EPUB",
-    description = "Streams the EPUB file for a manifestation, with a `Content-Disposition: attachment` header carrying a title-derived filename. Requires HTTP Basic authentication. Returns 403 if the file's on-disk path escapes the configured library root.",
+    description = "Streams one opened EPUB file for a manifestation, with Content-Length from that handle and a `Content-Disposition: attachment` header carrying a title-derived filename. Requires HTTP Basic authentication. Relative and absolute links resolving inside the library are supported. Established escapes return 403, missing files return 404, and other filesystem failures return a generic 500.",
     tag = "opds",
     security(("opds_basic" = [])),
     params(("id" = Uuid, Path, description = "Manifestation id")),
@@ -56,6 +58,7 @@ pub fn router() -> OpenApiRouter<AppState> {
         (status = 401, description = "Basic authentication required (WWW-Authenticate: Basic)", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 403, description = "File path escapes the library root", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 404, description = "Manifestation missing, RLS-hidden, or file absent on disk", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
+        (status = 500, description = "Internal error; filesystem and database details are hidden", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
     )
 )]
 async fn download_epub(
@@ -68,7 +71,7 @@ async fn download_epub(
         .map_err(|e| AppError::Internal(e.into()))?;
 
     let row = sqlx::query!(
-        "SELECT m.file_path, w.title FROM manifestations m \
+        "SELECT m.library_id, m.file_path, w.title FROM manifestations m \
          JOIN works w ON w.id = m.work_id \
          WHERE m.id = $1",
         manifestation_id,
@@ -78,63 +81,46 @@ async fn download_epub(
     .map_err(|e| AppError::Internal(e.into()))?;
 
     let row = row.ok_or(AppError::NotFound)?;
-    let file_path = row.file_path;
+    let location = LibraryLocation {
+        library_id: LibraryId::from_uuid(row.library_id),
+        path: row.file_path.parse().map_err(download_error)?,
+    };
     let title = row.title;
     drop(tx);
 
-    let library_path = state.config.library_path.clone();
-    let canonical = canonicalise_file_for_download(&file_path, &library_path).await?;
+    let opened = state
+        .library_files
+        .open_download(&location)
+        .await
+        .map_err(download_error)?;
+    stream_download(opened, &title, manifestation_id)
+}
 
-    let metadata = match tokio::fs::metadata(&canonical).await {
-        Ok(m) => m,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Err(AppError::NotFound),
-        Err(e) => return Err(AppError::Internal(e.into())),
-    };
+pub(super) fn download_error(error: LibraryFileError) -> AppError {
+    match error {
+        LibraryFileError::OutsideLibrary => AppError::Forbidden,
+        LibraryFileError::Io(e) if e.kind() == std::io::ErrorKind::NotFound => AppError::NotFound,
+        other => AppError::Internal(anyhow::Error::new(other).context("opening library download")),
+    }
+}
 
-    let file = match File::open(&canonical).await {
-        Ok(f) => f,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Err(AppError::NotFound),
-        Err(e) => return Err(AppError::Internal(e.into())),
-    };
-    let stream = ReaderStream::new(file);
+pub(super) fn stream_download(
+    opened: OpenedLibraryFile,
+    title: &str,
+    manifestation_id: Uuid,
+) -> Result<Response, AppError> {
+    let stream = ReaderStream::new(File::from_std(opened.file));
     let body = Body::from_stream(stream);
 
-    let disposition = content_disposition(&title, manifestation_id);
+    let disposition = content_disposition(title, manifestation_id);
 
     Response::builder()
         .status(StatusCode::OK)
         .header(header::CONTENT_TYPE, EPUB_MIME)
         .header(header::CONTENT_DISPOSITION, disposition)
-        .header(header::CONTENT_LENGTH, metadata.len())
+        .header(header::CONTENT_LENGTH, opened.metadata.len())
         .body(body)
         .map_err(|e| AppError::Internal(e.into()))
-}
-
-async fn canonicalise_file_for_download(
-    file_path: &str,
-    library_path: &str,
-) -> Result<PathBuf, AppError> {
-    // Copy owned so we can move into spawn_blocking. Join operator for Result
-    // keeps the async signature clean.
-    let file_path = file_path.to_owned();
-    let library_path = library_path.to_owned();
-    tokio::task::spawn_blocking(move || {
-        let file_canonical = match std::fs::canonicalize(&file_path) {
-            Ok(p) => p,
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-                return Err(AppError::NotFound);
-            }
-            Err(e) => return Err(AppError::Internal(e.into())),
-        };
-        let library_canonical =
-            std::fs::canonicalize(&library_path).map_err(|e| AppError::Internal(e.into()))?;
-        if !file_canonical.starts_with(&library_canonical) {
-            return Err(AppError::Forbidden);
-        }
-        Ok(file_canonical)
-    })
-    .await
-    .map_err(|e| AppError::Internal(anyhow::anyhow!(e)))?
 }
 
 /// Build `Content-Disposition: attachment; filename="…"; filename*=UTF-8''…`

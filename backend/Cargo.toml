@@ -32,6 +32,10 @@ argon2 = "0.6.0"
 async-trait = "0.1.89"
 axum = { version = "0.8.9", features = ["macros"] }
 axum-extra = { version = "0.12.6", features = ["cookie", "query"] }
+cap-std = "4.0.3"
+cap-std-ext = "5.1.2"
+cap-tempfile = "4.0.3"
+rustix = { version = "1.1.5", features = ["fs"] }
 base64ct = { version = "1.8.3", features = ["std"] }
 # First-party datetime crate. `DateTime<Utc>` carries the UTC invariant in the
 # type parameter, and its serde default is RFC 3339 both directions, so the
