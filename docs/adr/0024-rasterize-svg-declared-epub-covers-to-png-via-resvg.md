@@ -62,8 +62,7 @@ serve code unchanged. The two alternatives either open an XSS surface (pass-thro
 Rasterisation occurs at extraction, and the result is a PNG served through the existing raster path. The choice confines
 resource access to the EPUB and bounds input and render work.
 
-Text rendering is disabled because Standard Ebooks converts cover text to vector paths. This avoids font discovery,
-shaping dependencies and bundled fonts while retaining the canonical source's artwork.
+Text rendering is disabled to avoid font discovery, shaping dependencies and bundled fonts.
 
 ### Consequences
 
@@ -72,8 +71,8 @@ shaping dependencies and bundled fonts while retaining the canonical source's ar
   CSP are unchanged.
 - Negative: a new rendering dependency (around 23 transitive crates) and untrusted-XML parsing enter the tree, mitigated
   by the bounded, EPUB-contained rendering and the maintained crate.
-- Negative: SVG covers relying on live `<text>` lose that text (no `text` feature); acceptable for the canonical source
-  and documented as a known limitation.
+- Negative: SVG covers relying on live `<text>` lose that text (no `text` feature), including Standard Ebooks covers
+  that use live title and author lettering.
 - Negative: an SVG cover that legitimately uses filters renders via the spine fallback rather than as artwork (filters
   are rejected as a render-cost bomb); acceptable, since the canonical Standard Ebooks covers use none.
 - Negative: a cover whose SVG carries a DOCTYPE is rejected (spine fallback). Parsing uses `allow_dtd: false` because
