@@ -447,8 +447,10 @@ struct SetupStatusResponse {
     /// the SPA's provider-aware redirect and the "Sign in with OIDC" action.
     oidc_enabled: bool,
     /// Minimum new-password length in Unicode scalar values.
+    #[schema(format = Int64)]
     password_min_length: usize,
     /// Maximum new-password length in Unicode scalar values.
+    #[schema(format = Int64)]
     password_max_length: usize,
 }
 

@@ -9366,11 +9366,13 @@
           },
           "password_max_length": {
             "type": "integer",
+            "format": "int64",
             "description": "Maximum new-password length in Unicode scalar values.",
             "minimum": 0
           },
           "password_min_length": {
             "type": "integer",
+            "format": "int64",
             "description": "Minimum new-password length in Unicode scalar values.",
             "minimum": 0
           },
