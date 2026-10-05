@@ -71,6 +71,13 @@ decision, to be made once the detector has earned its keep.
 
 Only static source scanning is in scope; URL scanning and the skill command surface are separate choices.
 
+The detector is initially advisory in both the local hook and CI until the three deferred `bg-black` findings are
+addressed. This exposes the existing violations without blocking unrelated work during adoption.
+
+Install-script denial avoids the unused Chromium download while retaining optional platform binaries. Omitting all
+optional dependencies would break Tailwind's platform packages; a CI-only download-skip variable would leave local
+installs exposed; bundling Chromium would pay for an unused feature and introduce browser-version drift.
+
 ### Consequences
 
 - Positive: frontend anti-patterns are surfaced deterministically on every commit and every pull request.
