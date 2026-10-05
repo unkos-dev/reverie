@@ -446,7 +446,7 @@ impl Config {
     /// Returns [`ConfigError::MissingVar`] when `DATABASE_URL_INGESTION` is
     /// absent, empty or whitespace-only.
     pub fn validate_server(&self) -> Result<(), ConfigError> {
-        // THREAT: Substituting application credentials removes ingestion's RLS access.
+        // THREAT: Missing ingestion credentials must not fall back to application-role access.
         for &(var, field) in SERVER_REQUIRED_FIELDS {
             if field(self).trim().is_empty() {
                 return Err(ConfigError::MissingVar(var.into()));

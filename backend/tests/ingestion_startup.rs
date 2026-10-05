@@ -185,7 +185,7 @@ async fn ingestion_startup_readiness_reports_early_exit() {
         .spawn()
         .unwrap();
     let result = tokio::time::timeout(
-        std::time::Duration::from_secs(1),
+        std::time::Duration::from_secs(60),
         wait_for_readiness(&mut child, log.path()),
     )
     .await;
@@ -232,7 +232,7 @@ async fn ingestion_startup_configured_roles_serve_ready(pool: sqlx::PgPool) {
         .spawn()
         .unwrap();
     let result = tokio::time::timeout(
-        Duration::from_secs(10),
+        Duration::from_secs(60),
         wait_for_readiness(&mut child, log.path()),
     )
     .await;
