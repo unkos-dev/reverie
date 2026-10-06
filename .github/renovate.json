@@ -189,6 +189,7 @@
   ],
   "customManagers": [
     {
+      "description": "Keep Cargo's rust-version equal to the toolchain pin by grouping updates with the rust-toolchain manager.",
       "customType": "regex",
       "managerFilePatterns": ["/^backend/Cargo\\.toml$/"],
       "matchStrings": ["(?:^|\\n)rust-version\\s*=\\s*\"(?<currentValue>[0-9.]+)\""],

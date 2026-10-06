@@ -10,9 +10,9 @@
 # auto-install it on the first cargo call: an explicit install adds the
 # components a single job needs, fails loudly and early when this file cannot
 # be read, and puts the pinned rustc on PATH before anything keys a build cache
-# on it. .github/actions/rust-toolchain reads the channel from here, so the
-# version is never repeated where it could drift. Renovate's rust-toolchain
-# manager owns the bumps.
+# on it. .github/actions/rust-toolchain reads the channel from here.
+# `rust-version` in backend/Cargo.toml must match `channel`; Renovate updates
+# both declarations in one grouped PR.
 #
 # clippy and rustfmt are not listed because rustup's default profile already
 # carries them. `rust-src` and `rust-analyzer` are not listed because nothing

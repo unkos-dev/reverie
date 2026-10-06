@@ -173,12 +173,12 @@ Rust itself is pinned in [`backend/rust-toolchain.toml`](../backend/rust-toolcha
 every cargo invocation under `backend/`, so a contributor's build and a CI build use the same compiler; before it, each
 side tracked `stable` on its own schedule and a release could surface new lints on one side weeks before the other. CI
 installs that same version through [`.github/actions/rust-toolchain`](actions/rust-toolchain/action.yml), a local
-composite action that reads the channel from the file and calls the rustup every runner preinstalls, so the version is
-never named a second time where it could drift. It replaced a third-party action that published its releases as
-long-lived branches upstream rewrites; once the pinned commit was no longer reachable from any branch there, the SHA pin
-had stopped identifying auditable upstream code. Renovate groups the `rust-toolchain` manager's pin update with a custom
-manager's update to `rust-version` in [`backend/Cargo.toml`](../backend/Cargo.toml). The declared minimum matches the
-pin; Reverie supports no older compiler.
+composite action that reads the channel from the file and calls the rustup every runner preinstalls, so CI workflows do
+not repeat the version. It replaced a third-party action that published its releases as long-lived branches upstream
+rewrites; once the pinned commit was no longer reachable from any branch there, the SHA pin had stopped identifying
+auditable upstream code. Renovate groups the `rust-toolchain` manager's pin update with a custom manager's update to
+`rust-version` in [`backend/Cargo.toml`](../backend/Cargo.toml). The declared minimum matches the pin; Reverie supports
+no older compiler.
 
 CI also keeps a content-addressed Rust build cache in object storage, installed by `kunobi-ninja/kache-action` at the
 versions pinned in the [backend](workflows/backend.yml) and [CodeQL](workflows/codeql.yml) workflows and updated by
