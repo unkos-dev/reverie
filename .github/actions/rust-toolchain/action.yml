@@ -15,17 +15,9 @@ description: >-
   derivation and quota behaviour genuinely earn the dependency.
 
   Resolving the channel here, rather than at each call site, is what keeps the
-  toolchain file the only place the version is named. The MSRV job is the sole
-  caller that overrides it, because it deliberately compiles on the declared
-  floor instead.
+  toolchain file the source for the version every caller installs.
 
 inputs:
-  toolchain:
-    description: >-
-      Toolchain to install instead of the one backend/rust-toolchain.toml
-      pins. Empty means use the pinned channel.
-    required: false
-    default: ""
   components:
     description: >-
       Comma-separated rustup components to install alongside the toolchain.
@@ -38,11 +30,9 @@ outputs:
   version:
     description: >-
       The resolved channel string, which is the version
-      backend/rust-toolchain.toml pins verbatim unless a caller overrode it.
+      backend/rust-toolchain.toml pins verbatim.
       Callers keying a cache on the compiler read it from here rather than
-      parsing the file a second time. It names the requested toolchain rather
-      than the exact compiler: a two-component override reports as given, not as
-      the patch release rustup settles on.
+      parsing the file a second time.
     value: ${{ steps.resolve.outputs.version }}
 
 runs:
@@ -54,17 +44,11 @@ runs:
       id: resolve
       shell: bash
       working-directory: ${{ github.workspace }}
-      env:
-        TOOLCHAIN_OVERRIDE: ${{ inputs.toolchain }}
       run: |
         set -euo pipefail
-        version="${TOOLCHAIN_OVERRIDE}"
-        source="input"
-        if [ -z "${version}" ]; then
-          source="backend/rust-toolchain.toml"
-          version=$(grep -m1 '^channel' backend/rust-toolchain.toml \
-            | sed -E 's/^channel[^"]*"([^"]+)".*/\1/' || true)
-        fi
+        source="backend/rust-toolchain.toml"
+        version=$(grep -m1 '^channel' backend/rust-toolchain.toml \
+          | sed -E 's/^channel[^"]*"([^"]+)".*/\1/' || true)
         if [[ ! "${version}" =~ ^[0-9]+\.[0-9]+(\.[0-9]+)?$ ]]; then
           echo "Could not resolve a valid Rust toolchain from ${source} (got: '${version}')" >&2
           exit 1

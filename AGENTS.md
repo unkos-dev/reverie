@@ -169,8 +169,8 @@ Two aggregates anchor the local loop and should be the default reflex:
   and the zizmor workflow-security audit (online audits included when a GitHub token is in the environment,
   offline-degraded otherwise). It brings the dev database up itself. Do not run it without the maintainer's prior
   approval. Before seeking approval, explain why the scoped gate is insufficient for the change. What it cannot run
-  stays remote. The MSRV (minimum supported Rust version) check, the docker image build, and the IaC, SAST (static
-  application security testing), and secret scans each need a runner, an image, or a token no workstation has.
+  stays remote. The docker image build, IaC, SAST (static application security testing), and secret scans each need a
+  runner, an image, or a token no workstation has.
 - Two recipes gate nowhere and are invoked by hand when you are working on what they cover. `just js::a11y` reuses an
   already-running dev server without checking who owns it, so from a checkout that does not hold port 5173 it scans a
   different tree; a clean CI runner cannot be ambiguous that way, so CI owns the gate and you run the recipe while
