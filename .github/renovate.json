@@ -35,6 +35,11 @@
   },
   "packageRules": [
     {
+      "description": "Keep the declared Rust floor and pinned toolchain in one PR.",
+      "matchDatasources": ["rust-version"],
+      "groupName": "rust-toolchain"
+    },
+    {
       "description": "Keep pnpm on v11 until targeted no-save updates preserve catalogue overrides and pass clean frozen installs; see debt/2026-09-10-pnpm-update-lockfile.md.",
       "matchPackageNames": ["pnpm", "ghcr.io/pnpm/pnpm"],
       "allowedVersions": "<12"
@@ -183,6 +188,14 @@
     }
   ],
   "customManagers": [
+    {
+      "description": "Keep Cargo's rust-version equal to the toolchain pin by grouping updates with the rust-toolchain manager.",
+      "customType": "regex",
+      "managerFilePatterns": ["/^backend/Cargo\\.toml$/"],
+      "matchStrings": ["(?:^|\\n)rust-version\\s*=\\s*\"(?<currentValue>[0-9.]+)\""],
+      "depNameTemplate": "rust",
+      "datasourceTemplate": "rust-version"
+    },
     {
       "description": "Track annotated version pins in workflows and composite action files. The first pattern matches a renovate comment above a version key; the second matches the SBOM generator, whose version and sha256 digest move together. File patterns are the customManagers:githubActionsVersions preset's verbatim, because the preset would double-claim these annotations while leaving that digest unrewritten. ARG-shaped Dockerfile pins belong to the dockerfileVersions preset in extends.",
       "customType": "regex",
