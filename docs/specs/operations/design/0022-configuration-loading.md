@@ -11,6 +11,7 @@ satisfies:
 governed-by:
   - "REV-ADR-0012"
   - "REV-ADR-0023"
+  - "REV-ADR-0053"
   - "REV-ADR-0051"
 ---
 
@@ -67,6 +68,12 @@ renders.
 field's `Default` impl supplies its value when the environment supplies none. `Config::from_env` is the production entry
 point; it builds a `Figment` from `EnvProvider::from_process_env()` and calls `Config::from_figment`.
 
+The three required credential strings (`database_url`, `ingestion_database_url`, `oidc_client_secret`) use
+`secrecy::SecretString`; the migration DSN, Google Books key and Hardcover token use `Option<SecretString>`. Config
+retains Clone, Deserialize, JsonSchema and Validate, with redacted derived Debug. Schemars `with` and explicit `default`
+annotations preserve string or nullable string properties and empty or null defaults independently of secret
+serialisation. `ExposeSecret` supplies plaintext to required-field checks and existing consumers.
+
 `EnvProvider` (`backend/src/config/provider.rs`) is the `figment::Provider` this subject substitutes for the stock
 `figment::providers::Env`. Its `data()` method walks a list of raw `(key, value)` pairs (`from_process_env` for
 production, `from_pairs` for tests), drops empty values except the three storage roots, looks each key up in `ENV_MAP`,
@@ -84,11 +91,11 @@ each has a distinct shape and a distinct completeness check:
   widest registry; the reference generator and `EnvProvider::data` both iterate it, and it is the only registry checked
   in both directions (see Failure and recovery).
 - `REQUIRED_FIELDS` (`mod.rs`): variable name paired with a `RequiredFieldAccessor` function reading the resolved field
-  back off a built `Config`, the single entry `("DATABASE_URL", |c| c.database_url.as_str())`. Pairing the name and its
-  field reader in one tuple, rather than keeping two parallel lists, is what the module comment calls structurally
-  impossible to get out of step: adding a required field is one new entry, not two lists kept aligned by hand.
-  `reference.rs::required_label` reads the same list to render the reference's "Required" column, so Gate 2's startup
-  contract and the documented contract cannot diverge.
+  back off a built `Config`, the single entry `("DATABASE_URL", |c| c.database_url.expose_secret())`. Pairing the name
+  and its field reader in one tuple, rather than keeping two parallel lists, is what the module comment calls
+  structurally impossible to get out of step: adding a required field is one new entry, not two lists kept aligned by
+  hand. `reference.rs::required_label` reads the same list to render the reference's "Required" column, so Gate 2's
+  startup contract and the documented contract cannot diverge.
 - `SERVER_REQUIRED_FIELDS` (`mod.rs`): the same name-plus-accessor shape, read by `Config::validate_server` and
   `reference.rs::required_label`. Its ingestion DSN entry is required for normal server startup and rendered as
   conditional in the reference; administrative commands do not run that validation.
@@ -97,8 +104,8 @@ each has a distinct shape and a distinct completeness check:
   `OIDC_FIELDS` lists the issuer field first deliberately, so an issuer-only block reports the next missing field rather
   than reporting the issuer itself as missing when it is in fact the one field already present.
 - `SECRET_FIELDS` (`mod.rs`): six dotted paths (`database_url`, `migration_database_url`, `ingestion_database_url`,
-  `oidc_client_secret`, `googlebooks_api_key`, `hardcover_api_token`) consulted only by `map_figment_error`, to scrub a
-  deserialise-phase error before it can echo a secret's value.
+  `oidc_client_secret`, `googlebooks_api_key`, `hardcover_api_token`) consulted by parsing and validation error mapping
+  before either can retain a credential value.
 
 A required-together rule exists outside this list-and-loop pattern entirely: `OpdsConfig` (`backend/src/config/opds.rs`)
 defaults `enabled` to `true` and requires `public_url` whenever it is, enforced by `validate_opds_config`, a
@@ -256,19 +263,19 @@ whitespace-only export cannot boot the server carrying a credential no query can
 
 ## Security and operations
 
-`ConfigError::Invalid`'s `reason` field never echoes the offending value for a field whose dotted path appears in
-`SECRET_FIELDS`, on the deserialise phase: `map_figment_error` checks `SECRET_FIELDS` membership before building the
-error and substitutes a fixed value-free reason whenever it matches. This defends against a value-shaped coercion
-failure that would otherwise echo the raw string, for example `OIDC_CLIENT_SECRET=true`, which lands as a `Value::Bool`
-and fails the `String` field with a message quoting `true`. The same guarantee does not extend to the `validate()`
-phase: `map_validation_errors` renders a validator's own `message` field directly, with no `SECRET_FIELDS` check. No
-field in `SECRET_FIELDS` carries a `#[validate(...)]` attribute, so that unguarded path has no secret-bearing field to
-reach; a `#[validate(...)]` attribute on one would not be scrubbed by anything this pipeline does. Separately, the
-schema-emitted default for a secret-bearing field is checked against real credential leakage by only three of the six
-`SECRET_FIELDS` entries (`oidc_client_secret`, `googlebooks_api_key`, `hardcover_api_token`, asserted in
-`config_schema_has_no_secret_default_values`); the other three, the DSN fields, are safe only through their defaults,
-not because a test confirms it: `database_url` and `ingestion_database_url` default to an empty string, and
-`migration_database_url`, which is optional, to `None`.
+Parsing and validation map credential failures to a fixed value-free `ConfigError::Invalid` reason before constructing
+the returned diagnostic. Both paths consult `SECRET_FIELDS`. Validation resolves a struct-level `"var"` parameter
+through `ENV_MAP`, accepting either the operator name or its dotted field path. Nested structs and lists retain their
+recursive handling, and multiple errors remain aggregated. Non-secret validation messages and codes retain useful
+reasons; raw validator parameters never enter `ConfigError`.
+
+`config_debug_omits_all_credentials`, `secret_field_deser_error_has_no_value` and
+`secret_field_validation_error_has_no_value` exercise all six credentials. The validation checks cover field errors and
+named struct errors; `nested_validation_errors_preserve_multiple_and_non_secret_reasons` and
+`non_secret_validation_error_retains_reason` check aggregation and useful non-secret diagnostics.
+`config_schema_has_no_secret_default_values` requires every credential property and its default key before checking
+exact empty strings or nulls. `required_and_secret_vars_render_correctly` in `backend/tests/gen_config_ref.rs` checks
+all six reference default cells. The drift tests compare both generated artefacts with their committed forms.
 
 Gate 1 keeps the migration DSN out of the `Config` the server runs on: forcing `migration_database_url` to `None`
 whenever `auto_migrate` is false runs on every load, not only when the operator remembers to omit the variable, so an

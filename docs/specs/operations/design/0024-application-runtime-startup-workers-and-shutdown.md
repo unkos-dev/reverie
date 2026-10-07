@@ -7,6 +7,7 @@ satisfies:
   - "REV-REQ-0066"
 governed-by:
   - "REV-ADR-0021"
+  - "REV-ADR-0053"
   - "REV-ADR-0051"
 ---
 
@@ -313,6 +314,14 @@ ingestion roots before starting the server, and stop it before removing a mount:
 busy. Directory existence cannot prove that the intended volume is mounted. Downloads use the owning capability after
 authorisation and never reopen an ambient path for streaming. Ingestion, writeback, cover-source reads, cache
 publication and response opening use recorded locations through capabilities.
+
+Configuration retains the six authentication values as `SecretString` or `Option<SecretString>`. Startup explicitly
+exposes the application, ingestion and migration DSNs at pool boundaries; OIDC and enrichment constructors explicitly
+copy the secret into the existing client API where ownership requires it. Diagnostic formatting of Config redacts these
+values. The migrate-only command reads only `DATABASE_URL_MIGRATION`, without constructing Config or loading unrelated
+credentials. `backend/tests/ingestion_startup.rs` checks raw captured `stdout` and `stderr` for credential-marker
+absence and setting-name presence before any test-diagnostic sanitisation. Its configured-role readiness test also
+checks raw output for supplied DSNs and passwords.
 
 When `auto_migrate` is unset or `false`, `run` never reads the migration DSN. Configuration loading forces
 `config.migration_database_url` to `None` whenever `auto_migrate` is `false` (covered by that subject, not restated

@@ -8,6 +8,7 @@
 //! THREAT: disabled redirects prevent an endpoint from forwarding credentials or key resolution.
 //! THREAT: timeouts bound stalled provider requests, including JWKS cache refreshes.
 
+use secrecy::ExposeSecret;
 use std::time::Duration;
 
 use anyhow::{Context, Result, bail};
@@ -284,7 +285,9 @@ pub async fn init_oidc_client(config: &Config, transport: &OidcTransport) -> Res
     let client = CoreClient::from_provider_metadata(
         metadata,
         ClientId::new(config.oidc_client_id.clone()),
-        Some(ClientSecret::new(config.oidc_client_secret.clone())),
+        Some(ClientSecret::new(
+            config.oidc_client_secret.expose_secret().to_owned(),
+        )),
     )
     .set_redirect_uri(redirect);
     Ok(OidcRuntime::new(client, transport.clone()))
@@ -307,7 +310,7 @@ mod tests {
         let mut config = crate::test_support::test_config();
         config.oidc_issuer_url = issuer.to_owned();
         config.oidc_client_id = "test".to_owned();
-        config.oidc_client_secret = "secret".to_owned();
+        config.oidc_client_secret = "secret".into();
         config.oidc_redirect_uri = "http://localhost:3000/auth/callback".to_owned();
         config
     }

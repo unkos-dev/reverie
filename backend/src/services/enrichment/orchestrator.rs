@@ -15,6 +15,7 @@
 //! URLs surface them as `cover_url` observations, and nothing fetches them
 //! yet.
 
+use secrecy::ExposeSecret;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -164,12 +165,18 @@ pub fn build_sources(config: &Config) -> Vec<Arc<dyn MetadataSource>> {
         Arc::new(OpenLibrary::new(open_library::DEFAULT_BASE_URL)),
         Arc::new(GoogleBooks::new(
             google_books::DEFAULT_BASE_URL,
-            config.googlebooks_api_key.clone(),
+            config
+                .googlebooks_api_key
+                .as_ref()
+                .map(|secret| secret.expose_secret().to_owned()),
         )),
     ];
     let hc = Hardcover::new(
         hardcover::DEFAULT_BASE_URL,
-        config.hardcover_api_token.clone(),
+        config
+            .hardcover_api_token
+            .as_ref()
+            .map(|secret| secret.expose_secret().to_owned()),
     );
     if hc.enabled() {
         v.push(Arc::new(hc));
@@ -1488,14 +1495,14 @@ mod tests {
     fn config_with_mock_sources() -> Config {
         Config {
             port: 3000,
-            database_url: String::new(),
+            database_url: String::new().into(),
             library_path: crate::config::Config::default().library_path,
             ingestion_path: crate::config::Config::default().ingestion_path,
             log_level: "info".into(),
             db_max_connections: 5,
             oidc_issuer_url: String::new(),
             oidc_client_id: String::new(),
-            oidc_client_secret: String::new(),
+            oidc_client_secret: String::new().into(),
             oidc_redirect_uri: String::new(),
             local_auth_enabled: true,
             resource_server_issuer: String::new(),
@@ -1515,7 +1522,7 @@ mod tests {
             trusted_client_ip_header: None,
             migration_database_url: None,
             auto_migrate: false,
-            ingestion_database_url: String::new(),
+            ingestion_database_url: String::new().into(),
             accepted_formats: vec![ManifestationFormat::Epub],
             cleanup_imported: false,
             cleanup_duplicates: false,

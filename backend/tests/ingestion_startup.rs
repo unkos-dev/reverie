@@ -111,6 +111,29 @@ fn redact_startup_output(output: &str, credentials: &[&str]) -> String {
 
 #[test]
 fn ingestion_startup_diagnostics_redact_credentials() {
+    for var in [
+        "DATABASE_URL",
+        "DATABASE_URL_MIGRATION",
+        "DATABASE_URL_INGESTION",
+        "OIDC_CLIENT_SECRET",
+        "REVERIE_GOOGLEBOOKS_API_KEY",
+        "REVERIE_HARDCOVER_API_TOKEN",
+    ] {
+        let output = Command::new(env!("CARGO_BIN_EXE_reverie-api"))
+            .env_clear()
+            .env("DATABASE_URL", "invalid-app-dsn-private-marker")
+            .env("REVERIE_OPDS_ENABLED", "false")
+            .env(var, "987654321")
+            .output()
+            .unwrap();
+        assert!(!output.status.success());
+        let stderr = String::from_utf8(output.stderr).unwrap();
+        let stdout = String::from_utf8(output.stdout).unwrap();
+        assert!(!stderr.contains("987654321"));
+        assert!(!stdout.contains("987654321"));
+        assert!(stderr.contains(var));
+        assert!(stderr.contains("invalid value (omitted — secret-bearing field)"));
+    }
     let output = "connection postgres://role:private-marker@localhost/db failed: private-marker";
     assert_eq!(
         redact_startup_output(
@@ -241,6 +264,17 @@ async fn ingestion_startup_configured_roles_serve_ready(pool: sqlx::PgPool) {
     }
     let status = child.wait().await.unwrap();
     let output = std::fs::read_to_string(log.path()).unwrap();
+    for credential in [
+        app_url.as_str(),
+        ingestion_url.as_str(),
+        app_password.as_str(),
+        ingestion_password.as_str(),
+    ] {
+        assert!(
+            !output.contains(credential),
+            "credential appeared in raw startup output"
+        );
+    }
     let diagnostics = redact_startup_output(
         &output,
         &[
