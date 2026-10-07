@@ -380,7 +380,7 @@
       "id": "REV-ADR-0053",
       "kind": "adr",
       "path": "docs/adr/0053-typed-credentials-and-externally-supplied-authentication-material.md",
-      "status": "proposed",
+      "status": "accepted",
       "title": "Typed credentials and externally supplied authentication material"
     },
     {

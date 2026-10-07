@@ -3,7 +3,7 @@ type: ADR
 profile-version: 1
 id: "REV-ADR-0053"
 title: "Typed credentials and externally supplied authentication material"
-status: "proposed"
+status: "accepted"
 recorded-on: "2026-10-07"
 decision-makers:
   - "John Unkovich"
@@ -40,21 +40,17 @@ Treating these alike either leaves usable operational defaults or removes meanin
 Chosen option: **Typed secrets with error scrubbing and externally supplied or provisioning-owned credentials**, because
 it protects ordinary diagnostic formatting while retaining the existing configuration and consumer contracts.
 
-The six credential-bearing configuration fields use `secrecy` 0.10.3 with Serde support. Required fields retain
-`SecretString`; optional fields retain `Option<SecretString>`. Explicit Schemars annotations preserve string or nullable
-string schema types and empty or null defaults. Consumers expose plaintext only where their existing APIs require it.
-One credential classification covers parsing and validation: wrappers cannot prevent a parser from quoting a value
-before constructing them. Credential failures therefore receive a fixed value-free reason, including struct-level
-validation failures that name a variable explicitly. Non-secret diagnostics retain their reasons.
+`secrecy` is chosen over handwritten diagnostic formatting so redaction follows the credential type. Error scrubbing
+remains a separate boundary because parsing and validation can quote values independently of secret wrappers. Plaintext
+access is explicit at consumers, while the existing configuration and published-default contracts remain unchanged.
 
-Deployment credentials come from operators. Disposable test provisioning generates credentials and owns its cluster and
-child execution; SQLx retains per-test databases and migrations. Persistent development provisioning generates
-credentials once and reuses them across restarts. Both TCP and Unix sockets use SCRAM, with no fallback to the
-persistent development database for disposable runs. Deliberate credential-handling literals remain test data.
+Operators own deployment credentials. Provisioning owns development and disposable test credentials, keeping test
+lifecycle ownership separate from persistent development state. Deliberate credential-handling literals remain test data
+rather than operational credentials.
 
-Credential file supply rejects simultaneous `VAR` and `VAR_FILE` sources, reads UTF-8, removes one final LF or CRLF,
-preserves other content, and reports failed reads without values. This supply decision covers the six configuration
-credentials and the separate migrate-only reader; it does not expand bootstrap credential storage.
+Environment variables and credential files are the selected supply mechanisms, avoiding an application-owned secret
+store. The choice covers configuration credentials and the separate migrate-only reader without expanding bootstrap
+credential storage.
 
 ### Consequences
 
@@ -83,9 +79,3 @@ credentials and the separate migrate-only reader; it does not expand bootstrap c
 
 - Positive: one subsystem could centralise supply, reflection and diagnostics.
 - Negative: it replaces working configuration contracts and adds an ownership surface beyond the credential boundary.
-
-## More information
-
-Delivered coverage consists of typed configuration, parsing and validation scrubbing, explicit consumer access, and
-six-field default and startup-output regressions. Generated provisioning credentials and credential-file readers are
-separate implementation work; this record does not establish that they are delivered.
