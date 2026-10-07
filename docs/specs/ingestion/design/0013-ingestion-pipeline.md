@@ -42,6 +42,10 @@ current inputs and linked attempts and writes works, manifestations, metadata dr
 existing singleton row, API and monotonic live cache. Tokio supplies cancellation, clock control and the deadline queue;
 cap-tempfile owns independent candidates.
 
+Normal application startup requires `DATABASE_URL_INGESTION` for the dedicated `reverie_ingestion` role. A missing,
+empty or whitespace-only value fails before database pools, workers or serving, with an error naming the variable. The
+application-role DSN is never substituted. One-shot administrative commands retain their own credential requirements.
+
 ## Data and state
 
 `ingestion_inputs` stores a byte-preserving ingestion-relative path, full source fingerprint, generation, current

@@ -340,12 +340,10 @@ scope to. `trigger` and `status` stay on the caller's row-level-security-scoped 
 
 Both the queue and the dry run read and write `manifestations` over `state.ingestion_pool`, never over
 `acquire_with_rls`, relying on `manifestations_ingestion_full_access`'s unconditional grant to the `reverie_ingestion`
-role. Which role that pool actually connects as is an operator precondition, not a fact this subject controls: with
-`DATABASE_URL_INGESTION` configured, it is `reverie_ingestion` and every claim, snapshot read and canonical apply
-proceeds as designed; left unset, the pool falls back to the same connection string and role as the request-handling
-pool (`reverie_app`) with no `app.current_user_id` ever set on it, so the ordinary per-user `manifestations` policies
-apply instead and admit no row: `claim_next`'s claim, `load_snapshot`'s read and every canonical `UPDATE` then match
-nothing, and the queue runs indefinitely without ever processing a manifestation, with no error surfaced.
+role. Normal startup requires `DATABASE_URL_INGESTION` before launching the queue and rejects missing, empty or
+whitespace-only values. Operators must configure the `reverie_ingestion` DSN; the server checks credential presence, not
+the connected role. A supplied application-role DSN has no `app.current_user_id` on this pool, so its ordinary per-user
+policies admit no manifestation for a claim, snapshot read or canonical update.
 
 The dry run declares read scope even though it calls every configured metadata provider live and writes their responses
 to `api_cache` over the ingestion pool; it changes no manifestation, journal or writeback row. This is a deliberate

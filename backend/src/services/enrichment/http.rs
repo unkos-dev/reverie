@@ -122,7 +122,6 @@ pub fn ip_is_denied(ip: IpAddr) -> bool {
             if o[0] & 0xF0 == 224 {
                 return true;
             }
-            false
         }
         IpAddr::V6(v6) => {
             // Unwrap IPv4-mapped addresses and re-check as IPv4.
@@ -150,9 +149,9 @@ pub fn ip_is_denied(ip: IpAddr) -> bool {
             if segs[0] & 0xFF00 == 0xFF00 {
                 return true;
             }
-            false
         }
     }
+    false
 }
 
 /// Extract the inner IPv4 address from an IPv4-mapped IPv6 address
@@ -452,6 +451,8 @@ mod tests {
     fn public_ip_allowed() {
         assert!(!ip_is_denied(v4(8, 8, 8, 8))); // Google DNS
         assert!(!ip_is_denied(v4(1, 1, 1, 1))); // Cloudflare
+        assert!(!ip_is_denied(v4(223, 255, 255, 255)));
+        assert!(!ip_is_denied(v4(240, 0, 0, 0)));
         assert!(!ip_is_denied(v4(93, 184, 216, 34))); // example.com
     }
 
@@ -487,6 +488,8 @@ mod tests {
     #[test]
     fn public_v6_allowed() {
         assert!(!ip_is_denied(v6("2001:4860:4860::8888"))); // Google DNS IPv6
+        assert!(!ip_is_denied(v6("fe7f::1")));
+        assert!(!ip_is_denied(v6("fec0::1")));
     }
 
     // ── IPv4-mapped IPv6 ──────────────────────────────────────────────────

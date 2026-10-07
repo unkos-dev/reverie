@@ -65,6 +65,7 @@ cat >"$fixture" <<'EOF'
 # a comment line, and a blank line below
 
 DATABASE_URL=postgres://someone_else:pw@db.example:5432/other
+DATABASE_URL_INGESTION=postgres://custom_ingestion:pw@localhost:5432/custom
 REVERIE_PUBLIC_URL="https://reverie.example.com/"
 REVERIE_PORT='3101'
 DATABASE_URL_MIGRATION=postgres://custom_migrator:pw@localhost:5432/custom
@@ -102,6 +103,19 @@ check "default port with no file" "3000" "$(resolve REVERIE_PORT)"
 check "default migration DSN with no file" \
   "postgres://reverie_migrator:reverie_migrator@localhost:5432/reverie_dev" \
   "$(resolve DATABASE_URL_MIGRATION)"
+check "default ingestion DSN with no file" \
+  "postgres://reverie_ingestion:reverie_ingestion@localhost:5432/reverie_dev" \
+  "$(resolve DATABASE_URL_INGESTION)"
+check "a file ingestion DSN is exported" \
+  "postgres://custom_ingestion:pw@localhost:5432/custom" \
+  "$(resolve DATABASE_URL_INGESTION REVERIE_DEV_ENV="$fixture")"
+check "an environment ingestion DSN wins over the file" \
+  "postgres://env_ingestion:pw@localhost/x" \
+  "$(resolve DATABASE_URL_INGESTION REVERIE_DEV_ENV="$fixture" DATABASE_URL_INGESTION=postgres://env_ingestion:pw@localhost/x)"
+check "explicit empty ingestion credentials are preserved" \
+  "" "$(resolve DATABASE_URL_INGESTION REVERIE_DEV_ENV="$fixture" DATABASE_URL_INGESTION=)"
+check "explicit whitespace ingestion credentials are preserved" \
+  "   " "$(resolve DATABASE_URL_INGESTION DATABASE_URL_INGESTION='   ')"
 
 # A fixture file's values are exported (not merely left for something else to
 # apply, since dotenvy is gone and this script is now the only loader).

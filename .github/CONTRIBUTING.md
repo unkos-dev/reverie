@@ -72,8 +72,8 @@ or put it in `docker/.env`, which is the dotenv file Compose loads for this proj
 of its own, so a repository `.env` has no effect on it. Environment stacks still share the published `127.0.0.1:5432`,
 so only one can run at a time and the port bind conflict is the guard.
 
-Backend only (requires the Rust toolchain; the minimum supported version is declared as `rust-version` in
-[`backend/Cargo.toml`](../backend/Cargo.toml) and enforced in CI):
+Backend only (requires the pinned Rust toolchain; `rust-version` in [`backend/Cargo.toml`](../backend/Cargo.toml)
+matches the pin and cargo enforces that minimum):
 
 ```bash
 just rust::dev
@@ -96,9 +96,9 @@ server logs to `.dev-server.log` in its own plane directory. The database delibe
 is stateful and shared with the test suite; stop it with `just db-down`.
 
 The backend recipes supply the dev configuration the server needs when nothing else does: the RLS-enforced `reverie_app`
-DSN and the `REVERIE_PUBLIC_URL` that OPDS requires. They resolve an out-of-tree env file at `~/reverie/dev/env`
-(override the location with `REVERIE_DEV_ENV`; copy `.env.example` there to start one), so a value you set there is the
-one the server uses.
+DSN, the dedicated `reverie_ingestion` DSN and the `REVERIE_PUBLIC_URL` that OPDS requires. They resolve an out-of-tree
+env file at `~/reverie/dev/env` (override the location with `REVERIE_DEV_ENV`; copy `.env.example` there to start one),
+so a value you set there is the one the server uses.
 
 Frontend only (Node.js at or above the `engines.node` floor in `package.json`; install at the repository root, where
 `pnpm-workspace.yaml` declares every plane's project):
@@ -173,13 +173,12 @@ Rust itself is pinned in [`backend/rust-toolchain.toml`](../backend/rust-toolcha
 every cargo invocation under `backend/`, so a contributor's build and a CI build use the same compiler; before it, each
 side tracked `stable` on its own schedule and a release could surface new lints on one side weeks before the other. CI
 installs that same version through [`.github/actions/rust-toolchain`](actions/rust-toolchain/action.yml), a local
-composite action that reads the channel from the file and calls the rustup every runner preinstalls, so the version is
-never named a second time where it could drift. It replaced a third-party action that published its releases as
-long-lived branches upstream rewrites; once the pinned commit was no longer reachable from any branch there, the SHA pin
-had stopped identifying auditable upstream code. Renovate's `rust-toolchain` manager raises the bump PRs. The pin is not
-the minimum supported version: `rust-version` in [`backend/Cargo.toml`](../backend/Cargo.toml) stays the supported
-floor, and the MSRV job overrides the file through `RUSTUP_TOOLCHAIN` so it still compiles against that floor rather
-than against the pinned version.
+composite action that reads the channel from the file and calls the rustup every runner preinstalls, so CI workflows do
+not repeat the version. It replaced a third-party action that published its releases as long-lived branches upstream
+rewrites; once the pinned commit was no longer reachable from any branch there, the SHA pin had stopped identifying
+auditable upstream code. Renovate groups the `rust-toolchain` manager's pin update with a custom manager's update to
+`rust-version` in [`backend/Cargo.toml`](../backend/Cargo.toml). The declared minimum matches the pin; Reverie supports
+no older compiler.
 
 CI also keeps a content-addressed Rust build cache in object storage, installed by `kunobi-ninja/kache-action` at the
 versions pinned in the [backend](workflows/backend.yml) and [CodeQL](workflows/codeql.yml) workflows and updated by
