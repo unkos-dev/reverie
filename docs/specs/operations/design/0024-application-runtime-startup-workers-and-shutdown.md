@@ -172,8 +172,9 @@ observation. Watchdog ticks and completion precede queued watcher traffic.
 
 **From process start to the first request accepted**, on the default `Serve` path:
 
-1. `Config::from_env` loads and validates configuration; any failure here (a missing or invalid environment variable)
-   returns immediately, before anything else in this list runs.
+1. `Config::from_env` loads shared configuration, then `Config::validate_server` requires a non-blank
+   `DATABASE_URL_INGESTION`. Missing, empty or whitespace-only values return a fixed error naming that variable before
+   anything else in this list runs. One-shot administrative commands use the shared loader without this check.
 2. `security::csp::build_api_csp` builds the API CSP string and stores it on `config.security.csp_api_header`. If
    `config.security.frontend_dist_path` is set, `security::dist_validation::validate_frontend_dist` runs next, and only
    on success does `security::csp::build_html_csp` build and store the HTML CSP string.

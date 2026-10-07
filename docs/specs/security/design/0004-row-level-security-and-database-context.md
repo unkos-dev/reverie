@@ -76,11 +76,9 @@ band through `reverie migrate`. A manual connection as that role, however, sees 
 
 `init_pool` in `backend/src/db.rs` opens a plain `PgPool` with no per-connection setup. `AppState::pool`
 (`backend/src/state.rs`) is one, connected as `reverie_app`. `AppState::ingestion_pool` is another, built the same way
-from `DATABASE_URL_INGESTION`. When that variable is unset, `Config::from_figment` (`backend/src/config/mod.rs`) falls
-back to the application's own connection string and sets `ingestion_dsn_defaulted`, and `run` logs a warning at startup:
-the ingestion pool then connects as `reverie_app`, the separation between the two roles is gone, and the
-`*_ingestion_full_access` policies no longer apply to it. Neither pool scopes a connection by itself; that is the job of
-`acquire_with_rls`, per request.
+from `DATABASE_URL_INGESTION`, which must name the dedicated `reverie_ingestion` role. Normal startup rejects missing,
+empty or whitespace-only ingestion credentials before opening either pool; it never substitutes the application
+connection string. Neither pool scopes a connection by itself; that is the job of `acquire_with_rls`, per request.
 
 `init_writeback_pool` differs: every connection it opens runs
 `SELECT set_config('app.system_context', 'writeback', false)` once, in `after_connect`, before the pool hands it out. It
@@ -277,9 +275,9 @@ Both outcomes keep gated rows hidden, but the failure is not always quiet, and w
 defences are the documentation on `acquire_with_rls` and review of each new handler.
 
 These workflows read through `state.ingestion_pool`, whose unconditional policies give `reverie_ingestion` access
-without any user context, as long as the pool has its own credentials. When `DATABASE_URL_INGESTION` is unset and the
-pool connects as `reverie_app`, its reads meet the ordinary policies with no user context set, and fail in one of the
-two ways above.
+without any user context. Normal startup requires the pool's own credentials in `DATABASE_URL_INGESTION`. An
+operator-supplied application-role DSN still meets the ordinary policies with no user context and cannot provide the
+ingestion role's access; startup validates presence, not the connected role.
 
 Initial ingestion settings seeding runs through the primary application's existing SELECT/UPDATE grants on `settings`,
 before worker startup. The ingestion role gains no settings grant. Publication evidence uses existing `ingestion_jobs`

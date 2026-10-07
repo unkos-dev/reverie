@@ -12,7 +12,7 @@
 # silently clobber whatever the developer already had set.
 #
 # Every key the file defines is exported, not only the ones with a
-# recipe-known dev default (DATABASE_URL, REVERIE_PUBLIC_URL,
+# recipe-known dev default (DATABASE_URL, DATABASE_URL_INGESTION, REVERIE_PUBLIC_URL,
 # DATABASE_URL_MIGRATION): the file pass below exports each parsed key that
 # the environment does not already define, then dev_env_default only fills in
 # the handful of keys the recipes need a fallback for.
@@ -78,6 +78,7 @@ dev_env_default() {
 # DATABASE_URL in the environment or in the dev env file, so there is no
 # recipe-specific knob for it.
 dev_env_default DATABASE_URL "postgres://reverie_app:reverie_app@localhost:5432/reverie_dev"
+dev_env_default DATABASE_URL_INGESTION "postgres://reverie_ingestion:reverie_ingestion@localhost:5432/reverie_dev"
 # Required whenever OPDS is enabled, which is the default. Feeds emit absolute
 # URLs rooted here, so the dev default is this server's own origin: a reader
 # pointed at the API then receives links back to the API, reachable whether or

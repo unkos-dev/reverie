@@ -25,7 +25,7 @@ configuration reference and `backend/config.schema.json` from the same schema.
 
 This subject owns the mechanism that gets a variable from the environment into a typed, validated field of `Config`: the
 custom `figment::Provider` (`EnvProvider` in `backend/src/config/provider.rs`), the `ENV_MAP` registry it and the
-reference generator both read, `Config::from_figment`'s six post-deserialise gates, the `ConfigError` shape and its
+reference generator both read, `Config::from_figment`'s five post-deserialise gates, the `ConfigError` shape and its
 var-name and secret-scrubbing behaviour, and `reference_markdown`/`config_schema_json`, the two renderers that turn the
 same `schemars` schema into the committed configuration reference and JSON Schema artifacts. It does not own the meaning
 or defaults of any individual domain's fields (enrichment, cover, writeback, OPDS, security headers, password policy,
@@ -33,16 +33,16 @@ OIDC): those belong to the subjects that consume them, and this Design names the
 their behaviour.
 
 `ENV_MAP` is the registry for every schema-visible field of `Config` (every field not marked `#[schemars(skip)]`), not
-for every environment variable Reverie reads. Three fields are computed after deserialisation rather than
-environment-sourced, and are excluded from both the schema and `ENV_MAP` for that reason: `ingestion_dsn_defaulted`,
-`security.csp_html_header` and `security.csp_api_header`. Two call sites deliberately read the environment directly,
-outside this pipeline, each for a stated reason: `run_migrate` in `backend/src/lib.rs` (the `reverie migrate`
-subcommand) reads only `DATABASE_URL_MIGRATION` through `resolve_migration_dsn`, because a migrate invocation has no
-business holding the OIDC secret or the application DSN that building a full `Config` would require;
-`read_bootstrap_seed`, also in `backend/src/lib.rs`, reads `REVERIE_BOOTSTRAP_EMAIL`, `REVERIE_BOOTSTRAP_DISPLAY_NAME`
-and `REVERIE_BOOTSTRAP_PASSWORD` directly because the seed password is a one-shot startup credential that must never be
-retained on the long-lived `Config`. Neither path is gated by this subject's Gates 1-6, and a malformed value on either
-surfaces as whatever error the consuming code produces, not a `ConfigError`.
+for every environment variable Reverie reads. Two fields are computed after deserialisation rather than
+environment-sourced, and are excluded from both the schema and `ENV_MAP` for that reason: `security.csp_html_header` and
+`security.csp_api_header`. Two call sites deliberately read the environment directly, outside this pipeline, each for a
+stated reason: `run_migrate` in `backend/src/lib.rs` (the `reverie migrate` subcommand) reads only
+`DATABASE_URL_MIGRATION` through `resolve_migration_dsn`, because a migrate invocation has no business holding the OIDC
+secret or the application DSN that building a full `Config` would require; `read_bootstrap_seed`, also in
+`backend/src/lib.rs`, reads `REVERIE_BOOTSTRAP_EMAIL`, `REVERIE_BOOTSTRAP_DISPLAY_NAME` and `REVERIE_BOOTSTRAP_PASSWORD`
+directly because the seed password is a one-shot startup credential that must never be retained on the long-lived
+`Config`. Neither path is gated by this subject's gates, and a malformed value on either surfaces as whatever error the
+consuming code produces, not a `ConfigError`.
 
 Depends on: the process environment, populated by the operator before the binary starts (a container's declared
 environment, or a sourced dev env file); `backend/src/models/manifestation_format.rs` for the `ManifestationFormat` enum
@@ -77,18 +77,21 @@ pair order), and the flat-versus-nested split driven entirely by `ENV_MAP`'s exp
 separator convention, because `REVERIE_DB_MAX_CONNECTIONS` must land on the flat `db_max_connections` field while
 `REVERIE_ENRICHMENT_CONCURRENCY` must nest under `enrichment.concurrency`, and no single splitting rule produces both.
 
-Four registries in `backend/src/config/mod.rs` and `provider.rs` together decide what varies and what is required, and
+Six registries in `backend/src/config/mod.rs` and `provider.rs` together decide what varies and what is required, and
 each has a distinct shape and a distinct completeness check:
 
 - `ENV_MAP` (`provider.rs`): every operator-facing variable name paired with the dotted field path it feeds. This is the
-  widest registry; the reference generator and `EnvProvider::data` both iterate it, and it is the only one of the four
-  checked in both directions (see Failure and recovery).
+  widest registry; the reference generator and `EnvProvider::data` both iterate it, and it is the only registry checked
+  in both directions (see Failure and recovery).
 - `REQUIRED_FIELDS` (`mod.rs`): variable name paired with a `RequiredFieldAccessor` function reading the resolved field
   back off a built `Config`, the single entry `("DATABASE_URL", |c| c.database_url.as_str())`. Pairing the name and its
   field reader in one tuple, rather than keeping two parallel lists, is what the module comment calls structurally
   impossible to get out of step: adding a required field is one new entry, not two lists kept aligned by hand.
-  `reference.rs::required_label` reads the same list to render the reference's "Required" column, so Gate 3's startup
+  `reference.rs::required_label` reads the same list to render the reference's "Required" column, so Gate 2's startup
   contract and the documented contract cannot diverge.
+- `SERVER_REQUIRED_FIELDS` (`mod.rs`): the same name-plus-accessor shape, read by `Config::validate_server` and
+  `reference.rs::required_label`. Its ingestion DSN entry is required for normal server startup and rendered as
+  conditional in the reference; administrative commands do not run that validation.
 - `OIDC_FIELDS` and `RESOURCE_SERVER_FIELDS` (`mod.rs`): the same name-plus-accessor shape as `REQUIRED_FIELDS`, but
   conditionally required together once a trigger field (`oidc_issuer_url`, `resource_server_issuer`) is non-blank.
   `OIDC_FIELDS` lists the issuer field first deliberately, so an issuer-only block reports the next missing field rather
@@ -97,12 +100,12 @@ each has a distinct shape and a distinct completeness check:
   `oidc_client_secret`, `googlebooks_api_key`, `hardcover_api_token`) consulted only by `map_figment_error`, to scrub a
   deserialise-phase error before it can echo a secret's value.
 
-A fifth required-together rule exists outside this list-and-loop pattern entirely: `OpdsConfig`
-(`backend/src/config/opds.rs`) defaults `enabled` to `true` and requires `public_url` whenever it is, enforced by
-`validate_opds_config`, a `#[validate(schema(function = ...))]` struct-level function that runs during the final
-`cfg.validate()` call rather than as one of `Config::from_figment`'s six numbered gates. Because `enabled` defaults to
-`true`, this rule fires on a load that sets no OPDS variable at all, not only on one that sets
-`REVERIE_OPDS_ENABLED=true` explicitly (see Runtime behaviour).
+A required-together rule exists outside this list-and-loop pattern entirely: `OpdsConfig` (`backend/src/config/opds.rs`)
+defaults `enabled` to `true` and requires `public_url` whenever it is, enforced by `validate_opds_config`, a
+`#[validate(schema(function = ...))]` struct-level function that runs during the final `cfg.validate()` call rather than
+as one of `Config::from_figment`'s five numbered gates. Because `enabled` defaults to `true`, this rule fires on a load
+that sets no OPDS variable at all, not only on one that sets `REVERIE_OPDS_ENABLED=true` explicitly (see Runtime
+behaviour).
 
 `reference.rs` and the `config_schema_json` function in `backend/src/lib.rs` both start from the same
 `schemars::schema_for!(Config)` value, so a field's doc comment, default and range constraint are declared once and
@@ -129,18 +132,18 @@ parse successfully. Explicitly empty root variables reach this parser instead of
 - `reference_markdown() -> anyhow::Result<String>` and `config_schema_json() -> anyhow::Result<String>` are the two
   generator entry points; the latter also backs the `reverie print-config-schema` CLI subcommand (`backend/src/lib.rs`),
   which reads no environment and opens no database.
+- `Config::validate_server() -> Result<(), ConfigError>` checks the ingestion credential required by normal startup.
 - `ConfigError` (`MissingVar(String)`, `Invalid { var, reason }`, `Multiple(Vec<ConfigError>)`) is the error type every
   gate and every `validate()` failure maps onto; callers match it to build an operator-facing message.
 
 ## Data and state
 
 `Config` is built once, at process startup, and is not reloaded while the process runs; operator-tunable settings that
-change at runtime live in a separate database-backed surface this subject does not own. Within that one build, three
-fields are written after `figment.extract()` inside `Config::from_figment` itself: Gate 1 forces
-`migration_database_url` to `None` whenever `auto_migrate` is false, regardless of what `DATABASE_URL_MIGRATION`
-supplied; Gate 2 clones `database_url` into `ingestion_database_url` whenever the latter is blank and sets
-`ingestion_dsn_defaulted` to `true` to record that the fallback fired. After `from_figment` returns, exactly one further
-writer touches the built value: `crate::run` (`backend/src/lib.rs`) sets `security.csp_api_header` and, when
+change at runtime live in a separate database-backed surface this subject does not own. Within that one build, one field
+is written after `figment.extract()` inside `Config::from_figment` itself: Gate 1 forces `migration_database_url` to
+`None` whenever `auto_migrate` is false, regardless of what `DATABASE_URL_MIGRATION` supplied. The ingestion DSN retains
+its supplied value, or its empty default; no application DSN is substituted. After `from_figment` returns, exactly one
+further writer touches the built value: `crate::run` (`backend/src/lib.rs`) sets `security.csp_api_header` and, when
 `security.frontend_dist_path` is set, `security.csp_html_header`, from the finalisation pass the Design "Response
 security headers and CSP" covers; both fields stay `None` on a `Config` produced by `from_env` or `from_figment` alone,
 so a caller embedding the library and skipping `crate::run` must perform that finalisation itself or ship a server that
@@ -172,20 +175,25 @@ stops startup. Other worker settings retain their own loading behaviour.
 3. `figment.extract()` deserialises the accumulated dict into `Config`; every field this load supplies no value for
    takes the value the container's `#[serde(default)]` reads off `Config::default()` (and each sub-struct's own
    `Default`).
-4. Gates 1 and 2 run: `auto_migrate` is `false` by default, so Gate 1 forces `migration_database_url` to `None`;
-   `ingestion_database_url` is blank by default, so Gate 2 clones `database_url` into it and sets
-   `ingestion_dsn_defaulted`.
-5. Gate 3 checks `REQUIRED_FIELDS`; `database_url` is non-blank because the operator set it, so it passes.
-6. Gate 4 checks `oidc_configured()` (a non-blank `oidc_issuer_url`); by default it is blank, so the OIDC-fields loop is
+4. Gate 1 runs: `auto_migrate` is `false` by default, so it forces `migration_database_url` to `None`.
+   `ingestion_database_url` retains its empty default.
+5. Gate 2 checks `REQUIRED_FIELDS`; `database_url` is non-blank because the operator set it, so it passes.
+6. Gate 3 checks `oidc_configured()` (a non-blank `oidc_issuer_url`); by default it is blank, so the OIDC-fields loop is
    skipped, and the `local_auth_enabled`-or-`oidc_configured()` check passes because `local_auth_enabled` defaults to
    `true`.
-7. Gate 5 checks `resource_server_configured()`; blank by default, so it is skipped. Gate 6 builds the `User-Agent`
+7. Gate 4 checks `resource_server_configured()`; blank by default, so it is skipped. Gate 5 builds the `User-Agent`
    string from `operator_contact` (`None` by default) and confirms it parses as a valid header value.
 8. `cfg.validate()` runs the `#[validate(range(...))]` attributes and the struct-level cross-field functions
    (`validate_security_config`, `validate_opds_config`); every range-checked field's default satisfies its own range,
    `validate_security_config` passes because every security default is `false`/`None`, and `validate_opds_config` passes
    because this load explicitly set `enabled` to `false`.
 9. `Config::from_env` returns `Ok(cfg)`.
+
+Normal server startup then calls `Config::validate_server`, which rejects a missing, empty or whitespace-only
+`DATABASE_URL_INGESTION` with `ConfigError::MissingVar` before CSP finalisation, tracing, database pools, workers or
+serving. Operators must supply the dedicated `reverie_ingestion` DSN. Bootstrap, reset-password and unlock-account use
+the shared loader without this server check. Migration reads only its migration credential; schema printing reads no
+environment.
 
 Omitting `REVERIE_OPDS_ENABLED=false` from that load changes the outcome at step 8 alone: `OpdsConfig::default()` sets
 `enabled` to `true`, so `validate_opds_config` finds `enabled` true and `public_url` still `None`, and
@@ -195,17 +203,17 @@ either disable OPDS or supply `REVERIE_PUBLIC_URL`.
 
 **An issuer-only OIDC block**, `OIDC_ISSUER_URL` set with the other three `OIDC_*` variables unset: `extract()`
 deserialises `oidc_issuer_url` to the supplied value and the other three OIDC fields to their blank `String::new()`
-defaults. Gate 4's `oidc_configured()` reads `true` because the issuer is non-blank, so the `OIDC_FIELDS` loop runs;
+defaults. Gate 3's `oidc_configured()` reads `true` because the issuer is non-blank, so the `OIDC_FIELDS` loop runs;
 because the loop iterates `OIDC_FIELDS` in the order the constant declares it and the issuer field is listed first, the
 loop's own field (the issuer) is checked and passes immediately, and the loop reports `MissingVar("OIDC_CLIENT_ID")` on
 the next entry rather than naming the issuer that is in fact present.
 
-**`REVERIE_LOCAL_AUTH_ENABLED=false` with no OIDC configured and no resource server configured**: Gate 4's OIDC branch
+**`REVERIE_LOCAL_AUTH_ENABLED=false` with no OIDC configured and no resource server configured**: Gate 3's OIDC branch
 is skipped (`oidc_configured()` is `false`), but the following check,
 `!cfg.local_auth_enabled && !cfg.oidc_configured()`, is true, so `from_figment` returns
 `ConfigError::Invalid { var: "REVERIE_LOCAL_AUTH_ENABLED", reason: "at least one auth provider must be enabled: ..." }`.
 Configuring `resource_server_issuer` and `resource_server_audience` in the same scenario does not change the outcome:
-Gate 5 (resource-server-fields-required-together) is a separate check from the interactive-provider guard above it,
+Gate 4 (resource-server-fields-required-together) is a separate check from the interactive-provider guard above it,
 because a resource-server JWT authenticates an API caller without ever establishing a session, so it cannot itself
 satisfy "at least one usable auth provider".
 
@@ -230,7 +238,7 @@ failure across the whole struct tree into `ConfigError::Multiple`, via `collect_
 on the `ValidationError`, because those failures key under the tree's synthetic `"__all__"` entry, which no dotted path
 resolves.
 
-A required variable left unset is always `ConfigError::MissingVar`, never `Invalid`: Gate 3, the OIDC-fields loop and
+A required variable left unset is always `ConfigError::MissingVar`, never `Invalid`: Gate 2, the OIDC-fields loop and
 the resource-server-fields loop each check this before any other gate can turn the same absence into a different error,
 so the operator-facing message says "set the variable" rather than "fix the value" for every field these three gates
 cover.

@@ -96,9 +96,9 @@ server logs to `.dev-server.log` in its own plane directory. The database delibe
 is stateful and shared with the test suite; stop it with `just db-down`.
 
 The backend recipes supply the dev configuration the server needs when nothing else does: the RLS-enforced `reverie_app`
-DSN and the `REVERIE_PUBLIC_URL` that OPDS requires. They resolve an out-of-tree env file at `~/reverie/dev/env`
-(override the location with `REVERIE_DEV_ENV`; copy `.env.example` there to start one), so a value you set there is the
-one the server uses.
+DSN, the dedicated `reverie_ingestion` DSN and the `REVERIE_PUBLIC_URL` that OPDS requires. They resolve an out-of-tree
+env file at `~/reverie/dev/env` (override the location with `REVERIE_DEV_ENV`; copy `.env.example` there to start one),
+so a value you set there is the one the server uses.
 
 Frontend only (Node.js at or above the `engines.node` floor in `package.json`; install at the repository root, where
 `pnpm-workspace.yaml` declares every plane's project):

@@ -78,6 +78,10 @@ fn required_and_secret_vars_render_correctly() {
 
     // The conditional migration DSN is labelled Conditional, not Yes/No.
     assert!(row(&md, "DATABASE_URL_MIGRATION").contains("| Conditional |"));
+    let ingestion = row(&md, "DATABASE_URL_INGESTION");
+    assert!(ingestion.contains("| Conditional |  |"));
+    assert!(ingestion.contains("required for normal server startup"));
+    assert!(ingestion.contains("One-shot administrative commands"));
 
     // The RUST_LOG alias entry still renders (ENV_MAP carries both names).
     let _ = row(&md, "RUST_LOG");

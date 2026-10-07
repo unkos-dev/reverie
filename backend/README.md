@@ -60,6 +60,11 @@ The `tower_sessions` schema bypasses RLS. The session id resolves user identity.
 `reverie_app` role receives DML access, `reverie_readonly` can read only the `expiry_date` column, and
 `reverie_ingestion` receives no access.
 
+Normal server startup requires `DATABASE_URL_INGESTION` with the dedicated `reverie_ingestion` credentials. Missing,
+empty or whitespace-only values refuse startup before pools, workers or serving. Set the variable and restart; there is
+no application-role fallback. Bootstrap, reset-password and unlock-account do not require ingestion credentials.
+Migration uses `DATABASE_URL_MIGRATION`; schema printing requires no credentials.
+
 ### Migrations
 
 The `reverie_migrator` role executes migrations out of band: `just db-migrate` runs them over the socket, or set

@@ -122,7 +122,6 @@ pub fn test_config() -> Config {
         googlebooks_api_key: None,
         hardcover_api_token: None,
         operator_contact: None,
-        ingestion_dsn_defaulted: false,
     }
 }
 

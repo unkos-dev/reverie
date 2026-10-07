@@ -231,6 +231,9 @@ fn resolve_log_filter(configured_level: &str) -> (EnvFilter, Option<String>) {
 pub async fn run() -> anyhow::Result<()> {
     let mut config =
         Config::from_env().map_err(|e| anyhow::anyhow!("invalid configuration: {e}"))?;
+    config
+        .validate_server()
+        .map_err(|e| anyhow::anyhow!("invalid configuration: {e}"))?;
 
     // Finalise CSP headers once at startup. API CSP has no dynamic inputs
     // besides the optional report endpoint. HTML CSP consumes the script-src
@@ -283,14 +286,6 @@ pub async fn run() -> anyhow::Result<()> {
         );
     }
 
-    if config.ingestion_dsn_defaulted {
-        tracing::warn!(
-            "DATABASE_URL_INGESTION unset: the ingestion pipeline runs as the application role, \
-             which row-level security refuses to insert manifestations, so every scan will fail \
-             at commit. Set DATABASE_URL_INGESTION to the reverie_ingestion DSN."
-        );
-    }
-
     let pool = db::init_pool(&config.database_url, config.db_max_connections)
         .await
         .map_err(|e| anyhow::anyhow!("failed to connect to database: {e}"))?;
@@ -328,7 +323,7 @@ pub async fn run() -> anyhow::Result<()> {
 
     // OIDC is optional: discover the client only when configured.
     // A local-only instance carries no OIDC runtime and the initiate/callback
-    // handlers 404. Gate 4 has already guaranteed at least one provider is usable.
+    // handlers 404. Gate 3 has already guaranteed at least one provider is usable.
     let oidc = if config.oidc_configured() {
         let transport = oidc_transport
             .as_ref()

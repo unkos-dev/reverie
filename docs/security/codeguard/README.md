@@ -167,8 +167,8 @@ function without parsing them.
 - Generated filenames for extracted content; never trust manifest-provided
   paths
 - Extracted content stored outside web root
-- The scheduling owner uses the ingestion pool with scoped RLS; with `DATABASE_URL_INGESTION` unset the pipeline runs as
-  the application role and cannot write at all
+- The scheduling owner uses the dedicated ingestion pool with scoped RLS; normal startup rejects missing or blank
+  `DATABASE_URL_INGESTION` before workers launch
 - The admin scan submits discovery to that owner; it does not run another import loop
 - Initial ingestion settings seeding uses the primary pool's existing settings grants before worker startup
 - Source cleanup uses opened ingestion authority, rejects symlink parents and rechecks the current generation and
