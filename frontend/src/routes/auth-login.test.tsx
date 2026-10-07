@@ -18,7 +18,13 @@ vi.mock("@/lib/theme/ThemeProvider", () => ({
 vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn(), info: vi.fn() } }));
 vi.mock("@/api/auth");
 
-type Status = { setup_required: boolean; local_auth_enabled: boolean; oidc_enabled: boolean };
+type Status = {
+  setup_required: boolean;
+  local_auth_enabled: boolean;
+  oidc_enabled: boolean;
+  password_min_length: number;
+  password_max_length: number;
+};
 
 const originalLocation = window.location;
 
@@ -65,7 +71,13 @@ describe("auth-login", () => {
   test("submitting credentials calls loginLocal then navigates to /library", async () => {
     vi.mocked(loginLocal).mockResolvedValue(undefined);
     const loc = mockLocation();
-    renderLogin({ setup_required: false, local_auth_enabled: true, oidc_enabled: false });
+    renderLogin({
+      setup_required: false,
+      local_auth_enabled: true,
+      password_min_length: 15,
+      password_max_length: 256,
+      oidc_enabled: false,
+    });
     const user = userEvent.setup();
 
     await user.type(screen.getByLabelText("Email"), "ada@example.com");
@@ -82,7 +94,13 @@ describe("auth-login", () => {
     vi.mocked(loginLocal).mockRejectedValue(
       new ApiError(422, null, "Unprocessable", "Incorrect email or password."),
     );
-    renderLogin({ setup_required: false, local_auth_enabled: true, oidc_enabled: false });
+    renderLogin({
+      setup_required: false,
+      local_auth_enabled: true,
+      password_min_length: 15,
+      password_max_length: 256,
+      oidc_enabled: false,
+    });
     const user = userEvent.setup();
 
     await user.type(screen.getByLabelText("Email"), "ada@example.com");
@@ -94,13 +112,25 @@ describe("auth-login", () => {
   });
 
   test("hides the OIDC action when oidc is disabled", () => {
-    renderLogin({ setup_required: false, local_auth_enabled: true, oidc_enabled: false });
+    renderLogin({
+      setup_required: false,
+      local_auth_enabled: true,
+      password_min_length: 15,
+      password_max_length: 256,
+      oidc_enabled: false,
+    });
     expect(screen.queryByRole("button", { name: /OIDC/ })).not.toBeInTheDocument();
   });
 
   test("shows the OIDC action and initiates OIDC when enabled", async () => {
     const loc = mockLocation();
-    renderLogin({ setup_required: false, local_auth_enabled: true, oidc_enabled: true });
+    renderLogin({
+      setup_required: false,
+      local_auth_enabled: true,
+      password_min_length: 15,
+      password_max_length: 256,
+      oidc_enabled: true,
+    });
     const user = userEvent.setup();
 
     await user.click(screen.getByRole("button", { name: /OIDC/ }));
@@ -109,7 +139,13 @@ describe("auth-login", () => {
   });
 
   test("bounces to /setup on a fresh instance", async () => {
-    renderLogin({ setup_required: true, local_auth_enabled: true, oidc_enabled: false });
+    renderLogin({
+      setup_required: true,
+      local_auth_enabled: true,
+      password_min_length: 15,
+      password_max_length: 256,
+      oidc_enabled: false,
+    });
     expect(await screen.findByTestId("setup-page")).toBeInTheDocument();
   });
 });

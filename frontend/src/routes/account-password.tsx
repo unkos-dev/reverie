@@ -14,10 +14,12 @@ import { toast } from "sonner";
 
 import { ApiError } from "@/api";
 import { changeOwnPassword } from "@/api/auth";
-import { currentPasswordField, newPasswordField } from "@/api/auth.schemas";
+import { currentPasswordField } from "@/api/auth.schemas";
+import { PasswordPolicyHint } from "@/components/PasswordPolicyHint";
 import { Button } from "@/components/ui/button";
-import { Field, FieldDescription, FieldError, FieldLabel } from "@/components/ui/field";
+import { Field, FieldError, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
+import { usePasswordPolicy } from "@/hooks/usePasswordPolicy";
 import { formString } from "@/lib/form";
 
 import { AuthShell } from "./auth-shell";
@@ -32,6 +34,7 @@ type FormError = { field: "current" | "new" | "form"; message: string };
 
 /** Route component for `/account/password`. */
 export function Component(): ReactElement {
+  const { policy, ready, isError: policyError, validate } = usePasswordPolicy();
   const navigate = useNavigate();
   const [error, setError] = useState<FormError | null>(null);
 
@@ -59,6 +62,7 @@ export function Component(): ReactElement {
 
   function handleSubmit(e: SyntheticEvent<HTMLFormElement>): void {
     e.preventDefault();
+    if (!ready) return;
     setError(null);
     const data = new FormData(e.currentTarget);
     const currentPassword = currentPasswordField.safeParse(formString(data, "current_password"));
@@ -66,14 +70,18 @@ export function Component(): ReactElement {
       setError({ field: "current", message: "Enter your current password." });
       return;
     }
-    const newPassword = newPasswordField.safeParse(formString(data, "new_password"));
-    if (!newPassword.success) {
-      setError({ field: "new", message: "Use at least 8 characters for the new password." });
+    const newPassword = formString(data, "new_password");
+    const passwordError = validate(newPassword);
+    if (passwordError !== undefined) {
+      setError({
+        field: "new",
+        message: passwordError,
+      });
       return;
     }
     changeMutation.mutate({
       currentPassword: currentPassword.data,
-      newPassword: newPassword.data,
+      newPassword: newPassword,
     });
   }
 
@@ -109,12 +117,10 @@ export function Component(): ReactElement {
             required
             aria-invalid={error?.field === "new" || undefined}
           />
-          <FieldDescription>
-            Use at least 8 characters. Avoid common words or passwords from known data breaches.
-          </FieldDescription>
+          <PasswordPolicyHint policy={policy} failed={policyError} />
         </Field>
         {error ? <FieldError>{error.message}</FieldError> : null}
-        <Button type="submit" disabled={changeMutation.isPending}>
+        <Button type="submit" disabled={changeMutation.isPending || !ready}>
           Change password
         </Button>
       </form>

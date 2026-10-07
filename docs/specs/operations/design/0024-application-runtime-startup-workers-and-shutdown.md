@@ -190,7 +190,11 @@ observation. Watchdog ticks and completion precede queued watcher traffic.
    ingestion roots through `LibraryFiles::open`. Missing identity, missing or non-directory roots, and acquisition
    failures stop startup with context. Root configuration is absolute; parsing does not access disk.
 7. `seed_admin_if_configured` creates the first administrator from `REVERIE_BOOTSTRAP_*` when configured and no
-   administrator yet exists; it is a no-op otherwise.
+   administrator yet exists; it is a no-op otherwise. Before hashing or opening the credential transaction, the shared
+   password policy checks the configured maximum and minimum length, zxcvbn strength with email and display-name
+   context, and the enabled breach check. The breach-check client uses the shared SSRF protections and a ten-second
+   timeout; an unavailable breach service logs a warning and permits a sufficiently strong password. Policy rejection
+   stops startup without creating the administrator.
 8. One bounded HTTPS OIDC transport is built when either identity mode is configured; local-only mode builds none. The
    interactive runtime pairs the discovered client with that transport when `config.oidc_configured()` is true,
    otherwise `AppState.oidc` stays `None`. The resource-server JWT validator is constructed independently when

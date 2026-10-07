@@ -22,7 +22,8 @@ import {
 } from "@/api/users";
 import type { User, Role, CreateUserInput } from "@/api/users";
 import { ApiError } from "@/api";
-import { displayNameField, emailField, newPasswordField } from "@/api/auth.schemas";
+import { displayNameField, emailField } from "@/api/auth.schemas";
+import { usePasswordPolicy, type PasswordPolicyState } from "@/hooks/usePasswordPolicy";
 import { formString } from "@/lib/form";
 import {
   Table,
@@ -53,6 +54,7 @@ import { Field, FieldError, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
+import { PasswordPolicyHint } from "@/components/PasswordPolicyHint";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 
@@ -65,6 +67,7 @@ function errorDetail(err: unknown): string {
 }
 
 function UsersPage(): ReactElement {
+  const passwordPolicy = usePasswordPolicy();
   const { data: me, isLoading: meLoading, isError: meError } = useAuthMe();
   const queryClient = useQueryClient();
 
@@ -167,7 +170,7 @@ function UsersPage(): ReactElement {
     <div className="mx-auto max-w-4xl p-6">
       <div className="mb-6 flex items-center justify-between">
         <h1 className="text-2xl font-bold text-fg">Users</h1>
-        <CreateUserDialog onCreated={invalidateUsers} />
+        <CreateUserDialog onCreated={invalidateUsers} passwordPolicy={passwordPolicy} />
       </div>
 
       {isLoading && (
@@ -202,6 +205,7 @@ function UsersPage(): ReactElement {
                 key={user.id}
                 user={user}
                 isSelf={user.id === me.id}
+                passwordPolicy={passwordPolicy}
                 onRoleChange={handleRoleChange}
                 onChildToggle={handleChildToggle}
                 onStatusToggle={handleStatusToggle}
@@ -215,6 +219,7 @@ function UsersPage(): ReactElement {
 }
 
 type UserRowProps = {
+  passwordPolicy: PasswordPolicyState;
   user: User;
   isSelf: boolean;
   onRoleChange: (userId: string, role: Role) => void;
@@ -227,6 +232,7 @@ function isRole(v: string): v is Role {
 }
 
 function UserRow({
+  passwordPolicy,
   user,
   isSelf,
   onRoleChange,
@@ -278,7 +284,11 @@ function UserRow({
       </TableCell>
       <TableCell className="text-right">
         <div className="flex items-center justify-end gap-2">
-          <ResetPasswordDialog userId={user.id} displayName={user.display_name} />
+          <ResetPasswordDialog
+            passwordPolicy={passwordPolicy}
+            userId={user.id}
+            displayName={user.display_name}
+          />
           {!isSelf && (
             <Button
               variant={user.disabled ? "outline" : "destructive"}
@@ -297,10 +307,15 @@ function UserRow({
 }
 
 type CreateUserDialogProps = {
+  passwordPolicy: PasswordPolicyState;
   onCreated: () => void;
 };
 
-function CreateUserDialog({ onCreated }: Readonly<CreateUserDialogProps>): ReactElement {
+function CreateUserDialog({
+  onCreated,
+  passwordPolicy,
+}: Readonly<CreateUserDialogProps>): ReactElement {
+  const { policy, ready, isError: policyError, validate } = passwordPolicy;
   const [open, setOpen] = useState(false);
   const [role, setRole] = useState<Role>("adult");
   const [error, setError] = useState<string | null>(null);
@@ -331,6 +346,7 @@ function CreateUserDialog({ onCreated }: Readonly<CreateUserDialogProps>): React
 
   function handleSubmit(e: SyntheticEvent<HTMLFormElement>): void {
     e.preventDefault();
+    if (!ready) return;
     setError(null);
     const data = new FormData(e.currentTarget);
     const displayName = displayNameField.safeParse(formString(data, "display_name"));
@@ -343,16 +359,17 @@ function CreateUserDialog({ onCreated }: Readonly<CreateUserDialogProps>): React
       setError("Enter a valid email address.");
       return;
     }
-    const password = newPasswordField.safeParse(formString(data, "password"));
-    if (!password.success) {
-      setError("Use at least 8 characters for the password.");
+    const password = formString(data, "password");
+    const passwordError = validate(password);
+    if (passwordError !== undefined) {
+      setError(passwordError);
       return;
     }
     mutation.mutate({
       email: email.data,
       display_name: displayName.data,
       role,
-      password: password.data,
+      password: password,
     });
   }
 
@@ -407,6 +424,7 @@ function CreateUserDialog({ onCreated }: Readonly<CreateUserDialogProps>): React
               autoComplete="new-password"
               required
             />
+            <PasswordPolicyHint policy={policy} failed={policyError} />
           </Field>
           {error ? <FieldError>{error}</FieldError> : null}
           <DialogFooter>
@@ -415,7 +433,7 @@ function CreateUserDialog({ onCreated }: Readonly<CreateUserDialogProps>): React
                 Cancel
               </Button>
             </DialogClose>
-            <Button type="submit" disabled={mutation.isPending}>
+            <Button type="submit" disabled={mutation.isPending || !ready}>
               Create
             </Button>
           </DialogFooter>
@@ -426,14 +444,17 @@ function CreateUserDialog({ onCreated }: Readonly<CreateUserDialogProps>): React
 }
 
 type ResetPasswordDialogProps = {
+  passwordPolicy: PasswordPolicyState;
   userId: string;
   displayName: string;
 };
 
 function ResetPasswordDialog({
+  passwordPolicy,
   userId,
   displayName,
 }: Readonly<ResetPasswordDialogProps>): ReactElement {
+  const { policy, ready, isError: policyError, validate } = passwordPolicy;
   const [open, setOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -457,14 +478,16 @@ function ResetPasswordDialog({
 
   function handleSubmit(e: SyntheticEvent<HTMLFormElement>): void {
     e.preventDefault();
+    if (!ready) return;
     setError(null);
     const data = new FormData(e.currentTarget);
-    const password = newPasswordField.safeParse(formString(data, "password"));
-    if (!password.success) {
-      setError("Use at least 8 characters for the password.");
+    const password = formString(data, "password");
+    const passwordError = validate(password);
+    if (passwordError !== undefined) {
+      setError(passwordError);
       return;
     }
-    mutation.mutate(password.data);
+    mutation.mutate(password);
   }
 
   return (
@@ -492,6 +515,7 @@ function ResetPasswordDialog({
               autoComplete="new-password"
               required
             />
+            <PasswordPolicyHint policy={policy} failed={policyError} />
           </Field>
           {error ? <FieldError>{error}</FieldError> : null}
           <DialogFooter>
@@ -500,7 +524,7 @@ function ResetPasswordDialog({
                 Cancel
               </Button>
             </DialogClose>
-            <Button type="submit" disabled={mutation.isPending}>
+            <Button type="submit" disabled={mutation.isPending || !ready}>
               Reset
             </Button>
           </DialogFooter>

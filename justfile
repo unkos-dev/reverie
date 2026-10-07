@@ -111,7 +111,7 @@ preflight-full:
     #!/usr/bin/env bash
     set -ueo pipefail
     scripts/gate-run.sh preflight-full \
-        rust::guards db-up check rust::doc-lint test rust::doctests \
+        rust::guards infra::openapi db-up check rust::doc-lint test rust::doctests \
         rust::sqlx-check rust::schema-check rust::machete rust::deny js::build \
         js::font-integrity infra::zizmor
 

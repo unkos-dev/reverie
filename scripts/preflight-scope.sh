@@ -87,7 +87,7 @@ done
 # drift signal (someone added a CI gate without deciding its local story), not
 # something to silently ignore.
 #
-# staging, iac, docker, openapi and npm are deliberately empty. Their CI jobs
+# staging, iac, docker and npm are deliberately empty. Their CI jobs
 # need a built image, a scanner container, or a registry token, so there is no
 # faithful local lane to run; `just preflight-full` never ran them either.
 lanes_for() {
@@ -97,7 +97,8 @@ lanes_for() {
     frontend) printf '%s\n' js::check js::test js::build js::font-integrity ;;
     website) printf '%s\n' website::check ;;
     workflows) printf '%s\n' infra::zizmor ;;
-    staging | iac | docker | openapi | npm) : ;;
+    openapi) printf '%s\n' infra::openapi ;;
+    staging | iac | docker | npm) : ;;
     *) return 1 ;;
   esac
 }
@@ -125,6 +126,7 @@ lanes_for() {
 LANE_ORDER=(
   rust::guards
   infra::check
+  infra::openapi
   db-up
   rust::check
   rust::doc-lint

@@ -1220,7 +1220,111 @@ async fn admin_reset_unknown_id_returns_404(pool: PgPool) {
 
 // ---------- POST /api/v1/account/password (self-service) ----------
 
-const OLD_PW: &str = "the old password one!";
+const OLD_PW: &str = "old";
+
+#[sqlx::test(migrations = "./migrations")]
+async fn change_own_password_does_not_overwrite_concurrent_reset(pool: PgPool) {
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let (id, basic) = test_support::db::create_adult_and_basic_auth(&app_pool, "change-race").await;
+    let old_hash = crate::auth::password::hash_password(OLD_PW.as_bytes()).unwrap();
+    crate::models::local_credentials::set_password(&app_pool, id, &old_hash)
+        .await
+        .unwrap();
+    let reset_hash = crate::auth::password::hash_password(b"independent reset passphrase").unwrap();
+    let mut reset = app_pool.begin().await.unwrap();
+    sqlx::query_scalar!("SELECT id FROM users WHERE id = $1 FOR UPDATE", id)
+        .fetch_one(&mut *reset)
+        .await
+        .unwrap();
+    crate::models::local_credentials::set_password(&mut *reset, id, &reset_hash)
+        .await
+        .unwrap();
+    crate::models::user::increment_session_version(&mut *reset, id)
+        .await
+        .unwrap();
+
+    let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+    let change = tokio::spawn(async move {
+        server
+            .post("/api/v1/account/password")
+            .add_header(auth(&basic).0, auth(&basic).1)
+            .json(&json!({"current_password": OLD_PW, "new_password": STRONG_PW}))
+            .await
+    });
+    test_support::wait_for_blocked_query(
+        &pool,
+        "SELECT id FROM users WHERE id = $1 FOR NO KEY UPDATE%",
+        1,
+    )
+    .await;
+    reset.commit().await.unwrap();
+    let response = change.await.unwrap();
+    assert_eq!(response.status_code(), StatusCode::UNPROCESSABLE_ENTITY);
+    let credential = crate::models::local_credentials::find_by_user_id(&app_pool, id)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(credential.password_hash, reset_hash);
+    assert_eq!(
+        crate::models::user::find_by_id(&app_pool, id)
+            .await
+            .unwrap()
+            .unwrap()
+            .session_version,
+        1
+    );
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn change_own_password_accepts_only_one_concurrent_change(pool: PgPool) {
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let (id, basic) = test_support::db::create_adult_and_basic_auth(&app_pool, "change-pair").await;
+    let old_hash = crate::auth::password::hash_password(OLD_PW.as_bytes()).unwrap();
+    crate::models::local_credentials::set_password(&app_pool, id, &old_hash)
+        .await
+        .unwrap();
+    let mut blocker = app_pool.begin().await.unwrap();
+    sqlx::query_scalar!("SELECT id FROM users WHERE id = $1 FOR UPDATE", id)
+        .fetch_one(&mut *blocker)
+        .await
+        .unwrap();
+    let requests: Vec<_> = (0..2)
+        .map(|_| {
+            let basic = basic.clone();
+            let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+            tokio::spawn(async move {
+                server
+                    .post("/api/v1/account/password")
+                    .add_header(auth(&basic).0, auth(&basic).1)
+                    .json(&json!({"current_password": OLD_PW, "new_password": STRONG_PW}))
+                    .await
+            })
+        })
+        .collect();
+    test_support::wait_for_blocked_query(
+        &pool,
+        "SELECT id FROM users WHERE id = $1 FOR NO KEY UPDATE%",
+        2,
+    )
+    .await;
+    blocker.commit().await.unwrap();
+    let mut statuses = Vec::new();
+    for request in requests {
+        statuses.push(request.await.unwrap().status_code());
+    }
+    statuses.sort();
+    assert_eq!(statuses, [StatusCode::OK, StatusCode::UNPROCESSABLE_ENTITY]);
+    assert_eq!(
+        crate::models::user::find_by_id(&app_pool, id)
+            .await
+            .unwrap()
+            .unwrap()
+            .session_version,
+        1
+    );
+}
 
 fn csrf_header(token: &str) -> (HeaderName, HeaderValue) {
     (

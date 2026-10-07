@@ -1,8 +1,6 @@
 //! Local password credentials: the seam for local-account login.
 //!
-//! This step ships the table and a read-only lookup only: no password
-//! hashing, write, or verification path exists yet. One hash per user (the PK
-//! is `user_id`). The hash is a SECRET: the model deliberately does not derive
+//! One hash per user (the PK is `user_id`). The hash is a SECRET: the model deliberately does not derive
 //! `Serialize` (so it cannot leak through an API by accident), is never
 //! logged, and the table is granted to `reverie_app` only (no readonly,
 //! mirroring `device_tokens`).
@@ -38,6 +36,19 @@ impl std::fmt::Debug for LocalCredential {
     }
 }
 
+/// Whether a user has a local credential, without reading its secret hash.
+///
+/// # Errors
+/// Returns [`sqlx::Error`] from the existence query.
+pub async fn exists_for_user(pool: &PgPool, user_id: Uuid) -> Result<bool, sqlx::Error> {
+    sqlx::query_scalar!(
+        "SELECT EXISTS (SELECT 1 FROM local_credentials WHERE user_id = $1) AS \"exists!\"",
+        user_id,
+    )
+    .fetch_one(pool)
+    .await
+}
+
 /// Fetch a user's local credential. Returns `Ok(None)` when the user has no
 /// password set (OIDC-only account).
 ///
@@ -68,8 +79,8 @@ pub async fn find_by_user_id(
 ///
 /// Takes an executor so the caller can bind it to a transaction (the
 /// password-reset flow writes the credential in the same transaction that
-/// consumes the PIN and bumps `session_version`) or run it against a pool (the
-/// headless env seed). The bootstrap path writes its own transactional insert
+/// consumes the PIN and bumps `session_version`) or run it against a pool.
+/// The bootstrap path writes its own transactional insert
 /// at the call site alongside the `users` row and the `instance_bootstrap`
 /// marker.
 ///
@@ -90,6 +101,31 @@ pub async fn set_password(
     .execute(executor)
     .await
     .map(|_| ())
+}
+
+/// Replace a credential only if it is still the hash the caller verified.
+///
+/// The caller holds the owning user row lock and bumps its session version in
+/// the same transaction only when this returns `true`.
+///
+/// # Errors
+/// Returns [`sqlx::Error`] from the guarded update.
+pub async fn replace_verified_password(
+    executor: impl sqlx::PgExecutor<'_>,
+    user_id: Uuid,
+    verified_hash: &str,
+    new_hash: &str,
+) -> Result<bool, sqlx::Error> {
+    // THREAT: a credential verified before a concurrent reset cannot authorise its replacement.
+    sqlx::query!(
+        "UPDATE local_credentials SET password_hash = $3 WHERE user_id = $1 AND password_hash = $2",
+        user_id,
+        verified_hash,
+        new_hash,
+    )
+    .execute(executor)
+    .await
+    .map(|result| result.rows_affected() == 1)
 }
 
 #[cfg(test)]

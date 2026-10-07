@@ -16,7 +16,7 @@
           "users"
         ],
         "summary": "Change your own password",
-        "description": "Verifies the caller's current password and sets a new one, invalidating all of the caller's sessions including the one making this request. Returns 422 if the current password is wrong or the account has no local credential.",
+        "description": "Verifies the caller's current password and sets a new one only if that credential is unchanged, invalidating all of the caller's sessions including the one making this request. Returns 422 for a wrong current password, a rejected new password, no local credential, or a concurrent credential change.",
         "operationId": "change_own_password",
         "requestBody": {
           "content": {
@@ -43,7 +43,7 @@
             }
           },
           "422": {
-            "description": "Wrong current password, new password rejected by the policy, or no local credential",
+            "description": "Wrong current password, rejected new password, no local credential, or concurrent credential change",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -5704,11 +5704,11 @@
           "auth"
         ],
         "summary": "Get setup status",
-        "description": "Returns whether initial setup is required and which sign-in providers are enabled, for the sign-in page to decide what to show. No authentication is required to call it.",
+        "description": "Returns whether initial setup is required, which sign-in providers are enabled, and the configured minimum and maximum new-password lengths. Sign-in and password-setting forms use this state. No authentication is required to call it.",
         "operationId": "setup_status",
         "responses": {
           "200": {
-            "description": "Setup and provider state",
+            "description": "Setup, provider and password-length policy state",
             "content": {
               "application/json": {
                 "schema": {
@@ -8370,6 +8370,7 @@
           "display_name",
           "role",
           "is_child",
+          "has_local_password",
           "theme_preference"
         ],
         "properties": {
@@ -8390,6 +8391,10 @@
               "null"
             ],
             "description": "Email address; `null` when none on file."
+          },
+          "has_local_password": {
+            "type": "boolean",
+            "description": "Whether this account has a local password, independently of OIDC identities."
           },
           "id": {
             "type": "string",
@@ -9336,7 +9341,7 @@
           },
           "password": {
             "type": "string",
-            "description": "Plaintext password; enforced against `password_min_length`, then hashed."
+            "description": "Plaintext password; checked against the shared password policy, then hashed."
           }
         }
       },
@@ -9346,7 +9351,9 @@
         "required": [
           "setup_required",
           "local_auth_enabled",
-          "oidc_enabled"
+          "oidc_enabled",
+          "password_min_length",
+          "password_max_length"
         ],
         "properties": {
           "local_auth_enabled": {
@@ -9356,6 +9363,18 @@
           "oidc_enabled": {
             "type": "boolean",
             "description": "Whether OIDC is configured (computed from the issuer). Drives\nthe SPA's provider-aware redirect and the \"Sign in with OIDC\" action."
+          },
+          "password_max_length": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Maximum new-password length in Unicode scalar values.",
+            "minimum": 0
+          },
+          "password_min_length": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Minimum new-password length in Unicode scalar values.",
+            "minimum": 0
           },
           "setup_required": {
             "type": "boolean",

@@ -13,8 +13,27 @@ import { z } from "zod";
 export const emailField = z.email();
 /** A non-empty display name (rejects whitespace-only input). */
 export const displayNameField = z.string().trim().min(1);
-/** New-password floor mirrors the server default and the form hint (8 chars). */
-export const newPasswordField = z.string().min(8);
+export type PasswordLengthPolicy = {
+  password_min_length: number;
+  password_max_length: number;
+};
+
+export function newPasswordField(policy: PasswordLengthPolicy): z.ZodString {
+  return z.string().superRefine((value, ctx) => {
+    const length = Array.from(value).length;
+    if (length > policy.password_max_length) {
+      ctx.addIssue({
+        code: "custom",
+        message: `Use at most ${String(policy.password_max_length)} characters.`,
+      });
+    } else if (length < policy.password_min_length) {
+      ctx.addIssue({
+        code: "custom",
+        message: `Use at least ${String(policy.password_min_length)} characters.`,
+      });
+    }
+  });
+}
 /** A recovery PIN is opaque here; the server validates its value. */
 export const pinField = z.string().trim().min(1);
 /** Login takes an existing credential, so no new-password policy applies. */
@@ -26,7 +45,7 @@ export const LoginLocalSchema = z.object({ email: emailField, password: currentP
 export const SetupAdminSchema = z.object({
   email: emailField,
   display_name: displayNameField,
-  password: newPasswordField,
+  password: z.string().min(1),
 });
 /** Body for `POST /auth/forgot-password`. */
 export const ForgotPasswordSchema = z.object({ email: emailField });
@@ -34,16 +53,16 @@ export const ForgotPasswordSchema = z.object({ email: emailField });
 export const ResetPasswordSchema = z.object({
   email: emailField,
   pin: pinField,
-  new_password: newPasswordField,
+  new_password: z.string().min(1),
 });
 /** Body for `POST /auth/register` (self-service registration). */
 export const RegisterSchema = z.object({
   email: emailField,
   display_name: displayNameField,
-  password: newPasswordField,
+  password: z.string().min(1),
 });
 /** Body for `POST /api/v1/account/password` (self-service change). */
 export const ChangePasswordSchema = z.object({
   current_password: currentPasswordField,
-  new_password: newPasswordField,
+  new_password: z.string().min(1),
 });

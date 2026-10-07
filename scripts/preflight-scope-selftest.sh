@@ -55,6 +55,7 @@ expect_failure() {
 
 FULL='rust::guards
 infra::check
+infra::openapi
 db-up
 rust::check
 rust::doc-lint
@@ -101,6 +102,28 @@ expect_lanes 'frontend source selects the js lanes' \
 
 expect_lanes 'site content selects the website lane' \
   'website/src/content/docs/index.mdx' 'infra::check
+website::check'
+
+expect_lanes 'OpenAPI rules select the contract lint' \
+  '.vacuum.yaml' 'infra::check
+infra::openapi'
+
+expect_lanes 'OpenAPI baseline selects the contract lint' \
+  '.vacuum-ignore.yaml' 'infra::check
+infra::openapi'
+
+expect_lanes 'generated OpenAPI selects backend, contract and website lanes' \
+  'backend/openapi.json' 'rust::guards
+infra::check
+infra::openapi
+db-up
+rust::check
+rust::doc-lint
+rust::test
+rust::doctests
+rust::sqlx-check
+rust::schema-check
+rust::machete
 website::check'
 
 expect_lanes 'a workflow edit selects the zizmor audit' \

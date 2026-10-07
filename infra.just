@@ -58,6 +58,11 @@ actionlint:
 zizmor:
     zizmor --config .github/zizmor.yml .
 
+# Lint the OpenAPI contract with the CI security rules and baseline.
+[group('infra')]
+openapi:
+    vacuum lint --ruleset .vacuum.yaml --ignore-file .vacuum-ignore.yaml --fail-severity info --details backend/openapi.json
+
 # --offline is the strict form of the two network-disabling flags (it also
 # forbids fetching a remote `user/repo` input, not just skipping audits), so
 # it is the one that gives an unconditional offline guarantee regardless of
@@ -201,7 +206,7 @@ lint: shellcheck hadolint typos ryl sqruff actionlint prose specful filter-sarif
 # preflight-scope-selftest guards the scoper that decides which lanes a local
 # gate runs, including the lane holding this check. Break the `scripts/*` arm of
 # its escalates() and a change to the scoper itself narrows its own gate from
-# sixteen lanes to one, prints nothing, and exits clean. No assertion inside the
+# all lanes to one, prints nothing, and exits clean. No assertion inside the
 # scoper can catch that, because what needs asserting is which lanes were
 # selected and the selector is the code under suspicion. Gate placement is
 # circular for the same reason, so CI's repo-lint job is what actually holds it:

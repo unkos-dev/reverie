@@ -25,6 +25,7 @@ const AuthMeSchema = z.object({
   email: z.string().nullable(),
   role: z.enum(ROLE_VALUES),
   is_child: z.boolean(),
+  has_local_password: z.boolean(),
   theme_preference: z.string(),
   csrf_token: z.string().nullable().optional(),
 });

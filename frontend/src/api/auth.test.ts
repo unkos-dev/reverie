@@ -62,21 +62,66 @@ describe("logout", () => {
 });
 
 describe("fetchSetupStatus", () => {
+  test("validates policy shape without duplicating server configuration floors", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          setup_required: false,
+          local_auth_enabled: true,
+          oidc_enabled: false,
+          password_min_length: 8,
+          password_max_length: 32,
+        }),
+        { status: 200 },
+      ),
+    );
+    await expect(fetchSetupStatus()).resolves.toMatchObject({
+      password_min_length: 8,
+      password_max_length: 32,
+    });
+  });
+
+  test.each([
+    {},
+    { password_min_length: 0, password_max_length: 256 },
+    { password_min_length: 15.5, password_max_length: 256 },
+    { password_min_length: 24, password_max_length: "256" },
+  ])("refuses missing or malformed password policy %j", async (policy) => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          setup_required: true,
+          local_auth_enabled: true,
+          oidc_enabled: false,
+          ...policy,
+        }),
+        { status: 200 },
+      ),
+    );
+    await expect(fetchSetupStatus()).rejects.toThrow();
+  });
+
   test("GETs /auth/setup/status and parses the body", async () => {
-    const fetchSpy = vi
-      .spyOn(globalThis, "fetch")
-      .mockResolvedValueOnce(
-        new Response(
-          JSON.stringify({ setup_required: true, local_auth_enabled: true, oidc_enabled: false }),
-          { status: 200, headers: { "Content-Type": "application/json" } },
-        ),
-      );
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          setup_required: true,
+          local_auth_enabled: true,
+          password_min_length: 15,
+          password_max_length: 256,
+          oidc_enabled: false,
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      ),
+    );
 
     const status = await fetchSetupStatus();
 
     expect(status).toEqual({
       setup_required: true,
       local_auth_enabled: true,
+      password_min_length: 15,
+      password_max_length: 256,
       oidc_enabled: false,
     });
     const [input, init] = fetchSpy.mock.calls[0] ?? [];
@@ -202,9 +247,9 @@ describe("request payload validation", () => {
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 
-  test("resetPassword rejects a too-short new password without calling fetch", async () => {
+  test("resetPassword rejects a blank new password without calling fetch", async () => {
     const fetchSpy = vi.spyOn(globalThis, "fetch");
-    await expect(resetPassword("user@example.com", "0123456789", "short")).rejects.toThrow();
+    await expect(resetPassword("user@example.com", "0123456789", "")).rejects.toThrow();
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 });

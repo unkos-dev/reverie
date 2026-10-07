@@ -16,10 +16,12 @@ import { toast } from "sonner";
 
 import { ApiError } from "@/api";
 import { requestPasswordReset, resetPassword } from "@/api/auth";
-import { emailField, newPasswordField, pinField } from "@/api/auth.schemas";
+import { emailField, pinField } from "@/api/auth.schemas";
+import { PasswordPolicyHint } from "@/components/PasswordPolicyHint";
 import { Button } from "@/components/ui/button";
-import { Field, FieldDescription, FieldError, FieldLabel } from "@/components/ui/field";
+import { Field, FieldError, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
+import { usePasswordPolicy } from "@/hooks/usePasswordPolicy";
 import { formString } from "@/lib/form";
 
 import { AuthShell } from "./auth-shell";
@@ -29,6 +31,7 @@ const RECOVERY_NOTICE =
 
 /** Route component for `/forgot-password`. */
 export function Component(): ReactElement {
+  const { policy, ready, isError: policyError, validate } = usePasswordPolicy();
   const navigate = useNavigate();
   const [email, setEmail] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -76,6 +79,7 @@ export function Component(): ReactElement {
 
   function handleReset(e: SyntheticEvent<HTMLFormElement>): void {
     e.preventDefault();
+    if (!ready) return;
     setError(null);
     const data = new FormData(e.currentTarget);
     const pin = pinField.safeParse(formString(data, "pin"));
@@ -83,12 +87,13 @@ export function Component(): ReactElement {
       setError("Enter the recovery PIN.");
       return;
     }
-    const newPassword = newPasswordField.safeParse(formString(data, "new_password"));
-    if (!newPassword.success) {
-      setError("Use at least 8 characters for the new password.");
+    const newPassword = formString(data, "new_password");
+    const passwordError = validate(newPassword);
+    if (passwordError !== undefined) {
+      setError(passwordError);
       return;
     }
-    resetMutation.mutate({ pin: pin.data, newPassword: newPassword.data });
+    resetMutation.mutate({ pin: pin.data, newPassword: newPassword });
   }
 
   if (email === null) {
@@ -144,12 +149,10 @@ export function Component(): ReactElement {
             required
             aria-invalid={error !== null || undefined}
           />
-          <FieldDescription>
-            Use at least 8 characters. Avoid common words or passwords from known data breaches.
-          </FieldDescription>
+          <PasswordPolicyHint policy={policy} failed={policyError} />
         </Field>
         {error !== null ? <FieldError>{error}</FieldError> : null}
-        <Button type="submit" disabled={resetMutation.isPending}>
+        <Button type="submit" disabled={resetMutation.isPending || !ready}>
           Reset password
         </Button>
       </form>

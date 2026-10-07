@@ -96,9 +96,11 @@ export function UserChip(): ReactElement | null {
           Settings
           <span className="text-fg-faint ml-auto text-xs">planned</span>
         </DropdownMenuItem>
-        <DropdownMenuItem asChild>
-          <Link to="/account/password">Change password</Link>
-        </DropdownMenuItem>
+        {me.has_local_password ? (
+          <DropdownMenuItem asChild>
+            <Link to="/account/password">Change password</Link>
+          </DropdownMenuItem>
+        ) : null}
         <DropdownMenuItem asChild>
           <Link to="/tokens">API tokens</Link>
         </DropdownMenuItem>

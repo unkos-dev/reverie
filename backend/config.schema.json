@@ -164,11 +164,11 @@
       "minimum": 64
     },
     "password_min_length": {
-      "description": "Minimum length for a local-account password\n(`REVERIE_PASSWORD_MIN_LENGTH`, default `8`, the NIST SP 800-63B basic\nfloor). The length floor, the zxcvbn strength floor\n([`Self::password_min_zxcvbn_score`]), and the HIBP breach check\n([`Self::password_breach_check_enabled`]) together form the password\npolicy applied at registration, admin create/reset, and self-service\nchange.",
+      "description": "Minimum length for a local-account password\n(`REVERIE_PASSWORD_MIN_LENGTH`, default `15`, the single-factor\nfloor). The length floor, the zxcvbn strength floor\n([`Self::password_min_zxcvbn_score`]), and the HIBP breach check\n([`Self::password_breach_check_enabled`]) together form the password\npolicy applied at bootstrap, registration, recovery, admin create/reset,\nand self-service change. Existing credentials remain valid. Must not\nexceed [`Self::password_max_length`].",
       "type": "integer",
       "format": "uint",
-      "default": 8,
-      "minimum": 8
+      "default": 15,
+      "minimum": 15
     },
     "password_min_zxcvbn_score": {
       "description": "Minimum acceptable zxcvbn strength score, 0..=4\n(`REVERIE_PASSWORD_MIN_ZXCVBN_SCORE`, default `2`). A candidate scoring\nbelow this is rejected as too weak, with the estimator's feedback\nreturned in the 422 response.",

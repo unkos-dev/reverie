@@ -22,7 +22,11 @@ type Status = { setup_required: boolean; local_auth_enabled: boolean; oidc_enabl
 
 function renderSetup(status: Status): { client: QueryClient } {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  client.setQueryData(queryKeys.auth.setupStatus(), status);
+  client.setQueryData(queryKeys.auth.setupStatus(), {
+    password_min_length: 15,
+    password_max_length: 256,
+    ...status,
+  });
 
   const routes: RouteObject[] = [
     { path: "/setup", element: <AuthSetup /> },
@@ -57,11 +61,11 @@ describe("auth-setup", () => {
 
     await user.type(screen.getByLabelText("Display name"), "Ada");
     await user.type(screen.getByLabelText("Email"), "ada@example.com");
-    await user.type(screen.getByLabelText("Password"), "hunter2hunter2");
+    await user.type(screen.getByLabelText("Password"), "hunter2hunter2hunter2");
     await user.click(screen.getByRole("button", { name: "Create administrator" }));
 
     expect(await screen.findByTestId("login-page")).toBeInTheDocument();
-    expect(setupAdmin).toHaveBeenCalledWith("ada@example.com", "Ada", "hunter2hunter2");
+    expect(setupAdmin).toHaveBeenCalledWith("ada@example.com", "Ada", "hunter2hunter2hunter2");
   });
 
   test("surfaces an inline error and toast when setup conflicts", async () => {
@@ -73,7 +77,7 @@ describe("auth-setup", () => {
 
     await user.type(screen.getByLabelText("Display name"), "Ada");
     await user.type(screen.getByLabelText("Email"), "ada@example.com");
-    await user.type(screen.getByLabelText("Password"), "hunter2hunter2");
+    await user.type(screen.getByLabelText("Password"), "hunter2hunter2hunter2");
     await user.click(screen.getByRole("button", { name: "Create administrator" }));
 
     expect(await screen.findByRole("alert")).toHaveTextContent("Setup is already complete.");
@@ -96,7 +100,7 @@ describe("auth-setup", () => {
 
     await user.type(screen.getByLabelText("Display name"), "Ada");
     await user.type(screen.getByLabelText("Email"), "ada@example.com");
-    await user.type(screen.getByLabelText("Password"), "hunter2hunter2");
+    await user.type(screen.getByLabelText("Password"), "hunter2hunter2hunter2");
     await user.click(screen.getByRole("button", { name: "Create administrator" }));
 
     await screen.findByTestId("login-page");
@@ -108,7 +112,7 @@ describe("auth-setup", () => {
     const user = userEvent.setup();
 
     await user.type(screen.getByLabelText("Email"), "ada@example.com");
-    await user.type(screen.getByLabelText("Password"), "hunter2hunter2");
+    await user.type(screen.getByLabelText("Password"), "hunter2hunter2hunter2");
     await user.click(screen.getByRole("button", { name: "Create administrator" }));
 
     expect(await screen.findByRole("alert")).toBeInTheDocument();
