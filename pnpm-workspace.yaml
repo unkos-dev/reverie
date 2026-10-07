@@ -37,8 +37,8 @@ catalog:
 
 # Transitive security floors. Each entry is a deliberate minimum, not a
 # convenience pin, and removing one reopens the advisory it closes.
-#   vite    peer alignment; the only thing holding the graph on vp's fork.
+#   vite@*  peer alignment; the only thing holding the graph on vp's fork.
 #   form-data  live floor. httpsnippet resolves 4.0.4 unaided. GHSA-fx2h-pf6j-xcff.
 overrides:
-  vite: "catalog:"
+  vite@*: "catalog:"
   form-data: "4.0.6"
