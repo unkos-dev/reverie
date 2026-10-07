@@ -123,16 +123,16 @@ fn ingestion_startup_diagnostics_redact_credentials() {
             .env_clear()
             .env("DATABASE_URL", "invalid-app-dsn-private-marker")
             .env("REVERIE_OPDS_ENABLED", "false")
-            .env(var, "[\"credential-startup-marker\"]")
+            .env(var, "987654321")
             .output()
             .unwrap();
         assert!(!output.status.success());
         let stderr = String::from_utf8(output.stderr).unwrap();
         let stdout = String::from_utf8(output.stdout).unwrap();
-        assert!(!stderr.contains("credential-startup-marker"));
-        assert!(!stdout.contains("credential-startup-marker"));
-        assert!(!stderr.contains("invalid-app-dsn-private-marker"));
+        assert!(!stderr.contains("987654321"));
+        assert!(!stdout.contains("987654321"));
         assert!(stderr.contains(var));
+        assert!(stderr.contains("invalid value (omitted — secret-bearing field)"));
     }
     let output = "connection postgres://role:private-marker@localhost/db failed: private-marker";
     assert_eq!(

@@ -235,8 +235,7 @@ pub struct Config {
     /// configured). Treated as secret material; never logged.
     ///
     /// NOTE: any new secret-bearing field must also be added to the
-    /// `SECRET_FIELDS` list so a deserialize error never echoes its value
-    /// (hard rule 7).
+    /// `SECRET_FIELDS` list so parsing and validation errors never echo its value.
     #[schemars(with = "String", default = "String::new")]
     pub oidc_client_secret: SecretString,
     /// OIDC redirect URI (`OIDC_REDIRECT_URI`). Required when OIDC is configured
@@ -727,7 +726,7 @@ fn collect_validation_errors(errs: &ValidationErrors, prefix: &str, out: &mut Ve
                     );
                     let var =
                         env_name_for(&dotted).map_or_else(|| dotted.clone(), ToString::to_string);
-                    // THREAT: Validator messages and codes can contain credentials before a secret wrapper exists.
+                    // THREAT: Validator messages and codes can contain credentials even after secret wrapping.
                     let reason = if SECRET_FIELDS.contains(&dotted.as_str()) {
                         "invalid value (omitted — secret-bearing field)".into()
                     } else {
@@ -1474,18 +1473,18 @@ mod tests {
 
     #[test]
     fn secret_field_deser_error_has_no_value() {
-        for (index, field) in SECRET_FIELDS.iter().enumerate() {
+        for field in SECRET_FIELDS {
             let var = env_name_for(field).unwrap();
-            let marker = format!("credential-parse-marker-{index}");
-            let input = format!("[\"{marker}\"]");
-            let vars = with_overrides(&[(var, &input)]);
+            let marker = "987654321";
+            let vars = with_overrides(&[(var, marker)]);
             let error = cfg_from_owned(&vars).unwrap_err();
             for output in [error.to_string(), format!("{error:?}")] {
                 assert!(output.contains(var));
                 assert!(
-                    !output.contains(&marker),
+                    !output.contains(marker),
                     "credential marker appeared in parse error"
                 );
+                assert!(output.contains("invalid value (omitted — secret-bearing field)"));
             }
         }
     }
@@ -1495,33 +1494,36 @@ mod tests {
         for field in SECRET_FIELDS {
             let var = env_name_for(field).unwrap();
             for named_var in [None, Some(var), Some(*field)] {
-                let mut error = validator::ValidationError::new("credential-code-marker");
-                error.message = Some("credential-message-marker".into());
-                error.add_param("value".into(), &"credential-parameter-marker");
-                if let Some(named_var) = named_var {
-                    error.add_param("var".into(), &named_var);
-                }
-                let mut errors = ValidationErrors::new();
-                errors.add(
-                    if named_var.is_some() {
-                        "__all__"
-                    } else {
-                        field
-                    },
-                    error,
-                );
-                let mapped = map_validation_errors(&errors);
-                for output in [mapped.to_string(), format!("{mapped:?}")] {
-                    assert!(output.contains(var));
-                    for marker in [
-                        "credential-code-marker",
-                        "credential-message-marker",
-                        "credential-parameter-marker",
-                    ] {
-                        assert!(
-                            !output.contains(marker),
-                            "credential marker appeared in validation error"
-                        );
+                for message in [None, Some("credential-message-marker")] {
+                    let mut error = validator::ValidationError::new("credential-code-marker");
+                    error.message = message.map(Into::into);
+                    error.add_param("value".into(), &"credential-parameter-marker");
+                    if let Some(named_var) = named_var {
+                        error.add_param("var".into(), &named_var);
+                    }
+                    let mut errors = ValidationErrors::new();
+                    errors.add(
+                        if named_var.is_some() {
+                            "__all__"
+                        } else {
+                            field
+                        },
+                        error,
+                    );
+                    let mapped = map_validation_errors(&errors);
+                    for output in [mapped.to_string(), format!("{mapped:?}")] {
+                        assert!(output.contains(var));
+                        for marker in [
+                            "credential-code-marker",
+                            "credential-message-marker",
+                            "credential-parameter-marker",
+                        ] {
+                            assert!(
+                                !output.contains(marker),
+                                "credential marker appeared in validation error"
+                            );
+                        }
+                        assert!(output.contains("invalid value (omitted — secret-bearing field)"));
                     }
                 }
             }
