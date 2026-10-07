@@ -437,7 +437,7 @@ mod tests {
             ..Default::default()
         };
         let seeded = seed_ingestion(&pool, &config).await.unwrap();
-        assert!(seeded.ingestion.accepted_formats.is_empty());
+        assert_eq!(seeded.ingestion.accepted_formats, Vec::<String>::new());
         assert!(!seeded.ingestion.cleanup_imported);
         assert!(seeded.ingestion.cleanup_duplicates);
         assert_eq!(seeded.opds_page_size, 77);
@@ -487,14 +487,14 @@ mod tests {
         let seeded = seeded.unwrap();
         let saved = saved.unwrap();
         let latest = load(&pool).await.unwrap();
-        assert!(latest.ingestion.accepted_formats.is_empty());
+        assert_eq!(latest.ingestion.accepted_formats, Vec::<String>::new());
         assert!(latest.ingestion.cleanup_imported);
         assert!(!latest.ingestion.cleanup_duplicates);
         let mut resident = seeded;
         apply_if_newer(&mut resident, saved);
         apply_if_newer(&mut resident, latest.clone());
         assert_eq!(resident.revision, latest.revision);
-        assert!(resident.ingestion.accepted_formats.is_empty());
+        assert_eq!(resident.ingestion.accepted_formats, Vec::<String>::new());
         pool.close().await;
         assert!(seed_ingestion(&pool, &config).await.is_err());
     }
@@ -524,7 +524,7 @@ mod tests {
         };
         let seeded = seed_ingestion(&pool, &config).await.unwrap();
         assert_eq!(seeded.revision, saved.revision + 1);
-        assert!(seeded.ingestion.accepted_formats.is_empty());
+        assert_eq!(seeded.ingestion.accepted_formats, Vec::<String>::new());
         assert!(!seeded.ingestion.cleanup_imported);
         assert!(seeded.ingestion.cleanup_duplicates);
         assert_eq!(seeded.opds_page_size, 77);

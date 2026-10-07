@@ -22,7 +22,7 @@ fn assert_missing_ingestion(ingestion_url: Option<&str>) -> Result<(), Box<dyn s
         "{stderr}"
     );
     assert!(!stderr.contains("invalid-app-dsn-private-marker"));
-    assert!(output.stdout.is_empty());
+    assert_eq!(output.stdout, [] as [u8; 0]);
     Ok(())
 }
 

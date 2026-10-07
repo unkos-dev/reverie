@@ -682,7 +682,7 @@ mod tests {
                             && *limit == MAX_ZIP_ENTRIES
                 )
         }));
-        assert!(handle.entries.is_empty());
+        assert_eq!(handle.entries, Vec::<String>::new());
         assert!(handle.archive.is_none());
     }
 
@@ -834,7 +834,7 @@ mod tests {
                 ..
             }
         ));
-        assert!(handle.entries.is_empty());
+        assert_eq!(handle.entries, Vec::<String>::new());
     }
 
     #[test]

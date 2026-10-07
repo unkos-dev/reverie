@@ -8,11 +8,11 @@
   "devEngines": {
     "runtime": {
       "name": "node",
-      "version": "24.19.0",
+      "version": "24.21.0",
       "onFail": "download"
     }
   },
-  "packageManager": "pnpm@11.28.3",
+  "packageManager": "pnpm@11.28.4",
   "scripts": {
     "prepare": "test ! -e .git || lefthook install",
     "build": "vp run -r build"

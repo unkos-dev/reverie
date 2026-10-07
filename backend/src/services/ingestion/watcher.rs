@@ -171,7 +171,7 @@ mod tests {
             .expect("timeout waiting for batch")
             .expect("channel closed");
 
-        assert!(!batch.is_empty());
+        assert_ne!(batch, Vec::<PathBuf>::new());
         assert!(batch.iter().any(|p| p.file_name().unwrap() == "test.epub"));
 
         cancel.cancel();

@@ -2,14 +2,9 @@
 name = "reverie-api"
 version = "0.0.0"
 edition = "2024"
-# Minimum supported Rust version. Now set by a dependency: sqlx 0.9 declares
-# rust-version 1.94, above our first-party floor (session_sweep/settings use
-# `Duration::from_hours`/`from_mins`, stabilized in 1.91.0) and the edition-2024
-# floor (1.85). Enforced two ways:
-# clippy's `incompatible_msrv` lint (denied workspace-wide) flags any use of a
-# newer std API, and the CI `msrv` job compiles on exactly this toolchain. Bump
-# only when one of those proves the real floor has risen.
-rust-version = "1.94"
+# The declared floor tracks the pinned toolchain so dependency resolution can
+# prefer compatible releases and cargo rejects older non-rustup builders clearly.
+rust-version = "1.99.0"
 license = "AGPL-3.0-or-later"
 description = "Reverie ebook library manager — API server"
 

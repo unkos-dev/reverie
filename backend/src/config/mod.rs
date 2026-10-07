@@ -948,7 +948,7 @@ mod tests {
         // unset (off), so the DSN is intentionally NOT carried into Config.
         assert_eq!(config.migration_database_url, None);
         assert!(!config.auto_migrate);
-        assert!(config.ingestion_database_url.is_empty());
+        assert_eq!(config.ingestion_database_url, "");
         assert_eq!(config.accepted_formats, vec![ManifestationFormat::Epub]);
         assert!(config.cleanup_imported);
         assert!(!config.cleanup_duplicates);
@@ -1470,7 +1470,7 @@ mod tests {
         // Gate 2 startup check and the generated config reference. Every entry
         // must be a real ENV_MAP var name, or the reference would mark a
         // non-existent variable required.
-        assert!(!REQUIRED_FIELDS.is_empty());
+        assert_ne!(REQUIRED_FIELDS, []);
         let mapped: std::collections::HashSet<&str> =
             ENV_MAP.iter().map(|(name, _)| *name).collect();
         for (var, _) in REQUIRED_FIELDS {
@@ -1726,7 +1726,7 @@ mod tests {
             with_overrides(&[("DATABASE_URL_INGESTION", " \t\n")]),
         ] {
             let cfg = cfg_from_owned(&vars).unwrap();
-            assert!(cfg.ingestion_database_url.trim().is_empty());
+            assert_eq!(cfg.ingestion_database_url.trim(), "");
             assert_ne!(cfg.ingestion_database_url, cfg.database_url);
             let error = cfg.validate_server().unwrap_err();
             assert!(

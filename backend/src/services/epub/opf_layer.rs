@@ -1250,7 +1250,7 @@ mod tests {
         assert!(data.title.is_none());
         assert!(data.creators.is_empty());
         assert!(data.description.is_none());
-        assert!(data.identifiers.is_empty());
+        assert_eq!(data.identifiers, Vec::<String>::new());
         assert!(data.series_meta.is_none());
     }
 
@@ -1272,7 +1272,7 @@ mod tests {
         assert_eq!(data.creators.len(), 3);
         assert_eq!(data.creators[0].roles, vec!["aut"]);
         assert_eq!(data.creators[1].roles, vec!["edt"]);
-        assert!(data.creators[2].roles.is_empty());
+        assert_eq!(data.creators[2].roles, Vec::<String>::new());
     }
 
     #[test]
@@ -1330,7 +1330,7 @@ mod tests {
         assert_eq!(data.creators.len(), 2);
         assert!(!data.creators[0].from_contributor);
         assert!(data.creators[1].from_contributor);
-        assert!(data.creators[1].roles.is_empty());
+        assert_eq!(data.creators[1].roles, Vec::<String>::new());
     }
 
     #[test]
