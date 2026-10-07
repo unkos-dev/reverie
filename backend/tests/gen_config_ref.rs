@@ -73,6 +73,22 @@ fn required_and_secret_vars_render_correctly() {
         "secret default cell is empty"
     );
 
+    for var in [
+        "DATABASE_URL",
+        "DATABASE_URL_INGESTION",
+        "DATABASE_URL_MIGRATION",
+        "OIDC_CLIENT_SECRET",
+        "REVERIE_GOOGLEBOOKS_API_KEY",
+        "REVERIE_HARDCOVER_API_TOKEN",
+    ] {
+        let cells: Vec<_> = row(&md, var).split('|').collect();
+        assert_eq!(
+            cells[4].trim(),
+            "",
+            "credential reference default for {var}"
+        );
+    }
+
     // A non-required scalar keeps its real default.
     assert!(row(&md, "REVERIE_PORT").contains("`3000`"));
 

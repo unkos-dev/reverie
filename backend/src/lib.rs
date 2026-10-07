@@ -40,6 +40,7 @@ pub(crate) mod test_support;
 
 use anyhow::Context as _;
 use axum::Router;
+use secrecy::ExposeSecret;
 use tower_sessions::{Expiry, SessionManagerLayer};
 use tracing_subscriber::EnvFilter;
 
@@ -286,9 +287,12 @@ pub async fn run() -> anyhow::Result<()> {
         );
     }
 
-    let pool = db::init_pool(&config.database_url, config.db_max_connections)
-        .await
-        .map_err(|e| anyhow::anyhow!("failed to connect to database: {e}"))?;
+    let pool = db::init_pool(
+        config.database_url.expose_secret(),
+        config.db_max_connections,
+    )
+    .await
+    .map_err(|e| anyhow::anyhow!("failed to connect to database: {e}"))?;
 
     // Startup schema step — apply in-process (opt-in) or verify (default).
     // Extracted to apply_or_verify_schema so the flag selector (the security
@@ -353,9 +357,12 @@ pub async fn run() -> anyhow::Result<()> {
         None
     };
 
-    let ingestion_pool = db::init_pool(&config.ingestion_database_url, config.db_max_connections)
-        .await
-        .map_err(|e| anyhow::anyhow!("failed to connect ingestion pool: {e}"))?;
+    let ingestion_pool = db::init_pool(
+        config.ingestion_database_url.expose_secret(),
+        config.db_max_connections,
+    )
+    .await
+    .map_err(|e| anyhow::anyhow!("failed to connect ingestion pool: {e}"))?;
 
     let initial_settings = services::settings::seed_ingestion(&pool, &config)
         .await
@@ -393,9 +400,12 @@ pub async fn run() -> anyhow::Result<()> {
     // `manifestations_*_system` RLS policies match only when that GUC is
     // set, so user-facing handlers (which never set it) cannot reach the
     // system policies even if they forget `SET LOCAL app.current_user_id`.
-    let writeback_pool = db::init_writeback_pool(&config.database_url, config.db_max_connections)
-        .await
-        .map_err(|e| anyhow::anyhow!("failed to build writeback pool: {e}"))?;
+    let writeback_pool = db::init_writeback_pool(
+        config.database_url.expose_secret(),
+        config.db_max_connections,
+    )
+    .await
+    .map_err(|e| anyhow::anyhow!("failed to build writeback pool: {e}"))?;
 
     let addr = format!("0.0.0.0:{}", config.port);
     let listener = tokio::net::TcpListener::bind(&addr)
@@ -587,9 +597,9 @@ async fn apply_or_verify_schema(config: &Config, app_pool: &sqlx::PgPool) -> any
     if config.auto_migrate {
         let migration_url = config
             .migration_database_url
-            .as_deref()
+            .as_ref()
             .context("REVERIE_AUTO_MIGRATE is set but DATABASE_URL_MIGRATION is missing")?;
-        let report = db::run_migrations(migration_url)
+        let report = db::run_migrations(migration_url.expose_secret())
             .await
             .context("database migration failed")?;
         if report.applied > 0 {
@@ -866,7 +876,7 @@ async fn seed_admin_if_configured(pool: &sqlx::PgPool, config: &Config) -> anyho
 pub async fn run_bootstrap() -> anyhow::Result<()> {
     tracing_subscriber::fmt().try_init().ok();
     let config = config::Config::from_env().context("load configuration")?;
-    let pool = db::init_pool(&config.database_url, 1)
+    let pool = db::init_pool(config.database_url.expose_secret(), 1)
         .await
         .context("connect to the database")?;
     if seed_admin_if_configured(&pool, &config).await? {
@@ -895,7 +905,7 @@ pub async fn run_bootstrap() -> anyhow::Result<()> {
 pub async fn run_reset_password(email: &str) -> anyhow::Result<()> {
     tracing_subscriber::fmt().try_init().ok();
     let config = config::Config::from_env().context("load configuration")?;
-    let pool = db::init_pool(&config.database_url, 1)
+    let pool = db::init_pool(config.database_url.expose_secret(), 1)
         .await
         .context("connect to the database")?;
     let user = models::user::find_by_email(&pool, email)
@@ -949,7 +959,7 @@ pub async fn run_reset_password(email: &str) -> anyhow::Result<()> {
 pub async fn run_unlock_account(email: &str) -> anyhow::Result<()> {
     tracing_subscriber::fmt().try_init().ok();
     let config = config::Config::from_env().context("load configuration")?;
-    let pool = db::init_pool(&config.database_url, 1)
+    let pool = db::init_pool(config.database_url.expose_secret(), 1)
         .await
         .context("connect to the database")?;
     models::login_throttle::reset(&pool, email)

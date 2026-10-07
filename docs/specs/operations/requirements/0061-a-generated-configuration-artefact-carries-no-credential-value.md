@@ -26,14 +26,11 @@ and no step between those two events looks like disclosure to a reviewer.
 
 ## Acceptance criteria
 
-- `backend/config.schema.json`, as committed, emits for each credential-carrying setting a default that is either an
-  empty string or null: an empty string for `database_url`, `ingestion_database_url` and `oidc_client_secret`, null for
-  `migration_database_url`, `googlebooks_api_key` and `hardcover_api_token`. Checked for `oidc_client_secret`,
-  `googlebooks_api_key` and `hardcover_api_token` by `config_schema_has_no_secret_default_values` in
-  `backend/src/config/mod.rs`, which reads the generated schema that `config_schema_matches_committed_artifact` in
-  `backend/tests/gen_config_schema.rs` holds equal to the committed file; the other three are determined by inspecting
-  the committed file.
-- The committed configuration reference leaves the default column empty for every one of those six settings. Checked for
-  `OIDC_CLIENT_SECRET` by `required_and_secret_vars_render_correctly` in `backend/tests/gen_config_ref.rs`, which
-  renders the reference that `config_reference_matches_committed_artifact` in the same file holds equal to the committed
-  file; the other five are determined by inspecting the committed file.
+- The generated schema includes all six credential properties and an explicit default key for each: an empty string for
+  `database_url`, `ingestion_database_url` and `oidc_client_secret`; null for `migration_database_url`,
+  `googlebooks_api_key` and `hardcover_api_token`. Checked by `config_schema_has_no_secret_default_values` in
+  `backend/src/config/mod.rs`; `config_schema_matches_committed_artifact` in `backend/tests/gen_config_schema.rs`
+  compares the generated schema with the committed file.
+- The configuration reference leaves the default cell empty for all six credential settings. Checked by
+  `required_and_secret_vars_render_correctly` in `backend/tests/gen_config_ref.rs`; the same file's
+  `config_reference_matches_committed_artifact` compares the render with the committed reference.

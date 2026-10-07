@@ -25,10 +25,13 @@ been shared the credential is already out.
 
 ## Acceptance criteria
 
-- A decoding failure on a credential-carrying setting reports the setting's name and a fixed reason, with no fragment of
-  the supplied value anywhere in the reported text. Checked by `secret_field_deser_error_has_no_value` in
-  `backend/src/config/mod.rs`, which supplies a recognisable value and asserts its absence.
-- A validation failure on a credential-carrying setting reports no more than a decoding failure does. Nothing on the
-  validation path inspects the credential-carrying set, so satisfaction rests instead on no credential-carrying setting
-  declaring a validation rule; that is determined by reading the field declarations in `backend/src/config/mod.rs` and
-  `backend/src/config/security.rs`. No automated check covers this criterion.
+- A decoding failure on each of the six credential-carrying settings reports its setting name and a fixed reason,
+  without its supplied value in Display or Debug. Checked by `secret_field_deser_error_has_no_value` in
+  `backend/src/config/mod.rs` and the raw process-output assertions in
+  `ingestion_startup_diagnostics_redact_credentials` in `backend/tests/ingestion_startup.rs`.
+- Field-level and struct-level validation failures on each credential-carrying setting report its name without
+  credential-bearing messages, codes or parameters in Display or Debug. Checked by
+  `secret_field_validation_error_has_no_value` in `backend/src/config/mod.rs`.
+- Nested and list validation errors preserve aggregation, setting names and useful non-secret reasons while omitting
+  credential markers. Checked by `nested_validation_errors_preserve_multiple_and_non_secret_reasons` and
+  `non_secret_validation_error_retains_reason` in `backend/src/config/mod.rs`.

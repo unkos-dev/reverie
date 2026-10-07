@@ -43,6 +43,7 @@ pub use writeback::WritebackConfig;
 use crate::models::manifestation_format::ManifestationFormat;
 use figment::Figment;
 use provider::ENV_MAP;
+use secrecy::{ExposeSecret, SecretString};
 use validator::{Validate, ValidationErrors, ValidationErrorsKind};
 
 /// Accessor returning a required field's resolved value, paired with its
@@ -66,12 +67,12 @@ type RequiredFieldAccessor = fn(&Config) -> &str;
 /// required (only when `REVERIE_AUTO_MIGRATE=true`, enforced by Gate 1) and is
 /// documented as such by the reference rather than listed here.
 pub(crate) const REQUIRED_FIELDS: &[(&str, RequiredFieldAccessor)] =
-    &[("DATABASE_URL", |c| c.database_url.as_str())];
+    &[("DATABASE_URL", |c| c.database_url.expose_secret())];
 
 /// Fields required by normal server startup, shared with the configuration reference.
 pub(crate) const SERVER_REQUIRED_FIELDS: &[(&str, RequiredFieldAccessor)] =
     &[("DATABASE_URL_INGESTION", |c| {
-        c.ingestion_database_url.as_str()
+        c.ingestion_database_url.expose_secret()
     })];
 
 /// OIDC fields that become required *together* once OIDC is configured (the
@@ -85,7 +86,9 @@ pub(crate) const SERVER_REQUIRED_FIELDS: &[(&str, RequiredFieldAccessor)] =
 const OIDC_FIELDS: &[(&str, RequiredFieldAccessor)] = &[
     ("OIDC_ISSUER_URL", |c| c.oidc_issuer_url.as_str()),
     ("OIDC_CLIENT_ID", |c| c.oidc_client_id.as_str()),
-    ("OIDC_CLIENT_SECRET", |c| c.oidc_client_secret.as_str()),
+    ("OIDC_CLIENT_SECRET", |c| {
+        c.oidc_client_secret.expose_secret()
+    }),
     ("OIDC_REDIRECT_URI", |c| c.oidc_redirect_uri.as_str()),
 ];
 
@@ -123,7 +126,8 @@ pub struct Config {
     /// Primary database DSN (`DATABASE_URL`, required). Connections opened
     /// against this DSN run as `reverie_app`; user-facing queries acquire
     /// transactions through [`crate::db::acquire_with_rls`].
-    pub database_url: String,
+    #[schemars(with = "String", default = "String::new")]
+    pub database_url: SecretString,
     /// Absolute root for managed manifestation files (`REVERIE_LIBRARY_PATH`,
     /// default `/data/library`). Must exist before server startup; OPDS opens
     /// recorded relative locations through its pinned directory capability.
@@ -233,7 +237,8 @@ pub struct Config {
     /// NOTE: any new secret-bearing field must also be added to the
     /// `SECRET_FIELDS` list so a deserialize error never echoes its value
     /// (hard rule 7).
-    pub oidc_client_secret: String,
+    #[schemars(with = "String", default = "String::new")]
+    pub oidc_client_secret: SecretString,
     /// OIDC redirect URI (`OIDC_REDIRECT_URI`). Required when OIDC is configured
     /// (Gate 3); must match the value registered with the issuer.
     pub oidc_redirect_uri: String,
@@ -332,7 +337,8 @@ pub struct Config {
     /// server path: the application process holds no migration credential
     /// unless [`Self::auto_migrate`] is set. Required (else
     /// [`ConfigError::MissingVar`]) only when `auto_migrate` is true.
-    pub migration_database_url: Option<String>,
+    #[schemars(with = "Option<String>", default = "Option::<String>::default")]
+    pub migration_database_url: Option<SecretString>,
     /// Run pending migrations in-process at startup
     /// (`REVERIE_AUTO_MIGRATE`, default `false`). The shipped default is
     /// out-of-band migration via `reverie migrate`; when this is `true` the
@@ -345,7 +351,8 @@ pub struct Config {
     /// Use the dedicated `reverie_ingestion` role for the
     /// `*_ingestion_full_access` RLS policies. One-shot administrative commands
     /// do not require this credential.
-    pub ingestion_database_url: String,
+    #[schemars(with = "String", default = "String::new")]
+    pub ingestion_database_url: SecretString,
     /// Accepted ingestion formats (`REVERIE_ACCEPTED_FORMATS`, comma-separated;
     /// default `epub`). Seeds settings once; saved values win. An empty list suspends acquisition.
     #[serde(deserialize_with = "de_accepted_formats")]
@@ -375,11 +382,13 @@ pub struct Config {
     /// Optional Google Books API key
     /// (`REVERIE_GOOGLEBOOKS_API_KEY`); when set, requests bypass the
     /// public anonymous quota.
-    pub googlebooks_api_key: Option<String>,
+    #[schemars(with = "Option<String>", default = "Option::<String>::default")]
+    pub googlebooks_api_key: Option<SecretString>,
     /// Optional Hardcover bearer token
     /// (`REVERIE_HARDCOVER_API_TOKEN`); requests are skipped when
     /// unset.
-    pub hardcover_api_token: Option<String>,
+    #[schemars(with = "Option<String>", default = "Option::<String>::default")]
+    pub hardcover_api_token: Option<SecretString>,
     /// Operator contact (`REVERIE_OPERATOR_CONTACT`); embedded into
     /// the outbound `User-Agent` to claim `OpenLibrary`'s identified
     /// 3 req/s rate-limit tier (vs. 1 req/s anonymous).
@@ -490,8 +499,8 @@ impl Config {
         if cfg.auto_migrate {
             if cfg
                 .migration_database_url
-                .as_deref()
-                .is_none_or(|s| s.trim().is_empty())
+                .as_ref()
+                .is_none_or(|s| s.expose_secret().trim().is_empty())
             {
                 return Err(ConfigError::MissingVar("DATABASE_URL_MIGRATION".into()));
             }
@@ -635,18 +644,7 @@ where
 // Error mapping: figment / validator errors → var-named `ConfigError`.
 // ---------------------------------------------------------------------------
 
-/// Dotted field paths whose value is secret material. A deserialize error on
-/// one of these must never echo the offending value into a `ConfigError`
-/// (hard rule 7). This is reachable, not theoretical: `EnvProvider` parses
-/// `OIDC_CLIENT_SECRET=true` / `=123` into a `Value::Bool` / `Value::Num`,
-/// which fails to deserialize into the `String` field with an `invalid type:
-/// found bool true` message — figment echoes the value. The scrub replaces
-/// that reason with a value-free one for any secret-bearing key path.
-///
-/// The DSN fields embed credentials in their `user:password@host` form, so
-/// they are included defensively: a `String`-typed DSN does not currently
-/// reach a value-echoing coercion error (strings coerce trivially), but a
-/// future type change (e.g. a `url::Url` DSN field) would reopen that path.
+/// Credential paths scrubbed before parsing or validation errors become diagnostics.
 const SECRET_FIELDS: &[&str] = &[
     "database_url",
     "migration_database_url",
@@ -717,20 +715,26 @@ fn collect_validation_errors(errs: &ValidationErrors, prefix: &str, out: &mut Ve
                     // Struct-level (`schema`) errors land under "__all__" and
                     // name their var explicitly; field errors reverse-map by
                     // the accumulated dotted path.
-                    let var = fe
-                        .params
-                        .get("var")
-                        .and_then(|v| v.as_str())
-                        .map(ToString::to_string)
-                        .or_else(|| {
-                            let dotted = join_path(prefix, field);
-                            env_name_for(&dotted).map(ToString::to_string)
-                        })
-                        .unwrap_or_else(|| join_path(prefix, field));
-                    let reason = fe
-                        .message
-                        .as_ref()
-                        .map_or_else(|| fe.code.to_string(), ToString::to_string);
+                    let dotted = fe.params.get("var").and_then(|v| v.as_str()).map_or_else(
+                        || join_path(prefix, field),
+                        |var| {
+                            ENV_MAP
+                                .iter()
+                                .find(|(name, _)| *name == var)
+                                .map_or(var, |(_, path)| *path)
+                                .to_owned()
+                        },
+                    );
+                    let var =
+                        env_name_for(&dotted).map_or_else(|| dotted.clone(), ToString::to_string);
+                    // THREAT: Validator messages and codes can contain credentials before a secret wrapper exists.
+                    let reason = if SECRET_FIELDS.contains(&dotted.as_str()) {
+                        "invalid value (omitted — secret-bearing field)".into()
+                    } else {
+                        fe.message
+                            .as_ref()
+                            .map_or_else(|| fe.code.to_string(), ToString::to_string)
+                    };
                     out.push(ConfigError::Invalid { var, reason });
                 }
             }
@@ -773,7 +777,7 @@ impl Default for Config {
         Self {
             port: 3000,
             // REQUIRED — empty sentinel; reviewer handles MissingVar (GOTCHA-REQUIRED).
-            database_url: String::new(),
+            database_url: String::new().into(),
             library_path,
             ingestion_path,
             log_level: "info".into(),
@@ -792,7 +796,7 @@ impl Default for Config {
             // REQUIRED — empty sentinels.
             oidc_issuer_url: String::new(),
             oidc_client_id: String::new(),
-            oidc_client_secret: String::new(),
+            oidc_client_secret: String::new().into(),
             oidc_redirect_uri: String::new(),
             // Local-first default; Gate 3 guards the lock-out case.
             local_auth_enabled: true,
@@ -803,8 +807,7 @@ impl Default for Config {
             resource_server_require_at_jwt: false,
             migration_database_url: None,
             auto_migrate: false,
-            // Falls back to database_url at post-deserialize time (Task 6).
-            ingestion_database_url: String::new(),
+            ingestion_database_url: String::new().into(),
             accepted_formats: vec![ManifestationFormat::Epub],
             cleanup_imported: true,
             cleanup_duplicates: false,
@@ -947,15 +950,18 @@ mod tests {
     fn from_env_with_defaults() {
         let config = cfg_from(BASE_VARS).unwrap();
         assert_eq!(config.port, 3000);
-        assert_eq!(config.database_url, "postgres://test@localhost/reverie_dev");
+        assert_eq!(
+            config.database_url.expose_secret(),
+            "postgres://test@localhost/reverie_dev"
+        );
         assert_eq!(config.library_path.as_str(), "/data/library");
         assert_eq!(config.ingestion_path.as_str(), "/data/ingestion");
         assert_eq!(config.recovery_pin_dir, "/data/recovery-pins");
         // BASE_VARS exports DATABASE_URL_MIGRATION but leaves REVERIE_AUTO_MIGRATE
         // unset (off), so the DSN is intentionally NOT carried into Config.
-        assert_eq!(config.migration_database_url, None);
+        assert!(config.migration_database_url.is_none());
         assert!(!config.auto_migrate);
-        assert_eq!(config.ingestion_database_url, "");
+        assert_eq!(config.ingestion_database_url.expose_secret(), "");
         assert_eq!(config.accepted_formats, vec![ManifestationFormat::Epub]);
         assert!(config.cleanup_imported);
         assert!(!config.cleanup_duplicates);
@@ -1013,7 +1019,7 @@ mod tests {
         let config = cfg_from_owned(&vars).unwrap();
         assert_eq!(config.port, 8080);
         assert_eq!(
-            config.database_url,
+            config.database_url.expose_secret(),
             "postgres://custom@localhost/reverie_dev"
         );
         assert_eq!(config.library_path.as_str(), "/data/library");
@@ -1057,7 +1063,7 @@ mod tests {
         // schema via the app pool and never holds a migration credential.
         let vars = without_keys(&["DATABASE_URL_MIGRATION"]);
         let config = cfg_from_owned(&vars).unwrap();
-        assert_eq!(config.migration_database_url, None);
+        assert!(config.migration_database_url.is_none());
         assert!(!config.auto_migrate);
     }
 
@@ -1067,7 +1073,7 @@ mod tests {
         // default path: both yield None, no error.
         let vars = with_overrides(&[("DATABASE_URL_MIGRATION", "")]);
         let config = cfg_from_owned(&vars).unwrap();
-        assert_eq!(config.migration_database_url, None);
+        assert!(config.migration_database_url.is_none());
     }
 
     #[test]
@@ -1096,7 +1102,10 @@ mod tests {
         let config = cfg_from_owned(&vars).unwrap();
         assert!(config.auto_migrate);
         assert_eq!(
-            config.migration_database_url.as_deref(),
+            config
+                .migration_database_url
+                .as_ref()
+                .map(ExposeSecret::expose_secret),
             Some("postgres://reverie_migrator@localhost/reverie_dev")
         );
     }
@@ -1124,7 +1133,10 @@ mod tests {
         ]);
         let config = cfg_from_owned(&vars).unwrap();
         assert_eq!(
-            config.migration_database_url.as_deref(),
+            config
+                .migration_database_url
+                .as_ref()
+                .map(ExposeSecret::expose_secret),
             Some("postgres://schema_owner@localhost/reverie_dev")
         );
     }
@@ -1140,7 +1152,7 @@ mod tests {
         ]);
         let config = cfg_from_owned(&vars).unwrap();
         assert_eq!(
-            config.ingestion_database_url,
+            config.ingestion_database_url.expose_secret(),
             "postgres://ingestion@localhost/reverie_dev"
         );
         assert_eq!(config.accepted_formats, vec![ManifestationFormat::Epub]);
@@ -1397,7 +1409,7 @@ mod tests {
         // migrator credential when auto_migrate is off, even if the DSN is set.
         let vars = with_overrides(&[("DATABASE_URL_MIGRATION", "postgres://m@localhost/d")]);
         let cfg = cfg_from_owned(&vars).unwrap();
-        assert_eq!(cfg.migration_database_url, None);
+        assert!(cfg.migration_database_url.is_none());
     }
 
     #[test]
@@ -1431,43 +1443,151 @@ mod tests {
     }
 
     #[test]
+    fn config_debug_omits_all_credentials() {
+        let overrides: Vec<_> = SECRET_FIELDS
+            .iter()
+            .enumerate()
+            .map(|(index, field)| {
+                (
+                    env_name_for(field).unwrap(),
+                    format!("credential-debug-marker-{index}"),
+                )
+            })
+            .collect();
+        let mut vars = with_overrides(&[("REVERIE_AUTO_MIGRATE", "true")]);
+        vars.extend(
+            overrides
+                .iter()
+                .map(|(var, value)| ((*var).to_owned(), value.clone())),
+        );
+        let config = cfg_from_owned(&vars).unwrap();
+        let debug = format!("{config:?}");
+        assert!(debug.contains("port: 3000"));
+        assert!(debug.contains("log_level: \"info\""));
+        for (_, marker) in overrides {
+            assert!(
+                !debug.contains(&marker),
+                "credential marker appeared in Config Debug"
+            );
+        }
+    }
+
+    #[test]
     fn secret_field_deser_error_has_no_value() {
-        // GOTCHA-SECRET-ERR (hard rule 7): a non-string-shaped secret value
-        // (`true` parses to Value::Bool) fails String deserialization at
-        // `extract()`, and figment's raw message would echo the value. The
-        // SECRET_FIELDS scrub must replace the reason with a value-free one
-        // while still naming the var.
-        let vars = with_overrides(&[("OIDC_CLIENT_SECRET", "true")]);
-        let err = cfg_from_owned(&vars).unwrap_err();
-        let s = err.to_string();
-        assert!(s.contains("OIDC_CLIENT_SECRET"), "must name the var: {s}");
-        assert!(s.contains("omitted"), "expected scrubbed reason, got: {s}");
-        assert!(!s.contains("true"), "secret value leaked into error: {s}");
+        for (index, field) in SECRET_FIELDS.iter().enumerate() {
+            let var = env_name_for(field).unwrap();
+            let marker = format!("credential-parse-marker-{index}");
+            let input = format!("[\"{marker}\"]");
+            let vars = with_overrides(&[(var, &input)]);
+            let error = cfg_from_owned(&vars).unwrap_err();
+            for output in [error.to_string(), format!("{error:?}")] {
+                assert!(output.contains(var));
+                assert!(
+                    !output.contains(&marker),
+                    "credential marker appeared in parse error"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn secret_field_validation_error_has_no_value() {
+        for field in SECRET_FIELDS {
+            let var = env_name_for(field).unwrap();
+            for named_var in [None, Some(var), Some(*field)] {
+                let mut error = validator::ValidationError::new("credential-code-marker");
+                error.message = Some("credential-message-marker".into());
+                error.add_param("value".into(), &"credential-parameter-marker");
+                if let Some(named_var) = named_var {
+                    error.add_param("var".into(), &named_var);
+                }
+                let mut errors = ValidationErrors::new();
+                errors.add(
+                    if named_var.is_some() {
+                        "__all__"
+                    } else {
+                        field
+                    },
+                    error,
+                );
+                let mapped = map_validation_errors(&errors);
+                for output in [mapped.to_string(), format!("{mapped:?}")] {
+                    assert!(output.contains(var));
+                    for marker in [
+                        "credential-code-marker",
+                        "credential-message-marker",
+                        "credential-parameter-marker",
+                    ] {
+                        assert!(
+                            !output.contains(marker),
+                            "credential marker appeared in validation error"
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn non_secret_validation_error_retains_reason() {
+        let mut error = validator::ValidationError::new("range");
+        error.message = Some("must be at least 15".into());
+        let mut errors = ValidationErrors::new();
+        errors.add("password_min_length", error);
+        let mapped = map_validation_errors(&errors);
+        for output in [mapped.to_string(), format!("{mapped:?}")] {
+            assert!(output.contains("REVERIE_PASSWORD_MIN_LENGTH"));
+            assert!(output.contains("must be at least 15"));
+        }
+    }
+
+    #[test]
+    fn nested_validation_errors_preserve_multiple_and_non_secret_reasons() {
+        let mut secret = validator::ValidationError::new("credential-code-marker");
+        secret.message = Some("credential-message-marker".into());
+        secret.add_param("var".into(), &"DATABASE_URL");
+        secret.add_param("value".into(), &"credential-parameter-marker");
+        let mut child = ValidationErrors::new();
+        child.add("__all__", secret);
+        let mut plain = validator::ValidationError::new("range");
+        plain.message = Some("must be at least 15".into());
+        let mut errors = ValidationErrors::new();
+        errors.add("password_min_length", plain);
+        errors.errors_mut().insert(
+            "nested".into(),
+            ValidationErrorsKind::Struct(Box::new(child.clone())),
+        );
+        errors.errors_mut().insert(
+            "items".into(),
+            ValidationErrorsKind::List(std::collections::BTreeMap::from([(0, Box::new(child))])),
+        );
+        let mapped = map_validation_errors(&errors);
+        assert!(matches!(&mapped, ConfigError::Multiple(errors) if errors.len() == 3));
+        for output in [mapped.to_string(), format!("{mapped:?}")] {
+            assert!(output.contains("DATABASE_URL"));
+            assert!(output.contains("REVERIE_PASSWORD_MIN_LENGTH"));
+            assert!(output.contains("must be at least 15"));
+            assert!(!output.contains("credential-"));
+        }
     }
 
     #[test]
     fn config_schema_has_no_secret_default_values() {
-        // Hard rule 7 / GOTCHA-SECRET: the emitted JSON Schema must carry no
-        // secret VALUE. schemars renders each field's default, so secret-
-        // bearing fields appear with `""` (required `String`) or `null`
-        // (optional) — both non-values; a non-empty string default would be a
-        // leak of real credential material.
         let schema = serde_json::to_value(schemars::schema_for!(Config)).unwrap();
         let props = schema["properties"].as_object().expect("properties object");
-        for field in [
-            "oidc_client_secret",
-            "googlebooks_api_key",
-            "hardcover_api_token",
-        ] {
-            let default = &props[field]["default"];
-            let safe = default.is_null() || default.as_str() == Some("");
-            assert!(
-                safe,
-                "secret field {field} carries a non-empty default in the schema: {default}"
-            );
+        for field in SECRET_FIELDS {
+            let property = props.get(*field).expect("credential property exists");
+            let default = property.get("default").expect("credential default exists");
+            let expected = if matches!(
+                *field,
+                "database_url" | "ingestion_database_url" | "oidc_client_secret"
+            ) {
+                serde_json::json!("")
+            } else {
+                serde_json::Value::Null
+            };
+            assert_eq!(*default, expected, "credential default for {field}");
         }
-        // Non-vacuity: a non-secret scalar still carries its real default, so
-        // the assertion above is meaningful (the schema does emit defaults).
         assert_eq!(props["port"]["default"], serde_json::json!(3000));
     }
 
@@ -1733,8 +1853,11 @@ mod tests {
             with_overrides(&[("DATABASE_URL_INGESTION", " \t\n")]),
         ] {
             let cfg = cfg_from_owned(&vars).unwrap();
-            assert_eq!(cfg.ingestion_database_url.trim(), "");
-            assert_ne!(cfg.ingestion_database_url, cfg.database_url);
+            assert_eq!(cfg.ingestion_database_url.expose_secret().trim(), "");
+            assert_ne!(
+                cfg.ingestion_database_url.expose_secret(),
+                cfg.database_url.expose_secret()
+            );
             let error = cfg.validate_server().unwrap_err();
             assert!(
                 matches!(&error, ConfigError::MissingVar(var) if var == "DATABASE_URL_INGESTION")
@@ -1784,7 +1907,7 @@ mod tests {
         )]);
         let cfg = cfg_from_owned(&vars).unwrap();
         assert_eq!(
-            cfg.ingestion_database_url,
+            cfg.ingestion_database_url.expose_secret(),
             "postgres://reverie_ingestion@localhost/reverie_dev"
         );
         cfg.validate_server().unwrap();

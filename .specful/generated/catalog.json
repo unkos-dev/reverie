@@ -377,6 +377,13 @@
       "title": "Library path ownership during publication and relocation"
     },
     {
+      "id": "REV-ADR-0053",
+      "kind": "adr",
+      "path": "docs/adr/0053-typed-credentials-and-externally-supplied-authentication-material.md",
+      "status": "proposed",
+      "title": "Typed credentials and externally supplied authentication material"
+    },
+    {
       "governed-by": [
         "REV-ADR-0041",
         "REV-ADR-0047"
@@ -696,6 +703,7 @@
       "governed-by": [
         "REV-ADR-0012",
         "REV-ADR-0023",
+        "REV-ADR-0053",
         "REV-ADR-0051"
       ],
       "id": "REV-DESIGN-0022",
@@ -725,6 +733,7 @@
     {
       "governed-by": [
         "REV-ADR-0021",
+        "REV-ADR-0053",
         "REV-ADR-0051"
       ],
       "id": "REV-DESIGN-0024",
