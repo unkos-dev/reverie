@@ -2,6 +2,8 @@
 //!
 //! Endpoint: `GET {base}/volumes?q=<query>&maxResults=<N>`.
 //!
+//! Request errors omit their URLs before entering the cache or dry-run diagnostics.
+//!
 //! Without an API key Google caps anonymous traffic at ~1000 req/day across
 //! the entire IP — the rate limiter is therefore intentionally conservative
 //! (1 req/sec).
@@ -194,7 +196,8 @@ fn to_source_error(e: reqwest::Error) -> SourceError {
     if e.is_timeout() {
         SourceError::Timeout
     } else {
-        SourceError::Other(anyhow::Error::from(e))
+        // THREAT: Request URLs carry the provider API key.
+        SourceError::Other(anyhow::Error::from(e.without_url()))
     }
 }
 
@@ -328,7 +331,7 @@ mod tests {
     )]
     use super::*;
     use serde_json::json;
-    use wiremock::matchers::{method, path, query_param_contains};
+    use wiremock::matchers::{method, path, query_param, query_param_contains};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
     fn ctx(http: &reqwest::Client) -> LookupCtx<'_> {
@@ -365,14 +368,16 @@ mod tests {
     #[tokio::test]
     async fn isbn_happy_path() {
         let server = MockServer::start().await;
+        let api_key = uuid::Uuid::new_v4().to_string();
         Mock::given(method("GET"))
             .and(path("/volumes"))
             .and(query_param_contains("q", "isbn:9780441172719"))
+            .and(query_param("key", &api_key))
             .respond_with(ResponseTemplate::new(200).set_body_json(sample_volume()))
             .mount(&server)
             .await;
 
-        let adapter = GoogleBooks::new(server.uri(), None);
+        let adapter = GoogleBooks::new(server.uri(), Some(api_key));
         let http = reqwest::Client::new();
         let out = adapter
             .lookup(&ctx(&http), &LookupKey::Isbn("isbn:9780441172719".into()))
@@ -401,10 +406,12 @@ mod tests {
     #[tokio::test]
     async fn volume_id_lookup_uses_structural_path_and_maps() {
         let server = MockServer::start().await;
+        let api_key = uuid::Uuid::new_v4().to_string();
         // The volume id must arrive as its own path segment; a query-string
         // or concatenated form would not match this path expectation.
         Mock::given(method("GET"))
             .and(path("/volumes/zyTZAAAAYAAJ"))
+            .and(query_param("key", &api_key))
             .respond_with(ResponseTemplate::new(200).set_body_json(json!({
                 "id": "zyTZAAAAYAAJ",
                 "volumeInfo": sample_volume_info()
@@ -412,7 +419,7 @@ mod tests {
             .mount(&server)
             .await;
 
-        let adapter = GoogleBooks::new(server.uri(), None);
+        let adapter = GoogleBooks::new(server.uri(), Some(api_key));
         let http = reqwest::Client::new();
         let out = adapter
             .lookup(
@@ -508,6 +515,73 @@ mod tests {
             .await
             .unwrap();
         assert!(out.is_empty());
+    }
+
+    fn credential_lookup_keys() -> [LookupKey; 2] {
+        [
+            LookupKey::Isbn("isbn:9780441172719".into()),
+            LookupKey::ExternalId {
+                scheme: "googlebooks".into(),
+                value: "zyTZAAAAYAAJ".into(),
+            },
+        ]
+    }
+
+    fn assert_credential_free_error(error: &SourceError, api_key: &str) {
+        for rendered in [
+            error.to_string(),
+            format!("{error:#}"),
+            format!("{error:?}"),
+        ] {
+            assert!(!rendered.contains(api_key));
+        }
+        let SourceError::Other(error) = error else {
+            panic!("expected reqwest error, got {error:?}");
+        };
+        let error = error.downcast_ref::<reqwest::Error>().unwrap();
+        assert!(error.url().is_none());
+    }
+
+    #[tokio::test]
+    async fn malformed_json_errors_omit_api_key_for_both_lookup_paths() {
+        let server = MockServer::start().await;
+        let api_key = uuid::Uuid::new_v4().to_string();
+        Mock::given(method("GET"))
+            .and(query_param("key", &api_key))
+            .respond_with(ResponseTemplate::new(200).set_body_string("not JSON"))
+            .expect(2)
+            .mount(&server)
+            .await;
+        let adapter = GoogleBooks::new(server.uri(), Some(api_key.clone()));
+        let http = reqwest::Client::new();
+
+        for key in credential_lookup_keys() {
+            let error = adapter.lookup(&ctx(&http), &key).await.unwrap_err();
+            assert_credential_free_error(&error, &api_key);
+            let SourceError::Other(error) = error else {
+                unreachable!();
+            };
+            assert!(error.downcast_ref::<reqwest::Error>().unwrap().is_decode());
+        }
+    }
+
+    #[tokio::test]
+    async fn transport_errors_omit_api_key_for_both_lookup_paths() {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = listener.local_addr().unwrap();
+        let api_key = uuid::Uuid::new_v4().to_string();
+        let adapter = GoogleBooks::new(format!("http://{address}"), Some(api_key.clone()));
+        let http = reqwest::Client::builder().no_proxy().build().unwrap();
+        drop(listener);
+
+        for key in credential_lookup_keys() {
+            let error = adapter.lookup(&ctx(&http), &key).await.unwrap_err();
+            assert_credential_free_error(&error, &api_key);
+            let SourceError::Other(error) = error else {
+                unreachable!();
+            };
+            assert!(error.downcast_ref::<reqwest::Error>().unwrap().is_connect());
+        }
     }
 
     #[tokio::test]

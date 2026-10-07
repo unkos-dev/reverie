@@ -293,6 +293,9 @@ a projection, not a preview of a specific journal row a subsequent real run woul
   `SourceFailure` with a `terminal` flag (true only for a non-429 4xx) and, for `RateLimited`, a `retry_after`. `finish`
   only marks a row `Failed` when every enabled source failed non-terminally with nothing applied or staged; a terminal
   failure alongside a live result from another source still counts as `Complete`.
+- Google Books removes the request URL from transport and JSON-decoding errors before wrapping them as
+  `SourceError::Other`. Cache payloads and dry-run failure summaries retain the error cause without its query
+  credential; timeout errors remain `SourceError::Timeout`.
 - After `max_attempts` failed attempts a row moves to `Skipped` and the claim query never selects it again; nothing
   short of `trigger` or a manual identifier edit returns it to circulation.
 - A hard kill mid-run leaves the claimed row `in_progress` until the next startup with enrichment enabled: `spawn_queue`
