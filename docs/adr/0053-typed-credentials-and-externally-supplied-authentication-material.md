@@ -14,9 +14,9 @@ decision-makers:
 ## Context and problem statement
 
 Configuration diagnostics can expose authentication material even when consumers never log it deliberately. Derived
-Debug renders plain strings, and parsing or validation can reproduce a supplied value before a secret wrapper exists.
-The configuration schema and reference also publish defaults, so changing representation cannot remove their explicit
-empty or null credential defaults.
+Debug renders plain strings. Parsing can quote a supplied value before a secret wrapper exists; validator messages and
+codes can expose it after wrapping. The configuration schema and reference also publish defaults, so changing
+representation cannot remove their explicit empty or null credential defaults.
 
 Credential supply has three distinct purposes: operators supply deployment credentials, provisioning owns development
 and disposable test credentials, and credential-handling tests use deliberate literals to exercise the boundary.
