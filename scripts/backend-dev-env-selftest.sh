@@ -317,6 +317,52 @@ malformed_output="$(resolve DATABASE_URL 2>&1)" && malformed_status=0 || malform
   echo 'FAIL malformed state diagnostics'; fail=1;
 }
 cp "$tmp/saved-state" "$state_dir/credentials.env"
+for command in runtime migration auto-migration; do
+  for password_state in absent local exported empty; do
+    consumer_status=0
+    env -i PATH="$test_path" TMPDIR="${TMPDIR:-/tmp}" HOME="$fake_home" XDG_STATE_HOME="$state_root" \
+      bash -s -- "$helper" "$command" "$password_state" "$fixture_bootstrap" \
+      > "$tmp/consumer-$command-$password_state.log" 2>&1 <<'CONSUMER' || consumer_status=$?
+set -euo pipefail
+passwords=(POSTGRES_PASSWORD REVERIE_APP_PASSWORD REVERIE_MIGRATOR_PASSWORD REVERIE_INGESTION_PASSWORD REVERIE_READONLY_PASSWORD)
+declare -A before=()
+for key in "${passwords[@]}"; do
+  case "$3" in
+    absent) ;;
+    local | exported)
+      printf -v "$key" '%s' developer-supplied-password
+      [[ "$key" != POSTGRES_PASSWORD ]] || POSTGRES_PASSWORD="$4"
+      [[ "$3" != exported ]] || export "$key"
+      ;;
+    empty)
+      [[ "$key" != POSTGRES_PASSWORD ]] || continue
+      export "$key="
+      ;;
+  esac
+  before["$key"]="$(declare -p "$key" 2>/dev/null || true)"
+done
+if [[ "$2" == migration ]]; then
+  source "$1" DATABASE_URL_MIGRATION
+  [[ "$DATABASE_URL_MIGRATION" == "postgres:///reverie_dev?host=$XDG_STATE_HOME/reverie/pgsock&user=reverie_migrator&password="* ]]
+  [[ ! -v DATABASE_URL && ! -v DATABASE_URL_INGESTION ]]
+else
+  [[ "$2" != auto-migration ]] || export REVERIE_AUTO_MIGRATE=true
+  source "$1" DATABASE_URL DATABASE_URL_INGESTION
+  [[ "$DATABASE_URL" == postgres://reverie_app:*@localhost:5432/reverie_dev ]]
+  [[ "$DATABASE_URL_INGESTION" == postgres://reverie_ingestion:*@localhost:5432/reverie_dev ]]
+  if [[ "$2" == auto-migration ]]; then
+    [[ "$DATABASE_URL_MIGRATION" == postgres://reverie_migrator:*@localhost:5432/reverie_dev ]]
+  else
+    [[ ! -v DATABASE_URL_MIGRATION ]]
+  fi
+fi
+for key in "${passwords[@]}"; do
+  [[ "$(declare -p "$key" 2>/dev/null || true)" == "${before[$key]-}" ]]
+done
+CONSUMER
+    check_status "$command preserves $password_state password inputs without adding credentials" 0 "$consumer_status"
+  done
+done
 for variable in DATABASE_URL DATABASE_URL_INGESTION DATABASE_URL_MIGRATION; do
   check "explicit empty $variable" '' "$(resolve "$variable" "$variable=")"
 done

@@ -188,7 +188,7 @@ pg_disposable() {
   if [[ "$mode" == schema ]]; then
     if ! PGPASSWORD="$REVERIE_MIGRATOR_PASSWORD" \
       DATABASE_URL="postgres:///reverie_test?host=$REVERIE_PG_HOST&port=$([[ "$REVERIE_PG_HOST" == /* ]] && printf 5432 || printf '%s' "$REVERIE_PG_PORT")&user=reverie_migrator" \
-      sqlx migrate run --source "$root/backend/migrations" >/dev/null 2>&1; then
+      sqlx migrate run --source "$root/backend/migrations" >/dev/null; then
       pg_fail "schema preparation failed for $pg_container"
       exit 1
     fi

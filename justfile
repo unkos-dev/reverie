@@ -542,15 +542,9 @@ db-migrate:
     cd backend
     SQLX_OFFLINE=true cargo run --locked -- migrate
 
-# Is: a development-loop unblocker for the compile/cache/migration cycle
-# when a branch is authoring a new migration. `db-migrate` compiles the
-# backend binary first, but the binary cannot compile until the sqlx
-# offline cache reflects the new migration, and the cache cannot
-# regenerate until the migration has been applied to the dev DB. This
-# recipe breaks that cycle by applying the SQL files in
-# backend/migrations/ straight through sqlx-cli, no compile involved.
-# After it runs, `just rust::sqlx-prepare` regenerates the offline cache
-# against the now-migrated schema so the binary builds again.
+# Applies migrations to the development database without compiling the backend.
+# The query cache is regenerated independently with rust::sqlx-prepare, which
+# prepares its own disposable database from this checkout's migrations.
 #
 # Is not: the deployment path. Real instances still migrate through the
 # application binary's `migrate` command (what `db-migrate` runs), which
@@ -560,7 +554,7 @@ db-migrate:
 # an earlier migration's commit (the classic case: using an enum value a
 # previous migration just added) passes here and fails under the shipped
 # runner on a fresh database. Before pushing a branch that adds a
-# migration, run `just db-reset && just db-migrate` once so the shipped
+# migration, coordinate `just db-reset <confirmed-volume>` then run db-migrate so the shipped
 # runner has applied it from scratch; nothing else in the local loop or
 # preflight exercises that runner.
 #
@@ -576,13 +570,7 @@ db-migrate:
 # so the application's schema-ahead check keeps rejecting the database:
 # `db-migrate` and backend startup both fail until the branch gains the
 # sibling's migration file or the database is rebuilt with
-# `just db-reset` (destructive; discards the shared DB's data).
-#
-# Same migrator DSN default as db-migrate, as a deliberate copy that
-# nothing enforces, so change both together. Duplicated
-# rather than lifted into a just variable for the same reason db-migrate
-# inlines it: a just variable would echo an overridden credential into
-# dry-run/verbose recipe output.
+# `just db-reset <confirmed-volume>` (destructive; discards the shared DB's data).
 #
 # No --locked here, unlike every resolving cargo invocation in these
 # recipes: `cargo sqlx migrate run` replays SQL files through sqlx-cli and
@@ -610,9 +598,8 @@ db-migrate-raw *args:
 [group('dev')]
 dev-up: db-up db-migrate rust::dev-start js::dev-start
 
-# The database stays up because it is cheap, stateful, and shared with the
-# test suite; stop it explicitly with db-down. Not dependency-driven: a
-# failing frontend stop must not strand the backend, so both stops always
+# The stateful development database stays up; stop it explicitly with db-down.
+# A failing frontend stop must not strand the backend, so both stops always
 # run and the recipe fails if either failed.
 #
 # Stop the background dev servers (frontend, then backend).

@@ -256,12 +256,6 @@ jobs:
           mise-install-args: mold github:nextest-rs/nextest
           add-shims-to-path: "false"
 
-      - name: Install sqlx-cli
-        working-directory: ${{ github.workspace }}
-        env:
-          RUSTFLAGS: ""
-        run: mise install --locked cargo:sqlx-cli
-
       - name: Test
         env:
           SQLX_OFFLINE: "true"

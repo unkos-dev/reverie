@@ -34,9 +34,10 @@ cache checks. Schema dumping uses a migrator-owned scratch database within its d
 owner; its online Clippy and documentation commands receive prepared clusters.
 
 Both TCP and Unix sockets require SCRAM authentication. Verification uses its owned socket when available and its owned
-TCP endpoint across a Docker host boundary. Development publishes `127.0.0.1:5432` and the socket at
-`${XDG_STATE_HOME:-$HOME/.local/state}/reverie/pgsock`; the runtime server uses TCP. Socket DSNs use the params-only
-form `postgres:///database?host=<socket-dir>&user=<role>&password=<password>`. SQLx rejects
+TCP endpoint across a Docker host boundary. Local migration recipes default to the Unix socket so they also work in
+network-isolated sandboxes that block TCP loopback. The runtime server uses TCP, matching the deployed transport.
+Development publishes `127.0.0.1:5432` and the socket at `${XDG_STATE_HOME:-$HOME/.local/state}/reverie/pgsock`. Socket
+DSNs use the params-only form `postgres:///database?host=<socket-dir>&user=<role>&password=<password>`. SQLx rejects
 `postgres://user@/database?host=...`, and a socket DSN never falls back to TCP.
 
 The foreground owner forwards INT/TERM, waits for children and removes its socket contents, container, disposable
@@ -75,16 +76,17 @@ Migration uses `DATABASE_URL_MIGRATION`; schema printing requires no credentials
 
 ### Migrations
 
-The `reverie_migrator` role executes migrations out of band: `just db-migrate` uses the retained migrator credentials,
-or set `DATABASE_URL_MIGRATION` to either transport's migrator DSN and run `cargo run -- migrate`. The application
-process calls `db::verify_schema_current()` on startup and exits if the schema diverges. The `#[sqlx::test]` macro uses
-the built-in sqlx migrator for tests.
+The `reverie_migrator` role executes migrations out of band: `just db-migrate`, `just db-migrate-raw` and
+`just rust::migrate` use the retained migrator credentials over the development socket, or set `DATABASE_URL_MIGRATION`
+to either transport's migrator DSN and run `cargo run -- migrate`. The application process calls
+`db::verify_schema_current()` on startup and exits if the schema diverges. The `#[sqlx::test]` macro uses the built-in
+sqlx migrator for tests.
 
-`just db-migrate` compiles the backend binary first, which is circular when a branch is authoring a new migration: the
-binary needs the sqlx offline cache to reflect the migration, and the cache needs the migration already applied.
-`just db-migrate-raw` breaks that cycle by applying `backend/migrations/` with sqlx-cli directly, no compile step;
-follow it with `just rust::sqlx-prepare`. It is a local authoring shortcut only, not a substitute for `just db-migrate`
-in any shipped environment. The two runners also group transactions differently: the shipped runner applies all pending
+`just db-migrate` and `just rust::migrate` compile against the committed SQLx cache, so a fresh development database
+needs no schema for compilation. If queries or migrations change, regenerate the cache with `just rust::sqlx-prepare`;
+that command prepares its own disposable database. `just db-migrate-raw` applies `backend/migrations/` with sqlx-cli
+without building the backend. It is a local authoring shortcut, not a substitute for the shipped migration runner in any
+shipped environment. The two runners also group transactions differently: the shipped runner applies all pending
 transactional migrations in one batch transaction, while sqlx-cli commits each migration individually, so a migration
 that depends on an earlier migration's commit passes under sqlx-cli and fails under the shipped runner. Before pushing a
 branch that adds a migration, coordinate `just db-reset <confirmed-volume>` then run `just db-migrate` so the shipped

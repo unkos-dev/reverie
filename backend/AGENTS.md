@@ -71,8 +71,9 @@ These rules define the Rust, Axum, and sqlx architecture. Do not deviate.
 
 - **Database Reachability:** `just db-up` owns persistent development provisioning and retains generated credentials
   outside checkouts. `just db-migrate` and dev recipes read that state through `scripts/backend-dev-env.sh`, preserving
-  process/file precedence and explicit empty inputs. Both loopback TCP and the development Unix socket require SCRAM.
-  Verification recipes provision independent disposable clusters; they never target development or honour
+  process/file precedence and explicit empty inputs. Local migration recipes default to the Unix socket for
+  network-isolated sandboxes; the runtime server uses TCP, matching the deployed transport. Both transports require
+  SCRAM. Verification recipes provision independent disposable clusters; they never target development or honour
   REVERIE_DEV_DB_URL. Test mode leaves the bootstrap database empty for SQLx per-test migrations; schema mode prepares
   it for online SQLx compilation. Socket DSNs use `postgres:///database?host=<dir>&user=<role>&password=<pw>`; SQLx
   rejects `postgres://user@/database?host=...`. See `./README.md` for lifecycle and explicit-supply instructions.

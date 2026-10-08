@@ -51,7 +51,7 @@ created=1
 sed -n '/^DO \$\$$/,$p' docker/init-roles.sql | psql_owner -d "$db" >/dev/null 2>&1 || die "scratch database grants failed"
 PGPASSWORD="$REVERIE_MIGRATOR_PASSWORD" \
   DATABASE_URL="postgres:///${db}?host=${host}&port=${port}&user=reverie_migrator" \
-  sqlx migrate run --source backend/migrations >/dev/null 2>&1 || die "scratch database migration failed"
+  sqlx migrate run --source backend/migrations >/dev/null || die "scratch database migration failed"
 
 PGPASSWORD="$POSTGRES_PASSWORD" docker exec -e PGPASSWORD "$container" pg_dump --schema-only --restrict-key=reverie -h localhost -U reverie -d "$db" 2>/dev/null \
   | sed -e '/^-- Dumped from database version /d' -e '/^-- Dumped by pg_dump version /d' > "$dump" || die "scratch schema dump failed"
