@@ -26,6 +26,8 @@ nor verification commands rotate development credentials.
 
 ### Verification ownership and transports
 
+Database verification requires access to a running Docker daemon.
+
 Each `just rust::test`, `doctests`, `sqlx-check`, `sqlx-prepare`, `schema-check` and `schema-dump` invocation owns a
 disposable cluster with independent credentials, a dynamic loopback TCP port and a unique socket directory. Tests and
 doctests compile against the committed SQLx cache. Test mode leaves the bootstrap database without migrations; SQLx

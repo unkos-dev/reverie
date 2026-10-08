@@ -58,9 +58,6 @@ dev_env_default() {
   export "${key}=${default_value}"
 }
 
-# RLS-enforced runtime identity. Overriding it is a matter of setting
-# DATABASE_URL in the environment or in the dev env file, so there is no
-# recipe-specific knob for it.
 _dev_env_databases() {
   local _key _dev_state_loaded
   for _key in POSTGRES_PASSWORD REVERIE_APP_PASSWORD REVERIE_MIGRATOR_PASSWORD REVERIE_INGESTION_PASSWORD REVERIE_READONLY_PASSWORD; do
