@@ -184,7 +184,7 @@ pg_disposable() {
   fi
   printf 'postgres-provision: owned container=%s host=%s port=%s\n' "$pg_container" "$REVERIE_PG_HOST" "$REVERIE_PG_PORT" >&2
   unset PGPASSWORD
-  env --default-signal=INT,TERM setsid --wait -- "$@" &
+  env --default-signal=INT,TERM setsid --wait -- "$@" <&0 &
   pg_child=$!
   status=0
   while :; do

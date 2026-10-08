@@ -112,15 +112,17 @@ Operator-facing `MigrationError` modes:
 ### Upgrade Note
 
 The Postgres 18 upgrade changed the volume mount from `pgdata:/var/lib/postgresql/data` to `pgdata:/var/lib/postgresql`.
-You must drop existing development volumes:
+Confirm the development cluster's project, container and mounted volume, and coordinate all consumers before deleting
+the existing development data:
 
 ```bash
-just db-reset
+just db-reset <confirmed-volume>
 just db-migrate
 ```
 
-`just db-reset` runs `docker compose -f docker/compose.dev.yml down -v`, which removes the project volume by reference
-regardless of its generated name, then recreates the cluster.
+`just db-reset <confirmed-volume>` verifies the exact project volume and the container's mounted volume before removing
+that volume and recreating the cluster. It reuses retained valid credentials. Deleted data cannot be recovered by a code
+revert.
 
 ## Security Headers
 
