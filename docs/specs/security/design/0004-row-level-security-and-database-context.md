@@ -57,6 +57,11 @@ transaction through `acquire_with_rls` before querying it; the writeback worker,
 `docker/init-roles.sql` creates four roles when the database container first starts. A fifth, `reverie`, is the
 cluster's bootstrap superuser, which the PostgreSQL image creates from `POSTGRES_USER`.
 
+The provisioning script requires all four nonempty role-password inputs before creating an application role. The
+bootstrap password is also required. Development and verification generate independent values for all five roles and
+require SCRAM on TCP and Unix sockets. Test helpers connect with the supplied role password against the same per-test
+database and preserve the source pool's transport; no helper substitutes a password when its input is missing or empty.
+
 | Role | Used by | Row-level security |
 | ---- | ------- | ------------------ |
 | `reverie` | Cluster bootstrap only; never at runtime | Bypasses it (superuser) |

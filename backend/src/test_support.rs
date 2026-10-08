@@ -412,13 +412,23 @@ pub mod db {
     use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
     use uuid::Uuid;
 
+    fn password_input(value: Option<&str>) -> Result<&str, &'static str> {
+        value
+            .filter(|value| !value.is_empty())
+            .ok_or("a nonempty role password is required")
+    }
+
+    pub fn required_password(name: &str) -> String {
+        let value = std::env::var(name).ok();
+        password_input(value.as_deref())
+            .unwrap_or_else(|_| panic!("{name} requires a nonempty password"))
+            .to_owned()
+    }
+
     /// Build a `reverie_app` pool against the same DB as the given pool.
     /// Use this when a test needs RLS-enforced access (the runtime web role).
-    /// Password defaults to the role name (matches `docker/init-roles.sql`);
-    /// override with `REVERIE_APP_PASSWORD` env var.
     pub async fn app_pool_for(pool: &PgPool) -> PgPool {
-        let password =
-            std::env::var("REVERIE_APP_PASSWORD").unwrap_or_else(|_| "reverie_app".into());
+        let password = required_password("REVERIE_APP_PASSWORD");
         pool_as_role(pool, "reverie_app", &password, false).await
     }
 
@@ -428,30 +438,23 @@ pub mod db {
     /// Use this for tests that exercise writeback orchestrator/queue code
     /// paths against `manifestations` (which has system-context RLS policies).
     pub async fn writeback_pool_for(pool: &PgPool) -> PgPool {
-        let password =
-            std::env::var("REVERIE_APP_PASSWORD").unwrap_or_else(|_| "reverie_app".into());
+        let password = required_password("REVERIE_APP_PASSWORD");
         pool_as_role(pool, "reverie_app", &password, true).await
     }
 
     /// Build a `reverie_ingestion` pool against the same DB as the given pool.
     /// Use this for fixture inserts on pipeline tables (manifestations, works)
     /// where the `*_ingestion_full_access` RLS policies apply.
-    /// Password defaults to the role name (matches `docker/init-roles.sql`);
-    /// override with `REVERIE_INGESTION_PASSWORD` env var.
     pub async fn ingestion_pool_for(pool: &PgPool) -> PgPool {
-        let password = std::env::var("REVERIE_INGESTION_PASSWORD")
-            .unwrap_or_else(|_| "reverie_ingestion".into());
+        let password = required_password("REVERIE_INGESTION_PASSWORD");
         pool_as_role(pool, "reverie_ingestion", &password, false).await
     }
 
     /// Build a `reverie_readonly` pool against the same DB as the given pool.
     /// Use this to prove read-only RLS access and write denial on tables the
     /// readonly reporting role only holds `SELECT` on.
-    /// Password defaults to the role name (matches `docker/init-roles.sql`);
-    /// override with `REVERIE_READONLY_PASSWORD` env var.
     pub async fn readonly_pool_for(pool: &PgPool) -> PgPool {
-        let password = std::env::var("REVERIE_READONLY_PASSWORD")
-            .unwrap_or_else(|_| "reverie_readonly".into());
+        let password = required_password("REVERIE_READONLY_PASSWORD");
         pool_as_role(pool, "reverie_readonly", &password, false).await
     }
 
@@ -1176,6 +1179,16 @@ pub mod db {
     mod tests {
         use super::role_opts_from;
         use sqlx::postgres::PgConnectOptions;
+
+        #[test]
+        fn role_password_requires_nonempty_input() {
+            assert_eq!(
+                super::password_input(Some("supplied-password")),
+                Ok("supplied-password")
+            );
+            assert!(super::password_input(None).is_err());
+            assert!(super::password_input(Some("")).is_err());
+        }
 
         #[test]
         fn role_opts_carry_a_socket_source() {

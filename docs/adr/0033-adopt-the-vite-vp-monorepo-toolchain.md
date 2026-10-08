@@ -65,3 +65,6 @@ Pairs with [adopt oxlint](./0030-adopt-oxlint-replacing-the-eslint-toolchain.md)
 [adopt lefthook](./0031-adopt-lefthook-replacing-husky-and-lint-staged.md), which moved lint, format, and git hooks to
 this toolchain. The workspace-image bake that runs `vp env setup` for fresh workspaces is a follow-up for the arm64
 staging host.
+
+Vite+ 1.0, released on 28 September 2026, is the first stable release, so vp is no longer pre-release. The workspace
+catalog still pins the exact version.

@@ -57,14 +57,15 @@ Simplest path, full stack in Docker:
 ```bash
 git clone https://github.com/unkos-dev/reverie.git
 cd reverie
-docker compose -f docker/compose.dev.yml up
+just dev-up
 ```
 
-> Upgrading a dev checkout from before the postgres:18 mount-layout fix? Drop the old volume first:
-> `docker compose -f docker/compose.dev.yml down && docker volume rm reverie_pgdata` (The compose project name is
-> pinned, so the volume is `reverie_pgdata` regardless of the checkout directory. A stack created before the pin is
-> labelled with a directory-derived project instead: find its volume with `docker volume ls | grep pgdata` and take that
-> stack down with `docker compose -p <project> -f docker/compose.dev.yml down`.)
+`just db-up` generates private credentials outside the checkout and reuses them on restart. Existing volumes without
+retained state refuse startup. Restore their original state or coordinate a destructive
+`just db-reset <confirmed-volume>` after confirming the actual project, container, mounted volume and affected
+consumers. Reset preserves valid retained credentials but permanently deletes development data. See the
+[backend database instructions](../backend/README.md#development-database) for state permissions, explicit overrides,
+older-checkout compatibility and forced-termination cleanup limits.
 
 Set `REVERIE_COMPOSE_ENV` to run a second, deliberately separate stack with its own volume and database
 (`REVERIE_COMPOSE_ENV=stage` gives project `reverie_stage` and volume `reverie_stage_pgdata`). Export it in your shell
@@ -79,9 +80,9 @@ matches the pin and cargo enforces that minimum):
 just rust::dev
 ```
 
-> Run `just rust::migrate` once to initialise the schema before the first `just rust::dev`; the server verifies the
-> schema and refuses to start if it is fresh or behind. Both recipes source the dev env file described below; a bare
-> `cd backend && cargo run` has no config unless you export it yourself.
+> Run `just db-up` then `just rust::migrate` once to initialise the schema before the first `just rust::dev`; the server
+> verifies the schema and refuses to start if it is fresh or behind. Both recipes source the dev env file described
+> below; a bare `cd backend && cargo run` has no config unless you export it yourself.
 
 Native toolchains, whole stack in the background:
 
@@ -93,12 +94,13 @@ just dev-down    # stops both servers, leaves Postgres up
 
 `dev-up` is safe to re-run: it is idempotent by construction rather than by checking what is already running. Each
 server logs to `.dev-server.log` in its own plane directory. The database deliberately survives `dev-down`, because it
-is stateful and shared with the test suite; stop it with `just db-down`.
+is stateful; stop it with `just db-down`. Database tests and schema tooling own disposable clusters.
 
 The backend recipes supply the dev configuration the server needs when nothing else does: the RLS-enforced `reverie_app`
 DSN, the dedicated `reverie_ingestion` DSN and the `REVERIE_PUBLIC_URL` that OPDS requires. They resolve an out-of-tree
 env file at `~/reverie/dev/env` (override the location with `REVERIE_DEV_ENV`; copy `.env.example` there to start one),
-so a value you set there is the one the server uses.
+so a value you set there is the one the server uses. Omit database assignments to use retained state; explicit empty
+assignments stay empty. Process environment values take precedence over the file.
 
 Frontend only (Node.js at or above the `engines.node` floor in `package.json`; install at the repository root, where
 `pnpm-workspace.yaml` declares every plane's project):
