@@ -1096,8 +1096,9 @@ describe("LibraryPage", () => {
         await user.type(upper, "00");
         await waitFor(() => {
           expect(requests.some((params) => params.get("pages_lte") === "900")).toBe(true);
+          expect(new URLSearchParams(window.location.search).get("pages_lte")).toBe("900");
+          expect(upper).toHaveValue(900);
         });
-        expect(upper).toHaveValue(900);
         expect(new URLSearchParams(window.location.search).get("title_contains")).toBe("dune");
         expect(
           requests.every(
