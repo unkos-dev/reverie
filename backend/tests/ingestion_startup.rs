@@ -219,6 +219,29 @@ async fn ingestion_startup_readiness_reports_early_exit() {
     assert!(!output.contains("invalid-app-dsn-private-marker"));
 }
 
+fn password_input(value: Option<&str>) -> Result<&str, &'static str> {
+    value
+        .filter(|value| !value.is_empty())
+        .ok_or("a nonempty role password is required")
+}
+
+fn required_password(name: &str) -> String {
+    let value = std::env::var(name).ok();
+    password_input(value.as_deref())
+        .unwrap_or_else(|_| panic!("{name} requires a nonempty password"))
+        .to_owned()
+}
+
+#[test]
+fn startup_role_password_requires_nonempty_input() {
+    assert_eq!(
+        password_input(Some("supplied-password")),
+        Ok("supplied-password")
+    );
+    assert!(password_input(None).is_err());
+    assert!(password_input(Some("")).is_err());
+}
+
 #[sqlx::test(migrations = "./migrations")]
 async fn ingestion_startup_configured_roles_serve_ready(pool: sqlx::PgPool) {
     use sqlx::ConnectOptions as _;
@@ -227,10 +250,8 @@ async fn ingestion_startup_configured_roles_serve_ready(pool: sqlx::PgPool) {
     let library = tempfile::tempdir().unwrap();
     let ingestion = tempfile::tempdir().unwrap();
     let log = tempfile::NamedTempFile::new().unwrap();
-    let app_password =
-        std::env::var("REVERIE_APP_PASSWORD").unwrap_or_else(|_| "reverie_app".into());
-    let ingestion_password =
-        std::env::var("REVERIE_INGESTION_PASSWORD").unwrap_or_else(|_| "reverie_ingestion".into());
+    let app_password = required_password("REVERIE_APP_PASSWORD");
+    let ingestion_password = required_password("REVERIE_INGESTION_PASSWORD");
     let app_options = (*pool.connect_options())
         .clone()
         .username("reverie_app")

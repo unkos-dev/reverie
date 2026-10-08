@@ -85,7 +85,15 @@ fi
 # otherwise still read as healthy right up until the backend fails to
 # start. SELECT 1 as reverie_app is read-only and mirrors the backend's own
 # runtime identity.
-container="reverie-postgres"
+# shellcheck source=scripts/postgres-provision.sh
+source "$repo_root/scripts/postgres-provision.sh"
+credentials_ready=0
+if pg_dev_context; then
+  container="$pg_dev_container"
+else
+  container=unresolved
+  fail 'development Compose resources resolve' 'restore the development Compose configuration'
+fi
 if [ "${docker_up}" -eq 1 ]; then
   state_status="$(docker inspect --format '{{.State.Status}}' "${container}" 2>/dev/null || true)"
 else
@@ -105,21 +113,16 @@ case "${state_status}" in
     else
       fail "dev Postgres accepts connections (pg_isready)" "just db-down && just db-up"
     fi
-    if docker exec -e PGPASSWORD=reverie_app "${container}" psql -h localhost -U reverie_app -d reverie_dev -Atc 'SELECT 1' >/dev/null 2>&1; then
+    if pg_dev_credentials; then
+      credentials_ready=1
+      pass 'retained development credentials are valid'
+    else
+      fail 'retained development credentials are valid' 'restore original credential state or coordinate a confirmed dev reset'
+    fi
+    if [[ "$credentials_ready" == 1 ]] && PGPASSWORD="$REVERIE_APP_PASSWORD" docker exec -e PGPASSWORD "${container}" psql -h localhost -U reverie_app -d reverie_dev -Atc 'SELECT 1' >/dev/null 2>&1; then
       pass "reverie_app role authenticates (psql SELECT 1)"
     else
-      # This probe only knows the dev default password; docker/init-roles.sql
-      # reads REVERIE_APP_PASSWORD to seed a non-default one (the same
-      # mechanism docker/compose.staging.yml requires), and docker/.env is
-      # this compose project's own dotenv file for such overrides. Their
-      # presence means a login failure may just be an unprobed custom
-      # credential, not a broken role, so degrade to WARN rather than
-      # sending an operator into a needless (and data-erasing) `db-reset`.
-      if [ -n "${REVERIE_APP_PASSWORD:-}" ] || [ -f docker/.env ]; then
-        warn "reverie_app role authenticates (psql SELECT 1)" "custom dev credentials in effect; verify the reverie_app password manually"
-      else
-        fail "reverie_app role authenticates (psql SELECT 1)" "just db-reset (re-seeds docker/init-roles.sql)"
-      fi
+      fail "reverie_app role authenticates (psql SELECT 1)" 'verify retained state and the running development cluster'
     fi
     ;;
   "")
@@ -134,23 +137,14 @@ case "${state_status}" in
     ;;
 esac
 
-# 5b. Host-side unix-socket reachability. The DB-backed just recipes'
-# default DSNs connect over the socket docker/compose.dev.yml bind-mounts
-# to the host (see rust.just), so a healthy container whose socket is not
-# reachable from the host still strands every DB recipe: exactly the state
-# of a container created before the socket mount existed, which db-up
-# fixes by recreating it. Probed from the host with psql because that is
-# the path the recipes actually take; the in-container checks above cannot
-# see a missing host mount. A host without psql skips the probe as INFO
-# rather than warning: db-up itself degrades gracefully without psql, so
-# absence only reduces diagnostic coverage.
-sock_dir="${XDG_STATE_HOME:-$HOME/.local/state}/reverie/pgsock"
+# 5b. Authenticate the persistent development socket with retained state.
+sock_dir="${pg_dev_socket:-unresolved}"
 if [ "${state_status}" = "running" ]; then
   if command -v psql >/dev/null 2>&1; then
-    if psql "postgres:///reverie_dev?host=${sock_dir}&user=reverie&password=reverie&connect_timeout=2" -Atc 'SELECT 1' >/dev/null 2>&1; then
+    if [[ "$credentials_ready" == 1 ]] && PGPASSWORD="$POSTGRES_PASSWORD" psql "postgres:///reverie_dev?host=${sock_dir}&user=reverie&connect_timeout=2" -Atc 'SELECT 1' >/dev/null 2>&1; then
       pass "dev Postgres reachable over the unix socket (${sock_dir})"
     else
-      fail "dev Postgres reachable over the unix socket (${sock_dir})" "just db-up (recreates the container with the socket mount)"
+      fail "dev Postgres reachable over the unix socket (${sock_dir})" "verify retained credentials and the development socket mount"
     fi
   else
     info "host psql not on PATH; unix-socket probe skipped"

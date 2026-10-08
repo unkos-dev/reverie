@@ -25,6 +25,17 @@ chmod +x "${fixture}/scripts/doctor.sh"
 cp "${repo_root}/scripts/require-disk-backed.sh" "${fixture}/scripts/require-disk-backed.sh"
 chmod +x "${fixture}/scripts/require-disk-backed.sh"
 
+cp "$repo_root/scripts/postgres-provision.sh" "$fixture/scripts/postgres-provision.sh"
+state_root="$tmp/state"
+state_dir="$state_root/reverie/postgres/doctor_fixture"
+mkdir -p "$state_dir"
+chmod 700 "$state_dir"
+for key in POSTGRES_PASSWORD REVERIE_APP_PASSWORD REVERIE_MIGRATOR_PASSWORD REVERIE_INGESTION_PASSWORD REVERIE_READONLY_PASSWORD; do
+  printf '%s=%048d\n' "$key" 7
+done > "$state_dir/credentials.env"
+chmod 600 "$state_dir/credentials.env"
+unset POSTGRES_PASSWORD
+
 # A minimal manifest. No check reads a field from it any more, but check 6's
 # lockfile comparison needs the file to exist alongside the fixture lockfile.
 cat > "${fixture}/package.json" << EOF
@@ -160,6 +171,11 @@ cat >"${stub_bin}/docker" <<'DOCKER_STUB'
 # independently reachable without a real daemon or container.
 set -euo pipefail
 case "$1" in
+  compose)
+    [[ "$*" == *config* && "$*" == *--no-env-resolution* ]] || exit 2
+    jq -n --arg socket "$XDG_STATE_HOME/reverie/pgsock" \
+      '{name:"doctor_fixture",volumes:{pgdata:{name:"doctor_fixture_pgdata"}},services:{postgres:{container_name:"reverie-postgres",volumes:[{target:"/var/run/postgresql",source:$socket}]}}}'
+    ;;
   info)
     [ "${DOCTOR_STUB_DOCKER_UP:-1}" = "1" ]
     ;;
@@ -193,7 +209,7 @@ run_doctor() { # runs the fixture doctor.sh with the given PATH, capturing outpu
   local test_path="$1"
   output=""
   rc=0
-  output="$(PATH="${test_path}" "${fixture}/scripts/doctor.sh" 2>&1)" || rc=$?
+  output="$(PATH="${test_path}" XDG_STATE_HOME="$state_root" "${fixture}/scripts/doctor.sh" 2>&1)" || rc=$?
 }
 
 expect_exit() { # <name> <want-exit> <path>
@@ -343,7 +359,7 @@ expect_contains "app-role login success is reported" "PASS reverie_app role auth
 export DOCTOR_STUB_SOCKET_OK=0
 expect_exit "unreachable socket fails the run" 1 "${stub_bin}"
 expect_contains "unreachable socket names the recreate fix" "FAIL dev Postgres reachable over the unix socket"
-expect_contains "unreachable socket advises db-up" "just db-up (recreates the container with the socket mount)"
+expect_contains "unreachable socket names authentication repair" "verify retained credentials and the development socket mount"
 export DOCTOR_STUB_SOCKET_OK=1
 
 # --- a host without psql skips the socket probe as INFO: db-up degrades
@@ -366,17 +382,17 @@ expect_not_contains "absent host psql produces no socket FAIL" "FAIL dev Postgre
 # tell a broken role from an intentionally customized one. ---
 export DOCTOR_STUB_APP_LOGIN=0
 export REVERIE_APP_PASSWORD=custom-secret
-expect_exit "custom REVERIE_APP_PASSWORD degrades login failure to warn" 0 "${stub_bin}"
-expect_contains "custom-password warn is reported" "WARN reverie_app role authenticates"
-expect_not_contains "custom-password path has no FAIL lines" "FAIL "
+expect_exit "custom password cannot excuse login failure" 1 "${stub_bin}"
+expect_contains "custom-password failure is reported" "FAIL reverie_app role authenticates"
+expect_not_contains "custom-password failure does not expose values" "custom-secret"
 unset REVERIE_APP_PASSWORD
 
 # --- the same degrade-to-WARN applies for the other documented override
 # signal: a docker/.env file, the dotenv file this compose project loads. ---
 mkdir -p "${fixture}/docker"
 : >"${fixture}/docker/.env"
-expect_exit "docker/.env presence degrades login failure to warn" 0 "${stub_bin}"
-expect_contains "docker/.env warn is reported" "WARN reverie_app role authenticates"
+expect_exit "docker/.env cannot excuse login failure" 1 "${stub_bin}"
+expect_contains "docker/.env login failure is reported" "FAIL reverie_app role authenticates"
 rm -rf "${fixture}/docker"
 export DOCTOR_STUB_APP_LOGIN=1
 
@@ -543,5 +559,20 @@ esac
 # Restore the happy-path figure so this section cannot leak into anything
 # appended after it.
 export DOCTOR_STUB_DISK_AVAIL_BYTES=$((10 * 1024 * 1024 * 1024))
+
+cp "$state_dir/credentials.env" "$tmp/saved-credentials"
+rm "$state_dir/credentials.env"
+expect_exit 'running volume without credential state fails' 1 "$stub_bin"
+expect_contains 'missing retained state is reported' 'FAIL retained development credentials are valid'
+cp "$tmp/saved-credentials" "$state_dir/credentials.env"
+printf 'POSTGRES_PASSWORD=doctor-private-credential-marker\n' > "$state_dir/credentials.env"
+expect_exit 'malformed credential state fails' 1 "$stub_bin"
+expect_not_contains 'malformed credential marker stays out of diagnostics' 'doctor-private-credential-marker'
+cp "$tmp/saved-credentials" "$state_dir/credentials.env"
+export DOCTOR_STUB_APP_LOGIN=0 REVERIE_APP_PASSWORD=doctor-private-credential-marker
+expect_exit 'override presence cannot downgrade failed login' 1 "$stub_bin"
+expect_not_contains 'failed login marker stays out of diagnostics' 'doctor-private-credential-marker'
+unset REVERIE_APP_PASSWORD
+export DOCTOR_STUB_APP_LOGIN=1
 
 exit "${fail}"

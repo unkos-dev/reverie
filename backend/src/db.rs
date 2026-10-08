@@ -1898,8 +1898,7 @@ mod tests {
             .unwrap();
 
         let opts = pool.connect_options();
-        let password = std::env::var("REVERIE_MIGRATOR_PASSWORD")
-            .unwrap_or_else(|_| "reverie_migrator".into());
+        let password = crate::test_support::db::required_password("REVERIE_MIGRATOR_PASSWORD");
         let migrator_url = migrator_url_for(&opts, &db_name, &password);
 
         let report = run_migrations(&migrator_url)
