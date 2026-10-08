@@ -538,7 +538,7 @@ db-reset volume="":
 db-migrate:
     #!/usr/bin/env bash
     set -ueo pipefail
-    source scripts/backend-dev-env.sh
+    source scripts/backend-dev-env.sh DATABASE_URL_MIGRATION
     cd backend
     SQLX_OFFLINE=true cargo run --locked -- migrate
 
@@ -595,7 +595,7 @@ db-migrate:
 db-migrate-raw *args:
     #!/usr/bin/env bash
     set -ueo pipefail
-    source scripts/backend-dev-env.sh
+    source scripts/backend-dev-env.sh DATABASE_URL_MIGRATION
     cd backend
     DATABASE_URL="$DATABASE_URL_MIGRATION" cargo sqlx migrate run "$@"
 

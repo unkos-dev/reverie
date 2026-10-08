@@ -100,10 +100,21 @@ pg_owned_exit() {
 }
 
 pg_owned_signal() {
-  local signal="$1"
+  local signal="$1" attempt
+  case "$signal" in
+    INT) pg_cancel_status=130 ;;
+    TERM) pg_cancel_status=143 ;;
+  esac
   if [[ -n "$pg_child" ]]; then
     if ! kill -s "$signal" -- "-$pg_child" 2>/dev/null; then
       pg_fail "child signal forwarding failed for $pg_container"
+    fi
+    for ((attempt=0; attempt<100; attempt++)); do
+      kill -0 -- "-$pg_child" 2>/dev/null || break
+      sleep 0.1
+    done
+    if kill -0 -- "-$pg_child" 2>/dev/null; then
+      kill -KILL -- "-$pg_child" 2>/dev/null || pg_fail "child kill failed for $pg_container"
     fi
   else
     case "$signal" in
@@ -119,7 +130,7 @@ pg_disposable() {
   shift
   [[ "${1:-}" == -- && "$#" -gt 1 ]] || { pg_fail 'usage: test|schema -- COMMAND ARG...'; exit 1; }
   shift
-  pg_dir='' pg_container='' pg_created=0 pg_started=0 pg_child=''
+  pg_dir='' pg_container='' pg_created=0 pg_started=0 pg_child='' pg_cancel_status=0
   trap pg_owned_exit EXIT
   trap 'pg_owned_signal INT' INT
   trap 'pg_owned_signal TERM' TERM
@@ -193,6 +204,7 @@ pg_disposable() {
       break
     fi
   done
+  [[ "$status" != 0 ]] || status="$pg_cancel_status"
   if kill -0 -- "-$pg_child" 2>/dev/null; then
     if ! kill -TERM -- "-$pg_child" 2>/dev/null; then
       pg_fail "descendant termination failed for $pg_container"
@@ -261,9 +273,12 @@ pg_dev_load() {
 
 pg_dev_auth() {
   PGPASSWORD="$POSTGRES_PASSWORD" docker exec -e PGPASSWORD "$pg_dev_container" \
-    psql -X -h localhost -U reverie -d reverie_dev -Atc 'SELECT 1' >/dev/null 2>&1 &&
-    PGPASSWORD="$POSTGRES_PASSWORD" psql -X \
-      "postgres:///reverie_dev?host=$pg_dev_socket&user=reverie&connect_timeout=2" -Atc 'SELECT 1' >/dev/null 2>&1
+    psql -X -h localhost -U reverie -d reverie_dev -Atc 'SELECT 1' >/dev/null 2>&1 || return 1
+  command -v psql >/dev/null 2>&1 || return 0
+  local host=127.0.0.1
+  [[ ! -S "$pg_dev_socket/.s.PGSQL.5432" ]] || host="$pg_dev_socket"
+  PGPASSWORD="$POSTGRES_PASSWORD" psql -X \
+    "postgres:///reverie_dev?host=$host&port=5432&user=reverie&connect_timeout=2" -Atc 'SELECT 1' >/dev/null 2>&1
 }
 
 pg_dev_compose() {

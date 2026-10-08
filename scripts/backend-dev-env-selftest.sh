@@ -92,6 +92,11 @@ cat > "$stub_bin/psql" <<'PSQL'
 #!/usr/bin/env bash
 set -euo pipefail
 [[ ! -e /proc/$$/fd/9 ]] || exit 94
+if [[ -n "${ENV_STUB_HOST_EVENTS:-}" ]]; then
+  [[ "$*" == *host=127.0.0.1* ]] || exit 96
+  printf 'tcp\n' >> "$ENV_STUB_HOST_EVENTS"
+fi
+[[ "${ENV_STUB_HOST_LOGIN_FAIL:-0}" == 0 ]]
 [[ "${ENV_STUB_LOGIN_FAIL:-0}" == 0 ]]
 PSQL
 chmod +x "$stub_bin/docker" "$stub_bin/psql"
@@ -111,7 +116,7 @@ resolve() {
   env -i PATH="$test_path" TMPDIR="${TMPDIR:-/tmp}" HOME="$fake_home" XDG_STATE_HOME="$state_root" "$@" bash -c '
     set -ueo pipefail
     # shellcheck source=/dev/null
-    source "$1" || exit 1
+    source "$1" DATABASE_URL DATABASE_URL_INGESTION DATABASE_URL_MIGRATION || exit 1
     if [ -z "${!2+set}" ]; then echo "<unset>"; else echo "${!2}"; fi
   ' _ "$helper" "$var"
 }
@@ -123,7 +128,7 @@ resolve_status() {
   env -i PATH="$test_path" TMPDIR="${TMPDIR:-/tmp}" HOME="$fake_home" XDG_STATE_HOME="$state_root" "$@" bash -c '
     set -ueo pipefail
     # shellcheck source=/dev/null
-    source "$1"
+    source "$1" DATABASE_URL DATABASE_URL_INGESTION DATABASE_URL_MIGRATION
   ' _ "$helper" >/dev/null 2>&1
 }
 
@@ -281,6 +286,30 @@ rm "$state_dir/credentials.env"
 if resolve_status; then echo 'FAIL missing state must refuse defaults'; fail=1; else echo 'ok   missing state refuses defaults'; fi
 check 'fully explicit external DSNs need no local state' 'postgres://someone_else:pw@db.example:5432/other' \
   "$(resolve DATABASE_URL REVERIE_DEV_ENV="$fixture" ENV_STUB_CONFIG_FAIL=1)"
+for command in migration runtime auto-migration; do
+  command_status=0
+  env -i PATH="$test_path" TMPDIR="${TMPDIR:-/tmp}" HOME="$fake_home" XDG_STATE_HOME="$state_root" \
+    ENV_STUB_CONFIG_FAIL=1 bash -s -- "$helper" "$command" > "$tmp/external-$command.log" 2>&1 <<'EXTERNAL' || command_status=$?
+case "$2" in
+  migration)
+    export DATABASE_URL_MIGRATION=external
+    source "$1" DATABASE_URL_MIGRATION || exit 1
+    [[ ! -v DATABASE_URL && ! -v DATABASE_URL_INGESTION && "$DATABASE_URL_MIGRATION" == external ]]
+    ;;
+  runtime | auto-migration)
+    export DATABASE_URL=external DATABASE_URL_INGESTION=external
+    [[ "$2" != auto-migration ]] || export REVERIE_AUTO_MIGRATE=true
+    source "$1" DATABASE_URL DATABASE_URL_INGESTION || exit 1
+    [[ ! -v DATABASE_URL_MIGRATION ]]
+    ;;
+esac
+EXTERNAL
+  if [[ "$command" == auto-migration ]]; then
+    check_status 'automatic migration still requires a migration DSN' 1 "$command_status"
+  else
+    check_status "external $command needs only its own DSNs" 0 "$command_status"
+  fi
+done
 printf 'POSTGRES_PASSWORD=private-credential-marker\n' > "$state_dir/credentials.env"
 chmod 600 "$state_dir/credentials.env"
 malformed_output="$(resolve DATABASE_URL 2>&1)" && malformed_status=0 || malformed_status=$?
@@ -324,6 +353,22 @@ cmp -s "$retained" "$tmp/retained-before" || { echo 'FAIL credentials rotated'; 
 lifecycle ENV_STUB_LOGIN_FAIL=1 > "$tmp/lifecycle-login.log" 2>&1 && login_status=0 || login_status=$?
 [[ "$login_status" != 0 ]] || { echo 'FAIL failed login accepted'; fail=1; }
 cmp -s "$retained" "$tmp/retained-before" || { echo 'FAIL failed login rotated credentials'; fail=1; }
+lifecycle ENV_STUB_HOST_EVENTS="$tmp/host.events" > "$tmp/lifecycle-tcp.log" 2>&1 && tcp_status=0 || tcp_status=$?
+check_status 'host authentication uses TCP without a socket' 0 "$tcp_status"
+grep -qx tcp "$tmp/host.events" || { echo 'FAIL host TCP authentication not executed'; fail=1; }
+lifecycle ENV_STUB_HOST_LOGIN_FAIL=1 > "$tmp/lifecycle-host-login.log" 2>&1 && host_status=0 || host_status=$?
+check_status 'host authentication failure is not bypassed' 1 "$host_status"
+no_client_status=0
+env -i PATH="$test_path" bash -s -- "$root/scripts/postgres-provision.sh" "$tmp/no-client.events" > "$tmp/no-client.log" 2>&1 <<'NOCLIENT' || no_client_status=$?
+source "$1"
+POSTGRES_PASSWORD=fixture pg_dev_container=fixture
+events="$2"
+docker() { printf 'container-auth\n' > "$events"; }
+PATH=/nonexistent
+pg_dev_auth
+NOCLIENT
+check_status 'container authentication needs no host client' 0 "$no_client_status"
+grep -qx container-auth "$tmp/no-client.events" || { echo 'FAIL container authentication not executed'; fail=1; }
 rm "$retained"
 lifecycle > "$tmp/lifecycle-missing.log" 2>&1 && missing_status=0 || missing_status=$?
 [[ "$missing_status" != 0 && ! -e "$retained" && -e "$volume_marker" ]] || {
@@ -361,6 +406,53 @@ CHILD
     fi
     if [[ "$cleanup_failure" == 1 ]] && ! grep -q 'cleanup failed' "$log"; then
       echo 'FAIL cleanup failure was not reported'; fail=1
+    fi
+  done
+done
+
+for cancellation in INT TERM; do
+  for response in success ignore; do
+    events="$tmp/cancel-$cancellation-$response.events"
+    ready="$tmp/cancel-$cancellation-$response.ready"
+    env --default-signal=INT,TERM -i PATH="$test_path" TMPDIR="${TMPDIR:-/tmp}" HOME="$fake_home" XDG_STATE_HOME="$state_root" \
+      ENV_STUB_EVENTS="$events" \
+      bash "$root/scripts/postgres-provision.sh" test -- bash -s -- "$response" "$ready" \
+      > "$tmp/cancel-$cancellation-$response.log" 2>&1 <<'CANCEL' &
+if [[ "$1" == ignore ]]; then trap "" INT TERM; else trap "exit 0" INT TERM; fi
+printf '%s\n' "$$" > "$2"
+while :; do sleep 0.1; done
+CANCEL
+    owner=$!
+    for ((attempt=0; attempt<100; attempt++)); do
+      [[ ! -s "$ready" ]] || break
+      sleep 0.1
+    done
+    if [[ ! -s "$ready" ]]; then
+      echo 'FAIL cancellation child did not start'; fail=1
+      kill -TERM "$owner" 2>/dev/null || true
+      wait "$owner" || true
+      continue
+    fi
+    child_group="$(cat "$ready")"
+    kill -s "$cancellation" "$owner"
+    for ((attempt=0; attempt<150; attempt++)); do
+      kill -0 "$owner" 2>/dev/null || break
+      sleep 0.1
+    done
+    if kill -0 "$owner" 2>/dev/null; then
+      echo 'FAIL cancellation exceeded its deadline'; fail=1
+      kill -KILL -- "-$child_group" 2>/dev/null || true
+    fi
+    wait "$owner" && cancel_status=0 || cancel_status=$?
+    if [[ "$response" == ignore ]]; then
+      check_status "$cancellation stops an unresponsive child" 137 "$cancel_status"
+    elif [[ "$cancellation" == INT ]]; then
+      check_status 'successful child cannot hide INT cancellation' 130 "$cancel_status"
+    else
+      check_status 'successful child cannot hide TERM cancellation' 143 "$cancel_status"
+    fi
+    if kill -0 -- "-$child_group" 2>/dev/null || ! grep -qx cleanup "$events"; then
+      echo 'FAIL cancelled group survived or cleanup did not execute'; fail=1
     fi
   done
 done

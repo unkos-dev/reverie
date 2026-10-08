@@ -61,14 +61,28 @@ dev_env_default() {
 # RLS-enforced runtime identity. Overriding it is a matter of setting
 # DATABASE_URL in the environment or in the dev env file, so there is no
 # recipe-specific knob for it.
-if [[ ! -v DATABASE_URL || ! -v DATABASE_URL_INGESTION || ! -v DATABASE_URL_MIGRATION ]]; then
-  # shellcheck source=scripts/postgres-provision.sh
-  source "$(dirname "${BASH_SOURCE[0]}")/postgres-provision.sh"
-  pg_dev_load || return 1
-  dev_env_default DATABASE_URL "postgres://reverie_app:$REVERIE_APP_PASSWORD@localhost:5432/reverie_dev"
-  dev_env_default DATABASE_URL_INGESTION "postgres://reverie_ingestion:$REVERIE_INGESTION_PASSWORD@localhost:5432/reverie_dev"
-  dev_env_default DATABASE_URL_MIGRATION "postgres://reverie_migrator:$REVERIE_MIGRATOR_PASSWORD@localhost:5432/reverie_dev"
+_dev_database_inputs=("$@")
+if [[ "$#" == 0 ]]; then
+  _dev_database_inputs=(DATABASE_URL DATABASE_URL_INGESTION DATABASE_URL_MIGRATION)
 fi
+if [[ "${REVERIE_AUTO_MIGRATE:-false}" == true ]]; then
+  _dev_database_inputs+=(DATABASE_URL_MIGRATION)
+fi
+_dev_state_loaded=0
+for _key in "${_dev_database_inputs[@]}"; do
+  [[ ! -v "$_key" ]] || continue
+  if [[ "$_dev_state_loaded" == 0 ]]; then
+    # shellcheck source=scripts/postgres-provision.sh
+    source "$(dirname "${BASH_SOURCE[0]}")/postgres-provision.sh"
+    pg_dev_load || return 1
+    _dev_state_loaded=1
+  fi
+  case "$_key" in
+    DATABASE_URL) dev_env_default "$_key" "postgres://reverie_app:$REVERIE_APP_PASSWORD@localhost:5432/reverie_dev" ;;
+    DATABASE_URL_INGESTION) dev_env_default "$_key" "postgres://reverie_ingestion:$REVERIE_INGESTION_PASSWORD@localhost:5432/reverie_dev" ;;
+    DATABASE_URL_MIGRATION) dev_env_default "$_key" "postgres://reverie_migrator:$REVERIE_MIGRATOR_PASSWORD@localhost:5432/reverie_dev" ;;
+  esac
+done
 # Required whenever OPDS is enabled, which is the default. Feeds emit absolute
 # URLs rooted here, so the dev default is this server's own origin: a reader
 # pointed at the API then receives links back to the API, reachable whether or

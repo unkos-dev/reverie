@@ -216,8 +216,10 @@ test-mode cluster and applies migrations with the supplied migrator credential.
 
 Development state belongs to the resolved Compose project outside checkouts. Provisioning publishes one complete
 mode-0600 credential file in a mode-0700 directory under a stable lock. Dev readers preserve process/file overrides and
-fill absent database inputs from that state; readers never generate or rotate credentials. Both transports require SCRAM
-authentication.
+fill absent database inputs required by the selected command from that state; readers never generate or rotate
+credentials. Migration commands need only the migration DSN. Server commands need runtime and ingestion DSNs, plus the
+migration DSN when automatic migration is enabled. Both transports require SCRAM authentication. Persistent provisioning
+authenticates inside the container and, when host `psql` is available, over the host socket if present or loopback TCP.
 
 - **`_sqlx_migrations`** (schema `public`): one row per applied migration, carrying its version, description, install
   timestamp, success flag, SHA-384 checksum, and execution time. Durable, forward-only: no code path deletes or updates
@@ -285,11 +287,12 @@ and its siblings against the same per-test database.
 
 ## Failure and recovery
 
-The disposable owner forwards INT/TERM to the child group, waits and removes its socket contents, container, storage and
-credential directory. Child failures propagate; cleanup failure makes a successful child or mutation-findings status an
-infrastructure failure. Forced termination, host failure or daemon loss can leave named resources for manual cleanup.
-Persistent startup refuses missing or malformed credential state for an existing volume. A confirmed dev reset recreates
-only that project's volume, retaining valid credentials and permanently deleting its data.
+The disposable owner forwards INT/TERM to the child group, allows ten seconds for termination, kills an unresponsive
+group, waits and removes its socket contents, container, storage and credential directory. Cancellation remains a
+failure even when the child exits successfully. Child failures propagate; cleanup failure makes a successful child or
+mutation-findings status an infrastructure failure. Forced termination, host failure or daemon loss can leave named
+resources for manual cleanup. Persistent startup refuses missing or malformed credential state for an existing volume. A
+confirmed dev reset recreates only that project's volume, retaining valid credentials and permanently deleting its data.
 
 - **`MigrationError::Connection`**: the ephemeral migration pool could not connect. Nothing was attempted; the message
   never includes DSN credentials (`resolve_migration_dsn` and the connect path pass only the parsed error through).

@@ -152,7 +152,7 @@ check: fmt-check clippy drift
 dev:
     #!/usr/bin/env bash
     set -ueo pipefail
-    source ../scripts/backend-dev-env.sh
+    source ../scripts/backend-dev-env.sh DATABASE_URL DATABASE_URL_INGESTION
     exec cargo run --locked
 
 # DB: needs the local dev Postgres up (`just db-up`). The binary no longer
@@ -164,7 +164,7 @@ dev:
 migrate:
     #!/usr/bin/env bash
     set -ueo pipefail
-    source ../scripts/backend-dev-env.sh
+    source ../scripts/backend-dev-env.sh DATABASE_URL_MIGRATION
     exec env SQLX_OFFLINE=true cargo run --locked -- migrate
 
 # Shared lifecycle plumbing for dev-start/dev-stop/dev-status. The script owns
@@ -183,7 +183,7 @@ migrate:
 _dev-lifecycle action:
     #!/usr/bin/env bash
     set -ueo pipefail
-    source ../scripts/backend-dev-env.sh
+    source ../scripts/backend-dev-env.sh DATABASE_URL DATABASE_URL_INGESTION
     DEV_SERVER_DIR=. \
     DEV_SERVER_PORT="$REVERIE_PORT" \
     DEV_SERVER_CMD="cargo run --locked" \

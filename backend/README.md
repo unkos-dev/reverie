@@ -12,10 +12,12 @@ without its original credential state refuses startup. Restore that state or coo
 
 Run `just db-migrate` before starting the server, or use `just dev-up` for migrations, the API and Vite. The dev loader
 resolves the process environment, then the parsed `REVERIE_DEV_ENV` file (default `~/reverie/dev/env`), then retained
-state for absent database inputs. Explicit empty assignments stay empty and fail application validation. Omit the three
-database assignments from a local env file to use retained state. Fully supplied external DSNs need no local state; a
-conflicting bootstrap `POSTGRES_PASSWORD` is rejected. Operators supply their own role-specific DSNs through deployment
-tooling; the server reads only its process environment.
+state for absent database inputs required by the command. Migration recipes need only the migration DSN; server recipes
+need runtime and ingestion DSNs, plus the migration DSN when automatic migration is enabled. Explicit empty assignments
+stay empty and fail application validation. Omit database assignments from a local env file to use retained state.
+Supplying a command's required external DSNs needs no local state; a conflicting bootstrap `POSTGRES_PASSWORD` is
+rejected. Operators supply their own role-specific DSNs through deployment tooling; the server reads only its process
+environment.
 
 `just db-down` preserves the volume and credentials. `just db-reset <confirmed-volume>` permanently deletes that
 volume's data and recreates it with retained valid credentials. Confirm the resolved project, container and mounted
