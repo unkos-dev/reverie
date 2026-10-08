@@ -46,14 +46,24 @@ pub fn reference_markdown() -> anyhow::Result<String> {
     }
 
     Ok(format!(
-        "{FRONTMATTER}{INTRO}\n| Variable | Type | Required | Default | Description |\n| --- | --- | --- | --- | --- |\n{}\n",
-        rows.join("\n")
+        "{FRONTMATTER}{INTRO}\n| Variable | Type | Required | Default | Description |\n| --- | --- | --- | --- | --- |\n{}",
+        rows.join("\n") + &credential_file_reference()
     ))
+}
+
+fn credential_file_reference() -> String {
+    let aliases = super::provider::credential_settings()
+        .map(|(name, _)| format!("- `{name}_FILE`"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    format!(
+        "\n\n## Credential files\n\n{aliases}\n\nEach alias supplies the path of a UTF-8 credential file readable inside the process or container.\nEmpty direct variables and empty file variables are absent. Two non-empty sources conflict,\neven when automatic migration is disabled. Whitespace-only sources are non-empty.\n\nAll trailing LF and CRLF terminators are removed. Other content, including spaces, interior\nnewlines and a lone CR, is preserved as text. Existing required and blank checks still apply.\nRead failures identify the setting without disclosing the path, file contents or I/O details.\n\nWith automatic migration disabled, the migration file is not opened and its DSN stays unset.\n`reverie migrate` reads only its migration source; schema output reads no credential files.\nUnknown file variables, including `REVERIE_BOOTSTRAP_PASSWORD_FILE`, are ignored.\n\nDevelopment defaults yield to non-empty database file sources without opening the files.\n`db-migrate-raw` accepts direct DSNs only. To roll back file supply, restore direct variables\nand remove their file aliases before reverting the application.\n"
+    )
 }
 
 const FRONTMATTER: &str = "---\ntitle: Configuration\ndescription: Environment variables that configure a Reverie instance.\n---\n\n";
 
-const INTRO: &str = "import { Aside } from \"@astrojs/starlight/components\";\n\n<Aside type=\"caution\" title=\"Generated file\">\nThis page is generated from the backend configuration schema. Do not edit it by\nhand. Regenerate with `REGEN=1 cargo test --test gen_config_ref` and commit the\nresult. The drift test fails CI if it is stale.\n</Aside>\n\nReverie is configured entirely through environment variables, read once at\nstartup. Secret-bearing variables are listed by name only; their values never\nappear here. A required variable left unset refuses startup with a clear error.\n";
+const INTRO: &str = "import { Aside } from \"@astrojs/starlight/components\";\n\n<Aside type=\"caution\" title=\"Generated file\">\nThis page is generated from the backend configuration schema. Do not edit it by\nhand. Regenerate with `REGEN=1 cargo test --test gen_config_ref` and commit the\nresult. The drift test fails CI if it is stale.\n</Aside>\n\nReverie reads configuration once at startup from environment variables.\nCredential variables may instead select mounted files through `_FILE` aliases.\nSecret-bearing variables are listed by name only; their values never\nappear here. A required variable left unset refuses startup with a clear error.\n";
 
 /// Resolve a `$ref` node to its `$defs` target; pass any other node through.
 fn resolve<'a>(node: &'a Value, defs: &'a Value) -> &'a Value {

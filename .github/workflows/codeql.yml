@@ -146,6 +146,7 @@ jobs:
       actions: read
       contents: read
     env:
+      CODEQL_EXTRACTOR_RUST_OPTION_CARGO_CFG_OVERRIDES: -test
       CARGO_INCREMENTAL: 0
       KACHE_REMOTE_READONLY: ${{ github.ref == 'refs/heads/main' && 'false' || 'true' }}
       KACHE_CC_EXTRA_ALLOWLIST_FLAGS: -fmerge-all-constants

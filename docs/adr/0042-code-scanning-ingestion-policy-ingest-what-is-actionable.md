@@ -3,11 +3,13 @@ type: ADR
 profile-version: 1
 id: "REV-ADR-0042"
 title: "Code-scanning ingestion policy: ingest what is actionable"
-status: "accepted"
+status: "superseded"
 recorded-on: "2026-09-06"
 decided-on: "2026-07-23"
 decision-makers:
   - "John Unkovich"
+superseded-by:
+  - "REV-ADR-0055"
 ---
 
 # Code-scanning ingestion policy: ingest what is actionable

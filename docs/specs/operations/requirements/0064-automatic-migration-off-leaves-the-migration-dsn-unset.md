@@ -12,7 +12,8 @@ governed-by:
 ## Statement
 
 WHEN automatic migration is disabled, Reverie's loaded configuration MUST leave `migration_database_url` unset,
-regardless of whether `DATABASE_URL_MIGRATION` is present in the process environment.
+regardless of whether its direct variable or file alias is present. The configuration load MUST NOT open the migration
+credential file in this state. Two non-empty sources remain a configuration conflict.
 
 ## Rationale
 
@@ -33,3 +34,7 @@ put it into the configuration the server runs on.
 - With automatic migration disabled and `DATABASE_URL_MIGRATION` set to an empty value, the loaded configuration leaves
   `migration_database_url` unset. Checked by `from_env_empty_migration_url_treated_as_none_when_auto_migrate_off` in
   `backend/src/config/mod.rs`.
+- With automatic migration disabled and a non-empty migration file alias, the reader is never called and the loaded
+  field remains unset. Checked by `credential_file_inactive_migration_never_reads` in `backend/src/config/provider.rs`.
+- Two non-empty migration sources fail without reading even when automatic migration is disabled. Checked by
+  `credential_file_conflicts_fail_without_reading` in `backend/src/config/provider.rs`.

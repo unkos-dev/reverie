@@ -60,9 +60,6 @@ jobs:
       pages: write
       id-token: write
 
-  staging:
-    uses: ./.github/workflows/staging.yml
-
   docker:
     uses: ./.github/workflows/docker.yml
 
@@ -111,7 +108,6 @@ jobs:
       - security
       - lint
       - website
-      - staging
       - docker
       - codeql
     runs-on: ubuntu-latest

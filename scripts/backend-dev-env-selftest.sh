@@ -286,6 +286,22 @@ rm "$state_dir/credentials.env"
 if resolve_status; then echo 'FAIL missing state must refuse defaults'; fail=1; else echo 'ok   missing state refuses defaults'; fi
 check 'fully explicit external DSNs need no local state' 'postgres://someone_else:pw@db.example:5432/other' \
   "$(resolve DATABASE_URL REVERIE_DEV_ENV="$fixture" ENV_STUB_CONFIG_FAIL=1)"
+for source in process file; do
+  file_fixture="$tmp/file-supply-$source.env"
+  : > "$file_fixture"
+  file_inputs=()
+  for key in DATABASE_URL DATABASE_URL_INGESTION DATABASE_URL_MIGRATION; do
+    if [[ "$source" == process ]]; then
+      file_inputs+=("${key}_FILE=$tmp/not-readable-credential")
+    else
+      printf '%s_FILE=%s\n' "$key" "$tmp/not-readable-credential" >> "$file_fixture"
+    fi
+  done
+  for key in DATABASE_URL DATABASE_URL_INGESTION DATABASE_URL_MIGRATION; do
+    check "file supply from $source suppresses $key without state or reads" '<unset>' \
+      "$(resolve "$key" REVERIE_DEV_ENV="$file_fixture" ENV_STUB_CONFIG_FAIL=1 "${file_inputs[@]}")"
+  done
+ done
 for command in migration runtime auto-migration; do
   command_status=0
   env -i PATH="$test_path" TMPDIR="${TMPDIR:-/tmp}" HOME="$fake_home" XDG_STATE_HOME="$state_root" \

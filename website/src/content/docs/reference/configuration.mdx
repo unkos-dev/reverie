@@ -11,8 +11,9 @@ hand. Regenerate with `REGEN=1 cargo test --test gen_config_ref` and commit the
 result. The drift test fails CI if it is stale.
 </Aside>
 
-Reverie is configured entirely through environment variables, read once at
-startup. Secret-bearing variables are listed by name only; their values never
+Reverie reads configuration once at startup from environment variables.
+Credential variables may instead select mounted files through `_FILE` aliases.
+Secret-bearing variables are listed by name only; their values never
 appear here. A required variable left unset refuses startup with a clear error.
 
 | Variable | Type | Required | Default | Description |
@@ -79,3 +80,28 @@ appear here. A required variable left unset refuses startup with a clear error.
 | `REVERIE_HSTS_PRELOAD` | `boolean` | No | `false` | Whether the HSTS header carries `; preload` (`REVERIE_HSTS_PRELOAD`, default `false`). Requires `hsts_include_subdomains=true` (chrome.com / hstspreload.org rules). |
 | `REVERIE_CSP_REPORT_ENDPOINT` | `URL` | No |  | Optional CSP-violation reporting endpoint (`REVERIE_CSP_REPORT_ENDPOINT`). Pre-validated at startup to reject `"`/`;`/CR/LF (header-injection guard) and any scheme other than `http`/`https`. |
 | `REVERIE_FRONTEND_DIST_PATH` | `string` | No |  | Optional path to the built frontend dist directory (`REVERIE_FRONTEND_DIST_PATH`). When set, the SPA assets router is mounted and the FOUC-script hash is read at startup to seed the HTML CSP. |
+
+## Credential files
+
+- `DATABASE_URL_FILE`
+- `DATABASE_URL_MIGRATION_FILE`
+- `DATABASE_URL_INGESTION_FILE`
+- `OIDC_CLIENT_SECRET_FILE`
+- `REVERIE_GOOGLEBOOKS_API_KEY_FILE`
+- `REVERIE_HARDCOVER_API_TOKEN_FILE`
+
+Each alias supplies the path of a UTF-8 credential file readable inside the process or container.
+Empty direct variables and empty file variables are absent. Two non-empty sources conflict,
+even when automatic migration is disabled. Whitespace-only sources are non-empty.
+
+All trailing LF and CRLF terminators are removed. Other content, including spaces, interior
+newlines and a lone CR, is preserved as text. Existing required and blank checks still apply.
+Read failures identify the setting without disclosing the path, file contents or I/O details.
+
+With automatic migration disabled, the migration file is not opened and its DSN stays unset.
+`reverie migrate` reads only its migration source; schema output reads no credential files.
+Unknown file variables, including `REVERIE_BOOTSTRAP_PASSWORD_FILE`, are ignored.
+
+Development defaults yield to non-empty database file sources without opening the files.
+`db-migrate-raw` accepts direct DSNs only. To roll back file supply, restore direct variables
+and remove their file aliases before reverting the application.

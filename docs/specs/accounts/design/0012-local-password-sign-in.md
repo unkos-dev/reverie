@@ -11,6 +11,7 @@ satisfies:
 governed-by:
   - "REV-ADR-0029"
   - "REV-ADR-0034"
+  - "REV-ADR-0054"
 ---
 
 # Local password sign-in
@@ -91,19 +92,20 @@ decision on the local-password side.
   the rate), and `client_ip` (resolves the rate-limit key from the TCP peer and, only when the operator has named a
   `trusted_client_ip_header`, the leftmost token of that forwarded-for header).
 - `backend/src/models/local_credentials.rs` holds `LocalCredential` (one row per `user_id`, the PK; `password_hash` is
-  the Argon2id PHC string; the type hand-implements `Debug` to redact the hash and deliberately does not derive
-  `Serialize`), `find_by_user_id` (`Ok(None)` for an OIDC-only account), and `set_password` (an
-  `INSERT … ON CONFLICT (user_id) DO UPDATE`, callable against a pool or a transaction). `password_hash` also gets a
-  first value written directly by `user::create_first_admin` and `user::create_local`, both of which insert into
-  `local_credentials` inline inside their own transaction rather than calling `set_password`. `set_password` is not a
-  replacement-only operation: `admin_reset_password`'s precondition is only that the target `users` row exists (a
-  `FOR NO KEY UPDATE` existence check on `users`, not on `local_credentials`), so it can write a first credential onto
-  an OIDC-only account exactly as `create_first_admin`/`create_local` do; `reset_password`'s precondition (the account
-  recovery subject) is only an active, unexpired PIN, so it too can write a first credential onto an OIDC-only account.
-  Only `change_own_password` requires an existing `local_credentials` row up front: it calls `find_by_user_id` and
-  answers a `422` ("this account has no password to change; it signs in through an identity provider") when there is
-  none. Its write uses `replace_verified_password`, an UPDATE conditional on the hash verified before the transaction,
-  so it cannot overwrite a concurrent change or insert a missing credential.
+  the Argon2id PHC string; the type derives `redactable::SensitiveDisplay` with `Secret` on the hash and `not_sensitive`
+  on the other fields, and deliberately does not derive `Serialize`), `find_by_user_id` (`Ok(None)` for an OIDC-only
+  account), and `set_password` (an `INSERT … ON CONFLICT (user_id) DO UPDATE`, callable against a pool or a
+  transaction). `password_hash` also gets a first value written directly by `user::create_first_admin` and
+  `user::create_local`, both of which insert into `local_credentials` inline inside their own transaction rather than
+  calling `set_password`. `set_password` is not a replacement-only operation: `admin_reset_password`'s precondition is
+  only that the target `users` row exists (a `FOR NO KEY UPDATE` existence check on `users`, not on
+  `local_credentials`), so it can write a first credential onto an OIDC-only account exactly as
+  `create_first_admin`/`create_local` do; `reset_password`'s precondition (the account recovery subject) is only an
+  active, unexpired PIN, so it too can write a first credential onto an OIDC-only account. Only `change_own_password`
+  requires an existing `local_credentials` row up front: it calls `find_by_user_id` and answers a `422` ("this account
+  has no password to change; it signs in through an identity provider") when there is none. Its write uses
+  `replace_verified_password`, an UPDATE conditional on the hash verified before the transaction, so it cannot overwrite
+  a concurrent change or insert a missing credential.
 - `backend/src/models/login_throttle.rs` holds `record_failure`, `reset` and `backoff_until`, all keyed on
   `email.to_lowercase()` rather than `user_id`, so the throttle exists independent of whether the email resolves to an
   account. `record_failure` upserts a capped-exponential-backoff window, `min(cap, base * 2^prior_failures)`, where

@@ -40,14 +40,6 @@ frontend:
   - ".github/workflows/security.yml"
   - ".github/actions/setup/**"
   - ".github/path-filters.yml"
-staging:
-  - "docker/compose.staging.yml"
-  - "docker/init-roles.sql"
-  - "docker/staging.env.bootstrap.example"
-  - "docker/staging.env.runtime.example"
-  - ".github/workflows/ci.yml"
-  - ".github/workflows/staging.yml"
-  - ".github/path-filters.yml"
 workflows:
   # A suppression edit must re-run the scan without a workflow change.
   - ".github/workflows/**"

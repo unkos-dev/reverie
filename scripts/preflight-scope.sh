@@ -87,7 +87,7 @@ done
 # drift signal (someone added a CI gate without deciding its local story), not
 # something to silently ignore.
 #
-# staging, iac, docker and npm are deliberately empty. Their CI jobs
+# iac, docker and npm are deliberately empty. Their CI jobs
 # need a built image, a scanner container, or a registry token, so there is no
 # faithful local lane to run; `just preflight-full` never ran them either.
 lanes_for() {
@@ -98,7 +98,7 @@ lanes_for() {
     website) printf '%s\n' website::check ;;
     workflows) printf '%s\n' infra::zizmor ;;
     openapi) printf '%s\n' infra::openapi ;;
-    staging | iac | docker | npm) : ;;
+    iac | docker | npm) : ;;
     *) return 1 ;;
   esac
 }

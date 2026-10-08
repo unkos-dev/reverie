@@ -10,9 +10,9 @@ title: "A configuration failure names the setting, never its value"
 ## Statement
 
 WHEN Reverie refuses to start because a configuration setting is absent, unreadable, or invalid, the failure it reports
-MUST NOT contain the value the environment supplied for a credential-carrying setting. A credential-carrying setting is
-one whose value authenticates Reverie to something else: a database connection string, the identity provider's client
-secret, or a metadata provider's API key.
+MUST NOT contain a credential value supplied directly or through a file, its file path, or raw file-I/O details. A
+credential-carrying setting is one whose value authenticates Reverie to something else: a database connection string,
+the identity provider's client secret, or a metadata provider's API key.
 
 ## Rationale
 
@@ -35,3 +35,7 @@ been shared the credential is already out.
 - Nested and list validation errors preserve aggregation, setting names and useful non-secret reasons while omitting
   credential markers. Checked by `nested_validation_errors_preserve_multiple_and_non_secret_reasons` and
   `non_secret_validation_error_retains_reason` in `backend/src/config/mod.rs`.
+- A two-source conflict names the setting and both variables without reading a file or disclosing either source. Checked
+  by `credential_file_conflicts_fail_without_reading` in `backend/src/config/provider.rs`.
+- Missing, unreadable and non-UTF-8 credential files report a fixed category without file contents, paths or I/O details
+  in Display, Debug or the error chain. Checked by `credential_file_safe_errors` in `backend/src/config/provider.rs`.

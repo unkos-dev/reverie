@@ -11,29 +11,24 @@ use uuid::Uuid;
 
 /// A user's local password credential row.
 ///
-/// `Debug` is implemented by hand to redact `password_hash`: deriving it would
-/// emit the Argon2id PHC through any `?value` tracing span (CWE-532).
-#[derive(Clone, sqlx::FromRow)]
+/// `Debug` redacts `password_hash` so tracing cannot disclose its Argon2id PHC (CWE-532).
+#[derive(Clone, sqlx::FromRow, redactable::SensitiveDisplay)]
+#[error(
+    "LocalCredential {{ user_id: {user_id:?}, password_hash: {password_hash:?}, created_at: {created_at:?}, updated_at: {updated_at:?} }}"
+)]
 pub struct LocalCredential {
     /// Owning [`crate::models::user::User`]; also the primary key.
+    #[not_sensitive]
     pub user_id: Uuid,
     /// Argon2id PHC string. Never logged; the model is not serialisable.
+    #[sensitive(redactable::Secret)]
     pub password_hash: String,
     /// Row insert timestamp.
+    #[not_sensitive]
     pub created_at: DateTime<Utc>,
     /// `now()` of the most recent password change.
+    #[not_sensitive]
     pub updated_at: DateTime<Utc>,
-}
-
-impl std::fmt::Debug for LocalCredential {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("LocalCredential")
-            .field("user_id", &self.user_id)
-            .field("password_hash", &"[REDACTED]")
-            .field("created_at", &self.created_at)
-            .field("updated_at", &self.updated_at)
-            .finish()
-    }
 }
 
 /// Whether a user has a local credential, without reading its secret hash.
@@ -131,6 +126,59 @@ pub async fn replace_verified_password(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn credential_model_redaction_local_credentials() {
+        #[derive(Clone)]
+        struct Capture(std::sync::Arc<std::sync::Mutex<Vec<u8>>>);
+        impl std::io::Write for Capture {
+            fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+                self.0.lock().unwrap().extend_from_slice(bytes);
+                Ok(bytes.len())
+            }
+            fn flush(&mut self) -> std::io::Result<()> {
+                Ok(())
+            }
+        }
+        let marker = "local_credentials-distinct-hash-marker";
+        let value = LocalCredential {
+            user_id: Uuid::from_u128(101),
+            created_at: DateTime::from_timestamp(1_700_000_000, 0).unwrap(),
+            updated_at: DateTime::from_timestamp(1_700_000_001, 0).unwrap(),
+            password_hash: marker.into(),
+        };
+        let expected = [
+            format!("{:?}", value.user_id),
+            format!("{:?}", value.created_at),
+            format!("{:?}", value.updated_at),
+        ];
+        for value in [value.clone(), value] {
+            for debug in [format!("{value:?}"), format!("{value:#?}")] {
+                assert!(!debug.contains(marker));
+                for field in &expected {
+                    assert!(debug.contains(field));
+                }
+            }
+            let bytes = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+            let writer = Capture(bytes.clone());
+            let subscriber = tracing_subscriber::fmt()
+                .without_time()
+                .with_ansi(false)
+                .with_writer(move || writer.clone())
+                .finish();
+            tracing::subscriber::with_default(subscriber, || {
+                tracing::info!("capture-positive-event");
+                tracing::info!(model = ?value, "model-event");
+            });
+            let captured = String::from_utf8(bytes.lock().unwrap().clone()).unwrap();
+            assert!(captured.contains("capture-positive-event"));
+            assert!(captured.contains("model-event"));
+            assert!(!captured.contains(marker));
+            for field in &expected {
+                assert!(captured.contains(field));
+            }
+        }
+    }
 
     async fn insert_user(pool: &PgPool) -> Uuid {
         sqlx::query_scalar!("INSERT INTO users (display_name) VALUES ('Cred Test') RETURNING id",)

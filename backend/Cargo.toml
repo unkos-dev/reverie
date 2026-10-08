@@ -22,6 +22,7 @@ name = "reverie-api"
 path = "src/main.rs"
 
 [dependencies]
+redactable = { version = "=0.14.0", default-features = false, features = ["redaction"] }
 anyhow = "1.0.103"
 argon2 = "0.6.0"
 async-trait = "0.1.89"

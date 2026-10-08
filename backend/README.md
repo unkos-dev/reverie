@@ -14,15 +14,32 @@ Run `just db-migrate` before starting the server, or use `just dev-up` for migra
 resolves the process environment, then the parsed `REVERIE_DEV_ENV` file (default `~/reverie/dev/env`), then retained
 state for absent database inputs required by the command. Migration recipes need only the migration DSN; server recipes
 need runtime and ingestion DSNs, plus the migration DSN when automatic migration is enabled. Explicit empty assignments
-stay empty and fail application validation. Omit database assignments from a local env file to use retained state.
-Supplying a command's required external DSNs needs no local state; a conflicting bootstrap `POSTGRES_PASSWORD` is
-rejected. Operators supply their own role-specific DSNs through deployment tooling; the server reads only its process
-environment.
+stay empty; without a non-empty matching file alias, required credentials fail application validation. Omit database
+assignments from a local env file to use retained state. Supplying a command's required external DSNs needs no local
+state; a conflicting bootstrap `POSTGRES_PASSWORD` is rejected. Operators supply their own role-specific DSNs through
+deployment tooling or credential files selected by process environment variables.
 
 `just db-down` preserves the volume and credentials. `just db-reset <confirmed-volume>` permanently deletes that
 volume's data and recreates it with retained valid credentials. Confirm the resolved project, container and mounted
 volume, and coordinate all consumers before resetting. A code revert cannot recover deleted data. Neither dev readers
 nor verification commands rotate development credentials.
+
+### Credential files
+
+The six file aliases are `DATABASE_URL_FILE`, `DATABASE_URL_MIGRATION_FILE`, `DATABASE_URL_INGESTION_FILE`,
+`OIDC_CLIENT_SECRET_FILE`, `REVERIE_GOOGLEBOOKS_API_KEY_FILE` and `REVERIE_HARDCOVER_API_TOKEN_FILE`. Each selects a
+UTF-8 file readable inside the process or container. Empty direct and file variables are absent; two non-empty sources
+conflict before reading, including when automatic migration is disabled. Whitespace-only variables remain present.
+
+The reader strips all trailing LF and CRLF terminators and preserves all other text, including spaces, interior newlines
+and a lone CR. Existing required, optional and blank checks apply to the result. Errors identify the setting without
+paths, contents or raw I/O details. Unknown file aliases, including the bootstrap password alias, are ignored.
+
+With automatic migration disabled, the migration file is never opened and the field remains unset. `reverie migrate`
+reads only its migration source, and schema output opens no credential files. The dev loader yields generated database
+defaults to non-empty matching file aliases without reading the files. External sources can satisfy a command without
+retained dev state. `db-migrate-raw` accepts direct DSNs only. To roll back, restore direct variables and remove their
+file aliases before reverting the application.
 
 ### Verification ownership and transports
 
