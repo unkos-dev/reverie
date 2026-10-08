@@ -138,14 +138,14 @@ url = "https://github.com/casey/just/releases/download/1.58.0/just-1.58.0-x86_64
 url_api = "https://api.github.com/repos/casey/just/releases/assets/500509978"
 
 [[tools.mold]]
-version = "2.42.1"
+version = "3.0.0"
 backend = "aqua:rui314/mold"
-specifiers = ["2.42.1"]
+specifiers = ["3.0.0"]
 
 [tools.mold."platforms.linux-x64"]
-checksum = "sha256:6ff270c9bf07d2bec5c98aa324eb7c4daf6a1a4d815c05ff1708049616047855"
-url = "https://github.com/rui314/mold/releases/download/v2.42.1/mold-2.42.1-x86_64-linux.tar.gz"
-url_api = "https://api.github.com/repos/rui314/mold/releases/assets/557036001"
+checksum = "sha256:6c90d4a474c7c0409dfb575be03a5345878ac14fdba18de8b40fa58c60121189"
+url = "https://github.com/rui314/mold/releases/download/v3.0.0/mold-3.0.0-x86_64-linux.tar.gz"
+url_api = "https://api.github.com/repos/rui314/mold/releases/assets/612122001"
 
 [[tools.opengrep]]
 version = "1.30.1"
