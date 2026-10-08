@@ -56,7 +56,6 @@ expect_failure() {
 FULL='rust::guards
 infra::check
 infra::openapi
-db-up
 rust::check
 rust::doc-lint
 rust::test
@@ -74,7 +73,6 @@ infra::zizmor'
 
 BACKEND='rust::guards
 infra::check
-db-up
 rust::check
 rust::doc-lint
 rust::test
@@ -116,7 +114,6 @@ expect_lanes 'generated OpenAPI selects backend, contract and website lanes' \
   'backend/openapi.json' 'rust::guards
 infra::check
 infra::openapi
-db-up
 rust::check
 rust::doc-lint
 rust::test
@@ -171,7 +168,6 @@ expect_lanes 'a blank entry is discarded rather than matched' \
 expect_lanes 'a cargo manifest edit unions backend and audit' \
   'backend/Cargo.toml' 'rust::guards
 infra::check
-db-up
 rust::check
 rust::doc-lint
 rust::test
@@ -185,7 +181,6 @@ expect_lanes 'unrelated planes union rather than override' \
   'backend/src/lib.rs
 frontend/src/App.tsx' 'rust::guards
 infra::check
-db-up
 rust::check
 rust::doc-lint
 rust::test

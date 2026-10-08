@@ -1,26 +1,4 @@
-# Rust plane: backend format/lint/test/build. All recipes run from backend/.
-# Backend tools are system-PATH (image-baked toolchain), so bare invocation is
-# correct here (unlike the node-local JS plane). Recipes marked DB need the
-# local dev Postgres up (`just db-up`).
-#
-# DB recipes inject the schema-owner DSN inline via shell parameter expansion,
-# never a just variable: just echoes recipe lines after {{var}} interpolation,
-# so a just-variable DSN would print a credential-bearing override into
-# terminal/CI logs, while `${REVERIE_DEV_DB_URL:-…}` stays unexpanded in the
-# echo. The owner DSN is injected explicitly (mirroring the CI job env)
-# because sqlx::test needs a superuser connection to mint per-test databases,
-# and a developer `.env` carries the reverie_app runtime DSN instead.
-#
-# The default DSN targets the dev cluster's unix socket, which is what lets
-# these recipes run inside network-isolated dev sandboxes (no TCP loopback).
-# The params-only URI form is deliberate: sqlx rejects the libpq-style
-# `postgres://user@/db?host=…` spelling (userinfo with an empty authority
-# host fails URL parsing), while `postgres:///db?host=…&user=…` parses in
-# both sqlx and libpq. There is no TCP fallback in a socket DSN; if the
-# socket is absent the recipe fails fast and `just db-up` recreates the
-# container with the socket mount. The runtime server deliberately stays on
-# TCP (production-faithful transport; see backend/AGENTS.md), and CI keeps
-# its TCP service container by overriding DATABASE_URL per job.
+# Rust verification owns disposable PostgreSQL clusters; runtime development uses retained state.
 
 set shell := ["bash", "-ueo", "pipefail", "-c"]
 set working-directory := 'backend'
@@ -66,12 +44,12 @@ drift:
 [group('rust')]
 [positional-arguments]
 test *args:
-    SQLX_OFFLINE=true DATABASE_URL="${REVERIE_DEV_DB_URL:-postgres:///reverie_dev?host=${XDG_STATE_HOME:-$HOME/.local/state}/reverie/pgsock&user=reverie&password=reverie}" cargo nextest run --workspace --locked "$@"
+    SQLX_OFFLINE=true bash ../scripts/postgres-provision.sh test -- cargo nextest run --workspace --locked "$@"
 
 # DB: doctests across the workspace.
 [group('rust')]
 doctests:
-    SQLX_OFFLINE=true DATABASE_URL="${REVERIE_DEV_DB_URL:-postgres:///reverie_dev?host=${XDG_STATE_HOME:-$HOME/.local/state}/reverie/pgsock&user=reverie&password=reverie}" cargo test --locked --doc --workspace
+    SQLX_OFFLINE=true bash ../scripts/postgres-provision.sh test -- cargo test --locked --doc --workspace
 
 # This is the one recipe that dirties the shared target dir, and it is
 # unavoidable: `sqlx prepare` deliberately bumps the mtimes of the crate's
@@ -87,7 +65,7 @@ doctests:
 # DB: sqlx query-cache freshness against the live schema.
 [group('rust')]
 sqlx-check:
-    DATABASE_URL="${REVERIE_DEV_DB_URL:-postgres:///reverie_dev?host=${XDG_STATE_HOME:-$HOME/.local/state}/reverie/pgsock&user=reverie&password=reverie}" cargo sqlx prepare --check -- --locked --tests
+    bash ../scripts/postgres-provision.sh schema -- cargo sqlx prepare --check -- --locked --tests
 
 # WRITES backend/.sqlx; commit the result in the same change as the queries
 # that produced it. `sqlx-check` is the read-only gate form.
@@ -95,15 +73,14 @@ sqlx-check:
 # DB: regenerate the sqlx offline query cache from the live schema.
 [group('rust')]
 sqlx-prepare:
-    RUSTC_WRAPPER= DATABASE_URL="${REVERIE_DEV_DB_URL:-postgres:///reverie_dev?host=${XDG_STATE_HOME:-$HOME/.local/state}/reverie/pgsock&user=reverie&password=reverie}" cargo sqlx prepare -- --locked --tests
+    RUSTC_WRAPPER= bash ../scripts/postgres-provision.sh schema -- cargo sqlx prepare -- --locked --tests
 
-# Migrates a scratch database on the dev cluster, never reverie_dev, and runs
-# pg_dump inside the Postgres container, so it needs docker access.
+# Migrates a scratch database on an owned cluster and runs its pg_dump.
 #
 # DB: check backend/schema.sql against the migrations.
 [group('rust')]
 schema-check:
-    ../scripts/schema-dump.sh check
+    bash ../scripts/postgres-provision.sh test -- ../scripts/schema-dump.sh check
 
 # WRITES backend/schema.sql; commit the result in the same change as the
 # migration that produced it. `schema-check` is the read-only gate form.
@@ -111,7 +88,7 @@ schema-check:
 # DB: regenerate backend/schema.sql from the migrations.
 [group('rust')]
 schema-dump:
-    ../scripts/schema-dump.sh write
+    bash ../scripts/postgres-provision.sh test -- ../scripts/schema-dump.sh write
 
 # WRITES backend/openapi.json plus the generated config reference and schema;
 # commit the result in the same change that moved the API or config surface.
@@ -160,7 +137,7 @@ deny:
 lint: clippy doc-lint
 
 # DB-backed recipes (test/doctests/sqlx-check) are excluded from the offline
-# gate; run them with the dev DB up (`just db-up`). doc-lint is excluded
+# gate; each provisions its own cluster. doc-lint is excluded
 # from the mid-task gate on cost grounds (a full rustdoc pass per check);
 # preflight and CI still run it, so broken links cannot reach a push.
 #
@@ -188,7 +165,7 @@ migrate:
     #!/usr/bin/env bash
     set -ueo pipefail
     source ../scripts/backend-dev-env.sh
-    exec cargo run --locked -- migrate
+    exec env SQLX_OFFLINE=true cargo run --locked -- migrate
 
 # Shared lifecycle plumbing for dev-start/dev-stop/dev-status. The script owns
 # the ownership and race checks (see scripts/dev-server.sh); this sets the

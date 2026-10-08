@@ -46,28 +46,7 @@ jobs:
     defaults:
       run:
         working-directory: backend
-    services:
-      postgres:
-        # Same digest compose.dev.yml pins, for dev/CI postgres parity.
-        image: postgres:18@sha256:74935e72241653ca55e0414067e6d8763aceb8a810eb51b452253ec3dcfc4336
-        env:
-          POSTGRES_USER: reverie
-          # Non-secret credential scoped to this ephemeral CI run.
-          POSTGRES_PASSWORD: ci-${{ github.run_id }}-${{ github.run_attempt }}
-          POSTGRES_DB: reverie_dev
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U reverie -d reverie_dev"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 5
     env:
-      # sqlx::test connects as the schema owner; per-test role pools are built in code.
-      DATABASE_URL: postgres://reverie:ci-${{ github.run_id }}-${{ github.run_attempt }}@localhost:5432/reverie_dev
-      # init-roles.sql reads this when it creates the migrator role, and the
-      # schema check logs in with it over TCP; run-scoped like POSTGRES_PASSWORD.
-      REVERIE_MIGRATOR_PASSWORD: ci-${{ github.run_id }}-${{ github.run_attempt }}
       # Debuginfo deliberately absent here: backend/Cargo.toml declares it, so both
       # planes compile the same way without two settings having to agree.
       CARGO_INCREMENTAL: 0
@@ -195,10 +174,6 @@ jobs:
       - name: Check formatting
         run: cargo fmt --check
 
-      - name: Create database roles
-        run: psql -v ON_ERROR_STOP=1 "$DATABASE_URL" -f docker/init-roles.sql
-        working-directory: ${{ github.workspace }}
-
       # Must land before the first linking cargo invocation (sqlx-cli below), since
       # job-level RUSTFLAGS routes every link through mold.
       - uses: ./.github/actions/setup
@@ -217,34 +192,29 @@ jobs:
       - name: Unused dependencies (cargo-machete)
         run: mise exec github:bnjbvr/cargo-machete -- cargo machete
 
-      - name: Apply migrations
-        run: mise exec cargo:sqlx-cli -- sqlx migrate run
-
       - name: Lint
-        run: mise exec mold -- cargo clippy --workspace --all-targets --locked -- -D warnings
+        run: mise exec mold cargo:sqlx-cli -- bash ../scripts/postgres-provision.sh schema -- cargo clippy --workspace --all-targets --locked -- -D warnings
 
       # Without --document-private-items the scope is pub items only, matching the
       # Tier 1 comment-policy surface.
       - name: Doc lint (broken intra-doc links)
         env:
           RUSTDOCFLAGS: "-D rustdoc::broken_intra_doc_links"
-        run: mise exec mold -- cargo doc --locked --no-deps --workspace
+        run: mise exec mold cargo:sqlx-cli -- bash ../scripts/postgres-provision.sh schema -- cargo doc --locked --no-deps --workspace
 
       - name: Check sqlx query cache freshness
-        run: mise exec mold cargo:sqlx-cli -- cargo sqlx prepare --check -- --locked --tests
+        run: mise exec mold cargo:sqlx-cli -- bash ../scripts/postgres-provision.sh schema -- cargo sqlx prepare --check -- --locked --tests
 
-      # pg_dump runs inside the service container so its version is the server's.
       - name: Check the schema dump against the migrations
         working-directory: ${{ github.workspace }}
-        env:
-          REVERIE_PG_CONTAINER: ${{ job.services.postgres.id }}
-          REVERIE_PG_HOST: localhost
-        run: mise exec just -- just rust::schema-check
+        run: mise exec just cargo:sqlx-cli -- just rust::schema-check
 
       # nextest does not run doctests; Reverie has none today, so this exists to fail
       # CI from day one on doctest drift.
       - name: Doctests
-        run: mise exec mold -- cargo test --locked --doc --workspace
+        env:
+          SQLX_OFFLINE: "true"
+        run: mise exec mold -- bash ../scripts/postgres-provision.sh test -- cargo test --locked --doc --workspace
 
       # The cache action's post step runs from $GITHUB_WORKSPACE, which has no
       # Cargo.lock (the crate root is backend/), so it skips this upload itself.
@@ -262,23 +232,7 @@ jobs:
     defaults:
       run:
         working-directory: backend
-    services:
-      postgres:
-        image: postgres:18@sha256:74935e72241653ca55e0414067e6d8763aceb8a810eb51b452253ec3dcfc4336
-        env:
-          POSTGRES_USER: reverie
-          # Non-secret credential scoped to this ephemeral CI run.
-          POSTGRES_PASSWORD: ci-${{ github.run_id }}-${{ github.run_attempt }}
-          POSTGRES_DB: reverie_dev
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U reverie -d reverie_dev"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 5
     env:
-      DATABASE_URL: postgres://reverie:ci-${{ github.run_id }}-${{ github.run_attempt }}@localhost:5432/reverie_dev
       CARGO_INCREMENTAL: 0
       RUSTFLAGS: -C link-arg=-fuse-ld=mold
       # See the checks job.
@@ -296,10 +250,6 @@ jobs:
           # Restore-only on PR branches; see the checks job's cache step.
           save-if: ${{ github.ref == 'refs/heads/main' }}
 
-      - name: Create database roles
-        run: psql -v ON_ERROR_STOP=1 "$DATABASE_URL" -f docker/init-roles.sql
-        working-directory: ${{ github.workspace }}
-
       # Shims stay off here for the same reason as the checks job.
       - uses: ./.github/actions/setup
         with:
@@ -312,8 +262,7 @@ jobs:
           RUSTFLAGS: ""
         run: mise install --locked cargo:sqlx-cli
 
-      - name: Apply migrations
-        run: mise exec cargo:sqlx-cli -- sqlx migrate run
-
       - name: Test
-        run: mise exec mold github:nextest-rs/nextest -- cargo nextest run --locked --workspace
+        env:
+          SQLX_OFFLINE: "true"
+        run: mise exec mold github:nextest-rs/nextest -- bash ../scripts/postgres-provision.sh test -- cargo nextest run --locked --workspace

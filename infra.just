@@ -176,9 +176,10 @@ no-plan-refs *files:
 #
 # Whole repo-lint surface (the non-JS half of CI's lint concern).
 [group('infra')]
-lint: shellcheck hadolint typos ryl sqruff actionlint prose specful filter-sarif-unfixable-os-selftest preflight-scope-selftest cargo-locked-guard
+lint: shellcheck hadolint typos ryl sqruff actionlint prose specful filter-sarif-unfixable-os-selftest preflight-scope-selftest cargo-locked-guard backend-dev-env-selftest
 
-# Everything left here covers local-only developer tooling, and that is now the
+# The env-loader status cases also gate lint and CI; the other tests cover local tooling.
+# Everything else here covers local-only developer tooling, and that is now the
 # entry criterion. CI has no stake in `just doctor`, `just worktree`, or the
 # dev-server lifecycle: nothing CI does breaks when one of them regresses. So
 # this recipe gates nothing, and is absent from LANE_ORDER, lanes_for(),
@@ -212,7 +213,7 @@ lint: shellcheck hadolint typos ryl sqruff actionlint prose specful filter-sarif
 # circular for the same reason, so CI's repo-lint job is what actually holds it:
 # that job is unconditional and never consults the scoper.
 #
-# Self-tests for this repository's local developer tooling; gates nothing, run it by hand.
+# Developer tooling self-tests; the backend env/status cases also run in local lint and CI.
 [group('infra')]
 selftests: dev-server-selftest backend-dev-env-selftest doctor-selftest require-disk-backed-selftest worktree-selftest worktree-base-selftest gate-detach-selftest
 

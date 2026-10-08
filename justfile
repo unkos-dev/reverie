@@ -62,7 +62,7 @@ lint: js::lint rust::lint infra::lint
 [group('aggregate')]
 fmt: js::fmt rust::fmt
 
-# Backend tests are DB-backed: bring the dev DB up first (`just db-up`).
+# Backend tests each provision a disposable database cluster.
 # Doctests stay out of the aggregate (slow; CI runs them).
 #
 # Run every locally-runnable unit test.
@@ -76,10 +76,8 @@ build: js::build rust::build website::build
 # CI-parity local gate: everything the GitHub CI gate runs that is runnable on
 # a workstation. rust::guards runs first: it needs no toolchain, database, or
 # install, so it fails fastest (mirroring where ci.yml places its own static
-# guards). db-up brings the dev database up by construction (idempotent,
-# --wait), so every DB-backed recipe below it in this dependency list always
-# runs against a ready database; just runs dependencies serially in listed
-# order, so the cheap offline gates (rust::guards, check) fail fast before the
+# guards). Database recipes own disposable clusters. Dependencies run serially
+# in listed order, so the cheap offline gates (rust::guards, check) fail fast before the
 # slower DB-backed and network-backed ones run. infra::zizmor runs the full
 # audit (online audits included when a GH_TOKEN/GITHUB_TOKEN/
 # ZIZMOR_GITHUB_TOKEN is exported, offline-degraded otherwise, matching CI's
@@ -111,7 +109,7 @@ preflight-full:
     #!/usr/bin/env bash
     set -ueo pipefail
     scripts/gate-run.sh preflight-full \
-        rust::guards infra::openapi db-up check rust::doc-lint test rust::doctests \
+        rust::guards infra::openapi check rust::doc-lint test rust::doctests \
         rust::sqlx-check rust::schema-check rust::machete rust::deny js::build \
         js::font-integrity infra::zizmor
 
@@ -520,40 +518,29 @@ worktree-rm branch:
     git worktree prune
     echo "removed worktree for ${branch}"
 
-# Roles seed from docker/init-roles.sql on first init only. Probe-first:
-# when the database already answers over its unix socket the recipe exits
-# without touching the docker CLI, so gate runs inside a network-isolated
-# sandbox (which blocks the docker socket but not AF_UNIX connects) treat
-# an already-running stack as up instead of failing on docker. Only a
-# stack that is genuinely down falls through to compose, which needs an
-# unsandboxed run.
-#
 # Start (or create) the local dev Postgres.
 [group('db')]
 db-up:
-    #!/usr/bin/env bash
-    set -ueo pipefail
-    if scripts/db-ready.sh; then exit 0; fi
-    docker compose -f docker/compose.dev.yml up -d --wait
+    bash scripts/postgres-provision.sh dev-up
 
 # Stop the local dev Postgres; the data volume survives.
 [group('db')]
 db-down:
-    docker compose -f docker/compose.dev.yml down
+    bash scripts/postgres-provision.sh dev-down
 
-# Destroy and recreate the local dev Postgres, then re-seed roles. DESTRUCTIVE.
+# Destroy the confirmed dev volume and recreate it with retained credentials. DESTRUCTIVE.
 [group('db')]
-db-reset:
-    docker compose -f docker/compose.dev.yml down -v
-    docker compose -f docker/compose.dev.yml up -d --wait
+db-reset volume="":
+    bash scripts/postgres-provision.sh dev-reset {{quote(volume)}}
 
-# The DSN uses shell parameter expansion (not a just variable) so an
-# overridden credential never echoes into logs.
-#
 # Apply pending migrations with the dedicated migrator identity.
 [group('db')]
 db-migrate:
-    cd backend && DATABASE_URL_MIGRATION="${DATABASE_URL_MIGRATION:-postgres:///reverie_dev?host=${XDG_STATE_HOME:-$HOME/.local/state}/reverie/pgsock&user=reverie_migrator&password=reverie_migrator}" cargo run --locked -- migrate
+    #!/usr/bin/env bash
+    set -ueo pipefail
+    source scripts/backend-dev-env.sh
+    cd backend
+    SQLX_OFFLINE=true cargo run --locked -- migrate
 
 # Is: a development-loop unblocker for the compile/cache/migration cycle
 # when a branch is authoring a new migration. `db-migrate` compiles the
@@ -604,8 +591,13 @@ db-migrate:
 #
 # Apply pending migrations directly with sqlx-cli, bypassing the backend build.
 [group('db')]
+[positional-arguments]
 db-migrate-raw *args:
-    cd backend && DATABASE_URL="${DATABASE_URL_MIGRATION:-postgres:///reverie_dev?host=${XDG_STATE_HOME:-$HOME/.local/state}/reverie/pgsock&user=reverie_migrator&password=reverie_migrator}" cargo sqlx migrate run {{ args }}
+    #!/usr/bin/env bash
+    set -ueo pipefail
+    source scripts/backend-dev-env.sh
+    cd backend
+    DATABASE_URL="$DATABASE_URL_MIGRATION" cargo sqlx migrate run "$@"
 
 # Idempotent by construction: db-up is a no-op when the container is already
 # healthy, db-migrate is a no-op once the schema is current, and each

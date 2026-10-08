@@ -1,20 +1,8 @@
 #!/usr/bin/env bash
-# Writes or checks backend/schema.sql, the pg_dump of a database with every
-# migration applied. The dump comes from a scratch database, never reverie_dev,
-# so nothing done to a developer's own database can reach it. pg_dump runs
-# inside the Postgres container so its version is the server's, and the two
-# header lines naming those versions are dropped.
-#
-# Usage: schema-dump.sh write|check
-#
-# REVERIE_PG_CONTAINER names the Postgres container (default: the dev compose
-# service). REVERIE_PG_HOST is where sqlx-cli reaches the same server, as a
-# socket directory or a hostname (default: the dev socket directory).
-# REVERIE_MIGRATOR_PASSWORD is the migrator role's password (default: the dev
-# role-name password); it travels as PGPASSWORD, never inside the URL.
+# Writes or checks the migrator-owned schema inside a disposable cluster.
 set -euo pipefail
 
-cd "$(git rev-parse --show-toplevel)"
+cd "$(dirname -- "${BASH_SOURCE[0]}")/.."
 
 die() {
   printf 'schema-dump: %s\n' "$*" >&2
@@ -27,37 +15,46 @@ case "$mode" in
   *) die "usage: $0 write|check" ;;
 esac
 
-container="${REVERIE_PG_CONTAINER:-$(docker compose -f docker/compose.dev.yml ps -q postgres)}"
-[ -n "$container" ] || die "no dev Postgres container is running; start it with \`just db-up\`"
-host="${REVERIE_PG_HOST:-${XDG_STATE_HOME:-$HOME/.local/state}/reverie/pgsock}"
+for input in REVERIE_PG_CONTAINER REVERIE_PG_HOST REVERIE_PG_PORT POSTGRES_PASSWORD REVERIE_MIGRATOR_PASSWORD; do
+  [[ -n "${!input:-}" ]] || die "$input is required from the provisioning owner"
+done
+container="$REVERIE_PG_CONTAINER"
+host="$REVERIE_PG_HOST"
+port="$REVERIE_PG_PORT"
+[[ "$host" != /* ]] || port=5432
 db="reverie_schema_dump_$(od -An -N6 -tx1 /dev/urandom | tr -d ' \n')"
 dump="$(mktemp)"
 created=0
 
 psql_owner() {
-  docker exec -i "$container" psql -X -q -v ON_ERROR_STOP=1 -U reverie "$@"
+  PGPASSWORD="$POSTGRES_PASSWORD" docker exec -i -e PGPASSWORD "$container" psql -X -q -h localhost -v ON_ERROR_STOP=1 -U reverie "$@"
 }
 
-# Drop only a database this run created: a failed CREATE means the name is taken.
 cleanup() {
-  rm -f "$dump"
-  if [ "$created" = 1 ]; then
-    psql_owner -d postgres -c "DROP DATABASE IF EXISTS $db WITH (FORCE)" || true
+  local status=$?
+  trap - EXIT
+  if [ "$created" = 1 ] && ! psql_owner -d postgres -c "DROP DATABASE IF EXISTS $db WITH (FORCE)" >/dev/null 2>&1; then
+    printf 'schema-dump: scratch database cleanup failed\n' >&2
+    [[ "$status" != 0 ]] || status=1
   fi
+  if ! rm -f "$dump"; then
+    [[ "$status" != 0 ]] || status=1
+  fi
+  exit "$status"
 }
 trap cleanup EXIT
 
-psql_owner -d postgres -c "CREATE DATABASE $db TEMPLATE template0"
+psql_owner -d postgres -c "CREATE DATABASE $db TEMPLATE template0" >/dev/null 2>&1 || die "scratch database creation failed"
 created=1
 # From its DO block on, init-roles.sql grants per database rather than per
 # cluster; the dump records the part of that it applies to schema public.
-sed -n '/^DO \$\$$/,$p' docker/init-roles.sql | psql_owner -d "$db"
-PGPASSWORD="${REVERIE_MIGRATOR_PASSWORD:-reverie_migrator}" \
-  DATABASE_URL="postgres:///${db}?host=${host}&user=reverie_migrator" \
-  sqlx migrate run --source backend/migrations
+sed -n '/^DO \$\$$/,$p' docker/init-roles.sql | psql_owner -d "$db" >/dev/null 2>&1 || die "scratch database grants failed"
+PGPASSWORD="$REVERIE_MIGRATOR_PASSWORD" \
+  DATABASE_URL="postgres:///${db}?host=${host}&port=${port}&user=reverie_migrator" \
+  sqlx migrate run --source backend/migrations >/dev/null 2>&1 || die "scratch database migration failed"
 
-docker exec "$container" pg_dump --schema-only --restrict-key=reverie -U reverie -d "$db" \
-  | sed -e '/^-- Dumped from database version /d' -e '/^-- Dumped by pg_dump version /d' > "$dump"
+PGPASSWORD="$POSTGRES_PASSWORD" docker exec -e PGPASSWORD "$container" pg_dump --schema-only --restrict-key=reverie -h localhost -U reverie -d "$db" 2>/dev/null \
+  | sed -e '/^-- Dumped from database version /d' -e '/^-- Dumped by pg_dump version /d' > "$dump" || die "scratch schema dump failed"
 grep -q '^CREATE POLICY ' "$dump" || die "the dump defines no policy, so the migrations did not apply"
 
 if [ "$mode" = write ]; then

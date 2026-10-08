@@ -69,19 +69,20 @@ These rules define the Rust, Axum, and sqlx architecture. Do not deviate.
 
 <local_environment>
 
-- **Database Reachability:** The local dev cluster (`docker/compose.dev.yml`; start with `just db-up`) serves two
-  transports: a unix socket at `${XDG_STATE_HOME:-$HOME/.local/state}/reverie/pgsock` and loopback-only TCP on
-  `localhost:5432`. The DB-backed just recipes (tests, migrations, the sqlx cache) default to the socket, which lets
-  them run inside network-isolated dev sandboxes; the runtime server and GUI clients use TCP, the transport the server
-  ships with. Run migrations with `just db-migrate`, or set `DATABASE_URL_MIGRATION` and run `cargo run -- migrate`.
-  Socket DSNs use the params-only form `postgres:///reverie_dev?host=<dir>&user=<role>&password=<pw>`; sqlx rejects
-  `postgres://user@/db?host=...`. See `./README.md` for full connection tables and role details. </local_environment>
+- **Database Reachability:** `just db-up` owns persistent development provisioning and retains generated credentials
+  outside checkouts. `just db-migrate` and dev recipes read that state through `scripts/backend-dev-env.sh`, preserving
+  process/file precedence and explicit empty inputs. Both loopback TCP and the development Unix socket require SCRAM.
+  Verification recipes provision independent disposable clusters; they never target development or honour
+  REVERIE_DEV_DB_URL. Test mode leaves the bootstrap database empty for SQLx per-test migrations; schema mode prepares
+  it for online SQLx compilation. Socket DSNs use `postgres:///database?host=<dir>&user=<role>&password=<pw>`; SQLx
+  rejects `postgres://user@/database?host=...`. See `./README.md` for lifecycle and explicit-supply instructions.
+  </local_environment>
 
 <testing_standards>
 
 - **Integration Tests:** Use `axum-test`.
-- **Database Tests:** Use `#[sqlx::test(migrations = "./migrations")]`. It provisions a fresh isolated database per
-  test.
+- **Database Tests:** Use `#[sqlx::test(migrations = "./migrations")]`. It provisions a fresh isolated database per test
+  within an invocation-owned disposable cluster. Role helpers require the owner-supplied nonempty passwords.
 - **OIDC Mocking:** Use `crate::test_support::oidc_mock` for auth flows.
   </testing_standards>
 

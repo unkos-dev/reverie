@@ -69,8 +69,10 @@ provisions its database through the harness path this subject documents.
 `docker/init-roles.sql` creates `reverie_migrator WITH LOGIN PASSWORD :'mig_pw' NOSUPERUSER NOCREATEROLE NOBYPASSRLS`,
 alongside the three RLS-scoped roles the neighbouring Design owns. Its password comes from the
 `REVERIE_MIGRATOR_PASSWORD` environment variable, which `docker/compose.staging.yml` passes only to the
-`reverie-postgres` service, where the script runs on first boot. The script grants it `CONNECT` on the database and,
-separately, `USAGE, CREATE ON SCHEMA public` — both are load-bearing: database-level `CREATE` alone lets it run
+`reverie-postgres` service, where the script runs on first boot. All four role passwords must be nonempty before
+provisioning creates any role. Development and verification supply generated credentials through
+`scripts/postgres-provision.sh`. The script grants it `CONNECT` on the database and, separately,
+`USAGE, CREATE ON SCHEMA public` — both are load-bearing: database-level `CREATE` alone lets it run
 `CREATE SCHEMA tower_sessions` (the initial migration's own statement), but PostgreSQL 15 removed the implicit `CREATE`
 on schema `public` from `PUBLIC`, so the schema-level grant is what lets it create tables and trusted extensions inside
 `public`. Every schema object the migrations create is owned by whichever role ran the migration that created it: on a
@@ -137,13 +139,12 @@ applied-but-unembedded version is `MigrationError::SchemaAhead`, an embedded-but
   socket, belongs to "Application runtime".
 - **The `#[sqlx::test]` harness** applies migrations through neither of the above. The attribute macro (from the pinned
   `sqlx` crate) expands to `sqlx::testing::TestFn::run_test`, which creates a fresh `_sqlx_test_<hash>` database through
-  a master pool connected with the ambient `DATABASE_URL` — in local development and CI that is the bootstrap role
-  `reverie` (`test_support.rs`'s own doc comment: "owned by the schema owner (`reverie` — bypasses RLS)") — and then
-  calls the embedded `Migrator`'s own `run_direct` method on a fresh connection to that database. `run_direct` is sqlx's
-  built-in migration applier: it does not call `db::run_migrations`, `run_locked`, or anything in this crate, so a test
-  provisioned this way exercises none of the advisory lock, the batch-vs-no-tx split, or any `MigrationError` variant. A
-  handful of tests in `backend/src/db.rs` instead prove properties of the real `reverie_migrator` identity directly:
-  `reverie_migrator_can_apply_full_migration_set` grants a fresh per-test database's `CREATE` privileges to
+  a master pool connected with the invocation owner's `DATABASE_URL`, authenticated as bootstrap role `reverie`, and
+  then calls the embedded `Migrator`'s own `run_direct` method on a fresh connection to that database. `run_direct` is
+  sqlx's built-in migration applier: it does not call `db::run_migrations`, `run_locked`, or anything in this crate, so
+  a test provisioned this way exercises none of the advisory lock, the batch-vs-no-tx split, or any `MigrationError`
+  variant. A handful of tests in `backend/src/db.rs` instead prove properties of the real `reverie_migrator` identity
+  directly: `reverie_migrator_can_apply_full_migration_set` grants a fresh per-test database's `CREATE` privileges to
   `reverie_migrator` (since a `#[sqlx::test]` database starts with none of `init-roles.sql`'s grants) and then calls
   `db::run_migrations` against a `reverie_migrator`-authenticated DSN built from the test pool's own connect options.
 - **`just db-migrate-raw`** applies pending migrations directly through sqlx-cli's `cargo sqlx migrate run` against the
@@ -206,6 +207,17 @@ ever ships — if a new `TIMESTAMPTZ` column has no matching constraint.
   upgrade in the repository-provided Compose topology.
 
 ## Data and state
+
+Each independent test or schema command owns a disposable PostgreSQL cluster, generated credentials, a dynamic loopback
+port and a unique socket directory through `scripts/postgres-provision.sh`. Test mode leaves its bootstrap database
+without migrations; the SQLx harness still owns per-test creation and migrations. Schema mode applies migrations as
+`reverie_migrator` before online compilation or SQLx preparation. Schema dumping creates its scratch database within a
+test-mode cluster and applies migrations with the supplied migrator credential.
+
+Development state belongs to the resolved Compose project outside checkouts. Provisioning publishes one complete
+mode-0600 credential file in a mode-0700 directory under a stable lock. Dev readers preserve process/file overrides and
+fill absent database inputs from that state; readers never generate or rotate credentials. Both transports require SCRAM
+authentication.
 
 - **`_sqlx_migrations`** (schema `public`): one row per applied migration, carrying its version, description, install
   timestamp, success flag, SHA-384 checksum, and execution time. Durable, forward-only: no code path deletes or updates
@@ -272,6 +284,12 @@ RLS-enforced behaviour reconnects as `reverie_app` (or another runtime role) via
 and its siblings against the same per-test database.
 
 ## Failure and recovery
+
+The disposable owner forwards INT/TERM to the child group, waits and removes its socket contents, container, storage and
+credential directory. Child failures propagate; cleanup failure makes a successful child or mutation-findings status an
+infrastructure failure. Forced termination, host failure or daemon loss can leave named resources for manual cleanup.
+Persistent startup refuses missing or malformed credential state for an existing volume. A confirmed dev reset recreates
+only that project's volume, retaining valid credentials and permanently deleting its data.
 
 - **`MigrationError::Connection`**: the ephemeral migration pool could not connect. Nothing was attempted; the message
   never includes DSN credentials (`resolve_migration_dsn` and the connect path pass only the parsed error through).

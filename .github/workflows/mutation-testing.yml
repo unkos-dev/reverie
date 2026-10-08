@@ -25,26 +25,10 @@ jobs:
     defaults:
       run:
         working-directory: backend
-    services:
-      postgres:
-        image: postgres:18@sha256:74935e72241653ca55e0414067e6d8763aceb8a810eb51b452253ec3dcfc4336
-        env:
-          POSTGRES_USER: reverie
-          # Non-secret credential scoped to this ephemeral CI run.
-          POSTGRES_PASSWORD: ci-${{ github.run_id }}-${{ github.run_attempt }}
-          POSTGRES_DB: reverie_dev
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U reverie -d reverie_dev"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 5
     env:
       # Compile against the committed .sqlx cache; tests connect live and
       # create their own per-test databases.
       SQLX_OFFLINE: "true"
-      DATABASE_URL: postgres://reverie:ci-${{ github.run_id }}-${{ github.run_attempt }}@localhost:5432/reverie_dev
       CARGO_INCREMENTAL: 0
       RUSTFLAGS: -C link-arg=-fuse-ld=mold
       CARGO_TERM_COLOR: always
@@ -52,10 +36,6 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-
-      - name: Create database roles
-        run: psql "$DATABASE_URL" -f docker/init-roles.sql
-        working-directory: ${{ github.workspace }}
 
       # Pins to backend/rust-toolchain.toml, keeping this workflow on the same
       # compiler as ci.yml and a developer's machine.
@@ -85,7 +65,7 @@ jobs:
           shard=$(( 10#$(date -u +%V) % 8 ))
           echo "ISO week $(date -u +%V) -> shard ${shard}/8"
           rc=0
-          mise exec mold github:sourcefrog/cargo-mutants -- cargo mutants --workspace --shard "${shard}/8" -- --locked --all-targets || rc=$?
+          mise exec mold github:sourcefrog/cargo-mutants -- bash ../scripts/postgres-provision.sh test -- cargo mutants --jobs 1 --workspace --shard "${shard}/8" -- --locked --all-targets || rc=$?
           case "$rc" in
             0) echo "shard clean: every mutant caught" ;;
             2|3)

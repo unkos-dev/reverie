@@ -2,59 +2,65 @@
 
 This directory contains the Rust Axum backend.
 
-## Development Database
+## Development database
 
-The development database is a local Docker Postgres cluster defined in `docker/compose.dev.yml`. Start it with
-`just db-up` (or `docker compose -f docker/compose.dev.yml up -d --wait` from the repository root). The cluster serves
-two transports: loopback-only TCP on `127.0.0.1:5432`, keeping the trivially-credentialed dev cluster off the LAN, and a
-Unix socket bind-mounted to `${XDG_STATE_HOME:-$HOME/.local/state}/reverie/pgsock` on the host. Tooling defaults to the
-socket; the server and GUI clients use TCP (see "Transports" below). Roles seed from `docker/init-roles.sql` on first
-init. The cluster is a fresh install: roles and schema build from zero, with no data imports from any prior environment.
+`just db-up` starts the persistent development cluster in `docker/compose.dev.yml`. The shared provisioning script
+generates five independent credentials once and retains them at
+`${XDG_STATE_HOME:-$HOME/.local/state}/reverie/postgres/<compose-project>/credentials.env`. The directory is mode 0700
+and the file is mode 0600. Provisioning is serialised by a stable lock; restarts reuse the complete state. A volume
+without its original credential state refuses startup. Restore that state or coordinate an explicit reset.
 
-The local loop: `just db-up`, then `just db-migrate` to apply migrations, then `just rust::test` / `just rust::doctests`
-/ `just rust::sqlx-check`. Those recipes inject the schema-owner DSN over the socket
-(`postgres:///reverie_dev?host=$HOME/.local/state/reverie/pgsock&user=reverie&password=reverie`); bare `cargo`
-invocations must set `DATABASE_URL` themselves, to either that socket form or the TCP form from the roles table below.
+Run `just db-migrate` before starting the server, or use `just dev-up` for migrations, the API and Vite. The dev loader
+resolves the process environment, then the parsed `REVERIE_DEV_ENV` file (default `~/reverie/dev/env`), then retained
+state for absent database inputs. Explicit empty assignments stay empty and fail application validation. Omit the three
+database assignments from a local env file to use retained state. Fully supplied external DSNs need no local state; a
+conflicting bootstrap `POSTGRES_PASSWORD` is rejected. Operators supply their own role-specific DSNs through deployment
+tooling; the server reads only its process environment.
 
-### Transports
+`just db-down` preserves the volume and credentials. `just db-reset <confirmed-volume>` permanently deletes that
+volume's data and recreates it with retained valid credentials. Confirm the resolved project, container and mounted
+volume, and coordinate all consumers before resetting. A code revert cannot recover deleted data. Neither dev readers
+nor verification commands rotate development credentials.
 
-Local tooling (the DB-backed just recipes: tests, doctests, the sqlx cache, migrations) connects over the Unix socket.
-That is what lets those recipes run inside network-isolated dev sandboxes, which block TCP loopback but not AF_UNIX
-connects. The runtime server keeps connecting over TCP as the `reverie_app` role, matching the transport and password
-auth mode it ships with, and GUI clients keep using `localhost:5432`; both transports reach the same cluster.
+### Verification ownership and transports
 
-Socket DSNs use the params-only URI form: `postgres:///reverie_dev?host=<socket-dir>&user=<role>&password=<password>`.
-sqlx rejects the libpq-style `postgres://user@/db?host=...` spelling (userinfo with an empty authority host fails its
-URL parsing), and a socket DSN never falls back to TCP: if the socket is absent the connection fails immediately. A
-container created before the socket mount existed has no host socket; one `just db-up` recreates it. Socket connections
-match the image's `local all all trust` pg_hba rule and are passwordless for every role, the same effective access the
-role-name passwords on TCP already grant. Docker Desktop on macOS/Windows cannot share Unix sockets across its VM
-boundary; there, drop the mount with a local compose override and set `REVERIE_DEV_DB_URL` to the TCP schema-owner DSN.
-The schema recipes (`just rust::schema-dump` and `just rust::schema-check`) take `REVERIE_PG_HOST=localhost` instead,
-plus `REVERIE_MIGRATOR_PASSWORD` when the cluster's migrator password is not the dev default.
+Each `just rust::test`, `doctests`, `sqlx-check`, `sqlx-prepare`, `schema-check` and `schema-dump` invocation owns a
+disposable cluster with independent credentials, a dynamic loopback TCP port and a unique socket directory. Tests and
+doctests compile against the committed SQLx cache. Test mode leaves the bootstrap database without migrations; SQLx
+creates and migrates each test database. Schema mode prepares its bootstrap database for online compilation and SQLx
+cache checks. Schema dumping uses a migrator-owned scratch database within its disposable cluster. CI uses the same
+owner; its online Clippy and documentation commands receive prepared clusters.
 
-To run the server itself: `just rust::dev` in the foreground, or `just rust::dev-start` / `dev-stop` / `dev-status` for
-a background process logging to `backend/.dev-server.log`. `just dev-up` from the repository root does the whole
-sequence above and brings Vite up as well. Unlike the test recipes, these run as the RLS-enforced `reverie_app` role,
-the identity the deployed server uses. They fill in `DATABASE_URL` and the OPDS-required `REVERIE_PUBLIC_URL` only when
-neither the environment nor `.env` supplies one, so a `.env` copied from `.env.example` stays authoritative.
+Both TCP and Unix sockets require SCRAM authentication. Verification uses its owned socket when available and its owned
+TCP endpoint across a Docker host boundary. Development publishes `127.0.0.1:5432` and the socket at
+`${XDG_STATE_HOME:-$HOME/.local/state}/reverie/pgsock`; the runtime server uses TCP. Socket DSNs use the params-only
+form `postgres:///database?host=<socket-dir>&user=<role>&password=<password>`. SQLx rejects
+`postgres://user@/database?host=...`, and a socket DSN never falls back to TCP.
 
-The `#[sqlx::test]` macro creates a fresh database per test, which requires a superuser connection; the compose
-bootstrap role `reverie` qualifies. Running tests with the `reverie_app` DSN from `.env` fails per-test with a
-permission error. A `failed to connect to setup test database: PoolTimedOut` error means the dev cluster is not running;
-start it with `just db-up`. CI runs the same commands against its own Postgres service container.
+The foreground owner forwards INT/TERM, waits for children and removes its socket contents, container, disposable
+storage and private credential directory. A failed child remains failed; a cleanup failure is an infrastructure failure,
+including when cargo-mutants reports findings. SIGKILL, host failure or Docker daemon loss can leave resources; the
+reported resource identities support manual cleanup. Verification never resets development data.
+
+Older checkouts with socket/default-password recipes fail against this SCRAM cluster. Upgrade verification recipes or
+invoke commands from the older checkout through the updated provisioning script's absolute path, using
+`bash <updated-checkout>/scripts/postgres-provision.sh test -- <command>`. For an older dev consumer, use a private
+shell to load the updated `scripts/backend-dev-env.sh` by its absolute path and invoke the consumer with explicit DSNs.
+Avoid echoing or storing these values in the checkout. `REVERIE_DEV_DB_URL` cannot redirect updated verification
+recipes.
 
 ### Roles
 
-The `docker/init-roles.sql` script creates these roles when the cluster starts:
+`docker/init-roles.sql` requires all four nonempty role-password inputs before creating any application role. The
+PostgreSQL image also requires the bootstrap password. Development and verification supply generated values.
 
-| Role | Connection | Purpose |
-| ---- | ---------- | ------- |
-| `reverie` | `postgres://reverie:reverie@localhost:5432/reverie_dev` | Bootstraps the cluster. Do not use for application logic. |
-| `reverie_migrator` | `postgres://reverie_migrator:reverie_migrator@localhost:5432/reverie_dev` | Runs migrations. Owns schema objects. |
-| `reverie_app` | `postgres://reverie_app:reverie_app@localhost:5432/reverie_dev` | Serves web traffic. Obeys RLS policies. |
-| `reverie_ingestion` | `postgres://reverie_ingestion:reverie_ingestion@localhost:5432/reverie_dev` | Runs background pipelines. Obeys RLS policies. |
-| `reverie_readonly` | `postgres://reverie_readonly:reverie_readonly@localhost:5432/reverie_dev` | Queries data for debugging. SELECT only. |
+| Role                | Purpose                                           |
+| ------------------- | ------------------------------------------------- |
+| `reverie`           | Cluster bootstrap and SQLx test provisioning.     |
+| `reverie_migrator`  | Applies migrations and owns schema objects.       |
+| `reverie_app`       | Serves web traffic under RLS.                     |
+| `reverie_ingestion` | Runs background pipelines under its RLS policies. |
+| `reverie_readonly`  | Queries permitted data for debugging.             |
 
 The `tower_sessions` schema bypasses RLS. The session id resolves user identity. Role grants control access. The
 `reverie_app` role receives DML access, `reverie_readonly` can read only the `expiry_date` column, and
@@ -67,10 +73,10 @@ Migration uses `DATABASE_URL_MIGRATION`; schema printing requires no credentials
 
 ### Migrations
 
-The `reverie_migrator` role executes migrations out of band: `just db-migrate` runs them over the socket, or set
-`DATABASE_URL_MIGRATION` to either transport's migrator DSN and run `cargo run -- migrate`. The application process
-calls `db::verify_schema_current()` on startup and exits if the schema diverges. The `#[sqlx::test]` macro uses the
-built-in sqlx migrator for tests.
+The `reverie_migrator` role executes migrations out of band: `just db-migrate` uses the retained migrator credentials,
+or set `DATABASE_URL_MIGRATION` to either transport's migrator DSN and run `cargo run -- migrate`. The application
+process calls `db::verify_schema_current()` on startup and exits if the schema diverges. The `#[sqlx::test]` macro uses
+the built-in sqlx migrator for tests.
 
 `just db-migrate` compiles the backend binary first, which is circular when a branch is authoring a new migration: the
 binary needs the sqlx offline cache to reflect the migration, and the cache needs the migration already applied.
@@ -79,13 +85,13 @@ follow it with `just rust::sqlx-prepare`. It is a local authoring shortcut only,
 in any shipped environment. The two runners also group transactions differently: the shipped runner applies all pending
 transactional migrations in one batch transaction, while sqlx-cli commits each migration individually, so a migration
 that depends on an earlier migration's commit passes under sqlx-cli and fails under the shipped runner. Before pushing a
-branch that adds a migration, run `just db-reset && just db-migrate` once so the shipped runner has applied it to a
-fresh database; no other local loop or preflight lane exercises it.
+branch that adds a migration, coordinate `just db-reset <confirmed-volume>` then run `just db-migrate` so the shipped
+runner has applied it to a fresh database; no other local loop or preflight lane exercises it.
 
 `backend/schema.sql` is the committed `pg_dump` of a database with every migration applied. A change to the migrations
-regenerates it with `just rust::schema-dump`, which migrates a scratch database on the dev cluster instead of reading
-`reverie_dev`; `just rust::schema-check` and CI fail when the committed file differs. A Postgres image bump that carries
-a new minor release can change `pg_dump`'s output, and regenerates the dump the same way.
+regenerates it with `just rust::schema-dump`, which migrates a scratch database on its own disposable cluster;
+`just rust::schema-check` and CI fail when the committed file differs. A Postgres image bump that carries a new minor
+release can change `pg_dump`'s output, and regenerates the dump the same way.
 
 Operator-facing `MigrationError` modes:
 

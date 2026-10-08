@@ -1,21 +1,6 @@
 #!/usr/bin/env bash
-# Resolve the backend's dev configuration and export it into the environment.
-# Sourced by the rust plane's dev recipes; not executable on its own.
-#
-# The server discovers no env file itself: `cargo run` reads only the process
-# environment (backend/src/config/mod.rs Config::from_env). This script is the
-# dev-only substitute, loading an out-of-tree env file so a checkout never
-# doubles as a place to keep developer secrets. Resolution order is strictly
-# environment, then the env file, then the dev default below: a value already
-# in the process environment is never overwritten by the file, and a value in
-# the file is never overwritten by the default. Getting this backwards would
-# silently clobber whatever the developer already had set.
-#
-# Every key the file defines is exported, not only the ones with a
-# recipe-known dev default (DATABASE_URL, DATABASE_URL_INGESTION, REVERIE_PUBLIC_URL,
-# DATABASE_URL_MIGRATION): the file pass below exports each parsed key that
-# the environment does not already define, then dev_env_default only fills in
-# the handful of keys the recipes need a fallback for.
+# Load process, parsed dev-file and retained database-state inputs in that order.
+# Sourced by dev recipes; explicit empty values remain application inputs.
 
 # Executing this file would resolve the configuration into a shell that exits
 # immediately, which looks like success and changes nothing.
@@ -25,8 +10,7 @@ if [ "${BASH_SOURCE[0]}" = "$0" ]; then
 fi
 
 # An explicitly set REVERIE_DEV_ENV names a file that must exist; the default
-# path is a convenience that silently falls back to dev defaults on a fresh
-# clone, so its absence is not an error.
+# path is optional; absent database inputs require retained provisioning state.
 _dev_env_explicit="${REVERIE_DEV_ENV:-}"
 REVERIE_DEV_ENV="${REVERIE_DEV_ENV:-$HOME/reverie/dev/env}"
 
@@ -77,17 +61,19 @@ dev_env_default() {
 # RLS-enforced runtime identity. Overriding it is a matter of setting
 # DATABASE_URL in the environment or in the dev env file, so there is no
 # recipe-specific knob for it.
-dev_env_default DATABASE_URL "postgres://reverie_app:reverie_app@localhost:5432/reverie_dev"
-dev_env_default DATABASE_URL_INGESTION "postgres://reverie_ingestion:reverie_ingestion@localhost:5432/reverie_dev"
+if [[ ! -v DATABASE_URL || ! -v DATABASE_URL_INGESTION || ! -v DATABASE_URL_MIGRATION ]]; then
+  # shellcheck source=scripts/postgres-provision.sh
+  source "$(dirname "${BASH_SOURCE[0]}")/postgres-provision.sh"
+  pg_dev_load || return 1
+  dev_env_default DATABASE_URL "postgres://reverie_app:$REVERIE_APP_PASSWORD@localhost:5432/reverie_dev"
+  dev_env_default DATABASE_URL_INGESTION "postgres://reverie_ingestion:$REVERIE_INGESTION_PASSWORD@localhost:5432/reverie_dev"
+  dev_env_default DATABASE_URL_MIGRATION "postgres://reverie_migrator:$REVERIE_MIGRATOR_PASSWORD@localhost:5432/reverie_dev"
+fi
 # Required whenever OPDS is enabled, which is the default. Feeds emit absolute
 # URLs rooted here, so the dev default is this server's own origin: a reader
 # pointed at the API then receives links back to the API, reachable whether or
 # not the frontend is running. `.env.example` ships the same value.
 dev_env_default REVERIE_PUBLIC_URL "http://localhost:3000"
-# `cargo run -- migrate` no longer self-loads anything, so the migration DSN
-# needs the same three-way precedence as every other dev default.
-dev_env_default DATABASE_URL_MIGRATION "postgres://reverie_migrator:reverie_migrator@localhost:5432/reverie_dev"
-
 # The file pass above already exported REVERIE_PORT if the file defines it
 # and the environment did not; this just supplies the last-resort default.
 REVERIE_PORT="${REVERIE_PORT:-3000}"

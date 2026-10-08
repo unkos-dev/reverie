@@ -92,7 +92,7 @@ done
 # faithful local lane to run; `just preflight-full` never ran them either.
 lanes_for() {
   case "$1" in
-    backend) printf '%s\n' rust::guards db-up rust::check rust::doc-lint rust::test rust::doctests rust::sqlx-check rust::schema-check rust::machete ;;
+    backend) printf '%s\n' rust::guards rust::check rust::doc-lint rust::test rust::doctests rust::sqlx-check rust::schema-check rust::machete ;;
     audit) printf '%s\n' rust::deny ;;
     frontend) printf '%s\n' js::check js::test js::build js::font-integrity ;;
     website) printf '%s\n' website::check ;;
@@ -104,8 +104,8 @@ lanes_for() {
 }
 
 # Emission order. Mirrors `just preflight-full`: the static guards that need no
-# toolchain, database, or install come first so they fail fastest, db-up
-# precedes every DB-backed recipe, and the network-backed audit runs last.
+# toolchain, database, or install come first so they fail fastest. Database
+# recipes own disposable clusters; the network-backed audit runs last.
 #
 # Two recipes are deliberately absent, both because a laptop cannot answer for
 # them honestly.
@@ -127,7 +127,6 @@ LANE_ORDER=(
   rust::guards
   infra::check
   infra::openapi
-  db-up
   rust::check
   rust::doc-lint
   rust::test

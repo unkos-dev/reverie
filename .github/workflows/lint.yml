@@ -84,6 +84,9 @@ jobs:
       - name: Preflight lane scoper
         run: just infra::preflight-scope-selftest
 
+      - name: Database provisioning status and dev environment
+        run: just infra::backend-dev-env-selftest
+
       # The package-ingress ADR's frozen-installs control.
       - name: cargo --locked guard
         run: just infra::cargo-locked-guard
