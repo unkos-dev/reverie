@@ -371,7 +371,19 @@ describe("Needs attention", () => {
     act(() => {
       resolveMore({ items: [inputItem(3)], next_cursor: null });
     });
-    expect(await screen.findByText("Loaded 1 more files")).toBeInTheDocument();
+    expect(await screen.findByText("Loaded 1 more file")).toBeInTheDocument();
+  });
+
+  test("a second press on a pending scan sends no second request", async () => {
+    vi.mocked(scanIngestion).mockReturnValue(new Promise(() => {}));
+    renderPage();
+    const button = await screen.findByRole("button", { name: "Scan ingestion folder" });
+    await userEvent.click(button);
+    const pending = await screen.findByRole("button", { name: "Scanning" });
+    pending.focus();
+    await userEvent.keyboard("{Enter}");
+    await userEvent.keyboard(" ");
+    expect(scanIngestion).toHaveBeenCalledTimes(1);
   });
 
   test("a failed later page keeps loaded rows and offers Try again", async () => {
@@ -593,6 +605,18 @@ describe("Enrichment problems", () => {
     ).toBeInTheDocument();
     expect(screen.getByText("Book title 1")).toBeInTheDocument();
     expect(triggerEnrichment).toHaveBeenCalledWith(failureItem(1).manifestation_id);
+  });
+
+  test("a second press on a queuing retry sends no second request", async () => {
+    vi.mocked(triggerEnrichment).mockReturnValue(new Promise(() => {}));
+    renderPage();
+    const row = (await screen.findByText("Book title 1")).closest("tr");
+    if (row === null) throw new Error("row missing");
+    await userEvent.click(within(row).getByRole("button", { name: "Try again" }));
+    const queuing = within(row).getByRole("button", { name: "Queuing" });
+    queuing.focus();
+    await userEvent.keyboard("{Enter}");
+    expect(triggerEnrichment).toHaveBeenCalledTimes(1);
   });
 
   test("a failed retry says so and offers Try again on the same row", async () => {
