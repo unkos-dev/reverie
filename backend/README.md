@@ -32,8 +32,9 @@ UTF-8 file readable inside the process or container. Empty direct and file varia
 conflict before reading, including when automatic migration is disabled. Whitespace-only variables remain present.
 
 The reader strips all trailing LF and CRLF terminators and preserves all other text, including spaces, interior newlines
-and a lone CR. Existing required, optional and blank checks apply to the result. Errors identify the setting without
-paths, contents or raw I/O details. Unknown file aliases, including the bootstrap password alias, are ignored.
+and a lone CR. Empty contents after stripping are absent for all six settings; optional metadata credentials remain
+unset. Existing required and blank checks apply. Errors identify the setting without paths, contents or raw I/O details.
+Unknown file aliases, including the bootstrap password alias, are ignored.
 
 With automatic migration disabled, the migration file is never opened and the field remains unset. `reverie migrate`
 reads only its migration source, and schema output opens no credential files. The dev loader yields generated database

@@ -81,9 +81,10 @@ joining `SECRET_FIELDS` to `ENV_MAP`, and the migrate-only entry point uses that
 
 Empty direct variables and empty file aliases are absent; whitespace-only sources are present. Two non-empty sources
 conflict before any file read, independent of pair order. File contents must be UTF-8. The resolver removes all trailing
-LF and CRLF terminators and preserves other text, including spaces, interior newlines and a lone CR. It inserts file
-contents as a Figment string, preserving numeric-, boolean- and quote-looking values. Direct values keep Figment's
-existing typed parsing. Required, optional and blank checks run after resolution.
+LF and CRLF terminators and preserves other text, including spaces, interior newlines and a lone CR. Empty contents
+after stripping are absent for all six settings. It inserts non-empty file contents as a Figment string, preserving
+numeric-, boolean- and quote-looking values. Direct values keep Figment's existing typed parsing. Existing required and
+blank checks run after resolution; absent optional metadata credentials remain unset.
 
 When automatic migration is disabled, the resolver still detects a migration-source conflict but never opens its file;
 Gate 1 clears the migration field. Unknown `_FILE` variables, including the bootstrap password alias, are ignored. The
@@ -244,7 +245,8 @@ variable set rewrites the artifact instead of asserting.
 
 Source conflicts and file-read failures return fixed, value-free diagnostics naming the setting. Conflict diagnostics
 name both variable names; read errors retain only a fixed category, with no file path, contents or attached raw I/O
-error. Existing required and blank failures still apply to empty or terminator-only file contents.
+error. Empty or terminator-only files leave credentials absent. Required credentials fail their existing missing checks
+when needed; optional metadata credentials remain unset. Admin commands retain the blank ingestion DSN default.
 
 Deserialise-phase failure (`figment.extract()`) is fail-fast: the first field that cannot deserialise into its typed
 slot stops the pipeline, and `map_figment_error` turns the underlying `figment::Error` into one `ConfigError::Invalid`

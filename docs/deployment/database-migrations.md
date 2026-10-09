@@ -37,8 +37,9 @@ cargo run -- migrate
 `DATABASE_URL_MIGRATION_FILE` selects a UTF-8 file readable inside the migration process or container. Empty direct and
 file variables are absent; two non-empty sources conflict before reading. Whitespace-only variables remain present. The
 reader removes all trailing LF and CRLF terminators and preserves other text, including spaces, interior newlines and a
-lone CR. The existing blank-DSN check applies after reading. Errors name the setting without file contents, paths or raw
-I/O details. `reverie migrate` reads no other credential files.
+lone CR. Empty contents after stripping are absent. The existing missing and blank-DSN checks apply after reading.
+Errors name the setting without file contents, paths or raw I/O details. `reverie migrate` reads no other credential
+files.
 
 The same file supply applies to the application, ingestion, OIDC and metadata credentials; the
 [configuration reference](../../website/src/content/docs/reference/configuration.mdx) lists all six aliases. Mount each

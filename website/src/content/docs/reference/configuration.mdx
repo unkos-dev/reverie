@@ -95,7 +95,8 @@ Empty direct variables and empty file variables are absent. Two non-empty source
 even when automatic migration is disabled. Whitespace-only sources are non-empty.
 
 All trailing LF and CRLF terminators are removed. Other content, including spaces, interior
-newlines and a lone CR, is preserved as text. Existing required and blank checks still apply.
+newlines and a lone CR, is preserved as text. Empty contents after stripping are absent for all six settings.
+Existing required and blank checks still apply.
 Read failures identify the setting without disclosing the path, file contents or I/O details.
 
 With automatic migration disabled, the migration file is not opened and its DSN stays unset.

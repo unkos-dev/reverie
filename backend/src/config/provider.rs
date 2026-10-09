@@ -372,7 +372,7 @@ pub fn resolve_credential<R: Fn(&str) -> std::io::Result<String>>(
                     value.pop();
                 }
             }
-            Ok(Some(CredentialValue::File(value)))
+            Ok((!value.is_empty()).then_some(CredentialValue::File(value)))
         }
         _ => Ok(None),
     }
@@ -457,8 +457,7 @@ mod tests {
             ("秘密", "秘密"),
             ("123", "123"),
             ("true", "true"),
-            ("", ""),
-            ("\n\r\n", ""),
+            (" \n", " "),
         ] {
             let provider = EnvProvider::from_pairs(&[("DATABASE_URL_FILE", "content-path")])
                 .with_reader(|path: &str| {
@@ -470,6 +469,22 @@ mod tests {
                 panic!("file content must remain a string");
             };
             assert_eq!(value, expected);
+        }
+    }
+
+    #[test]
+    fn credential_file_empty_contents_are_absent_for_every_setting() {
+        for (name, field) in credential_settings() {
+            for contents in ["", "\n\r\n"] {
+                let alias = format!("{name}_FILE");
+                let provider = EnvProvider::from_pairs(&[
+                    (alias.as_str(), "path"),
+                    ("REVERIE_AUTO_MIGRATE", "true"),
+                ])
+                .with_reader(|_: &str| Ok(contents.into()));
+                let data = provider.data().unwrap();
+                assert!(!data[&Profile::Default].contains_key(field), "{name}");
+            }
         }
     }
 
@@ -524,6 +539,10 @@ mod tests {
 
     #[test]
     fn credential_file_existing_blank_and_migration_guards() {
+        use crate::services::enrichment::sources::MetadataSource;
+        use crate::services::enrichment::sources::hardcover::Hardcover;
+        use secrecy::ExposeSecret;
+
         for contents in ["", "\n\r\n"] {
             let provider = EnvProvider::from_pairs(&[
                 ("DATABASE_URL_FILE", "path"),
@@ -537,12 +556,26 @@ mod tests {
             let provider = EnvProvider::from_pairs(&[
                 ("DATABASE_URL", "app"),
                 ("REVERIE_GOOGLEBOOKS_API_KEY_FILE", "path"),
+                ("REVERIE_HARDCOVER_API_TOKEN_FILE", "path"),
+                ("DATABASE_URL_INGESTION_FILE", "path"),
                 ("REVERIE_OPDS_ENABLED", "false"),
             ])
             .with_reader(|_: &str| Ok(contents.into()));
             let config =
                 super::super::Config::from_figment(&figment::Figment::from(provider)).unwrap();
-            assert!(config.googlebooks_api_key.is_some());
+            assert!(config.googlebooks_api_key.is_none());
+            assert!(config.hardcover_api_token.is_none());
+            let hardcover = Hardcover::new(
+                "https://example.invalid",
+                config
+                    .hardcover_api_token
+                    .as_ref()
+                    .map(|value| value.expose_secret().to_owned()),
+            );
+            assert!(!hardcover.enabled());
+            assert_eq!(config.ingestion_database_url.expose_secret(), "");
+            assert!(matches!(config.validate_server(),
+                Err(super::super::ConfigError::MissingVar(name)) if name == "DATABASE_URL_INGESTION"));
         }
         for (file, contents, succeeds) in [
             (None, "valid", false),
