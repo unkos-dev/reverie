@@ -208,6 +208,7 @@ jobs:
           strict: true
 
       - name: Initialize CodeQL
+        id: init
         uses: github/codeql-action/init@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2 # v4.38.2
         with:
           languages: rust
@@ -218,8 +219,64 @@ jobs:
 
       - name: Perform CodeQL Analysis
         uses: github/codeql-action/analyze@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2 # v4.38.2
+        env:
+          RUST_LOG: info,ra_ap_load_cargo=debug,ra_ap_project_model=debug
         with:
           category: /language:rust
+
+      - name: Macro expansion coverage (temporary diagnostic)
+        if: always()
+        env:
+          CODEQL: ${{ steps.init.outputs.codeql-path }}
+        run: |
+          set -euo pipefail
+          db="${RUNNER_TEMP}/codeql_databases/rust"
+          pack="$(find "$(dirname "${CODEQL}")/qlpacks/codeql/rust-queries" -mindepth 1 -maxdepth 1 -type d | head -n1)"
+          mkdir -p "${pack}/reverie-diag"
+          cat > "${pack}/reverie-diag/coverage.ql" <<'QL'
+          import rust
+
+          predicate firstParty(AstNode n) {
+            n.getLocation().getFile().getRelativePath().matches("backend/src/%")
+          }
+
+          from string category, string name, int total, int expanded
+          where
+            category = "macro call" and
+            name = any(MacroCall mc | firstParty(mc)).getPath().toString() and
+            total = count(MacroCall mc | firstParty(mc) and mc.getPath().toString() = name) and
+            expanded =
+              count(MacroCall mc |
+                firstParty(mc) and mc.getPath().toString() = name and mc.hasMacroCallExpansion()
+              )
+            or
+            category = "derive" and
+            name = "type items" and
+            total = count(TypeItem t | firstParty(t)) and
+            expanded = count(TypeItem t | firstParty(t) and t.getNumberOfDeriveMacroExpansions() > 0)
+            or
+            category = "attribute macro" and
+            name = "items" and
+            total = count(Item i | firstParty(i)) and
+            expanded = count(Item i | firstParty(i) and i.hasAttributeMacroExpansion())
+          select category, name, total, expanded order by category, total desc
+          QL
+          cat > "${pack}/reverie-diag/unexpanded.ql" <<'QL'
+          import rust
+
+          from MacroCall mc, Location loc
+          where
+            loc = mc.getLocation() and
+            loc.getFile().getRelativePath().matches("backend/src/%") and
+            not mc.hasMacroCallExpansion()
+          select mc.getPath().toString(), loc.getFile().getRelativePath(), loc.getStartLine()
+          QL
+          for q in coverage unexpanded; do
+            echo "::group::${q}"
+            "${CODEQL}" query run --database "${db}" --output "${RUNNER_TEMP}/${q}.bqrs" "${pack}/reverie-diag/${q}.ql"
+            "${CODEQL}" bqrs decode --format text "${RUNNER_TEMP}/${q}.bqrs" | sed -n "1,80p"
+            echo "::endgroup::"
+          done
 
       # The action's post step cannot find backend/Cargo.lock from the repository root.
       - name: Upload prefetch shards
