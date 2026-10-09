@@ -1711,6 +1711,42 @@ mod tests {
     }
 
     #[sqlx::test(migrations = false)]
+    async fn a_batch_failing_after_a_success_leaves_neither_record_nor_schema(pool: PgPool) {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("20260101000000_creates_probe.sql"),
+            "CREATE TABLE batch_probe (id integer);",
+        )
+        .unwrap();
+        std::fs::write(dir.path().join("20260101000001_fails.sql"), "SELECT 1 / 0;").unwrap();
+        let migrator = sqlx::migrate::Migrator::new(dir.path()).await.unwrap();
+        let mut conn = pool.acquire().await.unwrap();
+
+        let err = run_locked(&mut conn, &migrator).await.unwrap_err();
+        assert!(
+            matches!(err, MigrationError::BatchFailed(_)),
+            "expected BatchFailed, got: {err}"
+        );
+
+        let recorded: i64 = sqlx::query_scalar("SELECT count(*) FROM _sqlx_migrations")
+            .fetch_one(&mut *conn)
+            .await
+            .unwrap();
+        assert_eq!(
+            recorded, 0,
+            "the succeeded migration must not stay recorded"
+        );
+        let probe: Option<String> = sqlx::query_scalar("SELECT to_regclass('batch_probe')::text")
+            .fetch_one(&mut *conn)
+            .await
+            .unwrap();
+        assert_eq!(
+            probe, None,
+            "the succeeded migration's table must not exist"
+        );
+    }
+
+    #[sqlx::test(migrations = false)]
     async fn rerun_after_success_is_stable(pool: PgPool) {
         let first = run_migrations_inner(&pool).await.unwrap();
         assert!(first.applied > 0, "should apply at least one migration");
