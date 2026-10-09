@@ -52,6 +52,16 @@ impl FailureClass {
             Self::Unspecified => "unspecified",
         }
     }
+
+    /// The class stored under `stored`; any spelling this build does not know
+    /// reads as `unspecified`.
+    #[must_use]
+    pub fn from_stored(stored: &str) -> Self {
+        Self::ALL
+            .into_iter()
+            .find(|class| class.as_str() == stored)
+            .unwrap_or(Self::Unspecified)
+    }
 }
 
 /// One failure: the source it came from and its class. `source` is absent
