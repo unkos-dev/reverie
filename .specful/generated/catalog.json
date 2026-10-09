@@ -700,7 +700,6 @@
       "kind": "design",
       "path": "docs/specs/library/design/0020-shelves.md",
       "satisfies": [
-        "REV-REQ-0020",
         "REV-REQ-0057",
         "REV-REQ-0059"
       ],
