@@ -29,8 +29,8 @@ pub struct Shelf {
     pub is_system: bool,
     /// `shelves.created_at`.
     pub created_at: DateTime<Utc>,
-    /// `shelves.updated_at`. Doubles as the `ETag` value the client
-    /// echoes on `If-Match` for the reorder endpoint.
+    /// `shelves.updated_at`; the value the shelf endpoints render into the
+    /// `ETag` response header.
     pub updated_at: DateTime<Utc>,
     /// Count of `shelf_items` rows on this shelf. Computed inline via
     /// a correlated scalar subquery on the list endpoint and surfaces

@@ -9279,7 +9279,7 @@
           "updated_at": {
             "type": "string",
             "format": "date-time",
-            "description": "`shelves.updated_at`. Doubles as the `ETag` value the client\nechoes on `If-Match` for the reorder endpoint."
+            "description": "`shelves.updated_at`; the value the shelf endpoints render into the\n`ETag` response header."
           }
         }
       },
