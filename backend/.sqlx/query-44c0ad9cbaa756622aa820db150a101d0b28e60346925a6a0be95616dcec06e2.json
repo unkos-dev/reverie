@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT c.class AS \"class!\", COUNT(*) AS \"count!\"\n           FROM ingestion_inputs i\n           LEFT JOIN LATERAL (\n               SELECT j.outcome FROM ingestion_jobs j\n               WHERE j.input_id = i.id AND j.input_generation = i.generation AND j.outcome IS NOT NULL\n               ORDER BY j.created_at DESC, j.id DESC LIMIT 1\n           ) latest ON TRUE\n           CROSS JOIN LATERAL (\n               SELECT CASE i.status\n                   WHEN 'rejected' THEN COALESCE(i.rejection_reasons[1], 'unspecified')\n                   WHEN 'not_accepted' THEN 'format_not_accepted'\n                   WHEN 'operational_failure' THEN CASE latest.outcome\n                       WHEN 'needs_change' THEN 'needs_change'\n                       WHEN 'transient_input' THEN CASE WHEN (\n                           SELECT COUNT(*) FROM ingestion_jobs t\n                           WHERE t.input_id = i.id AND t.input_generation = i.generation\n                             AND t.created_at >= i.retry_reset_at AND t.outcome = 'transient_input'\n                       ) >= 6 THEN 'retries_exhausted' END\n                   END\n               END AS class\n           ) c\n           WHERE i.status IN ('rejected', 'not_accepted', 'operational_failure')\n             AND c.class IS NOT NULL\n           GROUP BY c.class",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "class!",
+        "type_info": "Text",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 1,
+        "name": "count!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      null,
+      null
+    ]
+  },
+  "hash": "44c0ad9cbaa756622aa820db150a101d0b28e60346925a6a0be95616dcec06e2"
+}

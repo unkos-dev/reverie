@@ -369,7 +369,7 @@ async fn capability_ingestion_owner_activity_reads_linked_running_and_terminal_j
         assert_eq!(activity["batches"][0]["in_progress"], 1);
         assert!(activity["batches"][0]["ended_at"].is_null());
         let mut tx = ing.begin().await.unwrap();
-        ingestion_input::finish(&mut tx, &input, job, outcome, status, reason, None)
+        ingestion_input::finish(&mut tx, &input, job, outcome, status, reason, &[], None)
             .await
             .unwrap();
         tx.commit().await.unwrap();

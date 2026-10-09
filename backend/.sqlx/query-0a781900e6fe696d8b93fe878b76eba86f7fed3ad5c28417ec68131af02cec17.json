@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "UPDATE ingestion_inputs SET status = $3, reason = $4, work_id = $5,\n         completed_at = CASE WHEN $3::ingestion_input_status = 'pending' THEN NULL ELSE now() END\n         WHERE id = $1 AND generation = $2 AND status <> 'removed'",
+  "query": "UPDATE ingestion_inputs SET status = $3, reason = $4, work_id = $5, rejection_reasons = $6,\n         completed_at = CASE WHEN $3::ingestion_input_status = 'pending' THEN NULL ELSE now() END\n         WHERE id = $1 AND generation = $2 AND status <> 'removed'",
   "describe": {
     "columns": [],
     "parameters": {
@@ -25,10 +25,11 @@
           }
         },
         "Text",
-        "Uuid"
+        "Uuid",
+        "TextArray"
       ]
     },
     "nullable": []
   },
-  "hash": "e0a687adb17a119a70f233a123cadefb542d41bd6cb2c661f31049fdcc613665"
+  "hash": "0a781900e6fe696d8b93fe878b76eba86f7fed3ad5c28417ec68131af02cec17"
 }

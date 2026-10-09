@@ -415,6 +415,59 @@ impl ShelfItemCursor {
     }
 }
 
+/// Keyset boundary for an id-ordered admin list filtered by one value.
+///
+/// Wire encoding: base64url(unpadded) over `<tag>|<filter>|<uuid>`. The
+/// `filter` is the request's canonical filter value (empty when none), and
+/// `tag` names the endpoint, so a cursor replayed against another endpoint
+/// or under a different filter is rejected rather than walking a boundary
+/// computed for another set.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FilteredIdCursor {
+    /// Canonical filter value the cursor was minted under.
+    pub filter: String,
+    /// Boundary row id (rows are ordered by id ascending).
+    pub id: Uuid,
+}
+
+impl FilteredIdCursor {
+    /// Encode as a base64url-unpadded `?cursor=` value for `tag`.
+    #[must_use]
+    pub fn encode(&self, tag: &str) -> String {
+        let payload = format!("{tag}|{}|{}", self.filter, self.id.as_hyphenated());
+        Base64UrlUnpadded::encode_string(payload.as_bytes())
+    }
+
+    /// Parse a cursor minted by [`Self::encode`] under `tag` and `filter`.
+    ///
+    /// # Errors
+    ///
+    /// Returns the matching [`CursorError`] variant for bad base64,
+    /// non-UTF-8 bytes, a missing delimiter, a foreign tag, a malformed uuid,
+    /// or a filter that differs from the request's ([`CursorError::FilterMismatch`]).
+    pub fn parse(s: &str, tag: &str, filter: &str) -> Result<Self, CursorError> {
+        let mut buf = vec![0u8; s.len()];
+        let decoded = Base64UrlUnpadded::decode(s.as_bytes(), &mut buf)
+            .map_err(|_| CursorError::InvalidBase64)?;
+        let decoded_str = std::str::from_utf8(decoded).map_err(|_| CursorError::InvalidUtf8)?;
+        let (found_tag, rest) = decoded_str
+            .split_once('|')
+            .ok_or(CursorError::MissingDelimiter)?;
+        if found_tag != tag {
+            return Err(CursorError::UnknownTag);
+        }
+        let (found_filter, id_str) = rest.rsplit_once('|').ok_or(CursorError::MalformedKey)?;
+        let id = Uuid::parse_str(id_str).map_err(|_| CursorError::MalformedKey)?;
+        if found_filter != filter {
+            return Err(CursorError::FilterMismatch);
+        }
+        Ok(Self {
+            filter: found_filter.to_owned(),
+            id,
+        })
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -666,6 +719,49 @@ mod tests {
         assert!(matches!(
             SortCursor::parse_for(&encoded, &SortSpec::default(), NO_FILTERS),
             Err(CursorError::UnknownTag)
+        ));
+    }
+
+    #[test]
+    fn filtered_id_roundtrip_and_binding() {
+        let key = FilteredIdCursor {
+            filter: "damaged".into(),
+            id: Uuid::new_v4(),
+        };
+        let encoded = key.encode("ii");
+        assert_eq!(
+            FilteredIdCursor::parse(&encoded, "ii", "damaged").expect("roundtrip"),
+            key
+        );
+        assert!(matches!(
+            FilteredIdCursor::parse(&encoded, "ii", ""),
+            Err(CursorError::FilterMismatch)
+        ));
+        assert!(matches!(
+            FilteredIdCursor::parse(&encoded, "ef", "damaged"),
+            Err(CursorError::UnknownTag)
+        ));
+    }
+
+    #[test]
+    fn filtered_id_empty_filter_roundtrips() {
+        let key = FilteredIdCursor {
+            filter: String::new(),
+            id: Uuid::new_v4(),
+        };
+        let parsed = FilteredIdCursor::parse(&key.encode("ii"), "ii", "").expect("roundtrip");
+        assert_eq!(parsed, key);
+    }
+
+    #[test]
+    fn filtered_id_rejects_malformed_payloads() {
+        for raw in ["!!!", "aWk"] {
+            assert!(FilteredIdCursor::parse(raw, "ii", "").is_err(), "{raw}");
+        }
+        let bad_uuid = Base64UrlUnpadded::encode_string(b"ii||not-a-uuid");
+        assert!(matches!(
+            FilteredIdCursor::parse(&bad_uuid, "ii", ""),
+            Err(CursorError::MalformedKey)
         ));
     }
 

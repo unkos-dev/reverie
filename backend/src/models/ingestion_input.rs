@@ -62,8 +62,9 @@ impl Fingerprint {
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, sqlx::Type)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, sqlx::Type, serde::Serialize, utoipa::ToSchema)]
 #[sqlx(type_name = "ingestion_input_status", rename_all = "snake_case")]
+#[serde(rename_all = "snake_case")]
 pub enum InputStatus {
     Pending,
     Processing,
@@ -75,8 +76,9 @@ pub enum InputStatus {
     Removed,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, sqlx::Type)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, sqlx::Type, serde::Serialize, utoipa::ToSchema)]
 #[sqlx(type_name = "ingestion_attempt_outcome", rename_all = "snake_case")]
+#[serde(rename_all = "snake_case")]
 pub enum AttemptOutcome {
     Imported,
     Duplicate,
@@ -86,6 +88,77 @@ pub enum AttemptOutcome {
     TransientInput,
     NeedsChange,
     Interrupted,
+}
+
+/// Why the validator rejected an EPUB, declared most severe first so the
+/// head of a sorted list is the primary reason.
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub enum RejectionReason {
+    UnsafeContents,
+    Damaged,
+    InvalidStructure,
+    OverLimits,
+    Unspecified,
+}
+
+impl RejectionReason {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::UnsafeContents => "unsafe_contents",
+            Self::Damaged => "damaged",
+            Self::InvalidStructure => "invalid_structure",
+            Self::OverLimits => "over_limits",
+            Self::Unspecified => "unspecified",
+        }
+    }
+
+    const fn from_issue_kind(kind: &crate::services::epub::IssueKind) -> Self {
+        use crate::services::epub::IssueKind;
+        match kind {
+            IssueKind::PathTraversal { .. }
+            | IssueKind::ZipBomb { .. }
+            | IssueKind::UnsafeOpfPath { .. }
+            | IssueKind::UnsafeManifestHref { .. } => Self::UnsafeContents,
+            IssueKind::CorruptEntry { .. }
+            | IssueKind::PreludeBeforeArchive { .. }
+            | IssueKind::DuplicateEntry { .. }
+            | IssueKind::UnsupportedCompression { .. }
+            | IssueKind::EncryptedEntry { .. } => Self::Damaged,
+            IssueKind::InvalidMimetype { .. }
+            | IssueKind::MissingContainer { .. }
+            | IssueKind::BrokenSpineRef { .. }
+            | IssueKind::EncodingMismatch { .. }
+            | IssueKind::AmbiguousEncoding { .. }
+            | IssueKind::MalformedXhtml { .. }
+            | IssueKind::MissingCover { .. }
+            | IssueKind::UndecodableCover { .. } => Self::InvalidStructure,
+            IssueKind::EntryCapExceeded { .. }
+            | IssueKind::ArchiveTooLarge { .. }
+            | IssueKind::SpineCapExceeded { .. } => Self::OverLimits,
+        }
+    }
+
+    /// Distinct classes of the issues that made the report irrecoverable,
+    /// most severe first; `[Unspecified]` when none did.
+    pub fn from_issues(issues: &[crate::services::epub::Issue]) -> Vec<Self> {
+        let mut reasons: Vec<Self> = issues
+            .iter()
+            .filter(|issue| issue.severity == crate::services::epub::Severity::Irrecoverable)
+            .map(|issue| Self::from_issue_kind(&issue.kind))
+            .collect();
+        reasons.sort_unstable();
+        reasons.dedup();
+        if reasons.is_empty() {
+            reasons.push(Self::Unspecified);
+        }
+        reasons
+    }
+}
+
+/// Renders an ingestion-relative path for display: UTF-8 verbatim, otherwise
+/// with the non-UTF-8 bytes escaped, so a stored name always renders.
+pub fn display_path(bytes: &[u8]) -> String {
+    std::str::from_utf8(bytes).map_or_else(|_| bytes.escape_ascii().to_string(), str::to_owned)
 }
 
 #[derive(Clone, Debug)]
@@ -364,7 +437,7 @@ pub async fn begin_attempt(pool: &PgPool, input: &Input, batch: Uuid) -> sqlx::R
         "INSERT INTO ingestion_jobs (batch_id, source_path, input_id, input_generation, status, started_at)
          VALUES ($1, $2, $3, $4, 'running', now()) RETURNING id",
         batch,
-        String::from_utf8(input.source_path.clone()).unwrap_or_else(|_| input.source_path.escape_ascii().to_string()),
+        display_path(&input.source_path),
         input.id,
         input.generation,
     )
@@ -381,6 +454,7 @@ pub async fn finish(
     outcome: AttemptOutcome,
     status: InputStatus,
     reason: Option<&str>,
+    rejection_reasons: &[RejectionReason],
     work: Option<Uuid>,
 ) -> sqlx::Result<()> {
     let history = sqlx::query!(
@@ -403,8 +477,12 @@ pub async fn finish(
     if history.rows_affected() != 1 {
         return Err(sqlx::Error::RowNotFound);
     }
+    let rejection_reasons: Vec<String> = rejection_reasons
+        .iter()
+        .map(|reason| reason.as_str().to_owned())
+        .collect();
     sqlx::query!(
-        "UPDATE ingestion_inputs SET status = $3, reason = $4, work_id = $5,
+        "UPDATE ingestion_inputs SET status = $3, reason = $4, work_id = $5, rejection_reasons = $6,
          completed_at = CASE WHEN $3::ingestion_input_status = 'pending' THEN NULL ELSE now() END
          WHERE id = $1 AND generation = $2 AND status <> 'removed'",
         input.id,
@@ -412,6 +490,7 @@ pub async fn finish(
         status as InputStatus,
         reason,
         work,
+        &rejection_reasons,
     )
     .execute(&mut **tx)
     .await?;
@@ -511,6 +590,92 @@ pub async fn remove_many(
 mod tests {
     use super::*;
 
+    fn issue(
+        severity: crate::services::epub::Severity,
+        kind: crate::services::epub::IssueKind,
+    ) -> crate::services::epub::Issue {
+        crate::services::epub::Issue {
+            layer: crate::services::epub::Layer::Zip,
+            severity,
+            kind,
+        }
+    }
+
+    #[test]
+    fn rejection_reasons_are_distinct_and_most_severe_first() {
+        use crate::services::epub::{IssueKind, Severity};
+        let issues = [
+            issue(
+                Severity::Irrecoverable,
+                IssueKind::ArchiveTooLarge { size: 2, limit: 1 },
+            ),
+            issue(
+                Severity::Irrecoverable,
+                IssueKind::CorruptEntry {
+                    entry_name: "a".into(),
+                },
+            ),
+            issue(
+                Severity::Irrecoverable,
+                IssueKind::DuplicateEntry {
+                    entry_name: "b".into(),
+                },
+            ),
+            issue(
+                Severity::Irrecoverable,
+                IssueKind::PathTraversal {
+                    entry_name: "../x".into(),
+                },
+            ),
+        ];
+        assert_eq!(
+            RejectionReason::from_issues(&issues),
+            vec![
+                RejectionReason::UnsafeContents,
+                RejectionReason::Damaged,
+                RejectionReason::OverLimits,
+            ]
+        );
+    }
+
+    #[test]
+    fn rejection_reasons_ignore_issues_that_did_not_cause_the_rejection() {
+        use crate::services::epub::{IssueKind, Severity};
+        let issues = [
+            issue(
+                Severity::Repaired,
+                IssueKind::PathTraversal {
+                    entry_name: "../x".into(),
+                },
+            ),
+            issue(
+                Severity::Irrecoverable,
+                IssueKind::EntryCapExceeded { count: 9, limit: 1 },
+            ),
+        ];
+        assert_eq!(
+            RejectionReason::from_issues(&issues),
+            vec![RejectionReason::OverLimits]
+        );
+    }
+
+    #[test]
+    fn rejection_reasons_fall_back_to_unspecified_without_an_irrecoverable_issue() {
+        assert_eq!(
+            RejectionReason::from_issues(&[]),
+            vec![RejectionReason::Unspecified]
+        );
+    }
+
+    #[test]
+    fn display_path_escapes_only_non_utf8_bytes() {
+        assert_eq!(
+            display_path("dir/caf\u{e9}.epub".as_bytes()),
+            "dir/caf\u{e9}.epub"
+        );
+        assert_eq!(display_path(b"dir/\xffname.epub"), "dir/\\xffname.epub");
+    }
+
     #[sqlx::test(migrations = "./migrations")]
     async fn capability_ingestion_publication_acknowledged_evidence_blocks_reclaim_and_acquisition(
         pool: PgPool,
@@ -562,6 +727,7 @@ mod tests {
                 AttemptOutcome::NeedsChange,
                 InputStatus::OperationalFailure,
                 Some("unresolved"),
+                &[],
                 None
             )
             .await
@@ -751,6 +917,7 @@ mod tests {
             AttemptOutcome::Rejected,
             InputStatus::Rejected,
             Some("invalid EPUB"),
+            &[],
             None,
         )
         .await
@@ -777,6 +944,7 @@ mod tests {
             AttemptOutcome::Duplicate,
             InputStatus::Duplicate,
             None,
+            &[],
             None,
         )
         .await
@@ -803,6 +971,7 @@ mod tests {
                 AttemptOutcome::Rejected,
                 InputStatus::Rejected,
                 None,
+                &[],
                 None
             )
             .await
@@ -833,6 +1002,7 @@ mod tests {
                 outcome,
                 InputStatus::Pending,
                 None,
+                &[],
                 None,
             )
             .await
@@ -850,6 +1020,7 @@ mod tests {
                 AttemptOutcome::TransientInput,
                 InputStatus::OperationalFailure,
                 None,
+                &[],
                 None,
             )
             .await
