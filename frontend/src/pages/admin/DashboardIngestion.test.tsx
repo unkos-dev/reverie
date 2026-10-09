@@ -1,4 +1,4 @@
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { QueryClient, QueryClientProvider, focusManager } from "@tanstack/react-query";
 import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { RouterProvider, createMemoryRouter } from "react-router";
@@ -761,6 +761,25 @@ describe("polling", () => {
       await vi.advanceTimersByTimeAsync(POLL_INTERVAL_MS * 10);
     });
     expect(vi.mocked(getInputCounts).mock.calls.length).toBe(stopped);
+  });
+
+  test("refetches activity and counts on window focus once polling has stopped", async () => {
+    renderPage();
+    await flush();
+    expect(screen.getByText("7 files, 5 reasons")).toBeInTheDocument();
+    const counts = vi.mocked(getInputCounts).mock.calls.length;
+    const activity = vi.mocked(getDashboardActivity).mock.calls.length;
+    vi.mocked(getInputCounts).mockResolvedValue(
+      countsFixture({ by_reason: [{ reason: "damaged", count: 9 }], attention_total: 9 }),
+    );
+    await act(async () => {
+      focusManager.setFocused(false);
+      focusManager.setFocused(true);
+      await vi.advanceTimersByTimeAsync(20);
+    });
+    expect(vi.mocked(getInputCounts).mock.calls.length).toBe(counts + 1);
+    expect(vi.mocked(getDashboardActivity).mock.calls.length).toBe(activity + 1);
+    expect(screen.getByText("9 files, 1 reason")).toBeInTheDocument();
   });
 
   test("a scan that queued and deferred nothing starts no poll", async () => {
