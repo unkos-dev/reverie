@@ -10,7 +10,7 @@ title: "Read-only role cannot read device tokens or local credentials"
 ## Statement
 
 The `reverie_readonly` database role MUST NOT hold `SELECT` on the `device_tokens` table or on the `local_credentials`
-table.
+table, nor on the `token_hash` column of the first or the `password_hash` column of the second.
 
 ## Rationale
 
