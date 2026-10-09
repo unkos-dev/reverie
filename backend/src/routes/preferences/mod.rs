@@ -196,7 +196,10 @@ impl UpdatePreferencesRequest {
     request_body(content = UpdatePreferencesRequest, description = "RFC 7396 JSON Merge Patch: absent groups are unchanged, `null` resets a group to the installation default"),
     responses(
         (status = 200, description = "Preferences after the merge, in the same shape as the read", body = PreferencesResponse),
+        (status = 400, description = "The request body is not valid JSON", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
+        (status = 413, description = "The request body is too large", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
+        (status = 415, description = "The request body is not sent as application/json", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 422, description = "Unknown density or view, or an out-of-range sort", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
     )
 )]

@@ -429,3 +429,55 @@ fn discovery_counts_serialize_zero_and_large_values() {
         }
     }
 }
+
+#[test]
+fn extractor_failure_statuses_are_declared_as_problem_json() {
+    let rendered = reverie_api::openapi::spec_json().expect("serialize OpenAPI spec");
+    let doc: serde_json::Value = serde_json::from_str(&rendered).expect("valid JSON");
+    let paths = doc["paths"].as_object().expect("paths object");
+    let mut json_body_operations = 0;
+    let mut path_parameter_operations = 0;
+    let mut omissions = Vec::new();
+
+    for (path, path_item) in paths {
+        for (method, operation) in path_item.as_object().expect("path item object") {
+            let takes_json_body = operation
+                .pointer("/requestBody/content/application~1json")
+                .is_some();
+            let takes_path_parameter = operation
+                .get("parameters")
+                .and_then(serde_json::Value::as_array)
+                .is_some_and(|parameters| parameters.iter().any(|p| p["in"] == "path"));
+
+            let mut required = Vec::new();
+            if takes_json_body {
+                json_body_operations += 1;
+                required.extend(["400", "413", "415"]);
+            }
+            if takes_path_parameter {
+                path_parameter_operations += 1;
+                required.push("400");
+            }
+
+            for status in required {
+                let declared = operation
+                    .pointer(&format!(
+                        "/responses/{status}/content/application~1problem+json"
+                    ))
+                    .is_some();
+                if !declared {
+                    omissions.push(format!("{method} {path} lacks {status} as problem+json"));
+                }
+            }
+        }
+    }
+
+    assert!(json_body_operations > 0, "no JSON body operations examined");
+    assert!(
+        path_parameter_operations > 0,
+        "no path parameter operations examined"
+    );
+    omissions.sort();
+    omissions.dedup();
+    assert_eq!(omissions, Vec::<String>::new());
+}

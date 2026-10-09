@@ -126,8 +126,11 @@ struct PutSettingsResponse {
     security(("session_cookie" = ["admin"]), ("device_token_bearer" = ["admin"]), ("oidc_jwt_bearer" = ["admin"]), ("opds_basic" = ["admin"])),
     responses(
         (status = 200, description = "Updated settings. `restart_required` is true when a changed field only takes effect after restart. Admin only.", body = PutSettingsResponse),
+        (status = 400, description = "The request body is not valid JSON", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 403, description = "Caller is not an admin", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
+        (status = 413, description = "The request body is too large", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
+        (status = 415, description = "The request body is not sent as application/json", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 422, description = "Empty patch or invalid field values", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
     )
 )]
