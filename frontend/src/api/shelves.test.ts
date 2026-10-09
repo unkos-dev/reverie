@@ -3,14 +3,12 @@ import { beforeEach, describe, expect, test, vi } from "vite-plus/test";
 import { __seedCsrfTokenForTesting } from "./csrf";
 import {
   addShelfItem,
-  buildEtag,
   createShelf,
   deleteShelf,
   getShelf,
   listShelves,
   removeShelfItem,
   renameShelf,
-  reorderShelfItems,
 } from "./shelves";
 
 function parseJsonBody(body: BodyInit | null | undefined): unknown {
@@ -36,12 +34,6 @@ beforeEach(() => {
   // hydration behaviour itself is pinned in fetch.test.ts.
   __seedCsrfTokenForTesting("test-csrf-token-0000000000000000000000000");
   vi.restoreAllMocks();
-});
-
-describe("buildEtag", () => {
-  test("wraps the timestamp in double quotes", () => {
-    expect(buildEtag("2026-05-24T03:00:00Z")).toBe('"2026-05-24T03:00:00Z"');
-  });
 });
 
 function shelfRow(name: string, id: string) {
@@ -121,7 +113,6 @@ describe("getShelf", () => {
     };
     const item = (n: number) => ({
       manifestation_id: `00000000-0000-0000-0000-00000000000${String(n)}`,
-      position: n,
       added_at: "2026-05-24T02:00:00Z",
     });
     const fetchSpy = vi
@@ -131,7 +122,11 @@ describe("getShelf", () => {
       )
       .mockResolvedValueOnce(jsonResponse({ ...identity, items: [item(3)], next_cursor: null }));
     const result = await getShelf("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb");
-    expect(result.items.map((i) => i.position)).toEqual([1, 2, 3]);
+    expect(result.items.map((i) => i.manifestation_id)).toEqual([
+      "00000000-0000-0000-0000-000000000001",
+      "00000000-0000-0000-0000-000000000002",
+      "00000000-0000-0000-0000-000000000003",
+    ]);
     expect(fetchSpy).toHaveBeenCalledTimes(2);
     const secondUrl = fetchSpy.mock.calls[1]?.[0] as string;
     expect(secondUrl).toBe("/api/v1/shelves/bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb?cursor=bmV4dA");
@@ -237,8 +232,6 @@ describe("timestamp wire contract", () => {
   });
 
   test("getShelf rejects a tuple-shaped updated_at", async () => {
-    // updated_at is the entity-tag the reorder path echoes as If-Match,
-    // so a malformed one must fail here rather than reach buildEtag.
     vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
       jsonResponse(detailPage({ updated_at: TUPLE })),
     );
@@ -259,7 +252,6 @@ describe("timestamp wire contract", () => {
           items: [
             {
               manifestation_id: "00000000-0000-0000-0000-000000000001",
-              position: 1,
               added_at: TUPLE,
             },
           ],
@@ -379,41 +371,5 @@ describe("shelf items", () => {
     expect(url).toBe(
       "/api/v1/shelves/ffffffff-ffff-ffff-ffff-ffffffffffff/items/00000000-0000-0000-0000-000000000002",
     );
-  });
-
-  test("reorderShelfItems sends quoted If-Match header", async () => {
-    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(emptyResponse(204));
-    await reorderShelfItems(
-      "ffffffff-ffff-ffff-ffff-ffffffffffff",
-      ["00000000-0000-0000-0000-000000000003"],
-      "2026-05-24T03:00:00Z",
-    );
-    const init = fetchSpy.mock.calls[0]?.[1];
-    expect(init?.method).toBe("PUT");
-    const headers = init?.headers as Headers | undefined;
-    expect(headers?.get("If-Match")).toBe('"2026-05-24T03:00:00Z"');
-  });
-
-  test("reorderShelfItems surfaces 412 as ApiError", async () => {
-    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
-      new Response(
-        JSON.stringify({
-          type: "https://reverie.example/probs/if-match-mismatch",
-          title: "Precondition Failed",
-          status: 412,
-          detail: "Resource changed since last read.",
-        }),
-        {
-          status: 412,
-          headers: { "Content-Type": "application/problem+json" },
-        },
-      ),
-    );
-    await expect(
-      reorderShelfItems("ffffffff-ffff-ffff-ffff-ffffffffffff", [], "stale"),
-    ).rejects.toMatchObject({
-      status: 412,
-      problemSlug: "if-match-mismatch",
-    });
   });
 });

@@ -53,20 +53,6 @@
  * schema rejection from a transport failure in mutation handlers is
  * error plumbing rather than contract enforcement, and is deliberately
  * not done here.
- *
- * # ETag / If-Match contract
- *
- * The backend emits `ETag: "<updated_at RFC3339>"` on every shelf read
- * and requires `If-Match` on the reorder PUT. Because the entity-tag
- * value is the timestamp itself, the frontend derives the ETag from
- * the response body's `updated_at` (`buildEtag(updatedAt)`) without
- * needing to read the response header — reads expose `updated_at`
- * directly, and mutations return 204 + ETag header but callers refetch
- * on invalidation rather than threading the header through `apiFetch`.
- *
- * The reorder mutation accepts an `ifMatch` parameter that the caller
- * carries from the cached shelf detail; the wrapper formats it as a
- * quoted entity-tag header.
  */
 import { z } from "zod";
 
@@ -85,7 +71,6 @@ export type Shelf = z.infer<typeof ShelfSchema>;
 
 const ShelfItemSchema = z.object({
   manifestation_id: z.string(),
-  position: z.number().int(),
   added_at: z.iso.datetime(),
 });
 /** One item row in `GET /api/v1/shelves/{id}`. */
@@ -123,11 +108,6 @@ export type ShelfWithItems = Omit<z.infer<typeof ShelfDetailPageSchema>, "next_c
  */
 const MAX_PAGE_WALK = 100;
 
-/** Derive an RFC 9110 quoted entity-tag from an RFC 3339 `updated_at`. */
-export function buildEtag(updatedAt: string): string {
-  return `"${updatedAt}"`;
-}
-
 /** List the caller's shelves (walks all pages). */
 export async function listShelves(signal?: AbortSignal): Promise<Shelf[]> {
   const shelves: Shelf[] = [];
@@ -148,12 +128,11 @@ export async function listShelves(signal?: AbortSignal): Promise<Shelf[]> {
 export async function getShelf(id: string, signal?: AbortSignal): Promise<ShelfWithItems> {
   const base = `/api/v1/shelves/${encodeURIComponent(id)}`;
   const items: ShelfItem[] = [];
-  // Identity (incl. the ETag-bearing updated_at) comes from the FIRST
-  // page: under a concurrent shelf mutation mid-walk, later pages can
-  // carry a newer updated_at than the items being assembled — pinning
-  // page 1's identity keeps the If-Match value consistent with the
-  // snapshot the caller actually received (a stale tag fails safe with
-  // 412; a too-new tag could let a reorder clobber the unseen change).
+  // Identity (incl. updated_at) comes from the FIRST page: under a
+  // concurrent shelf mutation mid-walk, later pages can carry a newer
+  // updated_at than the items being assembled — pinning page 1's
+  // identity keeps it consistent with the snapshot the caller actually
+  // received.
   let identity: Omit<ShelfWithItems, "items"> | null = null;
   let cursor: string | null = null;
   for (let walked = 0; walked < MAX_PAGE_WALK; walked++) {
@@ -214,7 +193,7 @@ export async function deleteShelf(id: string, signal?: AbortSignal): Promise<voi
   });
 }
 
-/** Append a manifestation to a shelf at `max(position) + 1`. */
+/** Add a manifestation to a shelf. */
 export async function addShelfItem(
   shelfId: string,
   manifestationId: string,
@@ -241,29 +220,4 @@ export async function removeShelfItem(
       ...(signal ? { signal } : {}),
     },
   );
-}
-
-/**
- * Reorder a shelf's items. `ifMatch` MUST be the `updated_at` from
- * the cached shelf detail (the wrapper formats it as a quoted entity-
- * tag). On 412 the caller should refetch + retry with the new ETag.
- *
- * @param items - The full ordered list of manifestation ids — partial
- *   lists are rejected by the backend with 422.
- */
-export async function reorderShelfItems(
-  shelfId: string,
-  items: string[],
-  ifMatch: string,
-  signal?: AbortSignal,
-): Promise<void> {
-  await apiFetch(`/api/v1/shelves/${encodeURIComponent(shelfId)}/items`, {
-    method: "PUT",
-    headers: {
-      "Content-Type": "application/json",
-      "If-Match": buildEtag(ifMatch),
-    },
-    body: JSON.stringify({ items }),
-    ...(signal ? { signal } : {}),
-  });
 }

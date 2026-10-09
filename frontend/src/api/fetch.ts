@@ -23,8 +23,7 @@
  *    surfaces; see `etags.ts`) is cached by resource identity and echoed
  *    back as `If-Match` on that resource's next PATCH. Captured from every
  *    response regardless of status, so a `412`'s current tag replaces a
- *    stale one without a follow-up GET. Every other endpoint, including
- *    the shelves reorder PUT's own `If-Match` scheme, is untouched.
+ *    stale one without a follow-up GET. Every other endpoint is untouched.
  *
  * Out of scope: route-level retries, request deduplication (react-query
  * owns that), suspense/loading state (react-query owns that too).
@@ -195,9 +194,7 @@ async function sendRequest(
     }
   }
   // Auto-echo a retained ETag as If-Match on that resource's own PATCH.
-  // Scoped to PATCH so the shelves reorder PUT (which sets its own
-  // timestamp-derived If-Match) is never touched, and a caller-set header
-  // always wins over the cache.
+  // A caller-set header always wins over the cache.
   if (method === "PATCH" && !headers.has("If-Match")) {
     const key = etagKeyForPath(pathnameOf(input));
     if (key !== null) {
