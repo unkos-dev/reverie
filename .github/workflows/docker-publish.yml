@@ -220,8 +220,8 @@ jobs:
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
             type=ref,event=branch
-            # THREAT: sha-<7> tags trigger staging auto-deploy, so mint them
-            # for main only — a feature-branch dispatch must never land on a deployable tag.
+            # THREAT: a sha-<7> tag is a deployable reference, so mint it for
+            # main only — a feature-branch dispatch must never land on one.
             type=sha,prefix=sha-,enable=${{ github.ref_type != 'tag' && github.ref_name == 'main' }}
 
       # CVE-gate before tagging/signing: images exist only as untagged digests
