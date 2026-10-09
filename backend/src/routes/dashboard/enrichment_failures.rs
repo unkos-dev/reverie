@@ -14,7 +14,7 @@ use crate::auth::middleware::CurrentUser;
 use crate::auth::scope::Scope;
 use crate::db;
 use crate::error::AppError;
-use crate::models::enrichment_failure::{FailureClass, FailureEntry};
+use crate::models::enrichment_failure::FailureClass;
 use crate::models::enrichment_status::EnrichmentStatus;
 use crate::routes::cursor::FilteredIdCursor;
 use crate::state::AppState;
@@ -76,13 +76,12 @@ struct FailureRef {
     class: FailureClass,
 }
 
-impl From<FailureEntry> for FailureRef {
-    fn from(entry: FailureEntry) -> Self {
-        Self {
-            source: entry.source,
-            class: entry.class,
-        }
-    }
+/// A stored failure as read back: the class stays text until
+/// [`FailureClass::from_stored`] normalises it.
+#[derive(Deserialize)]
+struct StoredFailure {
+    source: Option<String>,
+    class: Option<String>,
 }
 
 /// One book whose enrichment is failing or has stopped retrying.
@@ -125,16 +124,33 @@ struct FailureCountsResponse {
     total: i64,
 }
 
-fn parse_entries(stored: serde_json::Value) -> Vec<FailureEntry> {
-    serde_json::from_value::<Vec<FailureEntry>>(stored)
-        .ok()
-        .filter(|entries| !entries.is_empty())
-        .unwrap_or_else(|| {
-            vec![FailureEntry {
-                source: None,
-                class: FailureClass::Unspecified,
-            }]
-        })
+fn known_classes() -> Vec<String> {
+    FailureClass::ALL
+        .iter()
+        .map(|class| class.as_str().to_owned())
+        .collect()
+}
+
+/// The failures after the primary one, with unknown classes read as
+/// `unspecified`. An unreadable value has no further failures.
+fn also_failures(stored: serde_json::Value) -> Vec<FailureRef> {
+    match serde_json::from_value::<Vec<StoredFailure>>(stored) {
+        Ok(entries) => entries
+            .into_iter()
+            .skip(1)
+            .map(|entry| FailureRef {
+                source: entry.source,
+                class: entry
+                    .class
+                    .as_deref()
+                    .map_or(FailureClass::Unspecified, FailureClass::from_stored),
+            })
+            .collect(),
+        Err(e) => {
+            tracing::warn!(error = %e, "enrichment failures: unreadable stored failures");
+            Vec::new()
+        }
+    }
 }
 
 /// `GET /api/v1/dashboard/enrichment-failures`: books whose enrichment is
@@ -143,7 +159,8 @@ fn parse_entries(stored: serde_json::Value) -> Vec<FailureEntry> {
 /// A book appears once, under its primary failure: the failing source with
 /// the lowest key, because every source in an attempt fails at the same
 /// moment. Other failing sources are in `also`. Failures recorded before
-/// classes existed read as `unspecified`.
+/// classes existed, and classes this build does not know, read as
+/// `unspecified`; the list, its filters and the counts all use that reading.
 ///
 /// # Errors
 /// - [`AppError::Forbidden`] when the caller is not an admin.
@@ -200,21 +217,29 @@ async fn list_failures(
                   m.enrichment_status AS "status!: EnrichmentStatus",
                   m.enrichment_attempt_count AS "attempt_count!",
                   m.enrichment_attempted_at AS attempted_at,
-                  m.enrichment_failures AS "failures!"
+                  m.enrichment_failures AS "failures!",
+                  p.source AS primary_source,
+                  p.class AS "primary_class!"
            FROM manifestations m
            JOIN works w ON w.id = m.work_id
+           CROSS JOIN LATERAL (
+               SELECT m.enrichment_failures -> 0 ->> 'source' AS source,
+                      CASE WHEN m.enrichment_failures -> 0 ->> 'class' = ANY($5::text[])
+                           THEN m.enrichment_failures -> 0 ->> 'class'
+                           ELSE 'unspecified' END AS class
+           ) p
            WHERE m.enrichment_status IN ('failed', 'skipped')
              AND m.enrichment_error IS NOT NULL
              AND ($1::uuid IS NULL OR m.id > $1)
-             AND ($2::text IS NULL OR m.enrichment_failures -> 0 ->> 'source' = $2)
-             AND ($3::text IS NULL
-                  OR COALESCE(m.enrichment_failures -> 0 ->> 'class', 'unspecified') = $3)
+             AND ($2::text IS NULL OR p.source = $2)
+             AND ($3::text IS NULL OR p.class = $3)
            ORDER BY m.id
            LIMIT $4"#,
         after,
         source,
         class,
         limit + 1,
+        &known_classes(),
     )
     .fetch_all(&mut *tx)
     .await
@@ -228,24 +253,18 @@ async fn list_failures(
     let items: Vec<FailureItem> = rows
         .into_iter()
         .take(page_len)
-        .map(|row| {
-            let mut entries = parse_entries(row.failures)
-                .into_iter()
-                .map(FailureRef::from);
-            let primary = entries.next().unwrap_or(FailureRef {
-                source: None,
-                class: FailureClass::Unspecified,
-            });
-            FailureItem {
-                manifestation_id: row.id,
-                work_id: row.work_id,
-                title: row.title,
-                status: row.status,
-                attempt_count: row.attempt_count,
-                attempted_at: row.attempted_at,
-                primary,
-                also: entries.collect(),
-            }
+        .map(|row| FailureItem {
+            manifestation_id: row.id,
+            work_id: row.work_id,
+            title: row.title,
+            status: row.status,
+            attempt_count: row.attempt_count,
+            attempted_at: row.attempted_at,
+            primary: FailureRef {
+                source: row.primary_source,
+                class: FailureClass::from_stored(&row.primary_class),
+            },
+            also: also_failures(row.failures),
         })
         .collect();
 
@@ -302,13 +321,19 @@ async fn failure_counts(
         )
         .map_err(|e| AppError::Internal(e.into()))?;
     let rows = sqlx::query!(
-        r#"SELECT m.enrichment_failures -> 0 ->> 'source' AS source,
-                  COALESCE(m.enrichment_failures -> 0 ->> 'class', 'unspecified') AS "class!",
-                  COUNT(*) AS "count!"
+        r#"SELECT p.source AS source, p.class AS "class!", COUNT(*) AS "count!"
            FROM manifestations m
+           CROSS JOIN LATERAL (
+               SELECT m.enrichment_failures -> 0 ->> 'source' AS source,
+                      CASE WHEN m.enrichment_failures -> 0 ->> 'class' = ANY($1::text[])
+                           THEN m.enrichment_failures -> 0 ->> 'class'
+                           ELSE 'unspecified' END AS class
+           ) p
            WHERE m.enrichment_status IN ('failed', 'skipped')
              AND m.enrichment_error IS NOT NULL
-           GROUP BY 1, 2"#,
+           GROUP BY p.source, p.class
+           ORDER BY p.source COLLATE "C" NULLS LAST, array_position($1::text[], p.class)"#,
+        &known_classes(),
     )
     .fetch_all(&mut *tx)
     .await
@@ -317,29 +342,14 @@ async fn failure_counts(
         .await
         .map_err(|e| AppError::Internal(e.into()))?;
 
-    let mut groups: std::collections::BTreeMap<(Option<String>, usize), i64> =
-        std::collections::BTreeMap::new();
-    for row in rows {
-        let class_index = FailureClass::ALL
-            .iter()
-            .position(|class| class.as_str() == row.class)
-            .unwrap_or(FailureClass::ALL.len() - 1);
-        *groups.entry((row.source, class_index)).or_default() += row.count;
-    }
-    let mut by_failure: Vec<FailureCount> = groups
+    let by_failure: Vec<FailureCount> = rows
         .into_iter()
-        .map(|((source, class_index), count)| FailureCount {
-            source,
-            class: FailureClass::ALL[class_index],
-            count,
+        .map(|row| FailureCount {
+            source: row.source,
+            class: FailureClass::from_stored(&row.class),
+            count: row.count,
         })
         .collect();
-    by_failure.sort_by(|a, b| {
-        a.source
-            .is_none()
-            .cmp(&b.source.is_none())
-            .then_with(|| a.source.cmp(&b.source))
-    });
     let total = by_failure.iter().map(|group| group.count).sum();
 
     Ok(Json(FailureCountsResponse { by_failure, total }))

@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT m.id AS \"id!\", m.work_id AS \"work_id!\", w.title AS \"title!\",\n                  m.enrichment_status AS \"status!: EnrichmentStatus\",\n                  m.enrichment_attempt_count AS \"attempt_count!\",\n                  m.enrichment_attempted_at AS attempted_at,\n                  m.enrichment_failures AS \"failures!\"\n           FROM manifestations m\n           JOIN works w ON w.id = m.work_id\n           WHERE m.enrichment_status IN ('failed', 'skipped')\n             AND m.enrichment_error IS NOT NULL\n             AND ($1::uuid IS NULL OR m.id > $1)\n             AND ($2::text IS NULL OR m.enrichment_failures -> 0 ->> 'source' = $2)\n             AND ($3::text IS NULL\n                  OR COALESCE(m.enrichment_failures -> 0 ->> 'class', 'unspecified') = $3)\n           ORDER BY m.id\n           LIMIT $4",
+  "query": "SELECT m.id AS \"id!\", m.work_id AS \"work_id!\", w.title AS \"title!\",\n                  m.enrichment_status AS \"status!: EnrichmentStatus\",\n                  m.enrichment_attempt_count AS \"attempt_count!\",\n                  m.enrichment_attempted_at AS attempted_at,\n                  m.enrichment_failures AS \"failures!\",\n                  p.source AS primary_source,\n                  p.class AS \"primary_class!\"\n           FROM manifestations m\n           JOIN works w ON w.id = m.work_id\n           CROSS JOIN LATERAL (\n               SELECT m.enrichment_failures -> 0 ->> 'source' AS source,\n                      CASE WHEN m.enrichment_failures -> 0 ->> 'class' = ANY($5::text[])\n                           THEN m.enrichment_failures -> 0 ->> 'class'\n                           ELSE 'unspecified' END AS class\n           ) p\n           WHERE m.enrichment_status IN ('failed', 'skipped')\n             AND m.enrichment_error IS NOT NULL\n             AND ($1::uuid IS NULL OR m.id > $1)\n             AND ($2::text IS NULL OR p.source = $2)\n             AND ($3::text IS NULL OR p.class = $3)\n           ORDER BY m.id\n           LIMIT $4",
   "describe": {
     "columns": [
       {
@@ -92,6 +92,18 @@
             "name": "enrichment_failures"
           }
         }
+      },
+      {
+        "ordinal": 7,
+        "name": "primary_source",
+        "type_info": "Text",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 8,
+        "name": "primary_class!",
+        "type_info": "Text",
+        "origin": "Expression"
       }
     ],
     "parameters": {
@@ -99,7 +111,8 @@
         "Uuid",
         "Text",
         "Text",
-        "Int8"
+        "Int8",
+        "TextArray"
       ]
     },
     "nullable": [
@@ -109,8 +122,10 @@
       false,
       false,
       true,
-      false
+      false,
+      null,
+      null
     ]
   },
-  "hash": "0d6bf4eeade1ff8b0a199ea496a58a4ba63a6c139ae21f57cb32339e05a40447"
+  "hash": "53790c16f7595f8650b198b0d2d08935e84fbfa22165e015366e7dc3cea0844f"
 }

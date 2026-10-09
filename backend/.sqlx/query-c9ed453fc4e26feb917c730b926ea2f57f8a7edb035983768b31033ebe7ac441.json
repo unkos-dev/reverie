@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT enrichment_status::text AS \"enrichment_status!\", enrichment_attempt_count, enrichment_attempted_at, enrichment_error FROM manifestations WHERE id = $1",
+  "query": "SELECT enrichment_status::text AS \"enrichment_status!\", enrichment_attempt_count, enrichment_attempted_at, enrichment_error, enrichment_failures FROM manifestations WHERE id = $1",
   "describe": {
     "columns": [
       {
@@ -41,6 +41,17 @@
             "name": "enrichment_error"
           }
         }
+      },
+      {
+        "ordinal": 4,
+        "name": "enrichment_failures",
+        "type_info": "Jsonb",
+        "origin": {
+          "Table": {
+            "table": "manifestations",
+            "name": "enrichment_failures"
+          }
+        }
       }
     ],
     "parameters": {
@@ -52,8 +63,9 @@
       null,
       false,
       true,
-      true
+      true,
+      false
     ]
   },
-  "hash": "b49305938aacd4060b6009607aafc3d9ba1b7e928169701b82a5a748a8b65eaf"
+  "hash": "c9ed453fc4e26feb917c730b926ea2f57f8a7edb035983768b31033ebe7ac441"
 }

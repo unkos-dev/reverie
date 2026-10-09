@@ -272,6 +272,7 @@ async fn mark_complete(pool: &PgPool, id: Uuid) -> sqlx::Result<()> {
              enrichment_attempted_at = CASE WHEN enrichment_rerun_requested \
                                             THEN NULL ELSE enrichment_attempted_at END, \
              enrichment_error = NULL, \
+             enrichment_failures = '[]'::jsonb, \
              enrichment_rerun_requested = FALSE \
          WHERE id = $1 AND enrichment_status = 'in_progress'",
         id,
@@ -1142,6 +1143,36 @@ mod tests {
             stored_failures(&pool, id).await,
             serde_json::json!([{"source": "googlebooks", "class": "unreachable"}])
         );
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn a_successful_run_clears_the_failure_classes_of_earlier_attempts(pool: PgPool) {
+        let pool = ingestion_pool_for(&pool).await;
+        for rerun_requested in [false, true] {
+            let (_work_id, id, _) =
+                insert_queue_fixture(&pool, EnrichmentStatus::InProgress, 2, Some(10)).await;
+            sqlx::query!(
+                "UPDATE manifestations SET enrichment_error = 'transient source failures', \
+                     enrichment_failures = $2 WHERE id = $1",
+                id,
+                serde_json::json!([{"source": "openlibrary", "class": "timeout"}]),
+            )
+            .execute(&pool)
+            .await
+            .unwrap();
+            if rerun_requested {
+                set_rerun_requested(&pool, id).await;
+            }
+
+            mark_complete(&pool, id).await.unwrap();
+
+            assert!(queue_row_state(&pool, id).await.error.is_none());
+            assert_eq!(
+                stored_failures(&pool, id).await,
+                serde_json::json!([]),
+                "rerun_requested = {rerun_requested}"
+            );
+        }
     }
 
     #[sqlx::test(migrations = "./migrations")]

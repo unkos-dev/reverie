@@ -220,6 +220,63 @@ async fn rows_without_classes_read_as_unspecified_and_never_expose_stored_text(p
 }
 
 #[sqlx::test(migrations = "./migrations")]
+async fn an_unknown_stored_class_reads_as_unspecified_in_the_list_filters_and_counts(pool: PgPool) {
+    let env = env(&pool).await;
+    failing(
+        &env,
+        "future class",
+        json!([
+            entry("hardcover", "from_the_future"),
+            entry("kobo", "also_from_the_future"),
+            entry("openlibrary", "timeout")
+        ]),
+    )
+    .await;
+    failing(
+        &env,
+        "recorded unspecified",
+        json!([entry("hardcover", "unspecified")]),
+    )
+    .await;
+
+    let body = list(&env, "").await;
+    let future = items(&body)
+        .iter()
+        .find(|item| item["title"] == "future class")
+        .unwrap();
+    assert_eq!(
+        future["primary"],
+        json!({"source": "hardcover", "class": "unspecified"})
+    );
+    assert_eq!(
+        future["also"],
+        json!([
+            {"source": "kobo", "class": "unspecified"},
+            {"source": "openlibrary", "class": "timeout"},
+        ])
+    );
+    assert!(!body.to_string().contains("from_the_future"));
+
+    let counts: Value = get(&env, COUNTS).await.json();
+    assert_eq!(counts["total"], 2);
+    assert_eq!(
+        counts["by_failure"],
+        json!([{"source": "hardcover", "class": "unspecified", "count": 2}])
+    );
+
+    let query = "?source=hardcover&class=unspecified";
+    let mut walked: Vec<String> = walk(&env, query, 1)
+        .await
+        .iter()
+        .map(|item| item["title"].as_str().unwrap().to_owned())
+        .collect();
+    walked.sort();
+    assert_eq!(walked, vec!["future class", "recorded unspecified"]);
+    assert_eq!(titles(&list(&env, "?class=unspecified").await).len(), 2);
+    assert!(titles(&list(&env, "?class=timeout").await).is_empty());
+}
+
+#[sqlx::test(migrations = "./migrations")]
 async fn filters_match_the_primary_failure_only(pool: PgPool) {
     let env = env(&pool).await;
     failing(

@@ -303,8 +303,10 @@ a projection, not a preview of a specific journal row a subsequent real run woul
   `source_error` (an unexpected HTTP status), `not_found`, `unreachable` (any other transport or decode failure),
   `internal` and `unspecified`. A source that failed on several lookup keys in one run contributes its last failure. A
   run that errors as a whole, including a panic, records the single class `internal`, with no source. A row holding
-  `enrichment_error` without classes reads as `unspecified`, with no source. The classes are meaningful only while
-  `enrichment_error` is set; a rerun request resets both.
+  `enrichment_error` without classes reads as `unspecified`, with no source; a stored class this build does not know
+  reads as `unspecified` and keeps its source. The classes are meaningful only while `enrichment_error` is set, and
+  every write that clears `enrichment_error` clears them in the same statement: a retry through `trigger`, an identifier
+  edit, a rerun request consumed at the end of a run, and a successful run.
 - Google Books removes the request URL from transport and JSON-decoding errors before wrapping them as
   `SourceError::Other`. Cache payloads and dry-run failure summaries retain the error cause without its query
   credential; timeout errors remain `SourceError::Timeout`.
