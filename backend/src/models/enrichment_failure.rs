@@ -1,7 +1,7 @@
 //! Closed failure classes persisted with a failed enrichment attempt.
 //!
 //! `manifestations.enrichment_failures` holds a JSON array of
-//! [`FailureEntry`] values, primary first. The classes are the only
+//! `FailureEntry` values, primary first. The classes are the only
 //! description of a failure that leaves the server: the raw
 //! `enrichment_error` text can carry internal error detail.
 
