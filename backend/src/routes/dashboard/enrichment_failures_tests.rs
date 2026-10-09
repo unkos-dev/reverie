@@ -331,6 +331,77 @@ async fn filters_match_the_primary_failure_only(pool: PgPool) {
 }
 
 #[sqlx::test(migrations = "./migrations")]
+async fn source_none_lists_only_books_without_a_primary_source(pool: PgPool) {
+    let env = env(&pool).await;
+    seed(
+        &env,
+        "legacy",
+        EnrichmentStatus::Failed,
+        Some("transient source failures"),
+        json!([]),
+    )
+    .await;
+    failing(
+        &env,
+        "sourced unspecified",
+        json!([entry("hardcover", "unspecified")]),
+    )
+    .await;
+    failing(
+        &env,
+        "sourced unknown class",
+        json!([entry("openlibrary", "from_a_future_build")]),
+    )
+    .await;
+    failing(
+        &env,
+        "internal",
+        json!([{"source": null, "class": "internal"}]),
+    )
+    .await;
+
+    assert_eq!(
+        titles(&list(&env, "?source=none&class=unspecified").await),
+        vec!["legacy"]
+    );
+    let mut unsourced = titles(&list(&env, "?source=none").await);
+    unsourced.sort();
+    assert_eq!(unsourced, vec!["internal", "legacy"]);
+    assert_eq!(
+        titles(&list(&env, "?source=none&class=internal").await),
+        vec!["internal"]
+    );
+    assert_eq!(titles(&list(&env, "?class=unspecified").await).len(), 3);
+    assert_eq!(
+        titles(&list(&env, "?source=hardcover&class=unspecified").await),
+        vec!["sourced unspecified"]
+    );
+
+    let walked = walk(&env, "?source=none", 1).await;
+    assert_eq!(walked.len(), 2);
+    assert!(
+        walked
+            .iter()
+            .all(|item| item["primary"]["source"].is_null())
+    );
+
+    let cursor = list(&env, "?source=none&limit=1").await["next_cursor"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    for url in [
+        format!("{LIST}?cursor={cursor}"),
+        format!("{LIST}?source=hardcover&cursor={cursor}"),
+    ] {
+        test_support::assert_problem(
+            &get(&env, &url).await,
+            problems::VALIDATION,
+            StatusCode::UNPROCESSABLE_ENTITY,
+        );
+    }
+}
+
+#[sqlx::test(migrations = "./migrations")]
 async fn counts_equal_the_rows_listed_per_group_across_pages(pool: PgPool) {
     let env = env(&pool).await;
     for index in 0..4 {
@@ -372,9 +443,7 @@ async fn counts_equal_the_rows_listed_per_group_across_pages(pool: PgPool) {
 
     let mut seen = 0;
     for group in counts["by_failure"].as_array().unwrap() {
-        let source = group["source"]
-            .as_str()
-            .map_or_else(String::new, |source| format!("&source={source}"));
+        let source = format!("&source={}", group["source"].as_str().unwrap_or("none"));
         let query = format!("?class={}{source}", group["class"].as_str().unwrap());
         let listed = walk(&env, &query, 2).await;
         assert_eq!(
