@@ -6,13 +6,12 @@
  * carries an `ETag` header and read back by `apiFetch` to inject `If-Match`
  * on that resource's own PATCH. Callers never thread the header by hand,
  * matching the CSRF token's wrapper-level injection rather than a
- * per-callsite `ifMatch` parameter (contrast `shelves.ts`, whose
- * timestamp-derived scheme predates this module and stays untouched).
+ * per-callsite `ifMatch` parameter.
  *
  * Scope is deliberately narrow: only the two resource families this phase
  * protects (`backend/src/routes/reading.rs`, `backend/src/routes/
- * metadata.rs`) resolve to a cache key. Every other path, including the
- * shelves reorder PUT, resolves to `null` and is never touched.
+ * metadata.rs`) resolve to a cache key. Every other path resolves to
+ * `null` and is never touched.
  */
 
 const cache = new Map<string, string>();

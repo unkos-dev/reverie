@@ -3302,7 +3302,7 @@
           "shelves"
         ],
         "summary": "Get a shelf with its items",
-        "description": "Returns a shelf's identity plus one page of its items in position order. Restricted to shelves the caller owns.",
+        "description": "Returns a shelf's identity plus one page of its items ordered by when they were added. Restricted to shelves the caller owns.",
         "operationId": "get_shelf_with_items",
         "parameters": [
           {
@@ -3333,7 +3333,7 @@
                 "schema": {
                   "type": "string"
                 },
-                "description": "Entity-tag carrying the shelf's updated_at (RFC 3339, quoted per RFC 9110); echo as If-Match on reorder"
+                "description": "Entity-tag carrying the shelf's updated_at (RFC 3339, quoted per RFC 9110)"
               },
               "Link": {
                 "schema": {
@@ -3625,136 +3625,12 @@
       }
     },
     "/api/v1/shelves/{id}/items": {
-      "put": {
-        "tags": [
-          "shelves"
-        ],
-        "summary": "Reorder shelf items",
-        "description": "Rewrites the full ordering of items on the caller's shelf. Requires an `If-Match` header carrying the shelf's current entity-tag; fails with 428 when it is absent and 412 when it does not match. Returns 422 if the supplied list does not exactly match the shelf's current items.",
-        "operationId": "reorder_shelf_items",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "description": "Shelf id",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          },
-          {
-            "name": "If-Match",
-            "in": "header",
-            "description": "Strong entity-tag from a prior shelf response; weak validators (W/\"...\") are rejected",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/ReorderItemsRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "204": {
-            "description": "Positions rewritten; shelf ETag bumped",
-            "headers": {
-              "ETag": {
-                "schema": {
-                  "type": "string"
-                },
-                "description": "Entity-tag carrying the shelf's new updated_at (RFC 3339, quoted per RFC 9110)"
-              }
-            }
-          },
-          "401": {
-            "description": "Authentication required",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Shelf missing or owned by another user (existence-not-leaked)",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
-          },
-          "412": {
-            "description": "If-Match does not match the shelf's current updated_at",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Malformed If-Match, or items list does not exactly cover the shelf",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
-          },
-          "428": {
-            "description": "If-Match header absent",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "session_cookie": [
-              "write"
-            ]
-          },
-          {
-            "device_token_bearer": [
-              "write"
-            ]
-          },
-          {
-            "oidc_jwt_bearer": [
-              "write"
-            ]
-          },
-          {
-            "opds_basic": [
-              "write"
-            ]
-          }
-        ]
-      },
       "post": {
         "tags": [
           "shelves"
         ],
         "summary": "Add an item to a shelf",
-        "description": "Appends a manifestation to the end of the caller's shelf; adding one already on the shelf is a no-op. Returns 404 if the manifestation is not visible to the caller.",
+        "description": "Adds a manifestation to the caller's shelf; adding one already on the shelf is a no-op. Returns 404 if the manifestation is not visible to the caller.",
         "operationId": "add_shelf_item",
         "parameters": [
           {
@@ -3780,7 +3656,7 @@
         },
         "responses": {
           "204": {
-            "description": "Item appended at the end (no-op if already on the shelf); shelf ETag bumped",
+            "description": "Item added (no-op if already on the shelf); shelf ETag bumped",
             "headers": {
               "ETag": {
                 "schema": {
@@ -7194,7 +7070,7 @@
           "manifestation_id": {
             "type": "string",
             "format": "uuid",
-            "description": "Manifestation to append; must be visible to the caller."
+            "description": "Manifestation to add; must be visible to the caller."
           }
         }
       },
@@ -8919,23 +8795,6 @@
           }
         }
       },
-      "ReorderItemsRequest": {
-        "type": "object",
-        "description": "Body for `PUT /api/v1/shelves/{id}/items` — full ordered manifestation list.",
-        "required": [
-          "items"
-        ],
-        "properties": {
-          "items": {
-            "type": "array",
-            "items": {
-              "type": "string",
-              "format": "uuid"
-            },
-            "description": "Complete new ordering: every manifestation currently on the shelf,\nexactly once. Partial reorders are rejected."
-          }
-        }
-      },
       "ResetPasswordRequest": {
         "type": "object",
         "description": "Request body for `POST /auth/reset-password`.",
@@ -9420,7 +9279,7 @@
           "updated_at": {
             "type": "string",
             "format": "date-time",
-            "description": "`shelves.updated_at`. Doubles as the `ETag` value the client\nechoes on `If-Match` for the reorder endpoint."
+            "description": "`shelves.updated_at`; the value the shelf endpoints render into the\n`ETag` response header."
           }
         }
       },
@@ -9452,7 +9311,7 @@
             "items": {
               "$ref": "#/components/schemas/ShelfItem"
             },
-            "description": "One page of items ordered by `position ASC, added_at ASC,\nmanifestation_id ASC`."
+            "description": "One page of items ordered by `added_at ASC, manifestation_id ASC`."
           },
           "name": {
             "type": "string"
@@ -9467,16 +9326,15 @@
           "updated_at": {
             "type": "string",
             "format": "date-time",
-            "description": "`shelves.updated_at` — the `ETag` value the client echoes as\n`If-Match` on the reorder PUT."
+            "description": "`shelves.updated_at` — the value of the `ETag` header."
           }
         }
       },
       "ShelfItem": {
         "type": "object",
-        "description": "One row of the shelf-items list (`GET /api/v1/shelves/{id}`).\n\nCarries the position so the frontend can render in stored order\nand round-trip back as `PUT /api/v1/shelves/{id}/items` with the\nre-arranged list.",
+        "description": "One row of the shelf-items list (`GET /api/v1/shelves/{id}`).\n\nItems arrive ordered by `added_at`, then `manifestation_id`.",
         "required": [
           "manifestation_id",
-          "position",
           "added_at"
         ],
         "properties": {
@@ -9489,11 +9347,6 @@
             "type": "string",
             "format": "uuid",
             "description": "`shelf_items.manifestation_id`."
-          },
-          "position": {
-            "type": "integer",
-            "format": "int32",
-            "description": "`shelf_items.position`. Caller echoes the ordering when sending\nthe reorder PUT."
           }
         }
       },

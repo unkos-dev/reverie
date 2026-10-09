@@ -16,20 +16,15 @@
 //! shelf-existence probing via random UUIDs (relevant for children,
 //! whose manifestation visibility is shelf-gated).
 //!
-//! # ETag / If-Match contract
+//! # ETag
 //!
 //! Every shelf read endpoint emits `ETag: "<updated_at RFC3339>"`.
-//! The reorder endpoint (`PUT /api/v1/shelves/{id}/items`) requires the
-//! caller to echo that value as `If-Match`; the handler runs
-//! `SELECT updated_at FROM shelves WHERE id = $1 FOR UPDATE` inside
-//! the transaction and refuses the write with 412 if the value
-//! differs. All items-mutation handlers explicitly issue
+//! The items-mutation handlers explicitly issue
 //! `UPDATE shelves SET updated_at = now() WHERE id = $1` in the same
-//! transaction so add/remove also bump the ETag — without that, a
-//! follow-up reorder PUT would 412 spuriously.
+//! transaction so add/remove also move the ETag.
 
 use axum::extract::{OriginalUri, State};
-use axum::http::header::{ETAG, IF_MATCH, LINK};
+use axum::http::header::{ETAG, LINK};
 use axum::http::{HeaderMap, HeaderValue, StatusCode};
 use axum::response::IntoResponse;
 use axum_extra::extract::{Query, QueryRejection};
@@ -62,7 +57,7 @@ pub fn router() -> OpenApiRouter<AppState> {
     OpenApiRouter::new()
         .routes(routes!(list_shelves, create_shelf))
         .routes(routes!(rename_shelf, delete_shelf, get_shelf_with_items))
-        .routes(routes!(add_shelf_item, reorder_shelf_items))
+        .routes(routes!(add_shelf_item))
         .routes(routes!(remove_shelf_item))
 }
 
@@ -71,52 +66,10 @@ pub fn router() -> OpenApiRouter<AppState> {
 /// quotes per RFC 9110 §8.8.3).
 fn etag_header(updated_at: DateTime<Utc>) -> Result<HeaderValue, AppError> {
     // The tag must be the same RFC 3339 spelling serde writes into the
-    // response body, because clients echo the body's `updated_at` back as
-    // `If-Match`. `to_rfc3339_opts(AutoSi, true)` is exactly what chrono's
+    // response body. `to_rfc3339_opts(AutoSi, true)` is exactly what chrono's
     // `Serialize` impl emits; `to_rfc3339()` is not (it writes `+00:00`).
     let formatted = updated_at.to_rfc3339_opts(SecondsFormat::AutoSi, true);
     HeaderValue::from_str(&format!("\"{formatted}\"")).map_err(|e| AppError::Internal(e.into()))
-}
-
-/// Parse the `If-Match` request header into an [`DateTime<Utc>`].
-///
-/// Strips the RFC 9110 entity-tag quoting and decodes the inner
-/// RFC 3339 timestamp. Returns:
-/// - `Ok(None)` when the header is absent (handler typically responds
-///   with [`AppError::IfMatchRequired`]).
-/// - `Ok(Some(_))` on a well-formed entity-tag.
-/// - `Err(AppError::Validation)` when the value is malformed.
-fn parse_if_match(headers: &HeaderMap) -> Result<Option<DateTime<Utc>>, AppError> {
-    let Some(raw) = headers.get(IF_MATCH) else {
-        return Ok(None);
-    };
-    let value = raw
-        .to_str()
-        .map_err(|_| AppError::Validation("If-Match header must be ASCII".into()))?;
-    let trimmed = value.trim();
-    // RFC 9110 §13.1.2: If-Match requires strong comparison. Weak
-    // validators (`W/"..."`) are semantically wrong for optimistic
-    // concurrency and reject explicitly rather than silently being
-    // promoted to strong.
-    if trimmed.starts_with("W/") {
-        return Err(AppError::Validation(
-            "weak entity-tags (W/\"...\") not accepted for If-Match".into(),
-        ));
-    }
-    // Strong tag MUST be wrapped in double quotes per RFC 9110 §8.8.3.
-    let Some(stripped) = trimmed.strip_prefix('"').and_then(|s| s.strip_suffix('"')) else {
-        return Err(AppError::Validation(
-            "If-Match value must be a quoted entity-tag".into(),
-        ));
-    };
-    let ts = DateTime::parse_from_rfc3339(stripped)
-        .map_err(|e| {
-            AppError::Validation(format!(
-                "If-Match value is not a valid RFC3339 entity-tag: {e}"
-            ))
-        })?
-        .with_timezone(&Utc);
-    Ok(Some(ts))
 }
 
 /// Cursor pagination input for `GET /api/v1/shelves`.
@@ -520,14 +473,11 @@ struct ShelfDetailResponse {
     // This envelope re-declares the model's timestamps rather than
     // embedding `Shelf`.
     created_at: DateTime<Utc>,
-    /// `shelves.updated_at` — the `ETag` value the client echoes as
-    /// `If-Match` on the reorder PUT.
+    /// `shelves.updated_at` — the value of the `ETag` header.
     // `etag_header` renders this field with the same RFC 3339 spelling
-    // serde writes here, so the value a client reads from the body
-    // round-trips as an `If-Match` header.
+    // serde writes here.
     updated_at: DateTime<Utc>,
-    /// One page of items ordered by `position ASC, added_at ASC,
-    /// manifestation_id ASC`.
+    /// One page of items ordered by `added_at ASC, manifestation_id ASC`.
     items: Vec<ShelfItem>,
     /// Opaque cursor for the next items page; `null` on the last page.
     next_cursor: Option<String>,
@@ -535,10 +485,9 @@ struct ShelfDetailResponse {
 
 /// Shelf identity plus one keyset-paginated page of its items.
 ///
-/// Items page over `(position, added_at, manifestation_id)`, so every list is
-/// bounded by construction. The ETag/If-Match contract is unaffected by item
-/// paging: the entity-tag carries the shelf's `updated_at` regardless of which
-/// items page is requested.
+/// Items page over `(added_at, manifestation_id)`, so every list is bounded by
+/// construction. The entity-tag carries the shelf's `updated_at` regardless of
+/// which items page is requested.
 ///
 /// # Errors
 /// - [`AppError::NotFound`] when missing or not owned by caller.
@@ -548,14 +497,14 @@ struct ShelfDetailResponse {
     get,
     path = "/api/v1/shelves/{id}",
     summary = "Get a shelf with its items",
-    description = "Returns a shelf's identity plus one page of its items in position order. Restricted to shelves the caller owns.",
+    description = "Returns a shelf's identity plus one page of its items ordered by when they were added. Restricted to shelves the caller owns.",
     tag = "shelves",
     params(("id" = Uuid, Path, description = "Shelf id"), ShelfItemsParams),
     security(("session_cookie" = ["read"]), ("device_token_bearer" = ["read"]), ("oidc_jwt_bearer" = ["read"]), ("opds_basic" = ["read"])),
     responses(
         (status = 200, description = "Shelf identity plus one page of ordered items", body = ShelfDetailResponse,
          headers(
-            ("ETag" = String, description = "Entity-tag carrying the shelf's updated_at (RFC 3339, quoted per RFC 9110); echo as If-Match on reorder"),
+            ("ETag" = String, description = "Entity-tag carrying the shelf's updated_at (RFC 3339, quoted per RFC 9110)"),
             ("Link" = String, description = "RFC 8288 next-page link; emitted with rel=\"next\" when more items remain")
          )),
         (status = 400, description = "Malformed query parameter", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
@@ -598,23 +547,21 @@ async fn get_shelf_with_items(
     .ok_or(AppError::NotFound)?;
 
     let mut qb: QueryBuilder<Postgres> = QueryBuilder::new(
-        "SELECT manifestation_id, position, added_at \
+        "SELECT manifestation_id, added_at \
            FROM shelf_items WHERE shelf_id = ",
     );
     qb.push_bind(id);
     if let Some(c) = &cursor {
         // All-ASC sort — a single row-tuple comparison is total. The
-        // manifestation_id tiebreaker is load-bearing: neither position
-        // nor added_at is unique per shelf.
-        qb.push(" AND (position, added_at, manifestation_id) > (");
-        qb.push_bind(c.position);
-        qb.push(", ");
+        // manifestation_id tiebreaker is load-bearing: added_at is not
+        // unique per shelf.
+        qb.push(" AND (added_at, manifestation_id) > (");
         qb.push_bind(c.added_at);
         qb.push(", ");
         qb.push_bind(c.manifestation_id);
         qb.push(")");
     }
-    qb.push(" ORDER BY position ASC, added_at ASC, manifestation_id ASC LIMIT ");
+    qb.push(" ORDER BY added_at ASC, manifestation_id ASC LIMIT ");
     qb.push_bind(page_size + 1);
 
     let rows = qb
@@ -629,7 +576,6 @@ async fn get_shelf_with_items(
         .iter()
         .map(|r| ShelfItem {
             manifestation_id: r.get("manifestation_id"),
-            position: r.get("position"),
             added_at: r.get("added_at"),
         })
         .collect();
@@ -639,7 +585,6 @@ async fn get_shelf_with_items(
             let manifestation_id: Uuid = last.get("manifestation_id");
             Some(
                 ShelfItemCursor {
-                    position: last.get("position"),
                     added_at: last.get("added_at"),
                     manifestation_id,
                 }
@@ -677,12 +622,12 @@ async fn get_shelf_with_items(
 /// Body for `POST /api/v1/shelves/{id}/items`.
 #[derive(Debug, Deserialize, utoipa::ToSchema)]
 struct AddItemRequest {
-    /// Manifestation to append; must be visible to the caller.
+    /// Manifestation to add; must be visible to the caller.
     manifestation_id: Uuid,
 }
 
-/// `POST /api/v1/shelves/{id}/items` — append a manifestation at
-/// `max(position) + 1`. Bumps the shelf's `updated_at` (`ETag`).
+/// `POST /api/v1/shelves/{id}/items` — add a manifestation to the shelf.
+/// Bumps the shelf's `updated_at` (`ETag`).
 ///
 /// # Errors
 /// - [`AppError::Validation`] when the request body is missing,
@@ -696,13 +641,13 @@ struct AddItemRequest {
     post,
     path = "/api/v1/shelves/{id}/items",
     summary = "Add an item to a shelf",
-    description = "Appends a manifestation to the end of the caller's shelf; adding one already on the shelf is a no-op. Returns 404 if the manifestation is not visible to the caller.",
+    description = "Adds a manifestation to the caller's shelf; adding one already on the shelf is a no-op. Returns 404 if the manifestation is not visible to the caller.",
     tag = "shelves",
     params(("id" = Uuid, Path, description = "Shelf id")),
     request_body = AddItemRequest,
     security(("session_cookie" = ["write"]), ("device_token_bearer" = ["write"]), ("oidc_jwt_bearer" = ["write"]), ("opds_basic" = ["write"])),
     responses(
-        (status = 204, description = "Item appended at the end (no-op if already on the shelf); shelf ETag bumped",
+        (status = 204, description = "Item added (no-op if already on the shelf); shelf ETag bumped",
          headers(("ETag" = String, description = "Entity-tag carrying the shelf's new updated_at (RFC 3339, quoted per RFC 9110)"))),
         (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 404, description = "Shelf missing / not owned, or manifestation not visible to the caller", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
@@ -752,21 +697,12 @@ async fn add_shelf_item(
     if owned.is_none() {
         return Err(AppError::NotFound);
     }
-    let next_position: i32 = sqlx::query_scalar!(
-        r#"SELECT COALESCE(MAX(position), -1) + 1 AS "p!"
-             FROM shelf_items WHERE shelf_id = $1"#,
-        id,
-    )
-    .fetch_one(&mut *tx)
-    .await
-    .map_err(|e| AppError::Internal(e.into()))?;
     sqlx::query!(
-        "INSERT INTO shelf_items (shelf_id, manifestation_id, position) \
-         VALUES ($1, $2, $3) \
+        "INSERT INTO shelf_items (shelf_id, manifestation_id) \
+         VALUES ($1, $2) \
          ON CONFLICT (shelf_id, manifestation_id) DO NOTHING",
         id,
         req.manifestation_id,
-        next_position,
     )
     .execute(&mut *tx)
     .await
@@ -795,8 +731,8 @@ async fn add_shelf_item(
 /// - [`AppError::NotFound`] when the shelf is missing / not owned by
 ///   the caller, OR when the item is not on the shelf (the second
 ///   case prevents silent `ETag` drift from a no-op delete: bumping
-///   `updated_at` on zero `rows_affected` would invalidate a
-///   correctly-held client `If-Match` for the next reorder).
+///   `updated_at` on zero `rows_affected` would move the `ETag`
+///   without a membership change).
 /// - [`AppError::Internal`] on database errors.
 #[utoipa::path(
     delete,
@@ -860,150 +796,6 @@ async fn remove_shelf_item(
     tx.commit()
         .await
         .map_err(|e| AppError::Internal(e.into()))?;
-    let mut headers = HeaderMap::new();
-    headers.insert(ETAG, etag_header(updated_at)?);
-    Ok((StatusCode::NO_CONTENT, headers))
-}
-
-/// Body for `PUT /api/v1/shelves/{id}/items` — full ordered manifestation list.
-#[derive(Debug, Deserialize, utoipa::ToSchema)]
-struct ReorderItemsRequest {
-    /// Complete new ordering: every manifestation currently on the shelf,
-    /// exactly once. Partial reorders are rejected.
-    items: Vec<Uuid>,
-}
-
-/// `PUT /api/v1/shelves/{id}/items` — transactionally rewrite
-/// `shelf_items.position` based on the supplied order.
-///
-/// Optimistic-concurrency: requires `If-Match: "<updated_at>"`
-/// header matching the shelf's current `updated_at`; otherwise 412.
-///
-/// # Errors
-/// - [`AppError::IfMatchRequired`] (428) when the header is absent.
-/// - [`AppError::Validation`] when the header is malformed or the
-///   posted items list does not name every item currently on the
-///   shelf exactly once.
-/// - [`AppError::NotFound`] when the shelf is missing / not owned.
-/// - [`AppError::IfMatchMismatch`] (412) when the `ETag` does not match.
-/// - [`AppError::Internal`] on database errors.
-#[utoipa::path(
-    put,
-    path = "/api/v1/shelves/{id}/items",
-    summary = "Reorder shelf items",
-    description = "Rewrites the full ordering of items on the caller's shelf. Requires an `If-Match` header carrying the shelf's current entity-tag; fails with 428 when it is absent and 412 when it does not match. Returns 422 if the supplied list does not exactly match the shelf's current items.",
-    tag = "shelves",
-    params(
-        ("id" = Uuid, Path, description = "Shelf id"),
-        ("If-Match" = String, Header, description = "Strong entity-tag from a prior shelf response; weak validators (W/\"...\") are rejected")
-    ),
-    request_body = ReorderItemsRequest,
-    security(("session_cookie" = ["write"]), ("device_token_bearer" = ["write"]), ("oidc_jwt_bearer" = ["write"]), ("opds_basic" = ["write"])),
-    responses(
-        (status = 204, description = "Positions rewritten; shelf ETag bumped",
-         headers(("ETag" = String, description = "Entity-tag carrying the shelf's new updated_at (RFC 3339, quoted per RFC 9110)"))),
-        (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
-        (status = 404, description = "Shelf missing or owned by another user (existence-not-leaked)", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
-        (status = 412, description = "If-Match does not match the shelf's current updated_at", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
-        (status = 422, description = "Malformed If-Match, or items list does not exactly cover the shelf", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
-        (status = 428, description = "If-Match header absent", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
-    )
-)]
-async fn reorder_shelf_items(
-    current_user: CurrentUser,
-    State(state): State<AppState>,
-    ApiPath(id): ApiPath<Uuid>,
-    headers_in: HeaderMap,
-    ApiJson(req): ApiJson<ReorderItemsRequest>,
-) -> Result<impl IntoResponse, AppError> {
-    current_user.require_scope(Scope::Write)?;
-    let if_match = parse_if_match(&headers_in)?.ok_or(AppError::IfMatchRequired)?;
-
-    let mut tx = state
-        .pool
-        .begin()
-        .await
-        .map_err(|e| AppError::Internal(e.into()))?;
-    let row = sqlx::query!(
-        r#"SELECT updated_at AS "ts!" FROM shelves
-           WHERE id = $1 AND user_id = $2 FOR UPDATE"#,
-        id,
-        current_user.user_id,
-    )
-    .fetch_optional(&mut *tx)
-    .await
-    .map_err(|e| AppError::Internal(e.into()))?
-    .ok_or(AppError::NotFound)?;
-    // The FOR UPDATE lock serialises concurrent reorder attempts;
-    // the second transaction reads the bumped `updated_at` and 412s.
-    if row.ts != if_match {
-        return Err(AppError::IfMatchMismatch);
-    }
-
-    // Refuse partial reorders so the operator either sees the full
-    // new order or none of it.
-    let current: Vec<Uuid> = sqlx::query_scalar!(
-        "SELECT manifestation_id FROM shelf_items WHERE shelf_id = $1",
-        id,
-    )
-    .fetch_all(&mut *tx)
-    .await
-    .map_err(|e| AppError::Internal(e.into()))?;
-    if current.len() != req.items.len() {
-        return Err(AppError::Validation(format!(
-            "items list size mismatch: shelf has {}, request supplied {}",
-            current.len(),
-            req.items.len(),
-        )));
-    }
-    let current_set: std::collections::HashSet<Uuid> = current.iter().copied().collect();
-    let mut seen: std::collections::HashSet<Uuid> = std::collections::HashSet::new();
-    for item in &req.items {
-        if !current_set.contains(item) {
-            return Err(AppError::Validation(format!(
-                "manifestation {item} is not on this shelf"
-            )));
-        }
-        if !seen.insert(*item) {
-            return Err(AppError::Validation(format!(
-                "manifestation {item} appears more than once"
-            )));
-        }
-    }
-
-    // Bulk-update positions via UNNEST in a single round-trip — N
-    // sequential UPDATE statements would make the lock window scale
-    // with shelf size.
-    let positions: Vec<i32> = (0..req.items.len())
-        .map(|i| {
-            i32::try_from(i).map_err(|e| AppError::Validation(format!("position overflow: {e}")))
-        })
-        .collect::<Result<_, _>>()?;
-    sqlx::query!(
-        "UPDATE shelf_items AS si \
-            SET position = updates.pos \
-           FROM unnest($1::int4[], $2::uuid[]) AS updates(pos, mid) \
-          WHERE si.shelf_id = $3 AND si.manifestation_id = updates.mid",
-        &positions,
-        &req.items,
-        id,
-    )
-    .execute(&mut *tx)
-    .await
-    .map_err(|e| AppError::Internal(e.into()))?;
-
-    let updated_at: DateTime<Utc> = sqlx::query_scalar!(
-        r#"UPDATE shelves SET updated_at = now() WHERE id = $1
-           RETURNING updated_at AS "ts!""#,
-        id,
-    )
-    .fetch_one(&mut *tx)
-    .await
-    .map_err(|e| AppError::Internal(e.into()))?;
-    tx.commit()
-        .await
-        .map_err(|e| AppError::Internal(e.into()))?;
-
     let mut headers = HeaderMap::new();
     headers.insert(ETAG, etag_header(updated_at)?);
     Ok((StatusCode::NO_CONTENT, headers))

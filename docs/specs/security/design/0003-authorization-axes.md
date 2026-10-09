@@ -89,7 +89,7 @@ and the backend test suite, which runs the matrix as an ordinary `#[sqlx::test]`
   independently; Runtime behaviour shows why both are needed.
 - **Ownership map.** `backend/src/routes/shelves/mod.rs` documents its own boundary: `shelves` and `shelf_items` have no
   row-level-security policy, so every mutating handler in that module enforces ownership with an explicit
-  `WHERE id = $1 AND user_id = $2` predicate, and the reorder endpoint takes a `FOR UPDATE` lock under the same
+  `WHERE id = $1 AND user_id = $2` predicate, and the item-mutation handlers take a `FOR UPDATE` lock under the same
   predicate against a concurrent write. A mismatched id resolves to `AppError::NotFound`, never to a response that says
   the shelf exists but belongs to someone else. The one exception inside that module is the manifestation probe in
   `add_shelf_item`, which opens an RLS-scoped transaction through `crate::db::acquire_with_rls` so a child account

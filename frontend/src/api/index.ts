@@ -53,7 +53,6 @@ export { acceptVersion, rejectVersion, revertField } from "./metadata";
 export { getSeries } from "./series";
 export type { SeriesDetail, SeriesWork, SeriesWorkManifestation } from "./series";
 export {
-  buildEtag,
   listShelves,
   getShelf,
   createShelf,
@@ -61,7 +60,6 @@ export {
   deleteShelf,
   addShelfItem,
   removeShelfItem,
-  reorderShelfItems,
 } from "./shelves";
 export type { Shelf, ShelfItem, ShelfWithItems } from "./shelves";
 export {
