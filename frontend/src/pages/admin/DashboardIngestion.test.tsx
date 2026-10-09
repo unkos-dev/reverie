@@ -242,6 +242,10 @@ describe("scan control and notices", () => {
     expect(await screen.findByText("Files were sent for another try")).toBeInTheDocument();
     expect(screen.getByText(/Rejected files were left as they are/)).toBeInTheDocument();
     expect(await screen.findByText("2 files, 1 reason")).toBeInTheDocument();
+    const card = screen.getByRole("region", { name: /Needs attention/ });
+    expect(
+      within(card).getByText(/Files marked Needs a change were sent for another try/),
+    ).toBeInTheDocument();
   });
 
   test("does not claim a retry when the needs-change count did not fall", async () => {
@@ -260,6 +264,12 @@ describe("scan control and notices", () => {
 });
 
 describe("Needs attention", () => {
+  test("says nothing about files being sent for another try before any scan", async () => {
+    renderPage();
+    await screen.findByText("7 files, 5 reasons");
+    expect(screen.queryByText(/were sent for another try/)).not.toBeInTheDocument();
+  });
+
   test("headline total equals the sum of the group counts and excludes ignored files", async () => {
     renderPage();
     await screen.findByText("7 files, 5 reasons");
