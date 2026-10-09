@@ -15,6 +15,7 @@ type NeedsAttentionCardProps = {
   isPending: boolean;
   onRetry: () => void;
   pollInterval: number | false;
+  afterScan: boolean;
 };
 
 type Group = { reason: InputReason; count: number };
@@ -48,6 +49,7 @@ function NeedsAttentionCard({
   isPending,
   onRetry,
   pollInterval,
+  afterScan,
 }: NeedsAttentionCardProps): ReactElement {
   const [openOnLoad, setOpenOnLoad] = useState<InputReason | null | undefined>(undefined);
   const groups = counts === undefined ? [] : groupsFrom(counts);
@@ -129,10 +131,12 @@ function NeedsAttentionCard({
           folder, unchanged.
         </p>
       </CardHead>
-      <p className="text-fg-muted px-4 pb-3 text-[13px]">
-        Files marked Needs a change were sent for another try. They return here if they fail again.
-        Rejected files stay until the file changes.
-      </p>
+      {afterScan ? (
+        <p className="text-fg-muted px-4 pb-3 text-[13px]">
+          Files marked Needs a change were sent for another try. They return here if they fail
+          again. Rejected files stay until the file changes.
+        </p>
+      ) : null}
       {groups.map(renderGroup)}
     </Card>
   );

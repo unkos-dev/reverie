@@ -134,6 +134,7 @@ function DashboardPage(): ReactElement {
           void monitor.counts.refetch();
         }}
         pollInterval={monitor.pollInterval}
+        afterScan={monitor.notice?.kind === "accepted" && monitor.notice.afterScan}
       />
 
       <EnrichmentCard />
