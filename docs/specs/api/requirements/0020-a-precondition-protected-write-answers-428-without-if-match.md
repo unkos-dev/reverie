@@ -11,15 +11,15 @@ governed-by:
 
 ## Statement
 
-WHEN a `PATCH` request to a book's metadata resource, a `PATCH` request to a book's reading-state resource, or a `PUT`
-request that reorders a shelf's items carries no `If-Match` header, the server MUST answer `428 Precondition Required`
-and MUST NOT begin a database write for that request.
+WHEN a `PATCH` request to a book's metadata resource, a `PATCH` request to a book's reading-state resource, a `PUT`
+request that reorders a shelf's items, or a `PUT` request to the settings resource carries no `If-Match` header, the
+server MUST answer `428 Precondition Required` and MUST NOT begin a database write for that request.
 
 ## Rationale
 
 [RFC 6585 §3](https://www.rfc-editor.org/rfc/rfc6585#section-3) defines `428 Precondition Required` for exactly this
 case: a state-changing request that omits a precondition the server requires, distinct from `412`, which answers a
-precondition that was supplied but did not hold. Requiring `If-Match` on every write these three operations protect
+precondition that was supplied but did not hold. Requiring `If-Match` on every write these four operations protect
 closes the "lost update" gap RFC 9110 describes, where two clients read the same representation and the second write
 silently overwrites the first's changes with neither client aware a conflict occurred.
 
@@ -31,9 +31,12 @@ silently overwrites the first's changes with neither client aware a conflict occ
   `patch_reading_without_if_match_returns_428` in `backend/src/routes/reading.rs`.
 - A `PUT` that reorders a shelf's items with no `If-Match` header answers `428`. Checked by
   `reorder_without_if_match_returns_428` in `backend/src/routes/shelves/tests.rs`.
+- A `PUT` to the settings resource with no `If-Match` header answers `428` and leaves the stored settings unchanged.
+  Checked by `put_settings_without_if_match_returns_428_and_leaves_settings_unchanged` in
+  `backend/src/routes/settings/tests.rs`.
 
 ## More information
 
-The three tests above assert the response status. None independently re-reads the resource afterwards to confirm its
-state is unchanged; that guarantee follows from each handler checking for the header before it opens the database
+The first three tests above assert the response status. None independently re-reads the resource afterwards to confirm
+its state is unchanged; that guarantee follows from each handler checking for the header before it opens the database
 transaction the write would run in, so a request missing the header never reaches a point where a write could begin.
