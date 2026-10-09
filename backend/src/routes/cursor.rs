@@ -38,7 +38,7 @@
 //! - [`crate::routes::cursor::ShelfCursor`] (`sh` tag): `(is_system,
 //!   name, id)` boundary for `GET /api/v1/shelves`.
 //! - [`crate::routes::cursor::ShelfItemCursor`] (`si` tag):
-//!   `(position, added_at, manifestation_id)` boundary for
+//!   `(added_at, manifestation_id)` boundary for
 //!   `GET /api/v1/shelves/{id}` items.
 //!
 //! No HMAC — same trust model as the OPDS cursor.
@@ -345,20 +345,18 @@ impl ShelfCursor {
 
 /// Keyset boundary for the items page of `GET /api/v1/shelves/{id}`.
 ///
-/// Carries `(position, added_at, manifestation_id)` matching the items
-/// query's `ORDER BY position ASC, added_at ASC, manifestation_id ASC`.
-/// Neither `position` nor `added_at` is unique per shelf (the table's
+/// Carries `(added_at, manifestation_id)` matching the items
+/// query's `ORDER BY added_at ASC, manifestation_id ASC`.
+/// `added_at` is not unique per shelf (the table's
 /// only unique key is the `(shelf_id, manifestation_id)` PK), so the
 /// `manifestation_id` final tiebreaker is what keeps the walk total —
-/// without it a page boundary between two same-position rows would
+/// without it a page boundary between two same-instant rows would
 /// drop one.
 ///
 /// Wire encoding: base64url(unpadded) over
-/// `si|<position>|<rfc3339>|<uuid>` — no free-text field, plain splits.
+/// `si|<rfc3339>|<uuid>` — no free-text field, plain splits.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ShelfItemCursor {
-    /// Boundary item's `shelf_items.position`.
-    pub position: i32,
     /// Boundary item's `shelf_items.added_at`.
     pub added_at: DateTime<Utc>,
     /// Tiebreaker `shelf_items.manifestation_id`.
@@ -374,11 +372,7 @@ impl ShelfItemCursor {
     #[must_use]
     pub fn encode(&self) -> String {
         let ts = self.added_at.to_rfc3339_opts(SecondsFormat::AutoSi, true);
-        let payload = format!(
-            "si|{}|{ts}|{}",
-            self.position,
-            self.manifestation_id.as_hyphenated()
-        );
+        let payload = format!("si|{ts}|{}", self.manifestation_id.as_hyphenated());
         Base64UrlUnpadded::encode_string(payload.as_bytes())
     }
 
@@ -388,7 +382,7 @@ impl ShelfItemCursor {
     ///
     /// Returns the matching [`CursorError`] variant for bad base64,
     /// non-UTF-8 bytes, a missing delimiter, a foreign tag byte, or a
-    /// malformed position / timestamp / uuid.
+    /// malformed timestamp / uuid.
     pub fn parse(s: &str) -> Result<Self, CursorError> {
         let mut buf = vec![0u8; s.len()];
         let decoded = Base64UrlUnpadded::decode(s.as_bytes(), &mut buf)
@@ -400,15 +394,12 @@ impl ShelfItemCursor {
         if tag != "si" {
             return Err(CursorError::UnknownTag);
         }
-        let (pos_str, rest) = rest.split_once('|').ok_or(CursorError::MalformedKey)?;
-        let position: i32 = pos_str.parse().map_err(|_| CursorError::MalformedKey)?;
         let (ts, id_str) = rest.split_once('|').ok_or(CursorError::MalformedKey)?;
         let added_at = DateTime::parse_from_rfc3339(ts)
             .map_err(|_| CursorError::MalformedKey)?
             .with_timezone(&Utc);
         let manifestation_id = Uuid::parse_str(id_str).map_err(|_| CursorError::MalformedKey)?;
         Ok(Self {
-            position,
             added_at,
             manifestation_id,
         })
@@ -710,7 +701,6 @@ mod tests {
             Err(CursorError::UnknownTag)
         ));
         let item = ShelfItemCursor {
-            position: 3,
             added_at: ts,
             manifestation_id: id,
         }
@@ -737,7 +727,6 @@ mod tests {
             .unwrap()
             .with_timezone(&Utc);
         let key = ShelfItemCursor {
-            position: 7,
             added_at: ts,
             manifestation_id: Uuid::new_v4(),
         };
@@ -752,11 +741,18 @@ mod tests {
             ShelfItemCursor::parse("!!!not-b64!!!"),
             Err(CursorError::InvalidBase64)
         ));
-        let bad_pos = Base64UrlUnpadded::encode_string(
-            b"si|notanint|2026-05-22T09:30:00Z|550e8400-e29b-41d4-a716-446655440000",
+        let bad_ts = Base64UrlUnpadded::encode_string(
+            b"si|notatimestamp|550e8400-e29b-41d4-a716-446655440000",
         );
         assert!(matches!(
-            ShelfItemCursor::parse(&bad_pos),
+            ShelfItemCursor::parse(&bad_ts),
+            Err(CursorError::MalformedKey)
+        ));
+        let positional = Base64UrlUnpadded::encode_string(
+            b"si|3|2026-05-22T09:30:00Z|550e8400-e29b-41d4-a716-446655440000",
+        );
+        assert!(matches!(
+            ShelfItemCursor::parse(&positional),
             Err(CursorError::MalformedKey)
         ));
         let shelf = ShelfCursor {

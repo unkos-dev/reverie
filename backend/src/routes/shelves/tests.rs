@@ -279,12 +279,9 @@ async fn child_cannot_delete_shelf(pool: PgPool) {
 }
 
 // ------------------------------------------------------------------
-// Items: add / remove / reorder (with If-Match precondition)
+// Items: add / remove
 // ------------------------------------------------------------------
 
-/// Strip the surrounding double quotes from a quoted `ETag` header
-/// value (the way the handler emits the timestamp). Tests echo the
-/// value verbatim on `If-Match`, so this is just a sanity-check.
 fn etag_value(headers: &axum::http::HeaderMap) -> String {
     headers
         .get(header::ETAG)
@@ -315,13 +312,11 @@ async fn make_owner_shelf_and_books(
         manifestation_ids.push(m);
     }
     // Bypass POST /items so the shelf still has the original ETag.
-    for (idx, m_id) in manifestation_ids.iter().enumerate() {
+    for m_id in &manifestation_ids {
         sqlx::query!(
-            "INSERT INTO shelf_items (shelf_id, manifestation_id, position) \
-             VALUES ($1, $2, $3)",
+            "INSERT INTO shelf_items (shelf_id, manifestation_id) VALUES ($1, $2)",
             shelf_id,
             m_id,
-            i32::try_from(idx).unwrap(),
         )
         .execute(pool)
         .await
@@ -429,111 +424,10 @@ async fn remove_shelf_item_bumps_etag(pool: PgPool) {
 }
 
 #[sqlx::test(migrations = "./migrations")]
-async fn reorder_without_if_match_returns_428(pool: PgPool) {
+async fn shelf_detail_wire_shape_has_timestamps_and_no_position(pool: PgPool) {
     let app_pool = test_support::db::app_pool_for(&pool).await;
     let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
-    let (_uid, basic, shelf_id, ids) =
-        make_owner_shelf_and_books(&pool, &app_pool, &ingestion_pool, "no-ifmatch", 2).await;
-    let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
-    let r = server
-        .put(&format!("/api/v1/shelves/{shelf_id}/items"))
-        .add_header(auth(&basic).0, auth(&basic).1)
-        .json(&json!({"items": [ids[1], ids[0]]}))
-        .await;
-    test_support::assert_problem(
-        &r,
-        problems::IF_MATCH_REQUIRED,
-        StatusCode::PRECONDITION_REQUIRED,
-    );
-}
-
-#[sqlx::test(migrations = "./migrations")]
-async fn reorder_with_stale_if_match_returns_412(pool: PgPool) {
-    let app_pool = test_support::db::app_pool_for(&pool).await;
-    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
-    let (_uid, basic, shelf_id, ids) =
-        make_owner_shelf_and_books(&pool, &app_pool, &ingestion_pool, "stale", 2).await;
-    let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
-    let initial = server
-        .get(&format!("/api/v1/shelves/{shelf_id}"))
-        .add_header(auth(&basic).0.clone(), auth(&basic).1.clone())
-        .await;
-    let stale_etag = etag_value(initial.headers());
-
-    // Bump updated_at out-of-band so the captured ETag is stale.
-    sqlx::query!(
-        "UPDATE shelves SET updated_at = now() + interval '1 second' WHERE id = $1",
-        shelf_id,
-    )
-    .execute(&pool)
-    .await
-    .unwrap();
-
-    let r = server
-        .put(&format!("/api/v1/shelves/{shelf_id}/items"))
-        .add_header(auth(&basic).0.clone(), auth(&basic).1.clone())
-        .add_header(
-            header::IF_MATCH,
-            HeaderValue::from_str(&stale_etag).unwrap(),
-        )
-        .json(&json!({"items": [ids[1], ids[0]]}))
-        .await;
-    test_support::assert_problem(
-        &r,
-        problems::IF_MATCH_MISMATCH,
-        StatusCode::PRECONDITION_FAILED,
-    );
-}
-
-#[sqlx::test(migrations = "./migrations")]
-async fn reorder_happy_path_persists_new_order(pool: PgPool) {
-    let app_pool = test_support::db::app_pool_for(&pool).await;
-    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
-    let (_uid, basic, shelf_id, ids) =
-        make_owner_shelf_and_books(&pool, &app_pool, &ingestion_pool, "reorder-ok", 3).await;
-    let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
-    let initial = server
-        .get(&format!("/api/v1/shelves/{shelf_id}"))
-        .add_header(auth(&basic).0.clone(), auth(&basic).1.clone())
-        .await;
-    let etag = etag_value(initial.headers());
-
-    let new_order = vec![ids[2], ids[0], ids[1]];
-    let r = server
-        .put(&format!("/api/v1/shelves/{shelf_id}/items"))
-        .add_header(auth(&basic).0.clone(), auth(&basic).1.clone())
-        .add_header(header::IF_MATCH, HeaderValue::from_str(&etag).unwrap())
-        .json(&json!({"items": new_order}))
-        .await;
-    assert_eq!(
-        r.status_code(),
-        StatusCode::NO_CONTENT,
-        "body: {}",
-        r.text()
-    );
-
-    let after = server
-        .get(&format!("/api/v1/shelves/{shelf_id}"))
-        .add_header(auth(&basic).0.clone(), auth(&basic).1.clone())
-        .await;
-    let body: serde_json::Value = after.json();
-    let surfaced: Vec<String> = body["items"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .map(|v| v["manifestation_id"].as_str().unwrap().to_owned())
-        .collect();
-    assert_eq!(
-        surfaced,
-        vec![ids[2].to_string(), ids[0].to_string(), ids[1].to_string(),],
-    );
-}
-
-#[sqlx::test(migrations = "./migrations")]
-async fn shelf_detail_timestamps_round_trip_as_if_match(pool: PgPool) {
-    let app_pool = test_support::db::app_pool_for(&pool).await;
-    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
-    let (_uid, basic, shelf_id, ids) =
+    let (_uid, basic, shelf_id, _ids) =
         make_owner_shelf_and_books(&pool, &app_pool, &ingestion_pool, "wire-detail", 2).await;
     let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
 
@@ -549,36 +443,179 @@ async fn shelf_detail_timestamps_round_trip_as_if_match(pool: PgPool) {
     // timestamps, so the model DTO being correct proves nothing here.
     test_support::assert_rfc3339(&body, "created_at");
     test_support::assert_rfc3339(&body, "updated_at");
-    for item in body["items"].as_array().expect("items array") {
+    let items = body["items"].as_array().expect("items array");
+    assert_eq!(items.len(), 2);
+    for item in items {
         test_support::assert_rfc3339(item, "added_at");
+        let mut keys: Vec<&str> = item
+            .as_object()
+            .expect("item object")
+            .keys()
+            .map(String::as_str)
+            .collect();
+        keys.sort_unstable();
+        assert_eq!(keys, ["added_at", "manifestation_id"]);
     }
 
-    let read_updated_at = body["updated_at"].as_str().unwrap();
     assert_eq!(
         etag.trim_matches('"'),
-        read_updated_at,
+        body["updated_at"].as_str().unwrap(),
         "the ETag header and the body's updated_at must be the same text",
     );
+}
 
-    // The property clients depend on: the timestamp read from the body,
-    // quoted, is accepted as If-Match. A body shape the client cannot
-    // reproduce as a header value breaks the reorder contract even when
-    // the header alone is well-formed.
-    let reorder = server
+#[sqlx::test(migrations = "./migrations")]
+async fn put_on_shelf_items_is_method_not_allowed(pool: PgPool) {
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let (_uid, basic, shelf_id, ids) =
+        make_owner_shelf_and_books(&pool, &app_pool, &ingestion_pool, "no-put", 2).await;
+    let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+
+    let r = server
         .put(&format!("/api/v1/shelves/{shelf_id}/items"))
-        .add_header(auth(&basic).0.clone(), auth(&basic).1.clone())
-        .add_header(
-            header::IF_MATCH,
-            HeaderValue::from_str(&format!("\"{read_updated_at}\"")).unwrap(),
-        )
+        .add_header(auth(&basic).0, auth(&basic).1)
         .json(&json!({"items": [ids[1], ids[0]]}))
         .await;
-    assert_eq!(
-        reorder.status_code(),
-        StatusCode::NO_CONTENT,
-        "body: {}",
-        reorder.text()
+    test_support::assert_problem(
+        &r,
+        problems::METHOD_NOT_ALLOWED,
+        StatusCode::METHOD_NOT_ALLOWED,
     );
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn shelf_items_are_ordered_by_added_at_then_manifestation_id(pool: PgPool) {
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let (a_id, a_basic) =
+        test_support::db::create_adult_and_basic_auth(&app_pool, "item-order").await;
+    let shelf_id = test_support::db::create_shelf(&app_pool, a_id, "Ordered").await;
+
+    let mut tied: Vec<Uuid> = Vec::new();
+    for marker in ["order-tie-a", "order-tie-b"] {
+        let (_w, m_id) =
+            test_support::db::insert_work_and_manifestation(&ingestion_pool, marker).await;
+        tied.push(m_id);
+    }
+    tied.sort();
+    let (_w, earliest) =
+        test_support::db::insert_work_and_manifestation(&ingestion_pool, "order-first").await;
+    let (_w, latest) =
+        test_support::db::insert_work_and_manifestation(&ingestion_pool, "order-last").await;
+
+    for (m_id, added_at) in [
+        (latest, "2026-03-01T00:00:00Z"),
+        (tied[1], "2026-02-01T00:00:00Z"),
+        (earliest, "2026-01-01T00:00:00Z"),
+        (tied[0], "2026-02-01T00:00:00Z"),
+    ] {
+        sqlx::query!(
+            "INSERT INTO shelf_items (shelf_id, manifestation_id, added_at) \
+             VALUES ($1, $2, $3)",
+            shelf_id,
+            m_id,
+            added_at
+                .parse::<chrono::DateTime<chrono::Utc>>()
+                .expect("rfc3339 literal"),
+        )
+        .execute(&app_pool)
+        .await
+        .expect("insert shelf item");
+    }
+
+    let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+    let r = server
+        .get(&format!("/api/v1/shelves/{shelf_id}"))
+        .add_header(auth(&a_basic).0, auth(&a_basic).1)
+        .await;
+    assert_eq!(r.status_code(), StatusCode::OK, "body: {}", r.text());
+    let body: serde_json::Value = r.json();
+    let surfaced: Vec<String> = body["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|v| v["manifestation_id"].as_str().unwrap().to_owned())
+        .collect();
+    let expected: Vec<String> = [earliest, tied[0], tied[1], latest]
+        .iter()
+        .map(Uuid::to_string)
+        .collect();
+    assert_eq!(surfaced, expected);
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn delete_shelf_removes_its_items_and_keeps_the_manifestation(pool: PgPool) {
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let (_uid, basic, shelf_id, ids) =
+        make_owner_shelf_and_books(&pool, &app_pool, &ingestion_pool, "cascade-shelf", 2).await;
+    let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+
+    let r = server
+        .delete(&format!("/api/v1/shelves/{shelf_id}"))
+        .add_header(auth(&basic).0, auth(&basic).1)
+        .await;
+    assert_eq!(r.status_code(), StatusCode::NO_CONTENT);
+
+    let items: i64 = sqlx::query_scalar!(
+        r#"SELECT COUNT(*) AS "n!" FROM shelf_items WHERE shelf_id = $1"#,
+        shelf_id,
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(items, 0, "the shelf's items go with it");
+    let manifestations: i64 = sqlx::query_scalar!(
+        r#"SELECT COUNT(*) AS "n!" FROM manifestations WHERE id = ANY($1)"#,
+        &ids,
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(manifestations, 2, "deleting a shelf never deletes a book");
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn deleting_a_manifestation_removes_it_from_every_shelf(pool: PgPool) {
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let (a_id, a_basic) =
+        test_support::db::create_adult_and_basic_auth(&app_pool, "cascade-book").await;
+    let first = test_support::db::create_shelf(&app_pool, a_id, "First").await;
+    let second = test_support::db::create_shelf(&app_pool, a_id, "Second").await;
+    let (_w, doomed) =
+        test_support::db::insert_work_and_manifestation(&ingestion_pool, "cascade-doomed").await;
+    let (_w, kept) =
+        test_support::db::insert_work_and_manifestation(&ingestion_pool, "cascade-kept").await;
+    for (shelf, m_id) in [(first, doomed), (second, doomed), (first, kept)] {
+        test_support::db::add_to_shelf(&app_pool, shelf, m_id).await;
+    }
+
+    sqlx::query!("DELETE FROM manifestations WHERE id = $1", doomed)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+    for (shelf, remaining) in [(first, vec![kept]), (second, vec![])] {
+        let r = server
+            .get(&format!("/api/v1/shelves/{shelf}"))
+            .add_header(auth(&a_basic).0.clone(), auth(&a_basic).1.clone())
+            .await;
+        assert_eq!(r.status_code(), StatusCode::OK, "body: {}", r.text());
+        let body: serde_json::Value = r.json();
+        let surfaced: Vec<String> = body["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|v| v["manifestation_id"].as_str().unwrap().to_owned())
+            .collect();
+        assert_eq!(
+            surfaced,
+            remaining.iter().map(Uuid::to_string).collect::<Vec<_>>()
+        );
+    }
 }
 
 #[sqlx::test(migrations = "./migrations")]
@@ -624,66 +661,6 @@ async fn shelf_timestamps_keep_sub_second_precision(pool: PgPool) {
             body[field],
         );
     }
-}
-
-#[sqlx::test(migrations = "./migrations")]
-async fn reorder_rejects_partial_list(pool: PgPool) {
-    let app_pool = test_support::db::app_pool_for(&pool).await;
-    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
-    let (_uid, basic, shelf_id, ids) =
-        make_owner_shelf_and_books(&pool, &app_pool, &ingestion_pool, "partial", 3).await;
-    let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
-    let initial = server
-        .get(&format!("/api/v1/shelves/{shelf_id}"))
-        .add_header(auth(&basic).0.clone(), auth(&basic).1.clone())
-        .await;
-    let etag = etag_value(initial.headers());
-
-    let r = server
-        .put(&format!("/api/v1/shelves/{shelf_id}/items"))
-        .add_header(auth(&basic).0.clone(), auth(&basic).1.clone())
-        .add_header(header::IF_MATCH, HeaderValue::from_str(&etag).unwrap())
-        .json(&json!({"items": [ids[0]]}))
-        .await;
-    test_support::assert_problem(&r, problems::VALIDATION, StatusCode::UNPROCESSABLE_ENTITY);
-}
-
-#[sqlx::test(migrations = "./migrations")]
-async fn reorder_rejects_repeated_item(pool: PgPool) {
-    let app_pool = test_support::db::app_pool_for(&pool).await;
-    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
-    let (_uid, basic, shelf_id, ids) =
-        make_owner_shelf_and_books(&pool, &app_pool, &ingestion_pool, "repeat", 2).await;
-    let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
-    let initial = server
-        .get(&format!("/api/v1/shelves/{shelf_id}"))
-        .add_header(auth(&basic).0.clone(), auth(&basic).1.clone())
-        .await;
-    let etag = etag_value(initial.headers());
-
-    let r = server
-        .put(&format!("/api/v1/shelves/{shelf_id}/items"))
-        .add_header(auth(&basic).0.clone(), auth(&basic).1.clone())
-        .add_header(header::IF_MATCH, HeaderValue::from_str(&etag).unwrap())
-        .json(&json!({"items": [ids[0], ids[0]]}))
-        .await;
-    test_support::assert_problem(&r, problems::VALIDATION, StatusCode::UNPROCESSABLE_ENTITY);
-
-    let positions: Vec<(Uuid, i32)> = sqlx::query!(
-        "SELECT manifestation_id, position FROM shelf_items WHERE shelf_id = $1 ORDER BY position",
-        shelf_id,
-    )
-    .fetch_all(&app_pool)
-    .await
-    .expect("fetch positions")
-    .into_iter()
-    .map(|row| (row.manifestation_id, row.position))
-    .collect();
-    assert_eq!(
-        positions,
-        vec![(ids[0], 0), (ids[1], 1)],
-        "a refused reorder leaves every position untouched"
-    );
 }
 
 #[sqlx::test(migrations = "./migrations")]
@@ -762,119 +739,7 @@ async fn remove_item_from_other_users_shelf_returns_404(pool: PgPool) {
 }
 
 #[sqlx::test(migrations = "./migrations")]
-async fn reorder_other_users_shelf_returns_404(pool: PgPool) {
-    let app_pool = test_support::db::app_pool_for(&pool).await;
-    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
-    let (_a_id, a_basic, a_shelf, ids) =
-        make_owner_shelf_and_books(&pool, &app_pool, &ingestion_pool, "reorder-owner", 2).await;
-    let (_b_id, b_basic) =
-        test_support::db::create_adult_and_basic_auth(&app_pool, "reorder-other").await;
-    let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
-    let initial = server
-        .get(&format!("/api/v1/shelves/{a_shelf}"))
-        .add_header(auth(&a_basic).0.clone(), auth(&a_basic).1.clone())
-        .await;
-    let etag = etag_value(initial.headers());
-
-    let r = server
-        .put(&format!("/api/v1/shelves/{a_shelf}/items"))
-        .add_header(auth(&b_basic).0, auth(&b_basic).1)
-        .add_header(header::IF_MATCH, HeaderValue::from_str(&etag).unwrap())
-        .json(&json!({"items": [ids[1], ids[0]]}))
-        .await;
-    test_support::assert_problem(&r, problems::NOT_FOUND, StatusCode::NOT_FOUND);
-
-    let first: Uuid = sqlx::query_scalar!(
-        "SELECT manifestation_id FROM shelf_items WHERE shelf_id = $1 ORDER BY position LIMIT 1",
-        a_shelf,
-    )
-    .fetch_one(&app_pool)
-    .await
-    .expect("fetch first item");
-    assert_eq!(
-        first, ids[0],
-        "another account's reorder must not change the order"
-    );
-}
-
-#[sqlx::test(migrations = "./migrations")]
-async fn reorder_with_non_quoted_if_match_returns_422(pool: PgPool) {
-    let app_pool = test_support::db::app_pool_for(&pool).await;
-    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
-    let (_uid, basic, shelf_id, ids) =
-        make_owner_shelf_and_books(&pool, &app_pool, &ingestion_pool, "unquoted", 2).await;
-    let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
-    let r = server
-        .put(&format!("/api/v1/shelves/{shelf_id}/items"))
-        .add_header(auth(&basic).0, auth(&basic).1)
-        .add_header(
-            header::IF_MATCH,
-            HeaderValue::from_static("2026-05-24T03:00:00Z"),
-        )
-        .json(&json!({"items": [ids[1], ids[0]]}))
-        .await;
-    test_support::assert_problem(&r, problems::VALIDATION, StatusCode::UNPROCESSABLE_ENTITY);
-}
-
-#[sqlx::test(migrations = "./migrations")]
-async fn reorder_with_weak_etag_if_match_returns_422(pool: PgPool) {
-    let app_pool = test_support::db::app_pool_for(&pool).await;
-    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
-    let (_uid, basic, shelf_id, ids) =
-        make_owner_shelf_and_books(&pool, &app_pool, &ingestion_pool, "weak", 2).await;
-    let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
-    let r = server
-        .put(&format!("/api/v1/shelves/{shelf_id}/items"))
-        .add_header(auth(&basic).0, auth(&basic).1)
-        .add_header(
-            header::IF_MATCH,
-            HeaderValue::from_static("W/\"2026-05-24T03:00:00Z\""),
-        )
-        .json(&json!({"items": [ids[1], ids[0]]}))
-        .await;
-    test_support::assert_problem(&r, problems::VALIDATION, StatusCode::UNPROCESSABLE_ENTITY);
-}
-
-#[sqlx::test(migrations = "./migrations")]
-async fn reorder_with_malformed_timestamp_if_match_returns_422(pool: PgPool) {
-    let app_pool = test_support::db::app_pool_for(&pool).await;
-    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
-    let (_uid, basic, shelf_id, ids) =
-        make_owner_shelf_and_books(&pool, &app_pool, &ingestion_pool, "malformed", 2).await;
-    let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
-    let r = server
-        .put(&format!("/api/v1/shelves/{shelf_id}/items"))
-        .add_header(auth(&basic).0, auth(&basic).1)
-        .add_header(header::IF_MATCH, HeaderValue::from_static("\"garbage\""))
-        .json(&json!({"items": [ids[1], ids[0]]}))
-        .await;
-    test_support::assert_problem(&r, problems::VALIDATION, StatusCode::UNPROCESSABLE_ENTITY);
-}
-
-#[sqlx::test(migrations = "./migrations")]
-async fn reorder_rejects_foreign_manifestation_id(pool: PgPool) {
-    let app_pool = test_support::db::app_pool_for(&pool).await;
-    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
-    let (_uid, basic, shelf_id, ids) =
-        make_owner_shelf_and_books(&pool, &app_pool, &ingestion_pool, "foreign", 2).await;
-    let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
-    let initial = server
-        .get(&format!("/api/v1/shelves/{shelf_id}"))
-        .add_header(auth(&basic).0.clone(), auth(&basic).1.clone())
-        .await;
-    let etag = etag_value(initial.headers());
-    let foreign = Uuid::new_v4();
-    let r = server
-        .put(&format!("/api/v1/shelves/{shelf_id}/items"))
-        .add_header(auth(&basic).0.clone(), auth(&basic).1.clone())
-        .add_header(header::IF_MATCH, HeaderValue::from_str(&etag).unwrap())
-        .json(&json!({"items": [ids[0], foreign]}))
-        .await;
-    test_support::assert_problem(&r, problems::VALIDATION, StatusCode::UNPROCESSABLE_ENTITY);
-}
-
-#[sqlx::test(migrations = "./migrations")]
-async fn duplicate_add_item_is_idempotent_no_double_position(pool: PgPool) {
+async fn duplicate_add_item_is_idempotent(pool: PgPool) {
     let app_pool = test_support::db::app_pool_for(&pool).await;
     let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
     let (a_id, a_basic) = test_support::db::create_adult_and_basic_auth(&app_pool, "dup-add").await;
@@ -948,60 +813,6 @@ async fn rename_shelf_rejects_empty_name(pool: PgPool) {
         .json(&json!({"name": "   "}))
         .await;
     test_support::assert_problem(&r, problems::VALIDATION, StatusCode::UNPROCESSABLE_ENTITY);
-}
-
-#[sqlx::test(migrations = "./migrations")]
-async fn parallel_reorders_with_same_if_match_serialize(pool: PgPool) {
-    let app_pool = test_support::db::app_pool_for(&pool).await;
-    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
-    let (_uid, basic, shelf_id, ids) =
-        make_owner_shelf_and_books(&pool, &app_pool, &ingestion_pool, "concurrent", 2).await;
-    let server = std::sync::Arc::new(test_support::db::server_with_real_pools(
-        &app_pool,
-        &ingestion_pool,
-    ));
-    let initial = server
-        .get(&format!("/api/v1/shelves/{shelf_id}"))
-        .add_header(auth(&basic).0.clone(), auth(&basic).1.clone())
-        .await;
-    let etag = etag_value(initial.headers());
-
-    let path = format!("/api/v1/shelves/{shelf_id}/items");
-    let basic1 = basic.clone();
-    let basic2 = basic.clone();
-    let etag1 = etag.clone();
-    let etag2 = etag.clone();
-    let ids1 = ids.clone();
-    let ids2 = ids.clone();
-    let s1 = std::sync::Arc::clone(&server);
-    let s2 = std::sync::Arc::clone(&server);
-    let path1 = path.clone();
-    let path2 = path.clone();
-
-    let (r1, r2) = tokio::join!(
-        async move {
-            s1.put(&path1)
-                .add_header(auth(&basic1).0.clone(), auth(&basic1).1.clone())
-                .add_header(header::IF_MATCH, HeaderValue::from_str(&etag1).unwrap())
-                .json(&json!({"items": [ids1[1], ids1[0]]}))
-                .await
-        },
-        async move {
-            s2.put(&path2)
-                .add_header(auth(&basic2).0.clone(), auth(&basic2).1.clone())
-                .add_header(header::IF_MATCH, HeaderValue::from_str(&etag2).unwrap())
-                .json(&json!({"items": [ids2[0], ids2[1]]}))
-                .await
-        },
-    );
-
-    let mut codes = [r1.status_code(), r2.status_code()];
-    codes.sort_by_key(StatusCode::as_u16);
-    assert_eq!(
-        codes,
-        [StatusCode::NO_CONTENT, StatusCode::PRECONDITION_FAILED],
-        "exactly one parallel reorder must win, the other must 412 — got {codes:?}",
-    );
 }
 
 #[sqlx::test(migrations = "./migrations")]
@@ -1109,25 +920,38 @@ async fn shelf_items_pagination_total_under_identical_sort_keys(pool: PgPool) {
         test_support::db::create_adult_and_basic_auth(&app_pool, "items-walk").await;
     let shelf_id = test_support::db::create_shelf(&app_pool, a_id, "Walk shelf").await;
 
-    // Three items sharing position AND added_at — only the
-    // manifestation_id tiebreaker keeps the walk total. A page boundary
-    // between two of them must not drop or duplicate a row.
-    let mut expected: Vec<Uuid> = Vec::new();
+    // Three items sharing added_at — only the manifestation_id
+    // tiebreaker keeps the walk total. A page boundary between two of
+    // them must not drop or duplicate a row.
+    let mut tied: Vec<Uuid> = Vec::new();
     for marker in ["walk-zebra", "walk-quill", "walk-marsh"] {
         let (_w, m_id) =
             test_support::db::insert_work_and_manifestation(&ingestion_pool, marker).await;
         sqlx::query!(
-            "INSERT INTO shelf_items (shelf_id, manifestation_id, position, added_at) \
-             VALUES ($1, $2, 0, '2026-01-01T00:00:00Z')",
+            "INSERT INTO shelf_items (shelf_id, manifestation_id, added_at) \
+             VALUES ($1, $2, '2026-01-01T00:00:00Z')",
             shelf_id,
             m_id,
         )
         .execute(&app_pool)
         .await
         .expect("insert shelf item");
-        expected.push(m_id);
+        tied.push(m_id);
     }
-    expected.sort();
+    tied.sort();
+    let (_w, earlier) =
+        test_support::db::insert_work_and_manifestation(&ingestion_pool, "walk-first").await;
+    sqlx::query!(
+        "INSERT INTO shelf_items (shelf_id, manifestation_id, added_at) \
+         VALUES ($1, $2, '2025-12-01T00:00:00Z')",
+        shelf_id,
+        earlier,
+    )
+    .execute(&app_pool)
+    .await
+    .expect("insert shelf item");
+    let mut expected = vec![earlier];
+    expected.extend(tied);
 
     let server = test_support::db::server_with_real_pools_page_size(&app_pool, &ingestion_pool, 2);
 
@@ -1160,9 +984,11 @@ async fn shelf_items_pagination_total_under_identical_sort_keys(pool: PgPool) {
             None => break,
         }
     }
-    assert_eq!(pages, 2, "3 items at page_size=2 must take exactly 2 pages");
-    seen.sort();
-    assert_eq!(seen, expected, "every item exactly once");
+    assert_eq!(pages, 2, "4 items at page_size=2 must take exactly 2 pages");
+    assert_eq!(
+        seen, expected,
+        "every item exactly once, in added_at then id order"
+    );
 }
 
 #[sqlx::test(migrations = "./migrations")]

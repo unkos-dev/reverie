@@ -1152,7 +1152,6 @@ CREATE TABLE public.shelf_items (
     shelf_id uuid NOT NULL,
     manifestation_id uuid NOT NULL,
     added_at timestamp with time zone DEFAULT now() NOT NULL,
-    "position" integer DEFAULT 0 NOT NULL,
     CONSTRAINT shelf_items_added_at_ts_decode_range CHECK (((added_at >= '0001-01-01 00:00:00+00'::timestamp with time zone) AND (added_at < '10000-01-01 00:00:00+00'::timestamp with time zone)))
 );
 
@@ -2300,7 +2299,7 @@ CREATE INDEX idx_shelf_items_manifestation_id ON public.shelf_items USING btree 
 -- Name: idx_shelf_items_shelf_keyset; Type: INDEX; Schema: public; Owner: reverie_migrator
 --
 
-CREATE INDEX idx_shelf_items_shelf_keyset ON public.shelf_items USING btree (shelf_id, "position", added_at, manifestation_id);
+CREATE INDEX idx_shelf_items_shelf_keyset ON public.shelf_items USING btree (shelf_id, added_at, manifestation_id);
 
 
 --

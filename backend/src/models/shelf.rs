@@ -4,15 +4,11 @@
 //! (`docs/adr/0011-json-api-conventions-for-the-browser-facing-rest-surface.md`): snake_case field names,
 //! `Option<T>` for nullable, RFC 3339 timestamps.
 //!
-//! # `ETag` + If-Match contract
+//! # `ETag`
 //!
 //! Every shelf read endpoint emits `ETag: "<updated_at RFC3339>"`.
-//! The `PUT /api/v1/shelves/{id}/items` reorder endpoint requires the
-//! caller to echo that value as `If-Match`; mutation handlers issue
-//! an `UPDATE shelves SET updated_at = now() WHERE id = $1` in the
-//! same transaction so item-mutation events also move the `ETag`.
-//! Without that bump, a `POST .../items` would not change the `ETag`
-//! and the next reorder PUT would 412 spuriously.
+//! Item mutations issue an `UPDATE shelves SET updated_at = now()` in
+//! the same transaction so the tag moves with membership changes.
 
 use chrono::{DateTime, Utc};
 use serde::Serialize;
@@ -44,17 +40,12 @@ pub struct Shelf {
 
 /// One row of the shelf-items list (`GET /api/v1/shelves/{id}`).
 ///
-/// Carries the position so the frontend can render in stored order
-/// and round-trip back as `PUT /api/v1/shelves/{id}/items` with the
-/// re-arranged list.
+/// Items arrive ordered by `added_at`, then `manifestation_id`.
 #[derive(Debug, Clone, Serialize, utoipa::ToSchema)]
 #[non_exhaustive]
 pub struct ShelfItem {
     /// `shelf_items.manifestation_id`.
     pub manifestation_id: Uuid,
-    /// `shelf_items.position`. Caller echoes the ordering when sending
-    /// the reorder PUT.
-    pub position: i32,
     /// `shelf_items.added_at`.
     pub added_at: DateTime<Utc>,
 }
