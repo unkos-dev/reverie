@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "UPDATE users SET display_name = $2, email = $3, updated_at = now() WHERE id = $1 RETURNING id, oidc_subject AS \"oidc_subject?\", display_name, email, role AS \"role: Role\", is_child, created_at, updated_at, session_version, theme_preference AS \"theme_preference: ThemePreference\", disabled_at",
+  "query": "UPDATE users SET display_name = $2, email = $3, updated_at = now() WHERE id = $1 AND disabled_at IS NULL RETURNING id, oidc_subject AS \"oidc_subject?\", display_name, email, role AS \"role: Role\", is_child, created_at, updated_at, session_version, theme_preference AS \"theme_preference: ThemePreference\", disabled_at",
   "describe": {
     "columns": [
       {
@@ -168,5 +168,5 @@
       true
     ]
   },
-  "hash": "1c6b84d96fd54e98d2bd7d7c4d713b1d898ba99cd46b47d761e90ed22d834482"
+  "hash": "eb400e9b873ed64fca743108d10f2c80ceb0ca0897e2809a14753d48d2ed735f"
 }

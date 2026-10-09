@@ -451,6 +451,10 @@ pub(crate) fn is_addr_spec(e: &str) -> bool {
 /// resolution and the two-table create run in a single transaction so
 /// concurrent same-identity logins cannot orphan a `users` row.
 ///
+/// A soft-disabled account is returned exactly as stored: no profile field or
+/// `updated_at` is written, so the caller can refuse the login without the
+/// refused attempt having changed the account.
+///
 /// THREAT: `email` carries a case-insensitive uniqueness constraint
 /// (`idx_users_email_lower`); login identity rides on the verified
 /// `(issuer, subject)` resolved via `user_identities`, never on `email`. The
@@ -560,11 +564,13 @@ pub async fn upsert_from_oidc(
         crate::models::user_identities::find_user_id_by_oidc(&mut *tx, issuer, subject).await?
     {
         // Returning identity: refresh the canonical user's mutable fields.
-        sqlx::query_as!(
+        // The `disabled_at IS NULL` predicate makes the refusal atomic with
+        // the write: a disabled account is read back untouched.
+        let refreshed = sqlx::query_as!(
             UserRow,
             "UPDATE users \
              SET display_name = $2, email = $3, updated_at = now() \
-             WHERE id = $1 \
+             WHERE id = $1 AND disabled_at IS NULL \
              RETURNING id, oidc_subject AS \"oidc_subject?\", display_name, email, \
                        role AS \"role: Role\", is_child, created_at, updated_at, \
                        session_version, theme_preference AS \"theme_preference: ThemePreference\", \
@@ -573,8 +579,23 @@ pub async fn upsert_from_oidc(
             display_name,
             email,
         )
-        .fetch_one(&mut *tx)
-        .await?
+        .fetch_optional(&mut *tx)
+        .await?;
+        if let Some(row) = refreshed {
+            row
+        } else {
+            sqlx::query_as!(
+                UserRow,
+                "SELECT id, oidc_subject AS \"oidc_subject?\", display_name, email, \
+                        role AS \"role: Role\", is_child, created_at, updated_at, \
+                        session_version, theme_preference AS \"theme_preference: ThemePreference\", \
+                        disabled_at \
+                 FROM users WHERE id = $1",
+                user_id,
+            )
+            .fetch_one(&mut *tx)
+            .await?
+        }
     } else {
         // First login for this identity: create the canonical user (no
         // oidc_subject — identity lives in user_identities) and the link.
@@ -1192,6 +1213,83 @@ mod tests {
             .await
             .expect_err("duplicate email rejected");
         assert!(matches!(err, CreateUserError::EmailExists));
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn upsert_leaves_a_disabled_account_unwritten(pool: PgPool) {
+        let subject = format!("test-subject-{}", Uuid::new_v4());
+        let created = upsert_from_oidc(
+            &pool,
+            TEST_ISSUER,
+            &subject,
+            "Alice",
+            Some("alice@example.com"),
+        )
+        .await
+        .expect("upsert");
+        disable_account(&pool, created.id).await.expect("disable");
+        let disabled = find_by_id(&pool, created.id)
+            .await
+            .expect("reload")
+            .expect("exists");
+
+        let attempted = upsert_from_oidc(
+            &pool,
+            TEST_ISSUER,
+            &subject,
+            "Mallory",
+            Some("mallory@example.com"),
+        )
+        .await
+        .expect("upsert of a disabled account still resolves it");
+
+        assert_eq!(attempted.id, created.id);
+        assert!(
+            attempted.disabled_at.is_some(),
+            "the caller must see it disabled"
+        );
+        assert_eq!(attempted.display_name, "Alice");
+        assert_eq!(attempted.email.as_deref(), Some("alice@example.com"));
+        assert_eq!(attempted.updated_at, disabled.updated_at);
+
+        let stored = find_by_id(&pool, created.id)
+            .await
+            .expect("reload")
+            .expect("exists");
+        assert_eq!(stored.display_name, "Alice");
+        assert_eq!(stored.email.as_deref(), Some("alice@example.com"));
+        assert_eq!(stored.updated_at, disabled.updated_at);
+        assert_eq!(stored.session_version, disabled.session_version);
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn upsert_refreshes_an_account_again_once_it_is_re_enabled(pool: PgPool) {
+        let subject = format!("test-subject-{}", Uuid::new_v4());
+        let created = upsert_from_oidc(
+            &pool,
+            TEST_ISSUER,
+            &subject,
+            "Alice",
+            Some("alice@example.com"),
+        )
+        .await
+        .expect("upsert");
+        disable_account(&pool, created.id).await.expect("disable");
+        enable_account(&pool, created.id).await.expect("re-enable");
+
+        let refreshed = upsert_from_oidc(
+            &pool,
+            TEST_ISSUER,
+            &subject,
+            "Alice B",
+            Some("alice-b@example.com"),
+        )
+        .await
+        .expect("upsert");
+
+        assert!(refreshed.disabled_at.is_none());
+        assert_eq!(refreshed.display_name, "Alice B");
+        assert_eq!(refreshed.email.as_deref(), Some("alice-b@example.com"));
     }
 
     #[sqlx::test(migrations = "./migrations")]
