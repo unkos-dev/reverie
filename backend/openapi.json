@@ -2977,6 +2977,14 @@
         "responses": {
           "200": {
             "description": "Current persisted settings plus reload health. Admin only.",
+            "headers": {
+              "ETag": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "Strong entity-tag of the current settings, to echo as `If-Match` on `PUT`"
+              }
+            },
             "content": {
               "application/json": {
                 "schema": {
@@ -3034,8 +3042,19 @@
           "settings"
         ],
         "summary": "Update settings",
-        "description": "Applies a JSON Merge Patch to the application settings: fields absent from the body are left unchanged, and at least one field is required. Returns the updated settings and whether the change needs a process restart to take effect. Admin only.",
+        "description": "Applies a JSON Merge Patch to the application settings: fields absent from the body are left unchanged, and at least one field is required. Requires an `If-Match` header carrying the `ETag` of a prior `GET` or `PUT`; fails with 428 when it is absent, 412 when it does not match, and 400 when it is malformed or refused by policy. Returns the updated settings and whether the change needs a process restart to take effect. Admin only.",
         "operationId": "put_settings",
+        "parameters": [
+          {
+            "name": "If-Match",
+            "in": "header",
+            "description": "Exactly one quoted strong entity-tag, as returned in a prior GET or PUT response's ETag header. The * wildcard, entity-tag lists, weak tags, and repeated instances of this field are refused with 400. Required: absent means 428; unequal means 412",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "requestBody": {
           "description": "RFC 7396 JSON Merge Patch: absent fields are unchanged; at least one field is required",
           "content": {
@@ -3050,10 +3069,28 @@
         "responses": {
           "200": {
             "description": "Updated settings. `restart_required` is true when a changed field only takes effect after restart. Admin only.",
+            "headers": {
+              "ETag": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "Strong entity-tag of the settings after this write"
+              }
+            },
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/PutSettingsResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "If-Match is malformed, or carries a form this API refuses by policy: the * wildcard, an entity-tag list, a weak tag, or a repeated header instance",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
                 }
               }
             }
@@ -3078,8 +3115,36 @@
               }
             }
           },
+          "412": {
+            "description": "If-Match does not match the current settings ETag",
+            "headers": {
+              "ETag": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "Current entity-tag, so the caller can resync without a follow-up GET"
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
           "422": {
-            "description": "Empty patch or invalid field values",
+            "description": "Empty patch or invalid field values. Evaluated only after If-Match has matched, so a stale tag returns 412 instead",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "428": {
+            "description": "If-Match header absent",
             "content": {
               "application/problem+json": {
                 "schema": {

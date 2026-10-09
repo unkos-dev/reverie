@@ -7,7 +7,9 @@
 //! propagate to the running process via LISTEN/NOTIFY + RwLock.
 
 use axum::extract::State;
-use axum::response::IntoResponse;
+use axum::http::header::ETAG;
+use axum::http::{HeaderMap, HeaderValue};
+use axum::response::{IntoResponse, Response};
 use chrono::{DateTime, Utc};
 use utoipa_axum::router::OpenApiRouter;
 use utoipa_axum::routes;
@@ -19,6 +21,7 @@ use crate::extract::ApiJson;
 use crate::models::settings::{
     Settings, UpdateSettings, has_restart_required_field, restart_required_fields, validate_update,
 };
+use crate::routes::etag::{hash_etag, if_match_mismatch, parse_if_match};
 use crate::state::AppState;
 
 #[cfg(test)]
@@ -32,6 +35,17 @@ mod tests;
 /// and split into its runtime and spec halves there.
 pub fn router() -> OpenApiRouter<AppState> {
     OpenApiRouter::new().routes(routes!(get_settings, put_settings))
+}
+
+/// Hash input for the settings `ETag`. `revision` increases on every write to
+/// the settings row, so the tag changes exactly when the settings do.
+#[derive(serde::Serialize)]
+struct SettingsEtagFields {
+    revision: i64,
+}
+
+fn settings_etag(revision: i64) -> Result<HeaderValue, AppError> {
+    hash_etag(&SettingsEtagFields { revision })
 }
 
 /// Response shape for `GET /api/v1/settings`.
@@ -59,9 +73,13 @@ struct SettingsResponse {
 /// LISTEN/NOTIFY task so operators can verify the live-reload
 /// mechanism is healthy.
 ///
+/// The `ETag` header carries the tag a subsequent `PUT` echoes as
+/// `If-Match`.
+///
 /// # Errors
 /// - [`AppError::Forbidden`] when the caller is not an admin.
-/// - [`AppError::Internal`] on database errors.
+/// - [`AppError::Internal`] on database errors, or if the `ETag` cannot be
+///   built.
 #[utoipa::path(
     get,
     path = "/api/v1/settings",
@@ -70,7 +88,8 @@ struct SettingsResponse {
     tag = "settings",
     security(("session_cookie" = ["admin"]), ("device_token_bearer" = ["admin"]), ("oidc_jwt_bearer" = ["admin"]), ("opds_basic" = ["admin"])),
     responses(
-        (status = 200, description = "Current persisted settings plus reload health. Admin only.", body = SettingsResponse),
+        (status = 200, description = "Current persisted settings plus reload health. Admin only.", body = SettingsResponse,
+         headers(("ETag" = String, description = "Strong entity-tag of the current settings, to echo as `If-Match` on `PUT`"))),
         (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 403, description = "Caller is not an admin", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
     )
@@ -86,11 +105,15 @@ async fn get_settings(
         .await
         .map_err(|e| AppError::Internal(e.into()))?;
     let last_successful_reload_at = *state.last_settings_reload.read().await;
-    Ok(axum::Json(SettingsResponse {
-        settings,
-        restart_required_fields: restart_required_fields(),
-        last_successful_reload_at,
-    }))
+    let etag = settings_etag(settings.revision)?;
+    Ok((
+        [(ETAG, etag)],
+        axum::Json(SettingsResponse {
+            settings,
+            restart_required_fields: restart_required_fields(),
+            last_successful_reload_at,
+        }),
+    ))
 }
 
 /// Response shape for `PUT /api/v1/settings`.
@@ -111,8 +134,19 @@ struct PutSettingsResponse {
 /// reads). The DB trigger also fires `NOTIFY settings_changed` to
 /// propagate changes to other connected processes.
 ///
+/// Requires `If-Match` carrying the `ETag` of a prior `GET` or `PUT`. The
+/// tag is compared under the settings row lock that the update then
+/// commits under, so of two writers holding the same tag exactly one wins
+/// and the other receives 412. Body validation runs only once the
+/// precondition has held.
+///
 /// # Errors
 /// - [`AppError::Forbidden`] when the caller is not an admin.
+/// - [`AppError::MalformedHeader`] when `If-Match` is not exactly one
+///   well-formed strong entity-tag.
+/// - [`AppError::IfMatchRequired`] (428) when `If-Match` is absent.
+/// - [`AppError::IfMatchMismatch`] (412) when `If-Match` does not match the
+///   current settings `ETag`; the response carries the current `ETag`.
 /// - [`AppError::Validation`] when the body is empty or contains
 ///   invalid field values.
 /// - [`AppError::Internal`] on database errors.
@@ -120,24 +154,47 @@ struct PutSettingsResponse {
     put,
     path = "/api/v1/settings",
     summary = "Update settings",
-    description = "Applies a JSON Merge Patch to the application settings: fields absent from the body are left unchanged, and at least one field is required. Returns the updated settings and whether the change needs a process restart to take effect. Admin only.",
+    description = "Applies a JSON Merge Patch to the application settings: fields absent from the body are left unchanged, and at least one field is required. Requires an `If-Match` header carrying the `ETag` of a prior `GET` or `PUT`; fails with 428 when it is absent, 412 when it does not match, and 400 when it is malformed or refused by policy. Returns the updated settings and whether the change needs a process restart to take effect. Admin only.",
     tag = "settings",
+    params(
+        ("If-Match" = String, Header, description = "Exactly one quoted strong entity-tag, as returned in a prior GET or PUT response's ETag header. The * wildcard, entity-tag lists, weak tags, and repeated instances of this field are refused with 400. Required: absent means 428; unequal means 412")
+    ),
     request_body(content = UpdateSettings, description = "RFC 7396 JSON Merge Patch: absent fields are unchanged; at least one field is required"),
     security(("session_cookie" = ["admin"]), ("device_token_bearer" = ["admin"]), ("oidc_jwt_bearer" = ["admin"]), ("opds_basic" = ["admin"])),
     responses(
-        (status = 200, description = "Updated settings. `restart_required` is true when a changed field only takes effect after restart. Admin only.", body = PutSettingsResponse),
+        (status = 200, description = "Updated settings. `restart_required` is true when a changed field only takes effect after restart. Admin only.", body = PutSettingsResponse,
+         headers(("ETag" = String, description = "Strong entity-tag of the settings after this write"))),
+        (status = 400, description = "If-Match is malformed, or carries a form this API refuses by policy: the * wildcard, an entity-tag list, a weak tag, or a repeated header instance", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 403, description = "Caller is not an admin", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
-        (status = 422, description = "Empty patch or invalid field values", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
+        (status = 412, description = "If-Match does not match the current settings ETag", body = crate::openapi::ProblemDetails, content_type = "application/problem+json",
+         headers(("ETag" = String, description = "Current entity-tag, so the caller can resync without a follow-up GET"))),
+        (status = 422, description = "Empty patch or invalid field values. Evaluated only after If-Match has matched, so a stale tag returns 412 instead", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
+        (status = 428, description = "If-Match header absent", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
     )
 )]
 async fn put_settings(
     current_user: CurrentUser,
     State(state): State<AppState>,
+    headers_in: HeaderMap,
     ApiJson(req): ApiJson<UpdateSettings>,
-) -> Result<impl IntoResponse, AppError> {
+) -> Result<Response, AppError> {
     current_user.require_scope(Scope::Admin)?;
     current_user.require_admin()?;
+    let if_match = parse_if_match(&headers_in)?.ok_or(AppError::IfMatchRequired)?;
+
+    let mut tx = state
+        .pool
+        .begin()
+        .await
+        .map_err(|e| AppError::Internal(e.into()))?;
+    let current_revision = crate::services::settings::lock_revision(&mut *tx)
+        .await
+        .map_err(|e| AppError::Internal(e.into()))?;
+    let current_etag = settings_etag(current_revision)?;
+    if !if_match.matches(&current_etag) {
+        return Ok(if_match_mismatch(&current_etag));
+    }
 
     if req.is_empty() {
         return Err(AppError::Validation(
@@ -157,7 +214,10 @@ async fn put_settings(
 
     let restart_required = has_restart_required_field(&req);
 
-    let updated = crate::services::settings::save(&state.pool, &req)
+    let updated = crate::services::settings::save(&mut *tx, &req)
+        .await
+        .map_err(|e| AppError::Internal(e.into()))?;
+    tx.commit()
         .await
         .map_err(|e| AppError::Internal(e.into()))?;
 
@@ -170,8 +230,13 @@ async fn put_settings(
         crate::services::settings::apply_if_newer(&mut guard, updated.clone());
     }
 
-    Ok(axum::Json(PutSettingsResponse {
-        settings: updated,
-        restart_required,
-    }))
+    let new_etag = settings_etag(updated.revision)?;
+    Ok((
+        [(ETAG, new_etag)],
+        axum::Json(PutSettingsResponse {
+            settings: updated,
+            restart_required,
+        }),
+    )
+        .into_response())
 }
