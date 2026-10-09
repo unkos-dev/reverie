@@ -184,8 +184,9 @@ ambient path and has no production caller.
 - `GET /api/v1/dashboard/enrichment-failures` and `.../counts`: admin scope and role, under `acquire_with_rls`. They
   list and count manifestations in `failed`, or `skipped` with an `enrichment_error`, each once under its primary
   failure, with the work title and the other failing sources in `also`. `source` and `class` filters match the primary
-  only; the list is ordered by id with a cursor bound to the filters and a limit clamped to 1 through 100. Only closed
-  failure classes leave the server, never `enrichment_error`. The existing trigger endpoint is the retry action.
+  only, and `source=none` selects books whose primary failure has no source; the list is ordered by id with a cursor
+  bound to the filters and a limit clamped to 1 through 100. Only closed failure classes leave the server, never
+  `enrichment_error`. The existing trigger endpoint is the retry action.
 - `GET /api/v1/enrichment/status`: requires a non-child caller and read scope; aggregates
   `manifestations.enrichment_status` counts under `acquire_with_rls`, so a child sees counts scoped to its own visible
   manifestations like any other row-level-security-gated read.
