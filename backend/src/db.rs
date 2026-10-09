@@ -1728,7 +1728,7 @@ mod tests {
             "expected BatchFailed, got: {err}"
         );
 
-        let recorded: i64 = sqlx::query_scalar("SELECT count(*) FROM _sqlx_migrations")
+        let recorded = sqlx::query_scalar!("SELECT count(*) AS \"count!\" FROM _sqlx_migrations")
             .fetch_one(&mut *conn)
             .await
             .unwrap();
@@ -1736,7 +1736,7 @@ mod tests {
             recorded, 0,
             "the succeeded migration must not stay recorded"
         );
-        let probe: Option<String> = sqlx::query_scalar("SELECT to_regclass('batch_probe')::text")
+        let probe = sqlx::query_scalar!("SELECT to_regclass('batch_probe')::text")
             .fetch_one(&mut *conn)
             .await
             .unwrap();

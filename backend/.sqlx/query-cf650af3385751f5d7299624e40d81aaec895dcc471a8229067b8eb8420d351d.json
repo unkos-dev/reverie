@@ -1,0 +1,21 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT to_regclass('batch_probe')::text",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "to_regclass",
+        "type_info": "Text",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "cf650af3385751f5d7299624e40d81aaec895dcc471a8229067b8eb8420d351d"
+}
