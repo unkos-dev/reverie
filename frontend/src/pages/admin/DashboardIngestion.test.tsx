@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider, focusManager } from "@tanstack/react-query";
-import { act, fireEvent, render, screen, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { RouterProvider, createMemoryRouter } from "react-router";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vite-plus/test";
@@ -615,6 +615,46 @@ describe("Enrichment problems", () => {
     ).toBeInTheDocument();
     expect(screen.getByText("Book title 1")).toBeInTheDocument();
     expect(triggerEnrichment).toHaveBeenCalledWith(failureItem(1).manifestation_id);
+  });
+
+  test("a retried book that fails again shows Try again once its row carries a newer attempt", async () => {
+    vi.mocked(triggerEnrichment).mockResolvedValue();
+    renderPage();
+    const row = (await screen.findByText("Book title 1")).closest("tr");
+    if (row === null) throw new Error("row missing");
+    await userEvent.click(within(row).getByRole("button", { name: "Try again" }));
+    await within(row).findByText("Queued. It leaves this list once it runs.");
+    vi.mocked(listEnrichmentFailures).mockResolvedValue({
+      items: [
+        failureItem(1, { attempted_at: "2099-01-02T00:00:00Z", attempt_count: 1 }),
+        failureItem(2),
+      ],
+      next_cursor: null,
+    });
+    act(() => {
+      focusManager.setFocused(false);
+      focusManager.setFocused(true);
+    });
+    expect(await within(row).findByRole("button", { name: "Try again" })).toBeInTheDocument();
+    expect(within(row).queryByText(/Queued\./)).not.toBeInTheDocument();
+  });
+
+  test("a refetch that returns the same attempt keeps the Queued confirmation", async () => {
+    vi.mocked(triggerEnrichment).mockResolvedValue();
+    renderPage();
+    const row = (await screen.findByText("Book title 1")).closest("tr");
+    if (row === null) throw new Error("row missing");
+    await userEvent.click(within(row).getByRole("button", { name: "Try again" }));
+    await within(row).findByText("Queued. It leaves this list once it runs.");
+    const calls = vi.mocked(listEnrichmentFailures).mock.calls.length;
+    act(() => {
+      focusManager.setFocused(false);
+      focusManager.setFocused(true);
+    });
+    await waitFor(() => {
+      expect(vi.mocked(listEnrichmentFailures).mock.calls.length).toBeGreaterThan(calls);
+    });
+    expect(within(row).getByText("Queued. It leaves this list once it runs.")).toBeInTheDocument();
   });
 
   test("a second press on a queuing retry sends no second request", async () => {
