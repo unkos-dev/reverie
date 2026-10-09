@@ -1065,18 +1065,15 @@ mod tests {
         }
     }
 
-    fn run_outcome(
-        id: Uuid,
-        source_failures: Vec<orchestrator::SourceFailure>,
-    ) -> anyhow::Result<RunOutcome> {
-        Ok(RunOutcome {
+    fn run_outcome(id: Uuid, source_failures: Vec<orchestrator::SourceFailure>) -> RunOutcome {
+        RunOutcome {
             manifestation_id: id,
             applied: 0,
             staged: 0,
             skipped_locked: 0,
             source_failures,
             duplicate_suspected: false,
-        })
+        }
     }
 
     #[sqlx::test(migrations = "./migrations")]
@@ -1091,7 +1088,7 @@ mod tests {
             source_failure("hardcover", FailureClass::Timeout),
             source_failure("hardcover", FailureClass::NotFound),
         ];
-        finish(&pool, &config, id, 1, run_outcome(id, failures))
+        finish(&pool, &config, id, 1, Ok(run_outcome(id, failures)))
             .await
             .unwrap();
 
@@ -1133,7 +1130,7 @@ mod tests {
             insert_queue_fixture(&pool, EnrichmentStatus::InProgress, 2, Some(10)).await;
 
         let failures = vec![source_failure("googlebooks", FailureClass::Unreachable)];
-        finish(&pool, &config, id, 2, run_outcome(id, failures))
+        finish(&pool, &config, id, 2, Ok(run_outcome(id, failures)))
             .await
             .unwrap();
 
@@ -1156,7 +1153,7 @@ mod tests {
         set_rerun_requested(&pool, id).await;
 
         let failures = vec![source_failure("openlibrary", FailureClass::Timeout)];
-        finish(&pool, &config, id, 1, run_outcome(id, failures))
+        finish(&pool, &config, id, 1, Ok(run_outcome(id, failures)))
             .await
             .unwrap();
 
