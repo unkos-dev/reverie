@@ -25,12 +25,15 @@
 //! bypass.
 
 use std::str::FromStr;
+use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 use jsonwebtoken::errors::{ErrorKind, new_error};
 use jsonwebtoken::{Algorithm, DecodingKey, Validation, decode, decode_header};
 use jwks_client_rs::source::JwksSource;
 use jwks_client_rs::{JsonWebKey, JsonWebKeySet, JwksClient, JwksClientError};
 use serde::Deserialize;
+use tokio::sync::Mutex;
 
 use crate::config::Config;
 
@@ -89,6 +92,17 @@ impl std::fmt::Display for JwtValidationError {
 
 impl std::error::Error for JwtValidationError {}
 
+/// Minimum interval between outbound JWKS fetches.
+const JWKS_REFETCH_COOLDOWN: Duration = Duration::from_secs(30);
+
+type Clock = Arc<dyn Fn() -> Instant + Send + Sync>;
+
+/// Outcome of the most recent outbound fetch. `keys` is `None` when it failed.
+struct FetchAttempt {
+    at: Instant,
+    keys: Option<JsonWebKeySet>,
+}
+
 /// [`JwksSource`] carrying the project `User-Agent`.
 /// `jwks_client_rs::source::WebSource` cannot set one, and a bare-UA fetch
 /// 403s behind common WAFs (see [`crate::auth::oidc::OidcTransport`], which
@@ -96,22 +110,32 @@ impl std::error::Error for JwtValidationError {}
 /// type has no `jku`/`x5u` code path at all, and its client never follows HTTP
 /// redirects, so a token can never redirect key resolution to an
 /// attacker-chosen JWKS endpoint.
+///
+/// Outbound fetches are at least [`JWKS_REFETCH_COOLDOWN`] apart and
+/// single-flight: `jwks_client_rs` refetches on every unknown `kid`, so this
+/// bounds an unknown-`kid` flood to one IdP request per window.
 struct ReverieJwksSource {
     client: reqwest::Client,
     url: url::Url,
+    clock: Clock,
+    last_attempt: Mutex<Option<FetchAttempt>>,
 }
 
-#[async_trait::async_trait]
-impl JwksSource for ReverieJwksSource {
-    async fn fetch_keys(&self) -> Result<JsonWebKeySet, JwksClientError> {
-        // `jsonwebtoken::errors::ErrorKind::Provider` is the crate's documented
-        // escape hatch for custom providers: `JwksClientError`'s only public
-        // constructor path is `From<jsonwebtoken::errors::Error>` (its own
-        // `Error` type is crate-private, so we cannot build a
-        // `JwksClientError` any other way from outside the crate).
-        let provider_error = |context: &str, err: &dyn std::fmt::Display| -> JwksClientError {
-            new_error(ErrorKind::Provider(format!("{context}: {err}"))).into()
-        };
+impl ReverieJwksSource {
+    fn new(client: reqwest::Client, url: url::Url) -> Self {
+        Self::with_clock(client, url, Arc::new(Instant::now))
+    }
+
+    fn with_clock(client: reqwest::Client, url: url::Url, clock: Clock) -> Self {
+        Self {
+            client,
+            url,
+            clock,
+            last_attempt: Mutex::new(None),
+        }
+    }
+
+    async fn fetch_now(&self) -> Result<JsonWebKeySet, JwksClientError> {
         let response = self
             .client
             .get(self.url.clone())
@@ -124,6 +148,47 @@ impl JwksSource for ReverieJwksSource {
             .json::<JsonWebKeySet>()
             .await
             .map_err(|e| provider_error("JWKS response was not valid JSON", &e))
+    }
+}
+
+/// `jsonwebtoken::errors::ErrorKind::Provider` is the crate's documented
+/// escape hatch for custom providers: `JwksClientError`'s only public
+/// constructor path is `From<jsonwebtoken::errors::Error>` (its own `Error`
+/// type is crate-private, so we cannot build a `JwksClientError` any other
+/// way from outside the crate).
+fn provider_error(context: &str, err: &dyn std::fmt::Display) -> JwksClientError {
+    new_error(ErrorKind::Provider(format!("{context}: {err}"))).into()
+}
+
+#[async_trait::async_trait]
+impl JwksSource for ReverieJwksSource {
+    async fn fetch_keys(&self) -> Result<JsonWebKeySet, JwksClientError> {
+        // THREAT: `jwks_client_rs` refetches on every unknown `kid`, so an
+        // unauthenticated flood of forged headers would otherwise reach the
+        // IdP 1:1. The lock is held across the fetch so concurrent misses
+        // coalesce, and a failure starts the cooldown too, so a down IdP is
+        // not hammered.
+        let mut last = self.last_attempt.lock().await;
+        if let Some(attempt) = last.as_ref()
+            && (self.clock)().saturating_duration_since(attempt.at) < JWKS_REFETCH_COOLDOWN
+        {
+            // Replaying a failure as `Err` leaves the client's cached keys,
+            // and their expiry, untouched; replaying the last good set as
+            // `Ok` would renew the expiry of keys the IdP may have dropped.
+            return attempt
+                .keys
+                .clone()
+                .ok_or_else(|| provider_error("JWKS refetch", &"suppressed after a failed fetch"));
+        }
+        let result = self.fetch_now().await;
+        *last = Some(FetchAttempt {
+            at: (self.clock)(),
+            keys: match &result {
+                Ok(keys) => Some(keys.clone()),
+                Err(_) => None,
+            },
+        });
+        result
     }
 }
 
@@ -304,10 +369,7 @@ pub async fn init_jwt_validator(
     };
     transport.check_endpoint(OidcEndpoint::Jwks, jwks_source, &jwks_url)?;
 
-    let source = ReverieJwksSource {
-        client: transport.raw_client(),
-        url: jwks_url,
-    };
+    let source = ReverieJwksSource::new(transport.raw_client(), jwks_url);
     let client = JwksClient::builder().build(source);
 
     Ok(JwtValidator {
@@ -320,8 +382,6 @@ pub async fn init_jwt_validator(
 
 #[cfg(test)]
 mod tests {
-    use std::time::Duration;
-
     use jsonwebtoken::{Algorithm, EncodingKey, Header};
 
     use super::*;
@@ -743,8 +803,6 @@ mod tests {
 
     #[tokio::test]
     async fn jwks_fetch_fails_fast_against_hung_endpoint() {
-        use std::time::Instant;
-
         use wiremock::matchers::{method, path};
         use wiremock::{Mock, MockServer, ResponseTemplate};
 
@@ -755,14 +813,14 @@ mod tests {
             .mount(&server)
             .await;
 
-        let source = ReverieJwksSource {
-            client: crate::auth::oidc::OidcTransport::for_tests_with_timeouts(
+        let source = ReverieJwksSource::new(
+            crate::auth::oidc::OidcTransport::for_tests_with_timeouts(
                 Duration::from_millis(250),
                 Duration::from_millis(250),
             )
             .raw_client(),
-            url: url::Url::parse(&format!("{}/jwks", server.uri())).expect("mock JWKS url parses"),
-        };
+            url::Url::parse(&format!("{}/jwks", server.uri())).expect("mock JWKS url parses"),
+        );
 
         let started = Instant::now();
         let result = source.fetch_keys().await;
@@ -795,16 +853,217 @@ mod tests {
             .mount(&redirector)
             .await;
 
-        let source = ReverieJwksSource {
-            client: crate::auth::oidc::OidcTransport::for_tests().raw_client(),
-            url: url::Url::parse(&format!("{}/jwks", redirector.uri()))
-                .expect("mock JWKS url parses"),
-        };
+        let source = ReverieJwksSource::new(
+            crate::auth::oidc::OidcTransport::for_tests().raw_client(),
+            url::Url::parse(&format!("{}/jwks", redirector.uri())).expect("mock JWKS url parses"),
+        );
 
         assert!(
             source.fetch_keys().await.is_err(),
             "a redirect response must fail the fetch, not steer it to the redirect target \
              (the target here serves a fully valid JWKS, so following it would succeed)"
         );
+    }
+
+    #[derive(Clone)]
+    struct ManualClock {
+        base: Instant,
+        offset: Arc<std::sync::Mutex<Duration>>,
+    }
+
+    impl ManualClock {
+        fn new() -> Self {
+            Self {
+                base: Instant::now(),
+                offset: Arc::new(std::sync::Mutex::new(Duration::ZERO)),
+            }
+        }
+
+        fn advance(&self, by: Duration) {
+            *self.offset.lock().expect("clock lock") += by;
+        }
+
+        fn clock(&self) -> Clock {
+            let this = self.clone();
+            Arc::new(move || this.base + *this.offset.lock().expect("clock lock"))
+        }
+    }
+
+    /// A JWKS endpoint that answers its Nth request with the Nth scripted
+    /// `(status, kids)` entry and 404s once the script runs out, plus a
+    /// validator reading it through a manual clock. Every scripted `200`
+    /// publishes the mock provider's one signing key under each listed `kid`.
+    struct ScriptedJwks {
+        mock: MockOidcProvider,
+        server: wiremock::MockServer,
+        clock: ManualClock,
+        validator: JwtValidator,
+    }
+
+    impl ScriptedJwks {
+        async fn start(script: &[(u16, &[&str])]) -> Self {
+            use wiremock::matchers::{method, path};
+            use wiremock::{Mock, MockServer, ResponseTemplate};
+
+            let mock = MockOidcProvider::start("").await;
+            mock.mount_resource_server_jwks().await;
+            let template: serde_json::Value = crate::auth::oidc::OidcTransport::for_tests()
+                .raw_client()
+                .get(mock.resource_server_jwks_url())
+                .send()
+                .await
+                .expect("fetch the mock JWKS")
+                .json()
+                .await
+                .expect("mock JWKS is JSON");
+
+            let server = MockServer::start().await;
+            for (status, kids) in script {
+                let response = if *status == 200 {
+                    let keys: Vec<_> = kids
+                        .iter()
+                        .map(|kid| {
+                            let mut key = template["keys"][0].clone();
+                            key["kid"] = serde_json::json!(kid);
+                            key
+                        })
+                        .collect();
+                    ResponseTemplate::new(200).set_body_json(serde_json::json!({ "keys": keys }))
+                } else {
+                    ResponseTemplate::new(*status)
+                };
+                Mock::given(method("GET"))
+                    .and(path("/jwks"))
+                    .respond_with(response)
+                    .up_to_n_times(1)
+                    .mount(&server)
+                    .await;
+            }
+
+            let clock = ManualClock::new();
+            let source = ReverieJwksSource::with_clock(
+                crate::auth::oidc::OidcTransport::for_tests().raw_client(),
+                url::Url::parse(&format!("{}/jwks", server.uri())).expect("mock JWKS url parses"),
+                clock.clock(),
+            );
+            let validator = JwtValidator {
+                client: JwksClient::builder().build(source),
+                issuer: mock.issuer().to_string(),
+                audience: AUDIENCE.to_string(),
+                require_at_jwt: false,
+            };
+            Self {
+                mock,
+                server,
+                clock,
+                validator,
+            }
+        }
+
+        async fn accepts(&self, kid: &str) -> bool {
+            let token =
+                self.mock
+                    .sign_access_token(&base_claims(self.mock.issuer(), "user-1"), |h| {
+                        h.kid = Some(kid.to_string());
+                    });
+            self.validator.validate(&token).await.is_ok()
+        }
+
+        async fn fetches(&self) -> usize {
+            self.server
+                .received_requests()
+                .await
+                .expect("request recording is on")
+                .len()
+        }
+    }
+
+    const WINDOW: Duration = JWKS_REFETCH_COOLDOWN;
+
+    #[tokio::test]
+    async fn concurrent_unknown_kid_misses_share_one_fetch() {
+        let jwks =
+            ScriptedJwks::start(&[(200, &["test-kid"]), (200, &["test-kid", "rotated"])]).await;
+        assert!(jwks.accepts("test-kid").await);
+        jwks.clock.advance(WINDOW + Duration::from_secs(1));
+
+        let kids = ["rotated", "bogus-a", "rotated", "bogus-b"].repeat(4);
+        let results = futures::future::join_all(kids.iter().map(|kid| jwks.accepts(kid))).await;
+
+        for (kid, accepted) in kids.iter().zip(results) {
+            assert_eq!(accepted, *kid == "rotated", "kid {kid}");
+        }
+        assert_eq!(
+            jwks.fetches().await,
+            2,
+            "one startup fetch, one coalesced refetch"
+        );
+    }
+
+    #[tokio::test]
+    async fn repeated_unknown_kid_inside_the_window_does_not_refetch() {
+        let jwks = ScriptedJwks::start(&[(200, &["test-kid"]), (200, &["test-kid"])]).await;
+
+        for _ in 0..5 {
+            assert!(!jwks.accepts("bogus").await);
+        }
+
+        assert_eq!(jwks.fetches().await, 1);
+        assert!(jwks.accepts("test-kid").await, "known kid still verifies");
+    }
+
+    #[tokio::test]
+    async fn rotated_key_is_picked_up_once_the_window_lapses() {
+        let jwks =
+            ScriptedJwks::start(&[(200, &["test-kid"]), (200, &["test-kid", "rotated"])]).await;
+        assert!(jwks.accepts("test-kid").await);
+
+        jwks.clock.advance(WINDOW - Duration::from_secs(1));
+        assert!(!jwks.accepts("rotated").await, "inside the window");
+        assert_eq!(jwks.fetches().await, 1);
+
+        jwks.clock.advance(Duration::from_secs(2));
+        assert!(jwks.accepts("rotated").await, "after the window");
+        assert_eq!(jwks.fetches().await, 2);
+        assert!(jwks.accepts("test-kid").await);
+    }
+
+    #[tokio::test]
+    async fn failed_refetch_keeps_last_good_keys_and_holds_the_cooldown() {
+        let jwks = ScriptedJwks::start(&[
+            (200, &["test-kid"]),
+            (500, &[]),
+            (200, &["test-kid", "rotated"]),
+        ])
+        .await;
+        assert!(jwks.accepts("test-kid").await);
+
+        jwks.clock.advance(WINDOW + Duration::from_secs(1));
+        assert!(!jwks.accepts("rotated").await, "the refetch fails");
+        assert_eq!(jwks.fetches().await, 2);
+        assert!(jwks.accepts("test-kid").await, "last good keys still serve");
+
+        jwks.clock.advance(Duration::from_secs(1));
+        for _ in 0..3 {
+            assert!(!jwks.accepts("rotated").await);
+        }
+        assert_eq!(
+            jwks.fetches().await,
+            2,
+            "a failed fetch still starts the cooldown"
+        );
+
+        jwks.clock.advance(WINDOW);
+        assert!(jwks.accepts("rotated").await, "recovers on the next window");
+        assert_eq!(jwks.fetches().await, 3);
+    }
+
+    #[tokio::test]
+    async fn first_fetch_is_not_throttled() {
+        let jwks = ScriptedJwks::start(&[(200, &["test-kid"])]).await;
+
+        assert!(jwks.accepts("test-kid").await);
+
+        assert_eq!(jwks.fetches().await, 1);
     }
 }

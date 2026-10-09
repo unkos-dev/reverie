@@ -30,7 +30,8 @@ enrichment clients.
 - `OidcTransport` holds a `reqwest::Client` and an endpoint scheme policy in `backend/src/auth/oidc.rs`.
 - `OidcRuntime` pairs the discovered interactive client with a clone of its transport; `AppState.oidc` holds the runtime
   behind an `Arc`.
-- `ReverieJwksSource` in `backend/src/auth/jwt.rs` holds a raw client clone and the resolved signing-key URL.
+- `ReverieJwksSource` in `backend/src/auth/jwt.rs` holds a raw client clone, the resolved signing-key URL, and the
+  outcome of its most recent fetch.
 
 Client clones share the connection pool. Constructing an OAuth adapter wraps a clone of the same client, so discovery,
 code exchange and direct JWKS fetches use the same client configuration.
@@ -57,7 +58,8 @@ The upstream OAuth adapter is exact-pinned. Its dependency constraint and lift c
 
 The pool and interactive provider metadata live for the lifetime of the configured runtime. Discovery populates the
 interactive metadata once at startup; the transport does not refresh it. Resource-server key caching is owned by
-`JwksClient`, outside this subject.
+`JwksClient`, outside this subject. `ReverieJwksSource` keeps the time and result of its latest fetch, success or
+failure, behind an async lock.
 
 Each request uses a 5-second connect timeout, a 10-second total timeout through response-body completion, no redirects,
 and `reverie/<package-version>` as its User-Agent. Production clients enforce HTTPS at the HTTP layer. Test-only
@@ -80,6 +82,11 @@ Resource-server initialisation checks `REVERIE_RESOURCE_SERVER_ISSUER` even when
 resolves it through the OAuth adapter, including the library-owned JWKS fetch. The resolved URL is checked before
 `ReverieJwksSource` retains it. Later key fetches use the raw client clone.
 
+`JwksClient` asks its source for keys whenever a token names an unknown `kid`. `ReverieJwksSource` holds its lock across
+the request, so concurrent misses share one fetch. A call arriving less than 30 seconds after the previous fetch
+completed makes no request: it returns the key set from that fetch, or an error when that fetch failed. The first fetch
+is never delayed.
+
 ## Failure and recovery
 
 Client construction, URL parsing, endpoint rejection and discovery failures propagate to startup and prevent the server
@@ -89,13 +96,17 @@ without a transport also fails startup, as described by the application runtime 
 Redirect responses are returned to the calling library without following their destination. Timeouts terminate stalled
 requests. Callback exchange failures become `AppError::Internal`; direct JWKS request, status and JSON failures become
 provider errors consumed by the validator. This transport supplies no application retry loop; recovery and cached-key
-fallback belong to its consumers.
+fallback belong to its consumers. A failed fetch starts the 30-second window like a successful one, so an unreachable
+provider is retried at most once per window while `JwksClient` keeps serving the keys it already holds. The error
+returned inside the window leaves those cached keys and their expiry untouched.
 
 ## Security and operations
 
 Configured issuers and explicit key URLs are operator trust inputs. Token headers cannot select a signing-key URL;
-`ReverieJwksSource` only fetches its retained endpoint. Scheme enforcement remains active during the library-owned JWKS
-request, before initialisation can inspect endpoint components in the returned metadata.
+`ReverieJwksSource` only fetches its retained endpoint, so credentials with forged `kid` values cost the provider at
+most one request per window. A key the provider rotates in is rejected until the window has passed since the last fetch.
+Scheme enforcement remains active during the library-owned JWKS request, before initialisation can inspect endpoint
+components in the returned metadata.
 
 Private HTTPS providers are supported. TLS verification uses the platform trust store through
 `rustls-platform-verifier`; a private CA must be installed in the host or container trust store. There is no certificate
