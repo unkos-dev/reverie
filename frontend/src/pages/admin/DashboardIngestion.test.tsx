@@ -445,6 +445,20 @@ describe("Needs attention", () => {
     expect(await screen.findByText("Loaded 1 more file")).toBeInTheDocument();
   });
 
+  test("an expanded group refetches its first page on window focus", async () => {
+    renderPage();
+    await screen.findByText("Marlow - The Salt Archive.epub");
+    vi.mocked(listInputs).mockResolvedValue({
+      items: [inputItem(77, { path: "incoming/Fresh Arrival.epub" })],
+      next_cursor: null,
+    });
+    act(() => {
+      focusManager.setFocused(false);
+      focusManager.setFocused(true);
+    });
+    expect(await screen.findByText("Fresh Arrival.epub")).toBeInTheDocument();
+  });
+
   test("a second press on a pending scan sends no second request", async () => {
     vi.mocked(scanIngestion).mockReturnValue(new Promise(() => {}));
     renderPage();
