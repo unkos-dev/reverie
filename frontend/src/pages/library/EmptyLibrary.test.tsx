@@ -89,6 +89,22 @@ describe("EmptyLibrary", () => {
     expect(await screen.findByText("Where files go")).toBeInTheDocument();
   });
 
+  test("failed activity with positive counts shows the default guidance, not attention", async () => {
+    vi.mocked(getInputCounts).mockResolvedValue(countsFixture());
+    vi.mocked(getDashboardActivity).mockRejectedValue(new ApiError(500, null, "Internal", ""));
+    renderEmpty(ADMIN_ME);
+    expect(await screen.findByText("Where files go")).toBeInTheDocument();
+    expect(screen.queryByText(/could not be imported/)).not.toBeInTheDocument();
+  });
+
+  test("failed counts with a running batch shows the default guidance, not progress", async () => {
+    vi.mocked(getInputCounts).mockRejectedValue(new ApiError(500, null, "Internal", ""));
+    vi.mocked(getDashboardActivity).mockResolvedValue(batch({ ended_at: null, in_progress: 4 }));
+    renderEmpty(ADMIN_ME);
+    expect(await screen.findByText("Where files go")).toBeInTheDocument();
+    expect(screen.queryByText("Ingestion is under way")).not.toBeInTheDocument();
+  });
+
   test("a running batch shows the under-way variant with a labelled progress bar", async () => {
     vi.mocked(getDashboardActivity).mockResolvedValue(
       batch({ ended_at: null, completed: 7, failed: 1, in_progress: 4 }),

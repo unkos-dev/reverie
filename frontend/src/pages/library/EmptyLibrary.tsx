@@ -175,11 +175,12 @@ function EmptyLibrary(): ReactElement {
 
   if (meLoading) return <CheckingGuidance />;
   if (!isAdmin) return <ReaderGuidance />;
+  if (counts.isError || activity.isError) return <DefaultGuidance />;
   if (counts.isPending || activity.isPending) return <CheckingGuidance />;
 
-  const batch = activity.data?.batches.at(0);
+  const batch = activity.data.batches.at(0);
   if (batch !== undefined && batch.ended_at === null) return <UnderwayGuidance batch={batch} />;
-  const attention = counts.data?.attention_total ?? 0;
+  const attention = counts.data.attention_total;
   if (attention > 0) return <AttentionGuidance total={attention} />;
   return <DefaultGuidance />;
 }
