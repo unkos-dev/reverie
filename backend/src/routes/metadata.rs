@@ -378,6 +378,7 @@ async fn lock_version_review(
         (status = 404, description = "Version not found for this manifestation, or RLS-hidden", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 413, description = "The request body is too large", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 415, description = "The request body is not sent as application/json", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
+        (status = 422, description = "The request body is missing a required field or has a field of the wrong type", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
     )
 )]
 async fn reject_manifestation(

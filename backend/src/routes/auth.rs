@@ -727,6 +727,7 @@ struct ForgotPasswordRequest {
         (status = 404, description = "Local authentication is disabled", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 413, description = "The request body is too large", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 415, description = "The request body is not sent as application/json", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
+        (status = 422, description = "The request body is missing a required field or has a field of the wrong type", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 429, description = "Too many requests", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
     )
 )]
@@ -2604,6 +2605,23 @@ mod tests {
             .json(&serde_json::json!({"email": "ghost@example.com"}))
             .await;
         assert_eq!(resp.status_code(), StatusCode::OK);
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn a_json_body_missing_a_required_field_is_a_422_problem(pool: sqlx::PgPool) {
+        let app_pool = test_support::db::app_pool_for(&pool).await;
+        let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+        let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+
+        let resp = server
+            .post("/auth/forgot-password")
+            .json(&serde_json::json!({}))
+            .await;
+        test_support::assert_problem(
+            &resp,
+            crate::error::problems::INVALID_REQUEST_BODY,
+            StatusCode::UNPROCESSABLE_ENTITY,
+        );
     }
 
     #[sqlx::test(migrations = "./migrations")]

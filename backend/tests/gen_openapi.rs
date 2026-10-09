@@ -452,7 +452,7 @@ fn extractor_failure_statuses_are_declared_as_problem_json() {
             let mut required = Vec::new();
             if takes_json_body {
                 json_body_operations += 1;
-                required.extend(["400", "413", "415"]);
+                required.extend(["400", "413", "415", "422"]);
             }
             if takes_path_parameter {
                 path_parameter_operations += 1;

@@ -2536,6 +2536,16 @@
                 }
               }
             }
+          },
+          "422": {
+            "description": "The request body is missing a required field or has a field of the wrong type",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -4279,6 +4289,16 @@
                 }
               }
             }
+          },
+          "422": {
+            "description": "The request body is missing a required field or has a field of the wrong type",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -5905,6 +5925,16 @@
           },
           "415": {
             "description": "The request body is not sent as application/json",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The request body is missing a required field or has a field of the wrong type",
             "content": {
               "application/problem+json": {
                 "schema": {
