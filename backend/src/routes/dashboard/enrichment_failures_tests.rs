@@ -321,10 +321,10 @@ async fn counts_equal_the_rows_listed_per_group_across_pages(pool: PgPool) {
 
     let mut seen = 0;
     for group in counts["by_failure"].as_array().unwrap() {
-        let mut query = format!("?class={}", group["class"].as_str().unwrap());
-        if let Some(source) = group["source"].as_str() {
-            query.push_str(&format!("&source={source}"));
-        }
+        let source = group["source"]
+            .as_str()
+            .map_or_else(String::new, |source| format!("&source={source}"));
+        let query = format!("?class={}{source}", group["class"].as_str().unwrap());
         let listed = walk(&env, &query, 2).await;
         assert_eq!(
             i64::try_from(listed.len()).unwrap(),
