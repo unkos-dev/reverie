@@ -182,6 +182,16 @@ records its reason and creates neither a manifestation nor a quarantine copy. Un
 suppressed across restart. A changed fingerprint creates a new generation. Content duplicates link the existing work; a
 destination-path collision selects a suffix and does not establish duplication.
 
+`GET /api/v1/ingestion/inputs` (admin only) lists the inputs that need attention, one page at a time, each under one
+reason class: `unsafe_contents`, `damaged`, `invalid_structure`, `over_limits` or `unspecified` for a rejected file (the
+most severe class when a file has several), `needs_change` for a failure that needs fixing outside Reverie, and
+`retries_exhausted` once the transient retry budget is spent. `reason=<class>` narrows the list; `format_not_accepted`
+lists ignored files, which the default list omits. A file waiting for its next automatic retry is not listed. Each item
+gives the path relative to the ingestion folder and the other classes that apply (`reasons`); stored failure text is
+never returned, and rejections recorded before classes existed read as `unspecified`.
+`GET /api/v1/ingestion/inputs/counts` returns the count per class and `attention_total`, independent of paging and
+filters.
+
 The three ingestion environment values seed settings once before startup completes. Saved database values then control
 acceptance and cleanup through the existing settings API and live reload, including empty acceptance and default values.
 Changing those environment values on restart does not overwrite saved settings. Imported-source cleanup defaults to
