@@ -228,7 +228,6 @@ export function useSettingsEditor(area: AreaId, base: SettingsSnapshot): Setting
     }
     const snapshot = outcome.kind === "saved" ? outcome.written : outcome.fresh;
     queryClient.setQueryData(queryKeys.settings.snapshot(), snapshot);
-    void queryClient.invalidateQueries({ queryKey: queryKeys.settings.snapshot() });
     setDraft(EMPTY_DRAFT);
     setElsewhere(annotate(outcome.changed, outcome.base, patch));
     const reapplied = outcome.kind === "agreed" || outcome.reapplied;

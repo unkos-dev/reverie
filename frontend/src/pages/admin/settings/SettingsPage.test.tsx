@@ -62,6 +62,7 @@ type Server = {
   stale: Map<number, () => void>;
   puts: PutRecord[];
   gets: number;
+  getGate: Promise<void> | null;
 };
 
 let server: Server;
@@ -78,6 +79,7 @@ function newServer(over: Partial<Server> = {}): Server {
     stale: new Map(),
     puts: [],
     gets: 0,
+    getGate: null,
     ...over,
   };
 }
@@ -188,9 +190,9 @@ function installFetch(): void {
           reply({ title: "Error", status: server.getStatus }, server.getStatus),
         );
       }
-      return Promise.resolve(
-        reply({ ...row(), restart_required_fields: [] }, 200, { ETag: etag() }),
-      );
+      const answer = (): Response =>
+        reply({ ...row(), restart_required_fields: [] }, 200, { ETag: etag() });
+      return server.getGate === null ? Promise.resolve(answer()) : server.getGate.then(answer);
     }
     if (url.pathname === "/api/v1/settings" && method === "PUT") {
       try {
@@ -467,6 +469,28 @@ describe("saving", () => {
       expect(server.puts).toHaveLength(2);
     });
     expect(server.puts[1]?.ifMatch).toBe('"rev-2"');
+  });
+
+  test("a read slow enough to land after another admin's save never rebases an active draft", async () => {
+    const user = userEvent.setup();
+    await loaded();
+    let release = (): void => {};
+    server.getGate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    await type(user, "Concurrent lookups", "6");
+    await user.click(save());
+    await screen.findByText("Settings saved");
+    await type(user, "Concurrent lookups", "7");
+    server.values.enrichment_concurrency = 8;
+    server.revision += 1;
+    server.getGate = null;
+    release();
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    await user.click(save());
+    expect(await screen.findByText("Settings changed while you were editing")).toBeInTheDocument();
+    expect(server.puts[1]?.ifMatch).toBe('"rev-2"');
+    expect(server.values.enrichment_concurrency).toBe(8);
   });
 
   test("an edit after a save clears the saved notice", async () => {
