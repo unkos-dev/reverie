@@ -160,7 +160,10 @@ impl RejectionReason {
 pub fn display_path(bytes: &[u8]) -> String {
     bytes
         .utf8_chunks()
-        .map(|chunk| format!("{}{}", chunk.valid(), chunk.invalid().escape_ascii()))
+        .flat_map(|chunk| {
+            let escaped = chunk.invalid().iter().flat_map(|byte| byte.escape_ascii());
+            chunk.valid().chars().chain(escaped.map(char::from))
+        })
         .collect()
 }
 
