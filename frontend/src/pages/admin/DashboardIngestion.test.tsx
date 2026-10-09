@@ -358,6 +358,67 @@ describe("Needs attention", () => {
     });
   });
 
+  test("loading the final page moves focus to the count line instead of dropping it", async () => {
+    vi.mocked(getInputCounts).mockResolvedValue(
+      countsFixture({ by_reason: [{ reason: "damaged", count: 3 }], attention_total: 3 }),
+    );
+    vi.mocked(listInputs).mockImplementation(({ cursor }) =>
+      Promise.resolve(
+        cursor === undefined
+          ? { items: [inputItem(1), inputItem(2)], next_cursor: "cur-1" }
+          : { items: [inputItem(3)], next_cursor: null },
+      ),
+    );
+    renderPage();
+    await userEvent.click(await screen.findByRole("button", { name: "Show more" }));
+    const count = await screen.findByText("Showing 3 of 3");
+    await waitFor(() => {
+      expect(count).toHaveFocus();
+    });
+  });
+
+  test("Show more keeps focus on its button while more pages remain", async () => {
+    vi.mocked(getInputCounts).mockResolvedValue(
+      countsFixture({ by_reason: [{ reason: "damaged", count: 5 }], attention_total: 5 }),
+    );
+    vi.mocked(listInputs).mockImplementation(({ cursor }) =>
+      Promise.resolve(
+        cursor === undefined
+          ? { items: [inputItem(1), inputItem(2)], next_cursor: "cur-1" }
+          : { items: [inputItem(3), inputItem(4)], next_cursor: "cur-2" },
+      ),
+    );
+    renderPage();
+    await userEvent.click(await screen.findByRole("button", { name: "Show more" }));
+    await screen.findByText("Showing 4 of 5");
+    expect(screen.getByRole("button", { name: "Show more" })).toHaveFocus();
+  });
+
+  test("a failed later page moves focus to its Try again, and a successful retry to the count line", async () => {
+    vi.mocked(getInputCounts).mockResolvedValue(
+      countsFixture({ by_reason: [{ reason: "damaged", count: 3 }], attention_total: 3 }),
+    );
+    vi.mocked(listInputs).mockImplementation(({ cursor }) =>
+      cursor === undefined
+        ? Promise.resolve({ items: [inputItem(1), inputItem(2)], next_cursor: "cur-1" })
+        : Promise.reject(new ApiError(500, null, "Internal", "")),
+    );
+    renderPage();
+    await userEvent.click(await screen.findByRole("button", { name: "Show more" }));
+    await screen.findByText("Could not load these files.");
+    const card = screen.getByRole("region", { name: /Needs attention/ });
+    const retry = within(card).getByRole("button", { name: "Try again" });
+    await waitFor(() => {
+      expect(retry).toHaveFocus();
+    });
+    vi.mocked(listInputs).mockResolvedValue({ items: [inputItem(3)], next_cursor: null });
+    await userEvent.click(retry);
+    const count = await screen.findByText("Showing 3 of 3");
+    await waitFor(() => {
+      expect(count).toHaveFocus();
+    });
+  });
+
   test("Show more stays in the tab order and announces a busy state while loading", async () => {
     let resolveMore: (v: {
       items: ReturnType<typeof inputItem>[];
@@ -655,6 +716,18 @@ describe("Enrichment problems", () => {
       expect(vi.mocked(listEnrichmentFailures).mock.calls.length).toBeGreaterThan(calls);
     });
     expect(within(row).getByText("Queued. It leaves this list once it runs.")).toBeInTheDocument();
+  });
+
+  test("a successful retry moves focus to the Queued confirmation", async () => {
+    vi.mocked(triggerEnrichment).mockResolvedValue();
+    renderPage();
+    const row = (await screen.findByText("Book title 1")).closest("tr");
+    if (row === null) throw new Error("row missing");
+    await userEvent.click(within(row).getByRole("button", { name: "Try again" }));
+    const queued = await within(row).findByText("Queued. It leaves this list once it runs.");
+    await waitFor(() => {
+      expect(queued).toHaveFocus();
+    });
   });
 
   test("a second press on a queuing retry sends no second request", async () => {
