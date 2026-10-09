@@ -132,6 +132,19 @@ export function patchKeys(patch: SettingsPatch): SettingsKey[] {
   return ALL_KEYS.filter((key) => patch[key] !== undefined);
 }
 
+/** Value of a field as the draft currently holds it, as copy quotes it; unparsable text is quoted raw. */
+export function describeDraftValue(key: SettingsKey, draft: Draft, base: SettingsValues): string {
+  const field = fieldByKey(key);
+  if (field.control === "switch") return describeBoolean(shownBoolean(draft, base, field.key));
+  if (field.control === "formats") {
+    const formats: SettingsValues["accepted_formats"] = shownEpub(draft, base) ? ["epub"] : [];
+    return describeValue(key, { ...base, accepted_formats: formats });
+  }
+  const text = shownText(draft, base, field.key);
+  const parsed = parseNumberField(field, text);
+  return parsed.ok ? describeNumber(field.key, parsed.value) : text;
+}
+
 export function changedKeys(before: SettingsValues, after: SettingsValues): SettingsKey[] {
   return ALL_KEYS.filter((key) => !sameValue(before[key], after[key]));
 }

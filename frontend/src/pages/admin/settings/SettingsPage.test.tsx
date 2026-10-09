@@ -1033,6 +1033,32 @@ describe("a stale write", () => {
     expect(screen.getByRole("textbox", { name: "Concurrent lookups" })).toHaveValue("8");
   });
 
+  test("editing a field after choosing theirs switches it back to mine and saves the new value", async () => {
+    server.stale.set(1, () => {
+      server.values.enrichment_concurrency = 8;
+      server.revision += 1;
+    });
+    const user = userEvent.setup();
+    await loaded();
+    await editTwoFields(user);
+    await user.click(save());
+    await screen.findByText("Settings changed while you were editing");
+    await user.click(screen.getByRole("radio", { name: "Use theirs (8 lookups)" }));
+    await type(user, "Concurrent lookups", "9");
+    expect(screen.getByRole("radio", { name: "Keep mine (9 lookups)" })).toBeChecked();
+    expect(screen.getByRole("radio", { name: "Use theirs (8 lookups)" })).not.toBeChecked();
+    expect(
+      screen.getByText("Someone else saved 8 lookups while you were editing. You set 9 lookups."),
+    ).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Save my choices" }));
+    await screen.findByText("Settings saved");
+    expect(server.puts[1]?.patch).toEqual({
+      enrichment_concurrency: 9,
+      enrichment_fetch_budget_secs: 30,
+    });
+    expect(server.values.enrichment_concurrency).toBe(9);
+  });
+
   test("a failed reload after a stale answer cannot carry the newer tag over the old values", async () => {
     server.stale.set(1, () => {
       server.values.enrichment_concurrency = 8;

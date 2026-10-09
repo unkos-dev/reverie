@@ -7,6 +7,7 @@ import {
   buildPatch,
   changedKeys,
   classify,
+  describeDraftValue,
   dirtyKeys,
   dropKeys,
   elsewhereSummary,
@@ -169,6 +170,30 @@ describe("classify", () => {
   test("changedKeys compares format lists by content", () => {
     expect(changedKeys(BASE, { ...BASE, accepted_formats: ["epub"] })).toEqual([]);
     expect(changedKeys(BASE, { ...BASE, accepted_formats: [] })).toEqual(["accepted_formats"]);
+  });
+});
+
+describe("describeDraftValue", () => {
+  test("quotes each control kind as the draft holds it", () => {
+    const draft = setEpub(
+      setBoolean(
+        setText(EMPTY_DRAFT, BASE, "enrichment_concurrency", "9"),
+        BASE,
+        "cleanup_imported",
+        false,
+      ),
+      BASE,
+      false,
+    );
+    expect(describeDraftValue("enrichment_concurrency", draft, BASE)).toBe("9 lookups");
+    expect(describeDraftValue("cleanup_imported", draft, BASE)).toBe("Off");
+    expect(describeDraftValue("accepted_formats", draft, BASE)).toBe("None");
+    expect(describeDraftValue("writeback_enabled", draft, BASE)).toBe("On");
+  });
+
+  test("quotes unparsable text as typed", () => {
+    const draft = setText(EMPTY_DRAFT, BASE, "enrichment_concurrency", "nine");
+    expect(describeDraftValue("enrichment_concurrency", draft, BASE)).toBe("nine");
   });
 });
 

@@ -24,6 +24,7 @@ import {
   EMPTY_DRAFT,
   buildPatch,
   classify,
+  describeDraftValue,
   describePatched,
   dirtyKeys,
   dropKeys,
@@ -297,9 +298,16 @@ export function useSettingsEditor(area: AreaId, base: SettingsSnapshot): Setting
   const pending = mutation.isPending;
   const phase = !pending ? "idle" : notice.kind === "reapplying" ? "reapplying" : "saving";
 
-  function afterEdit(key: SettingsKey): void {
+  function afterEdit(key: SettingsKey, next: Draft): void {
     setElsewhere({});
     setNotice((current) => {
+      if (current.kind === "conflict") {
+        const mine = describeDraftValue(key, next, base.values);
+        const rows = current.rows.map((row) =>
+          row.key === key ? { ...row, choice: "mine" as const, mine } : row,
+        );
+        return { kind: "conflict", rows };
+      }
       if (current.kind === "validation") {
         const errors = omitKey(current.errors, ALL_KEYS, key);
         const remaining = Object.keys(errors).length > 0;
@@ -317,14 +325,16 @@ export function useSettingsEditor(area: AreaId, base: SettingsSnapshot): Setting
       setPendingConfirm(key);
       return;
     }
-    setDraft(setBoolean(draft, base.values, key, value));
-    afterEdit(key);
+    const next = setBoolean(draft, base.values, key, value);
+    setDraft(next);
+    afterEdit(key, next);
   }
 
   function confirmDeletion(): void {
     if (pendingConfirm === null) return;
-    setDraft(setBoolean(draft, base.values, pendingConfirm, true));
-    afterEdit(pendingConfirm);
+    const next = setBoolean(draft, base.values, pendingConfirm, true);
+    setDraft(next);
+    afterEdit(pendingConfirm, next);
     setPendingConfirm(null);
   }
 
@@ -334,14 +344,16 @@ export function useSettingsEditor(area: AreaId, base: SettingsSnapshot): Setting
 
   function editText(key: NumberKey, text: string): void {
     if (pending) return;
-    setDraft(setText(draft, base.values, key, text));
-    afterEdit(key);
+    const next = setText(draft, base.values, key, text);
+    setDraft(next);
+    afterEdit(key, next);
   }
 
   function editEpub(value: boolean): void {
     if (pending) return;
-    setDraft(setEpub(draft, base.values, value));
-    afterEdit("accepted_formats");
+    const next = setEpub(draft, base.values, value);
+    setDraft(next);
+    afterEdit("accepted_formats", next);
   }
 
   function discard(): void {
