@@ -74,6 +74,22 @@ async fn read<'a>(
     })
 }
 
+/// Take the settings row lock and return its current `revision`.
+///
+/// Called inside the transaction that will [`save`], so a precondition
+/// compared against the returned revision cannot be overtaken by a concurrent
+/// writer before the update commits.
+///
+/// # Errors
+/// Returns `sqlx::Error` on connection or query failure.
+pub async fn lock_revision<'a>(
+    executor: impl sqlx::Executor<'a, Database = sqlx::Postgres>,
+) -> Result<i64, sqlx::Error> {
+    sqlx::query_scalar!("SELECT revision FROM settings WHERE id = true FOR UPDATE")
+        .fetch_one(executor)
+        .await
+}
+
 pub(crate) async fn seed_ingestion(
     pool: &PgPool,
     config: &crate::config::Config,
@@ -139,8 +155,8 @@ pub enum ProviderKeyError {
 /// # Errors
 /// [`ProviderKeyError::UnknownKey`] for the first unknown key,
 /// [`ProviderKeyError::Db`] on query failure.
-pub async fn validate_provider_keys(
-    pool: &PgPool,
+pub async fn validate_provider_keys<'a>(
+    executor: impl sqlx::Executor<'a, Database = sqlx::Postgres>,
     req: &UpdateSettings,
 ) -> Result<(), ProviderKeyError> {
     let Some(ref visibility) = req.provider_visibility else {
@@ -154,7 +170,7 @@ pub async fn validate_provider_keys(
            UNION
            SELECT id AS "id!" FROM rating_sources"#,
     )
-    .fetch_all(pool)
+    .fetch_all(executor)
     .await?;
     let known: std::collections::HashSet<&str> = known.iter().map(String::as_str).collect();
     if let Some(unknown) = visibility.keys().find(|k| !known.contains(k.as_str())) {
@@ -181,7 +197,10 @@ pub async fn validate_provider_keys(
 ///
 /// # Errors
 /// Returns `sqlx::Error` on connection or query failure.
-pub async fn save(pool: &PgPool, req: &UpdateSettings) -> Result<Settings, sqlx::Error> {
+pub async fn save<'a>(
+    executor: impl sqlx::Executor<'a, Database = sqlx::Postgres>,
+    req: &UpdateSettings,
+) -> Result<Settings, sqlx::Error> {
     use sqlx::{Postgres, QueryBuilder};
 
     debug_assert!(!req.is_empty(), "save() called with empty UpdateSettings");
@@ -280,7 +299,7 @@ pub async fn save(pool: &PgPool, req: &UpdateSettings) -> Result<Settings, sqlx:
 
     qb.push(" WHERE id = true RETURNING enrichment_enabled, enrichment_concurrency, enrichment_poll_idle_secs, enrichment_fetch_budget_secs, cover_max_bytes, cover_download_timeout_secs, cover_min_long_edge_px, cover_redirect_limit, writeback_enabled, writeback_concurrency, writeback_poll_idle_secs, writeback_max_attempts, opds_enabled, opds_page_size, accepted_formats, cleanup_imported, cleanup_duplicates, provider_visibility, revision, updated_at");
 
-    qb.build_query_as::<Settings>().fetch_one(pool).await
+    qb.build_query_as::<Settings>().fetch_one(executor).await
 }
 
 /// Spawn the LISTEN/NOTIFY + fallback poll background task.

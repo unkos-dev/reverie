@@ -4841,9 +4841,15 @@ async fn hidden_provider_absent_from_projection_and_hot_reloads(pool: PgPool) {
 
     // Hide googlebooks (ids + rating share the key) and asin (ids only;
     // Amazon's rating key is 'amazon' and stays visible).
+    let settings_etag = server
+        .get("/api/v1/settings")
+        .add_header(AUTHORIZATION, basic.clone())
+        .await
+        .header(axum::http::header::ETAG);
     let put = server
         .put("/api/v1/settings")
         .add_header(AUTHORIZATION, basic.clone())
+        .add_header(axum::http::header::IF_MATCH, settings_etag)
         .json(&serde_json::json!({"provider_visibility": {"googlebooks": false, "asin": false}}))
         .await;
     assert_eq!(put.status_code(), StatusCode::OK, "body = {}", put.text());
@@ -4872,9 +4878,15 @@ async fn hidden_provider_absent_from_projection_and_hot_reloads(pool: PgPool) {
 
     // Unhide everything: the next read reflects it without a restart —
     // the projection reads the hot-reloaded settings cache per request.
+    let settings_etag = server
+        .get("/api/v1/settings")
+        .add_header(AUTHORIZATION, basic.clone())
+        .await
+        .header(axum::http::header::ETAG);
     let put = server
         .put("/api/v1/settings")
         .add_header(AUTHORIZATION, basic.clone())
+        .add_header(axum::http::header::IF_MATCH, settings_etag)
         .json(&serde_json::json!({"provider_visibility": {}}))
         .await;
     assert_eq!(put.status_code(), StatusCode::OK);

@@ -2972,11 +2972,19 @@
           "settings"
         ],
         "summary": "Get settings",
-        "description": "Returns the currently persisted application settings, including the fields that only take effect after a process restart and the timestamp of the last successful live-reload. Admin only.",
+        "description": "Returns the currently persisted application settings, including the fields that only take effect after a process restart. Admin only.",
         "operationId": "get_settings",
         "responses": {
           "200": {
-            "description": "Current persisted settings plus reload health. Admin only.",
+            "description": "Current persisted settings. Admin only.",
+            "headers": {
+              "ETag": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "Strong entity-tag of the current settings, to echo as `If-Match` on `PUT`"
+              }
+            },
             "content": {
               "application/json": {
                 "schema": {
@@ -3034,8 +3042,19 @@
           "settings"
         ],
         "summary": "Update settings",
-        "description": "Applies a JSON Merge Patch to the application settings: fields absent from the body are left unchanged, and at least one field is required. Returns the updated settings and whether the change needs a process restart to take effect. Admin only.",
+        "description": "Applies a JSON Merge Patch to the application settings: fields absent from the body are left unchanged, and at least one field is required. Requires an `If-Match` header carrying the `ETag` of a prior `GET` or `PUT`; fails with 428 when it is absent, 412 when it does not match, and 400 when it is malformed or refused by policy. Returns the updated settings and whether the change needs a process restart to take effect. Admin only.",
         "operationId": "put_settings",
+        "parameters": [
+          {
+            "name": "If-Match",
+            "in": "header",
+            "description": "Exactly one quoted strong entity-tag, as returned in a prior GET or PUT response's ETag header. The * wildcard, entity-tag lists, weak tags, and repeated instances of this field are refused with 400. Required: absent means 428; unequal means 412",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "requestBody": {
           "description": "RFC 7396 JSON Merge Patch: absent fields are unchanged; at least one field is required",
           "content": {
@@ -3050,10 +3069,28 @@
         "responses": {
           "200": {
             "description": "Updated settings. `restart_required` is true when a changed field only takes effect after restart. Admin only.",
+            "headers": {
+              "ETag": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "Strong entity-tag of the settings after this write"
+              }
+            },
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/PutSettingsResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "If-Match is malformed, or carries a form this API refuses by policy: the * wildcard, an entity-tag list, a weak tag, or a repeated header instance",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
                 }
               }
             }
@@ -3078,8 +3115,100 @@
               }
             }
           },
+          "412": {
+            "description": "If-Match does not match the current settings ETag",
+            "headers": {
+              "ETag": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "Current entity-tag, so the caller can resync without a follow-up GET"
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
           "422": {
-            "description": "Empty patch or invalid field values",
+            "description": "Empty patch or invalid field values. Evaluated only after If-Match has matched, so a stale tag returns 412 instead",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "428": {
+            "description": "If-Match header absent",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session_cookie": [
+              "admin"
+            ]
+          },
+          {
+            "device_token_bearer": [
+              "admin"
+            ]
+          },
+          {
+            "oidc_jwt_bearer": [
+              "admin"
+            ]
+          },
+          {
+            "opds_basic": [
+              "admin"
+            ]
+          }
+        ]
+      }
+    },
+    "/api/v1/settings/reload-status": {
+      "get": {
+        "tags": [
+          "settings"
+        ],
+        "summary": "Get settings reload status",
+        "description": "Returns the timestamp of the last successful live reload of settings in this process, or null before the first reload. Admin only.",
+        "operationId": "reload_status",
+        "responses": {
+          "200": {
+            "description": "Last successful settings reload in this process. Admin only.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReloadStatusResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Caller is not an admin",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -8906,6 +9035,20 @@
           }
         }
       },
+      "ReloadStatusResponse": {
+        "type": "object",
+        "description": "Response shape for `GET /api/v1/settings/reload-status`.",
+        "properties": {
+          "last_successful_reload_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "description": "Timestamp of the last successful LISTEN/NOTIFY settings reload in\nthis process; `null` until the first reload."
+          }
+        }
+      },
       "RenameShelfRequest": {
         "type": "object",
         "description": "Body for `PATCH /api/v1/shelves/{id}`.",
@@ -9302,14 +9445,6 @@
               "restart_required_fields"
             ],
             "properties": {
-              "last_successful_reload_at": {
-                "type": [
-                  "string",
-                  "null"
-                ],
-                "format": "date-time",
-                "description": "Timestamp of the last successful LISTEN/NOTIFY settings reload in\nthis process; `null` until the first reload."
-              },
               "restart_required_fields": {
                 "type": "array",
                 "items": {
