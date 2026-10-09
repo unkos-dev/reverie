@@ -12,7 +12,8 @@
  * giving them the `<Outlet />` surface, the 401 redirect handler, and
  * the `ThemeProvider` / `QueryClientProvider` providers above.
  */
-import type { RouteObject } from "react-router";
+import { createElement } from "react";
+import { Navigate, type RouteObject } from "react-router";
 
 import type { ZoneHandle } from "@/components/shell/AppShell";
 import { titleCrumb } from "@/components/shell/crumbs";
@@ -93,6 +94,24 @@ export const adminDashboardRoute: RouteObject = {
   handle: { zone: "admin" } satisfies ZoneHandle,
   lazy: async () => {
     const mod = await import("./dashboard");
+    return { loader: mod.loader, Component: mod.Component };
+  },
+};
+
+/** `/admin/settings` — lands on the first settings area. */
+export const adminSettingsIndexRoute: RouteObject = {
+  path: "admin/settings",
+  handle: { zone: "admin" } satisfies ZoneHandle,
+  element: createElement(Navigate, { to: "/admin/settings/acquisition", replace: true }),
+};
+
+/** `/admin/settings/:area` — admin-only instance settings, one page per area. */
+export const adminSettingsRoute: RouteObject = {
+  path: "admin/settings/:area",
+  // Shell tone shift to canvas-2 (spec §2 admin zone).
+  handle: { zone: "admin" } satisfies ZoneHandle,
+  lazy: async () => {
+    const mod = await import("./admin-settings");
     return { loader: mod.loader, Component: mod.Component };
   },
 };

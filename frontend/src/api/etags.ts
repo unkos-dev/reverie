@@ -9,29 +9,32 @@
  * per-callsite `ifMatch` parameter (contrast `shelves.ts`, whose
  * timestamp-derived scheme predates this module and stays untouched).
  *
- * Scope is deliberately narrow: only the two resource families this phase
- * protects (`backend/src/routes/reading.rs`, `backend/src/routes/
- * metadata.rs`) resolve to a cache key. Every other path, including the
- * shelves reorder PUT, resolves to `null` and is never touched.
+ * Scope is deliberately narrow: only the resource families below
+ * (`backend/src/routes/reading.rs`, `backend/src/routes/metadata.rs`,
+ * `backend/src/routes/settings/mod.rs`) resolve to a cache key. Every other
+ * path, including the shelves reorder PUT, resolves to `null` and is never
+ * touched.
  */
 
 const cache = new Map<string, string>();
 
 const READING_PATH = /^\/api\/v1\/books\/([^/]+)\/reading$/;
 const METADATA_PATH = /^\/api\/v1\/books\/([^/]+)\/metadata$/;
+const SETTINGS_PATH = /^\/api\/v1\/settings$/;
 
 /**
  * Resolve a request path to its ETag cache key, or `null` when the path is
  * not one of the protected resource families.
  *
- * The metadata GET and PATCH share one URI (`/api/v1/books/{id}/metadata`),
- * so a single pattern keys both to the same `metadata:{id}` slot.
+ * A resource's GET and write share one URI (`/api/v1/books/{id}/metadata`,
+ * `/api/v1/settings`), so a single pattern keys both to the same slot.
  */
 export function etagKeyForPath(pathname: string): string | null {
   const reading = READING_PATH.exec(pathname);
   if (reading) return `reading:${reading[1]}`;
   const metadata = METADATA_PATH.exec(pathname);
   if (metadata) return `metadata:${metadata[1]}`;
+  if (SETTINGS_PATH.test(pathname)) return "settings";
   return null;
 }
 

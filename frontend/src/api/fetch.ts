@@ -18,10 +18,11 @@
  *    funnelled into {@link ApiError} so callers branch on `.status` /
  *    `.problemSlug` instead of re-parsing JSON.
  *
- * 4. **If-Match ETag retention** — a GET or PATCH response carrying an
+ * 4. **If-Match ETag retention** — a GET, PATCH or PUT response carrying an
  *    `ETag` for a protected resource (the reading-state and metadata PATCH
- *    surfaces; see `etags.ts`) is cached by resource identity and echoed
- *    back as `If-Match` on that resource's next PATCH. Captured from every
+ *    surfaces and the settings PUT; see `etags.ts`) is cached by resource
+ *    identity and echoed back as `If-Match` on that resource's next PATCH or
+ *    PUT. Captured from every
  *    response regardless of status, so a `412`'s current tag replaces a
  *    stale one without a follow-up GET. Every other endpoint, including
  *    the shelves reorder PUT's own `If-Match` scheme, is untouched.
@@ -194,11 +195,11 @@ async function sendRequest(
       headers.set("Content-Type", "application/json");
     }
   }
-  // Auto-echo a retained ETag as If-Match on that resource's own PATCH.
-  // Scoped to PATCH so the shelves reorder PUT (which sets its own
-  // timestamp-derived If-Match) is never touched, and a caller-set header
-  // always wins over the cache.
-  if (method === "PATCH" && !headers.has("If-Match")) {
+  // Auto-echo a retained ETag as If-Match on that resource's own PATCH or
+  // PUT. Only paths `etags.ts` keys resolve to a tag, so the shelves reorder
+  // PUT (which sets its own timestamp-derived If-Match) is never touched, and
+  // a caller-set header always wins over the cache.
+  if ((method === "PATCH" || method === "PUT") && !headers.has("If-Match")) {
     const key = etagKeyForPath(pathnameOf(input));
     if (key !== null) {
       const etag = getRememberedEtag(key);

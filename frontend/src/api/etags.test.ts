@@ -20,6 +20,15 @@ describe("etagKeyForPath", () => {
     expect(etagKeyForPath("/api/v1/books/abc-123/metadata")).toBe("metadata:abc-123");
   });
 
+  test("matches the settings GET and PUT path", () => {
+    expect(etagKeyForPath("/api/v1/settings")).toBe("settings");
+  });
+
+  test("does not match paths that merely start with the settings path", () => {
+    expect(etagKeyForPath("/api/v1/settings/extra")).toBeNull();
+    expect(etagKeyForPath("/api/v1/settings-other")).toBeNull();
+  });
+
   test("does not match unrelated paths, including the unprotected review-queue GET", () => {
     expect(etagKeyForPath("/api/v1/shelves/abc-123")).toBeNull();
     expect(etagKeyForPath("/api/v1/books/abc-123")).toBeNull();

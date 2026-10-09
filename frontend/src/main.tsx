@@ -25,6 +25,8 @@ import { Toaster } from "./components/ui/sonner.tsx";
 import { queryClient } from "./lib/query/client";
 import {
   adminDashboardRoute,
+  adminSettingsIndexRoute,
+  adminSettingsRoute,
   adminUsersRoute,
   bookRoute,
   libraryRoute,
@@ -50,6 +52,8 @@ const routes: RouteObject[] = [
       tokensRoute,
       adminUsersRoute,
       adminDashboardRoute,
+      adminSettingsIndexRoute,
+      adminSettingsRoute,
     ],
   },
   // Pre-auth screens. Siblings of the app-shell root, NOT children:
