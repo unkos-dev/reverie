@@ -90,6 +90,7 @@ async fn library_opensearch(
     params(("shelf_id" = Uuid, Path, description = "Shelf id")),
     responses(
         (status = 200, description = "OpenSearch descriptor with the shelf-scoped search URL template", content_type = "application/opensearchdescription+xml", body = String),
+        (status = 400, description = "A path parameter is malformed", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 401, description = "Basic authentication required (WWW-Authenticate: Basic)", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 404, description = "Shelf missing or not owned by the caller", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
     )

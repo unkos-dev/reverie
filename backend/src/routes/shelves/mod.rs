@@ -278,8 +278,11 @@ struct CreateShelfRequest {
     responses(
         (status = 201, description = "Shelf created", body = Shelf,
          headers(("ETag" = String, description = "Entity-tag carrying the shelf's updated_at (RFC 3339, quoted per RFC 9110)"))),
+        (status = 400, description = "The request body is not valid JSON", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 403, description = "Caller is a child account", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
+        (status = 413, description = "The request body is too large", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
+        (status = 415, description = "The request body is not sent as application/json", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 422, description = "Empty name", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
     )
 )]
@@ -357,10 +360,13 @@ struct RenameShelfRequest {
     responses(
         (status = 200, description = "Renamed shelf", body = Shelf,
          headers(("ETag" = String, description = "Entity-tag carrying the shelf's updated_at (RFC 3339, quoted per RFC 9110)"))),
+        (status = 400, description = "The request body is not valid JSON, or a path parameter is malformed", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 403, description = "Caller is a child account", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 404, description = "Shelf missing or owned by another user (existence-not-leaked)", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 409, description = "System shelves cannot be renamed", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
+        (status = 413, description = "The request body is too large", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
+        (status = 415, description = "The request body is not sent as application/json", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 422, description = "Empty name", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
     )
 )]
@@ -454,6 +460,7 @@ async fn rename_shelf(
     security(("session_cookie" = ["write"]), ("device_token_bearer" = ["write"]), ("oidc_jwt_bearer" = ["write"]), ("opds_basic" = ["write"])),
     responses(
         (status = 204, description = "Shelf deleted"),
+        (status = 400, description = "A path parameter is malformed", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 403, description = "Caller is a child account", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 404, description = "Shelf missing or owned by another user (existence-not-leaked)", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
@@ -558,7 +565,7 @@ struct ShelfDetailResponse {
             ("ETag" = String, description = "Entity-tag carrying the shelf's updated_at (RFC 3339, quoted per RFC 9110); echo as If-Match on reorder"),
             ("Link" = String, description = "RFC 8288 next-page link; emitted with rel=\"next\" when more items remain")
          )),
-        (status = 400, description = "Malformed query parameter", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
+        (status = 400, description = "Malformed query or path parameter", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 404, description = "Shelf missing or owned by another user (existence-not-leaked)", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 422, description = "Malformed cursor", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
@@ -704,8 +711,12 @@ struct AddItemRequest {
     responses(
         (status = 204, description = "Item appended at the end (no-op if already on the shelf); shelf ETag bumped",
          headers(("ETag" = String, description = "Entity-tag carrying the shelf's new updated_at (RFC 3339, quoted per RFC 9110)"))),
+        (status = 400, description = "The request body is not valid JSON, or a path parameter is malformed", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 404, description = "Shelf missing / not owned, or manifestation not visible to the caller", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
+        (status = 413, description = "The request body is too large", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
+        (status = 415, description = "The request body is not sent as application/json", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
+        (status = 422, description = "The request body is missing a required field or has a field of the wrong type", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
     )
 )]
 async fn add_shelf_item(
@@ -812,6 +823,7 @@ async fn add_shelf_item(
     responses(
         (status = 204, description = "Item removed; shelf ETag bumped",
          headers(("ETag" = String, description = "Entity-tag carrying the shelf's new updated_at (RFC 3339, quoted per RFC 9110)"))),
+        (status = 400, description = "A path parameter is malformed", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 404, description = "Shelf missing / not owned, or item not on the shelf", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
     )
@@ -902,9 +914,12 @@ struct ReorderItemsRequest {
     responses(
         (status = 204, description = "Positions rewritten; shelf ETag bumped",
          headers(("ETag" = String, description = "Entity-tag carrying the shelf's new updated_at (RFC 3339, quoted per RFC 9110)"))),
+        (status = 400, description = "The request body is not valid JSON, or a path parameter is malformed", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 404, description = "Shelf missing or owned by another user (existence-not-leaked)", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 412, description = "If-Match does not match the shelf's current updated_at", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
+        (status = 413, description = "The request body is too large", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
+        (status = 415, description = "The request body is not sent as application/json", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 422, description = "Malformed If-Match, or items list does not exactly cover the shelf", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 428, description = "If-Match header absent", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
     )

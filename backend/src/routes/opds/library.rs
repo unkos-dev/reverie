@@ -213,7 +213,7 @@ async fn library_authors(
     params(("id" = Uuid, Path, description = "Author id"), PageParams),
     responses(
         (status = 200, description = "OPDS acquisition feed of the author's visible books (empty for unknown authors)", content_type = "application/atom+xml;profile=opds-catalog;kind=acquisition", body = String),
-        (status = 400, description = "Malformed query parameter", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
+        (status = 400, description = "Malformed query or path parameter", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 401, description = "Basic authentication required (WWW-Authenticate: Basic)", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 422, description = "Malformed cursor", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
     )
@@ -294,7 +294,7 @@ async fn library_series(
     params(("id" = Uuid, Path, description = "Series id"), PageParams),
     responses(
         (status = 200, description = "OPDS acquisition feed of the series' visible books (empty for unknown series)", content_type = "application/atom+xml;profile=opds-catalog;kind=acquisition", body = String),
-        (status = 400, description = "Malformed query parameter", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
+        (status = 400, description = "Malformed query or path parameter", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 401, description = "Basic authentication required (WWW-Authenticate: Basic)", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 422, description = "Malformed cursor", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
     )

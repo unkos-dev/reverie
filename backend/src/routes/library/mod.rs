@@ -1051,6 +1051,7 @@ fn merge_external_ids(
     security(("session_cookie" = ["read"]), ("device_token_bearer" = ["read"]), ("oidc_jwt_bearer" = ["read"]), ("opds_basic" = ["read"])),
     responses(
         (status = 200, description = "Book detail", body = BookDetail),
+        (status = 400, description = "A path parameter is malformed", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 404, description = "Not found or RLS-hidden", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
     )
@@ -1562,6 +1563,7 @@ fn accepted_pointer_count(row: &DetailRow) -> u32 {
     security(("session_cookie" = ["read"]), ("device_token_bearer" = ["read"]), ("oidc_jwt_bearer" = ["read"]), ("opds_basic" = ["read"])),
     responses(
         (status = 200, description = "Work detail with visible manifestations", body = WorkDetail),
+        (status = 400, description = "A path parameter is malformed", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 404, description = "Not found or RLS-hidden", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
     )

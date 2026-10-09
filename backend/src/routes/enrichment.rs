@@ -71,6 +71,7 @@ pub fn router() -> OpenApiRouter<AppState> {
     params(("id" = Uuid, Path, description = "Manifestation id")),
     responses(
         (status = 202, description = "Re-run scheduled: an idle manifestation is reset to pending for the background worker's next poll; one with an active run is re-queued when that run completes"),
+        (status = 400, description = "A path parameter is malformed", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 403, description = "Caller is a child account", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 404, description = "Manifestation missing or RLS-hidden", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
@@ -137,6 +138,7 @@ async fn trigger(
     params(("id" = Uuid, Path, description = "Manifestation id")),
     responses(
         (status = 200, description = "Diff of changes an enrichment pass would make; per-source failures are listed, not fatal", body = crate::services::enrichment::dry_run::DryRunDiff),
+        (status = 400, description = "A path parameter is malformed", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 403, description = "Caller is a child account", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 404, description = "Manifestation missing or RLS-hidden", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
