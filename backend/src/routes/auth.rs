@@ -1674,6 +1674,20 @@ mod tests {
             crate::error::problems::UNAUTHORIZED,
             StatusCode::UNAUTHORIZED,
         );
+        let after_callback = store
+            .load(&session_id)
+            .await
+            .expect("load session record")
+            .expect("session record present");
+        for key in [
+            crate::auth::session::SESSION_KEY_USER_ID,
+            crate::auth::session::SESSION_KEY_SESSION_VERSION,
+        ] {
+            assert!(
+                !after_callback.data.contains_key(key),
+                "a refused callback must not write {key} into the session"
+            );
+        }
 
         let after = user::find_by_id(&app_pool, existing.id)
             .await
