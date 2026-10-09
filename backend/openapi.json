@@ -5245,7 +5245,7 @@
             }
           },
           "401": {
-            "description": "Anti-forgery state missing/mismatched or ID-token validation failed",
+            "description": "Anti-forgery state missing/mismatched, ID-token validation failed, account disabled, or email belongs to a different account",
             "content": {
               "application/problem+json": {
                 "schema": {

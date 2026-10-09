@@ -443,6 +443,50 @@ pub(crate) fn is_addr_spec(e: &str) -> bool {
     .is_ok()
 }
 
+/// Trim the OIDC email claim and degrade an absent, blank or invalid value to
+/// `None`, logging an invalid one by shape only.
+fn validated_oidc_email<'a>(email: Option<&'a str>, subject: &str) -> Option<&'a str> {
+    match email.map(str::trim) {
+        Some("") => {
+            tracing::debug!(
+                oidc_subject = %subject,
+                "OIDC email claim is whitespace-only; persisting NULL"
+            );
+            None
+        }
+        Some(e) if is_addr_spec(e) => Some(e),
+        Some(e) => {
+            tracing::warn!(
+                oidc_subject = %subject,
+                rejected_email_len = e.len(),
+                "OIDC email claim is not RFC-5322 valid; persisting NULL and matching on sub"
+            );
+            None
+        }
+        None => None,
+    }
+}
+
+/// Why an OIDC sign-in did not provision or resolve an account.
+#[derive(Debug, thiserror::Error)]
+pub enum OidcProvisionError {
+    /// A first sign-in carries an email that a different account already
+    /// holds (`idx_users_email_lower`). Nothing was written.
+    #[error("OIDC email belongs to a different account")]
+    EmailCollision,
+    /// Any other database failure.
+    #[error(transparent)]
+    Db(#[from] sqlx::Error),
+}
+
+fn is_email_collision(e: &sqlx::Error) -> bool {
+    matches!(
+        e,
+        sqlx::Error::Database(db)
+            if db.is_unique_violation() && db.constraint() == Some("idx_users_email_lower")
+    )
+}
+
 /// Insert or update a user from verified OIDC claims, resolving identity
 /// through [`crate::models::user_identities`] keyed on `(issuer, subject)`.
 ///
@@ -455,39 +499,33 @@ pub(crate) fn is_addr_spec(e: &str) -> bool {
 /// `updated_at` is written, so the caller can refuse the login without the
 /// refused attempt having changed the account.
 ///
-/// THREAT: `email` carries a case-insensitive uniqueness constraint
-/// (`idx_users_email_lower`); login identity rides on the verified
-/// `(issuer, subject)` resolved via `user_identities`, never on `email`. The
-/// OIDC JWT is signature-verified, but the `email` *string* is not
-/// format-checked upstream, so a misconfigured or non-standard `IdP` could
-/// release a malformed value that violates the column invariant. Both write
-/// paths to this column (here and the admin `PATCH /api/v1/users/{id}` path)
-/// guard with [`is_addr_spec`], so both uphold the RFC-5322 addr-spec
-/// invariant. Per OIDC Core §5.7 the `email` claim is optional and
-/// non-identifying, so an invalid claim degrades to `NULL` rather than failing
-/// authentication; login never depends on an optional claim's format. On a
-/// returning user the `UPDATE … SET email = $email` overwrites a
-/// previously-stored valid email with `NULL` when the `IdP` later emits a
-/// malformed claim (Option B: never persist a junk value in the column);
-/// identity is preserved because resolution keys on `(issuer, subject)`. The
-/// rejected value is logged by shape only (length), never verbatim (n 7);
-/// the `had_prior_email` log field lets operators distinguish that
-/// overwrite from a first-login with a malformed claim.
+/// THREAT: accounts are matched on `(issuer, subject)` only, never on `email`
+/// (OIDC Core §5.7). A first login whose email belongs to a different account
+/// writes and links nothing and fails with
+/// [`OidcProvisionError::EmailCollision`], so an `IdP` that releases an
+/// unverified or attacker-chosen email cannot reach an existing account. A
+/// returning identity keeps its stored email: the claim is read only when
+/// the account is created, so an `IdP` email change can neither collide nor
+/// overwrite. The claim's *string* is not format-checked upstream, so it is
+/// guarded with [`is_addr_spec`], and an invalid value degrades to `NULL`
+/// rather than failing authentication. The rejected value is logged by shape
+/// only (length), never verbatim.
 ///
 /// # Errors
 ///
-/// Returns [`sqlx::Error`] from any step of the transaction (advisory lock,
-/// identity resolution, `INSERT`/`UPDATE`, identity-link insert, re-fetch, or
-/// commit). A concurrent first-login losing the race to the
-/// `UNIQUE (issuer, subject)` backstop is serialised by the advisory lock and
-/// resolves to the same row rather than erroring.
+/// [`OidcProvisionError::EmailCollision`] on a first login whose email
+/// belongs to another account, or [`OidcProvisionError::Db`] from any step of
+/// the transaction (advisory lock, identity resolution, `INSERT`/`UPDATE`,
+/// identity-link insert, re-fetch, or commit). A concurrent first-login losing
+/// the race to the `UNIQUE (issuer, subject)` backstop is serialised by the
+/// advisory lock and resolves to the same row rather than erroring.
 pub async fn upsert_from_oidc(
     pool: &PgPool,
     issuer: &str,
     subject: &str,
     display_name: &str,
     email: Option<&str>,
-) -> Result<User, sqlx::Error> {
+) -> Result<User, OidcProvisionError> {
     let mut tx = pool.begin().await?;
 
     // Serialize concurrent provisioning of the same identity. Replacing the
@@ -513,63 +551,17 @@ pub async fn upsert_from_oidc(
     .execute(&mut *tx)
     .await?;
 
-    // Validate the OIDC email claim before persisting. Trim first so a
-    // whitespace-only claim reads as absence; degrade a non-empty-but-invalid
-    // value to NULL with a shape-only warning. Runs inside the transaction and
-    // under the advisory lock so the `had_prior_email` diagnostic reflects the
-    // same serialized state the upsert below acts on.
-    let email = match email.map(str::trim) {
-        Some("") => {
-            // Claim present but whitespace-only: absence, not a value. (A truly
-            // absent claim — `None` — is the normal optional-claim path per OIDC
-            // Core §5.7 and is not logged, to avoid per-login debug noise for IdPs
-            // that omit `email`.)
-            tracing::debug!(
-                oidc_subject = %subject,
-                "OIDC email claim is whitespace-only; persisting NULL"
-            );
-            None
-        }
-        Some(e) if is_addr_spec(e) => Some(e),
-        Some(e) => {
-            // Non-empty but not a valid addr-spec: degrade to NULL. On a returning
-            // user the UPDATE path overwrites a previously-stored valid email, so
-            // surface `had_prior_email` to distinguish an IdP misconfiguration
-            // wiping a known-good value from a first-login carrying junk. Resolve
-            // the prior-email check through `user_identities` (the identity key),
-            // since `users.oidc_subject` is no longer populated for new users.
-            let had_prior_email = sqlx::query_scalar!(
-                "SELECT u.email IS NOT NULL AS \"had_email!\" \
-                 FROM users u \
-                 JOIN user_identities ui ON ui.user_id = u.id \
-                 WHERE ui.issuer = $1 AND ui.subject = $2",
-                issuer,
-                subject,
-            )
-            .fetch_optional(&mut *tx)
-            .await?
-            .unwrap_or(false);
-            tracing::warn!(
-                oidc_subject = %subject,
-                rejected_email_len = e.len(),
-                had_prior_email,
-                "OIDC email claim is not RFC-5322 valid; persisting NULL and matching on sub"
-            );
-            None
-        }
-        None => None,
-    };
-
     let row = if let Some(user_id) =
         crate::models::user_identities::find_user_id_by_oidc(&mut *tx, issuer, subject).await?
     {
-        // Returning identity: refresh the canonical user's mutable fields.
-        // The `disabled_at IS NULL` predicate makes the refusal atomic with
-        // the write: a disabled account is read back untouched.
+        // Returning identity: refresh the display name only; the stored email
+        // is never overwritten from the IdP. The `disabled_at IS NULL`
+        // predicate makes the refusal atomic with the write: a disabled
+        // account is read back untouched.
         let refreshed = sqlx::query_as!(
             UserRow,
             "UPDATE users \
-             SET display_name = $2, email = $3, updated_at = now() \
+             SET display_name = $2, updated_at = now() \
              WHERE id = $1 AND disabled_at IS NULL \
              RETURNING id, oidc_subject AS \"oidc_subject?\", display_name, email, \
                        role AS \"role: Role\", is_child, created_at, updated_at, \
@@ -577,7 +569,6 @@ pub async fn upsert_from_oidc(
                        disabled_at",
             user_id,
             display_name,
-            email,
         )
         .fetch_optional(&mut *tx)
         .await?;
@@ -599,13 +590,21 @@ pub async fn upsert_from_oidc(
     } else {
         // First login for this identity: create the canonical user (no
         // oidc_subject — identity lives in user_identities) and the link.
+        let email = validated_oidc_email(email, subject);
         let user_id: Uuid = sqlx::query_scalar!(
             "INSERT INTO users (display_name, email) VALUES ($1, $2) RETURNING id",
             display_name,
             email,
         )
         .fetch_one(&mut *tx)
-        .await?;
+        .await
+        .map_err(|e| {
+            if is_email_collision(&e) {
+                OidcProvisionError::EmailCollision
+            } else {
+                OidcProvisionError::Db(e)
+            }
+        })?;
 
         // Per-identity verification state is added with its write path in a
         // later slice; the link carries no verification column yet.
@@ -769,25 +768,60 @@ mod tests {
     }
 
     #[sqlx::test(migrations = "./migrations")]
-    async fn first_login_with_duplicate_email_collides(pool: PgPool) {
-        // The migration documents that on an existing pre-release DB a first
-        // login whose IdP releases an email already held by another user
-        // collides on idx_users_email_lower and fails. Reproduce that shape: two
-        // distinct identities carrying the same email; the second is a first
-        // login whose users INSERT violates the case-insensitive email index.
-        let email = "dupe@example.com";
-        upsert_from_oidc(&pool, TEST_ISSUER, "collide-a", "A", Some(email))
+    async fn first_login_with_an_email_held_by_another_account_is_refused(pool: PgPool) {
+        let local = create_local(&pool, "dupe@example.com", "Local", Role::Adult, None)
             .await
-            .expect("first identity provisions");
+            .expect("local account");
 
-        let err = upsert_from_oidc(&pool, TEST_ISSUER, "collide-b", "B", Some(email))
-            .await
-            .expect_err("duplicate email on a first login must fail");
+        let err = upsert_from_oidc(
+            &pool,
+            TEST_ISSUER,
+            "collide-b",
+            "B",
+            Some("  Dupe@Example.COM "),
+        )
+        .await
+        .expect_err("a colliding first login must be refused");
+        assert!(matches!(err, OidcProvisionError::EmailCollision), "{err:?}");
+
         assert_eq!(
-            err.as_database_error().and_then(|e| e.constraint()),
-            Some("idx_users_email_lower"),
-            "collision must be the case-insensitive email index"
+            sqlx::query_scalar!("SELECT count(*) AS \"c!\" FROM users")
+                .fetch_one(&pool)
+                .await
+                .expect("count users"),
+            1,
+            "no user row is written"
         );
+        assert!(
+            find_by_oidc_identity(&pool, TEST_ISSUER, "collide-b")
+                .await
+                .expect("resolve")
+                .is_none(),
+            "no identity link is written"
+        );
+        let untouched = find_by_id(&pool, local.id)
+            .await
+            .expect("reload")
+            .expect("exists");
+        assert_eq!(untouched.updated_at, local.updated_at);
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn first_login_without_a_colliding_email_still_provisions(pool: PgPool) {
+        create_local(&pool, "someone@example.com", "Local", Role::Adult, None)
+            .await
+            .expect("local account");
+
+        let user = upsert_from_oidc(
+            &pool,
+            TEST_ISSUER,
+            "no-collision",
+            "New",
+            Some("new@example.com"),
+        )
+        .await
+        .expect("a distinct email provisions");
+        assert_eq!(user.email.as_deref(), Some("new@example.com"));
     }
 
     #[sqlx::test(migrations = "./migrations")]
@@ -926,30 +960,47 @@ mod tests {
     }
 
     #[sqlx::test(migrations = "./migrations")]
-    async fn upsert_overwrites_valid_email_to_none_when_claim_becomes_malformed(pool: PgPool) {
-        // Returning-user consequence: the upsert updates the resolved row's
-        // email, so a returning user whose IdP later emits a malformed claim
-        // has their previously-stored valid email overwritten to NULL.
-        // Consistent with Option-B (never persist junk in the column); identity
-        // is preserved because resolution keys on `(issuer, subject)`, not email.
-        let subject = format!("email-overwrite-{}", Uuid::new_v4());
+    async fn returning_identity_keeps_its_stored_email_when_the_claim_changes(pool: PgPool) {
+        let subject = format!("email-kept-{}", Uuid::new_v4());
         let first = upsert_from_oidc(&pool, TEST_ISSUER, &subject, "Bob", Some("bob@example.com"))
             .await
             .expect("first upsert");
-        assert_eq!(first.email.as_deref(), Some("bob@example.com"));
 
-        let second = upsert_from_oidc(&pool, TEST_ISSUER, &subject, "Bob", Some("not-an-email"))
+        for claim in [Some("bob-new@example.com"), Some("not-an-email"), None] {
+            let again = upsert_from_oidc(&pool, TEST_ISSUER, &subject, "Bob B", claim)
+                .await
+                .expect("returning identity signs in");
+            assert_eq!(again.id, first.id, "same row, not a new insert");
+            assert_eq!(again.display_name, "Bob B");
+            assert_eq!(
+                again.email.as_deref(),
+                Some("bob@example.com"),
+                "the stored email is never refreshed from the IdP"
+            );
+        }
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn returning_identity_signs_in_when_its_claim_matches_another_account(pool: PgPool) {
+        let subject = format!("email-held-{}", Uuid::new_v4());
+        let first = upsert_from_oidc(&pool, TEST_ISSUER, &subject, "Bob", Some("bob@example.com"))
             .await
-            .expect("second upsert");
-        assert_eq!(
-            second.email, None,
-            "malformed claim on re-login must overwrite the previously valid email to NULL"
-        );
-        assert_eq!(second.id, first.id, "same row updated, not a new insert");
-        assert_eq!(
-            second.oidc_subject, None,
-            "oidc_subject stays vestigial NULL"
-        );
+            .expect("first upsert");
+        create_local(&pool, "taken@example.com", "Local", Role::Adult, None)
+            .await
+            .expect("local account");
+
+        let again = upsert_from_oidc(
+            &pool,
+            TEST_ISSUER,
+            &subject,
+            "Bob",
+            Some("Taken@Example.com"),
+        )
+        .await
+        .expect("a returning identity still signs in");
+        assert_eq!(again.id, first.id);
+        assert_eq!(again.email.as_deref(), Some("bob@example.com"));
     }
 
     /// Loud-failure regression for role-enum drift. Simulates the failure mode
@@ -1289,7 +1340,7 @@ mod tests {
 
         assert!(refreshed.disabled_at.is_none());
         assert_eq!(refreshed.display_name, "Alice B");
-        assert_eq!(refreshed.email.as_deref(), Some("alice-b@example.com"));
+        assert_eq!(refreshed.email.as_deref(), Some("alice@example.com"));
     }
 
     #[sqlx::test(migrations = "./migrations")]
