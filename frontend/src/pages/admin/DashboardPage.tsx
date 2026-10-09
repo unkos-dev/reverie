@@ -121,6 +121,7 @@ function DashboardPage(): ReactElement {
 
       <ScanNotice
         notice={monitor.notice}
+        failure={monitor.scanFailure}
         scanPending={monitor.scanPending}
         running={monitor.running}
         latestBatch={monitor.latestBatch}

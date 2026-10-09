@@ -29,7 +29,6 @@ type ScanFailure = "failed" | "forbidden" | "session";
 
 type IngestionNotice =
   | { kind: "accepted"; result: DiscoveryResult; afterScan: boolean }
-  | { kind: "failure"; cause: ScanFailure }
   | { kind: "finished" };
 
 type IngestionMonitor = {
@@ -41,6 +40,8 @@ type IngestionMonitor = {
   running: boolean;
   /** `null` until a scan result or a finished batch has something to say. */
   notice: IngestionNotice | null;
+  /** The latest scan request's failure; batch completion never clears it. */
+  scanFailure: ScanFailure | null;
   scanPending: boolean;
   /** A 403 disables the control for the rest of the page session. */
   scanForbidden: boolean;
@@ -74,6 +75,8 @@ function useIngestionMonitor(options: {
   const [graceActive, setGraceActive] = useState(false);
   const [graceRuns, setGraceRuns] = useState(0);
   const [notice, setNotice] = useState<IngestionNotice | null>(null);
+  const [scanFailure, setScanFailure] = useState<ScanFailure | null>(null);
+  const [scanForbidden, setScanForbidden] = useState(false);
   const [wasRunning, setWasRunning] = useState(false);
   const countsBeforeScan = useRef(0);
 
@@ -115,6 +118,7 @@ function useIngestionMonitor(options: {
   const mutation = useMutation({
     mutationFn: scanIngestion,
     onMutate: () => {
+      setScanFailure(null);
       countsBeforeScan.current = changeTotal(
         queryClient.getQueryData(queryKeys.ingestion.counts()),
       );
@@ -140,7 +144,10 @@ function useIngestionMonitor(options: {
       void queryClient.invalidateQueries({ queryKey: queryKeys.dashboard.stats() });
     },
     onError: (err) => {
-      setNotice({ kind: "failure", cause: failureCause(err) });
+      const cause = failureCause(err);
+      setNotice(null);
+      setScanFailure(cause);
+      if (cause === "forbidden") setScanForbidden(true);
     },
   });
 
@@ -151,8 +158,9 @@ function useIngestionMonitor(options: {
     latestBatch,
     running,
     notice,
+    scanFailure,
     scanPending: mutation.isPending,
-    scanForbidden: notice?.kind === "failure" && notice.cause === "forbidden",
+    scanForbidden,
     scan: () => {
       if (mutation.isPending) return;
       mutation.mutate();
