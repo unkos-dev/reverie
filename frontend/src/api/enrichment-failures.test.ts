@@ -31,14 +31,39 @@ describe("enrichment failures API client", () => {
     );
   });
 
-  test("listEnrichmentFailures sends no source for a group that belongs to none", async () => {
+  test("listEnrichmentFailures sends source=none for the group that belongs to no source", async () => {
     vi.mocked(apiFetch).mockResolvedValue({
       items: [{ ...ITEM, primary: { source: null, class: "internal" }, also: [] }],
     });
     await listEnrichmentFailures({ source: null, class: "internal", cursor: "next" });
     expect(vi.mocked(apiFetch).mock.calls.at(-1)?.[0]).toBe(
-      "/api/v1/dashboard/enrichment-failures?class=internal&limit=25&cursor=next",
+      "/api/v1/dashboard/enrichment-failures?class=internal&source=none&limit=25&cursor=next",
     );
+  });
+
+  test("a legacy unsourced book and a sourced book of one class each list only their own", async () => {
+    const legacy = { ...ITEM, primary: { source: null, class: "unspecified" }, also: [] };
+    const sourced = {
+      ...ITEM,
+      manifestation_id: "019a0000-0000-7000-8000-0000000000a2",
+      primary: { source: "hardcover", class: "unspecified" },
+      also: [],
+    };
+    vi.mocked(apiFetch).mockImplementation((url) => {
+      const source = new URL(typeof url === "string" ? url : "", "http://x").searchParams.get(
+        "source",
+      );
+      const items = [legacy, sourced].filter(
+        (item) =>
+          source === null ||
+          (source === "none" ? item.primary.source === null : item.primary.source === source),
+      );
+      return Promise.resolve({ items, next_cursor: null });
+    });
+    const unsourced = await listEnrichmentFailures({ source: null, class: "unspecified" });
+    const hardcover = await listEnrichmentFailures({ source: "hardcover", class: "unspecified" });
+    expect(unsourced.items.map((i) => i.manifestation_id)).toEqual([legacy.manifestation_id]);
+    expect(hardcover.items.map((i) => i.manifestation_id)).toEqual([sourced.manifestation_id]);
   });
 
   test("listEnrichmentFailures rejects a class outside the closed set", async () => {

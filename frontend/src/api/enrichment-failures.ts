@@ -70,7 +70,7 @@ export type FailureCounts = z.infer<typeof FailureCountsSchema>;
 const FAILURES_PAGE_SIZE = 25;
 
 type ListFailuresParams = {
-  /** Source key; absent for the groups that belong to no source. */
+  /** Source key; `null` for the groups that belong to no source, sent as `none`. */
   source: string | null;
   class: FailureClass;
   cursor?: string;
@@ -86,7 +86,7 @@ async function listEnrichmentFailures(
   signal?: AbortSignal,
 ): Promise<FailuresPage> {
   const query = new URLSearchParams({ class: params.class });
-  if (params.source !== null) query.set("source", params.source);
+  query.set("source", params.source ?? "none");
   query.set("limit", String(params.limit ?? FAILURES_PAGE_SIZE));
   if (params.cursor !== undefined) query.set("cursor", params.cursor);
   const raw = await apiFetch(
