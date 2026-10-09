@@ -155,8 +155,8 @@ pub enum ProviderKeyError {
 /// # Errors
 /// [`ProviderKeyError::UnknownKey`] for the first unknown key,
 /// [`ProviderKeyError::Db`] on query failure.
-pub async fn validate_provider_keys(
-    pool: &PgPool,
+pub async fn validate_provider_keys<'a>(
+    executor: impl sqlx::Executor<'a, Database = sqlx::Postgres>,
     req: &UpdateSettings,
 ) -> Result<(), ProviderKeyError> {
     let Some(ref visibility) = req.provider_visibility else {
@@ -170,7 +170,7 @@ pub async fn validate_provider_keys(
            UNION
            SELECT id AS "id!" FROM rating_sources"#,
     )
-    .fetch_all(pool)
+    .fetch_all(executor)
     .await?;
     let known: std::collections::HashSet<&str> = known.iter().map(String::as_str).collect();
     if let Some(unknown) = visibility.keys().find(|k| !known.contains(k.as_str())) {

@@ -373,6 +373,32 @@ async fn put_settings_provider_visibility_persists_and_round_trips(pool: PgPool)
 }
 
 #[sqlx::test(migrations = "./migrations")]
+async fn put_settings_provider_visibility_needs_only_the_transaction_connection(pool: PgPool) {
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let (_admin_id, admin_basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+    let single_connection = sqlx::postgres::PgPoolOptions::new()
+        .max_connections(1)
+        .acquire_timeout(std::time::Duration::from_secs(2))
+        .connect_with((*app_pool.connect_options()).clone())
+        .await
+        .expect("single-connection pool");
+    let server = server(&single_connection, &ingestion_pool);
+
+    let r = put_settings(
+        &server,
+        &admin_basic,
+        &serde_json::json!({"provider_visibility": {"googlebooks": false}}),
+    )
+    .await;
+    assert_eq!(r.status_code(), StatusCode::OK, "body = {}", r.text());
+    assert_eq!(
+        r.json::<serde_json::Value>()["provider_visibility"],
+        serde_json::json!({"googlebooks": false})
+    );
+}
+
+#[sqlx::test(migrations = "./migrations")]
 async fn put_settings_provider_visibility_unknown_key_returns_422(pool: PgPool) {
     let app_pool = test_support::db::app_pool_for(&pool).await;
     let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;

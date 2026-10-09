@@ -203,7 +203,7 @@ async fn put_settings(
     }
 
     validate_update(&req).map_err(AppError::Validation)?;
-    crate::services::settings::validate_provider_keys(&state.pool, &req)
+    crate::services::settings::validate_provider_keys(&mut *tx, &req)
         .await
         .map_err(|e| match e {
             crate::services::settings::ProviderKeyError::UnknownKey(_) => {
