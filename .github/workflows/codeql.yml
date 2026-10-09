@@ -190,7 +190,7 @@ jobs:
         uses: kunobi-ninja/kache-action@1a33fb2ff51be23eb9e87abeae6edb65be78f71c # main
         with:
           # renovate: datasource=github-releases depName=kunobi-ninja/kache extractVersion=^v(?<version>.+)$
-          version: "0.28.1"
+          version: "1.0.0"
           s3-bucket: reverie-ci-cache
           s3-region: auto
           s3-endpoint: https://${{ secrets.R2_ACCOUNT_ID }}.r2.cloudflarestorage.com
