@@ -10,6 +10,8 @@ pub mod content_rating;
 pub mod contributor_role;
 /// Per-user device tokens for OPDS / mobile-client Basic-auth flows.
 pub mod device_token;
+/// Closed failure classes persisted with a failed enrichment attempt.
+pub mod enrichment_failure;
 /// Closed value set for the `enrichment_status` Postgres `ENUM`.
 pub mod enrichment_status;
 pub mod external_identifier;

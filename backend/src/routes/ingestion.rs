@@ -329,7 +329,7 @@ async fn list_inputs(
     ))
 }
 
-fn next_link_headers(uri: &axum::http::Uri, next_cursor: Option<&str>) -> HeaderMap {
+pub(crate) fn next_link_headers(uri: &axum::http::Uri, next_cursor: Option<&str>) -> HeaderMap {
     let mut headers = HeaderMap::new();
     if let Some(cursor) = next_cursor {
         let next_url = build_next_url(uri, cursor);

@@ -1,14 +1,17 @@
 //! `/api/v1/dashboard/*` admin-only library-health aggregation routes.
 //!
-//! THREAT: Privilege escalation / information disclosure — both endpoints
-//! are admin-gated via [`CurrentUser::require_admin`](crate::auth::middleware::CurrentUser::require_admin)
+//! THREAT: Privilege escalation / information disclosure — every endpoint
+//! is admin-gated via [`CurrentUser::require_admin`](crate::auth::middleware::CurrentUser::require_admin)
 //! **before** any DB
 //! access, so a non-admin caller receives 403 (401 when unauthenticated)
 //! and never reaches the aggregation queries. Responses carry only
 //! library-wide counts and byte totals — no per-user rows, file paths, or
-//! PII. The sole request parameter (`?limit` on `/activity`) is clamped to
+//! PII — except `/enrichment-failures`, which also names each failing book
+//! by id and title. Stored `enrichment_error` text never leaves the server;
+//! only closed failure classes do. File paths appear on no dashboard route;
+//! the admin ingestion reads own them. Every `?limit` is clamped to
 //! `1..=100` before binding, so it cannot drive an unbounded scan or a
-//! negative-LIMIT error.
+//! negative-LIMIT error, and the failures list pages by cursor.
 //!
 //! The handlers acquire their transaction through
 //! [`crate::db::acquire_with_rls`] so the `manifestations_select_adult` RLS
@@ -32,6 +35,9 @@ use crate::models::enrichment_status::EnrichmentStatus;
 use crate::models::validation_status::ValidationStatus;
 use crate::state::AppState;
 
+mod enrichment_failures;
+#[cfg(test)]
+mod enrichment_failures_tests;
 #[cfg(test)]
 mod tests;
 
@@ -51,6 +57,7 @@ pub fn router() -> OpenApiRouter<AppState> {
     OpenApiRouter::new()
         .routes(routes!(stats))
         .routes(routes!(activity))
+        .merge(enrichment_failures::router())
 }
 
 /// One `{ status, count }` bucket in a breakdown array. `status` is the

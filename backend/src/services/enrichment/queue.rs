@@ -20,6 +20,7 @@ use tracing::{info, warn};
 use uuid::Uuid;
 
 use crate::config::Config;
+use crate::models::enrichment_failure::{FailureClass, FailureEntry};
 use crate::models::enrichment_status::EnrichmentStatus;
 
 use super::orchestrator::{self, RunOutcome};
@@ -211,6 +212,7 @@ async fn finish(
                     config,
                     retry_after,
                     Some("transient source failures"),
+                    &failure_entries(&outcome.source_failures),
                 )
                 .await?;
             } else {
@@ -219,10 +221,39 @@ async fn finish(
         }
         Err(e) => {
             warn!(error = %e, %id, "enrichment run_once failed");
-            mark_failed(pool, id, attempt_count, config, None, Some(&e.to_string())).await?;
+            let internal = [FailureEntry {
+                source: None,
+                class: FailureClass::Internal,
+            }];
+            mark_failed(
+                pool,
+                id,
+                attempt_count,
+                config,
+                None,
+                Some(&e.to_string()),
+                &internal,
+            )
+            .await?;
         }
     }
     Ok(())
+}
+
+/// One entry per failing source, ordered by source key. When a source failed
+/// on several lookup keys in one run, the last failure stands.
+fn failure_entries(failures: &[orchestrator::SourceFailure]) -> Vec<FailureEntry> {
+    let by_source: std::collections::BTreeMap<&str, FailureClass> = failures
+        .iter()
+        .map(|failure| (failure.source_id.as_str(), failure.class))
+        .collect();
+    by_source
+        .into_iter()
+        .map(|(source, class)| FailureEntry {
+            source: Some(source.to_owned()),
+            class,
+        })
+        .collect()
 }
 
 /// Completion bookkeeping for a successful run. Guarded on `in_progress` so
@@ -262,7 +293,9 @@ async fn mark_failed(
     config: &Config,
     retry_after: Option<Duration>,
     error: Option<&str>,
+    failures: &[FailureEntry],
 ) -> sqlx::Result<()> {
+    let failures = serde_json::to_value(failures).map_err(|e| sqlx::Error::Encode(Box::new(e)))?;
     let max = config.enrichment.max_attempts.cast_signed();
     let next_status = if attempt_count >= max {
         EnrichmentStatus::Skipped
@@ -289,11 +322,14 @@ async fn mark_failed(
                                                 ELSE now() + ($2 || ' seconds')::interval END, \
                  enrichment_error = CASE WHEN enrichment_rerun_requested \
                                          THEN NULL ELSE $3 END, \
+                 enrichment_failures = CASE WHEN enrichment_rerun_requested \
+                                            THEN '[]'::jsonb ELSE $4 END, \
                  enrichment_rerun_requested = FALSE \
-             WHERE id = $4 AND enrichment_status = 'in_progress'",
+             WHERE id = $5 AND enrichment_status = 'in_progress'",
             next_status as EnrichmentStatus,
             secs_str,
             error,
+            failures,
             id,
         )
         .execute(pool)
@@ -309,10 +345,13 @@ async fn mark_failed(
                                                 THEN NULL ELSE enrichment_attempted_at END, \
                  enrichment_error = CASE WHEN enrichment_rerun_requested \
                                          THEN NULL ELSE $2 END, \
+                 enrichment_failures = CASE WHEN enrichment_rerun_requested \
+                                            THEN '[]'::jsonb ELSE $3 END, \
                  enrichment_rerun_requested = FALSE \
-             WHERE id = $3 AND enrichment_status = 'in_progress'",
+             WHERE id = $4 AND enrichment_status = 'in_progress'",
             next_status as EnrichmentStatus,
             error,
+            failures,
             id,
         )
         .execute(pool)
@@ -573,6 +612,7 @@ mod tests {
             &config,
             None,
             Some("simulated final failure"),
+            &[],
         )
         .await
         .unwrap();
@@ -970,6 +1010,7 @@ mod tests {
             &config,
             None,
             Some("boom"),
+            &[],
         )
         .await
         .unwrap();
@@ -986,6 +1027,7 @@ mod tests {
             &config,
             Some(Duration::from_mins(2)),
             Some("rate limited"),
+            &[],
         )
         .await
         .unwrap();
@@ -1001,5 +1043,124 @@ mod tests {
             assert!(state.error.is_none(), "row {id}: error cleared");
             assert!(!state.rerun_requested, "row {id}: flag consumed");
         }
+    }
+
+    async fn stored_failures(pool: &PgPool, id: Uuid) -> serde_json::Value {
+        sqlx::query_scalar!(
+            "SELECT enrichment_failures AS \"enrichment_failures!\" FROM manifestations WHERE id = $1",
+            id,
+        )
+        .fetch_one(pool)
+        .await
+        .unwrap()
+    }
+
+    fn source_failure(source: &str, class: FailureClass) -> orchestrator::SourceFailure {
+        orchestrator::SourceFailure {
+            source_id: source.into(),
+            error: "raw provider detail".into(),
+            retry_after: None,
+            terminal: false,
+            class,
+        }
+    }
+
+    fn run_outcome(
+        id: Uuid,
+        source_failures: Vec<orchestrator::SourceFailure>,
+    ) -> anyhow::Result<RunOutcome> {
+        Ok(RunOutcome {
+            manifestation_id: id,
+            applied: 0,
+            staged: 0,
+            skipped_locked: 0,
+            source_failures,
+            duplicate_suspected: false,
+        })
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn finish_persists_one_class_per_failing_source_in_key_order(pool: PgPool) {
+        let pool = ingestion_pool_for(&pool).await;
+        let (config, _files) = test_config_with_max_attempts(5);
+        let (_work_id, id, _) =
+            insert_queue_fixture(&pool, EnrichmentStatus::InProgress, 1, Some(10)).await;
+
+        let failures = vec![
+            source_failure("openlibrary", FailureClass::RateLimited),
+            source_failure("hardcover", FailureClass::Timeout),
+            source_failure("hardcover", FailureClass::NotFound),
+        ];
+        finish(&pool, &config, id, 1, run_outcome(id, failures))
+            .await
+            .unwrap();
+
+        let state = queue_row_state(&pool, id).await;
+        assert_eq!(state.status, EnrichmentStatus::Failed);
+        assert_eq!(state.error.as_deref(), Some("transient source failures"));
+        assert_eq!(
+            stored_failures(&pool, id).await,
+            serde_json::json!([
+                {"source": "hardcover", "class": "not_found"},
+                {"source": "openlibrary", "class": "rate_limited"},
+            ])
+        );
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn finish_records_a_run_error_as_an_internal_class_without_its_text(pool: PgPool) {
+        let pool = ingestion_pool_for(&pool).await;
+        let (config, _files) = test_config_with_max_attempts(5);
+        let (_work_id, id, _) =
+            insert_queue_fixture(&pool, EnrichmentStatus::InProgress, 1, Some(10)).await;
+
+        let error = Err(anyhow::anyhow!("sqlx: password authentication failed"));
+        finish(&pool, &config, id, 1, error).await.unwrap();
+
+        let stored = stored_failures(&pool, id).await;
+        assert_eq!(
+            stored,
+            serde_json::json!([{"source": null, "class": "internal"}])
+        );
+        assert!(!stored.to_string().contains("password"));
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn an_exhausted_row_keeps_its_failure_classes(pool: PgPool) {
+        let pool = ingestion_pool_for(&pool).await;
+        let (config, _files) = test_config_with_max_attempts(2);
+        let (_work_id, id, _) =
+            insert_queue_fixture(&pool, EnrichmentStatus::InProgress, 2, Some(10)).await;
+
+        let failures = vec![source_failure("googlebooks", FailureClass::Unreachable)];
+        finish(&pool, &config, id, 2, run_outcome(id, failures))
+            .await
+            .unwrap();
+
+        assert_eq!(
+            queue_row_state(&pool, id).await.status,
+            EnrichmentStatus::Skipped
+        );
+        assert_eq!(
+            stored_failures(&pool, id).await,
+            serde_json::json!([{"source": "googlebooks", "class": "unreachable"}])
+        );
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn a_requested_rerun_discards_the_failure_classes(pool: PgPool) {
+        let pool = ingestion_pool_for(&pool).await;
+        let (config, _files) = test_config_with_max_attempts(3);
+        let (_work_id, id, _) =
+            insert_queue_fixture(&pool, EnrichmentStatus::InProgress, 1, Some(10)).await;
+        set_rerun_requested(&pool, id).await;
+
+        let failures = vec![source_failure("openlibrary", FailureClass::Timeout)];
+        finish(&pool, &config, id, 1, run_outcome(id, failures))
+            .await
+            .unwrap();
+
+        assert_eq!(stored_failures(&pool, id).await, serde_json::json!([]));
+        assert!(queue_row_state(&pool, id).await.error.is_none());
     }
 }
