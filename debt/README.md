@@ -117,6 +117,8 @@ by definition active debt, the roadmap reads the directory as-is: no status filt
 
 <!-- listed most-stale first; new entries go to the top -->
 
+- [CodeQL Rust extraction ignores the declared Rust version](2026-10-09-codeql-rust-ignore-rust-version.md): lifts when
+  extraction builds build scripts and procedural macros without the extra argument, `rust-version` unchanged.
 - [CV11 reports ordinary functions as casts](2026-09-30-cv11-non-cast-functions.md): lifts when a corrected `sqruff`
   release passes SQL lint and schema checks with the ten line annotations removed.
 - [SQL lint exclusions preserve the initial schema rollup](2026-09-17-sqruff-schema-rollup-exclusions.md): lifts when
