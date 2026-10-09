@@ -220,7 +220,7 @@ jobs:
       - name: Perform CodeQL Analysis
         uses: github/codeql-action/analyze@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2 # v4.38.2
         env:
-          RUST_LOG: single_arch_extractor=info,codeql_extractor=info,codeql_rust=info,ra_ap_load_cargo=debug
+          RUST_LOG: single_arch_extractor=info,codeql_extractor=info,codeql_rust=info,ra_ap_load_cargo=debug,ra_ap_project_model=debug
         with:
           category: /language:rust
 
@@ -261,20 +261,65 @@ jobs:
             expanded = count(Item i | firstParty(i) and i.hasAttributeMacroExpansion())
           select category, name, total, expanded order by category, total desc
           QL
-          cat > "${pack}/reverie-diag/unexpanded.ql" <<'QL'
+          cat > "${pack}/reverie-diag/content.ql" <<'QL'
           import rust
+
+          predicate firstParty(AstNode n) {
+            n.getLocation().getFile().getRelativePath().matches("backend/src/%")
+          }
+
+          predicate sqlxQuery(MacroCall mc) {
+            firstParty(mc) and mc.getPath().toString().matches("%expand_query")
+          }
+
+          int nodesIn(AstNode root) { result = count(AstNode n | n.getParentNode+() = root) }
+
+          from string metric, int value
+          where
+            metric = "a. sqlx expand_query calls" and value = count(MacroCall mc | sqlxQuery(mc))
+            or
+            metric = "b. sqlx expand_query calls expanding to more than 5 AST nodes" and
+            value = count(MacroCall mc | sqlxQuery(mc) and nodesIn(mc.getMacroCallExpansion()) > 5)
+            or
+            metric = "c. AST nodes inside sqlx expand_query expansions" and
+            value = sum(MacroCall mc | sqlxQuery(mc) | nodesIn(mc.getMacroCallExpansion()))
+            or
+            metric = "d. derive expansions" and
+            value = count(TypeItem t, int i | firstParty(t) and exists(t.getDeriveMacroExpansion(i)))
+            or
+            metric = "e. derive expansions containing items" and
+            value =
+              count(TypeItem t, int i |
+                firstParty(t) and t.getDeriveMacroExpansion(i).getNumberOfItems() > 0
+              )
+            or
+            metric = "f. items with an attribute macro expansion" and
+            value = count(Item it | firstParty(it) and it.hasAttributeMacroExpansion())
+            or
+            metric = "g. attribute macro expansions containing items" and
+            value =
+              count(Item it | firstParty(it) and it.getAttributeMacroExpansion().getNumberOfItems() > 0)
+          select metric, value order by metric
+          QL
+          cat > "${pack}/reverie-diag/sites.ql" <<'QL'
+          import rust
+
+          int nodesIn(AstNode root) { result = count(AstNode n | n.getParentNode+() = root) }
 
           from MacroCall mc, Location loc
           where
             loc = mc.getLocation() and
-            loc.getFile().getRelativePath().matches("backend/src/%") and
-            not mc.hasMacroCallExpansion()
-          select mc.getPath().toString(), loc.getFile().getRelativePath(), loc.getStartLine()
+            loc.getFile().getRelativePath() = "backend/src/services/writeback/queue.rs" and
+            mc.getPath().toString().matches("%expand_query")
+          select loc.getStartLine() as line, nodesIn(mc.getMacroCallExpansion()) as nodes order by line
           QL
-          for q in coverage unexpanded; do
+          for q in content sites coverage; do
             echo "::group::${q}"
-            "${CODEQL}" query run --database "${db}" --output "${RUNNER_TEMP}/${q}.bqrs" "${pack}/reverie-diag/${q}.ql"
-            "${CODEQL}" bqrs decode --format text "${RUNNER_TEMP}/${q}.bqrs" | sed -n "1,80p"
+            if "${CODEQL}" query run --database "${db}" --output "${RUNNER_TEMP}/${q}.bqrs" "${pack}/reverie-diag/${q}.ql"; then
+              "${CODEQL}" bqrs decode --format text "${RUNNER_TEMP}/${q}.bqrs" | sed -n "1,80p"
+            else
+              echo "::warning::diagnostic query ${q} failed"
+            fi
             echo "::endgroup::"
           done
 
