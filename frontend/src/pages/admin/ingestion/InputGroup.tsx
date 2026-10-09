@@ -52,7 +52,7 @@ function InputGroupBody({
       listInputs(cursor === undefined ? { reason } : { reason, cursor }, signal),
     getId: (item) => item.id,
     refetchInterval: pollInterval,
-    refetchOnWindowFocus: false,
+    refetchOnWindowFocus: true,
   });
 
   if (group.isPending) return <GroupLoading label="Loading files" />;
