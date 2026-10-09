@@ -737,6 +737,40 @@ describe("polling", () => {
     expect(screen.queryByText(/Updating every few seconds/)).not.toBeInTheDocument();
   });
 
+  test("a 403 during a running batch outlives the batch and keeps the scan disabled", async () => {
+    vi.mocked(getDashboardActivity).mockResolvedValueOnce(
+      batch({ ended_at: null, in_progress: 4, completed: 7 }),
+    );
+    vi.mocked(scanIngestion).mockRejectedValue(new ApiError(403, null, "Forbidden", ""));
+    renderPage();
+    await flush();
+    fireEvent.click(screen.getByRole("button", { name: "Scan ingestion folder" }));
+    await flush();
+    expect(screen.getByText("This account cannot start a scan")).toBeInTheDocument();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(POLL_INTERVAL_MS + 20);
+    });
+    expect(screen.getByText("Latest activity has finished")).toBeInTheDocument();
+    expect(screen.getByText("This account cannot start a scan")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Scan ingestion folder" })).toBeDisabled();
+  });
+
+  test("a failed scan alert outlives a batch that finishes", async () => {
+    vi.mocked(getDashboardActivity).mockResolvedValueOnce(
+      batch({ ended_at: null, in_progress: 4, completed: 7 }),
+    );
+    vi.mocked(scanIngestion).mockRejectedValue(new ApiError(500, null, "Internal", ""));
+    renderPage();
+    await flush();
+    fireEvent.click(screen.getByRole("button", { name: "Scan ingestion folder" }));
+    await flush();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(POLL_INTERVAL_MS + 20);
+    });
+    expect(screen.getByText("Latest activity has finished")).toBeInTheDocument();
+    expect(screen.getByText("The scan did not start")).toBeInTheDocument();
+  });
+
   test("polls for the two-minute window after a scan that queued files, then stops", async () => {
     vi.mocked(scanIngestion).mockResolvedValue({
       queued: 2,

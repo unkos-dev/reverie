@@ -123,6 +123,7 @@ const FAILURE_COPY: Record<ScanFailure, { icon: LucideIcon; title: string; detai
 
 type ScanNoticeProps = {
   notice: IngestionNotice | null;
+  failure: ScanFailure | null;
   scanPending: boolean;
   running: boolean;
   latestBatch: BatchRow | undefined;
@@ -135,12 +136,13 @@ type ScanNoticeProps = {
  */
 function ScanNotice({
   notice,
+  failure: scanFailure,
   scanPending,
   running,
   latestBatch,
   onRetry,
 }: ScanNoticeProps): ReactElement {
-  const failure = !scanPending && notice?.kind === "failure" ? FAILURE_COPY[notice.cause] : null;
+  const failure = !scanPending && scanFailure !== null ? FAILURE_COPY[scanFailure] : null;
   const showActivity = running && latestBatch !== undefined && !scanPending;
   let body: ReactNode = null;
   if (scanPending) {
@@ -185,7 +187,7 @@ function ScanNotice({
             title={failure.title}
             detail={failure.detail}
             extra={
-              notice?.kind === "failure" && notice.cause === "failed" ? (
+              scanFailure === "failed" ? (
                 <span className="mt-2">
                   <Button type="button" variant="outline" size="sm" onClick={onRetry}>
                     Try again
