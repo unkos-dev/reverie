@@ -239,12 +239,14 @@ so a fresh page load starts with an empty cache; the next `GET` of either resour
   practice — an ETag-priming fetch losing a race against a very fast concurrent commit that already advanced the
   resource past the tag the priming fetch was about to return.
 - **Stale `If-Match`.** `AppError::IfMatchMismatch` (`412`) from `update_book_metadata`, `patch_reading` or
-  `put_settings` carries the resource's current `ETag` on the response, via `if_match_mismatch`, so `captureEtag`
-  refreshes the client cache from the failure response itself and a retry needs no extra round trip.
-  `reorder_shelf_items` returns the same `AppError::IfMatchMismatch` variant directly on a mismatch, without attaching
-  an `ETag` header to that response; its own `#[utoipa::path]` `412` entry documents no response header, unlike the
-  metadata and reading entries, and the frontend module doc for shelves states the caller should refetch the shelf
-  detail to recover rather than expecting the error response to carry it.
+  `put_settings` carries the resource's current `ETag` on the response, via `if_match_mismatch`. For metadata and
+  reading, `captureEtag` refreshes the client cache from the failure response itself, so a retry needs no extra round
+  trip. `etagKeyForPath` has no key for the settings path, and only `PATCH` requests attach `If-Match` automatically, so
+  the settings tag is managed by the caller: the client reads it from the `GET`, `PUT` or `412` response and sends it
+  explicitly on the next `PUT`. `reorder_shelf_items` returns the same `AppError::IfMatchMismatch` variant directly on a
+  mismatch, without attaching an `ETag` header to that response; its own `#[utoipa::path]` `412` entry documents no
+  response header, unlike the metadata and reading entries, and the frontend module doc for shelves states the caller
+  should refetch the shelf detail to recover rather than expecting the error response to carry it.
 - **Malformed, weak, wildcard, or list-form `If-Match`.** Rejected as satisfying nothing, on all four endpoints, so a
   caller can never use one of these forms to bypass the freshness check. The status code and problem type differ by
   which parser runs: `400`/`.../malformed-header` from the shared module (`update_book_metadata`, `patch_reading`);
