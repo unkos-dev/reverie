@@ -1,0 +1,116 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT m.id AS \"id!\", m.work_id AS \"work_id!\", w.title AS \"title!\",\n                  m.enrichment_status AS \"status!: EnrichmentStatus\",\n                  m.enrichment_attempt_count AS \"attempt_count!\",\n                  m.enrichment_attempted_at AS attempted_at,\n                  m.enrichment_failures AS \"failures!\"\n           FROM manifestations m\n           JOIN works w ON w.id = m.work_id\n           WHERE m.enrichment_status IN ('failed', 'skipped')\n             AND m.enrichment_error IS NOT NULL\n             AND ($1::uuid IS NULL OR m.id > $1)\n             AND ($2::text IS NULL OR m.enrichment_failures -> 0 ->> 'source' = $2)\n             AND ($3::text IS NULL\n                  OR COALESCE(m.enrichment_failures -> 0 ->> 'class', 'unspecified') = $3)\n           ORDER BY m.id\n           LIMIT $4",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id!",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "manifestations",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "work_id!",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "manifestations",
+            "name": "work_id"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "title!",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "works",
+            "name": "title"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "status!: EnrichmentStatus",
+        "type_info": {
+          "Custom": {
+            "name": "enrichment_status",
+            "kind": {
+              "Enum": [
+                "pending",
+                "in_progress",
+                "complete",
+                "failed",
+                "skipped"
+              ]
+            }
+          }
+        },
+        "origin": {
+          "Table": {
+            "table": "manifestations",
+            "name": "enrichment_status"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "attempt_count!",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "manifestations",
+            "name": "enrichment_attempt_count"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "attempted_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "manifestations",
+            "name": "enrichment_attempted_at"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "failures!",
+        "type_info": "Jsonb",
+        "origin": {
+          "Table": {
+            "table": "manifestations",
+            "name": "enrichment_failures"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Text",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      false
+    ]
+  },
+  "hash": "0d6bf4eeade1ff8b0a199ea496a58a4ba63a6c139ae21f57cb32339e05a40447"
+}
