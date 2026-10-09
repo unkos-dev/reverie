@@ -14,7 +14,7 @@
  * Importing `react-router` here would create a cycle: `main.tsx` must
  * mount the `QueryClientProvider` before the router can render, but
  * the router needs the navigate function inside the handler. The
- * `<App/>` route component calls `setUnauthenticatedHandler(navigate)`
+ * `<AuthenticatedBoundary/>` layout route calls `setUnauthenticatedHandler`
  * once on mount, after both providers are alive.
  *
  * Retry policy: the default of `failureCount < 2` keeps transient
@@ -49,7 +49,7 @@ let redirecting = false;
 /**
  * Replace the 401 handler installed on {@link queryClient}'s cache.
  *
- * Called once from the `<App/>` mount effect with a provider-aware redirect
+ * Called once from the `<AuthenticatedBoundary/>` mount effect with a provider-aware redirect
  * (the OIDC initiator when OIDC is enabled, else the local form `/login`).
  * Subsequent calls (e.g. on route remount during hot reload) replace the
  * previous handler and reset the once-guard so a re-wired tree can navigate
