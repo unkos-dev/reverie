@@ -22,14 +22,9 @@ security applies elsewhere.
 
 ## Acceptance criteria
 
-- Against a migrated database, `SELECT has_table_privilege('reverie_readonly', 'public.device_tokens', 'SELECT')`
-  returns `false`.
-- Against a migrated database, `SELECT has_table_privilege('reverie_readonly', 'public.local_credentials', 'SELECT')`
-  returns `false`.
-- A `SELECT` against either table over a connection authenticated as `reverie_readonly` fails with a permission-denied
-  error rather than returning an empty or filtered result.
-
-## More information
-
-- Nothing automated checks these criteria. They are inspections run by hand against a migrated database, so a migration
-  that widened the role's grants would pass every gate in the repository.
+- A `SELECT` against `device_tokens` over a connection authenticated as `reverie_readonly` fails with SQLSTATE `42501`
+  (`insufficient_privilege`) rather than returning an empty or filtered result.
+- A `SELECT` against `local_credentials` over a connection authenticated as `reverie_readonly` fails with SQLSTATE
+  `42501` (`insufficient_privilege`) rather than returning an empty or filtered result.
+- The backend test `db::tests::readonly_role_is_refused_credential_tables` asserts both refusals against a migrated
+  database, and a migration that grants the role `SELECT` on either table fails it.
