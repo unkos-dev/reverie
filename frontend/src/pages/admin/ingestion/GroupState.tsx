@@ -9,8 +9,8 @@ function GroupLoading({ label }: { label: string }): ReactElement {
       <span role="status" className="sr-only">
         {label}
       </span>
-      <Skeleton className="h-3 w-1/2" />
-      <Skeleton className="h-3 w-2/3" />
+      <Skeleton className="bg-surface-3 h-3 w-1/2" />
+      <Skeleton className="bg-surface-3 h-3 w-2/3" />
     </div>
   );
 }

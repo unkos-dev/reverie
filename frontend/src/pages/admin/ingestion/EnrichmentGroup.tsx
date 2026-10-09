@@ -66,10 +66,13 @@ function RetryControl({ item }: { item: FailureItem }): ReactElement {
         aria-disabled={mutation.isPending}
         className={mutation.isPending ? "pointer-events-none opacity-50" : undefined}
         onClick={() => {
+          if (mutation.isPending) return;
           mutation.mutate();
         }}
       >
-        {mutation.isPending ? <Loader2 aria-hidden="true" className="animate-spin" /> : null}
+        {mutation.isPending ? (
+          <Loader2 aria-hidden="true" className="motion-safe:animate-spin" />
+        ) : null}
         {mutation.isPending ? "Queuing" : "Try again"}
       </Button>
     </span>

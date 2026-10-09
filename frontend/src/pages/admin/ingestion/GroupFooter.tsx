@@ -4,6 +4,7 @@ import { Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
+import { formatCount } from "./format";
 import type { PagedGroup } from "./use-paged-group";
 
 type GroupFooterProps = {
@@ -42,14 +43,18 @@ function GroupFooter({ group, total, noun }: GroupFooterProps): ReactElement {
               className={cn(isLoadingMore && "pointer-events-none opacity-50")}
               onClick={showMore}
             >
-              {isLoadingMore ? <Loader2 aria-hidden="true" className="animate-spin" /> : null}
+              {isLoadingMore ? (
+                <Loader2 aria-hidden="true" className="motion-safe:animate-spin" />
+              ) : null}
               {isLoadingMore ? "Loading more" : "Show more"}
             </Button>
           ) : null}
         </>
       )}
       <span className="sr-only" role="status">
-        {loadedMore > 0 && !isLoadingMore ? `Loaded ${String(loadedMore)} more ${noun}` : ""}
+        {loadedMore > 0 && !isLoadingMore
+          ? `Loaded ${formatCount(loadedMore)} more ${loadedMore === 1 ? noun.slice(0, -1) : noun}`
+          : ""}
       </span>
     </div>
   );

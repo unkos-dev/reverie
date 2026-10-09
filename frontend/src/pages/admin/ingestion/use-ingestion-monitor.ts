@@ -154,6 +154,7 @@ function useIngestionMonitor(options: {
     scanPending: mutation.isPending,
     scanForbidden: notice?.kind === "failure" && notice.cause === "forbidden",
     scan: () => {
+      if (mutation.isPending) return;
       mutation.mutate();
     },
   };

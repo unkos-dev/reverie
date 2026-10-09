@@ -165,8 +165,8 @@ function ScanNotice({
   }
 
   return (
-    <>
-      <div role="status" aria-live="polite" className="flex flex-col gap-2 empty:hidden">
+    <div className="flex flex-col gap-2">
+      <div role="status" aria-live="polite" className="flex flex-col gap-2">
         {body}
         {showActivity ? <ActivityLine batch={latestBatch} /> : null}
         {!scanPending && notice?.kind === "accepted" && notice.afterScan ? (
@@ -196,7 +196,7 @@ function ScanNotice({
           />
         </div>
       ) : null}
-    </>
+    </div>
   );
 }
 

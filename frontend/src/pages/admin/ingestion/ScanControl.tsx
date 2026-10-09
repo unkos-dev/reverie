@@ -22,7 +22,7 @@ function ScanControl({ pending, forbidden, onScan }: ScanControlProps): ReactEle
         onClick={onScan}
       >
         {pending ? (
-          <Loader2 aria-hidden="true" className="animate-spin" />
+          <Loader2 aria-hidden="true" className="motion-safe:animate-spin" />
         ) : (
           <RefreshCw aria-hidden="true" />
         )}

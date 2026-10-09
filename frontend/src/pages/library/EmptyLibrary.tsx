@@ -74,9 +74,9 @@ function CheckingGuidance(): ReactElement {
       <span role="status" className="sr-only">
         Checking the ingestion folder
       </span>
-      <Skeleton className="h-5 w-52" />
-      <Skeleton className="mt-3.5 h-3 w-[26rem] max-w-full" />
-      <Skeleton className="mt-2.5 h-3 w-80 max-w-full" />
+      <Skeleton className="bg-surface-3 h-5 w-52" />
+      <Skeleton className="bg-surface-3 mt-3.5 h-3 w-[26rem] max-w-full" />
+      <Skeleton className="bg-surface-3 mt-2.5 h-3 w-80 max-w-full" />
     </div>
   );
 }
