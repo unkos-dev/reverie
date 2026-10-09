@@ -96,9 +96,10 @@ without a transport also fails startup, as described by the application runtime 
 Redirect responses are returned to the calling library without following their destination. Timeouts terminate stalled
 requests. Callback exchange failures become `AppError::Internal`; direct JWKS request, status and JSON failures become
 provider errors consumed by the validator. This transport supplies no application retry loop; recovery and cached-key
-fallback belong to its consumers. A failed fetch starts the 30-second window like a successful one, so an unreachable
-provider is retried at most once per window while `JwksClient` keeps serving the keys it already holds. The error
-returned inside the window leaves those cached keys and their expiry untouched.
+fallback belong to its consumers. A failed fetch, or one abandoned because its caller was dropped, starts the 30-second
+window like a successful one, so an unreachable provider is retried at most once per window while `JwksClient` keeps
+serving the keys it already holds. The error returned inside the window leaves those cached keys and their expiry
+untouched.
 
 ## Security and operations
 

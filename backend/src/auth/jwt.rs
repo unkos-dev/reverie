@@ -180,6 +180,12 @@ impl JwksSource for ReverieJwksSource {
                 .clone()
                 .ok_or_else(|| provider_error("JWKS refetch", &"suppressed after a failed fetch"));
         }
+        // Recorded before the await so a caller dropped mid-request still
+        // leaves the window running, as a failed attempt.
+        *last = Some(FetchAttempt {
+            at: (self.clock)(),
+            keys: None,
+        });
         let result = self.fetch_now().await;
         *last = Some(FetchAttempt {
             at: (self.clock)(),
@@ -1062,5 +1068,35 @@ mod tests {
         assert!(jwks.accepts("test-kid").await);
 
         assert_eq!(jwks.fetches().await, 1);
+    }
+
+    #[tokio::test]
+    async fn cancelled_fetch_still_starts_the_cooldown() {
+        use wiremock::matchers::{method, path};
+        use wiremock::{Mock, ResponseTemplate};
+
+        let jwks = ScriptedJwks::start(&[(200, &["test-kid"])]).await;
+        Mock::given(method("GET"))
+            .and(path("/jwks"))
+            .respond_with(ResponseTemplate::new(200).set_delay(Duration::from_secs(5)))
+            .with_priority(1)
+            .up_to_n_times(1)
+            .mount(&jwks.server)
+            .await;
+
+        let cancelled =
+            tokio::time::timeout(Duration::from_millis(300), jwks.accepts("test-kid")).await;
+        assert!(
+            cancelled.is_err(),
+            "the delayed fetch is dropped mid-request"
+        );
+        assert_eq!(jwks.fetches().await, 1);
+
+        assert!(!jwks.accepts("test-kid").await);
+        assert_eq!(jwks.fetches().await, 1, "the dropped fetch still counts");
+
+        jwks.clock.advance(WINDOW + Duration::from_secs(1));
+        assert!(jwks.accepts("test-kid").await);
+        assert_eq!(jwks.fetches().await, 2);
     }
 }
