@@ -19,6 +19,7 @@ export const routes: RouteObject[] = [
   // recovery live here, so a route outside this layout never redirects.
   {
     element: <AuthenticatedBoundary />,
+    errorElement: <RootErrorBoundary />,
     children: [
       {
         path: "/",

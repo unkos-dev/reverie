@@ -76,7 +76,7 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-describe("route table: unauthenticated redirect coverage", () => {
+describe("route table", () => {
   test("a 401 from the password-change mutation redirects to /login", async () => {
     stubApi("/api/v1/account/password");
     const loc = mockLocation();
@@ -108,5 +108,16 @@ describe("route table: unauthenticated redirect coverage", () => {
 
     expect(await screen.findByText("Incorrect email or password.")).toBeInTheDocument();
     expect(loc.assign).not.toHaveBeenCalled();
+  });
+
+  test("an unmatched URL renders the branded not-found page", async () => {
+    stubApi("/unused");
+    renderAt("/definitely-not-a-route");
+
+    expect(await screen.findByRole("heading", { name: "Not found" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Back to library" })).toHaveAttribute(
+      "href",
+      "/library",
+    );
   });
 });
