@@ -4,7 +4,7 @@ surfaces: [ci, security]
 adopted: 2026-10-09
 adopted-because: the CodeQL Rust extractor builds build scripts and procedural macros with its own fixed toolchain, which is older than the declared `rust-version`, so Cargo refuses the build and the scan continues without macro expansion
 lift-when-class: dep-unblocks
-lift-when: CodeQL Rust extraction builds the backend's build scripts and procedural macros without the extra argument, with `rust-version` in backend/Cargo.toml unchanged and first-party macro expansion restored
+lift-when: a supported upstream mechanism handles projects whose declared minimum exceeds the extractor's preferred toolchain, and extraction without this workaround demonstrably preserves the required macro coverage
 ---
 
 # CodeQL Rust extraction ignores the declared Rust version
@@ -35,8 +35,9 @@ that genuinely needs a newer compiler still fails, again without failing the sca
 
 ## Lift conditions
 
-CodeQL extraction builds the backend's build scripts and procedural macros without the extra argument, with
-`rust-version` unchanged and first-party macro expansion restored. The environment variable is then deleted.
+Remove when a supported upstream mechanism handles projects whose declared minimum exceeds the extractor's preferred
+toolchain, and extraction without this workaround demonstrably preserves the required macro coverage. The environment
+variable is then deleted.
 
 ## Related
 
