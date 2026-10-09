@@ -133,7 +133,7 @@ struct ListParams {
     /// names (`title`, `author`, `created_at`, `pages`); a leading `-`
     /// reverses that level to descending; order of appearance sets
     /// priority (the first field is the primary key). An unwhitelisted
-    /// field, a repeated column, or more than three levels is a 400.
+    /// field, a repeated column, or more than three levels is a 422.
     /// Omitted, this is `-created_at` (today's "recent" order).
     #[serde(default)]
     #[param(example = "-created_at,title")]
@@ -266,12 +266,12 @@ struct BookListResponse {
 /// # Errors
 /// - [`AppError::MalformedQuery`] when a filter param fails to
 ///   deserialize (a malformed UUID in `?author=`/`?series=`/`?shelf=`,
-///   via the `From<QueryRejection>` impl), or when `?sort=` names an
-///   unwhitelisted field, repeats a column, or exceeds
-///   [`crate::routes::sort_spec::MAX_SORT_LEVELS`] levels.
+///   via the `From<QueryRejection>` impl).
 /// - [`AppError::Validation`] when the cursor is malformed, its
 ///   embedded sort spec mismatches the requested stack, a filter exceeds
-///   its semantic limits, or a range's lower bound exceeds its upper bound.
+///   its semantic limits, a range's lower bound exceeds its upper bound,
+///   or `?sort=` names an unwhitelisted field, repeats a column, or
+///   exceeds [`crate::routes::sort_spec::MAX_SORT_LEVELS`] levels.
 /// - [`AppError::Internal`] on database errors.
 #[expect(
     clippy::too_many_lines,
@@ -290,7 +290,7 @@ struct BookListResponse {
             headers(("Link" = String, description = "RFC 8288 next-page link; emitted with rel=\"next\" when more rows remain"))),
         (status = 400, description = "Malformed query parameter", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
-        (status = 422, description = "Invalid cursor or filter value, including inverted range bounds", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
+        (status = 422, description = "Invalid cursor, filter value or sort stack, including inverted range bounds", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
     )
 )]
 async fn list(
@@ -309,7 +309,7 @@ async fn list(
         .as_deref()
         .map(SortSpec::parse)
         .transpose()
-        .map_err(|e| AppError::MalformedQuery(format!("invalid sort: {e}")))?
+        .map_err(|e| AppError::Validation(format!("invalid sort: {e}")))?
         .unwrap_or_default();
 
     // One fingerprint of the active filter set, computed once and used for

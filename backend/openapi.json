@@ -281,7 +281,7 @@
           {
             "name": "sort",
             "in": "query",
-            "description": "Sort stack, JSON:API grammar: comma-separated whitelisted field\nnames (`title`, `author`, `created_at`, `pages`); a leading `-`\nreverses that level to descending; order of appearance sets\npriority (the first field is the primary key). An unwhitelisted\nfield, a repeated column, or more than three levels is a 400.\nOmitted, this is `-created_at` (today's \"recent\" order).",
+            "description": "Sort stack, JSON:API grammar: comma-separated whitelisted field\nnames (`title`, `author`, `created_at`, `pages`); a leading `-`\nreverses that level to descending; order of appearance sets\npriority (the first field is the primary key). An unwhitelisted\nfield, a repeated column, or more than three levels is a 422.\nOmitted, this is `-created_at` (today's \"recent\" order).",
             "required": false,
             "schema": {
               "type": "string"
@@ -676,7 +676,7 @@
             }
           },
           "422": {
-            "description": "Invalid cursor or filter value, including inverted range bounds",
+            "description": "Invalid cursor, filter value or sort stack, including inverted range bounds",
             "content": {
               "application/problem+json": {
                 "schema": {
