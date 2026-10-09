@@ -99,9 +99,11 @@ command as the fallback when the UI cannot serve.
 Administrators create accounts. Self-registration is optional and off by default. Child accounts are
 administrator-created only: neither self-registration nor an OIDC login produces one.
 
-Account linking relies on email uniqueness per instance: an OIDC login auto-links to an existing local account only when
-the asserted email is verified; otherwise an administrator links the account manually. For configuration, OIDC becomes
-optional, and secrets accept a file-based variant in addition to environment variables.
+Accounts are matched on issuer and subject only, never on email (OpenID Connect Core 5.7). An OIDC sign-in whose email
+collides with a different existing account writes and links nothing, and ends in the same generic outcome as a disabled
+or inactive account. A returning identity keeps its stored email, with no email refresh, and still signs in.
+Auto-linking by email is rejected for v0.1, and linking after re-authentication is a deferred path. For configuration,
+OIDC becomes optional, and secrets accept a file-based variant in addition to environment variables.
 
 ### Consequences
 
