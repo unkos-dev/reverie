@@ -121,6 +121,10 @@ async fn list(env: &Env, query: &str) -> Value {
     response.json()
 }
 
+fn item_count(body: &Value) -> usize {
+    body["items"].as_array().unwrap().len()
+}
+
 fn paths(body: &Value) -> Vec<String> {
     body["items"]
         .as_array()
@@ -135,10 +139,10 @@ async fn walk(env: &Env, query: &str, limit: usize) -> Vec<Value> {
     let mut cursor: Option<String> = None;
     loop {
         let separator = if query.is_empty() { "?" } else { "&" };
-        let mut url = format!("{query}{separator}limit={limit}");
-        if let Some(cursor) = &cursor {
-            url.push_str(&format!("&cursor={cursor}"));
-        }
+        let after = cursor
+            .as_deref()
+            .map_or_else(String::new, |cursor| format!("&cursor={cursor}"));
+        let url = format!("{query}{separator}limit={limit}{after}");
         let body = list(env, &url).await;
         items.extend(body["items"].as_array().unwrap().iter().cloned());
         match body["next_cursor"].as_str() {
@@ -181,7 +185,7 @@ async fn empty_table_returns_empty_list_and_zero_counts(pool: PgPool) {
     let env = env(&pool).await;
 
     let body = list(&env, "").await;
-    assert!(body["items"].as_array().unwrap().is_empty());
+    assert_eq!(item_count(&body), 0);
     assert!(body["next_cursor"].is_null());
 
     let counts: Value = get(&env, "/api/v1/ingestion/inputs/counts").await.json();
@@ -291,7 +295,7 @@ async fn five_transient_failures_are_still_waiting_and_the_sixth_exhausts(pool: 
     for _ in 0..5 {
         transient(&env, &input).await;
     }
-    assert!(list(&env, "").await["items"].as_array().unwrap().is_empty());
+    assert_eq!(item_count(&list(&env, "").await), 0);
 
     transient(&env, &input).await;
     let body = list(&env, "").await;
@@ -342,10 +346,10 @@ async fn an_older_generations_attempts_do_not_describe_the_current_one(pool: PgP
 
     let second = observe(&env, b"edited.epub", 2).await;
     assert_eq!(second.generation, 2);
-    assert!(list(&env, "").await["items"].as_array().unwrap().is_empty());
+    assert_eq!(item_count(&list(&env, "").await), 0);
 
     transient(&env, &second).await;
-    assert!(list(&env, "").await["items"].as_array().unwrap().is_empty());
+    assert_eq!(item_count(&list(&env, "").await), 0);
 }
 
 #[sqlx::test(migrations = "./migrations")]
@@ -451,12 +455,7 @@ async fn a_two_reason_file_is_listed_and_counted_under_its_primary_only(pool: Pg
         paths(&list(&env, "?reason=damaged").await),
         vec!["both.epub"]
     );
-    assert!(
-        list(&env, "?reason=over_limits").await["items"]
-            .as_array()
-            .unwrap()
-            .is_empty()
-    );
+    assert_eq!(item_count(&list(&env, "?reason=over_limits").await), 0);
     let item = &list(&env, "?reason=damaged").await["items"][0];
     assert_eq!(
         item["reasons"],
@@ -506,7 +505,7 @@ async fn counts_equal_the_rows_listed_per_class_across_pages(pool: PgPool) {
         let reason = entry["reason"].as_str().unwrap();
         let count = entry["count"].as_i64().unwrap();
         let listed = walk(&env, &format!("?reason={reason}"), 2).await;
-        assert_eq!(listed.len() as i64, count, "{reason}");
+        assert_eq!(i64::try_from(listed.len()).unwrap(), count, "{reason}");
         assert!(listed.iter().all(|item| item["primary_reason"] == reason));
         if reason != "format_not_accepted" {
             attention += count;
@@ -527,7 +526,10 @@ async fn counts_equal_the_rows_listed_per_class_across_pages(pool: PgPool) {
             "format_not_accepted"
         ]
     );
-    assert_eq!(walk(&env, "", 4).await.len() as i64, attention);
+    assert_eq!(
+        i64::try_from(walk(&env, "", 4).await.len()).unwrap(),
+        attention
+    );
 }
 
 #[sqlx::test(migrations = "./migrations")]

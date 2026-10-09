@@ -447,6 +447,10 @@ pub async fn begin_attempt(pool: &PgPool, input: &Input, batch: Uuid) -> sqlx::R
     Ok(id)
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "one terminal write threads the attempt, outcome, status, reason and classes"
+)]
 pub async fn finish(
     tx: &mut Transaction<'_, Postgres>,
     input: &Input,

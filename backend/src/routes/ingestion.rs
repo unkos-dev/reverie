@@ -1,6 +1,4 @@
-//! Ingestion control and visibility: the library-scan trigger
-//! (`POST /api/v1/ingestion/scan`) and the admin lists of inputs needing
-//! attention (`GET /api/v1/ingestion/inputs`, `.../inputs/counts`).
+//! Admin ingestion routes: the scan trigger and the inputs-needing-attention reads.
 //!
 //! THREAT: Information disclosure / privilege escalation: every handler
 //! enforces the admin scope and role before any database access, so a
@@ -325,9 +323,16 @@ async fn list_inputs(
         _ => None,
     };
 
+    Ok((
+        next_link_headers(&uri, next_cursor.as_deref()),
+        Json(InputsResponse { items, next_cursor }),
+    ))
+}
+
+fn next_link_headers(uri: &axum::http::Uri, next_cursor: Option<&str>) -> HeaderMap {
     let mut headers = HeaderMap::new();
-    if let Some(cursor) = &next_cursor {
-        let next_url = build_next_url(&uri, cursor);
+    if let Some(cursor) = next_cursor {
+        let next_url = build_next_url(uri, cursor);
         match HeaderValue::from_str(&format!("<{next_url}>; rel=\"next\"")) {
             Ok(value) => {
                 headers.insert(LINK, value);
@@ -337,8 +342,7 @@ async fn list_inputs(
             }
         }
     }
-
-    Ok((headers, Json(InputsResponse { items, next_cursor })))
+    headers
 }
 
 /// `GET /api/v1/ingestion/inputs/counts`: how many inputs are listed under
