@@ -67,12 +67,15 @@ function usePagedGroup<TItem>(options: PagedGroupOptions<TItem>): PagedGroup<TIt
   }
 
   const lastLater = later.at(-1);
+  // While the newest page is loading or failed there is no cursor beyond it
+  // yet, but more rows still exist, so the control stays.
+  const lastSettled = lastLater === undefined || lastLater.data !== undefined;
   const tail = lastLater === undefined ? first.data : lastLater.data;
   const tailCursor = tail?.next_cursor ?? null;
   const loadedMore = lastLater?.data?.items.length ?? 0;
 
   function showMore(): void {
-    if (tailCursor === null || lastLater?.isFetching === true) return;
+    if (tailCursor === null || !lastSettled) return;
     setCursors((prev) => [...prev, tailCursor]);
   }
 
@@ -85,7 +88,7 @@ function usePagedGroup<TItem>(options: PagedGroupOptions<TItem>): PagedGroup<TIt
     rows,
     isPending: first.isPending,
     isError: first.isError && first.data === undefined,
-    hasMore: tailCursor !== null,
+    hasMore: !lastSettled || tailCursor !== null,
     isLoadingMore: lastLater?.isFetching === true,
     isMoreError: lastLater?.isError === true,
     loadedMore,

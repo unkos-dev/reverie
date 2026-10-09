@@ -47,7 +47,7 @@ function GroupShell({
       <CollapsibleTrigger asChild>
         <button
           type="button"
-          className="group/trigger hover:bg-surface-2/60 grid w-full grid-cols-[20px_minmax(0,1fr)_auto] items-start gap-3 px-4 py-3.5 text-left"
+          className="group/trigger focus-visible:-outline-offset-2! hover:bg-surface-2/60 grid w-full grid-cols-[20px_minmax(0,1fr)_auto] items-start gap-3 px-4 py-3.5 text-left"
         >
           <ChevronDown
             aria-hidden="true"

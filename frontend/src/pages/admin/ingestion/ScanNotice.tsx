@@ -30,7 +30,7 @@ function NoticeLine({
   return (
     <div
       className={cn(
-        "flex items-start gap-3",
+        "flex items-start gap-3 text-sm",
         boxed && "border-border-strong rounded-xl border px-4 py-3",
       )}
     >

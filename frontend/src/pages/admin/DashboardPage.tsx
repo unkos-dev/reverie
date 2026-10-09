@@ -107,7 +107,7 @@ function DashboardPage(): ReactElement {
       <div className="flex items-start justify-between gap-8">
         <div>
           <h1 className="text-2xl font-bold text-fg">Library health</h1>
-          <p className="text-fg-muted mt-1.5 max-w-[72ch]">
+          <p className="text-fg-muted mt-1.5 max-w-[72ch] text-sm">
             Reverie watches the ingestion folder and files each new EPUB into the library. A scan
             checks every file again and retries files that were set aside for another try.
           </p>
