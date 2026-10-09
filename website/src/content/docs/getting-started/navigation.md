@@ -32,7 +32,7 @@ evaluating Reverie can see where it is going without reading a roadmap. Planned 
 navigation and never act as links.
 
 Settings is not a rail destination: it lives in the user menu at the foot of the rail, and only administrators see it.
-Everyone else sees no Settings entry at all. See [Instance settings](/guides/instance-settings/).
+Everyone else sees no Settings entry at all. See [Instance settings](/reverie/guides/instance-settings/).
 
 ## Two search jobs, two surfaces
 
