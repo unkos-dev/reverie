@@ -147,6 +147,9 @@ jobs:
       contents: read
     env:
       CODEQL_EXTRACTOR_RUST_OPTION_CARGO_CFG_OVERRIDES: -test
+      # The extractor builds with its own older toolchain. Tracked in
+      # debt/2026-10-09-codeql-rust-ignore-rust-version.md.
+      CODEQL_EXTRACTOR_RUST_OPTION_CARGO_EXTRA_ARGS: --ignore-rust-version
       CARGO_INCREMENTAL: 0
       KACHE_REMOTE_READONLY: ${{ github.ref == 'refs/heads/main' && 'false' || 'true' }}
       KACHE_CC_EXTRA_ALLOWLIST_FLAGS: -fmerge-all-constants
