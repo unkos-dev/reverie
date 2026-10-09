@@ -1033,6 +1033,51 @@ describe("a stale write", () => {
     expect(screen.getByRole("textbox", { name: "Concurrent lookups" })).toHaveValue("8");
   });
 
+  test("a failed reload after a stale answer cannot carry the newer tag over the old values", async () => {
+    server.stale.set(1, () => {
+      server.values.enrichment_concurrency = 8;
+      server.revision += 1;
+      server.getStatus = 503;
+    });
+    const user = userEvent.setup();
+    await loaded();
+    await type(user, "Concurrent lookups", "6");
+    await user.click(save());
+    expect(
+      await screen.findByText("The server returned an error. Your edits are still here."),
+    ).toBeInTheDocument();
+    server.getStatus = 200;
+    await user.click(save());
+    expect(await screen.findByText("Settings changed while you were editing")).toBeInTheDocument();
+    expect(server.puts).toHaveLength(1);
+    expect(server.values.enrichment_concurrency).toBe(8);
+  });
+
+  test("a failed reload after the reapply is stale again cannot carry the newer tag either", async () => {
+    server.stale.set(1, () => {
+      server.values.enrichment_poll_idle_secs = 45;
+      server.revision += 1;
+    });
+    server.stale.set(2, () => {
+      server.values.enrichment_concurrency = 8;
+      server.revision += 1;
+      server.getStatus = 503;
+    });
+    const user = userEvent.setup();
+    await loaded();
+    await type(user, "Concurrent lookups", "6");
+    await user.click(save());
+    expect(
+      await screen.findByText("The server returned an error. Your edits are still here."),
+    ).toBeInTheDocument();
+    server.getStatus = 200;
+    server.stale.clear();
+    await user.click(save());
+    expect(await screen.findByText("Settings changed while you were editing")).toBeInTheDocument();
+    expect(server.puts).toHaveLength(2);
+    expect(server.values.enrichment_concurrency).toBe(8);
+  });
+
   test("choosing theirs for every conflict sends nothing and clears the panel", async () => {
     server.stale.set(1, () => {
       server.values.enrichment_concurrency = 8;
