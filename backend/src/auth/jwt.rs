@@ -113,7 +113,7 @@ struct FetchAttempt {
 ///
 /// Outbound fetches are at least [`JWKS_REFETCH_COOLDOWN`] apart and
 /// single-flight: `jwks_client_rs` refetches on every unknown `kid`, so this
-/// bounds an unknown-`kid` flood to one IdP request per window.
+/// bounds an unknown-`kid` flood to one `IdP` request per window.
 struct ReverieJwksSource {
     client: reqwest::Client,
     url: url::Url,
@@ -183,10 +183,7 @@ impl JwksSource for ReverieJwksSource {
         let result = self.fetch_now().await;
         *last = Some(FetchAttempt {
             at: (self.clock)(),
-            keys: match &result {
-                Ok(keys) => Some(keys.clone()),
-                Err(_) => None,
-            },
+            keys: result.as_ref().ok().cloned(),
         });
         result
     }
@@ -1018,7 +1015,7 @@ mod tests {
             ScriptedJwks::start(&[(200, &["test-kid"]), (200, &["test-kid", "rotated"])]).await;
         assert!(jwks.accepts("test-kid").await);
 
-        jwks.clock.advance(WINDOW - Duration::from_secs(1));
+        jwks.clock.advance(Duration::from_secs(29));
         assert!(!jwks.accepts("rotated").await, "inside the window");
         assert_eq!(jwks.fetches().await, 1);
 
