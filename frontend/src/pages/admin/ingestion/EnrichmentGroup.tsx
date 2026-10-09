@@ -1,4 +1,4 @@
-import { type ReactElement } from "react";
+import { type ReactElement, useEffect, useRef } from "react";
 import { Link } from "react-router";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Loader2 } from "lucide-react";
@@ -28,6 +28,20 @@ function statusText(item: FailureItem): string {
   return `${word}, tried ${pluralise(item.attempt_count, "time")}`;
 }
 
+function QueuedStatus(): ReactElement {
+  const ref = useRef<HTMLSpanElement>(null);
+  useEffect(() => {
+    const active = document.activeElement;
+    if (active === null || active === document.body) ref.current?.focus();
+    return undefined;
+  }, []);
+  return (
+    <span ref={ref} tabIndex={-1} className="text-fg-muted text-[13px]" role="status">
+      Queued. It leaves this list once it runs.
+    </span>
+  );
+}
+
 function attemptKey(item: FailureItem): string {
   return `${item.attempted_at ?? ""}|${String(item.attempt_count)}`;
 }
@@ -49,11 +63,7 @@ function RetryControl({ item }: { item: FailureItem }): ReactElement {
   });
 
   if (mutation.isSuccess && mutation.variables === attemptKey(item)) {
-    return (
-      <span className="text-fg-muted text-[13px]" role="status">
-        Queued. It leaves this list once it runs.
-      </span>
-    );
+    return <QueuedStatus />;
   }
 
   return (
