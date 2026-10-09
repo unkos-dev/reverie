@@ -102,3 +102,21 @@ fn required_and_secret_vars_render_correctly() {
     // The RUST_LOG alias entry still renders (ENV_MAP carries both names).
     let _ = row(&md, "RUST_LOG");
 }
+
+#[test]
+fn credential_file_reference_aliases_are_outside_schema() {
+    let rendered = reverie_api::config::reference_markdown().unwrap();
+    let schema = serde_json::to_value(schemars::schema_for!(reverie_api::config::Config)).unwrap();
+    for name in [
+        "DATABASE_URL",
+        "DATABASE_URL_MIGRATION",
+        "DATABASE_URL_INGESTION",
+        "OIDC_CLIENT_SECRET",
+        "REVERIE_GOOGLEBOOKS_API_KEY",
+        "REVERIE_HARDCOVER_API_TOKEN",
+    ] {
+        let alias = format!("{name}_FILE");
+        assert!(rendered.contains(&format!("- `{alias}`")));
+        assert!(!schema.to_string().contains(&alias));
+    }
+}

@@ -36,6 +36,7 @@ pub use cover::CoverConfig;
 pub use enrichment::EnrichmentConfig;
 pub use opds::OpdsConfig;
 pub use provider::EnvProvider;
+pub(crate) use provider::{CredentialValue, resolve_credential};
 pub use reference::reference_markdown;
 pub use security::SecurityConfig;
 pub use writeback::WritebackConfig;
@@ -674,6 +675,15 @@ fn map_figment_error(e: &figment::Error) -> ConfigError {
     let dotted = e.path.join(".");
     let var = env_name_for(&dotted).map_or_else(|| dotted.clone(), ToString::to_string);
     if SECRET_FIELDS.contains(&dotted.as_str()) {
+        if let figment::error::Kind::Message(reason) = &e.kind
+            && (reason == "credential file could not be read as UTF-8"
+                || reason == &format!("conflicting sources: {var} and {var}_FILE"))
+        {
+            return ConfigError::Invalid {
+                var,
+                reason: reason.clone(),
+            };
+        }
         return ConfigError::Invalid {
             var,
             reason: "invalid value (omitted — secret-bearing field)".into(),

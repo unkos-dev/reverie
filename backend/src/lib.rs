@@ -763,6 +763,14 @@ fn resolve_migration_dsn(var: Option<String>) -> anyhow::Result<String> {
         .ok_or_else(|| anyhow::anyhow!("DATABASE_URL_MIGRATION is required for `reverie migrate`"))
 }
 
+fn resolve_migration_source<R: Fn(&str) -> std::io::Result<String>>(
+    pairs: &[(String, String)],
+    reader: &R,
+) -> anyhow::Result<String> {
+    let value = config::resolve_credential(pairs, "DATABASE_URL_MIGRATION", true, reader)?;
+    resolve_migration_dsn(value.map(config::CredentialValue::into_string))
+}
+
 /// Apply pending database migrations, then exit.
 ///
 /// This is the `reverie
@@ -772,13 +780,13 @@ fn resolve_migration_dsn(var: Option<String>) -> anyhow::Result<String> {
 ///
 /// Deliberately does NOT build the full [`Config`]: a migrate container has
 /// no business holding the OIDC secret or the application DSN. It reads only
-/// `DATABASE_URL_MIGRATION` (the `reverie_migrator` DSN) and reuses
+/// `DATABASE_URL_MIGRATION` or `DATABASE_URL_MIGRATION_FILE` for the migrator DSN and reuses
 /// [`db::run_migrations`].
 ///
 /// # Errors
 ///
-/// - If `DATABASE_URL_MIGRATION` is unset or empty (an exported-empty value
-///   is treated as unset, mirroring [`Config::from_figment`]).
+/// - If both migration sources are absent, the resolved DSN is blank, the sources conflict,
+///   or the selected credential file cannot be read as UTF-8.
 /// - If the migration run fails (see [`db::MigrationError`]).
 pub async fn run_migrate() -> anyhow::Result<()> {
     // run_migrate bypasses run(), where the tracing subscriber is normally
@@ -788,7 +796,11 @@ pub async fn run_migrate() -> anyhow::Result<()> {
     // a global subscriber.
     tracing_subscriber::fmt().try_init().ok();
 
-    let migration_url = resolve_migration_dsn(std::env::var("DATABASE_URL_MIGRATION").ok())?;
+    let pairs = ["DATABASE_URL_MIGRATION", "DATABASE_URL_MIGRATION_FILE"]
+        .into_iter()
+        .filter_map(|name| std::env::var(name).ok().map(|value| (name.into(), value)))
+        .collect::<Vec<_>>();
+    let migration_url = resolve_migration_source(&pairs, &|path| std::fs::read_to_string(path))?;
 
     let report = db::run_migrations(&migration_url)
         .await
@@ -1053,6 +1065,26 @@ mod tests {
             "budget is one shared deadline, not per-worker: {:?}",
             started.elapsed()
         );
+    }
+
+    #[test]
+    fn credential_file_migrate_reads_only_migration_source() {
+        use std::cell::RefCell;
+        let reads = RefCell::new(Vec::new());
+        let pairs = [
+            ("DATABASE_URL_FILE", "app-path"),
+            ("DATABASE_URL_INGESTION_FILE", "ingestion-path"),
+            ("OIDC_CLIENT_SECRET_FILE", "oidc-path"),
+            ("DATABASE_URL_MIGRATION_FILE", "migration-path"),
+        ]
+        .map(|(key, value)| (key.into(), value.into()));
+        let result = super::resolve_migration_source(&pairs, &|path: &str| {
+            reads.borrow_mut().push(path.to_owned());
+            Ok("migration-dsn\r\n".into())
+        })
+        .unwrap();
+        assert_eq!(result, "migration-dsn");
+        assert_eq!(reads.borrow().as_slice(), &["migration-path"]);
     }
 
     #[test]

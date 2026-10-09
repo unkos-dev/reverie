@@ -297,7 +297,10 @@
       "id": "REV-ADR-0042",
       "kind": "adr",
       "path": "docs/adr/0042-code-scanning-ingestion-policy-ingest-what-is-actionable.md",
-      "status": "accepted",
+      "status": "superseded",
+      "superseded-by": [
+        "REV-ADR-0055"
+      ],
       "title": "Code-scanning ingestion policy: ingest what is actionable"
     },
     {
@@ -382,6 +385,23 @@
       "path": "docs/adr/0053-typed-credentials-and-externally-supplied-authentication-material.md",
       "status": "accepted",
       "title": "Typed credentials and externally supplied authentication material"
+    },
+    {
+      "id": "REV-ADR-0054",
+      "kind": "adr",
+      "path": "docs/adr/0054-non-serialising-credential-model-redaction.md",
+      "status": "accepted",
+      "title": "Non-serialising credential model redaction"
+    },
+    {
+      "id": "REV-ADR-0055",
+      "kind": "adr",
+      "path": "docs/adr/0055-production-analysis-and-credential-test-boundaries.md",
+      "status": "accepted",
+      "supersedes": [
+        "REV-ADR-0042"
+      ],
+      "title": "Production analysis and credential test boundaries"
     },
     {
       "governed-by": [
@@ -551,7 +571,8 @@
     {
       "governed-by": [
         "REV-ADR-0029",
-        "REV-ADR-0034"
+        "REV-ADR-0034",
+        "REV-ADR-0054"
       ],
       "id": "REV-DESIGN-0012",
       "kind": "design",

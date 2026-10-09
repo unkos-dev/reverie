@@ -17,10 +17,10 @@ governed-by:
 
 # Configuration loading
 
-This Design covers how Reverie turns the process environment into a validated `Config`: the declarative figment pipeline
-in `backend/src/config/mod.rs`, the operator-facing variable registry (`ENV_MAP`) and its two completeness checks, the
-post-deserialise startup gates, the secret-scrubbing behaviour of `ConfigError`, and the generator that renders the
-configuration reference and `backend/config.schema.json` from the same schema.
+This Design covers how Reverie turns environment variables and selected credential files into a validated `Config`: the
+declarative figment pipeline in `backend/src/config/mod.rs`, the operator-facing variable registry (`ENV_MAP`) and its
+two completeness checks, the post-deserialise startup gates, the secret-scrubbing behaviour of `ConfigError`, and the
+generator that renders the configuration reference and `backend/config.schema.json` from the same schema.
 
 ## Purpose and boundaries
 
@@ -37,13 +37,13 @@ their behaviour.
 for every environment variable Reverie reads. Two fields are computed after deserialisation rather than
 environment-sourced, and are excluded from both the schema and `ENV_MAP` for that reason: `security.csp_html_header` and
 `security.csp_api_header`. Two call sites deliberately read the environment directly, outside this pipeline, each for a
-stated reason: `run_migrate` in `backend/src/lib.rs` (the `reverie migrate` subcommand) reads only
-`DATABASE_URL_MIGRATION` through `resolve_migration_dsn`, because a migrate invocation has no business holding the OIDC
-secret or the application DSN that building a full `Config` would require; `read_bootstrap_seed`, also in
-`backend/src/lib.rs`, reads `REVERIE_BOOTSTRAP_EMAIL`, `REVERIE_BOOTSTRAP_DISPLAY_NAME` and `REVERIE_BOOTSTRAP_PASSWORD`
-directly because the seed password is a one-shot startup credential that must never be retained on the long-lived
-`Config`. Neither path is gated by this subject's gates, and a malformed value on either surfaces as whatever error the
-consuming code produces, not a `ConfigError`.
+stated reason: `run_migrate` in `backend/src/lib.rs` (the `reverie migrate` subcommand) reads only the direct or
+file-backed migration source through `resolve_migration_source` and `resolve_migration_dsn`, because a migrate
+invocation has no business holding the OIDC secret or the application DSN that building a full `Config` would require;
+`read_bootstrap_seed`, also in `backend/src/lib.rs`, reads `REVERIE_BOOTSTRAP_EMAIL`, `REVERIE_BOOTSTRAP_DISPLAY_NAME`
+and `REVERIE_BOOTSTRAP_PASSWORD` directly because the seed password is a one-shot startup credential that must never be
+retained on the long-lived `Config`. Neither path is gated by this subject's gates, and a malformed value on either
+surfaces as whatever error the consuming code produces, not a `ConfigError`.
 
 Depends on: the process environment, populated by the operator before the binary starts (a container's declared
 environment, or a sourced dev env file); `backend/src/models/manifestation_format.rs` for the `ManifestationFormat` enum
@@ -74,15 +74,22 @@ retains Clone, Deserialize, JsonSchema and Validate, with redacted derived Debug
 annotations preserve string or nullable string properties and empty or null defaults independently of secret
 serialisation. `ExposeSecret` supplies plaintext to required-field checks and existing consumers.
 
-`EnvProvider` (`backend/src/config/provider.rs`) is the `figment::Provider` this subject substitutes for the stock
-`figment::providers::Env`. Its `data()` method walks a list of raw `(key, value)` pairs (`from_process_env` for
-production, `from_pairs` for tests), drops empty values except the three storage roots, looks each key up in `ENV_MAP`,
-parses the raw string into a typed `figment::Value` the same way stock `Env` does, and nests it onto a dotted path. Two
-behaviours are specific to this provider rather than inherited from figment: the `RUST_LOG`/`REVERIE_LOG_LEVEL` cascade
-(both map to `log_level`; a present `REVERIE_LOG_LEVEL` pair causes the `RUST_LOG` pair to be skipped, independent of
-pair order), and the flat-versus-nested split driven entirely by `ENV_MAP`'s explicit dotted paths rather than a
-separator convention, because `REVERIE_DB_MAX_CONNECTIONS` must land on the flat `db_max_connections` field while
-`REVERIE_ENRICHMENT_CONCURRENCY` must nest under `enrichment.concurrency`, and no single splitting rule produces both.
+`EnvProvider` (`backend/src/config/provider.rs`) implements `figment::Provider` over raw environment pairs and a file
+reader supplied by the caller. Production uses `std::fs::read_to_string`; tests inject pairs and controlled reader
+results without mutating the process environment. A shared single-credential resolver derives the six `_FILE` names by
+joining `SECRET_FIELDS` to `ENV_MAP`, and the migrate-only entry point uses that same resolver for its own source.
+
+Empty direct variables and empty file aliases are absent; whitespace-only sources are present. Two non-empty sources
+conflict before any file read, independent of pair order. File contents must be UTF-8. The resolver removes all trailing
+LF and CRLF terminators and preserves other text, including spaces, interior newlines and a lone CR. Empty contents
+after stripping are absent for all six settings. It inserts non-empty file contents as a Figment string, preserving
+numeric-, boolean- and quote-looking values. Direct values keep Figment's existing typed parsing. Existing required and
+blank checks run after resolution; absent optional metadata credentials remain unset.
+
+When automatic migration is disabled, the resolver still detects a migration-source conflict but never opens its file;
+Gate 1 clears the migration field. Unknown `_FILE` variables, including the bootstrap password alias, are ignored. The
+provider retains the `RUST_LOG`/`REVERIE_LOG_LEVEL` precedence cascade and `ENV_MAP`'s explicit flat/nested paths.
+Non-credential empty values retain their existing handling, including explicit empty roots and accepted-format sets.
 
 Six registries in `backend/src/config/mod.rs` and `provider.rs` together decide what varies and what is required, and
 each has a distinct shape and a distinct completeness check:
@@ -135,7 +142,7 @@ parse successfully. Explicitly empty root variables reach this parser instead of
   directly, taking a caller-built `Figment` so tests can inject `EnvProvider::from_pairs` instead of the process
   environment.
 - `figment::Provider` is the trait `EnvProvider` implements; `EnvProvider::from_process_env()` and
-  `EnvProvider::from_pairs(&[(&str, &str)])` are its two constructors.
+  `EnvProvider::from_pairs(&[(&str, &str)])` are its two constructors. `with_reader` injects credential-file reads.
 - `reference_markdown() -> anyhow::Result<String>` and `config_schema_json() -> anyhow::Result<String>` are the two
   generator entry points; the latter also backs the `reverie print-config-schema` CLI subcommand (`backend/src/lib.rs`),
   which reads no environment and opens no database.
@@ -176,9 +183,9 @@ stops startup. Other worker settings retain their own loading behaviour.
 
 1. `EnvProvider::from_process_env` collects every process environment variable into raw pairs.
 2. `EnvProvider::data` drops empty values except storage roots and the accepted-format set, keeps only pairs whose key
-   appears in `ENV_MAP`, parses each surviving value into a typed `figment::Value` (a numeric string becomes `Num`,
-   exactly `true`/`false` becomes `Bool`, everything else stays `Str`), and nests each onto the dotted path `ENV_MAP`
-   names.
+   appears in `ENV_MAP`, resolves credential sources, parses surviving direct values into a typed `figment::Value` (a
+   numeric string becomes `Num`, exactly `true`/`false` becomes `Bool`, everything else stays `Str`), and nests each
+   onto the dotted path `ENV_MAP` names.
 3. `figment.extract()` deserialises the accumulated dict into `Config`; every field this load supplies no value for
    takes the value the container's `#[serde(default)]` reads off `Config::default()` (and each sub-struct's own
    `Default`).
@@ -228,12 +235,18 @@ satisfy "at least one usable auth provider".
 `ENV_MAP`, calls `node_for_path` to resolve `path` (following `$ref` links at each dotted segment) to a schema node,
 renders that node's type, required-ness (from `REQUIRED_FIELDS`/`OIDC_FIELDS`/the literal `DATABASE_URL_MIGRATION`
 check), default and description into one Markdown table row, and joins the rows under a fixed frontmatter and intro.
-`config_schema_json` serialises the same schema directly to pretty-printed JSON. Both are exercised by
-`backend/tests/gen_config_ref.rs` and `backend/tests/gen_config_schema.rs`, which compare a fresh render against the
-committed artifact and fail if they differ; running either test with the `REGEN` environment variable set rewrites the
-artifact instead of asserting.
+File aliases and their semantics follow as prose generated from the same credential registry, outside schema fields;
+neither generator opens credential files. `config_schema_json` serialises the same schema directly to pretty-printed
+JSON. Both are exercised by `backend/tests/gen_config_ref.rs` and `backend/tests/gen_config_schema.rs`, which compare a
+fresh render against the committed artifact and fail if they differ; running either test with the `REGEN` environment
+variable set rewrites the artifact instead of asserting.
 
 ## Failure and recovery
+
+Source conflicts and file-read failures return fixed, value-free diagnostics naming the setting. Conflict diagnostics
+name both variable names; read errors retain only a fixed category, with no file path, contents or attached raw I/O
+error. Empty or terminator-only files leave credentials absent. Required credentials fail their existing missing checks
+when needed; optional metadata credentials remain unset. Admin commands retain the blank ingestion DSN default.
 
 Deserialise-phase failure (`figment.extract()`) is fail-fast: the first field that cannot deserialise into its typed
 slot stops the pipeline, and `map_figment_error` turns the underlying `figment::Error` into one `ConfigError::Invalid`
@@ -262,6 +275,12 @@ with `ConfigError::MissingVar("DATABASE_URL_MIGRATION")`; the value is trimmed b
 whitespace-only export cannot boot the server carrying a credential no query can actually use.
 
 ## Security and operations
+
+Files are operator configuration and must be readable inside the process or container. The loader reads them once and
+never writes or reloads them. The dev loader suppresses generated database defaults when the matching file alias is
+non-empty, without opening files. `reverie migrate` resolves only its migration source; schema printing opens no
+credential file. `db-migrate-raw` accepts direct DSNs only. Rollback requires restoring direct variables and removing
+their aliases before reverting the application.
 
 Parsing and validation map credential failures to a fixed value-free `ConfigError::Invalid` reason before constructing
 the returned diagnostic. Both paths consult `SECRET_FIELDS`. Validation resolves a struct-level `"var"` parameter

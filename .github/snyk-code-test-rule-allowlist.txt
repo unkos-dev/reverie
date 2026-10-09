@@ -4,5 +4,5 @@ javascript/WebCookieSecureDisabledByDefault/test
 # Mocked-fetch request-body fixtures, not credentials; gitleaks covers secrets.
 javascript/NoHardcodedPasswords/test
 
-# Fixed names select provisioned roles in isolated tests; passwords use env overrides or dev defaults.
+# Fixed names select provisioned roles in isolated tests; provisioning supplies generated passwords.
 rust/NoHardcodedCredentials/test

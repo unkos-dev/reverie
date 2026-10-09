@@ -2,6 +2,7 @@ name: Reverie CodeQL config
 
 # Repo-specific paths the extractors don't already skip.
 paths-ignore:
+  - backend/tests
   - plans
   - website/.astro
   - "**/node_modules"

@@ -125,12 +125,13 @@ applied-but-unembedded version is `MigrationError::SchemaAhead`, an embedded-but
 ### The four entrypoints
 
 - **`reverie migrate`** (`run_migrate` in `backend/src/lib.rs`, dispatched from `Command::Migrate` in `main.rs`) reads
-  only `DATABASE_URL_MIGRATION` via `resolve_migration_dsn`, builds no `Config`, and calls `db::run_migrations`
-  directly. It installs its own best-effort `tracing_subscriber` because it never reaches `run()`, where the subscriber
-  is normally installed. This is the path `docker/compose.staging.yml`'s one-shot `reverie-migrate` service runs
-  (`command: ["migrate"]`, appended to the image's `ENTRYPOINT ["reverie-api"]`), scoped to `.env.migrate` so the
-  credential never reaches the `.env.runtime`-scoped `reverie` service, and the path the `db-migrate` recipe in the
-  justfiles runs locally against the dev socket DSN.
+  only the direct or file-backed migration source via the shared `resolve_migration_source` and `resolve_migration_dsn`,
+  builds no `Config`, and calls `db::run_migrations` directly. It installs its own best-effort `tracing_subscriber`
+  because it never reaches `run()`, where the subscriber is normally installed. This is the path
+  `docker/compose.staging.yml`'s one-shot `reverie-migrate` service runs (`command: ["migrate"]`, appended to the
+  image's `ENTRYPOINT ["reverie-api"]`), scoped to `.env.migrate` so the credential never reaches the
+  `.env.runtime`-scoped `reverie` service, and the path the `db-migrate` recipe in the justfiles runs locally against
+  the dev socket DSN.
 - **Auto-migrate at startup** (`apply_or_verify_schema` in `backend/src/lib.rs`, called from `run()` once the
   `reverie_app` pool exists) takes this branch only when `Config::auto_migrate` is true, in which case it requires
   `Config::migration_database_url` to be `Some` and calls the same `db::run_migrations`. When `auto_migrate` is false —
@@ -194,10 +195,10 @@ ever ships — if a new `TIMESTAMPTZ` column has no matching constraint.
   (`print-config-schema`, `bootstrap`, `reset-password <email>`, `unlock-account <email>`) dispatch to their own
   `Command` variants outside this subject's ownership. Only a token outside that set of six, or a wrong argument count,
   is a parse error rather than a silent fall-through to `Command::Serve`.
-- Environment: `DATABASE_URL_MIGRATION` (the `reverie_migrator` DSN, required by `run_migrate` unconditionally and by
-  `apply_or_verify_schema` only when `auto_migrate` is true) and `REVERIE_AUTO_MIGRATE` (parsed into
-  `Config::auto_migrate`, default `false`) — both owned by "Configuration loading", named here as the contract this
-  subject consumes.
+- Environment: `DATABASE_URL_MIGRATION` or `DATABASE_URL_MIGRATION_FILE` (the `reverie_migrator` DSN, required by
+  `run_migrate` unconditionally and by `apply_or_verify_schema` only when `auto_migrate` is true) and
+  `REVERIE_AUTO_MIGRATE` (parsed into `Config::auto_migrate`, default `false`) — both owned by "Configuration loading",
+  named here as the contract this subject consumes.
 - `sqlx::migrate!("./migrations")` is the compile-time embedding boundary: the migration SQL, its filename-derived
   version and description, its SHA-384 checksum, and its `no_tx` flag are all fixed at build time, not read from the
   filesystem at runtime.
@@ -233,11 +234,11 @@ authenticates inside the container and, when host `psql` is available, over the 
   holding connection closes for any other reason.
 - **`lock_timeout`**: a session GUC set fresh to `'30s'` at the start of every run; not read from configuration, not
   persisted, and not shared with any other subject's lock-timeout setting.
-- **`Config::auto_migrate`** (`bool`, default `false`) and **`Config::migration_database_url`** (`Option<String>`):
-  owned by "Configuration loading", consumed here. When `auto_migrate` is `false`, the loader forces
-  `migration_database_url` to `None` regardless of what `DATABASE_URL_MIGRATION` holds in the process environment, so a
-  value left in the runtime environment by mistake cannot reach `apply_or_verify_schema`'s auto-migrate branch unless
-  the operator also sets `REVERIE_AUTO_MIGRATE=true`.
+- **`Config::auto_migrate`** (`bool`, default `false`) and **`Config::migration_database_url`**
+  (`Option<SecretString>`): owned by "Configuration loading", consumed here. When `auto_migrate` is `false`, the loader
+  forces `migration_database_url` to `None` regardless of what `DATABASE_URL_MIGRATION` holds in the process
+  environment, so a value left in the runtime environment by mistake cannot reach `apply_or_verify_schema`'s
+  auto-migrate branch unless the operator also sets `REVERIE_AUTO_MIGRATE=true`.
 
 ## Runtime behaviour
 
@@ -336,6 +337,13 @@ confirmed dev reset recreates only that project's volume, retaining valid creden
   prevent.
 
 ## Security and operations
+
+`reverie migrate` resolves only `DATABASE_URL_MIGRATION` and `DATABASE_URL_MIGRATION_FILE`, builds no full Config and
+reads no application, ingestion or OIDC credential file. Empty sources are absent; two non-empty sources conflict before
+reading. A selected file must be UTF-8 and readable inside the migration process or container. All trailing LF and CRLF
+terminators are removed; other text stays intact. Read failures disclose neither paths nor contents. The existing
+blank-DSN guard runs after resolution. With auto-migration disabled, configuration clears the migration field and never
+opens its file, while still rejecting two non-empty sources. `db-migrate-raw` takes direct DSNs only.
 
 Two separate guarantees keep the `reverie_migrator` credential away from request serving, and they hold over different
 things. The repository-provided Compose topology keeps it out of the environment: `docker/compose.staging.yml` scopes

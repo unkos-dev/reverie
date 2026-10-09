@@ -184,16 +184,18 @@ pub const ENV_MAP: &[(&str, &str)] = &[
 /// GOTCHA-SPLIT (secondary): the explicit map also sidesteps
 /// `Env::split("_")`, which would wrongly split `snake_case` flat fields
 /// (`db_max_connections` → `db.max.connections`).
-pub struct EnvProvider {
+pub struct EnvProvider<R = fn(&str) -> std::io::Result<String>> {
     pairs: Vec<(String, String)>,
+    reader: R,
 }
 
-impl EnvProvider {
+impl EnvProvider<fn(&str) -> std::io::Result<String>> {
     /// Collect all current process environment variables.
     #[must_use]
     pub fn from_process_env() -> Self {
         Self {
             pairs: std::env::vars().collect(),
+            reader: |path| std::fs::read_to_string(path),
         }
     }
 
@@ -207,11 +209,23 @@ impl EnvProvider {
                 .iter()
                 .map(|(k, v)| ((*k).to_string(), (*v).to_string()))
                 .collect(),
+            reader: |path| std::fs::read_to_string(path),
         }
     }
 }
 
-impl Provider for EnvProvider {
+impl<R> EnvProvider<R> {
+    /// Inject credential reads without changing process state.
+    #[must_use]
+    pub fn with_reader<T>(self, reader: T) -> EnvProvider<T> {
+        EnvProvider {
+            pairs: self.pairs,
+            reader,
+        }
+    }
+}
+
+impl<R: Fn(&str) -> std::io::Result<String>> Provider for EnvProvider<R> {
     fn metadata(&self) -> Metadata {
         Metadata::named("EnvProvider")
     }
@@ -221,6 +235,41 @@ impl Provider for EnvProvider {
         let lookup: std::collections::HashMap<&str, &str> = ENV_MAP.iter().copied().collect();
 
         let mut dict = Dict::new();
+
+        let auto_migrate = self
+            .pairs
+            .iter()
+            .any(|(key, value)| key == "REVERIE_AUTO_MIGRATE" && value == "true");
+        let map_error = |field: &str, error| match error {
+            super::ConfigError::Invalid { reason, .. } => {
+                figment::Error::from(reason).with_path(field)
+            }
+            error => figment::Error::from(error.to_string()).with_path(field),
+        };
+        for (name, field) in credential_settings() {
+            resolve_credential(&self.pairs, name, false, &self.reader)
+                .map_err(|error| map_error(field, error))?;
+        }
+        for (name, field) in credential_settings() {
+            let resolved = resolve_credential(
+                &self.pairs,
+                name,
+                field != "migration_database_url" || auto_migrate,
+                &self.reader,
+            )
+            .map_err(|error| map_error(field, error))?;
+            if let Some(value) = resolved {
+                let leaf = match value {
+                    CredentialValue::Direct(value) => value
+                        .parse::<Value>()
+                        .unwrap_or_else(|never: std::convert::Infallible| match never {}),
+                    CredentialValue::File(value) => Value::from(value),
+                };
+                if let Value::Dict(_, inner) = figment::util::nest(field, leaf) {
+                    merge_dict(&mut dict, inner);
+                }
+            }
+        }
 
         for (key, val) in &self.pairs {
             // Empty roots reach their checked type; other empty values are unset.
@@ -236,6 +285,9 @@ impl Provider for EnvProvider {
             let Some(&dotted) = lookup.get(key.as_str()) else {
                 continue;
             };
+            if super::SECRET_FIELDS.contains(&dotted) {
+                continue;
+            }
             // Log cascade (GOTCHA-CASCADE): `REVERIE_LOG_LEVEL` > `RUST_LOG` >
             // `"info"` (the `Default`). Both vars map to `log_level` in
             // ENV_MAP, so skip `RUST_LOG` when the operator-namespace var is
@@ -274,6 +326,63 @@ impl Provider for EnvProvider {
     }
 }
 
+pub fn credential_settings() -> impl Iterator<Item = (&'static str, &'static str)> {
+    ENV_MAP
+        .iter()
+        .copied()
+        .filter(|(_, field)| super::SECRET_FIELDS.contains(field))
+}
+
+pub enum CredentialValue {
+    Direct(String),
+    File(String),
+}
+
+impl CredentialValue {
+    pub(crate) fn into_string(self) -> String {
+        match self {
+            Self::Direct(value) | Self::File(value) => value,
+        }
+    }
+}
+
+pub fn resolve_credential<R: Fn(&str) -> std::io::Result<String>>(
+    pairs: &[(String, String)],
+    name: &str,
+    read_file: bool,
+    reader: &R,
+) -> Result<Option<CredentialValue>, super::ConfigError> {
+    let alias = format!("{name}_FILE");
+    let direct = pairs
+        .iter()
+        .find(|(key, value)| key == name && !value.is_empty());
+    let file = pairs
+        .iter()
+        .find(|(key, value)| key == &alias && !value.is_empty());
+    match (direct, file) {
+        (Some(_), Some(_)) => Err(super::ConfigError::Invalid {
+            var: name.into(),
+            reason: format!("conflicting sources: {name} and {alias}"),
+        }),
+        (Some((_, value)), None) => Ok(Some(CredentialValue::Direct(value.clone()))),
+        (None, Some((_, path))) if read_file => {
+            // THREAT: Raw I/O errors may disclose credential paths or contents.
+            let mut value = reader(path).map_err(|_| super::ConfigError::Invalid {
+                var: name.into(),
+                reason: "credential file could not be read as UTF-8".into(),
+            })?;
+            while value.ends_with('\n') {
+                value.pop();
+                if value.ends_with('\r') {
+                    value.pop();
+                }
+            }
+            Ok((!value.is_empty()).then_some(CredentialValue::File(value)))
+        }
+        _ => Ok(None),
+    }
+}
+
 /// Recursively merge `src` into `dst`, with `src` winning on conflict.
 fn merge_dict(dst: &mut Dict, src: Dict) {
     for (k, v) in src {
@@ -299,6 +408,281 @@ fn merge_dict(dst: &mut Dict, src: Dict) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn credential_file_resolver_presence_and_contents() {
+        use std::cell::RefCell;
+        let reads = RefCell::new(Vec::new());
+        let reader = |path: &str| {
+            reads.borrow_mut().push(path.to_owned());
+            Ok("file-value".to_owned())
+        };
+        for (direct, file, expected) in [
+            (None, None, None),
+            (Some(""), Some(""), None),
+            (Some("direct"), Some(""), Some("direct")),
+            (Some(" "), Some(""), Some(" ")),
+            (Some(""), Some("file-path"), Some("file-value")),
+        ] {
+            let mut pairs = Vec::new();
+            if let Some(value) = direct {
+                pairs.push(("DATABASE_URL".into(), value.into()));
+            }
+            if let Some(value) = file {
+                pairs.push(("DATABASE_URL_FILE".into(), value.into()));
+            }
+            for _ in 0..2 {
+                reads.borrow_mut().clear();
+                let value = resolve_credential(&pairs, "DATABASE_URL", true, &reader)
+                    .unwrap()
+                    .map(CredentialValue::into_string);
+                assert_eq!(value.as_deref(), expected);
+                assert_eq!(
+                    reads.borrow().as_slice(),
+                    if file == Some("file-path") {
+                        &["file-path"][..]
+                    } else {
+                        &[]
+                    }
+                );
+                pairs.reverse();
+            }
+        }
+        for (contents, expected) in [
+            ("value\n", "value"),
+            ("value\r\n", "value"),
+            ("value", "value"),
+            ("value\n\n", "value"),
+            ("value\r\n\r\n", "value"),
+            ("value\n\r\n\n", "value"),
+            ("value\r", "value\r"),
+            (" value ", " value "),
+            ("one\ntwo", "one\ntwo"),
+            ("\"quoted\"", "\"quoted\""),
+            ("秘密", "秘密"),
+            ("123", "123"),
+            ("true", "true"),
+            (" \n", " "),
+        ] {
+            let provider = EnvProvider::from_pairs(&[("DATABASE_URL_FILE", "content-path")])
+                .with_reader(|path: &str| {
+                    assert_eq!(path, "content-path");
+                    Ok(contents.to_owned())
+                });
+            let data = provider.data().unwrap();
+            let Some(Value::String(_, value)) = data[&Profile::Default].get("database_url") else {
+                panic!("file content must remain a string");
+            };
+            assert_eq!(value, expected);
+        }
+    }
+
+    #[test]
+    fn credential_file_empty_contents_are_absent_for_every_setting() {
+        for (name, field) in credential_settings() {
+            for contents in ["", "\n\r\n"] {
+                let alias = format!("{name}_FILE");
+                let provider = EnvProvider::from_pairs(&[
+                    (alias.as_str(), "path"),
+                    ("REVERIE_AUTO_MIGRATE", "true"),
+                ])
+                .with_reader(|_: &str| Ok(contents.into()));
+                let data = provider.data().unwrap();
+                assert!(!data[&Profile::Default].contains_key(field), "{name}");
+            }
+        }
+    }
+
+    #[test]
+    fn credential_file_alias_wiring() {
+        for (name, field) in credential_settings() {
+            let alias = format!("{name}_FILE");
+            let provider = EnvProvider::from_pairs(&[
+                (alias.as_str(), "path-marker"),
+                ("REVERIE_AUTO_MIGRATE", "true"),
+            ])
+            .with_reader(|path: &str| {
+                assert_eq!(path, "path-marker");
+                Ok("file-marker".into())
+            });
+            let data = provider.data().unwrap();
+            assert!(
+                matches!(data[&Profile::Default].get(field), Some(Value::String(_, value)) if value == "file-marker")
+            );
+        }
+    }
+
+    #[test]
+    fn credential_file_safe_errors() {
+        let name = "DATABASE_URL";
+        let alias = "DATABASE_URL_FILE";
+        for kind in [
+            std::io::ErrorKind::NotFound,
+            std::io::ErrorKind::PermissionDenied,
+            std::io::ErrorKind::InvalidData,
+        ] {
+            let provider = EnvProvider::from_pairs(&[
+                (alias, "path-marker"),
+                ("REVERIE_AUTO_MIGRATE", "true"),
+            ])
+            .with_reader(move |_: &str| Err(std::io::Error::new(kind, "content-and-io-marker")));
+            let error =
+                super::super::Config::from_figment(&figment::Figment::from(provider)).unwrap_err();
+            let mut diagnostic = format!("{error} {error:?}");
+            let mut source = std::error::Error::source(&error);
+            while let Some(error) = source {
+                use std::fmt::Write as _;
+                write!(diagnostic, "{error} {error:?}").unwrap();
+                source = error.source();
+            }
+            assert!(diagnostic.contains(name));
+            assert!(diagnostic.contains("credential file could not be read as UTF-8"));
+            assert!(!diagnostic.contains("path-marker"));
+            assert!(!diagnostic.contains("content-and-io-marker"));
+        }
+    }
+
+    #[test]
+    fn credential_file_existing_blank_and_migration_guards() {
+        use crate::services::enrichment::sources::MetadataSource;
+        use crate::services::enrichment::sources::hardcover::Hardcover;
+        use secrecy::ExposeSecret;
+
+        for contents in ["", "\n\r\n"] {
+            let provider = EnvProvider::from_pairs(&[
+                ("DATABASE_URL_FILE", "path"),
+                ("REVERIE_OPDS_ENABLED", "false"),
+            ])
+            .with_reader(|_: &str| Ok(contents.into()));
+            assert!(
+                matches!(super::super::Config::from_figment(&figment::Figment::from(provider)),
+                Err(super::super::ConfigError::MissingVar(name)) if name == "DATABASE_URL")
+            );
+            let provider = EnvProvider::from_pairs(&[
+                ("DATABASE_URL", "app"),
+                ("REVERIE_GOOGLEBOOKS_API_KEY_FILE", "path"),
+                ("REVERIE_HARDCOVER_API_TOKEN_FILE", "path"),
+                ("DATABASE_URL_INGESTION_FILE", "path"),
+                ("REVERIE_OPDS_ENABLED", "false"),
+            ])
+            .with_reader(|_: &str| Ok(contents.into()));
+            let config =
+                super::super::Config::from_figment(&figment::Figment::from(provider)).unwrap();
+            assert!(config.googlebooks_api_key.is_none());
+            assert!(config.hardcover_api_token.is_none());
+            let hardcover = Hardcover::new(
+                "https://example.invalid",
+                config
+                    .hardcover_api_token
+                    .as_ref()
+                    .map(|value| value.expose_secret().to_owned()),
+            );
+            assert!(!hardcover.enabled());
+            assert_eq!(config.ingestion_database_url.expose_secret(), "");
+            assert!(matches!(config.validate_server(),
+                Err(super::super::ConfigError::MissingVar(name)) if name == "DATABASE_URL_INGESTION"));
+        }
+        for (file, contents, succeeds) in [
+            (None, "valid", false),
+            (Some("path"), " \n", false),
+            (Some("path"), "valid\n", true),
+        ] {
+            let mut pairs = vec![
+                ("DATABASE_URL", "app"),
+                ("REVERIE_OPDS_ENABLED", "false"),
+                ("REVERIE_AUTO_MIGRATE", "true"),
+            ];
+            if let Some(path) = file {
+                pairs.push(("DATABASE_URL_MIGRATION_FILE", path));
+            }
+            let provider =
+                EnvProvider::from_pairs(&pairs).with_reader(|_: &str| Ok(contents.into()));
+            assert_eq!(
+                super::super::Config::from_figment(&figment::Figment::from(provider)).is_ok(),
+                succeeds
+            );
+        }
+        let provider = EnvProvider::from_pairs(&[
+            ("DATABASE_URL", "app"),
+            ("REVERIE_OPDS_ENABLED", "false"),
+            ("REVERIE_AUTO_MIGRATE", "true"),
+            ("DATABASE_URL_MIGRATION_FILE", "path-marker"),
+        ])
+        .with_reader(|_: &str| {
+            Err(std::io::Error::new(
+                std::io::ErrorKind::PermissionDenied,
+                "io-marker",
+            ))
+        });
+        let error =
+            super::super::Config::from_figment(&figment::Figment::from(provider)).unwrap_err();
+        assert!(format!("{error}").contains("DATABASE_URL_MIGRATION"));
+        assert!(!format!("{error:?}").contains("io-marker"));
+    }
+
+    #[test]
+    fn credential_file_inactive_migration_never_reads() {
+        let provider = EnvProvider::from_pairs(&[
+            ("DATABASE_URL", "app"),
+            ("REVERIE_OPDS_ENABLED", "false"),
+            ("DATABASE_URL_MIGRATION_FILE", "path-marker"),
+            ("REVERIE_BOOTSTRAP_PASSWORD_FILE", "unknown-path"),
+        ])
+        .with_reader(|_: &str| -> std::io::Result<String> {
+            panic!("inactive migration must not read")
+        });
+        let config = super::super::Config::from_figment(&figment::Figment::from(provider)).unwrap();
+        assert!(config.migration_database_url.is_none());
+    }
+
+    #[test]
+    fn credential_file_conflicts_fail_without_reading() {
+        let error = EnvProvider::from_pairs(&[
+            ("DATABASE_URL_FILE", "/unreadable-path-marker"),
+            ("OIDC_CLIENT_SECRET", "direct-marker"),
+            ("OIDC_CLIENT_SECRET_FILE", "/conflict-path-marker"),
+        ])
+        .with_reader(|_: &str| -> std::io::Result<String> {
+            panic!("later conflict must prevent earlier file reads")
+        })
+        .data()
+        .unwrap_err();
+        let diagnostic = format!("{error} {error:?}");
+        assert!(diagnostic.contains("OIDC_CLIENT_SECRET"));
+        assert!(diagnostic.contains("OIDC_CLIENT_SECRET_FILE"));
+        assert!(!diagnostic.contains("direct-marker"));
+        assert!(!diagnostic.contains("/unreadable-path-marker"));
+        assert!(!diagnostic.contains("/conflict-path-marker"));
+
+        for &(name, field) in ENV_MAP {
+            if !super::super::SECRET_FIELDS.contains(&field) {
+                continue;
+            }
+            let alias = format!("{name}_FILE");
+            for pairs in [
+                vec![
+                    (name, "direct-marker"),
+                    (alias.as_str(), "/unreadable-path-marker"),
+                ],
+                vec![
+                    (alias.as_str(), "/unreadable-path-marker"),
+                    (name, "direct-marker"),
+                ],
+            ] {
+                let error = EnvProvider::from_pairs(&pairs)
+                    .with_reader(|_: &str| -> std::io::Result<String> {
+                        panic!("conflict must not read")
+                    })
+                    .data()
+                    .unwrap_err();
+                let diagnostic = format!("{error} {error:?}");
+                assert!(diagnostic.contains(name));
+                assert!(diagnostic.contains(&alias));
+                assert!(!diagnostic.contains("direct-marker"));
+                assert!(!diagnostic.contains("/unreadable-path-marker"));
+            }
+        }
+    }
 
     #[test]
     fn env_provider_maps_flat_and_nested_key() {

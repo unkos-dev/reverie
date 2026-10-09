@@ -110,8 +110,7 @@ services:
     # structural — this service's env_file is `.env.migrate`, the app's is
     # `.env.runtime`, and `.env.runtime` deliberately holds no migration
     # credential — so the DDL credential never reaches the long-lived
-    # `reverie` app container. A CI step enforces this against the rendered
-    # config (asserts the key is absent from the `reverie` service).
+    # `reverie` app container.
     env_file:
       - path: .env.migrate
         required: true

@@ -22,9 +22,9 @@ The shipped model runs migrations as a one-shot step **before** the server start
 reverie migrate
 ```
 
-This reads `DATABASE_URL_MIGRATION` (the `reverie_migrator` DSN), applies any pending migrations, and exits. It does not
-read the application config; a migrate step needs no OIDC secret or application DSN. A non-zero exit means migration
-failed; the error names the failure mode and recovery.
+This resolves `DATABASE_URL_MIGRATION` or `DATABASE_URL_MIGRATION_FILE` (the `reverie_migrator` DSN), applies pending
+migrations, and exits. It does not read the application config; a migrate step needs no OIDC secret or application DSN.
+A non-zero exit means migration failed; the error names the failure mode and recovery.
 
 In local development:
 
@@ -32,11 +32,27 @@ In local development:
 cargo run -- migrate
 ```
 
+## Credential supply
+
+`DATABASE_URL_MIGRATION_FILE` selects a UTF-8 file readable inside the migration process or container. Empty direct and
+file variables are absent; two non-empty sources conflict before reading. Whitespace-only variables remain present. The
+reader removes all trailing LF and CRLF terminators and preserves other text, including spaces, interior newlines and a
+lone CR. Empty contents after stripping are absent. The existing missing and blank-DSN checks apply after reading.
+Errors name the setting without file contents, paths or raw I/O details. `reverie migrate` reads no other credential
+files.
+
+The same file supply applies to the application, ingestion, OIDC and metadata credentials; the
+[configuration reference](../../website/src/content/docs/reference/configuration.mdx) lists all six aliases. Mount each
+file only where its consumer needs it. The dev loader yields generated defaults to non-empty matching database aliases
+without opening files. `just db-migrate-raw` takes direct DSNs only. Before rolling back file supply, restore direct
+variables and remove their aliases.
+
 ## What the server does on startup
 
 With `REVERIE_AUTO_MIGRATE` unset (the default), the server **does not migrate**. Instead it performs a read-only check
 that the database schema matches the binary, using its own `reverie_app` pool, and **refuses to start** if they diverge.
-The check is fail-closed in both directions:
+The loaded migration field remains unset and its file is never opened. A two-source conflict still refuses startup. The
+check is fail-closed in both directions:
 
 - **Database behind the binary** (the common "forgot to run `reverie migrate`" case): the server refuses rather than
   serving against a schema missing tables or columns it expects, which would otherwise surface as opaque runtime errors.
@@ -76,8 +92,8 @@ exactly the exposure the two-identity model above exists to avoid.
 
 Setting `REVERIE_AUTO_MIGRATE=true` makes the server run migrations itself at startup instead of verifying. This is an
 escape hatch, not the recommended path: the long-lived server process then holds `DATABASE_URL_MIGRATION` (and therefore
-the `reverie_migrator` credential) for its entire lifetime. When the flag is true, `DATABASE_URL_MIGRATION` is required
-and the server fails to start without it.
+the `reverie_migrator` credential) for its entire lifetime. When the flag is true, a direct or file-backed migration DSN
+is required and the server fails to start without it.
 
 Use it only when a separate migrate step is impractical (for example, a single-container deployment with no
 orchestration to sequence a migrate step before the server). Prefer the out-of-band `reverie migrate` step everywhere

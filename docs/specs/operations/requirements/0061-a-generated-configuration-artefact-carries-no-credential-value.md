@@ -34,3 +34,5 @@ and no step between those two events looks like disclosure to a reviewer.
 - The configuration reference leaves the default cell empty for all six credential settings. Checked by
   `required_and_secret_vars_render_correctly` in `backend/tests/gen_config_ref.rs`; the same file's
   `config_reference_matches_committed_artifact` compares the render with the committed reference.
+- File aliases appear in generated prose outside Config's schema fields and carry no credential values or defaults.
+  Checked by `credential_file_reference_aliases_are_outside_schema` in `backend/tests/gen_config_ref.rs`.

@@ -90,6 +90,11 @@ fn ingestion_startup_schema_printing_requires_no_credentials() {
     let output = Command::new(env!("CARGO_BIN_EXE_reverie-api"))
         .arg("print-config-schema")
         .env_clear()
+        .env("DATABASE_URL_FILE", "/unreadable-schema-app")
+        .env(
+            "DATABASE_URL_MIGRATION_FILE",
+            "/unreadable-schema-migration",
+        )
         .output()
         .unwrap();
     assert!(output.status.success());
@@ -240,6 +245,39 @@ fn startup_role_password_requires_nonempty_input() {
     );
     assert!(password_input(None).is_err());
     assert!(password_input(Some("")).is_err());
+}
+
+#[sqlx::test(migrations = false)]
+async fn credential_file_migrate_child(pool: sqlx::PgPool) {
+    use sqlx::ConnectOptions as _;
+    use std::io::Write as _;
+
+    let url = pool.connect_options().to_url_lossy();
+    let mut file = tempfile::NamedTempFile::new().unwrap();
+    writeln!(file, "{}", url.as_str()).unwrap();
+    let output = Command::new(env!("CARGO_BIN_EXE_reverie-api"))
+        .arg("migrate")
+        .env_clear()
+        .env("DATABASE_URL_MIGRATION_FILE", file.path())
+        .env("DATABASE_URL_FILE", "/unreadable-app")
+        .env("DATABASE_URL_INGESTION_FILE", "/unreadable-ingestion")
+        .env("OIDC_CLIENT_SECRET_FILE", "/unreadable-oidc")
+        .output()
+        .unwrap();
+    assert!(!String::from_utf8_lossy(&output.stderr).contains(url.as_str()));
+    assert!(!String::from_utf8_lossy(&output.stdout).contains(url.as_str()));
+    let diagnostics = redact_startup_output(
+        &String::from_utf8_lossy(&output.stderr),
+        &[
+            url.as_str(),
+            &required_password("REVERIE_MIGRATOR_PASSWORD"),
+        ],
+    );
+    assert!(
+        output.status.success(),
+        "migrate child failed: {diagnostics}"
+    );
+    reverie_api::db::verify_schema_current(&pool).await.unwrap();
 }
 
 #[sqlx::test(migrations = "./migrations")]

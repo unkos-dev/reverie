@@ -44,29 +44,24 @@ const ROTATE_RETRIES: u32 = 1;
 /// An active (unconsumed, unexpired) password-reset PIN, as needed to verify a
 /// reset attempt. Holds a SECRET (`pin_hash`); not serialisable, never logged.
 ///
-/// `Debug` is implemented by hand to redact `pin_hash`: deriving it would emit
-/// the Argon2id PHC through any `?value` tracing span (CWE-532).
-#[derive(Clone, sqlx::FromRow)]
+/// `Debug` redacts `pin_hash` so tracing cannot disclose its Argon2id PHC (CWE-532).
+#[derive(Clone, sqlx::FromRow, redactable::SensitiveDisplay)]
+#[error(
+    "PasswordResetPin {{ id: {id:?}, user_id: {user_id:?}, pin_hash: {pin_hash:?}, expires_at: {expires_at:?} }}"
+)]
 pub struct PasswordResetPin {
     /// Primary key, used to [`consume`] the row after a successful verify.
+    #[not_sensitive]
     pub id: Uuid,
     /// Owning user.
+    #[not_sensitive]
     pub user_id: Uuid,
     /// Argon2id PHC of the clear PIN.
+    #[sensitive(redactable::Secret)]
     pub pin_hash: String,
     /// When this PIN stops being valid.
+    #[not_sensitive]
     pub expires_at: DateTime<Utc>,
-}
-
-impl std::fmt::Debug for PasswordResetPin {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("PasswordResetPin")
-            .field("id", &self.id)
-            .field("user_id", &self.user_id)
-            .field("pin_hash", &"[REDACTED]")
-            .field("expires_at", &self.expires_at)
-            .finish()
-    }
 }
 
 /// Delete any unconsumed PIN rows for a user so at most one stays live.
@@ -408,6 +403,59 @@ pub async fn consume(executor: impl sqlx::PgExecutor<'_>, id: Uuid) -> Result<bo
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn credential_model_redaction_password_reset_pin() {
+        #[derive(Clone)]
+        struct Capture(std::sync::Arc<std::sync::Mutex<Vec<u8>>>);
+        impl std::io::Write for Capture {
+            fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+                self.0.lock().unwrap().extend_from_slice(bytes);
+                Ok(bytes.len())
+            }
+            fn flush(&mut self) -> std::io::Result<()> {
+                Ok(())
+            }
+        }
+        let marker = "password_reset_pin-distinct-hash-marker";
+        let value = PasswordResetPin {
+            id: Uuid::from_u128(102),
+            user_id: Uuid::from_u128(101),
+            expires_at: DateTime::from_timestamp(1_700_000_002, 0).unwrap(),
+            pin_hash: marker.into(),
+        };
+        let expected = [
+            format!("{:?}", value.id),
+            format!("{:?}", value.user_id),
+            format!("{:?}", value.expires_at),
+        ];
+        for value in [value.clone(), value] {
+            for debug in [format!("{value:?}"), format!("{value:#?}")] {
+                assert!(!debug.contains(marker));
+                for field in &expected {
+                    assert!(debug.contains(field));
+                }
+            }
+            let bytes = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+            let writer = Capture(bytes.clone());
+            let subscriber = tracing_subscriber::fmt()
+                .without_time()
+                .with_ansi(false)
+                .with_writer(move || writer.clone())
+                .finish();
+            tracing::subscriber::with_default(subscriber, || {
+                tracing::info!("capture-positive-event");
+                tracing::info!(model = ?value, "model-event");
+            });
+            let captured = String::from_utf8(bytes.lock().unwrap().clone()).unwrap();
+            assert!(captured.contains("capture-positive-event"));
+            assert!(captured.contains("model-event"));
+            assert!(!captured.contains(marker));
+            for field in &expected {
+                assert!(captured.contains(field));
+            }
+        }
+    }
     use chrono::TimeDelta;
 
     async fn insert_user(pool: &PgPool) -> Uuid {

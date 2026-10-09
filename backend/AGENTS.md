@@ -31,8 +31,10 @@ These rules define the Rust, Axum, and sqlx architecture. Do not deviate.
   should short-circuit the rest.
 - **Unsafe Code:** `unsafe` requires a `// SAFETY:` comment per block explaining the invariant. It is forbidden unless
   strictly necessary and explicitly allowed via `#[allow(unsafe_code)]`.
-- **Secrets Management:** Never hardcode credentials, tokens, or API keys. Always use environment variables.
-  </rust_and_architecture>
+- **Secrets Management:** Supply operational credentials externally through direct environment variables or credential
+  files selected by `_FILE` variables. Generate credentials for isolated tests. Literals used to test credential
+  handling are test data. Production credential defaults and disclosure remain security findings. Only proven test-only
+  code may leave production SAST; mixed files, setup tools and secret scans stay covered. </rust_and_architecture>
 
 <api_design>
 
