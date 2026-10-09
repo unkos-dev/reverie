@@ -69,7 +69,9 @@ precondition check, the post-write `ETag`, and the matched `GET` all hash the id
 path rather than three independently maintained ones") rather than an accidental byproduct of unrelated reuse.
 `settings/mod.rs` hashes `SettingsEtagFields`, a private struct holding only the settings row's `revision`, which every
 write to the row increments, so the tag changes exactly when any setting does; both `GET` and `PUT /api/v1/settings`
-emit it.
+emit it. The `GET` body is a function of that row alone, so one tag never covers two different bodies. Process state
+that changes without a revision, the last successful live reload, is served separately by the admin-only
+`GET /api/v1/settings/reload-status`, which carries no `ETag`.
 
 `parse_if_match` reads the request's `If-Match` header and returns `Ok(None)` when absent, `Ok(Some(StrongEntityTag))`
 for one well-formed strong tag, or `Err(AppError::MalformedHeader)`. It rejects more than one `If-Match` header instance
