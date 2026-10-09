@@ -273,7 +273,10 @@ async fn an_unknown_stored_class_reads_as_unspecified_in_the_list_filters_and_co
     walked.sort();
     assert_eq!(walked, vec!["future class", "recorded unspecified"]);
     assert_eq!(titles(&list(&env, "?class=unspecified").await).len(), 2);
-    assert!(titles(&list(&env, "?class=timeout").await).is_empty());
+    assert_eq!(
+        titles(&list(&env, "?class=timeout").await),
+        Vec::<String>::new()
+    );
 }
 
 #[sqlx::test(migrations = "./migrations")]
