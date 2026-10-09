@@ -240,6 +240,16 @@ impl<R: Fn(&str) -> std::io::Result<String>> Provider for EnvProvider<R> {
             .pairs
             .iter()
             .any(|(key, value)| key == "REVERIE_AUTO_MIGRATE" && value == "true");
+        let map_error = |field: &str, error| match error {
+            super::ConfigError::Invalid { reason, .. } => {
+                figment::Error::from(reason).with_path(field)
+            }
+            error => figment::Error::from(error.to_string()).with_path(field),
+        };
+        for (name, field) in credential_settings() {
+            resolve_credential(&self.pairs, name, false, &self.reader)
+                .map_err(|error| map_error(field, error))?;
+        }
         for (name, field) in credential_settings() {
             let resolved = resolve_credential(
                 &self.pairs,
@@ -247,12 +257,7 @@ impl<R: Fn(&str) -> std::io::Result<String>> Provider for EnvProvider<R> {
                 field != "migration_database_url" || auto_migrate,
                 &self.reader,
             )
-            .map_err(|error| match error {
-                super::ConfigError::Invalid { reason, .. } => {
-                    figment::Error::from(reason).with_path(field)
-                }
-                error => figment::Error::from(error.to_string()).with_path(field),
-            })?;
+            .map_err(|error| map_error(field, error))?;
             if let Some(value) = resolved {
                 let leaf = match value {
                     CredentialValue::Direct(value) => value
@@ -632,6 +637,23 @@ mod tests {
 
     #[test]
     fn credential_file_conflicts_fail_without_reading() {
+        let error = EnvProvider::from_pairs(&[
+            ("DATABASE_URL_FILE", "/unreadable-path-marker"),
+            ("OIDC_CLIENT_SECRET", "direct-marker"),
+            ("OIDC_CLIENT_SECRET_FILE", "/conflict-path-marker"),
+        ])
+        .with_reader(|_: &str| -> std::io::Result<String> {
+            panic!("later conflict must prevent earlier file reads")
+        })
+        .data()
+        .unwrap_err();
+        let diagnostic = format!("{error} {error:?}");
+        assert!(diagnostic.contains("OIDC_CLIENT_SECRET"));
+        assert!(diagnostic.contains("OIDC_CLIENT_SECRET_FILE"));
+        assert!(!diagnostic.contains("direct-marker"));
+        assert!(!diagnostic.contains("/unreadable-path-marker"));
+        assert!(!diagnostic.contains("/conflict-path-marker"));
+
         for &(name, field) in ENV_MAP {
             if !super::super::SECRET_FIELDS.contains(&field) {
                 continue;
