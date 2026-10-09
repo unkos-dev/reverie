@@ -83,7 +83,7 @@ function useIngestionMonitor(options: {
     enabled,
     refetchInterval: (query) =>
       isRunning(query.state.data) || graceActive ? POLL_INTERVAL_MS : false,
-    refetchOnWindowFocus: false,
+    refetchOnWindowFocus: true,
   });
   const latestBatch = activity.data?.batches[0];
   const running = isRunning(activity.data);
@@ -94,7 +94,7 @@ function useIngestionMonitor(options: {
     queryFn: ({ signal }) => getInputCounts(signal),
     enabled,
     refetchInterval: pollInterval,
-    refetchOnWindowFocus: false,
+    refetchOnWindowFocus: true,
   });
 
   if (running !== wasRunning) {
