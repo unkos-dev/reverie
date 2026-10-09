@@ -149,27 +149,10 @@ jobs:
           # than warming shards for artifacts that no longer exist.
           manifest-key: x86_64-unknown-linux-gnu/${{ steps.rust.outputs.version }}/dev
           namespace: x86_64-unknown-linux-gnu/${{ steps.rust.outputs.version }}/dev
-
-      # kache degrades quietly by design: it compiles for real when the store is
-      # unreachable and still exits 0, so a mistyped secret would leave every job
-      # uncached and green forever. Assert the remote resolved before depending on it.
-      - name: Verify the remote cache resolved
-        if: env.R2_CONFIGURED == 'true'
-        run: |
-          set -euo pipefail
-          stats="$(kache stats 2>&1 || true)"
-          printf '%s\n' "${stats}"
-          remote="$(printf '%s\n' "${stats}" | grep -m1 'Remote:' || true)"
-          if [ -z "${remote}" ]; then
-            echo "kache stats reported no Remote line; the output shape changed and this check can no longer tell configured from not" >&2
-            exit 1
-          fi
-          case "${remote}" in
-            *"not configured"*)
-              echo "kache has no remote configured: the S3 inputs did not reach it, so this job would compile uncached and still pass" >&2
-              exit 1
-              ;;
-          esac
+          # kache compiles uncached and still exits 0 when the remote does not
+          # resolve; strict turns every action warning, including a daemon remote
+          # the action cannot verify, into a step failure.
+          strict: true
 
       - name: Check formatting
         run: cargo fmt --check
