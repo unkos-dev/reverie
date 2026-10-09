@@ -28,10 +28,14 @@ function statusText(item: FailureItem): string {
   return `${word}, tried ${pluralise(item.attempt_count, "time")}`;
 }
 
+function attemptKey(item: FailureItem): string {
+  return `${item.attempted_at ?? ""}|${String(item.attempt_count)}`;
+}
+
 function RetryControl({ item }: { item: FailureItem }): ReactElement {
   const queryClient = useQueryClient();
   const mutation = useMutation({
-    mutationFn: () => triggerEnrichment(item.manifestation_id),
+    mutationFn: (_attempt: string) => triggerEnrichment(item.manifestation_id),
     onSuccess: () => {
       // Marked stale without refetching now: the trigger resets the book to
       // pending, so an immediate refetch would drop the row and its
@@ -44,7 +48,7 @@ function RetryControl({ item }: { item: FailureItem }): ReactElement {
     },
   });
 
-  if (mutation.isSuccess) {
+  if (mutation.isSuccess && mutation.variables === attemptKey(item)) {
     return (
       <span className="text-fg-muted text-[13px]" role="status">
         Queued. It leaves this list once it runs.
@@ -67,7 +71,7 @@ function RetryControl({ item }: { item: FailureItem }): ReactElement {
         className={mutation.isPending ? "pointer-events-none opacity-50" : undefined}
         onClick={() => {
           if (mutation.isPending) return;
-          mutation.mutate();
+          mutation.mutate(attemptKey(item));
         }}
       >
         {mutation.isPending ? (
