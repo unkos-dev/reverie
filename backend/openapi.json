@@ -1516,7 +1516,7 @@
           {
             "name": "source",
             "in": "query",
-            "description": "Lists only books whose primary failure came from this source.",
+            "description": "Lists only books whose primary failure came from this source; `none`\nlists only books whose primary failure has no source.",
             "required": false,
             "schema": {
               "type": "string"

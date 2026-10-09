@@ -30,13 +30,30 @@ pub(super) fn router() -> OpenApiRouter<AppState> {
         .routes(routes!(failure_counts))
 }
 
-/// A metadata source key as it appears in the registry: lowercase ASCII
-/// letters, digits and underscores.
+/// The `source` filter: a metadata source key as it appears in the
+/// registry (lowercase ASCII letters, digits and underscores), or the
+/// reserved value `none` for books whose primary failure has no source.
 #[derive(Clone, Debug, Deserialize)]
 #[serde(try_from = "String")]
-struct SourceKey(String);
+enum SourceFilter {
+    Key(String),
+    Unsourced,
+}
 
-impl TryFrom<String> for SourceKey {
+impl SourceFilter {
+    /// The reserved `source` value that selects books with no primary
+    /// source. It cannot be a source key.
+    const UNSOURCED: &'static str = "none";
+
+    fn as_str(&self) -> &str {
+        match self {
+            Self::Key(key) => key,
+            Self::Unsourced => Self::UNSOURCED,
+        }
+    }
+}
+
+impl TryFrom<String> for SourceFilter {
     type Error = String;
 
     fn try_from(value: String) -> Result<Self, Self::Error> {
@@ -45,10 +62,12 @@ impl TryFrom<String> for SourceKey {
             && value
                 .bytes()
                 .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'_');
-        if valid {
-            Ok(Self(value))
-        } else {
+        if !valid {
             Err("source must be 1 to 64 lowercase letters, digits or underscores".into())
+        } else if value == Self::UNSOURCED {
+            Ok(Self::Unsourced)
+        } else {
+            Ok(Self::Key(value))
         }
     }
 }
@@ -57,9 +76,10 @@ impl TryFrom<String> for SourceKey {
 #[derive(Deserialize, utoipa::IntoParams)]
 #[into_params(parameter_in = Query)]
 struct FailuresParams {
-    /// Lists only books whose primary failure came from this source.
+    /// Lists only books whose primary failure came from this source; `none`
+    /// lists only books whose primary failure has no source.
     #[param(value_type = Option<String>)]
-    source: Option<SourceKey>,
+    source: Option<SourceFilter>,
     /// Lists only books whose primary failure has this class.
     class: Option<FailureClass>,
     /// Page size; clamped to 1..=100, default 25.
@@ -158,7 +178,9 @@ fn also_failures(stored: serde_json::Value) -> Vec<FailureRef> {
 ///
 /// A book appears once, under its primary failure: the failing source with
 /// the lowest key, because every source in an attempt fails at the same
-/// moment. Other failing sources are in `also`. Failures recorded before
+/// moment. Other failing sources are in `also`. `source=none` selects books
+/// whose primary failure has no source, so every counts group, including
+/// the one with a null source, can be listed. Failures recorded before
 /// classes existed, and classes this build does not know, read as
 /// `unspecified`; the list, its filters and the counts all use that reading.
 ///
@@ -195,9 +217,17 @@ async fn list_failures(
     let Query(params) = params?;
 
     let limit = params.limit.unwrap_or(DEFAULT_LIMIT).clamp(1, MAX_LIMIT);
-    let source = params.source.as_ref().map(|key| key.0.as_str());
+    let source = match &params.source {
+        Some(SourceFilter::Key(key)) => Some(key.as_str()),
+        Some(SourceFilter::Unsourced) | None => None,
+    };
+    let unsourced = matches!(params.source, Some(SourceFilter::Unsourced));
     let class = params.class.map(FailureClass::as_str);
-    let filter = format!("{}/{}", source.unwrap_or(""), class.unwrap_or(""));
+    let filter = format!(
+        "{}/{}",
+        params.source.as_ref().map_or("", SourceFilter::as_str),
+        class.unwrap_or("")
+    );
     let after = params
         .cursor
         .as_deref()
@@ -232,6 +262,7 @@ async fn list_failures(
              AND m.enrichment_error IS NOT NULL
              AND ($1::uuid IS NULL OR m.id > $1)
              AND ($2::text IS NULL OR p.source = $2)
+             AND (NOT $6::bool OR p.source IS NULL)
              AND ($3::text IS NULL OR p.class = $3)
            ORDER BY m.id
            LIMIT $4"#,
@@ -240,6 +271,7 @@ async fn list_failures(
         class,
         limit + 1,
         &known_classes(),
+        unsourced,
     )
     .fetch_all(&mut *tx)
     .await
