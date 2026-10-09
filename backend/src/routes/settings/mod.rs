@@ -34,7 +34,9 @@ mod tests;
 /// Merged into `crate::openapi::pilot_router`
 /// and split into its runtime and spec halves there.
 pub fn router() -> OpenApiRouter<AppState> {
-    OpenApiRouter::new().routes(routes!(get_settings, put_settings))
+    OpenApiRouter::new()
+        .routes(routes!(get_settings, put_settings))
+        .routes(routes!(reload_status))
 }
 
 /// Hash input for the settings `ETag`. `revision` increases on every write to
@@ -57,9 +59,6 @@ struct SettingsResponse {
     /// restart.
     #[schema(value_type = Vec<String>)]
     restart_required_fields: &'static [&'static str],
-    /// Timestamp of the last successful LISTEN/NOTIFY settings reload in
-    /// this process; `null` until the first reload.
-    last_successful_reload_at: Option<DateTime<Utc>>,
 }
 
 /// `GET /api/v1/settings` — return current persisted settings (admin only).
@@ -69,12 +68,10 @@ struct SettingsResponse {
 /// called infrequently). Workers use the `RwLock` cache for zero-DB
 /// per-request reads.
 ///
-/// Also includes `last_successful_reload_at` from the background
-/// LISTEN/NOTIFY task so operators can verify the live-reload
-/// mechanism is healthy.
-///
-/// The `ETag` header carries the tag a subsequent `PUT` echoes as
-/// `If-Match`.
+/// The body is a function of the settings row alone, so the `ETag`
+/// header (a hash of the row's revision) identifies it exactly and is the
+/// tag a subsequent `PUT` echoes as `If-Match`. Process state such as the
+/// live-reload health is served by [`reload_status`] instead.
 ///
 /// # Errors
 /// - [`AppError::Forbidden`] when the caller is not an admin.
@@ -84,11 +81,11 @@ struct SettingsResponse {
     get,
     path = "/api/v1/settings",
     summary = "Get settings",
-    description = "Returns the currently persisted application settings, including the fields that only take effect after a process restart and the timestamp of the last successful live-reload. Admin only.",
+    description = "Returns the currently persisted application settings, including the fields that only take effect after a process restart. Admin only.",
     tag = "settings",
     security(("session_cookie" = ["admin"]), ("device_token_bearer" = ["admin"]), ("oidc_jwt_bearer" = ["admin"]), ("opds_basic" = ["admin"])),
     responses(
-        (status = 200, description = "Current persisted settings plus reload health. Admin only.", body = SettingsResponse,
+        (status = 200, description = "Current persisted settings. Admin only.", body = SettingsResponse,
          headers(("ETag" = String, description = "Strong entity-tag of the current settings, to echo as `If-Match` on `PUT`"))),
         (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 403, description = "Caller is not an admin", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
@@ -104,16 +101,58 @@ async fn get_settings(
     let settings = crate::services::settings::load(&state.pool)
         .await
         .map_err(|e| AppError::Internal(e.into()))?;
-    let last_successful_reload_at = *state.last_settings_reload.read().await;
     let etag = settings_etag(settings.revision)?;
     Ok((
         [(ETAG, etag)],
         axum::Json(SettingsResponse {
             settings,
             restart_required_fields: restart_required_fields(),
-            last_successful_reload_at,
         }),
     ))
+}
+
+/// Response shape for `GET /api/v1/settings/reload-status`.
+#[derive(serde::Serialize, utoipa::ToSchema)]
+struct ReloadStatusResponse {
+    /// Timestamp of the last successful LISTEN/NOTIFY settings reload in
+    /// this process; `null` until the first reload.
+    last_successful_reload_at: Option<DateTime<Utc>>,
+}
+
+/// `GET /api/v1/settings/reload-status` — health of the live-reload
+/// mechanism in this process (admin only).
+///
+/// Reports when the background LISTEN/NOTIFY task last reloaded settings
+/// successfully so operators can verify live reload is working. It is
+/// process state, not part of the settings representation, and carries no
+/// `ETag`.
+///
+/// # Errors
+/// - [`AppError::Forbidden`] when the caller is not an admin.
+#[utoipa::path(
+    get,
+    path = "/api/v1/settings/reload-status",
+    summary = "Get settings reload status",
+    description = "Returns the timestamp of the last successful live reload of settings in this process, or null before the first reload. Admin only.",
+    tag = "settings",
+    security(("session_cookie" = ["admin"]), ("device_token_bearer" = ["admin"]), ("oidc_jwt_bearer" = ["admin"]), ("opds_basic" = ["admin"])),
+    responses(
+        (status = 200, description = "Last successful settings reload in this process. Admin only.", body = ReloadStatusResponse),
+        (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
+        (status = 403, description = "Caller is not an admin", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
+    )
+)]
+async fn reload_status(
+    current_user: CurrentUser,
+    State(state): State<AppState>,
+) -> Result<impl IntoResponse, AppError> {
+    current_user.require_scope(Scope::Admin)?;
+    current_user.require_admin()?;
+
+    let last_successful_reload_at = *state.last_settings_reload.read().await;
+    Ok(axum::Json(ReloadStatusResponse {
+        last_successful_reload_at,
+    }))
 }
 
 /// Response shape for `PUT /api/v1/settings`.

@@ -87,14 +87,82 @@ async fn get_settings_as_admin_returns_200(pool: PgPool) {
     assert!(body["restart_required_fields"].is_array());
     test_support::assert_rfc3339(&body, "updated_at");
     assert!(
-        body.get("last_successful_reload_at").is_some(),
-        "last_successful_reload_at must be present in response"
+        body.get("last_successful_reload_at").is_none(),
+        "reload health is not part of the settings representation"
     );
-    assert!(
-        body["last_successful_reload_at"].is_null()
-            || body["last_successful_reload_at"].is_string(),
-        "last_successful_reload_at must be null or RFC 3339 string"
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn reload_status_as_admin_reports_the_last_successful_reload(pool: PgPool) {
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let (_admin_id, admin_basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+    let server = server(&app_pool, &ingestion_pool);
+
+    let r = server
+        .get("/api/v1/settings/reload-status")
+        .add_header(axum::http::header::AUTHORIZATION, admin_basic)
+        .await;
+    assert_eq!(r.status_code(), StatusCode::OK);
+    assert!(r.maybe_header(axum::http::header::ETAG).is_none());
+    let body: serde_json::Value = r.json();
+    assert!(body["last_successful_reload_at"].is_null());
+    assert_eq!(body.as_object().map(serde_json::Map::len), Some(1));
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn reload_status_reports_a_recorded_reload_as_rfc3339(pool: PgPool) {
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let (_admin_id, admin_basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+    let recorded = chrono::Utc::now();
+    let server = test_support::db::server_with_last_reload(&app_pool, &ingestion_pool, recorded);
+
+    let r = server
+        .get("/api/v1/settings/reload-status")
+        .add_header(axum::http::header::AUTHORIZATION, admin_basic)
+        .await;
+    assert_eq!(r.status_code(), StatusCode::OK);
+    let body: serde_json::Value = r.json();
+    let reported = test_support::assert_rfc3339(&body, "last_successful_reload_at");
+    assert_eq!(reported, recorded);
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn a_background_reload_does_not_change_the_settings_body_or_etag(pool: PgPool) {
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let (_admin_id, admin_basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+    let before = server(&app_pool, &ingestion_pool);
+    let after =
+        test_support::db::server_with_last_reload(&app_pool, &ingestion_pool, chrono::Utc::now());
+
+    assert_eq!(
+        current_etag(&before, &admin_basic).await,
+        current_etag(&after, &admin_basic).await
     );
+    assert_eq!(
+        get_body(&before, &admin_basic).await,
+        get_body(&after, &admin_basic).await
+    );
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn reload_status_requires_authentication_and_the_admin_role(pool: PgPool) {
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let (_adult_id, adult_basic) =
+        test_support::db::create_adult_and_basic_auth(&app_pool, "reload-adult").await;
+    let server = server(&app_pool, &ingestion_pool);
+
+    let r = server.get("/api/v1/settings/reload-status").await;
+    assert_eq!(r.status_code(), StatusCode::UNAUTHORIZED);
+
+    let r = server
+        .get("/api/v1/settings/reload-status")
+        .add_header(axum::http::header::AUTHORIZATION, adult_basic)
+        .await;
+    test_support::assert_problem(&r, problems::FORBIDDEN, StatusCode::FORBIDDEN);
 }
 
 #[sqlx::test(migrations = "./migrations")]
