@@ -155,10 +155,16 @@ impl RejectionReason {
     }
 }
 
-/// Renders an ingestion-relative path for display: UTF-8 verbatim, otherwise
-/// with the non-UTF-8 bytes escaped, so a stored name always renders.
+/// Renders an ingestion-relative path for display: valid UTF-8 spans verbatim
+/// and each invalid byte escaped as `\xNN`, so a stored name always renders.
 pub fn display_path(bytes: &[u8]) -> String {
-    std::str::from_utf8(bytes).map_or_else(|_| bytes.escape_ascii().to_string(), str::to_owned)
+    bytes
+        .utf8_chunks()
+        .flat_map(|chunk| {
+            let escaped = chunk.invalid().iter().flat_map(|byte| byte.escape_ascii());
+            chunk.valid().chars().chain(escaped.map(char::from))
+        })
+        .collect()
 }
 
 #[derive(Clone, Debug)]
@@ -678,6 +684,18 @@ mod tests {
             "dir/caf\u{e9}.epub"
         );
         assert_eq!(display_path(b"dir/\xffname.epub"), "dir/\\xffname.epub");
+    }
+
+    #[test]
+    fn display_path_keeps_valid_utf8_spans_around_invalid_bytes() {
+        assert_eq!(
+            display_path(b"na\xc3\xafve/\xff.epub"),
+            "na\u{ef}ve/\\xff.epub"
+        );
+        assert_eq!(
+            display_path(b"\xfe\xffa\xc3\xa9\x80"),
+            "\\xfe\\xffa\u{e9}\\x80"
+        );
     }
 
     #[sqlx::test(migrations = "./migrations")]
