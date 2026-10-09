@@ -14,7 +14,19 @@
         { "type": "chore", "section": "Miscellaneous", "hidden": true },
         { "type": "test", "section": "Tests", "hidden": true }
       ],
-      "extra-files": ["backend/Cargo.toml", "frontend/package.json"]
+      "extra-files": [
+        {
+          "type": "toml",
+          "path": "backend/Cargo.toml",
+          "jsonpath": "$.package.version"
+        },
+        {
+          "type": "toml",
+          "path": "backend/Cargo.lock",
+          "jsonpath": "$.package[?(@.name.value=='reverie-api')].version"
+        },
+        "frontend/package.json"
+      ]
     }
   },
   "$schema": "https://raw.githubusercontent.com/googleapis/release-please/main/schemas/config.json"
