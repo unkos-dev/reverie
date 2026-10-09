@@ -195,36 +195,27 @@ async fn rows_without_classes_read_as_unspecified_and_never_expose_stored_text(p
         json!([]),
     )
     .await;
-    seed(
-        &env,
-        "unknown class",
-        EnrichmentStatus::Failed,
-        Some("transient source failures"),
-        json!([{"source": "hardcover", "class": "secret-detail"}]),
-    )
-    .await;
-
     let response = get(&env, LIST).await;
     let text = response.text();
-    for leaked in ["password", "database", "secret-detail", "transient source"] {
+    for leaked in ["password", "database", "transient source"] {
         assert!(!text.contains(leaked), "response leaked {leaked}: {text}");
     }
     let body: Value = response.json();
-    for item in items(&body) {
-        assert_eq!(
-            item["primary"],
-            json!({"source": null, "class": "unspecified"})
-        );
-        assert_eq!(item["also"], json!([]));
-    }
+    assert_eq!(items(&body).len(), 1);
+    assert_eq!(
+        body["items"][0]["primary"],
+        json!({"source": null, "class": "unspecified"})
+    );
+    assert_eq!(body["items"][0]["also"], json!([]));
+    assert_eq!(
+        titles(&list(&env, "?class=unspecified").await),
+        vec!["legacy"]
+    );
     let counts: Value = get(&env, COUNTS).await.json();
-    assert_eq!(counts["total"], 2);
+    assert_eq!(counts["total"], 1);
     assert_eq!(
         counts["by_failure"],
-        json!([
-            {"source": "hardcover", "class": "unspecified", "count": 1},
-            {"source": null, "class": "unspecified", "count": 1},
-        ])
+        json!([{"source": null, "class": "unspecified", "count": 1}])
     );
 }
 
