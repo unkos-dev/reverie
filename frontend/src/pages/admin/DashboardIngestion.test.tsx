@@ -499,6 +499,16 @@ describe("Needs attention", () => {
     expect(await screen.findByText("Marlow - The Salt Archive.epub")).toBeInTheDocument();
   });
 
+  test("retrying a failed first page keeps keyboard focus on the group header", async () => {
+    vi.mocked(listInputs).mockRejectedValueOnce(new ApiError(500, null, "Internal", ""));
+    renderPage();
+    await screen.findByText("Could not load these files.");
+    const card = screen.getByRole("region", { name: /Needs attention/ });
+    await userEvent.click(within(card).getByRole("button", { name: "Try again" }));
+    await screen.findByText("Marlow - The Salt Archive.epub");
+    expect(within(card).getByRole("button", { name: /The file is damaged/ })).toHaveFocus();
+  });
+
   test("the ignored group is muted, counted on its own and requests format_not_accepted", async () => {
     vi.mocked(listInputs).mockImplementation(({ reason }) =>
       Promise.resolve(
