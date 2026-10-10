@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT i.id, COUNT(j.id) FILTER (WHERE j.outcome = 'transient_input') AS \"count!\",\n             MAX(j.completed_at) FILTER (WHERE j.outcome = 'transient_input') AS failed_at,\n             COALESCE(BOOL_OR(j.outcome = 'needs_change'), false) AS \"needs_change!\"\n           FROM ingestion_inputs i LEFT JOIN ingestion_jobs j ON j.input_id = i.id\n             AND j.input_generation = i.generation AND j.created_at >= i.retry_reset_at\n           WHERE i.id = ANY($1) GROUP BY i.id",
+  "query": "SELECT i.id, COUNT(j.id) FILTER (WHERE j.outcome = 'transient_input') AS \"count!\",\n             MAX(j.completed_at) FILTER (WHERE j.outcome = 'transient_input') AS failed_at,\n             COALESCE(BOOL_OR(j.outcome = 'needs_change'), false) AS \"needs_change!\",\n             i.retries_exhausted_at IS NOT NULL AS \"exhausted!\"\n           FROM ingestion_inputs i LEFT JOIN ingestion_jobs j ON j.input_id = i.id\n             AND j.input_generation = i.generation AND j.created_at >= i.retry_reset_at\n           WHERE i.id = ANY($1) GROUP BY i.id",
   "describe": {
     "columns": [
       {
@@ -31,6 +31,12 @@
         "name": "needs_change!",
         "type_info": "Bool",
         "origin": "Expression"
+      },
+      {
+        "ordinal": 4,
+        "name": "exhausted!",
+        "type_info": "Bool",
+        "origin": "Expression"
       }
     ],
     "parameters": {
@@ -42,8 +48,9 @@
       false,
       null,
       null,
+      null,
       null
     ]
   },
-  "hash": "f1e83e4674796e28369f72ba8832001eec8c468507656704e5c18d635eb8eba3"
+  "hash": "51ffe2ec6aa5634ded68c4d97e82f985b9c7941e39e582798f5ce5bb1e833c39"
 }

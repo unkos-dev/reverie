@@ -375,7 +375,7 @@ impl Coordinator {
                 .is_none_or(|formats| formats.iter().any(|format| format == "epub"))
             && match input.status {
                 InputStatus::Pending => true,
-                InputStatus::OperationalFailure => !retry.needs_change && retry.count < 6,
+                InputStatus::OperationalFailure => !retry.needs_change && !retry.exhausted,
                 _ => false,
             };
         if !eligible {
@@ -885,18 +885,20 @@ impl Coordinator {
             pending.health = accepted.health;
             pending.result = completed;
         }
-        let (outcome, status, reason, work) = match &pending.result {
+        let (outcome, status, reason, rejection_reasons, work) = match &pending.result {
             ProcessResult::Complete => return Ok(()),
             ProcessResult::Skipped(work) => (
                 AttemptOutcome::Duplicate,
                 InputStatus::Duplicate,
                 None,
+                &[][..],
                 Some(*work),
             ),
-            ProcessResult::Failed(reason) => (
+            ProcessResult::Failed(reason, rejection_reasons) => (
                 AttemptOutcome::Rejected,
                 InputStatus::Rejected,
                 Some(reason.as_str()),
+                rejection_reasons.as_slice(),
                 None,
             ),
             ProcessResult::Operational(class, reason) => (
@@ -907,9 +909,16 @@ impl Coordinator {
                     InputStatus::OperationalFailure
                 },
                 Some(reason.as_str()),
+                &[][..],
                 None,
             ),
-            ProcessResult::Changed => (AttemptOutcome::Changed, InputStatus::Pending, None, None),
+            ProcessResult::Changed => (
+                AttemptOutcome::Changed,
+                InputStatus::Pending,
+                None,
+                &[][..],
+                None,
+            ),
             ProcessResult::Accepted(_) => anyhow::bail!("accepted result awaiting commit"),
         };
         let mut tx = self.pool.begin().await?;
@@ -920,6 +929,7 @@ impl Coordinator {
             outcome,
             status,
             reason,
+            rejection_reasons,
             work,
         )
         .await?;
@@ -1217,7 +1227,7 @@ enum ProcessResult {
     Complete,
     Accepted(Box<Accepted>),
     Skipped(Uuid),
-    Failed(String),
+    Failed(String, Vec<crate::models::ingestion_input::RejectionReason>),
     Operational(crate::models::ingestion_input::AttemptOutcome, String),
     Changed,
 }
@@ -1688,7 +1698,10 @@ async fn process_file(
         .get("ext")
         .is_none_or(|ext| !ext.eq_ignore_ascii_case("epub"))
     {
-        return ProcessResult::Failed("unsupported format".into());
+        return ProcessResult::Failed(
+            "unsupported format".into(),
+            vec![crate::models::ingestion_input::RejectionReason::Unspecified],
+        );
     }
     let rendered = path_template::render(path_template::DEFAULT_TEMPLATE, &vars);
     let candidate_path: RelativeFilePath = match checked_candidate(&rendered) {
@@ -1842,7 +1855,10 @@ async fn accepted_from_validation(
                     )
                     .await;
                 }
-                return ProcessResult::Failed(format!("EPUB rejected: {reason}"));
+                return ProcessResult::Failed(
+                    format!("EPUB rejected: {reason}"),
+                    crate::models::ingestion_input::RejectionReason::from_issues(&report.issues),
+                );
             }
             let status = match report.outcome {
                 ValidationOutcome::Clean => ValidationStatus::Clean,
@@ -2586,6 +2602,7 @@ async fn commit_ingest_outcome(
             crate::models::ingestion_input::AttemptOutcome::Imported,
             crate::models::ingestion_input::InputStatus::Imported,
             None,
+            &[],
             Some(work_id),
         )
         .await?;
@@ -3899,6 +3916,7 @@ mod tests {
                 AttemptOutcome::NeedsChange,
                 InputStatus::OperationalFailure,
                 Some("PermissionDenied"),
+                &[],
                 None,
             )
             .await
@@ -4448,6 +4466,7 @@ mod tests {
             count: 0,
             failed_at: None,
             needs_change: false,
+            exhausted: false,
         }
     }
 
@@ -4501,11 +4520,15 @@ mod tests {
 
     #[tokio::test(start_paused = true)]
     async fn capability_ingestion_coordinator_five_retries_then_sixth_failure_exhausts() {
-        use crate::models::ingestion_input::{InputStatus, RetryState};
+        use crate::models::ingestion_input::{InputStatus, RetryState, TRANSIENT_ATTEMPT_LIMIT};
         let state = crate::test_support::test_state();
         let mut owner = coordinator(state.pool, state.config, state.library_files);
         assert_eq!(RETRIES, [300, 1800, 7200, 28800, 86400]);
-        for count in 1..=6 {
+        assert_eq!(
+            RETRIES.len() + 1,
+            usize::try_from(TRANSIENT_ATTEMPT_LIMIT).unwrap()
+        );
+        for count in 1..=TRANSIENT_ATTEMPT_LIMIT {
             let mut input = pending_input();
             input.source_path = format!("retry-{count}.epub").into_bytes();
             input.status = InputStatus::OperationalFailure;
@@ -4522,9 +4545,11 @@ mod tests {
                 count,
                 failed_at: Some(chrono::Utc::now()),
                 needs_change: false,
+                exhausted: count >= TRANSIENT_ATTEMPT_LIMIT,
             };
-            assert_eq!(owner.schedule(input, &retry), if count < 6 { 1 } else { 2 });
-            if count < 6 {
+            let waiting = count < TRANSIENT_ATTEMPT_LIMIT;
+            assert_eq!(owner.schedule(input, &retry), if waiting { 1 } else { 2 });
+            if waiting {
                 let key = owner.keys.get(&id).unwrap();
                 let remaining = owner
                     .deadlines
@@ -4994,7 +5019,7 @@ mod tests {
             match &pending.result {
                 ProcessResult::Complete => result.processed += 1,
                 ProcessResult::Skipped(_) => result.skipped += 1,
-                ProcessResult::Failed(_) | ProcessResult::Operational(_, _) => result.failed += 1,
+                ProcessResult::Failed(..) | ProcessResult::Operational(_, _) => result.failed += 1,
                 ProcessResult::Changed => {}
                 ProcessResult::Accepted(_) => anyhow::bail!("unresolved accepted result"),
             }
@@ -5342,7 +5367,7 @@ mod tests {
         )
         .await;
         assert!(
-            matches!(result, ProcessResult::Failed(reason) if reason.contains("unsupported format"))
+            matches!(result, ProcessResult::Failed(reason, _) if reason.contains("unsupported format"))
         );
         assert!(!library.path().join("Author/Unsupported.bin").exists());
         assert_eq!(std::fs::read(source).unwrap(), b"unsupported bytes");
@@ -6200,6 +6225,14 @@ mod tests {
             crate::models::ingestion_input::InputStatus::Rejected
         );
         assert!(input.reason.as_deref().unwrap().contains("EPUB rejected"));
+        let recorded = sqlx::query_scalar!(
+            "SELECT rejection_reasons AS \"rejection_reasons!\" FROM ingestion_inputs WHERE id = $1",
+            input.id,
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(recorded, vec!["damaged".to_owned()]);
         assert_eq!(std::fs::read(&source).unwrap(), b"this is not a zip file");
         assert_eq!(std::fs::read_dir(library.path()).unwrap().count(), 0);
         let dest = library.path().join("Bad/Corrupt Book.epub");

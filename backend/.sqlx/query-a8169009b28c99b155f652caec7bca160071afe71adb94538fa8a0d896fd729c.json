@@ -1,0 +1,53 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE ingestion_inputs SET status = $3, reason = $4, work_id = $5, rejection_reasons = $6,\n         completed_at = CASE WHEN $3::ingestion_input_status = 'pending' THEN NULL ELSE now() END,\n         retries_exhausted_at = CASE WHEN $7::ingestion_attempt_outcome = 'transient_input' AND (\n           SELECT COUNT(*) FROM ingestion_jobs j WHERE j.input_id = ingestion_inputs.id\n             AND j.input_generation = ingestion_inputs.generation AND j.created_at >= ingestion_inputs.retry_reset_at\n             AND j.outcome = 'transient_input') >= $8 THEN now() END\n         WHERE id = $1 AND generation = $2 AND status <> 'removed'",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Int8",
+        {
+          "Custom": {
+            "name": "ingestion_input_status",
+            "kind": {
+              "Enum": [
+                "pending",
+                "processing",
+                "imported",
+                "duplicate",
+                "rejected",
+                "not_accepted",
+                "operational_failure",
+                "removed"
+              ]
+            }
+          }
+        },
+        "Text",
+        "Uuid",
+        "TextArray",
+        {
+          "Custom": {
+            "name": "ingestion_attempt_outcome",
+            "kind": {
+              "Enum": [
+                "imported",
+                "duplicate",
+                "rejected",
+                "changed",
+                "shared_dependency",
+                "transient_input",
+                "needs_change",
+                "interrupted"
+              ]
+            }
+          }
+        },
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "a8169009b28c99b155f652caec7bca160071afe71adb94538fa8a0d896fd729c"
+}

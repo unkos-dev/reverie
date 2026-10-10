@@ -37,6 +37,19 @@ shared path exclusion; final registration reserves the manifestation's path clai
 after discovery, with queued, deferred and suppressed counts and `/api/v1/dashboard/activity` as the monitor. The
 response describes discovery, without promising a separately attributable batch or completed imports.
 
+`GET /api/v1/ingestion/inputs` lists the inputs that need attention and `GET /api/v1/ingestion/inputs/counts` counts
+them, both under the same admin scope and role. Each input appears once, under a primary reason class: the most severe
+recorded rejection class (`unsafe_contents`, `damaged`, `invalid_structure`, `over_limits`, `unspecified`),
+`needs_change` for an operational failure whose latest attempt outcome is needs-change, `retries_exhausted` for an
+operational failure whose latest outcome is transient and whose recorded retry budget is spent, and
+`format_not_accepted` for ignored files. An operational failure still waiting for an automatic retry is in none of these
+and is not listed. Secondary rejection classes are returned in `reasons`, primary first, and never counted. Without a
+`reason` filter the list holds every class except `format_not_accepted`; `reason` selects exactly the inputs whose
+primary class it names, so it also selects the input status. The list is ordered by id with a cursor bound to the
+filter, a limit clamped to 1 through 100 and a `Link` header; the counts read ignores cursor, limit and filter and
+reports `attention_total` as the sum without `format_not_accepted`. Items carry the ingestion-relative path, with
+non-UTF-8 bytes escaped, and the latest attempt outcome. Stored `reason` text never leaves the server.
+
 `LibraryFiles` supplies immutable ingestion and library directory capabilities. The ingestion database pool reads
 current inputs and linked attempts and writes works, manifestations, metadata drafts and claims. Settings use the
 existing singleton row, API and monotonic live cache. Tokio supplies cancellation, clock control and the deadline queue;
@@ -49,9 +62,13 @@ application-role DSN is never substituted. One-shot administrative commands reta
 ## Data and state
 
 `ingestion_inputs` stores a byte-preserving ingestion-relative path, full source fingerprint, generation, current
-status, reason, optional work link, observation and retry-reset times, completion time and removal cause. A partial
-unique index permits one present input per path; a removed input keeps its identity and history while a later arrival
-gets a new record. Fingerprints include device, `inode`, size, modification time and change time.
+status, reason, rejection classes, optional work link, observation and retry-reset times, the time its retries were
+exhausted, completion time and removal cause. The rejection classes are a closed list written with a rejection, most
+severe first, from the irrecoverable validator issues; a rejection recorded without them reads as `unspecified`. The
+`ingestion_input_classes` view maps status, latest attempt outcome on the current generation and the exhaustion time to
+the single class the inputs list and counts report, and holds only inputs that have one. A partial unique index permits
+one present input per path; a removed input keeps its identity and history while a later arrival gets a new record.
+Fingerprints include device, `inode`, size, modification time and change time.
 
 New `ingestion_jobs` link the captured input and generation and carry a typed attempt outcome separately from the shared
 job status. Old unlinked history remains readable. Terminal attempt and corresponding input updates share one
@@ -138,9 +155,11 @@ Operational failures are classified before retry:
   automatic retry. Exhausted suffix selection and confirmed database constraint or protocol errors also need change;
   serialization and deadlock errors are transient.
 
-Retry counts use linked history since the persisted reset marker, excluding shared and interrupted outcomes. New
-generation, startup reconstruction and admin scans reset exhausted and needs-change inputs, subject to readiness;
-unchanged rejection suppression is preserved. These timings and budgets are internal constants.
+Retry counts use linked history since the persisted reset marker, excluding shared and interrupted outcomes. The
+terminal write that records the transient outcome reaching the limit also records the exhaustion time on the input, in
+the same transaction, and the scheduler suppresses an input that carries it. New generation, startup reconstruction and
+admin scans reset exhausted and needs-change inputs, subject to readiness, and every reset of the marker clears the
+exhaustion time; unchanged rejection suppression is preserved. These timings and budgets are internal constants.
 
 Startup reconciles unresolved publication evidence under the session advisory lock before reclaiming interrupted
 attempts. It first checks this exact attempt's imported outcome, preserving committed files even after writeback changes
@@ -166,10 +185,11 @@ Library and ingestion capabilities are acquired before serving; no quarantine au
 refuses symlink parents and non-regular files. Independent staging prevents repair from mutating a source shared through
 a hardlink. Shared path exclusion protects publication, registration and cleanup across ingestion and writeback.
 
-The coordinator logs pause, resume, failures and stalled attempts. The activity endpoint exposes attempt history.
-Operators manage retained originals on disk and request another scan after correction. An outage can strand eligible
-inputs until probes succeed; a blocked read can delay process shutdown. Abrupt termination can leave temporary
-directories, and no scavenging is supplied. Local tests do not establish NAS server durability.
+The coordinator logs pause, resume, failures and stalled attempts. The activity endpoint exposes attempt history. The
+inputs list names retained originals by ingestion-relative path to administrators only, and exposes failure reasons as
+closed classes. Operators manage retained originals on disk and request another scan after correction. An outage can
+strand eligible inputs until probes succeed; a blocked read can delay process shutdown. Abrupt termination can leave
+temporary directories, and no scavenging is supplied. Local tests do not establish NAS server durability.
 
 ## More information
 

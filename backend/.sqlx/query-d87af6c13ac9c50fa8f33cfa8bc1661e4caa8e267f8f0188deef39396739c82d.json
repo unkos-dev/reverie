@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT rejection_reasons AS \"rejection_reasons!\" FROM ingestion_inputs WHERE id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "rejection_reasons!",
+        "type_info": "TextArray",
+        "origin": {
+          "Table": {
+            "table": "ingestion_inputs",
+            "name": "rejection_reasons"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "d87af6c13ac9c50fa8f33cfa8bc1661e4caa8e267f8f0188deef39396739c82d"
+}
