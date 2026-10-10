@@ -36,5 +36,10 @@ externally shared source bytes.
   `capability_ingestion_acquisition_rejected_candidate_never_publishes`.
 - An unchanged rejected generation remains suppressed across startup and an admin scan. A changed fingerprint restores
   eligibility as a new generation.
-- Validator execution failure is a separate trigger: `capability_ingestion_owner_validator_error_stores_failed_status`
-  checks that the accepted file can be registered with validation status `failed`.
+- A validator error that is a verdict on the file, a refused repair candidate or a failed required repair, reaches the
+  same outcome. Checked by `capability_ingestion_owner_rejects_candidate_refused_by_validation` and
+  `capability_ingestion_owner_rejects_epub_whose_required_repair_fails`; `only_content_verdicts_are_file_defects` fixes
+  which errors count.
+- A validator error that is a storage fault is a separate trigger:
+  `capability_ingestion_owner_validator_error_stores_failed_status` checks that the accepted file can be registered with
+  validation status `failed`.

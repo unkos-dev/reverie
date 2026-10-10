@@ -266,7 +266,11 @@ and a package document whose bytes are not valid UTF-8 or well-formed XML each p
 references, encoding mismatches and a non-conformant `mimetype` entry are `Repaired` or `Degraded`.
 
 **An archive with a corrupt entry.** An entry whose decompressed bytes fail the declared CRC-32 or size, anywhere in the
-archive, is `Irrecoverable` `CorruptEntry` and the outcome is `Quarantined`, whether or not the entry is structural.
+archive, is `Irrecoverable` `CorruptEntry` and the outcome is `Quarantined`, whether or not the entry is structural. The
+one exception is `META-INF/container.xml`: the verification pass skips it, so bytes that fail the CRC-32 or size make
+the entry unreadable to Layer 2, which regenerates it when a package document is discoverable and otherwise quarantines
+the archive. A `container.xml` whose bytes pass the check but do not parse, or that names no package document, is not
+regenerated and is `Irrecoverable`.
 
 **An archive shaped to exhaust memory or CPU.** An end-of-central-directory record declaring more entries than
 `MAX_ZIP_ENTRIES` is rejected before any header is parsed. A central directory that in fact holds more entries than it
@@ -278,9 +282,10 @@ without running Layer 2 or any layer after it.
 **An EPUB the check rejects outright.** A path-traversal entry name, a duplicate entry name, an encrypted entry, an
 unsupported compression method, data preceding the first entry, a corrupt central directory, or an entry failing
 whole-archive verification each produce an `Irrecoverable` issue in Layer 1 or the verification pass and an immediate
-`Quarantined` outcome. An unsafe `OPF` path, a missing `OPF` candidate and an unreadable `container.xml` are the
-`Irrecoverable` issues Layer 2 can raise, and an unreadable package document is the one `inspect` raises after Layer 3;
-each yields the same `Quarantined` result.
+`Quarantined` outcome. Layer 2 raises `Irrecoverable` issues for an unsafe `OPF` path, for a `container.xml` that is
+absent or unreadable with no `.opf` file to regenerate it from, and for a readable `container.xml` that does not parse
+or names no package document. `inspect` raises one for a package document that is absent or does not parse, after Layer
+3. Each yields the same `Quarantined` result.
 
 ## Failure and recovery
 
@@ -293,10 +298,12 @@ uncertain. `PublicationUncertain` carries the accepted hash and underlying error
 relocation or row-success update on that result. A retry inspects the recorded source afresh. No phase is inferred from
 an upstream error string.
 
-The ingestion caller retains its validator-error policy for an error the validator raises, as opposed to a finding in
-its report: `validation_status = failed` and continued ingestion. Writeback sends candidate rejection and errors to its
-existing failed/retry path. A missing or unreadable container with a discoverable OPF is repaired once, without
-duplicate container entries.
+An error the validator raises, as opposed to a finding in its report, is classified by `EpubError::is_file_defect`. A
+candidate refusal, a failed required repair, an XML rewrite error and a ZIP error that is not an I/O error are verdicts
+on the file; the ingestion caller rejects the input as it does a `Quarantined` outcome. An I/O error, a ZIP I/O error
+and an uncertain publication are faults in Reverie's own storage; the ingestion caller keeps the file and registers it
+with `validation_status = failed`. Writeback sends candidate rejection and errors to its existing failed/retry path. A
+missing or unreadable container with a discoverable OPF is repaired once, without duplicate container entries.
 
 ## Security and operations
 

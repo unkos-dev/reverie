@@ -57,6 +57,19 @@ pub enum EpubError {
     },
 }
 
+impl EpubError {
+    /// Whether the error is a verdict on the file's content rather than a fault
+    /// in Reverie's own storage or publication.
+    #[must_use]
+    pub const fn is_file_defect(&self) -> bool {
+        match self {
+            Self::CandidateRejected(_) | Self::Repair(_) | Self::Xml(_) => true,
+            Self::Zip(error) => !matches!(error, zip::result::ZipError::Io(_)),
+            Self::Io(_) | Self::PublicationUncertain { .. } => false,
+        }
+    }
+}
+
 // ── Issue types ───────────────────────────────────────────────────────────────
 
 /// The pipeline layer that detected an `Issue`.
@@ -987,6 +1000,23 @@ mod tests {
                 .any(|i| i.severity == Severity::Irrecoverable && expected(&i.kind)),
             "{:?}",
             report.issues
+        );
+    }
+
+    #[test]
+    fn only_content_verdicts_are_file_defects() {
+        let io = || std::io::Error::other("storage");
+        assert!(EpubError::CandidateRejected("regressed".into()).is_file_defect());
+        assert!(EpubError::Repair("no entry".into()).is_file_defect());
+        assert!(EpubError::Zip(zip::result::ZipError::FileNotFound).is_file_defect());
+        assert!(!EpubError::Zip(zip::result::ZipError::Io(io())).is_file_defect());
+        assert!(!EpubError::Io(io()).is_file_defect());
+        assert!(
+            !EpubError::PublicationUncertain {
+                hash: "h".into(),
+                error: Box::new(EpubError::Io(io())),
+            }
+            .is_file_defect()
         );
     }
 
