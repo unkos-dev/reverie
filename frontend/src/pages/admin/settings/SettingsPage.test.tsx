@@ -332,6 +332,20 @@ describe("loading", () => {
     await screen.findByRole("form", { name: "Enrichment settings" });
   });
 
+  test("the loading skeletons and the switch thumb opt out of motion under reduced motion", async () => {
+    renderSettings();
+    await screen.findByText("Loading settings");
+    const skeletons = document.querySelectorAll("[data-slot=skeleton]");
+    expect(skeletons.length).toBeGreaterThan(0);
+    for (const skeleton of skeletons) {
+      expect(skeleton).toHaveClass("motion-reduce:animate-none");
+    }
+    await screen.findByRole("form", { name: "Enrichment settings" });
+    expect(
+      screen.getByRole("switch", { name: "Fetch metadata from external sources" }),
+    ).toHaveClass("motion-reduce:[&>[data-slot=switch-thumb]]:transition-none");
+  });
+
   test("a failed load shows a recoverable error and Try again fetches again", async () => {
     server = newServer({ getStatus: 503 });
     const user = userEvent.setup();
