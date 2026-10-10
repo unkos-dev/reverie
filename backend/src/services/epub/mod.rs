@@ -1050,6 +1050,21 @@ mod tests {
     }
 
     #[test]
+    fn truncated_package_document_is_quarantined() {
+        let report = quarantine_of(&[
+            ("META-INF/container.xml", CONTAINER_XML),
+            (
+                "OEBPS/content.opf",
+                b"<package xmlns:dc=\"http://purl.org/dc/elements/1.1/\"><metadata><dc:title>Cut off",
+            ),
+        ]);
+        assert_irrecoverable(
+            &report,
+            |kind| matches!(kind, IssueKind::CorruptEntry { entry_name } if entry_name == "OEBPS/content.opf"),
+        );
+    }
+
+    #[test]
     fn crc_failure_in_a_content_entry_is_quarantined() {
         let (_dir, path) = file_fixture(&[("chapter.xhtml", b"<html/>")], false, false);
         let mut bytes = std::fs::read(&path).unwrap();
