@@ -28,7 +28,13 @@ const GRACE_WINDOW_MS = 2 * 60 * 1000;
 type ScanFailure = "failed" | "forbidden" | "session";
 
 type IngestionNotice =
-  | { kind: "accepted"; result: DiscoveryResult; afterScan: boolean }
+  | {
+      kind: "accepted";
+      result: DiscoveryResult;
+      afterScan: boolean;
+      /** Latest batch before the scan: `null` for none, `undefined` when activity had not loaded. */
+      batchBeforeScan: string | null | undefined;
+    }
   | { kind: "finished" };
 
 type IngestionMonitor = {
@@ -79,6 +85,7 @@ function useIngestionMonitor(options: {
   const [scanForbidden, setScanForbidden] = useState(false);
   const [wasRunning, setWasRunning] = useState(false);
   const countsBeforeScan = useRef(0);
+  const batchBeforeScan = useRef<string | null | undefined>(undefined);
 
   const activity = useQuery({
     queryKey: queryKeys.dashboard.activity(activityLimit),
@@ -105,6 +112,16 @@ function useIngestionMonitor(options: {
     if (wasRunning && !running) setNotice({ kind: "finished" });
   }
 
+  if (
+    notice?.kind === "accepted" &&
+    notice.batchBeforeScan !== undefined &&
+    latestBatch !== undefined &&
+    latestBatch.ended_at !== null &&
+    latestBatch.batch_id !== notice.batchBeforeScan
+  ) {
+    setNotice({ kind: "finished" });
+  }
+
   useEffect(() => {
     if (graceRuns === 0) return undefined;
     const timer = setTimeout(() => {
@@ -122,9 +139,19 @@ function useIngestionMonitor(options: {
       countsBeforeScan.current = changeTotal(
         queryClient.getQueryData(queryKeys.ingestion.counts()),
       );
+      const seen = queryClient.getQueryData<DashboardActivity>(
+        queryKeys.dashboard.activity(activityLimit),
+      );
+      batchBeforeScan.current =
+        seen === undefined ? undefined : (seen.batches[0]?.batch_id ?? null);
     },
     onSuccess: (result) => {
-      setNotice({ kind: "accepted", result, afterScan: false });
+      setNotice({
+        kind: "accepted",
+        result,
+        afterScan: false,
+        batchBeforeScan: batchBeforeScan.current,
+      });
       if (result.queued + result.deferred > 0) {
         setGraceActive(true);
         setGraceRuns((n) => n + 1);
