@@ -596,6 +596,25 @@ describe("Needs attention", () => {
     );
   });
 
+  test("the group chevron opts out of motion under reduced motion", async () => {
+    renderPage();
+    const chevron = (
+      await screen.findByRole("button", { name: /The file is damaged/ })
+    ).querySelector("svg");
+    expect(chevron).toHaveClass("motion-reduce:transition-none");
+  });
+
+  test("the needs-attention skeletons opt out of motion under reduced motion", async () => {
+    vi.mocked(getInputCounts).mockReturnValue(new Promise(() => {}));
+    renderPage();
+    const region = await screen.findByRole("region", { name: /Needs attention/ });
+    const skeletons = region.querySelectorAll("[data-slot=skeleton]");
+    expect(skeletons.length).toBeGreaterThan(0);
+    for (const skeleton of skeletons) {
+      expect(skeleton).toHaveClass("motion-reduce:animate-none");
+    }
+  });
+
   test("shows one error with a retry when the counts fail", async () => {
     vi.mocked(getInputCounts).mockRejectedValueOnce(new ApiError(500, null, "Internal", ""));
     renderPage();
@@ -789,6 +808,17 @@ describe("Enrichment problems", () => {
     vi.mocked(getEnrichmentFailureCounts).mockReturnValue(new Promise(() => {}));
     renderPage();
     expect(await screen.findByText("Loading books with enrichment problems")).toBeInTheDocument();
+  });
+
+  test("the enrichment skeletons opt out of motion under reduced motion", async () => {
+    vi.mocked(getEnrichmentFailureCounts).mockReturnValue(new Promise(() => {}));
+    renderPage();
+    const status = await screen.findByText("Loading books with enrichment problems");
+    const skeletons = status.parentElement?.querySelectorAll("[data-slot=skeleton]") ?? [];
+    expect(skeletons.length).toBeGreaterThan(0);
+    for (const skeleton of skeletons) {
+      expect(skeleton).toHaveClass("motion-reduce:animate-none");
+    }
   });
 
   test("shows a retryable error when the counts fail", async () => {
