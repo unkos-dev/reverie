@@ -375,7 +375,7 @@ impl Coordinator {
                 .is_none_or(|formats| formats.iter().any(|format| format == "epub"))
             && match input.status {
                 InputStatus::Pending => true,
-                InputStatus::OperationalFailure => !retry.needs_change && retry.count < 6,
+                InputStatus::OperationalFailure => !retry.needs_change && !retry.exhausted,
                 _ => false,
             };
         if !eligible {
@@ -4466,6 +4466,7 @@ mod tests {
             count: 0,
             failed_at: None,
             needs_change: false,
+            exhausted: false,
         }
     }
 
@@ -4519,11 +4520,15 @@ mod tests {
 
     #[tokio::test(start_paused = true)]
     async fn capability_ingestion_coordinator_five_retries_then_sixth_failure_exhausts() {
-        use crate::models::ingestion_input::{InputStatus, RetryState};
+        use crate::models::ingestion_input::{InputStatus, RetryState, TRANSIENT_ATTEMPT_LIMIT};
         let state = crate::test_support::test_state();
         let mut owner = coordinator(state.pool, state.config, state.library_files);
         assert_eq!(RETRIES, [300, 1800, 7200, 28800, 86400]);
-        for count in 1..=6 {
+        assert_eq!(
+            RETRIES.len() + 1,
+            usize::try_from(TRANSIENT_ATTEMPT_LIMIT).unwrap()
+        );
+        for count in 1..=TRANSIENT_ATTEMPT_LIMIT {
             let mut input = pending_input();
             input.source_path = format!("retry-{count}.epub").into_bytes();
             input.status = InputStatus::OperationalFailure;
@@ -4540,9 +4545,11 @@ mod tests {
                 count,
                 failed_at: Some(chrono::Utc::now()),
                 needs_change: false,
+                exhausted: count >= TRANSIENT_ATTEMPT_LIMIT,
             };
-            assert_eq!(owner.schedule(input, &retry), if count < 6 { 1 } else { 2 });
-            if count < 6 {
+            let waiting = count < TRANSIENT_ATTEMPT_LIMIT;
+            assert_eq!(owner.schedule(input, &retry), if waiting { 1 } else { 2 });
+            if waiting {
                 let key = owner.keys.get(&id).unwrap();
                 let remaining = owner
                     .deadlines
