@@ -73,10 +73,10 @@ metadata counts.
 
 ### State-writer census
 
-- `manifestations.enrichment_status`, `_attempt_count`, `_attempted_at`, `_error`, `_rerun_requested`: written by
-  `queue.rs`'s `claim_next`/`mark_complete`/`mark_failed`/`revert_in_progress` (the queue's own lifecycle), plus two
-  external re-queue writers sharing the identical CASE-guarded `UPDATE` shape: `routes/enrichment.rs::trigger` and
-  `routes/metadata.rs::apply_identifier_patches` (a manual identifier edit implicitly re-queues enrichment).
+- `manifestations.enrichment_status`, `_attempt_count`, `_attempted_at`, `_error`, `_failures`, `_rerun_requested`:
+  written by `queue.rs`'s `claim_next`/`mark_complete`/`mark_failed`/`revert_in_progress` (the queue's own lifecycle),
+  plus two external re-queue writers sharing the identical CASE-guarded `UPDATE` shape: `routes/enrichment.rs::trigger`
+  and `routes/metadata.rs::apply_identifier_patches` (a manual identifier edit implicitly re-queues enrichment).
 - `metadata_versions` rows have three writer classes. This subject's own automated observations: written by
   `orchestrator::upsert_journal_row` (insert, or an `observation_count` bump on conflict) and by
   `apply_canonical_batch`'s own `confidence_score` update. A second writer with no overlap in code path: ingestion-time
@@ -181,6 +181,12 @@ ambient path and has no production caller.
   (`AppError::NotFound` on a miss), drops that transaction, then calls `dry_run::preview` on `state.ingestion_pool`, the
   same pool the queue itself runs on, chosen because the preview reads several joined tables without re-checking
   row-level security at each step. Returns `DryRunDiff` (`would_apply`/`would_stage`/`locked`/`source_failures`).
+- `GET /api/v1/dashboard/enrichment-failures` and `.../counts`: admin scope and role, under `acquire_with_rls`. They
+  list and count manifestations in `failed`, or `skipped` with an `enrichment_error`, each once under its primary
+  failure, with the work title and the other failing sources in `also`. `source` and `class` filters match the primary
+  only, and `source=none` selects books whose primary failure has no source; the list is ordered by id with a cursor
+  bound to the filters and a limit clamped to 1 through 100. Only closed failure classes leave the server, never
+  `enrichment_error`. The existing trigger endpoint is the retry action.
 - `GET /api/v1/enrichment/status`: requires a non-child caller and read scope; aggregates
   `manifestations.enrichment_status` counts under `acquire_with_rls`, so a child sees counts scoped to its own visible
   manifestations like any other row-level-security-gated read.
@@ -293,6 +299,15 @@ a projection, not a preview of a specific journal row a subsequent real run woul
   `SourceFailure` with a `terminal` flag (true only for a non-429 4xx) and, for `RateLimited`, a `retry_after`. `finish`
   only marks a row `Failed` when every enabled source failed non-terminally with nothing applied or staged; a terminal
   failure alongside a live result from another source still counts as `Complete`.
+- Each non-terminal failed attempt also persists `manifestations.enrichment_failures`, a JSON array of source and class
+  pairs ordered by source key, so the first entry is the primary failure. Classes are closed: `timeout`, `rate_limited`,
+  `source_error` (an unexpected HTTP status), `not_found`, `unreachable` (any other transport or decode failure),
+  `internal` and `unspecified`. A source that failed on several lookup keys in one run contributes its last failure. A
+  run that errors as a whole, including a panic, records the single class `internal`, with no source. A row holding
+  `enrichment_error` without classes reads as `unspecified`, with no source; a stored class this build does not know
+  reads as `unspecified` and keeps its source. The classes are meaningful only while `enrichment_error` is set, and
+  every write that clears `enrichment_error` clears them in the same statement: a retry through `trigger`, an identifier
+  edit, a rerun request consumed at the end of a run, and a successful run.
 - Google Books removes the request URL from transport and JSON-decoding errors before wrapping them as
   `SourceError::Other`. Cache payloads and dry-run failure summaries retain the error cause without its query
   credential; timeout errors remain `SourceError::Timeout`.
