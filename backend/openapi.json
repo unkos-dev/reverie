@@ -1727,6 +1727,192 @@
         ]
       }
     },
+    "/api/v1/ingestion/inputs": {
+      "get": {
+        "tags": [
+          "ingestion"
+        ],
+        "summary": "List ingestion inputs needing attention",
+        "description": "Returns one page of ingestion inputs that were rejected, need a change or have used their retries, each under one primary reason class. With reason=format_not_accepted it lists ignored files instead. Admin only.",
+        "operationId": "list_inputs",
+        "parameters": [
+          {
+            "name": "reason",
+            "in": "query",
+            "description": "Lists only inputs whose primary reason is this class. Absent lists\nevery input needing attention, which excludes `format_not_accepted`.",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/InputReason"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "Page size; clamped to 1..=100, default 25.",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "description": "Opaque cursor from a previous response's `next_cursor`.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "One page of inputs needing attention. Admin only.",
+            "headers": {
+              "Link": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "RFC 8288 next-page link; emitted with rel=\"next\" when more rows remain"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InputsResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Malformed query parameter",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Caller is not an admin",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Malformed cursor",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session_cookie": [
+              "admin"
+            ]
+          },
+          {
+            "device_token_bearer": [
+              "admin"
+            ]
+          },
+          {
+            "oidc_jwt_bearer": [
+              "admin"
+            ]
+          },
+          {
+            "opds_basic": [
+              "admin"
+            ]
+          }
+        ]
+      }
+    },
+    "/api/v1/ingestion/inputs/counts": {
+      "get": {
+        "tags": [
+          "ingestion"
+        ],
+        "summary": "Count ingestion inputs by reason",
+        "description": "Returns the number of inputs under each primary reason class, and the total needing attention (every class except format_not_accepted). Admin only.",
+        "operationId": "input_counts",
+        "responses": {
+          "200": {
+            "description": "Per-class counts. Admin only.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InputCountsResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Caller is not an admin",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session_cookie": [
+              "admin"
+            ]
+          },
+          {
+            "device_token_bearer": [
+              "admin"
+            ]
+          },
+          {
+            "oidc_jwt_bearer": [
+              "admin"
+            ]
+          },
+          {
+            "opds_basic": [
+              "admin"
+            ]
+          }
+        ]
+      }
+    },
     "/api/v1/ingestion/scan": {
       "post": {
         "tags": [
@@ -7340,6 +7526,19 @@
           }
         }
       },
+      "AttemptOutcome": {
+        "type": "string",
+        "enum": [
+          "imported",
+          "duplicate",
+          "rejected",
+          "changed",
+          "shared_dependency",
+          "transient_input",
+          "needs_change",
+          "interrupted"
+        ]
+      },
       "AuthorsResponse": {
         "type": "object",
         "description": "`GET /api/v1/authors` response envelope: the resolved author labels for\nthe requested ids, as a plain collection.",
@@ -8426,6 +8625,134 @@
           "skipped"
         ]
       },
+      "InputCountsResponse": {
+        "type": "object",
+        "description": "Response for `GET /api/v1/ingestion/inputs/counts`.",
+        "required": [
+          "by_reason",
+          "attention_total"
+        ],
+        "properties": {
+          "attention_total": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Inputs needing attention: the sum of `by_reason` without\n`format_not_accepted`."
+          },
+          "by_reason": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ReasonCount"
+            },
+            "description": "Every class with at least one input, most severe first. Includes\n`format_not_accepted`."
+          }
+        }
+      },
+      "InputItem": {
+        "type": "object",
+        "description": "One ingestion input that needs attention.",
+        "required": [
+          "id",
+          "path",
+          "status",
+          "primary_reason",
+          "reasons",
+          "observed_at"
+        ],
+        "properties": {
+          "completed_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "observed_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "outcome": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/AttemptOutcome",
+                "description": "Outcome of the latest finished attempt on the current generation."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "path": {
+            "type": "string",
+            "description": "Ingestion-relative path; bytes that are not UTF-8 are escaped."
+          },
+          "primary_reason": {
+            "$ref": "#/components/schemas/InputReason",
+            "description": "The class the input is listed and counted under; equals the first\nentry of `reasons`."
+          },
+          "reasons": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/InputReason"
+            },
+            "description": "Every class that applies, primary first. Secondary classes are never\ncounted."
+          },
+          "status": {
+            "$ref": "#/components/schemas/InputStatus"
+          }
+        }
+      },
+      "InputReason": {
+        "type": "string",
+        "description": "Closed class an input is listed under. Rejected inputs carry one of the\nfirst five, declared most severe first; the rest classify the other\nattention states. Raw stored failure text never maps to anything but\n`unspecified`.",
+        "enum": [
+          "unsafe_contents",
+          "damaged",
+          "invalid_structure",
+          "over_limits",
+          "unspecified",
+          "needs_change",
+          "retries_exhausted",
+          "format_not_accepted"
+        ]
+      },
+      "InputStatus": {
+        "type": "string",
+        "enum": [
+          "pending",
+          "processing",
+          "imported",
+          "duplicate",
+          "rejected",
+          "not_accepted",
+          "operational_failure",
+          "removed"
+        ]
+      },
+      "InputsResponse": {
+        "type": "object",
+        "description": "Response for `GET /api/v1/ingestion/inputs`.",
+        "required": [
+          "items"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/InputItem"
+            }
+          },
+          "next_cursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
       "LibraryDensity": {
         "type": "string",
         "description": "Row height for the library table view.",
@@ -9011,6 +9338,23 @@
           "finished",
           "abandoned"
         ]
+      },
+      "ReasonCount": {
+        "type": "object",
+        "description": "One class and the number of inputs listed under it.",
+        "required": [
+          "reason",
+          "count"
+        ],
+        "properties": {
+          "count": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "reason": {
+            "$ref": "#/components/schemas/InputReason"
+          }
+        }
       },
       "RegisterRequest": {
         "type": "object",
