@@ -80,7 +80,7 @@ function IntControl({ field, base, editor }: Props & { field: IntField }): React
         aria-labelledby={labelId(field.key)}
         aria-describedby={describedBy}
         aria-invalid={error === null ? undefined : true}
-        disabled={busy}
+        readOnly={busy}
         onChange={(event) => {
           editor.editText(field.key, event.target.value);
         }}
@@ -114,7 +114,7 @@ function MibControl({ field, base, editor }: Props & { field: MibField }): React
         aria-labelledby={labelId(field.key)}
         aria-describedby={describedBy}
         aria-invalid={error === null ? undefined : true}
-        disabled={busy}
+        readOnly={busy}
         onChange={(event) => {
           editor.editText(field.key, event.target.value);
         }}

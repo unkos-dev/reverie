@@ -1,5 +1,5 @@
 import { QueryCache, QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { ReactElement } from "react";
 import { RouterProvider, createMemoryRouter } from "react-router";
@@ -259,6 +259,19 @@ async function type(
 
 const save = (): HTMLElement => screen.getByRole("button", { name: /^Save/ });
 
+function holdPut(): () => void {
+  let release: () => void = () => undefined;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const realFetch = vi.mocked(globalThis.fetch).getMockImplementation();
+  vi.mocked(globalThis.fetch).mockImplementation(async (input, init) => {
+    if ((init?.method ?? "GET") === "PUT") await gate;
+    return realFetch === undefined ? new Response() : realFetch(input, init);
+  });
+  return release;
+}
+
 beforeEach(() => {
   server = newServer();
   __resetEtagCacheForTesting();
@@ -374,7 +387,7 @@ describe("loading", () => {
     expect(screen.getByText("Last changed")).toBeInTheDocument();
     expect(screen.getByText("No unsaved changes.")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Discard changes" })).toBeDisabled();
-    expect(save()).toBeDisabled();
+    expect(save()).toHaveAttribute("aria-disabled", "true");
   });
 
   test("a null reload time reads as the normal never-refreshed state", async () => {
@@ -422,7 +435,7 @@ describe("editing", () => {
     await type(user, "Concurrent lookups", "6");
     await type(user, "Concurrent lookups", "4");
     expect(screen.getByText("No unsaved changes.")).toBeInTheDocument();
-    expect(save()).toBeDisabled();
+    expect(save()).toHaveAttribute("aria-disabled", "true");
   });
 
   test("an area's edits never appear in another area's bar", async () => {
@@ -540,11 +553,56 @@ describe("saving", () => {
     await user.click(save());
     const busy = await screen.findByRole("button", { name: "Saving" });
     expect(busy).toHaveAttribute("aria-busy", "true");
-    expect(screen.getByRole("textbox", { name: "Concurrent lookups" })).toBeDisabled();
+    expect(screen.getByRole("textbox", { name: "Concurrent lookups" })).toHaveAttribute("readonly");
     expect(screen.getByText("Saving 1 change")).toBeInTheDocument();
     await user.click(busy);
     release();
     await screen.findByText("Settings saved");
+    expect(server.puts).toHaveLength(1);
+  });
+
+  test("Save keeps keyboard focus while saving and after the save, and ignores activation meanwhile", async () => {
+    const release = holdPut();
+    const user = userEvent.setup();
+    await loaded();
+    await type(user, "Concurrent lookups", "6");
+    act(() => {
+      save().focus();
+    });
+    await user.keyboard("{Enter}");
+    const busy = await screen.findByRole("button", { name: "Saving" });
+    expect(busy).toHaveFocus();
+    expect(busy).toHaveAttribute("aria-disabled", "true");
+    expect(busy).not.toHaveAttribute("disabled");
+    await user.keyboard("{Enter}");
+    await user.keyboard(" ");
+    await user.click(busy);
+    expect(screen.getByRole("status")).toHaveTextContent("Saving 1 change");
+    release();
+    await screen.findByText("Settings saved");
+    expect(server.puts).toHaveLength(1);
+    expect(save()).toHaveFocus();
+    expect(save()).toHaveAttribute("aria-disabled", "true");
+    expect(save()).not.toHaveAttribute("disabled");
+    await user.keyboard("{Enter}");
+    expect(server.puts).toHaveLength(1);
+  });
+
+  test("pressing Enter in a field keeps focus in that field while saving and after the save", async () => {
+    const release = holdPut();
+    const user = userEvent.setup();
+    await loaded();
+    await type(user, "Concurrent lookups", "6");
+    const field = screen.getByRole("textbox", { name: "Concurrent lookups" });
+    await user.keyboard("{Enter}");
+    await screen.findByText("Saving 1 change");
+    expect(field).toHaveFocus();
+    await user.keyboard("9");
+    expect(field).toHaveValue("6");
+    release();
+    await screen.findByText("Settings saved");
+    expect(field).toHaveFocus();
+    expect(field).not.toHaveAttribute("readonly");
     expect(server.puts).toHaveLength(1);
   });
 });
@@ -966,7 +1024,7 @@ describe("a stale write", () => {
     await type(user, "Concurrent lookups", "6");
     await user.click(save());
     expect(await screen.findByText("Settings changed while you were saving")).toBeInTheDocument();
-    expect(screen.getByRole("textbox", { name: "Concurrent lookups" })).toBeDisabled();
+    expect(screen.getByRole("textbox", { name: "Concurrent lookups" })).toHaveAttribute("readonly");
     release();
     await screen.findByText("Settings saved");
   });
@@ -994,7 +1052,7 @@ describe("a stale write", () => {
     expect(screen.queryByText("Settings changed while you were editing")).not.toBeInTheDocument();
     expect(server.puts).toHaveLength(1);
     expect(screen.getByText(/^Saved at \d\d:\d\d\.$/)).toBeInTheDocument();
-    expect(save()).toBeDisabled();
+    expect(save()).toHaveAttribute("aria-disabled", "true");
   });
 
   test("agreement on one field still reapplies the others", async () => {

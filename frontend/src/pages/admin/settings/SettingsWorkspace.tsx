@@ -120,6 +120,7 @@ function SaveBar({ editor }: { editor: SettingsEditor }): ReactElement {
   const conflict = editor.notice.kind === "conflict";
   const busy = editor.phase !== "idle";
   const idle = editor.dirty.length === 0 || busy;
+  const inactive = conflict ? busy : idle;
   return (
     <div className="bg-surface border-border-strong sticky bottom-0 z-20 -mx-10 mt-8 flex items-center gap-3 border-t px-10 py-3">
       <div className="text-fg-muted mr-auto text-sm">{barSummary(editor)}</div>
@@ -132,7 +133,15 @@ function SaveBar({ editor }: { editor: SettingsEditor }): ReactElement {
           Discard changes
         </Button>
       )}
-      <Button type="submit" disabled={conflict ? busy : idle} aria-busy={busy ? true : undefined}>
+      <Button
+        type="submit"
+        aria-disabled={inactive ? true : undefined}
+        aria-busy={busy ? true : undefined}
+        className="aria-disabled:pointer-events-none aria-disabled:opacity-50"
+        onClick={(event) => {
+          if (inactive) event.preventDefault();
+        }}
+      >
         {busy ? "Saving" : conflict ? "Save my choices" : "Save changes"}
       </Button>
     </div>
