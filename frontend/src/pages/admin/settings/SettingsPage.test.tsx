@@ -689,6 +689,30 @@ describe("leaving with unsaved edits", () => {
     expect(router.state.location.pathname).toBe("/admin/settings/enrichment");
   });
 
+  test("Stay and Escape return focus to the control that opened the prompt", async () => {
+    const user = userEvent.setup();
+    await loaded();
+    await type(user, "Concurrent lookups", "6");
+    const covers = screen.getByRole("link", { name: /Covers/ });
+    await user.click(covers);
+    await user.click(
+      within(await screen.findByRole("alertdialog")).getByRole("button", {
+        name: "Stay on this page",
+      }),
+    );
+    await waitFor(() => {
+      expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+    });
+    expect(covers).toHaveFocus();
+    await user.click(covers);
+    await screen.findByRole("alertdialog");
+    await user.keyboard("{Escape}");
+    await waitFor(() => {
+      expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+    });
+    expect(covers).toHaveFocus();
+  });
+
   test("Leave discards the draft; coming back shows the saved value", async () => {
     const user = userEvent.setup();
     await loaded();

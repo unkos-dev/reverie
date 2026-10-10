@@ -149,6 +149,7 @@ function LeaveDialog({
   blocker: ReturnType<typeof useBlocker>;
 }): ReactElement {
   const title = areaById(area).title;
+  const opener = useRef<HTMLElement | null>(null);
   return (
     <AlertDialog
       open={blocker.state === "blocked"}
@@ -156,7 +157,17 @@ function LeaveDialog({
         if (!open && blocker.state === "blocked") blocker.reset();
       }}
     >
-      <AlertDialogContent className={DIALOG_CONTENT}>
+      <AlertDialogContent
+        className={DIALOG_CONTENT}
+        onOpenAutoFocus={() => {
+          opener.current =
+            document.activeElement instanceof HTMLElement ? document.activeElement : null;
+        }}
+        onCloseAutoFocus={(event) => {
+          event.preventDefault();
+          opener.current?.focus();
+        }}
+      >
         <AlertDialogHeader>
           <AlertDialogTitle className="text-lg font-semibold">
             Leave without saving?
