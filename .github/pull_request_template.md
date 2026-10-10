@@ -35,7 +35,7 @@ docs-only, or other non-UI changes. -->
 - [ ] Body text meets 1.4.3 (4.5:1).
 - [ ] Motion respects `prefers-reduced-motion`.
 - [ ] Any new colour is already a design token (no arbitrary hex).
-- [ ] Reverie Alarm appears only in one of its two carve-out contexts.
+- [ ] The danger hue appears only in a DESIGN.md carve-out context.
 
 <!--
 Reminders (see CONTRIBUTING.md for the full conventions):
