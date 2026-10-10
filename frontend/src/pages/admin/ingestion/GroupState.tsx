@@ -9,17 +9,33 @@ function GroupLoading({ label }: { label: string }): ReactElement {
       <span role="status" className="sr-only">
         {label}
       </span>
-      <Skeleton className="bg-surface-3 h-3 w-1/2" />
-      <Skeleton className="bg-surface-3 h-3 w-2/3" />
+      <Skeleton className="bg-surface-3 motion-reduce:animate-none h-3 w-1/2" />
+      <Skeleton className="bg-surface-3 motion-reduce:animate-none h-3 w-2/3" />
     </div>
   );
+}
+
+/** The failed state unmounts as soon as a retry starts, so focus moves to the group header first. */
+function focusGroupHeader(from: HTMLElement): void {
+  from
+    .closest("[data-slot=collapsible]")
+    ?.querySelector<HTMLElement>("[data-slot=collapsible-trigger]")
+    ?.focus();
 }
 
 function GroupFailed({ message, onRetry }: { message: string; onRetry: () => void }): ReactElement {
   return (
     <div className="text-fg-muted flex items-center justify-between gap-4 px-4 py-2 pl-12 text-[13px]">
       <span role="alert">{message}</span>
-      <Button type="button" variant="outline" size="sm" onClick={onRetry}>
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        onClick={(event) => {
+          focusGroupHeader(event.currentTarget);
+          onRetry();
+        }}
+      >
         Try again
       </Button>
     </div>
