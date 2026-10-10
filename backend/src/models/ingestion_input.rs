@@ -90,6 +90,10 @@ pub enum AttemptOutcome {
     Interrupted,
 }
 
+/// Transient failures an input records since its last retry reset before it
+/// stops being retried. The orchestrator's backoff has one delay fewer.
+pub const TRANSIENT_ATTEMPT_LIMIT: i64 = 6;
+
 /// Why the validator rejected an EPUB, declared most severe first so the
 /// head of a sorted list is the primary reason.
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -341,7 +345,7 @@ pub async fn observe(
              fingerprint = EXCLUDED.fingerprint,
              generation = ingestion_inputs.generation + 1,
              status = 'pending', reason = NULL, work_id = NULL, completed_at = NULL,
-             retry_reset_at = now(), observed_at = now()
+             retry_reset_at = now(), retries_exhausted_at = NULL, observed_at = now()
            WHERE ingestion_inputs.fingerprint <> EXCLUDED.fingerprint
            RETURNING id, source_path, fingerprint AS "fingerprint: sqlx::types::Json<Fingerprint>",
              generation, status AS "status: InputStatus", reason, work_id, retry_reset_at, observed_at"#,
@@ -391,14 +395,13 @@ pub async fn current(pool: &PgPool, id: Uuid) -> sqlx::Result<Option<Input>> {
 
 pub async fn reset_retries(pool: &PgPool) -> sqlx::Result<()> {
     sqlx::query!(
-        "UPDATE ingestion_inputs SET status = 'pending', reason = NULL, completed_at = NULL, retry_reset_at = clock_timestamp()
+        "UPDATE ingestion_inputs SET status = 'pending', reason = NULL, completed_at = NULL,
+         retry_reset_at = clock_timestamp(), retries_exhausted_at = NULL
          WHERE status = 'operational_failure' AND (
-           EXISTS (SELECT 1 FROM ingestion_jobs j WHERE j.input_id = ingestion_inputs.id
+           retries_exhausted_at IS NOT NULL
+           OR EXISTS (SELECT 1 FROM ingestion_jobs j WHERE j.input_id = ingestion_inputs.id
              AND j.input_generation = ingestion_inputs.generation AND j.created_at >= ingestion_inputs.retry_reset_at
-             AND j.outcome = 'needs_change')
-           OR (SELECT COUNT(*) FROM ingestion_jobs j WHERE j.input_id = ingestion_inputs.id
-             AND j.input_generation = ingestion_inputs.generation AND j.created_at >= ingestion_inputs.retry_reset_at
-             AND j.outcome = 'transient_input') >= 6)",
+             AND j.outcome = 'needs_change'))",
     )
     .execute(pool)
     .await?;
@@ -414,7 +417,8 @@ pub async fn reclaim(pool: &PgPool) -> sqlx::Result<()> {
     .execute(&mut *tx)
     .await?;
     sqlx::query!(
-        "UPDATE ingestion_inputs SET status = 'pending', reason = NULL, retry_reset_at = clock_timestamp()
+        "UPDATE ingestion_inputs SET status = 'pending', reason = NULL, retry_reset_at = clock_timestamp(),
+         retries_exhausted_at = NULL
          WHERE status = 'processing' AND NOT EXISTS (SELECT 1 FROM ingestion_jobs j
            WHERE j.input_id = ingestion_inputs.id AND j.publication_library_id IS NOT NULL)",
     )
@@ -493,7 +497,11 @@ pub async fn finish(
         .collect();
     sqlx::query!(
         "UPDATE ingestion_inputs SET status = $3, reason = $4, work_id = $5, rejection_reasons = $6,
-         completed_at = CASE WHEN $3::ingestion_input_status = 'pending' THEN NULL ELSE now() END
+         completed_at = CASE WHEN $3::ingestion_input_status = 'pending' THEN NULL ELSE now() END,
+         retries_exhausted_at = CASE WHEN $7::ingestion_attempt_outcome = 'transient_input' AND (
+           SELECT COUNT(*) FROM ingestion_jobs j WHERE j.input_id = ingestion_inputs.id
+             AND j.input_generation = ingestion_inputs.generation AND j.created_at >= ingestion_inputs.retry_reset_at
+             AND j.outcome = 'transient_input') >= $8 THEN now() END
          WHERE id = $1 AND generation = $2 AND status <> 'removed'",
         input.id,
         input.generation,
@@ -501,6 +509,8 @@ pub async fn finish(
         reason,
         work,
         &rejection_reasons,
+        outcome as AttemptOutcome,
+        TRANSIENT_ATTEMPT_LIMIT,
     )
     .execute(&mut **tx)
     .await?;
@@ -512,6 +522,7 @@ pub struct RetryState {
     pub count: i64,
     pub failed_at: Option<DateTime<Utc>>,
     pub needs_change: bool,
+    pub exhausted: bool,
 }
 
 pub async fn retry_states(pool: &PgPool, ids: &[Uuid]) -> sqlx::Result<Vec<RetryState>> {
@@ -519,7 +530,8 @@ pub async fn retry_states(pool: &PgPool, ids: &[Uuid]) -> sqlx::Result<Vec<Retry
         RetryState,
         r#"SELECT i.id, COUNT(j.id) FILTER (WHERE j.outcome = 'transient_input') AS "count!",
              MAX(j.completed_at) FILTER (WHERE j.outcome = 'transient_input') AS failed_at,
-             COALESCE(BOOL_OR(j.outcome = 'needs_change'), false) AS "needs_change!"
+             COALESCE(BOOL_OR(j.outcome = 'needs_change'), false) AS "needs_change!",
+             i.retries_exhausted_at IS NOT NULL AS "exhausted!"
            FROM ingestion_inputs i LEFT JOIN ingestion_jobs j ON j.input_id = i.id
              AND j.input_generation = i.generation AND j.created_at >= i.retry_reset_at
            WHERE i.id = ANY($1) GROUP BY i.id"#,
@@ -1006,52 +1018,71 @@ mod tests {
         );
     }
 
-    #[sqlx::test(migrations = "./migrations")]
-    async fn capability_ingestion_inputs_six_transient_failures_before_exhaustion_reset(
-        pool: PgPool,
+    async fn attempt_and_finish(
+        pool: &PgPool,
+        input: &Input,
+        outcome: AttemptOutcome,
+        status: InputStatus,
     ) {
+        let job = begin_attempt(pool, input, Uuid::new_v4()).await.unwrap();
+        let mut tx = pool.begin().await.unwrap();
+        finish(&mut tx, input, job, outcome, status, None, &[], None)
+            .await
+            .unwrap();
+        tx.commit().await.unwrap();
+    }
+
+    async fn fail_transiently(pool: &PgPool, input: &Input) {
+        attempt_and_finish(
+            pool,
+            input,
+            AttemptOutcome::TransientInput,
+            InputStatus::OperationalFailure,
+        )
+        .await;
+    }
+
+    async fn exhaustion_recorded(pool: &PgPool, input: &Input) -> bool {
+        sqlx::query_scalar!(
+            r#"SELECT retries_exhausted_at IS NOT NULL AS "recorded!" FROM ingestion_inputs WHERE id = $1"#,
+            input.id,
+        )
+        .fetch_one(pool)
+        .await
+        .unwrap()
+    }
+
+    async fn exhausted(pool: &PgPool) -> Input {
+        let input = observed(pool, 10).await;
+        for _ in 0..TRANSIENT_ATTEMPT_LIMIT {
+            fail_transiently(pool, &input).await;
+        }
+        assert!(exhaustion_recorded(pool, &input).await);
+        input
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn capability_ingestion_inputs_transient_failures_before_exhaustion_reset(pool: PgPool) {
         let input = observed(&pool, 10).await;
         for outcome in [
             AttemptOutcome::SharedDependency,
             AttemptOutcome::Interrupted,
         ] {
-            let job = begin_attempt(&pool, &input, Uuid::new_v4()).await.unwrap();
-            let mut tx = pool.begin().await.unwrap();
-            finish(
-                &mut tx,
-                &input,
-                job,
-                outcome,
-                InputStatus::Pending,
-                None,
-                &[],
-                None,
-            )
-            .await
-            .unwrap();
-            tx.commit().await.unwrap();
+            attempt_and_finish(&pool, &input, outcome, InputStatus::Pending).await;
         }
         assert_eq!(transient_count(&pool, &input).await.unwrap(), 0);
-        for count in 1..=6 {
-            let job = begin_attempt(&pool, &input, Uuid::new_v4()).await.unwrap();
-            let mut tx = pool.begin().await.unwrap();
-            finish(
-                &mut tx,
-                &input,
-                job,
-                AttemptOutcome::TransientInput,
-                InputStatus::OperationalFailure,
-                None,
-                &[],
-                None,
-            )
-            .await
-            .unwrap();
-            tx.commit().await.unwrap();
+        for count in 1..=TRANSIENT_ATTEMPT_LIMIT {
+            fail_transiently(&pool, &input).await;
             assert_eq!(transient_count(&pool, &input).await.unwrap(), count);
+            let states = retry_states(&pool, &[input.id]).await.unwrap();
+            assert_eq!(states[0].exhausted, count == TRANSIENT_ATTEMPT_LIMIT);
+            assert_eq!(
+                exhaustion_recorded(&pool, &input).await,
+                count == TRANSIENT_ATTEMPT_LIMIT
+            );
             reset_retries(&pool).await.unwrap();
             let current = current_page(&pool, None).await.unwrap().remove(0);
-            if count < 6 {
+            if count < TRANSIENT_ATTEMPT_LIMIT {
                 assert_eq!(current.status, InputStatus::OperationalFailure);
                 sqlx::query!(
                     "UPDATE ingestion_inputs SET status = 'pending' WHERE id = $1",
@@ -1063,8 +1094,102 @@ mod tests {
             } else {
                 assert_eq!(current.status, InputStatus::Pending);
                 assert_eq!(transient_count(&pool, &current).await.unwrap(), 0);
+                assert!(!exhaustion_recorded(&pool, &input).await);
             }
         }
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn exhaustion_is_recorded_on_the_limit_failure_and_not_before(pool: PgPool) {
+        let input = observed(&pool, 10).await;
+        for _ in 1..TRANSIENT_ATTEMPT_LIMIT {
+            fail_transiently(&pool, &input).await;
+            assert!(!exhaustion_recorded(&pool, &input).await);
+        }
+        fail_transiently(&pool, &input).await;
+        assert!(exhaustion_recorded(&pool, &input).await);
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn failures_of_other_inputs_and_generations_do_not_count_toward_the_limit(pool: PgPool) {
+        let other = observe(
+            &pool,
+            &[InputPath::from_path(Path::new("other.epub")).unwrap()],
+            &[fingerprint(20)],
+        )
+        .await
+        .unwrap()
+        .remove(0);
+        for _ in 1..TRANSIENT_ATTEMPT_LIMIT {
+            fail_transiently(&pool, &other).await;
+        }
+        let input = observed(&pool, 10).await;
+        fail_transiently(&pool, &input).await;
+        assert!(!exhaustion_recorded(&pool, &input).await);
+        let regenerated = observed(&pool, 11).await;
+        assert_eq!(regenerated.generation, 2);
+        fail_transiently(&pool, &regenerated).await;
+        assert!(!exhaustion_recorded(&pool, &regenerated).await);
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn a_later_attempt_with_another_outcome_clears_the_exhaustion_record(pool: PgPool) {
+        let input = exhausted(&pool).await;
+        attempt_and_finish(
+            &pool,
+            &input,
+            AttemptOutcome::NeedsChange,
+            InputStatus::OperationalFailure,
+        )
+        .await;
+        assert!(!exhaustion_recorded(&pool, &input).await);
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn retry_reset_by_a_changed_file_clears_the_exhaustion_record(pool: PgPool) {
+        let input = exhausted(&pool).await;
+        let changed = observed(&pool, 11).await;
+        assert_eq!(changed.id, input.id);
+        assert_eq!(changed.status, InputStatus::Pending);
+        assert!(!exhaustion_recorded(&pool, &input).await);
+        let states = retry_states(&pool, &[input.id]).await.unwrap();
+        assert!(!states[0].exhausted);
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn retry_reset_on_reclaim_clears_the_exhaustion_record(pool: PgPool) {
+        let input = observed(&pool, 10).await;
+        sqlx::query!(
+            "UPDATE ingestion_inputs SET status = 'processing', retries_exhausted_at = now() WHERE id = $1",
+            input.id,
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+        reclaim(&pool).await.unwrap();
+        assert_eq!(
+            current(&pool, input.id).await.unwrap().unwrap().status,
+            InputStatus::Pending
+        );
+        assert!(!exhaustion_recorded(&pool, &input).await);
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn retry_reset_of_an_exhausted_input_clears_the_record_and_leaves_others(pool: PgPool) {
+        let input = exhausted(&pool).await;
+        let waiting = observe(
+            &pool,
+            &[InputPath::from_path(Path::new("waiting.epub")).unwrap()],
+            &[fingerprint(30)],
+        )
+        .await
+        .unwrap()
+        .remove(0);
+        fail_transiently(&pool, &waiting).await;
+        reset_retries(&pool).await.unwrap();
+        assert!(!exhaustion_recorded(&pool, &input).await);
+        let waiting = current(&pool, waiting.id).await.unwrap().unwrap();
+        assert_eq!(waiting.status, InputStatus::OperationalFailure);
     }
 
     #[test]
