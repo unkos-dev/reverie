@@ -5,18 +5,17 @@ ADD COLUMN rejection_reasons text [] NOT NULL DEFAULT '{}' CHECK (
     ]::text []
 );
 
-ALTER TABLE public.ingestion_inputs ADD COLUMN retries_exhausted_at timestamptz;
+ALTER TABLE public.ingestion_inputs
+ADD COLUMN retries_exhausted_at timestamptz CHECK (
+    retries_exhausted_at >= '0001-01-01' AND retries_exhausted_at < '10000-01-01'
+);
 
 -- noqa: disable=RF03
 CREATE VIEW public.ingestion_input_classes WITH (security_invoker = TRUE) AS
 SELECT
     i.id,
-    i.source_path,
     i.status,
     latest.outcome,
-    i.rejection_reasons,
-    i.observed_at,
-    i.completed_at,
     c.reason_class
 FROM public.ingestion_inputs AS i
 LEFT JOIN LATERAL (

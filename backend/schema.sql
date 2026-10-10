@@ -632,6 +632,7 @@ CREATE TABLE public.ingestion_inputs (
     CONSTRAINT ingestion_inputs_rejection_reasons_check CHECK ((rejection_reasons <@ ARRAY['unsafe_contents'::text, 'damaged'::text, 'invalid_structure'::text, 'over_limits'::text, 'unspecified'::text])),
     CONSTRAINT ingestion_inputs_removal_cause_check CHECK ((removal_cause = ANY (ARRAY['automatic_cleanup'::text, 'admin_deletion'::text, 'external_disappearance'::text, 'unattributed_disappearance'::text]))),
     CONSTRAINT ingestion_inputs_removed_at_check CHECK (((removed_at >= '0001-01-01 00:00:00+00'::timestamp with time zone) AND (removed_at < '10000-01-01 00:00:00+00'::timestamp with time zone))),
+    CONSTRAINT ingestion_inputs_retries_exhausted_at_check CHECK (((retries_exhausted_at >= '0001-01-01 00:00:00+00'::timestamp with time zone) AND (retries_exhausted_at < '10000-01-01 00:00:00+00'::timestamp with time zone))),
     CONSTRAINT ingestion_inputs_retry_reset_at_check CHECK (((retry_reset_at >= '0001-01-01 00:00:00+00'::timestamp with time zone) AND (retry_reset_at < '10000-01-01 00:00:00+00'::timestamp with time zone))),
     CONSTRAINT ingestion_inputs_source_path_check CHECK ((octet_length(source_path) > 0))
 );
@@ -685,12 +686,8 @@ ALTER TABLE public.ingestion_jobs OWNER TO reverie_migrator;
 
 CREATE VIEW public.ingestion_input_classes WITH (security_invoker='true') AS
  SELECT i.id,
-    i.source_path,
     i.status,
     latest.outcome,
-    i.rejection_reasons,
-    i.observed_at,
-    i.completed_at,
     c.reason_class
    FROM ((public.ingestion_inputs i
      LEFT JOIN LATERAL ( SELECT j.outcome

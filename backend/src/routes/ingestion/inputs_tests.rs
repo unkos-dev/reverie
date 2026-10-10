@@ -706,8 +706,9 @@ async fn inputs_endpoints_require_authentication_and_the_admin_role(pool: PgPool
 
 async fn classes(env: &Env) -> Vec<(String, String)> {
     let mut rows = sqlx::query!(
-        r#"SELECT convert_from(source_path, 'UTF8') AS "path!", reason_class AS "class!"
-           FROM ingestion_input_classes"#,
+        r#"SELECT convert_from(i.source_path, 'UTF8') AS "path!", c.reason_class AS "class!"
+           FROM ingestion_input_classes c
+           JOIN ingestion_inputs i ON i.id = c.id"#,
     )
     .fetch_all(&env.ing)
     .await

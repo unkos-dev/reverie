@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT id AS \"id!\", source_path AS \"source_path!\",\n                  status AS \"status!: InputStatus\",\n                  outcome AS \"outcome: AttemptOutcome\",\n                  reason_class AS \"class!\",\n                  rejection_reasons AS \"rejection_reasons!\",\n                  observed_at AS \"observed_at!\", completed_at\n           FROM ingestion_input_classes\n           WHERE ($1::uuid IS NULL OR id > $1)\n             AND CASE WHEN $2::text IS NULL THEN reason_class <> 'format_not_accepted' ELSE reason_class = $2 END\n           ORDER BY id\n           LIMIT $3",
+  "query": "SELECT c.id AS \"id!\", i.source_path,\n                  c.status AS \"status!: InputStatus\",\n                  c.outcome AS \"outcome: AttemptOutcome\",\n                  c.reason_class AS \"class!\",\n                  i.rejection_reasons, i.observed_at, i.completed_at\n           FROM ingestion_input_classes c\n           JOIN ingestion_inputs i ON i.id = c.id\n           WHERE ($1::uuid IS NULL OR c.id > $1)\n             AND CASE WHEN $2::text IS NULL THEN c.reason_class <> 'format_not_accepted' ELSE c.reason_class = $2 END\n           ORDER BY c.id\n           LIMIT $3",
   "describe": {
     "columns": [
       {
@@ -16,11 +16,11 @@
       },
       {
         "ordinal": 1,
-        "name": "source_path!",
+        "name": "source_path",
         "type_info": "Bytea",
         "origin": {
           "Table": {
-            "table": "ingestion_input_classes",
+            "table": "ingestion_inputs",
             "name": "source_path"
           }
         }
@@ -92,22 +92,22 @@
       },
       {
         "ordinal": 5,
-        "name": "rejection_reasons!",
+        "name": "rejection_reasons",
         "type_info": "TextArray",
         "origin": {
           "Table": {
-            "table": "ingestion_input_classes",
+            "table": "ingestion_inputs",
             "name": "rejection_reasons"
           }
         }
       },
       {
         "ordinal": 6,
-        "name": "observed_at!",
+        "name": "observed_at",
         "type_info": "Timestamptz",
         "origin": {
           "Table": {
-            "table": "ingestion_input_classes",
+            "table": "ingestion_inputs",
             "name": "observed_at"
           }
         }
@@ -118,7 +118,7 @@
         "type_info": "Timestamptz",
         "origin": {
           "Table": {
-            "table": "ingestion_input_classes",
+            "table": "ingestion_inputs",
             "name": "completed_at"
           }
         }
@@ -133,14 +133,14 @@
     },
     "nullable": [
       true,
+      false,
       true,
       true,
       true,
-      true,
-      true,
-      true,
+      false,
+      false,
       true
     ]
   },
-  "hash": "a993f28a144d71b78690cfa7b6933b8cf3729c04da971efda3afedbd99e9ce5f"
+  "hash": "f7d592ccdc861393f6011c7fef6a9eb6c64e229eb8dd48ec2586fd0bcf237947"
 }

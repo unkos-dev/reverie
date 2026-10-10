@@ -244,16 +244,16 @@ async fn list_inputs(
         .map(|cursor| cursor.id);
 
     let rows = sqlx::query!(
-        r#"SELECT id AS "id!", source_path AS "source_path!",
-                  status AS "status!: InputStatus",
-                  outcome AS "outcome: AttemptOutcome",
-                  reason_class AS "class!",
-                  rejection_reasons AS "rejection_reasons!",
-                  observed_at AS "observed_at!", completed_at
-           FROM ingestion_input_classes
-           WHERE ($1::uuid IS NULL OR id > $1)
-             AND CASE WHEN $2::text IS NULL THEN reason_class <> 'format_not_accepted' ELSE reason_class = $2 END
-           ORDER BY id
+        r#"SELECT c.id AS "id!", i.source_path,
+                  c.status AS "status!: InputStatus",
+                  c.outcome AS "outcome: AttemptOutcome",
+                  c.reason_class AS "class!",
+                  i.rejection_reasons, i.observed_at, i.completed_at
+           FROM ingestion_input_classes c
+           JOIN ingestion_inputs i ON i.id = c.id
+           WHERE ($1::uuid IS NULL OR c.id > $1)
+             AND CASE WHEN $2::text IS NULL THEN c.reason_class <> 'format_not_accepted' ELSE c.reason_class = $2 END
+           ORDER BY c.id
            LIMIT $3"#,
         after,
         params.reason.map(InputReason::as_str),

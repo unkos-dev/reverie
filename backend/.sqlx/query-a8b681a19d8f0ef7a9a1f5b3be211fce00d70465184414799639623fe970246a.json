@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT convert_from(source_path, 'UTF8') AS \"path!\", reason_class AS \"class!\"\n           FROM ingestion_input_classes",
+  "query": "SELECT convert_from(i.source_path, 'UTF8') AS \"path!\", c.reason_class AS \"class!\"\n           FROM ingestion_input_classes c\n           JOIN ingestion_inputs i ON i.id = c.id",
   "describe": {
     "columns": [
       {
@@ -29,5 +29,5 @@
       true
     ]
   },
-  "hash": "ad9479ad77bf102ae262fe7d6f404c86415efee80b79bafc4ae075f14b727856"
+  "hash": "a8b681a19d8f0ef7a9a1f5b3be211fce00d70465184414799639623fe970246a"
 }
