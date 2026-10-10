@@ -1022,17 +1022,19 @@ mod tests {
             "META-INF/container.xml",
             b"<container><rootfiles/></container>",
         )]);
-        assert_irrecoverable(&report, |kind| {
-            matches!(kind, IssueKind::CorruptEntry { entry_name } if entry_name == "META-INF/container.xml")
-        });
+        assert_irrecoverable(
+            &report,
+            |kind| matches!(kind, IssueKind::CorruptEntry { entry_name } if entry_name == "META-INF/container.xml"),
+        );
     }
 
     #[test]
     fn package_document_absent_from_archive_is_quarantined() {
         let report = quarantine_of(&[("META-INF/container.xml", CONTAINER_XML)]);
-        assert_irrecoverable(&report, |kind| {
-            matches!(kind, IssueKind::CorruptEntry { entry_name } if entry_name == "OEBPS/content.opf")
-        });
+        assert_irrecoverable(
+            &report,
+            |kind| matches!(kind, IssueKind::CorruptEntry { entry_name } if entry_name == "OEBPS/content.opf"),
+        );
     }
 
     #[test]
@@ -1041,9 +1043,10 @@ mod tests {
             ("META-INF/container.xml", CONTAINER_XML),
             ("OEBPS/content.opf", b"<package><metadata></package>"),
         ]);
-        assert_irrecoverable(&report, |kind| {
-            matches!(kind, IssueKind::CorruptEntry { entry_name } if entry_name == "OEBPS/content.opf")
-        });
+        assert_irrecoverable(
+            &report,
+            |kind| matches!(kind, IssueKind::CorruptEntry { entry_name } if entry_name == "OEBPS/content.opf"),
+        );
     }
 
     #[test]
@@ -1057,9 +1060,10 @@ mod tests {
         bytes[last_directory_record + 16] ^= 0xFF;
         std::fs::write(&path, &bytes).unwrap();
         let report = validate_and_repair(&path).unwrap();
-        assert_irrecoverable(&report, |kind| {
-            matches!(kind, IssueKind::CorruptEntry { entry_name } if entry_name == "OEBPS/chapter.xhtml")
-        });
+        assert_irrecoverable(
+            &report,
+            |kind| matches!(kind, IssueKind::CorruptEntry { entry_name } if entry_name == "OEBPS/chapter.xhtml"),
+        );
         assert_eq!(std::fs::read(&path).unwrap(), bytes);
     }
 }

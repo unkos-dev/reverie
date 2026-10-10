@@ -489,12 +489,13 @@ fn push_mimetype_issues(issues: &mut Vec<Issue>, facts: Option<&MimetypeFacts>) 
     }
 }
 
-/// Streams every admitted entry through its decompressor and pushes an
-/// `Irrecoverable` `CorruptEntry` for the first whose bytes fail the declared
-/// CRC-32 or size. Each read is bounded by the entry's declared size plus one
-/// byte, which `validate` already caps per entry and in aggregate. The
-/// `container.xml` entry is exempt because Layer 2 regenerates an unreadable
-/// one from a discoverable package document.
+/// Pushes an `Irrecoverable` `CorruptEntry` for the first admitted entry whose
+/// bytes fail the declared CRC-32 or size.
+///
+/// Each entry is streamed through its decompressor under a verifying reader,
+/// bounded by its declared size plus one byte, which `validate` already caps
+/// per entry and in aggregate. The `container.xml` entry is exempt because
+/// Layer 2 regenerates an unreadable one from a discoverable package document.
 pub fn verify_entries(handle: &ZipHandle, issues: &mut Vec<Issue>) {
     let Some(archive) = handle.archive.as_ref() else {
         return;

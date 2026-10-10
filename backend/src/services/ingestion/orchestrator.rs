@@ -6253,10 +6253,11 @@ mod tests {
         assert!(input.reason.as_deref().unwrap().contains("EPUB rejected"));
         assert_eq!(std::fs::read(&source).unwrap(), bytes);
         assert_eq!(std::fs::read_dir(library.path()).unwrap().count(), 0);
-        let manifestations = sqlx::query_scalar!("SELECT COUNT(*) AS \"count!\" FROM manifestations")
-            .fetch_one(pool)
-            .await
-            .unwrap();
+        let manifestations =
+            sqlx::query_scalar!("SELECT COUNT(*) AS \"count!\" FROM manifestations")
+                .fetch_one(pool)
+                .await
+                .unwrap();
         let works = sqlx::query_scalar!("SELECT COUNT(*) AS \"count!\" FROM works")
             .fetch_one(pool)
             .await
