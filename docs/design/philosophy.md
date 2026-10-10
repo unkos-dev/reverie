@@ -40,19 +40,20 @@ with a single bounded exception, **danger** (below)). This is a load-bearing bra
 | Disabled | `opacity-50` + `text-fg-muted` |
 | Loading | opacity pulse 0.85 ↔ 1.0, ~1.6s, on the region |
 | Error (recoverable) | `text-fg font-semibold` + gold recovery action |
-| Destructive / unrecoverable error | `--danger` fill, border, or icon (white text on the fill), always paired with an icon, weight, or label. The one state hue (below) |
+| Destructive / unrecoverable error / invalid input | `--danger` fill, border, or icon (white text on the fill; the border alone on an invalid input), always paired with an icon, weight, or label. The one state hue (below) |
 | Success (explicit) | gold inline note (`text-fg-on-accent` on full `bg-accent` fill); fades after ~3s |
 | Link | underline + `text-accent` on hover; no permanent colour difference |
 | Focus (keyboard) | universal `:focus-visible`, single 2px `gold-11` outline + 2px offset, no halo; `gold-11` (`--accent-text`) carries the ≥ 3:1 non-text boundary unaided on both themes (see [Color Tokens](./color-tokens.md)) |
 
-`--color-danger` is the **one** sanctioned state hue: reserved for destructive and unrecoverable-error semantics, never
-decorative, and always paired with an icon, weight, or text label (WCAG 1.4.1). The rationale is recorded in the
-single-danger-hue decision (`docs/adr/0027-a-single-danger-hue-amends-the-no-hue-states-policy.md`); see also
-[Color Tokens](./color-tokens.md). The canonical token set still deliberately excludes `--color-success`,
-`--color-warning`, `--color-info`, and `--color-neutral`. Adding any further hue-coded state token requires a separate
-brand-aligned decision; do not "harmlessly add" them on the assumption they'll be useful later. Charts and code blocks
-are scoped exceptions; when they ship, the deviation is documented in [Visual Identity](./visual-identity.md) and
-constrained to the surface that requires it.
+`--color-danger` is the **one** sanctioned state hue: reserved for destructive, unrecoverable-error and invalid-input
+(`aria-invalid` border) semantics, never decorative, and always paired with an icon, weight, or text label (WCAG 1.4.1).
+The rationale is recorded in the single-danger-hue decision
+(`docs/adr/0027-a-single-danger-hue-amends-the-no-hue-states-policy.md`); see also [Color Tokens](./color-tokens.md).
+The canonical token set still deliberately excludes `--color-success`, `--color-warning`, `--color-info`, and
+`--color-neutral`. Adding any further hue-coded state token requires a separate brand-aligned decision; do not
+"harmlessly add" them on the assumption they'll be useful later. Charts and code blocks are scoped exceptions; when they
+ship, the deviation is documented in [Visual Identity](./visual-identity.md) and constrained to the surface that
+requires it.
 
 `--color-fg-faint` is **decorative-only**: breadcrumb separators, ornamental dividers, and similar tertiary glyphs. It
 is never a functional-state colour, because `opacity-50 × text-fg-faint` falls below AA in both themes; that's why the

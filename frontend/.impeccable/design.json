@@ -985,7 +985,7 @@
     "keyCharacteristics": [
       "Editorial pairing: Author (display) + Satoshi (workhorse) + JetBrains Mono (metadata). Sans-only; no content serif.",
       "Two anchored canvases: Parchment (`#E8DCC2`) for light, Ink (`#0E0D0A`) for dark. Both surface ramps tint warmly toward the brand hue. No neutral greys.",
-      "Single gold accent (\u226410% of any screen), single danger hue (bounded exception, destructive/error only, fill/border/icon \u2014 never body text).",
+      "Single gold accent (\u226410% of any screen), single danger hue (bounded exception, destructive, error and invalid-input only, fill/border/icon \u2014 never body text).",
       "Flat by default; the one signature shadow is the accent-glow cover-lift on the Library grid. Atmospheric depth on the Library page comes from the sealed `--atm-*` tier.",
       "Motion budget: 180\u2013320 ms ease-out (`--ease-standard` / `--ease-emphasised`), no bounce, no spring; route crossfades via the View Transitions API; `prefers-reduced-motion` respected as a first-class state."
     ],
@@ -997,7 +997,7 @@
       },
       {
         "name": "The Danger Carve-Out Rule",
-        "body": "The danger hue is the single exception to no-hue-states. It appears in exactly two contexts: (1) irreversible destructive confirmation (alongside typed-name confirmation and an undo window where feasible), and (2) unrecoverable system errors that would otherwise survive as a wrong \"it's working\" mental model. Nowhere else, never decorative, always paired with a non-colour signal. Success, warning, and info remain hue-less.",
+        "body": "The danger hue is the single exception to no-hue-states. It appears in exactly three contexts: (1) irreversible destructive confirmation (alongside typed-name confirmation and an undo window where feasible), (2) unrecoverable system errors that would otherwise survive as a wrong \"it's working\" mental model, and (3) the border (and its ring) of an invalid form control (`aria-invalid`), paired with the field's visible error message. Nowhere else, never decorative, always paired with a non-colour signal (a glyph or text). Success, warning, and info remain hue-less.",
         "section": "colors"
       },
       {
@@ -1064,7 +1064,7 @@
     "dos": [
       "**Do** anchor every screen on Parchment (`#E8DCC2`) or the Ink dark canvas (`#0E0D0A`); the two canvases are the only legitimate page backgrounds.",
       "**Do** use Reverie Gold for primary CTAs, recovery actions, the active-nav slot bar, and the Slot mark fill. Use the darker `accent-text` step where gold must read as text or a hairline (e.g. the focus ring); nothing else.",
-      "**Do** restrict the danger hue (`#B91C1C`) to fill, border, or icon \u2014 never body text \u2014 in exactly the two carve-out contexts (irreversible destructive confirm, unrecoverable system error), always paired with a non-colour signal.",
+      "**Do** restrict the danger hue (`#B91C1C`) to fill, border, or icon \u2014 never body text \u2014 in exactly the three carve-out contexts (irreversible destructive confirm, unrecoverable system error, invalid-input border), always paired with a non-colour signal.",
       "**Do** carry hierarchy through weight, opacity, type scale, density, and motion. Author or Satoshi at different weights is the system's primary expressiveness.",
       "**Do** cap body text at 65\u201375ch on prose surfaces; cards and detail panels are not prose and may run wider.",
       "**Do** keep cards flat at rest (`ring-1 ring-foreground/10`, no shadow). Tonal layering \u2014 canvas \u2192 surface \u2192 surface-2 \u2192 surface-3 \u2014 does the depth work.",
