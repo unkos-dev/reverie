@@ -51,7 +51,7 @@ function GroupShell({
         >
           <ChevronDown
             aria-hidden="true"
-            className="text-fg-muted mt-1 size-4 transition-transform group-data-[state=closed]/trigger:-rotate-90"
+            className="text-fg-muted mt-1 size-4 transition-transform motion-reduce:transition-none group-data-[state=closed]/trigger:-rotate-90"
           />
           <span className="flex flex-col gap-0.5">
             <strong

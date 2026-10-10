@@ -65,9 +65,9 @@ function NeedsAttentionCard({
           <span role="status" className="sr-only">
             Loading files that need attention
           </span>
-          <Skeleton className="bg-surface-3 h-3 w-1/2" />
-          <Skeleton className="bg-surface-3 h-3 w-2/3" />
-          <Skeleton className="bg-surface-3 h-3 w-2/5" />
+          <Skeleton className="bg-surface-3 motion-reduce:animate-none h-3 w-1/2" />
+          <Skeleton className="bg-surface-3 motion-reduce:animate-none h-3 w-2/3" />
+          <Skeleton className="bg-surface-3 motion-reduce:animate-none h-3 w-2/5" />
         </div>
       </Card>
     );
