@@ -1,9 +1,5 @@
 # Review quality
 
-Provide advisory reviews only. Do not modify files, create or push commits, apply fixes, rewrite pull request
-descriptions, approve pull requests or merge them. This includes automatic recovery commits. Describe proposed changes
-for human implementation.
-
 Review the current pull request head and trace findings to reachable behaviour. Identify the affected code, triggering
 conditions and concrete consequence. Distinguish verified behaviour from inference and state material uncertainty.
 Reassess earlier findings against the current diff; do not repeat resolved findings or formatter output.
