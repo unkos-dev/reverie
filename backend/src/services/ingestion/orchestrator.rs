@@ -11,8 +11,6 @@ use crate::models::manifestation_format::ManifestationFormat;
 use crate::models::storage_library::LibraryId;
 use crate::models::validation_status::ValidationStatus;
 use crate::models::{library_path_claim, work};
-#[cfg(test)]
-use crate::services::epub;
 use crate::services::epub::ValidationOutcome;
 use crate::services::files::{LibraryFiles, LibraryLocation, RelativeFilePath};
 use crate::services::ingestion::{cleanup, copier, path_template};
@@ -1759,6 +1757,30 @@ async fn process_file(
     validate_candidate(candidate, path, candidate_path, vars, files, library_id).await
 }
 
+#[cfg(test)]
+fn forced_validator_error(candidate_path: &str) -> Option<crate::services::epub::EpubError> {
+    if candidate_path.contains("force-validator-error") {
+        Some(crate::services::epub::EpubError::Io(std::io::Error::other(
+            "forced validator error (test seam)",
+        )))
+    } else if candidate_path.contains("force-candidate-rejected") {
+        Some(crate::services::epub::EpubError::CandidateRejected(
+            "forced candidate rejection (test seam)".into(),
+        ))
+    } else if candidate_path.contains("force-repair-error") {
+        Some(crate::services::epub::EpubError::Repair(
+            "forced repair error (test seam)".into(),
+        ))
+    } else {
+        None
+    }
+}
+
+#[cfg(not(test))]
+const fn forced_validator_error(_candidate_path: &str) -> Option<crate::services::epub::EpubError> {
+    None
+}
+
 async fn validate_candidate(
     candidate: copier::Candidate,
     path: crate::models::ingestion_input::InputPath,
@@ -1767,22 +1789,10 @@ async fn validate_candidate(
     files: &LibraryFiles,
     library_id: LibraryId,
 ) -> ProcessResult {
-    let forced_error = candidate_path.as_str().contains("force-validator-error");
+    let forced_error = forced_validator_error(candidate_path.as_str());
     let validated = tokio::task::spawn_blocking(move || {
         candidate.progress().enter(copier::Phase::Validation)?;
-        #[cfg(test)]
-        let validation = if forced_error {
-            Err(epub::EpubError::Io(std::io::Error::other(
-                "forced validator error (test seam)",
-            )))
-        } else {
-            candidate.validate()
-        };
-        #[cfg(not(test))]
-        let validation = {
-            let _ = forced_error;
-            candidate.validate()
-        };
+        let validation = forced_error.map_or_else(|| candidate.validate(), Err);
         candidate.progress().check()?;
         let (hash, size) = candidate.accepted_bytes(&validation)?;
         Ok::<_, copier::CopyError>((candidate, validation, hash, size))
@@ -1856,6 +1866,19 @@ async fn accepted_from_validation(
                 report.opf_data,
                 Some(report.has_usable_embedded_cover),
             )
+        }
+        Err(error) if error.is_file_defect() => {
+            tracing::warn!(%error, "EPUB could not be validated or repaired");
+            if let Err(error) = candidate.close() {
+                return acquisition_failure(
+                    copier::CopyError::DestinationIo(error),
+                    files,
+                    library_id,
+                    false,
+                )
+                .await;
+            }
+            return ProcessResult::Failed("EPUB rejected: unrepairable".into());
         }
         Err(error) => {
             tracing::warn!(%error, "EPUB validator execution failed");
@@ -6213,6 +6236,105 @@ mod tests {
         .await
         .unwrap();
         assert_eq!(count, 0);
+    }
+
+    fn zip_without_package_document() -> Vec<u8> {
+        use std::io::Write as _;
+        use zip::write::{ExtendedFileOptions, FileOptions};
+        let mut w = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+        let stored: FileOptions<ExtendedFileOptions> =
+            FileOptions::default().compression_method(zip::CompressionMethod::Stored);
+        w.start_file("mimetype", stored.clone()).unwrap();
+        w.write_all(b"application/epub+zip").unwrap();
+        w.start_file("OEBPS/chapter.xhtml", stored).unwrap();
+        w.write_all(b"<html/>").unwrap();
+        w.finish().unwrap().into_inner()
+    }
+
+    fn epub_with_failing_crc() -> Vec<u8> {
+        let mut bytes = make_minimal_epub();
+        let last_directory_record = bytes
+            .windows(4)
+            .rposition(|window| window == [0x50, 0x4b, 0x01, 0x02])
+            .unwrap();
+        bytes[last_directory_record + 16] ^= 0xFF;
+        bytes
+    }
+
+    async fn assert_corrupt_epub_is_rejected(pool: &PgPool, name: &str, bytes: &[u8]) {
+        use crate::models::ingestion_input::InputStatus;
+        let (ingestion, library, config) = scan_env();
+        let source = ingestion.path().join(name);
+        std::fs::write(&source, bytes).unwrap();
+        let result = drive_owner(&config, pool).await.unwrap();
+        assert_eq!((result.failed, result.processed), (1, 0));
+        let input = crate::models::ingestion_input::current_page(pool, None)
+            .await
+            .unwrap()
+            .remove(0);
+        assert_eq!(input.status, InputStatus::Rejected);
+        assert!(input.reason.as_deref().unwrap().contains("EPUB rejected"));
+        assert_eq!(std::fs::read(&source).unwrap(), bytes);
+        assert_eq!(std::fs::read_dir(library.path()).unwrap().count(), 0);
+        let manifestations =
+            sqlx::query_scalar!("SELECT COUNT(*) AS \"count!\" FROM manifestations")
+                .fetch_one(pool)
+                .await
+                .unwrap();
+        let works = sqlx::query_scalar!("SELECT COUNT(*) AS \"count!\" FROM works")
+            .fetch_one(pool)
+            .await
+            .unwrap();
+        assert_eq!((manifestations, works), (0, 0));
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn capability_ingestion_owner_rejects_candidate_refused_by_validation(pool: PgPool) {
+        let pool = ingestion_pool_for(&pool).await;
+        assert_corrupt_epub_is_rejected(
+            &pool,
+            "Probe - force-candidate-rejected.epub",
+            &make_minimal_epub(),
+        )
+        .await;
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn capability_ingestion_owner_rejects_epub_whose_required_repair_fails(pool: PgPool) {
+        let pool = ingestion_pool_for(&pool).await;
+        assert_corrupt_epub_is_rejected(
+            &pool,
+            "Probe - force-repair-error.epub",
+            &make_minimal_epub(),
+        )
+        .await;
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn capability_ingestion_owner_rejects_epub_without_container_or_package(pool: PgPool) {
+        let pool = ingestion_pool_for(&pool).await;
+        assert_corrupt_epub_is_rejected(
+            &pool,
+            "Bad - No Package.epub",
+            &zip_without_package_document(),
+        )
+        .await;
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn capability_ingestion_owner_rejects_empty_zip(pool: PgPool) {
+        let pool = ingestion_pool_for(&pool).await;
+        let empty = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()))
+            .finish()
+            .unwrap()
+            .into_inner();
+        assert_corrupt_epub_is_rejected(&pool, "Bad - Empty.epub", &empty).await;
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn capability_ingestion_owner_rejects_epub_failing_crc(pool: PgPool) {
+        let pool = ingestion_pool_for(&pool).await;
+        assert_corrupt_epub_is_rejected(&pool, "Bad - Crc.epub", &epub_with_failing_crc()).await;
     }
 
     #[sqlx::test(migrations = "./migrations")]

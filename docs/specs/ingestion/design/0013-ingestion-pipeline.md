@@ -110,8 +110,14 @@ preserves entries arriving during pruning. Unrelated empty directories are untou
 ## Failure and recovery
 
 An irrecoverable EPUB discards the candidate, preserves the original and records rejection without a manifestation or
-quarantine copy. A validator execution error retains the separate failed-validation contract: accepted bytes can be
-registered with validation status `failed`.
+quarantine copy. An EPUB is irrecoverable when its archive is unreadable or fails a CRC-32 or size check, or when no
+package document can be located and parsed: an empty archive, an archive with no `container.xml` and no `.opf` file, a
+`container.xml` that names no package document, and a package document that is absent or cannot be parsed. A readable
+archive with a parseable package document is not irrecoverable however many recoverable findings it carries; it
+registers as `repaired` or `degraded`. A validator error that is a verdict on the file, such as a refused repair
+candidate or a failed required repair, is rejected the same way, with a fixed reason that names no archive content. A
+validator error that is a fault in Reverie's own storage retains the separate failed-validation contract: accepted bytes
+can be registered with validation status `failed`.
 
 Each attempt has a child of the worker's shutdown token, a progress counter and typed streaming, validation and
 publication phases. Source hashing and streaming check cancellation between chunks and increment progress after each
