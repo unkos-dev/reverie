@@ -83,6 +83,17 @@ describe("EmptyLibrary", () => {
     expect(document.querySelector("[aria-busy=true]")).not.toBeNull();
   });
 
+  test("the checking skeletons opt out of motion under reduced motion", async () => {
+    vi.mocked(getInputCounts).mockReturnValue(new Promise(() => {}));
+    renderEmpty(ADMIN_ME);
+    const status = await screen.findByText("Checking the ingestion folder");
+    const skeletons = status.parentElement?.querySelectorAll("[data-slot=skeleton]") ?? [];
+    expect(skeletons.length).toBeGreaterThan(0);
+    for (const skeleton of skeletons) {
+      expect(skeleton).toHaveClass("motion-reduce:animate-none");
+    }
+  });
+
   test("a failed read falls back to the default guidance", async () => {
     vi.mocked(getInputCounts).mockRejectedValue(new ApiError(500, null, "Internal", ""));
     renderEmpty(ADMIN_ME);
@@ -117,6 +128,7 @@ describe("EmptyLibrary", () => {
     expect(screen.getByText("7 imported, 1 did not import, 4 in progress")).toBeInTheDocument();
     const bar = screen.getByRole("progressbar", { name: "Files imported in the latest batch" });
     expect(bar).toHaveAttribute("aria-valuetext", "7 of 12 files imported");
+    expect(bar).toHaveClass("motion-reduce:[&>[data-slot=progress-indicator]]:transition-none");
     expect(screen.getByRole("link", { name: "Open Ingestion" })).toBeInTheDocument();
   });
 
