@@ -24,6 +24,12 @@ externally shared source bytes.
 - A corrupt archive leaves the original byte-for-byte unchanged, records rejected input state and a reason, and creates
   no manifestation or separate file copy. Checked by `capability_ingestion_owner_retains_corrupt_epub_and_reason` and
   `capability_ingestion_coordinator_import_duplicate_rejection_cleanup_and_restart_suppression`.
+- An archive with no `container.xml` and no `.opf` file, an empty archive, and an archive with a CRC-32 failure each
+  reach the same outcome. Checked by `capability_ingestion_owner_rejects_epub_without_container_or_package`,
+  `capability_ingestion_owner_rejects_empty_zip` and `capability_ingestion_owner_rejects_epub_failing_crc`.
+- A readable archive with recoverable findings is not rejected. Checked by
+  `capability_ingestion_owner_repaired_epub_stores_repaired_status` and
+  `capability_ingestion_owner_degraded_epub_stores_degraded_status`.
 - An unsafe archive name reaches the same irrecoverable outcome. The archive boundary is checked by
   `path_traversal_is_quarantined`; the ingestion handling applies to every irrecoverable outcome.
 - Candidate disposal precedes final publication for rejection. Checked by

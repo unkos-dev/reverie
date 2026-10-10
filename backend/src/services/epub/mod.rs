@@ -332,6 +332,20 @@ pub fn inspect(file: File) -> Result<(zip_layer::ZipHandle, ValidationReport), E
         ));
     }
 
+    zip_layer::verify_entries(&zip_result, &mut issues);
+    if issues.iter().any(|i| i.severity == Severity::Irrecoverable) {
+        return Ok((
+            zip_result,
+            ValidationReport {
+                issues,
+                outcome: ValidationOutcome::Quarantined,
+                accessibility_metadata: None,
+                opf_data: None,
+                has_usable_embedded_cover: false,
+            },
+        ));
+    }
+
     // Layer 2: container.xml
     let opf_path = container_layer::validate(&zip_result, &mut issues);
     if issues.iter().any(|i| i.severity == Severity::Irrecoverable) {
@@ -349,6 +363,15 @@ pub fn inspect(file: File) -> Result<(zip_layer::ZipHandle, ValidationReport), E
 
     // Layer 3: OPF
     let opf_data = opf_layer::validate(&zip_result, opf_path.as_deref(), &mut issues);
+    if opf_data.is_none() {
+        issues.push(Issue {
+            layer: Layer::Opf,
+            severity: Severity::Irrecoverable,
+            kind: IssueKind::CorruptEntry {
+                entry_name: opf_path.clone().unwrap_or_default(),
+            },
+        });
+    }
 
     // Layer 4: XHTML
     xhtml_layer::validate(&zip_result, opf_data.as_ref(), &mut issues);
@@ -934,5 +957,109 @@ mod tests {
                 .any(|i| matches!(&i.kind, IssueKind::InvalidMimetype { .. }))
         );
         assert_eq!(report2.outcome, ValidationOutcome::Clean);
+    }
+
+    fn quarantine_of(entries: &[(&str, &[u8])]) -> ValidationReport {
+        let mut writer = ZipWriter::new(std::io::Cursor::new(Vec::new()));
+        let options = FileOptions::<ExtendedFileOptions>::default()
+            .compression_method(zip::CompressionMethod::Stored);
+        writer.start_file("mimetype", options.clone()).unwrap();
+        writer.write_all(repack::MIMETYPE_CONTENT).unwrap();
+        for (name, bytes) in entries {
+            writer.start_file(*name, options.clone()).unwrap();
+            writer.write_all(bytes).unwrap();
+        }
+        let bytes = writer.finish().unwrap().into_inner();
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("book.epub");
+        std::fs::write(&path, &bytes).unwrap();
+        let report = validate_and_repair(&path).unwrap();
+        assert_eq!(std::fs::read(&path).unwrap(), bytes);
+        report
+    }
+
+    fn assert_irrecoverable(report: &ValidationReport, expected: impl Fn(&IssueKind) -> bool) {
+        assert_eq!(report.outcome, ValidationOutcome::Quarantined);
+        assert!(
+            report
+                .issues
+                .iter()
+                .any(|i| i.severity == Severity::Irrecoverable && expected(&i.kind)),
+            "{:?}",
+            report.issues
+        );
+    }
+
+    #[test]
+    fn archive_without_container_or_package_document_is_quarantined() {
+        let report = quarantine_of(&[("OEBPS/chapter.xhtml", b"<html/>")]);
+        assert_irrecoverable(&report, |kind| {
+            matches!(
+                kind,
+                IssueKind::MissingContainer {
+                    opf_candidate: None
+                }
+            )
+        });
+    }
+
+    #[test]
+    fn empty_archive_is_quarantined() {
+        let report = quarantine_of(&[]);
+        assert_irrecoverable(&report, |kind| {
+            matches!(
+                kind,
+                IssueKind::MissingContainer {
+                    opf_candidate: None
+                }
+            )
+        });
+    }
+
+    #[test]
+    fn container_naming_no_package_document_is_quarantined() {
+        let report = quarantine_of(&[(
+            "META-INF/container.xml",
+            b"<container><rootfiles/></container>",
+        )]);
+        assert_irrecoverable(&report, |kind| {
+            matches!(kind, IssueKind::CorruptEntry { entry_name } if entry_name == "META-INF/container.xml")
+        });
+    }
+
+    #[test]
+    fn package_document_absent_from_archive_is_quarantined() {
+        let report = quarantine_of(&[("META-INF/container.xml", CONTAINER_XML)]);
+        assert_irrecoverable(&report, |kind| {
+            matches!(kind, IssueKind::CorruptEntry { entry_name } if entry_name == "OEBPS/content.opf")
+        });
+    }
+
+    #[test]
+    fn package_document_failing_to_parse_is_quarantined() {
+        let report = quarantine_of(&[
+            ("META-INF/container.xml", CONTAINER_XML),
+            ("OEBPS/content.opf", b"<package><metadata></package>"),
+        ]);
+        assert_irrecoverable(&report, |kind| {
+            matches!(kind, IssueKind::CorruptEntry { entry_name } if entry_name == "OEBPS/content.opf")
+        });
+    }
+
+    #[test]
+    fn crc_failure_in_a_content_entry_is_quarantined() {
+        let (_dir, path) = file_fixture(&[("chapter.xhtml", b"<html/>")], false, false);
+        let mut bytes = std::fs::read(&path).unwrap();
+        let last_directory_record = bytes
+            .windows(4)
+            .rposition(|window| window == [0x50, 0x4b, 0x01, 0x02])
+            .unwrap();
+        bytes[last_directory_record + 16] ^= 0xFF;
+        std::fs::write(&path, &bytes).unwrap();
+        let report = validate_and_repair(&path).unwrap();
+        assert_irrecoverable(&report, |kind| {
+            matches!(kind, IssueKind::CorruptEntry { entry_name } if entry_name == "OEBPS/chapter.xhtml")
+        });
+        assert_eq!(std::fs::read(&path).unwrap(), bytes);
     }
 }

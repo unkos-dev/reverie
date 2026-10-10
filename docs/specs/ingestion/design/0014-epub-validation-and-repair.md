@@ -77,17 +77,17 @@ extraction consumes an opened file through Layers 1 to 3 and shares cover-path a
 
 ## Structure
 
-**Outcome derivation runs in three stages, and only the first two can quarantine.** `inspect` runs Layer 1, checks for
-an `Irrecoverable` issue, and returns `Quarantined` immediately if one exists; runs Layer 2 and repeats the same check;
-then runs Layers 3, 4, and 5 together before a final severity sweep. Every `Severity::Irrecoverable` push site in the
-module lives in Layer 1 (`zip_layer.rs`) or Layer 2 (`container_layer.rs`); no push site in Layer 3, 4, or 5 ever
+**Outcome derivation runs in three stages, and only the first two can quarantine early.** `inspect` runs Layer 1 and
+then the whole-archive entry verification, checks for an `Irrecoverable` issue, and returns `Quarantined` immediately if
+one exists; runs Layer 2 and repeats the same check; then runs Layers 3, 4, and 5 together before a final severity
+sweep. The `Irrecoverable` push sites are Layer 1 and the entry verification (`zip_layer.rs`), Layer 2
+(`container_layer.rs`), and the package-document check in `inspect` after Layer 3; no push site in Layer 4 or 5
 constructs an `Irrecoverable` issue. The third `has_irrecoverable` check inside `inspect`, after Layers 3 to 5 have run,
-therefore has nothing to find under today's issue vocabulary; a maintainer adding a Layer 3, 4, or 5 refusal is the
-first code to make that check reachable. Below the `Irrecoverable` tier, the source outcome is `Repaired` when any issue
-supplies a repair instruction, otherwise `Degraded` when degraded issues remain, otherwise `Clean`. Pure checking
-applies no repairs. Successful repair publication retains `Repaired` status and the successful repair issues separately
-from the final candidate's unresolved issues. Remaining severity, not successful repair status, governs candidate
-acceptance.
+therefore fires only for an unreadable package document. Below the `Irrecoverable` tier, the source outcome is
+`Repaired` when any issue supplies a repair instruction, otherwise `Degraded` when degraded issues remain, otherwise
+`Clean`. Pure checking applies no repairs. Successful repair publication retains `Repaired` status and the successful
+repair issues separately from the final candidate's unresolved issues. Remaining severity, not successful repair status,
+governs candidate acceptance.
 
 **Layer 1: ZIP integrity (`zip_layer.rs`).** Checks opened-handle metadata against `MAX_ARCHIVE_BYTES` before reading
 any bytes. Locates the file-backed archive with `rawzip::ZipArchive::with_max_search_space` bounded to the fixed 22-byte
@@ -129,16 +129,16 @@ repack fixes as a side effect regardless of which repairable issue triggered the
 always writes a compliant `mimetype` entry first, whether or not that was the fix requested.
 
 **Layer 2: `container.xml` (`container_layer.rs`).** If the `META-INF/container.xml` entry cannot be read (absent, or
-present but failing Layer 1's own CRC-and-size-verified `read_entry`, which is a stricter check than Layer 1's own
-per-entry probe; see Failure and recovery), the layer scans the already-validated entry list for a `.opf` file and, if
-one is found, regenerates the container path from it, recording a `Repaired` `MissingContainer` issue in either case. A
-found candidate is still checked with `is_safe_path`; an unsafe candidate is `Irrecoverable` `UnsafeOpfPath`. If the
-entry can be read, its `<rootfile full-path="...">` attribute is extracted and, if unsafe, likewise rejected as
-`Irrecoverable`. A `container.xml` entry that reads successfully but whose bytes are not valid UTF-8, fail XML parsing,
-or carry no `rootfile` element with a `full-path` attribute takes neither of those paths: the extraction function
-returns `None` at each of those points without pushing any issue, and Layer 2 as a whole reports no OPF path found and
-no problem recorded, exactly as if the layer had never run. The `MissingContainer` regeneration only fires when the
-entry itself cannot be read; a readable-but-unparsable `container.xml` is not repaired and is not flagged.
+present but failing the CRC-and-size-verified `read_entry`; the whole-archive entry verification exempts this one entry
+for that reason), the layer scans the already-validated entry list for a `.opf` file. If one is found, the layer
+regenerates the container path from it and records a `Repaired` `MissingContainer` issue carrying the candidate. A found
+candidate is still checked with `is_safe_path`; an unsafe candidate is `Irrecoverable` `UnsafeOpfPath`. If no `.opf`
+file exists anywhere in the archive, the `MissingContainer` issue carries no candidate and is `Irrecoverable`, because
+no package document can be located. If the entry can be read, its `<rootfile full-path="...">` attribute is extracted
+and, if unsafe, likewise rejected as `Irrecoverable`. A `container.xml` entry that reads successfully but whose bytes
+are not valid UTF-8, fail XML parsing, or carry no `rootfile` element with a `full-path` attribute is `Irrecoverable`
+`CorruptEntry` naming `META-INF/container.xml`; it is not regenerated, because the archive does not say which package
+document it intended.
 
 **Layer 3: `OPF` (`opf_layer.rs`).** Parses the manifest (`id` to `href`), the two OPF-native cover fields Layer 5's own
 cascade consumes (`cover_href` from the EPUB 3 `properties="cover-image"` attribute; `meta_cover_href` from the EPUB 2
@@ -152,9 +152,10 @@ human-readable text field it emits (element text and `content` attribute values)
 fields as already decoded and must not decode them again, while the few attributes read raw (`id`, `idref`, `refines`,
 `name`, `property`, `properties`, `role`/`opf:role`, `media-type`, `href`) are reference keys compared only against each
 other or literal vocabulary terms. Exactly as with Layer 2, if the OPF entry cannot be read, its bytes are not valid
-UTF-8, or the XML fails to parse, the function returns `None` silently: there is no issue kind for a malformed or
-unreadable OPF, and no code path in this layer reports one. Layer 3 has no error-signal for its own parse failure at
-all, unlike Layer 4 below, which does report a malformed spine document as an issue.
+UTF-8, or the XML fails to parse, the function returns `None` without recording an issue of its own. `inspect` treats
+that `None` as `Irrecoverable` `CorruptEntry` naming the package document, because no metadata, manifest, or spine can
+be trusted without it. Recoverable findings inside a package document that parses stay `Repaired` or `Degraded` as
+above.
 
 **Layer 4: `XHTML` (`xhtml_layer.rs`).** If the spine holds more than `MAX_SPINE_ITEMS` spine references, the layer
 emits a single `Degraded` `SpineCapExceeded` issue and validates no spine document at all, not just the entries past the
@@ -219,20 +220,18 @@ constants in `mod.rs` or `zip_layer.rs`:
 | `MAX_EOCD_SEARCH_SPACE` | 65,557 bytes | How far back from the end of the file the end-of-central-directory locator searches (the fixed 22-byte record plus the format's maximum 65,535-byte comment) |
 | `MIMETYPE_CONTENT_PROBE_CAP` | 64 bytes | How much of the `mimetype` entry's content is read to check it against `application/epub+zip` |
 | the per-entry extraction probe cap | `min(declared_size + 1, 4096)` bytes | How much of an entry is decompressed during Layer 1's own lying-directory check |
+| the entry verification read cap | `declared_size + 1` bytes | How much of each entry the whole-archive verification decompresses |
 
 The per-entry and aggregate caps bound the *declared* size a central-directory record carries, not a verified actual
 size. Layer 1's own probe only catches a declared-size lie for an entry small enough that `declared + 1` is at most
-4,096 bytes; above that, the probe cap itself is the limiting factor and a larger lie is not distinguished from a
-truthful declaration at this layer. The bound that verifies an entry's actual size against its true content is
-`read_entry`, used by every layer past Layer 1 to fetch entry bytes: it caps the read at
-`MAX_ENTRY_UNCOMPRESSED_BYTES + 1` bytes and requires the wrapped CRC-32 verification over that capped read to succeed,
-returning nothing on any mismatch. Layer 1's own per-entry probe reads through a plain, unverified reader; it never
-checks the CRC-32 the central directory declares. Consequently, an entry that decompresses without an I/O error and
-whose true size (up to the probe cap) matches its declared size, but whose content does not match its declared CRC-32,
-passes Layer 1 entirely. When Layers 2 to 5 subsequently need that entry's bytes through `read_entry`, the CRC check
-there fails and the entry is treated as unreadable, silently, by whichever of the gaps described above applies: absent
-for `container.xml` (repaired via regeneration) or a `None` `OpfData` for the OPF itself (not repaired, not flagged, and
-potentially still an overall `Clean` outcome if nothing else fired).
+4,096 bytes, and it reads through a plain, unverified reader that never checks the CRC-32 the central directory
+declares. The whole-archive entry verification closes that gap: after Layer 1, `inspect` streams every admitted entry
+except `container.xml` through decompression under a CRC-32 and size verifying reader, reading at most the entry's
+declared size plus one byte, and records `Irrecoverable` `CorruptEntry` for the first entry whose bytes differ from what
+the directory declares. Because every entry was verified, `read_entry`, which caps a read at
+`MAX_ENTRY_UNCOMPRESSED_BYTES + 1` bytes and requires the same verification, cannot fail on CRC for any entry a later
+layer reads, apart from `container.xml`. On-demand cover extraction calls Layer 1 alone and does not pay for the
+verification pass.
 
 ## Runtime behaviour
 
@@ -258,10 +257,16 @@ state), and the repacked archive is persisted atomically. If the same run's Laye
 a `Repaired` `MissingContainer` with the discovered candidate path. `RepairPlan` regenerates `META-INF/container.xml`
 from that candidate (escaping the path for safe XML interpolation) and replaces the existing entry or adds it when
 absent; Layer 3 onward already ran against the regenerated path within the same validation pass, since Layer 2 returns
-the candidate immediately once it is confirmed safe. If no `.opf` file exists anywhere in the archive, the same
-`Repaired` `MissingContainer` issue is still recorded (its severity does not depend on whether a candidate was found),
-the outcome is still `Repaired`, but the repair plan cannot regenerate a container. Candidate validation still finds the
-instruction and refuses publication.
+the candidate immediately once it is confirmed safe.
+
+**An archive with no usable package document.** An empty archive, an archive with neither a `container.xml` nor any
+`.opf` file, a `container.xml` that names no package document, a named package document that is absent from the archive,
+and a package document whose bytes are not valid UTF-8 or well-formed XML each produce an `Irrecoverable` issue and a
+`Quarantined` outcome. A readable archive whose package document parses stays importable: missing covers, broken spine
+references, encoding mismatches and a non-conformant `mimetype` entry are `Repaired` or `Degraded`.
+
+**An archive with a corrupt entry.** An entry whose decompressed bytes fail the declared CRC-32 or size, anywhere in the
+archive, is `Irrecoverable` `CorruptEntry` and the outcome is `Quarantined`, whether or not the entry is structural.
 
 **An archive shaped to exhaust memory or CPU.** An end-of-central-directory record declaring more entries than
 `MAX_ZIP_ENTRIES` is rejected before any header is parsed. A central directory that in fact holds more entries than it
@@ -271,10 +276,11 @@ decompressed. Any of these is `Irrecoverable`; `validate_and_repair` returns `Qu
 without running Layer 2 or any layer after it.
 
 **An EPUB the check rejects outright.** A path-traversal entry name, a duplicate entry name, an encrypted entry, an
-unsupported compression method, data preceding the first entry, or a corrupt central directory each produce an
-`Irrecoverable` issue in Layer 1 and an immediate `Quarantined` outcome. An unsafe `OPF` path, whether extracted from
-`container.xml` or discovered by the regeneration scan, produces the only `Irrecoverable` issue Layer 2 can raise, with
-the same immediate `Quarantined` result.
+unsupported compression method, data preceding the first entry, a corrupt central directory, or an entry failing
+whole-archive verification each produce an `Irrecoverable` issue in Layer 1 or the verification pass and an immediate
+`Quarantined` outcome. An unsafe `OPF` path, a missing `OPF` candidate and an unreadable `container.xml` are the
+`Irrecoverable` issues Layer 2 can raise, and an unreadable package document is the one `inspect` raises after Layer 3;
+each yields the same `Quarantined` result.
 
 ## Failure and recovery
 
@@ -287,9 +293,10 @@ uncertain. `PublicationUncertain` carries the accepted hash and underlying error
 relocation or row-success update on that result. A retry inspects the recorded source afresh. No phase is inferred from
 an upstream error string.
 
-The ingestion caller retains its validator-error policy: `validation_status = failed` and continued ingestion. Writeback
-sends candidate rejection and errors to its existing failed/retry path. A missing or unreadable container with a
-discoverable OPF is repaired once, without duplicate container entries.
+The ingestion caller retains its validator-error policy for an error the validator raises, as opposed to a finding in
+its report: `validation_status = failed` and continued ingestion. Writeback sends candidate rejection and errors to its
+existing failed/retry path. A missing or unreadable container with a discoverable OPF is repaired once, without
+duplicate container entries.
 
 ## Security and operations
 

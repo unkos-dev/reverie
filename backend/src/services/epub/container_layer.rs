@@ -14,17 +14,29 @@ use super::{
     zip_layer::{ZipHandle, read_entry},
 };
 
-const CONTAINER_PATH: &str = "META-INF/container.xml";
+pub(super) const CONTAINER_PATH: &str = "META-INF/container.xml";
 
 /// Parse `container.xml` and return the `OPF` path.
 ///
 /// If `container.xml` is missing, scans for a `.opf` file and regenerates.
-/// Appends issues to `issues`. Returns `None` if no `OPF` can be found, or
-/// if the discovered candidate fails the path-safety check (an
+/// Appends issues to `issues`. Returns `None` if no `OPF` can be found (an
+/// `Irrecoverable` `MissingContainer` or `CorruptEntry` issue is recorded),
+/// or if the discovered candidate fails the path-safety check (an
 /// `UnsafeOpfPath` `Irrecoverable` issue is recorded in that case).
 pub fn validate(handle: &ZipHandle, issues: &mut Vec<Issue>) -> Option<String> {
     if let Some(bytes) = read_entry(handle, CONTAINER_PATH) {
-        extract_opf_path(&bytes, issues)
+        let recorded = issues.len();
+        let path = extract_opf_path(&bytes, issues);
+        if path.is_none() && issues.len() == recorded {
+            issues.push(Issue {
+                layer: Layer::Container,
+                severity: Severity::Irrecoverable,
+                kind: IssueKind::CorruptEntry {
+                    entry_name: CONTAINER_PATH.to_string(),
+                },
+            });
+        }
+        path
     } else {
         // Attempt regeneration: scan for .opf file
         let candidate = handle
@@ -35,7 +47,11 @@ pub fn validate(handle: &ZipHandle, issues: &mut Vec<Issue>) -> Option<String> {
 
         issues.push(Issue {
             layer: Layer::Container,
-            severity: Severity::Repaired,
+            severity: if candidate.is_some() {
+                Severity::Repaired
+            } else {
+                Severity::Irrecoverable
+            },
             kind: IssueKind::MissingContainer {
                 opf_candidate: candidate.clone(),
             },

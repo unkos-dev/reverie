@@ -26,6 +26,7 @@ use std::io::Read;
 use flate2::read::DeflateDecoder;
 use rawzip::{CompressionMethod, FileReader, ZipArchive, ZipArchiveEntryWayfinder, ZipEntry};
 
+use super::container_layer::CONTAINER_PATH;
 use super::repack::{MIMETYPE_CONTENT, MIMETYPE_ENTRY};
 use super::{
     Issue, IssueKind, Layer, MAX_AGGREGATE_UNCOMPRESSED_BYTES, MAX_ARCHIVE_BYTES,
@@ -485,6 +486,54 @@ fn push_mimetype_issues(issues: &mut Vec<Issue>, facts: Option<&MimetypeFacts>) 
     }
     if !facts.content_matches {
         push_problem(MimetypeProblem::Content);
+    }
+}
+
+/// Streams every admitted entry through its decompressor and pushes an
+/// `Irrecoverable` `CorruptEntry` for the first whose bytes fail the declared
+/// CRC-32 or size. Each read is bounded by the entry's declared size plus one
+/// byte, which `validate` already caps per entry and in aggregate. The
+/// `container.xml` entry is exempt because Layer 2 regenerates an unreadable
+/// one from a discoverable package document.
+pub fn verify_entries(handle: &ZipHandle, issues: &mut Vec<Issue>) {
+    let Some(archive) = handle.archive.as_ref() else {
+        return;
+    };
+    let corrupt = handle.entries.iter().find(|name| {
+        if name.as_str() == CONTAINER_PATH {
+            return false;
+        }
+        let Some(&(record, method)) = handle.index.get(name.as_str()) else {
+            return true;
+        };
+        let Ok(entry) = archive.get_entry(record) else {
+            return true;
+        };
+        let cap = record.uncompressed_size_hint().saturating_add(1);
+        let mut sink = std::io::sink();
+        let copied = if method == CompressionMethod::DEFLATE {
+            std::io::copy(
+                &mut entry
+                    .verifying_reader(DeflateDecoder::new(entry.reader()))
+                    .take(cap),
+                &mut sink,
+            )
+        } else {
+            std::io::copy(
+                &mut entry.verifying_reader(entry.reader()).take(cap),
+                &mut sink,
+            )
+        };
+        !copied.is_ok_and(|bytes| bytes < cap)
+    });
+    if let Some(name) = corrupt {
+        issues.push(Issue {
+            layer: Layer::Zip,
+            severity: Severity::Irrecoverable,
+            kind: IssueKind::CorruptEntry {
+                entry_name: name.clone(),
+            },
+        });
     }
 }
 
