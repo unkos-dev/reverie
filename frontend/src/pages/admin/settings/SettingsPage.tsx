@@ -58,18 +58,18 @@ function LoadingRegion(): ReactElement {
       <p className="text-fg-muted mt-6 text-[13px]">Loading settings</p>
       {[0, 1, 2].map((i) => (
         <div key={`section-${String(i)}`} className="border-border border-t pt-6">
-          <Skeleton className="h-[26px] w-[200px]" />
-          <Skeleton className="mt-2.5 h-3.5 w-[420px] max-w-full" />
+          <Skeleton className="motion-reduce:animate-none h-[26px] w-[200px]" />
+          <Skeleton className="motion-reduce:animate-none mt-2.5 h-3.5 w-[420px] max-w-full" />
           {[0, 1, 2].map((j) => (
             <div
               key={`row-${String(j)}`}
               className="grid grid-cols-[minmax(0,24rem)_minmax(0,1fr)] gap-8 py-4"
             >
               <div>
-                <Skeleton className="h-4 w-[240px] max-w-full" />
-                <Skeleton className="mt-2 h-3 w-[340px] max-w-full" />
+                <Skeleton className="motion-reduce:animate-none h-4 w-[240px] max-w-full" />
+                <Skeleton className="motion-reduce:animate-none mt-2 h-3 w-[340px] max-w-full" />
               </div>
-              <Skeleton className="h-8 w-[120px]" />
+              <Skeleton className="motion-reduce:animate-none h-8 w-[120px]" />
             </div>
           ))}
         </div>

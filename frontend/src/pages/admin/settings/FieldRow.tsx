@@ -133,6 +133,7 @@ function SwitchControl({ field, base, editor }: Props & { field: SwitchField }):
     <div className="inline-flex items-center gap-2.5">
       <Switch
         id={controlId(field.key)}
+        className="motion-reduce:[&>[data-slot=switch-thumb]]:transition-none"
         checked={on}
         aria-labelledby={labelId(field.key)}
         aria-describedby={`help-${field.key}`}
