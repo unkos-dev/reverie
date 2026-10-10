@@ -386,7 +386,10 @@ describe("loading", () => {
     expect(within(nav).queryByText(/Provider display/)).not.toBeInTheDocument();
     expect(screen.getByText("Last changed")).toBeInTheDocument();
     expect(screen.getByText("No unsaved changes.")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Discard changes" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Discard changes" })).toHaveAttribute(
+      "aria-disabled",
+      "true",
+    );
     expect(save()).toHaveAttribute("aria-disabled", "true");
   });
 
@@ -427,6 +430,23 @@ describe("editing", () => {
     expect(screen.getByRole("textbox", { name: "Concurrent lookups" })).toHaveValue("4");
     expect(screen.getByText("No unsaved changes.")).toBeInTheDocument();
     expect(screen.queryByText("Edited")).not.toBeInTheDocument();
+  });
+
+  test("Discard changes keeps keyboard focus after discarding, and ignores activation with nothing to discard", async () => {
+    const user = userEvent.setup();
+    await loaded();
+    await type(user, "Concurrent lookups", "6");
+    const discard = screen.getByRole("button", { name: "Discard changes" });
+    act(() => {
+      discard.focus();
+    });
+    await user.keyboard("{Enter}");
+    expect(screen.getByText("No unsaved changes.")).toBeInTheDocument();
+    expect(discard).toHaveFocus();
+    expect(discard).toHaveAttribute("aria-disabled", "true");
+    expect(discard).not.toHaveAttribute("disabled");
+    await user.keyboard("{Enter}");
+    expect(discard).toHaveFocus();
   });
 
   test("editing back to the saved value clears the dirty state", async () => {
@@ -1236,6 +1256,28 @@ describe("a stale write", () => {
     });
     expect(screen.getByRole("textbox", { name: "Concurrent lookups" })).toHaveValue("8");
     expect(screen.getByText("No unsaved changes.")).toBeInTheDocument();
+  });
+
+  test("Discard mine and reload keeps keyboard focus on the discard control", async () => {
+    server.stale.set(1, () => {
+      server.values.enrichment_concurrency = 8;
+      server.revision += 1;
+    });
+    const user = userEvent.setup();
+    await loaded();
+    await type(user, "Concurrent lookups", "6");
+    await user.click(save());
+    await screen.findByText("Settings changed while you were editing");
+    act(() => {
+      screen.getByRole("button", { name: "Discard mine and reload" }).focus();
+    });
+    await user.keyboard("{Enter}");
+    await waitFor(() => {
+      expect(screen.queryByText("Settings changed while you were editing")).not.toBeInTheDocument();
+    });
+    const discard = screen.getByRole("button", { name: "Discard changes" });
+    expect(discard).toHaveFocus();
+    expect(discard).toHaveAttribute("aria-disabled", "true");
   });
 
   test("the retry is bounded: a second stale answer opens the conflict panel after exactly two writes", async () => {

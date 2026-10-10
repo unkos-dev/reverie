@@ -124,15 +124,19 @@ function SaveBar({ editor }: { editor: SettingsEditor }): ReactElement {
   return (
     <div className="bg-surface border-border-strong sticky bottom-0 z-20 -mx-10 mt-8 flex items-center gap-3 border-t px-10 py-3">
       <div className="text-fg-muted mr-auto text-sm">{barSummary(editor)}</div>
-      {conflict ? (
-        <Button type="button" variant="outline" disabled={busy} onClick={editor.discardAndReload}>
-          Discard mine and reload
-        </Button>
-      ) : (
-        <Button type="button" variant="outline" disabled={idle} onClick={editor.discard}>
-          Discard changes
-        </Button>
-      )}
+      <Button
+        type="button"
+        variant="outline"
+        aria-disabled={inactive ? true : undefined}
+        className="aria-disabled:pointer-events-none aria-disabled:opacity-50"
+        onClick={() => {
+          if (inactive) return;
+          if (conflict) editor.discardAndReload();
+          else editor.discard();
+        }}
+      >
+        {conflict ? "Discard mine and reload" : "Discard changes"}
+      </Button>
       <Button
         type="submit"
         aria-disabled={inactive ? true : undefined}
