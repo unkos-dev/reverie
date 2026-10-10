@@ -904,6 +904,51 @@ describe("polling", () => {
     expect(screen.queryByText(/Updating every few seconds/)).not.toBeInTheDocument();
   });
 
+  test("clears the waiting notice once a newer batch has ended, though no poll saw it running", async () => {
+    vi.mocked(scanIngestion).mockResolvedValue({
+      queued: 0,
+      deferred: 8,
+      suppressed: 0,
+      monitor: "/m",
+    });
+    renderPage();
+    await flush();
+    fireEvent.click(screen.getByRole("button", { name: "Scan ingestion folder" }));
+    await flush();
+    expect(screen.getByText("Nothing is ready yet")).toBeInTheDocument();
+    vi.mocked(getDashboardActivity).mockResolvedValue(
+      batch({
+        batch_id: "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+        total: 1,
+        completed: 1,
+        failed: 0,
+      }),
+    );
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(POLL_INTERVAL_MS + 20);
+    });
+    expect(screen.queryByText("Nothing is ready yet")).not.toBeInTheDocument();
+    expect(screen.getByText("Latest activity has finished")).toBeInTheDocument();
+  });
+
+  test("keeps the waiting notice while the latest batch is the one seen before the scan", async () => {
+    vi.mocked(scanIngestion).mockResolvedValue({
+      queued: 0,
+      deferred: 8,
+      suppressed: 0,
+      monitor: "/m",
+    });
+    renderPage();
+    await flush();
+    fireEvent.click(screen.getByRole("button", { name: "Scan ingestion folder" }));
+    await flush();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(POLL_INTERVAL_MS * 3);
+    });
+    expect(screen.getByText("Nothing is ready yet")).toBeInTheDocument();
+    expect(screen.queryByText("Latest activity has finished")).not.toBeInTheDocument();
+  });
+
   test("a 403 during a running batch outlives the batch and keeps the scan disabled", async () => {
     vi.mocked(getDashboardActivity).mockResolvedValueOnce(
       batch({ ended_at: null, in_progress: 4, completed: 7 }),
