@@ -244,37 +244,16 @@ async fn list_inputs(
         .map(|cursor| cursor.id);
 
     let rows = sqlx::query!(
-        r#"SELECT i.id AS "id!", i.source_path AS "source_path!",
-                  i.status AS "status!: InputStatus",
-                  latest.outcome AS "outcome: AttemptOutcome",
-                  c.class AS "class!",
-                  i.rejection_reasons AS "rejection_reasons!",
-                  i.observed_at AS "observed_at!", i.completed_at
-           FROM ingestion_inputs i
-           LEFT JOIN LATERAL (
-               SELECT j.outcome FROM ingestion_jobs j
-               WHERE j.input_id = i.id AND j.input_generation = i.generation AND j.outcome IS NOT NULL
-               ORDER BY j.created_at DESC, j.id DESC LIMIT 1
-           ) latest ON TRUE
-           CROSS JOIN LATERAL (
-               SELECT CASE i.status
-                   WHEN 'rejected' THEN COALESCE(i.rejection_reasons[1], 'unspecified')
-                   WHEN 'not_accepted' THEN 'format_not_accepted'
-                   WHEN 'operational_failure' THEN CASE latest.outcome
-                       WHEN 'needs_change' THEN 'needs_change'
-                       WHEN 'transient_input' THEN CASE WHEN (
-                           SELECT COUNT(*) FROM ingestion_jobs t
-                           WHERE t.input_id = i.id AND t.input_generation = i.generation
-                             AND t.created_at >= i.retry_reset_at AND t.outcome = 'transient_input'
-                       ) >= 6 THEN 'retries_exhausted' END
-                   END
-               END AS class
-           ) c
-           WHERE i.status IN ('rejected', 'not_accepted', 'operational_failure')
-             AND c.class IS NOT NULL
-             AND ($1::uuid IS NULL OR i.id > $1)
-             AND CASE WHEN $2::text IS NULL THEN c.class <> 'format_not_accepted' ELSE c.class = $2 END
-           ORDER BY i.id
+        r#"SELECT id AS "id!", source_path AS "source_path!",
+                  status AS "status!: InputStatus",
+                  outcome AS "outcome: AttemptOutcome",
+                  reason_class AS "class!",
+                  rejection_reasons AS "rejection_reasons!",
+                  observed_at AS "observed_at!", completed_at
+           FROM ingestion_input_classes
+           WHERE ($1::uuid IS NULL OR id > $1)
+             AND CASE WHEN $2::text IS NULL THEN reason_class <> 'format_not_accepted' ELSE reason_class = $2 END
+           ORDER BY id
            LIMIT $3"#,
         after,
         params.reason.map(InputReason::as_str),
@@ -375,30 +354,9 @@ async fn input_counts(
     current_user.require_admin()?;
 
     let rows = sqlx::query!(
-        r#"SELECT c.class AS "class!", COUNT(*) AS "count!"
-           FROM ingestion_inputs i
-           LEFT JOIN LATERAL (
-               SELECT j.outcome FROM ingestion_jobs j
-               WHERE j.input_id = i.id AND j.input_generation = i.generation AND j.outcome IS NOT NULL
-               ORDER BY j.created_at DESC, j.id DESC LIMIT 1
-           ) latest ON TRUE
-           CROSS JOIN LATERAL (
-               SELECT CASE i.status
-                   WHEN 'rejected' THEN COALESCE(i.rejection_reasons[1], 'unspecified')
-                   WHEN 'not_accepted' THEN 'format_not_accepted'
-                   WHEN 'operational_failure' THEN CASE latest.outcome
-                       WHEN 'needs_change' THEN 'needs_change'
-                       WHEN 'transient_input' THEN CASE WHEN (
-                           SELECT COUNT(*) FROM ingestion_jobs t
-                           WHERE t.input_id = i.id AND t.input_generation = i.generation
-                             AND t.created_at >= i.retry_reset_at AND t.outcome = 'transient_input'
-                       ) >= 6 THEN 'retries_exhausted' END
-                   END
-               END AS class
-           ) c
-           WHERE i.status IN ('rejected', 'not_accepted', 'operational_failure')
-             AND c.class IS NOT NULL
-           GROUP BY c.class"#,
+        r#"SELECT reason_class AS "class!", COUNT(*) AS "count!"
+           FROM ingestion_input_classes
+           GROUP BY reason_class"#,
     )
     .fetch_all(&state.pool)
     .await

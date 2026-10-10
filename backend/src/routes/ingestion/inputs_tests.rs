@@ -6,6 +6,7 @@ use uuid::Uuid;
 use crate::error::problems;
 use crate::models::ingestion_input::{
     self, AttemptOutcome, Fingerprint, Input, InputPath, InputStatus, RejectionReason,
+    TRANSIENT_ATTEMPT_LIMIT,
 };
 use crate::test_support;
 
@@ -205,7 +206,7 @@ async fn default_listing_is_the_attention_set_with_one_class_per_state(pool: PgP
     transient(&env, &waiting).await;
 
     let exhausted = observe(&env, b"exhausted.epub", 4).await;
-    for _ in 0..6 {
+    for _ in 0..TRANSIENT_ATTEMPT_LIMIT {
         transient(&env, &exhausted).await;
     }
 
@@ -289,10 +290,10 @@ async fn default_listing_is_the_attention_set_with_one_class_per_state(pool: PgP
 }
 
 #[sqlx::test(migrations = "./migrations")]
-async fn five_transient_failures_are_still_waiting_and_the_sixth_exhausts(pool: PgPool) {
+async fn failures_below_the_limit_are_still_waiting_and_the_limit_exhausts(pool: PgPool) {
     let env = env(&pool).await;
     let input = observe(&env, b"flaky.epub", 1).await;
-    for _ in 0..5 {
+    for _ in 1..TRANSIENT_ATTEMPT_LIMIT {
         transient(&env, &input).await;
     }
     assert_eq!(item_count(&list(&env, "").await), 0);
@@ -701,4 +702,109 @@ async fn inputs_endpoints_require_authentication_and_the_admin_role(pool: PgPool
             test_support::assert_problem(&response, problems::FORBIDDEN, StatusCode::FORBIDDEN);
         }
     }
+}
+
+async fn classes(env: &Env) -> Vec<(String, String)> {
+    let mut rows = sqlx::query!(
+        r#"SELECT convert_from(source_path, 'UTF8') AS "path!", reason_class AS "class!"
+           FROM ingestion_input_classes"#,
+    )
+    .fetch_all(&env.ing)
+    .await
+    .unwrap()
+    .into_iter()
+    .map(|row| (row.path, row.class))
+    .collect::<Vec<_>>();
+    rows.sort();
+    rows
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn the_view_maps_each_state_to_its_bounded_class(pool: PgPool) {
+    let env = env(&pool).await;
+    rejected(&env, "unsafe.epub", 1, &[RejectionReason::UnsafeContents]).await;
+    rejected(&env, "plain.epub", 2, &[]).await;
+
+    let ignored = observe(&env, b"notes.txt", 3).await;
+    ingestion_input::set_unaccepted_many(&env.ing, &[ignored.id], &[ignored.generation])
+        .await
+        .unwrap();
+
+    let blocked = observe(&env, b"blocked.epub", 4).await;
+    needs_change(&env, &blocked).await;
+
+    let spent = observe(&env, b"spent.epub", 5).await;
+    for _ in 0..TRANSIENT_ATTEMPT_LIMIT {
+        transient(&env, &spent).await;
+    }
+
+    let waiting = observe(&env, b"waiting.epub", 6).await;
+    for _ in 1..TRANSIENT_ATTEMPT_LIMIT {
+        transient(&env, &waiting).await;
+    }
+
+    let pending = observe(&env, b"pending.epub", 7).await;
+    assert_eq!(pending.status, InputStatus::Pending);
+
+    let imported = observe(&env, b"imported.epub", 8).await;
+    attempt(
+        &env,
+        &imported,
+        AttemptOutcome::Imported,
+        InputStatus::Imported,
+        None,
+        &[],
+    )
+    .await;
+
+    let removed = observe(&env, b"removed.epub", 9).await;
+    needs_change(&env, &removed).await;
+    ingestion_input::remove(&env.ing, &removed, "admin_deletion")
+        .await
+        .unwrap();
+
+    let class = |path: &str, class: &str| (path.to_owned(), class.to_owned());
+    assert_eq!(
+        classes(&env).await,
+        vec![
+            class("blocked.epub", "needs_change"),
+            class("notes.txt", "format_not_accepted"),
+            class("plain.epub", "unspecified"),
+            class("spent.epub", "retries_exhausted"),
+            class("unsafe.epub", "unsafe_contents"),
+        ]
+    );
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn the_view_needs_the_recorded_exhaustion_and_a_transient_latest_outcome(pool: PgPool) {
+    let env = env(&pool).await;
+    let input = observe(&env, b"flaky.epub", 1).await;
+    transient(&env, &input).await;
+    assert!(classes(&env).await.is_empty());
+
+    sqlx::query!(
+        "UPDATE ingestion_inputs SET retries_exhausted_at = now() WHERE id = $1",
+        input.id
+    )
+    .execute(&env.ing)
+    .await
+    .unwrap();
+    assert_eq!(
+        classes(&env).await,
+        vec![("flaky.epub".into(), "retries_exhausted".into())]
+    );
+
+    needs_change(&env, &input).await;
+    sqlx::query!(
+        "UPDATE ingestion_inputs SET retries_exhausted_at = now() WHERE id = $1",
+        input.id
+    )
+    .execute(&env.ing)
+    .await
+    .unwrap();
+    assert_eq!(
+        classes(&env).await,
+        vec![("flaky.epub".into(), "needs_change".into())]
+    );
 }

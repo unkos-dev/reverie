@@ -623,6 +623,7 @@ CREATE TABLE public.ingestion_inputs (
     removed_at timestamp with time zone,
     removal_cause text,
     rejection_reasons text[] DEFAULT '{}'::text[] NOT NULL,
+    retries_exhausted_at timestamp with time zone,
     CONSTRAINT ingestion_inputs_check CHECK (((status = 'removed'::public.ingestion_input_status) = ((removed_at IS NOT NULL) AND (removal_cause IS NOT NULL)))),
     CONSTRAINT ingestion_inputs_check1 CHECK (((status = 'removed'::public.ingestion_input_status) OR ((removed_at IS NULL) AND (removal_cause IS NULL)))),
     CONSTRAINT ingestion_inputs_completed_at_check CHECK (((completed_at >= '0001-01-01 00:00:00+00'::timestamp with time zone) AND (completed_at < '10000-01-01 00:00:00+00'::timestamp with time zone))),
@@ -677,6 +678,42 @@ CREATE TABLE public.ingestion_jobs (
 
 
 ALTER TABLE public.ingestion_jobs OWNER TO reverie_migrator;
+
+--
+-- Name: ingestion_input_classes; Type: VIEW; Schema: public; Owner: reverie_migrator
+--
+
+CREATE VIEW public.ingestion_input_classes WITH (security_invoker='true') AS
+ SELECT i.id,
+    i.source_path,
+    i.status,
+    latest.outcome,
+    i.rejection_reasons,
+    i.observed_at,
+    i.completed_at,
+    c.reason_class
+   FROM ((public.ingestion_inputs i
+     LEFT JOIN LATERAL ( SELECT j.outcome
+           FROM public.ingestion_jobs j
+          WHERE ((j.input_id = i.id) AND (j.input_generation = i.generation) AND (j.outcome IS NOT NULL))
+          ORDER BY j.created_at DESC, j.id DESC
+         LIMIT 1) latest ON (true))
+     CROSS JOIN LATERAL ( SELECT
+                CASE i.status
+                    WHEN 'rejected'::public.ingestion_input_status THEN COALESCE(i.rejection_reasons[1], 'unspecified'::text)
+                    WHEN 'not_accepted'::public.ingestion_input_status THEN 'format_not_accepted'::text
+                    WHEN 'operational_failure'::public.ingestion_input_status THEN
+                    CASE
+                        WHEN (latest.outcome = 'needs_change'::public.ingestion_attempt_outcome) THEN 'needs_change'::text
+                        WHEN ((latest.outcome = 'transient_input'::public.ingestion_attempt_outcome) AND (i.retries_exhausted_at IS NOT NULL)) THEN 'retries_exhausted'::text
+                        ELSE NULL::text
+                    END
+                    ELSE NULL::text
+                END AS reason_class) c)
+  WHERE (c.reason_class IS NOT NULL);
+
+
+ALTER VIEW public.ingestion_input_classes OWNER TO reverie_migrator;
 
 --
 -- Name: instance_bootstrap; Type: TABLE; Schema: public; Owner: reverie_migrator
@@ -3645,6 +3682,15 @@ GRANT SELECT ON TABLE public.ingestion_inputs TO reverie_readonly;
 GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.ingestion_jobs TO reverie_app;
 GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.ingestion_jobs TO reverie_ingestion;
 GRANT SELECT ON TABLE public.ingestion_jobs TO reverie_readonly;
+
+
+--
+-- Name: TABLE ingestion_input_classes; Type: ACL; Schema: public; Owner: reverie_migrator
+--
+
+GRANT SELECT ON TABLE public.ingestion_input_classes TO reverie_app;
+GRANT SELECT ON TABLE public.ingestion_input_classes TO reverie_ingestion;
+GRANT SELECT ON TABLE public.ingestion_input_classes TO reverie_readonly;
 
 
 --
