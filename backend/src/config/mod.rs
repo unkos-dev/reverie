@@ -308,12 +308,12 @@ pub struct Config {
     /// Fetches against it run over the shared OIDC transport, so they carry
     /// explicit connect and request timeouts and never follow redirects (the
     /// configured URL must be the final endpoint); resolved keys are cached
-    /// in-process. Missing
-    /// keys are NOT negatively cached: each Bearer credential naming an
-    /// unknown `kid` triggers a fresh JWKS fetch, so a flood of such
-    /// credentials drives outbound fetches to the `IdP` roughly 1:1. On an
-    /// internet-exposed instance, put the API behind an edge rate limiter
-    /// (reverse proxy or WAF) to bound that amplification.
+    /// in-process. A Bearer credential naming an unknown `kid` triggers a
+    /// refetch, but fetches are at least 30 seconds apart and concurrent
+    /// misses share one, so a flood of such credentials costs the `IdP` at
+    /// most one request per window. A fetch that fails keeps the cached
+    /// keys and still starts the window. A key the `IdP` rotates in is
+    /// therefore rejected for up to 30 seconds after the last fetch.
     pub resource_server_jwks_url: String,
     /// Whether the `typ` header of a resource-server JWT must be `at+jwt` /
     /// `application/at+jwt` per RFC 9068 §4
