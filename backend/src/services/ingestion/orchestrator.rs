@@ -11,8 +11,6 @@ use crate::models::manifestation_format::ManifestationFormat;
 use crate::models::storage_library::LibraryId;
 use crate::models::validation_status::ValidationStatus;
 use crate::models::{library_path_claim, work};
-#[cfg(test)]
-use crate::services::epub;
 use crate::services::epub::ValidationOutcome;
 use crate::services::files::{LibraryFiles, LibraryLocation, RelativeFilePath};
 use crate::services::ingestion::{cleanup, copier, path_template};
@@ -1794,10 +1792,7 @@ async fn validate_candidate(
     let forced_error = forced_validator_error(candidate_path.as_str());
     let validated = tokio::task::spawn_blocking(move || {
         candidate.progress().enter(copier::Phase::Validation)?;
-        let validation = match forced_error {
-            Some(error) => Err(error),
-            None => candidate.validate(),
-        };
+        let validation = forced_error.map_or_else(|| candidate.validate(), Err);
         candidate.progress().check()?;
         let (hash, size) = candidate.accepted_bytes(&validation)?;
         Ok::<_, copier::CopyError>((candidate, validation, hash, size))
