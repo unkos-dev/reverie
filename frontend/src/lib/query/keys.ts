@@ -11,6 +11,8 @@
  * equality on the key, so equal params hit the same cache slot.
  */
 import type { ArrayParamKey, ListBooksParams } from "@/api";
+import type { FailureClass } from "@/api/enrichment-failures";
+import type { InputReason } from "@/api/ingestion";
 import type { SuggestKind } from "@/api/suggest";
 
 /** Tuple for the root books namespace. */
@@ -158,5 +160,32 @@ export const queryKeys = {
     stats: () => ["dashboard", "stats"] as const,
     /** `GET /api/v1/dashboard/activity` recent batches, keyed by limit. */
     activity: (limit: number) => ["dashboard", "activity", limit] as const,
+  },
+  ingestion: {
+    /** Root namespace; invalidate to refetch every ingestion-* slot. */
+    all: ["ingestion"] as const,
+    /** `GET /api/v1/ingestion/inputs/counts`, one read for every group header. */
+    counts: () => ["ingestion", "counts"] as const,
+    /** Prefix of every group's first page; invalidating it never touches later pages. */
+    groupsFirst: ["ingestion", "inputs"] as const,
+    /** One group's first page (`reason=<class>`, no cursor). */
+    groupFirst: (reason: InputReason) => ["ingestion", "inputs", reason] as const,
+    /** One later page of a group, keyed by the cursor that opens it. */
+    groupAfter: (reason: InputReason, cursor: string) =>
+      ["ingestion", "after", reason, cursor] as const,
+  },
+  enrichmentFailures: {
+    /** Root namespace; invalidate to refetch every enrichment-failure slot. */
+    all: ["enrichment-failures"] as const,
+    /** `GET /api/v1/dashboard/enrichment-failures/counts`. */
+    counts: () => ["enrichment-failures", "counts"] as const,
+    /** Prefix of every group's first page. */
+    groupsFirst: ["enrichment-failures", "list"] as const,
+    /** One group's first page; a null source is a group that belongs to no source. */
+    groupFirst: (source: string | null, failureClass: FailureClass) =>
+      ["enrichment-failures", "list", source ?? "", failureClass] as const,
+    /** One later page of a group, keyed by the cursor that opens it. */
+    groupAfter: (source: string | null, failureClass: FailureClass, cursor: string) =>
+      ["enrichment-failures", "after", source ?? "", failureClass, cursor] as const,
   },
 };
