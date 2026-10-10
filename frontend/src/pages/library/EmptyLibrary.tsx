@@ -74,9 +74,9 @@ function CheckingGuidance(): ReactElement {
       <span role="status" className="sr-only">
         Checking the ingestion folder
       </span>
-      <Skeleton className="bg-surface-3 h-5 w-52" />
-      <Skeleton className="bg-surface-3 mt-3.5 h-3 w-[26rem] max-w-full" />
-      <Skeleton className="bg-surface-3 mt-2.5 h-3 w-80 max-w-full" />
+      <Skeleton className="bg-surface-3 motion-reduce:animate-none h-5 w-52" />
+      <Skeleton className="bg-surface-3 motion-reduce:animate-none mt-3.5 h-3 w-[26rem] max-w-full" />
+      <Skeleton className="bg-surface-3 motion-reduce:animate-none mt-2.5 h-3 w-80 max-w-full" />
     </div>
   );
 }
@@ -128,7 +128,7 @@ function UnderwayGuidance({ batch }: { batch: BatchRow }): ReactElement {
           value={percent}
           aria-label="Files imported in the latest batch"
           aria-valuetext={`${COUNT_FORMAT.format(batch.completed)} of ${COUNT_FORMAT.format(batch.total)} files imported`}
-          className="bg-surface-3 h-1.5 [&>[data-slot=progress-indicator]]:bg-accent-text dark:[&>[data-slot=progress-indicator]]:bg-primary"
+          className="bg-surface-3 h-1.5 motion-reduce:[&>[data-slot=progress-indicator]]:transition-none [&>[data-slot=progress-indicator]]:bg-accent-text dark:[&>[data-slot=progress-indicator]]:bg-primary"
         />
       </div>
       <OpenIngestion>Open Ingestion</OpenIngestion>
