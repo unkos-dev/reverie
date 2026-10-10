@@ -572,4 +572,45 @@ describe("apiFetch — If-Match ETag retention", () => {
     const headers = new Headers(fetchSpy.mock.calls[1]?.[1]?.headers);
     expect(headers.has("If-Match")).toBe(false);
   });
+  test("a settings GET's ETag is echoed as If-Match on the settings PUT", async () => {
+    await seedCsrf(SAMPLE_TOKEN);
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(withEtag({ revision: 1 }, '"settings-1"'))
+      .mockResolvedValueOnce(withEtag({ revision: 2 }, '"settings-2"'));
+
+    await apiFetch("/api/v1/settings");
+    await apiFetch("/api/v1/settings", { method: "PUT", body: JSON.stringify({ a: 1 }) });
+
+    const headers = new Headers(fetchSpy.mock.calls[1]?.[1]?.headers);
+    expect(headers.get("If-Match")).toBe('"settings-1"');
+  });
+
+  test("a settings 412's current ETag replaces the stale tag for the next PUT", async () => {
+    await seedCsrf(SAMPLE_TOKEN);
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(withEtag({ revision: 1 }, '"stale"'))
+      .mockResolvedValueOnce(mismatchResponse('"current"'))
+      .mockResolvedValueOnce(withEtag({ revision: 3 }, '"after"'));
+
+    await apiFetch("/api/v1/settings");
+    await expect(
+      apiFetch("/api/v1/settings", { method: "PUT", body: JSON.stringify({ a: 1 }) }),
+    ).rejects.toBeInstanceOf(ApiError);
+    await apiFetch("/api/v1/settings", { method: "PUT", body: JSON.stringify({ a: 1 }) });
+
+    const retryHeaders = new Headers(fetchSpy.mock.calls[2]?.[1]?.headers);
+    expect(retryHeaders.get("If-Match")).toBe('"current"');
+  });
+
+  test("a PUT to an unkeyed path never gains an If-Match", async () => {
+    await seedCsrf(SAMPLE_TOKEN);
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(jsonResponse({}));
+
+    await apiFetch("/api/v1/users/u1/role", { method: "PUT", body: JSON.stringify({}) });
+
+    const headers = new Headers(fetchSpy.mock.calls[0]?.[1]?.headers);
+    expect(headers.has("If-Match")).toBe(false);
+  });
 });

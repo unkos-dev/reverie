@@ -145,6 +145,14 @@ export const queryKeys = {
     /** `/auth/setup/status` — first-run + provider state for the auth screens and the redirect. */
     setupStatus: () => ["auth", "setup-status"] as const,
   },
+  settings: {
+    /** Root namespace; invalidate to refetch every settings-* slot. */
+    all: ["settings"] as const,
+    /** `GET /api/v1/settings` snapshot (admin only); its ETag guards the PUT. */
+    snapshot: () => ["settings", "snapshot"] as const,
+    /** `GET /api/v1/settings/reload-status` (admin only); no ETag, safe to refetch. */
+    reloadStatus: () => ["settings", "reload-status"] as const,
+  },
   tokens: {
     /** Root namespace; invalidate to refetch every tokens-* slot. */
     all: ["tokens"] as const,

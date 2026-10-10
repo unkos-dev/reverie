@@ -102,12 +102,27 @@ describe("UserChip", () => {
     expect(screen.getByText("ada@example.com")).toBeInTheDocument();
   });
 
-  test("Settings item is disabled", async () => {
+  test("an administrator gets a Settings link to the settings area", async () => {
+    const me = useAuthMeMock().data;
+    if (me === undefined) throw new Error("fixture missing");
+    useAuthMeMock.mockReturnValue({
+      data: { ...me, role: "admin" },
+      isLoading: false,
+      isError: false,
+    });
     renderChip();
-    const user = userEvent.setup();
-    await user.click(screen.getByRole("button", { name: /Ada Lovelace/ }));
-    const settings = await screen.findByRole("menuitem", { name: /Settings/ });
-    expect(settings).toHaveAttribute("aria-disabled", "true");
+    await userEvent.setup().click(screen.getByRole("button", { name: /Ada Lovelace/ }));
+    const settings = await screen.findByRole("menuitem", { name: "Settings" });
+    expect(settings).toHaveAttribute("href", "/admin/settings");
+    expect(settings).not.toHaveAttribute("aria-disabled");
+  });
+
+  test("a non-admin sees no Settings item and no planned hint", async () => {
+    renderChip();
+    await userEvent.setup().click(screen.getByRole("button", { name: /Ada Lovelace/ }));
+    expect(await screen.findByRole("menu")).toBeInTheDocument();
+    expect(screen.queryByRole("menuitem", { name: /Settings/ })).not.toBeInTheDocument();
+    expect(screen.queryByText("planned")).not.toBeInTheDocument();
   });
 
   test("exposes a Change password link to the account screen", async () => {
