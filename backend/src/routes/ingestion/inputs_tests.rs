@@ -781,7 +781,7 @@ async fn the_view_needs_the_recorded_exhaustion_and_a_transient_latest_outcome(p
     let env = env(&pool).await;
     let input = observe(&env, b"flaky.epub", 1).await;
     transient(&env, &input).await;
-    assert!(classes(&env).await.is_empty());
+    assert_eq!(classes(&env).await, Vec::<(String, String)>::new());
 
     sqlx::query!(
         "UPDATE ingestion_inputs SET retries_exhausted_at = now() WHERE id = $1",
