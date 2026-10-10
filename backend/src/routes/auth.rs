@@ -222,9 +222,10 @@ async fn callback(
         .map_err(|e| AppError::Internal(anyhow::anyhow!("user upsert failed: {e}")))?;
 
     // THREAT (account lockout): a soft-disabled account cannot complete OIDC
-    // login. Reject after resolving the identity but before establishing any
-    // session. A first-time OIDC user is freshly provisioned (never disabled);
-    // this catches an existing account disabled after its initial link.
+    // login. `upsert_from_oidc` leaves a disabled account unwritten; reject it
+    // here before establishing any session. A first-time OIDC user is freshly
+    // provisioned (never disabled); this catches an existing account disabled
+    // after its initial link.
     if user.disabled_at.is_some() {
         return Err(AppError::Unauthorized);
     }
@@ -1581,6 +1582,126 @@ mod tests {
             me_body_2.get("csrf_token").and_then(|v| v.as_str()),
             Some(token),
             "csrf_token must be stable across /auth/me reads in same session"
+        );
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn callback_refuses_disabled_account_without_writing_profile(pool: sqlx::PgPool) {
+        use crate::models::user;
+        use crate::state::AppState;
+        use crate::test_support::oidc_mock::MockOidcProvider;
+        use tower_sessions::session::Id as SessionId;
+        use tower_sessions::{MemoryStore, SessionStore};
+
+        let app_pool = test_support::db::app_pool_for(&pool).await;
+        let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+        let mock = MockOidcProvider::start("").await;
+        let oidc = Some(std::sync::Arc::new(
+            mock.runtime("http://localhost:3000/auth/callback"),
+        ));
+        let store = MemoryStore::default();
+        let (config, library_files) = crate::test_support::test_storage_config(
+            None,
+            crate::models::storage_library::LibraryId::from_uuid(uuid::Uuid::new_v4()),
+        );
+        let state = AppState {
+            pool: app_pool.clone(),
+            ingestion_pool,
+            ingestion: crate::services::ingestion::coordinator_channel().0,
+            library_files,
+            config,
+            oidc,
+            jwt_validator: None,
+            login_limiter: test_support::test_login_limiter(),
+            settings: test_support::test_settings(),
+            last_settings_reload: std::sync::Arc::new(tokio::sync::RwLock::new(None)),
+        };
+        let app = crate::build_router_with_session_store(state, store.clone());
+        let mut server = axum_test::TestServer::new(app);
+        server.save_cookies();
+
+        let subject = "test-subject-disabled";
+        let existing = user::upsert_from_oidc(
+            &app_pool,
+            mock.issuer(),
+            subject,
+            "Original Name",
+            Some("original@example.com"),
+        )
+        .await
+        .expect("seed identity");
+        user::disable_account(&app_pool, existing.id)
+            .await
+            .expect("disable");
+        let before = user::find_by_id(&app_pool, existing.id)
+            .await
+            .expect("reload")
+            .expect("exists");
+
+        let login_resp = server.get("/auth/oidc/login").await;
+        assert_eq!(login_resp.status_code(), StatusCode::TEMPORARY_REDIRECT);
+        let session_id: SessionId = login_resp
+            .cookie("id")
+            .value()
+            .parse()
+            .expect("parse session id");
+        let record = store
+            .load(&session_id)
+            .await
+            .expect("load session record")
+            .expect("session record present");
+        let csrf: String =
+            serde_json::from_value(record.data.get("oidc_csrf_state").expect("state").clone())
+                .expect("state is string");
+        let nonce: String =
+            serde_json::from_value(record.data.get("nonce").expect("nonce").clone())
+                .expect("nonce is string");
+        mock.mount_token_endpoint(
+            subject,
+            Some("changed@example.com"),
+            Some("Changed Name"),
+            &nonce,
+        )
+        .await;
+
+        let cb_resp = server
+            .get("/auth/callback")
+            .add_query_param("code", "mock-auth-code")
+            .add_query_param("state", &csrf)
+            .await;
+        test_support::assert_problem(
+            &cb_resp,
+            crate::error::problems::UNAUTHORIZED,
+            StatusCode::UNAUTHORIZED,
+        );
+        let after_callback = store
+            .load(&session_id)
+            .await
+            .expect("load session record")
+            .expect("session record present");
+        for key in [
+            crate::auth::session::SESSION_KEY_USER_ID,
+            crate::auth::session::SESSION_KEY_SESSION_VERSION,
+        ] {
+            assert!(
+                !after_callback.data.contains_key(key),
+                "a refused callback must not write {key} into the session"
+            );
+        }
+
+        let after = user::find_by_id(&app_pool, existing.id)
+            .await
+            .expect("reload")
+            .expect("exists");
+        assert_eq!(after.display_name, "Original Name");
+        assert_eq!(after.email.as_deref(), Some("original@example.com"));
+        assert_eq!(after.updated_at, before.updated_at);
+        assert!(after.disabled_at.is_some());
+
+        assert_eq!(
+            server.get("/auth/me").await.status_code(),
+            StatusCode::UNAUTHORIZED,
+            "a refused callback must not establish a session"
         );
     }
 

@@ -130,15 +130,16 @@ made irrelevant.
 
 ### The client's capture and replay
 
-`frontend/src/api/etags.ts` holds a module-level `Map<string, string>` keyed by resource identity, with two key
-families: `reading:{id}` and `metadata:{id}`, resolved from a request path by `etagKeyForPath`. It is the client
-counterpart to exactly the two `hash_etag`-based endpoint families above; the shelf reorder `PUT`, whose `If-Match`
-value derives from `shelves.updated_at`, resolves to no key and is never touched by this cache (see below).
-`frontend/src/api/fetch.ts`'s `apiFetch` calls `captureEtag` on every response it receives, for every status code: when
-the response carries an `ETag` header and its path resolves to a key, `rememberEtag` overwrites that key's value.
-`sendRequest`, the single-attempt request builder `apiFetch` calls, auto-echoes a cached tag as `If-Match` only for a
-`PATCH` request whose caller did not already set that header, so a caller-supplied header always wins over the cache and
-a shelf `PUT` is never eligible regardless of its path.
+`frontend/src/api/etags.ts` holds a module-level `Map<string, string>` keyed by resource identity, with three key
+families: `reading:{id}`, `metadata:{id}` and the singleton `settings`, resolved from a request path by
+`etagKeyForPath`. It is the client counterpart to exactly the three `hash_etag`-based endpoint families above; the shelf
+reorder `PUT`, whose `If-Match` value derives from `shelves.updated_at`, resolves to no key and is never touched by this
+cache (see below). `frontend/src/api/fetch.ts`'s `apiFetch` calls `captureEtag` on every response it receives, for every
+status code: when the response carries an `ETag` header and its path resolves to a key, `rememberEtag` overwrites that
+key's value. `sendRequest`, the single-attempt request builder `apiFetch` calls, auto-echoes a cached tag as `If-Match`
+only for a `PATCH` or `PUT` request whose path resolves to a key and whose caller did not already set that header. A
+caller-supplied header therefore always wins over the cache, the settings `PUT` rides the tag its own `GET`, `PUT` or
+`412` response left in the `settings` slot, and a shelf `PUT` is never eligible because its path has no key.
 
 The shelf reorder's client side is a different pattern by design: `frontend/src/api/shelves.ts`'s `buildEtag` quotes a
 caller-supplied `updatedAt` string, and `reorderShelfItems` takes an `ifMatch` parameter the caller must source from its
@@ -163,7 +164,7 @@ an ETag-priming fetch loses a race against a very fast concurrent commit.
   (Design "API error contract and OpenAPI" owns the generated shape).
 - `etagKeyForPath`, `rememberEtag`, `getRememberedEtag` (`frontend/src/api/etags.ts`) and the `captureEtag`/ auto-echo
   logic inside `apiFetch`/`sendRequest` (`frontend/src/api/fetch.ts`) are the client's capture-and-replay surface for
-  the two shared-module resource families. `buildEtag` and the `ifMatch` parameter on `reorderShelfItems`
+  the three shared-module resource families. `buildEtag` and the `ifMatch` parameter on `reorderShelfItems`
   (`frontend/src/api/shelves.ts`) are the parallel, caller-driven surface for shelves.
   `isIfMatchMismatch`/`isIfMatchRequired` (`frontend/src/api/errors.ts`) are the typed checks callers use to branch on
   the two precondition failures.
@@ -191,9 +192,10 @@ data).
 
 On the client, `etags.ts`'s cache is the only persisted (page-lifetime) state this subject owns. It has exactly one
 writer, `captureEtag`, called from `apiFetch` after every response regardless of status, and one reader, the
-`PATCH`-only branch of `sendRequest`. It holds no more than two live keys per manifestation id at a time (the `reading:`
-and `metadata:` families) and nothing for shelves. Nothing mirrors it to `localStorage` or any other longer-lived store,
-so a fresh page load starts with an empty cache; the next `GET` of either resource re-seeds its key.
+`PATCH`/`PUT` branch of `sendRequest`. It holds no more than two live keys per manifestation id at a time (the
+`reading:` and `metadata:` families), one `settings` key, and nothing for shelves. Nothing mirrors it to `localStorage`
+or any other longer-lived store, so a fresh page load starts with an empty cache; the next `GET` of a resource re-seeds
+its key.
 
 ## Runtime behaviour
 
@@ -241,14 +243,12 @@ so a fresh page load starts with an empty cache; the next `GET` of either resour
   practice — an ETag-priming fetch losing a race against a very fast concurrent commit that already advanced the
   resource past the tag the priming fetch was about to return.
 - **Stale `If-Match`.** `AppError::IfMatchMismatch` (`412`) from `update_book_metadata`, `patch_reading` or
-  `put_settings` carries the resource's current `ETag` on the response, via `if_match_mismatch`. For metadata and
-  reading, `captureEtag` refreshes the client cache from the failure response itself, so a retry needs no extra round
-  trip. `etagKeyForPath` has no key for the settings path, and only `PATCH` requests attach `If-Match` automatically, so
-  the settings tag is managed by the caller: the client reads it from the `GET`, `PUT` or `412` response and sends it
-  explicitly on the next `PUT`. `reorder_shelf_items` returns the same `AppError::IfMatchMismatch` variant directly on a
-  mismatch, without attaching an `ETag` header to that response; its own `#[utoipa::path]` `412` entry documents no
-  response header, unlike the metadata and reading entries, and the frontend module doc for shelves states the caller
-  should refetch the shelf detail to recover rather than expecting the error response to carry it.
+  `put_settings` carries the resource's current `ETag` on the response, via `if_match_mismatch`. For metadata, reading
+  and settings, `captureEtag` refreshes the client cache from the failure response itself, so a retry needs no extra
+  round trip. `reorder_shelf_items` returns the same `AppError::IfMatchMismatch` variant directly on a mismatch, without
+  attaching an `ETag` header to that response; its own `#[utoipa::path]` `412` entry documents no response header,
+  unlike the metadata and reading entries, and the frontend module doc for shelves states the caller should refetch the
+  shelf detail to recover rather than expecting the error response to carry it.
 - **Malformed, weak, wildcard, or list-form `If-Match`.** Rejected as satisfying nothing, on all four endpoints, so a
   caller can never use one of these forms to bypass the freshness check. The status code and problem type differ by
   which parser runs: `400`/`.../malformed-header` from the shared module (`update_book_metadata`, `patch_reading`);
