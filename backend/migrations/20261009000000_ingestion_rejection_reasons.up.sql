@@ -25,7 +25,7 @@ LEFT JOIN LATERAL (
     ORDER BY j.created_at DESC, j.id DESC
     LIMIT 1
 ) AS latest ON TRUE
-CROSS JOIN LATERAL (
+INNER JOIN LATERAL (
     SELECT
         CASE i.status
             WHEN 'rejected' THEN coalesce(i.rejection_reasons[1], 'unspecified') -- noqa: CV11
@@ -37,7 +37,7 @@ CROSS JOIN LATERAL (
                         THEN 'retries_exhausted'
                 END
         END AS reason_class
-) AS c
+) AS c ON TRUE
 WHERE c.reason_class IS NOT NULL;
 -- noqa: enable=RF03
 

@@ -695,7 +695,7 @@ CREATE VIEW public.ingestion_input_classes WITH (security_invoker='true') AS
           WHERE ((j.input_id = i.id) AND (j.input_generation = i.generation) AND (j.outcome IS NOT NULL))
           ORDER BY j.created_at DESC, j.id DESC
          LIMIT 1) latest ON (true))
-     CROSS JOIN LATERAL ( SELECT
+     JOIN LATERAL ( SELECT
                 CASE i.status
                     WHEN 'rejected'::public.ingestion_input_status THEN COALESCE(i.rejection_reasons[1], 'unspecified'::text)
                     WHEN 'not_accepted'::public.ingestion_input_status THEN 'format_not_accepted'::text
@@ -706,7 +706,7 @@ CREATE VIEW public.ingestion_input_classes WITH (security_invoker='true') AS
                         ELSE NULL::text
                     END
                     ELSE NULL::text
-                END AS reason_class) c)
+                END AS reason_class) c ON (true))
   WHERE (c.reason_class IS NOT NULL);
 
 
