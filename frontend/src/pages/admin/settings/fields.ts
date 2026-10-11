@@ -4,7 +4,7 @@
  */
 import { z } from "zod";
 
-import type { SettingsKey, SettingsValues } from "@/api/settings";
+import type { ManifestationFormat, SettingsKey, SettingsValues } from "@/api/settings";
 
 export const AREA_IDS = ["acquisition", "enrichment", "covers", "writeback", "catalogue"] as const;
 export type AreaId = (typeof AREA_IDS)[number];
@@ -51,6 +51,8 @@ const INT32_MAX = 2_147_483_647;
 const MIB_MAX = Math.floor(Number.MAX_SAFE_INTEGER / BYTES_PER_MIB);
 
 export const FORMATS_KEY = "accepted_formats" satisfies SettingsKey;
+
+export const SUPPORTED_FORMATS: readonly ManifestationFormat[] = ["epub"];
 
 export const BOOLEAN_KEYS = [
   "cleanup_imported",

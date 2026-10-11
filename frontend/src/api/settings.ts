@@ -39,6 +39,7 @@ const SettingsValuesSchema = z.object({
 /** The editable settings, keyed by their API field names. */
 export type SettingsValues = z.infer<typeof SettingsValuesSchema>;
 export type SettingsKey = keyof SettingsValues;
+export type ManifestationFormat = SettingsValues["accepted_formats"][number];
 
 /** A merge patch: only the fields present are changed. */
 export type SettingsPatch = Partial<SettingsValues>;

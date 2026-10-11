@@ -12,6 +12,7 @@ import { useRef, useState } from "react";
 import { ApiError, isIfMatchMismatch, isIfMatchRequired } from "@/api/errors";
 import {
   updateSettings,
+  type ManifestationFormat,
   type SettingsKey,
   type SettingsPatch,
   type SettingsSnapshot,
@@ -32,7 +33,7 @@ import {
   fieldForServerDetail,
   patchKeys,
   setBoolean,
-  setEpub,
+  setFormat,
   setText,
   withoutKeys,
   type Draft,
@@ -84,7 +85,7 @@ export type SettingsEditor = {
   pendingConfirm: BooleanKey | null;
   editBoolean: (key: BooleanKey, value: boolean) => void;
   editText: (key: NumberKey, text: string) => void;
-  editEpub: (value: boolean) => void;
+  editFormat: (format: ManifestationFormat, value: boolean) => void;
   confirmDeletion: () => void;
   cancelDeletion: () => void;
   discard: () => void;
@@ -349,9 +350,9 @@ export function useSettingsEditor(area: AreaId, base: SettingsSnapshot): Setting
     afterEdit(key, next);
   }
 
-  function editEpub(value: boolean): void {
+  function editFormat(format: ManifestationFormat, value: boolean): void {
     if (pending) return;
-    const next = setEpub(draft, base.values, value);
+    const next = setFormat(draft, base.values, format, value);
     setDraft(next);
     afterEdit("accepted_formats", next);
   }
@@ -426,7 +427,7 @@ export function useSettingsEditor(area: AreaId, base: SettingsSnapshot): Setting
     pendingConfirm,
     editBoolean,
     editText,
-    editEpub,
+    editFormat,
     confirmDeletion,
     cancelDeletion,
     discard,

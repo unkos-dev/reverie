@@ -2,12 +2,18 @@
  * Pure draft logic for the settings screen: what is dirty, what a save sends,
  * and how a stale write is reconciled against the server's newer values.
  */
-import type { SettingsKey, SettingsPatch, SettingsValues } from "@/api/settings";
+import type {
+  ManifestationFormat,
+  SettingsKey,
+  SettingsPatch,
+  SettingsValues,
+} from "@/api/settings";
 
 import {
   ALL_KEYS,
   BOOLEAN_KEYS,
   NUMBER_KEYS,
+  SUPPORTED_FORMATS,
   omitKey,
   areaOfKey,
   areaById,
@@ -28,17 +34,17 @@ import {
 export type Draft = {
   booleans: Partial<Record<BooleanKey, boolean>>;
   numbers: Partial<Record<NumberKey, string>>;
-  epub: boolean | null;
+  formats: Partial<Record<ManifestationFormat, boolean>>;
 };
 
-export const EMPTY_DRAFT: Draft = { booleans: {}, numbers: {}, epub: null };
+export const EMPTY_DRAFT: Draft = { booleans: {}, numbers: {}, formats: {} };
 
 export function sameValue(a: unknown, b: unknown): boolean {
   return JSON.stringify(a) === JSON.stringify(b);
 }
 
-export function baseEpub(base: SettingsValues): boolean {
-  return base.accepted_formats.includes("epub");
+export function baseFormat(base: SettingsValues, format: ManifestationFormat): boolean {
+  return base.accepted_formats.includes(format);
 }
 
 export function shownBoolean(draft: Draft, base: SettingsValues, key: BooleanKey): boolean {
@@ -49,8 +55,16 @@ export function shownText(draft: Draft, base: SettingsValues, key: NumberKey): s
   return draft.numbers[key] ?? numberToText(key, base[key]);
 }
 
-export function shownEpub(draft: Draft, base: SettingsValues): boolean {
-  return draft.epub ?? baseEpub(base);
+export function shownFormat(
+  draft: Draft,
+  base: SettingsValues,
+  format: ManifestationFormat,
+): boolean {
+  return draft.formats[format] ?? baseFormat(base, format);
+}
+
+export function shownFormats(draft: Draft, base: SettingsValues): ManifestationFormat[] {
+  return SUPPORTED_FORMATS.filter((format) => shownFormat(draft, base, format));
 }
 
 export function setBoolean(
@@ -71,12 +85,19 @@ export function setText(draft: Draft, base: SettingsValues, key: NumberKey, text
 }
 
 export function enabledFormatCount(draft: Draft, base: SettingsValues): number {
-  return shownEpub(draft, base) ? 1 : 0;
+  return shownFormats(draft, base).length;
 }
 
-export function setEpub(draft: Draft, base: SettingsValues, value: boolean): Draft {
+export function setFormat(
+  draft: Draft,
+  base: SettingsValues,
+  format: ManifestationFormat,
+  value: boolean,
+): Draft {
   if (!value && enabledFormatCount(draft, base) <= 1) return draft;
-  return { ...draft, epub: value === baseEpub(base) ? null : value };
+  if (value === baseFormat(base, format))
+    return { ...draft, formats: omitKey(draft.formats, SUPPORTED_FORMATS, format) };
+  return { ...draft, formats: { ...draft.formats, [format]: value } };
 }
 
 export function dropKeys(draft: Draft, keys: readonly SettingsKey[]): Draft {
@@ -84,7 +105,7 @@ export function dropKeys(draft: Draft, keys: readonly SettingsKey[]): Draft {
   for (const key of keys) {
     if (isBooleanKey(key)) next = { ...next, booleans: omitKey(next.booleans, BOOLEAN_KEYS, key) };
     else if (isNumberKey(key)) next = { ...next, numbers: omitKey(next.numbers, NUMBER_KEYS, key) };
-    else next = { ...next, epub: null };
+    else next = { ...next, formats: {} };
   }
   return next;
 }
@@ -100,7 +121,10 @@ function isKeyDirty(draft: Draft, base: SettingsValues, key: SettingsKey): boole
     const parsed = parseNumberField(field, text);
     return !parsed.ok || parsed.value !== base[key];
   }
-  return draft.epub !== null && draft.epub !== baseEpub(base);
+  return SUPPORTED_FORMATS.some((format) => {
+    const edited = draft.formats[format];
+    return edited !== undefined && edited !== baseFormat(base, format);
+  });
 }
 
 /** Dirty fields of one area, in display order. */
@@ -123,7 +147,8 @@ export function buildPatch(area: AreaId, draft: Draft, base: SettingsValues): Bu
     if (field.control === "switch") {
       patch[field.key] = shownBoolean(draft, base, field.key);
     } else if (field.control === "formats") {
-      if (shownEpub(draft, base)) patch.accepted_formats = ["epub"];
+      const formats = shownFormats(draft, base);
+      if (formats.length > 0) patch.accepted_formats = formats;
       else errors[key] = "Accept at least one format.";
     } else {
       const parsed = parseNumberField(field, shownText(draft, base, field.key));
@@ -143,8 +168,7 @@ export function describeDraftValue(key: SettingsKey, draft: Draft, base: Setting
   const field = fieldByKey(key);
   if (field.control === "switch") return describeBoolean(shownBoolean(draft, base, field.key));
   if (field.control === "formats") {
-    const formats: SettingsValues["accepted_formats"] = shownEpub(draft, base) ? ["epub"] : [];
-    return describeValue(key, { ...base, accepted_formats: formats });
+    return describeValue(key, { ...base, accepted_formats: shownFormats(draft, base) });
   }
   const text = shownText(draft, base, field.key);
   const parsed = parseNumberField(field, text);

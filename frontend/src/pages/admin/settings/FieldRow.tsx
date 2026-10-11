@@ -9,12 +9,13 @@ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
 
-import { enabledFormatCount, shownBoolean, shownEpub, shownText } from "./editor";
+import { enabledFormatCount, shownBoolean, shownFormat, shownText } from "./editor";
 import {
   deletionCopy,
   describeValue,
   formatBytes,
   parseMib,
+  SUPPORTED_FORMATS,
   type Field,
   type IntField,
   type MibField,
@@ -153,29 +154,41 @@ function SwitchControl({ field, base, editor }: Props & { field: SwitchField }):
 }
 
 function FormatsControl({ field, base, editor }: Props): ReactElement {
-  const checked = shownEpub(editor.draft, base.values);
-  const lastEnabled = checked && enabledFormatCount(editor.draft, base.values) <= 1;
+  if (SUPPORTED_FORMATS.length <= 1) {
+    const only = SUPPORTED_FORMATS.map((format) => format.toUpperCase()).join(", ");
+    return <p className="text-sm leading-normal">Reverie imports {only} files.</p>;
+  }
   const lockId = `lock-${field.key}`;
+  const lastEnabled = enabledFormatCount(editor.draft, base.values) === 1;
   return (
     <div role="group" aria-labelledby={labelId(field.key)} aria-describedby={`help-${field.key}`}>
-      <Label className="inline-flex cursor-pointer items-center gap-2 text-sm font-normal has-[[aria-disabled=true]]:cursor-not-allowed">
-        <Checkbox
-          id={controlId(field.key)}
-          checked={checked}
-          disabled={editor.phase !== "idle"}
-          aria-disabled={lastEnabled ? true : undefined}
-          aria-describedby={lastEnabled ? lockId : undefined}
-          onCheckedChange={(value) => {
-            if (lastEnabled) return;
-            editor.editEpub(value === true);
-          }}
-        />
-        EPUB
-      </Label>
+      {SUPPORTED_FORMATS.map((format, index) => {
+        const checked = shownFormat(editor.draft, base.values, format);
+        const locked = checked && lastEnabled;
+        return (
+          <Label
+            key={format}
+            className="flex w-fit cursor-pointer items-center gap-2 py-0.5 text-sm font-normal has-[[aria-disabled=true]]:cursor-not-allowed"
+          >
+            <Checkbox
+              id={index === 0 ? controlId(field.key) : `${controlId(field.key)}-${format}`}
+              checked={checked}
+              disabled={editor.phase !== "idle"}
+              aria-disabled={locked ? true : undefined}
+              aria-describedby={locked ? lockId : undefined}
+              onCheckedChange={(value) => {
+                if (locked) return;
+                editor.editFormat(format, value === true);
+              }}
+            />
+            {format.toUpperCase()}
+          </Label>
+        );
+      })}
       {lastEnabled ? (
         <p id={lockId} className="text-fg-muted mt-1.5 max-w-[52ch] text-[13px] leading-normal">
-          EPUB can't be turned off. At least one format must stay selected, or Reverie would have
-          nothing to import.
+          This is the only format selected. At least one format must stay selected, or Reverie would
+          have nothing to import.
         </p>
       ) : null}
     </div>

@@ -16,6 +16,15 @@ import {
 
 import { SettingsPage } from "./SettingsPage";
 
+const supported = vi.hoisted(() => ({ formats: ["epub"] as string[] }));
+
+vi.mock("./fields", async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  get SUPPORTED_FORMATS() {
+    return supported.formats;
+  },
+}));
+
 const BodySchema = z.record(z.string(), z.unknown());
 
 type Values = Record<string, unknown>;
@@ -468,28 +477,82 @@ describe("editing", () => {
     expect(router.state.location.pathname).toBe("/admin/settings/covers");
     expect(screen.getByText("No unsaved changes.")).toBeInTheDocument();
   });
+});
 
-  test("the last accepted format stays ticked and the screen says why", async () => {
+describe("accepted formats", () => {
+  test("one supported format is a read-only line with no control and no save payload", async () => {
     const user = userEvent.setup();
     await loaded("acquisition");
-    const epub = screen.getByRole("checkbox", { name: "EPUB" });
-    expect(epub).toBeChecked();
-    expect(epub).toHaveAttribute("aria-disabled", "true");
-    expect(epub).not.toHaveAttribute("disabled");
-    expect(epub).toHaveAccessibleDescription(
-      /EPUB can't be turned off\. At least one format must stay selected, or Reverie would have nothing to import\./,
-    );
-    await user.click(epub);
-    expect(epub).toBeChecked();
-    act(() => {
-      epub.focus();
-    });
-    await user.keyboard(" ");
-    expect(epub).toBeChecked();
-    expect(epub).toHaveFocus();
+    const row = within(screen.getByRole("form", { name: "Acquisition settings" }));
+    expect(row.getByText("Reverie imports EPUB files.")).toBeInTheDocument();
+    expect(row.queryByRole("checkbox", { name: "EPUB" })).not.toBeInTheDocument();
+    const field = document.querySelector('[data-field="accepted_formats"]');
+    expect(field?.querySelector("input, button, a[href], [tabindex], [role=checkbox]")).toBeNull();
+    expect(screen.queryByText(/can't be turned off/)).not.toBeInTheDocument();
     expect(screen.getByText("No unsaved changes.")).toBeInTheDocument();
-    expect(save()).toHaveAttribute("aria-disabled", "true");
-    expect(server.puts).toEqual([]);
+    await user.click(
+      screen.getByRole("switch", { name: "Remove the source file when the book is a duplicate" }),
+    );
+    await user.click(await screen.findByRole("button", { name: "Turn on removal" }));
+    await user.click(save());
+    await screen.findByText("Settings saved");
+    expect(server.puts).toHaveLength(1);
+    expect(server.puts[0]?.patch).toEqual({ cleanup_duplicates: true });
+    expect(server.puts[0]?.patch).not.toHaveProperty("accepted_formats");
+  });
+
+  describe("with two supported formats", () => {
+    beforeEach(() => {
+      supported.formats = ["epub", "pdf"];
+    });
+
+    afterEach(() => {
+      supported.formats = ["epub"];
+    });
+
+    test("the checkbox list renders and the last enabled format is locked", async () => {
+      const user = userEvent.setup();
+      await loaded("acquisition");
+      expect(screen.queryByText("Reverie imports EPUB files.")).not.toBeInTheDocument();
+      const epub = screen.getByRole("checkbox", { name: "EPUB" });
+      const pdf = screen.getByRole("checkbox", { name: "PDF" });
+      expect(epub).toBeChecked();
+      expect(pdf).not.toBeChecked();
+      expect(epub).toHaveAttribute("aria-disabled", "true");
+      expect(epub).not.toHaveAttribute("disabled");
+      expect(pdf).not.toHaveAttribute("aria-disabled");
+      expect(epub).toHaveAccessibleDescription(
+        "This is the only format selected. At least one format must stay selected, or Reverie would have nothing to import.",
+      );
+      await user.click(epub);
+      expect(epub).toBeChecked();
+      act(() => {
+        epub.focus();
+      });
+      await user.keyboard(" ");
+      expect(epub).toBeChecked();
+      expect(epub).toHaveFocus();
+      expect(screen.getByText("No unsaved changes.")).toBeInTheDocument();
+      expect(server.puts).toEqual([]);
+    });
+
+    test("enabling a second format unlocks the first and saves the whole list", async () => {
+      const user = userEvent.setup();
+      await loaded("acquisition");
+      await user.click(screen.getByRole("checkbox", { name: "PDF" }));
+      const epub = screen.getByRole("checkbox", { name: "EPUB" });
+      expect(epub).not.toHaveAttribute("aria-disabled");
+      expect(screen.queryByText(/This is the only format selected/)).not.toBeInTheDocument();
+      await user.click(save());
+      await screen.findByText("Settings saved");
+      expect(server.puts[0]?.patch).toEqual({ accepted_formats: ["epub", "pdf"] });
+      await user.click(epub);
+      expect(epub).not.toBeChecked();
+      expect(screen.getByRole("checkbox", { name: "PDF" })).toHaveAttribute(
+        "aria-disabled",
+        "true",
+      );
+    });
   });
 });
 

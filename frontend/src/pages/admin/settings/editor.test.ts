@@ -1,4 +1,4 @@
-import { describe, expect, test } from "vite-plus/test";
+import { describe, expect, test, vi } from "vite-plus/test";
 
 import type { SettingsValues } from "@/api/settings";
 
@@ -16,15 +16,21 @@ import {
   fieldForServerDetail,
   patchKeys,
   setBoolean,
-  setEpub,
+  setFormat,
   setText,
   shownBoolean,
-  shownEpub,
+  shownFormat,
+  shownFormats,
   shownText,
   withoutKeys,
 } from "./editor";
 
-const EPUB_OFF: Draft = { ...EMPTY_DRAFT, epub: false };
+vi.mock("./fields", async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  SUPPORTED_FORMATS: ["epub", "pdf"],
+}));
+
+const EPUB_OFF: Draft = { ...EMPTY_DRAFT, formats: { epub: false } };
 
 const BASE: SettingsValues = {
   accepted_formats: ["epub"],
@@ -66,30 +72,38 @@ describe("draft edits", () => {
     expect(dirtyKeys("enrichment", draft, BASE)).toEqual(["enrichment_concurrency"]);
   });
 
-  test("booleans and the EPUB checkbox track dirtiness against the base", () => {
+  test("booleans and the format checkboxes track dirtiness against the base", () => {
     let draft = setBoolean(EMPTY_DRAFT, BASE, "cleanup_duplicates", true);
-    draft = { ...draft, epub: false };
+    draft = { ...draft, formats: { epub: false } };
     expect(dirtyKeys("acquisition", draft, BASE)).toEqual([
       "accepted_formats",
       "cleanup_duplicates",
     ]);
     expect(shownBoolean(draft, BASE, "cleanup_duplicates")).toBe(true);
-    expect(shownEpub(draft, BASE)).toBe(false);
+    expect(shownFormat(draft, BASE, "epub")).toBe(false);
     draft = setBoolean(draft, BASE, "cleanup_duplicates", false);
-    draft = setEpub(draft, BASE, true);
+    draft = setFormat(draft, BASE, "epub", true);
     expect(dirtyKeys("acquisition", draft, BASE)).toEqual([]);
   });
 
   test("the last accepted format cannot be removed", () => {
     expect(enabledFormatCount(EMPTY_DRAFT, BASE)).toBe(1);
-    expect(setEpub(EMPTY_DRAFT, BASE, false)).toBe(EMPTY_DRAFT);
-    expect(shownEpub(setEpub(EMPTY_DRAFT, BASE, false), BASE)).toBe(true);
+    expect(setFormat(EMPTY_DRAFT, BASE, "epub", false)).toBe(EMPTY_DRAFT);
+    expect(shownFormat(setFormat(EMPTY_DRAFT, BASE, "epub", false), BASE, "epub")).toBe(true);
+  });
+
+  test("a format can be removed once another is enabled", () => {
+    const both = setFormat(EMPTY_DRAFT, BASE, "pdf", true);
+    expect(enabledFormatCount(both, BASE)).toBe(2);
+    const pdfOnly = setFormat(both, BASE, "epub", false);
+    expect(shownFormats(pdfOnly, BASE)).toEqual(["pdf"]);
+    expect(setFormat(pdfOnly, BASE, "pdf", false)).toBe(pdfOnly);
   });
 
   test("a format can be added to a saved list that has none", () => {
     const none: SettingsValues = { ...BASE, accepted_formats: [] };
     expect(enabledFormatCount(EMPTY_DRAFT, none)).toBe(0);
-    expect(shownEpub(setEpub(EMPTY_DRAFT, none, true), none)).toBe(true);
+    expect(shownFormat(setFormat(EMPTY_DRAFT, none, "epub", true), none, "epub")).toBe(true);
   });
 
   test("dirtiness is scoped to the open area", () => {
@@ -142,9 +156,17 @@ describe("buildPatch", () => {
     });
   });
 
+  test("a second ticked format sends the whole list in supported order", () => {
+    const draft = setFormat(EMPTY_DRAFT, BASE, "pdf", true);
+    expect(buildPatch("acquisition", draft, BASE)).toEqual({
+      ok: true,
+      patch: { accepted_formats: ["epub", "pdf"] },
+    });
+  });
+
   test("a ticked EPUB sends the format list", () => {
     const none: SettingsValues = { ...BASE, accepted_formats: [] };
-    const draft = setEpub(EMPTY_DRAFT, none, true);
+    const draft = setFormat(EMPTY_DRAFT, none, "epub", true);
     expect(buildPatch("acquisition", draft, none)).toEqual({
       ok: true,
       patch: { accepted_formats: ["epub"] },
@@ -207,7 +229,7 @@ describe("describeDraftValue", () => {
         "cleanup_imported",
         false,
       ),
-      epub: false,
+      formats: { epub: false },
     };
     expect(describeDraftValue("enrichment_concurrency", draft, BASE)).toBe("9 lookups");
     expect(describeDraftValue("cleanup_imported", draft, BASE)).toBe("Off");
