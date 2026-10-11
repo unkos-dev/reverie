@@ -6,6 +6,8 @@ title: "OIDC sign-in"
 satisfies:
   - "REV-REQ-0037"
   - "REV-REQ-0067"
+  - "REV-REQ-0068"
+  - "REV-REQ-0069"
 governed-by:
   - "REV-ADR-0029"
 ---

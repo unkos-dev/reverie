@@ -783,7 +783,9 @@
       "path": "docs/specs/accounts/design/0026-oidc-sign-in.md",
       "satisfies": [
         "REV-REQ-0037",
-        "REV-REQ-0067"
+        "REV-REQ-0067",
+        "REV-REQ-0068",
+        "REV-REQ-0069"
       ],
       "title": "OIDC sign-in"
     },
@@ -1336,8 +1338,26 @@
       ],
       "id": "REV-REQ-0067",
       "kind": "req",
-      "path": "docs/specs/accounts/requirements/0067-an-oidc-sign-in-never-links-to-or-overwrites-an-existing-account-by-email.md",
-      "title": "An OIDC sign-in never links to or overwrites an existing account by email"
+      "path": "docs/specs/accounts/requirements/0067-an-oidc-identity-resolves-to-an-account-on-issuer-and-subject-never-on-email.md",
+      "title": "An OIDC identity resolves to an account on issuer and subject, never on email"
+    },
+    {
+      "governed-by": [
+        "REV-ADR-0029"
+      ],
+      "id": "REV-REQ-0068",
+      "kind": "req",
+      "path": "docs/specs/accounts/requirements/0068-a-first-oidc-sign-in-whose-email-another-account-holds-is-refused-and-writes-nothing.md",
+      "title": "A first OIDC sign-in whose email another account holds is refused and writes nothing"
+    },
+    {
+      "governed-by": [
+        "REV-ADR-0029"
+      ],
+      "id": "REV-REQ-0069",
+      "kind": "req",
+      "path": "docs/specs/accounts/requirements/0069-a-returning-oidc-identity-keeps-its-stored-email.md",
+      "title": "A returning OIDC identity keeps its stored email"
     }
   ]
 }
