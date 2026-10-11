@@ -460,8 +460,7 @@ struct ShelfDetailResponse {
 /// Shelf identity plus one keyset-paginated page of its items.
 ///
 /// Items page over `(added_at, manifestation_id)`, so every list is bounded by
-/// construction. The entity-tag carries the shelf's `updated_at` regardless of
-/// which items page is requested.
+/// construction.
 ///
 /// # Errors
 /// - [`AppError::NotFound`] when missing or not owned by caller.
