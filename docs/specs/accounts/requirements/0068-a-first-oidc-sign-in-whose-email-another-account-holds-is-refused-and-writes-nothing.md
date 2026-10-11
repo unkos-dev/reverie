@@ -33,10 +33,10 @@ caller that the address belongs to an account.
   or session version, and leaves `/auth/me` unauthenticated. It adds no user row and no identity link for the issuer and
   subject, and neither links the existing account nor changes its display name or `updated_at`. Checked by
   `callback_refuses_an_email_held_by_another_account_and_writes_nothing` in `backend/src/routes/auth.rs`.
-- The collision refusal and the disabled-account refusal are indistinguishable to the caller. Both are checked through
-  the shared `refused_callback` helper, which asserts the same status and problem type, in
-  `callback_refuses_an_email_held_by_another_account_and_writes_nothing` and
-  `callback_refuses_disabled_account_without_writing_profile` in `backend/src/routes/auth.rs`. That both outcomes return
-  the same `AppError::Unauthorized` is verified by inspection of the `callback` handler in the same file.
+- The collision refusal is indistinguishable to the caller from the disabled-account refusal. The shared
+  `refused_callback` helper asserts the status and problem type of the collision refusal in
+  `callback_refuses_an_email_held_by_another_account_and_writes_nothing` in `backend/src/routes/auth.rs`. That the
+  collision and the disabled-account outcomes return the same `AppError::Unauthorized` is verified by inspection of the
+  `callback` handler in the same file.
 - A first sign-in whose email no other account holds still provisions an account with that email. Checked by
   `first_login_without_a_colliding_email_still_provisions` in `backend/src/models/user.rs`.
