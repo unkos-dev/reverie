@@ -47,14 +47,13 @@ globalThis.Intl = Object.create(Intl, {
   DateTimeFormat: { value: ViewerDateTimeFormat },
   NumberFormat: { value: ViewerNumberFormat },
   RelativeTimeFormat: { value: ViewerRelativeTimeFormat },
-});
-const numberToLocaleString = Number.prototype.toLocaleString;
+}) as typeof Intl;
 Number.prototype.toLocaleString = function toLocaleString(
   this: number,
   locales?: Intl.LocalesArgument,
   options?: Intl.NumberFormatOptions,
 ): string {
-  return numberToLocaleString.call(this, locales ?? VIEWER_LOCALE, options);
+  return new Intl.NumberFormat(locales, options).format(this);
 };
 
 // jsdom has no ResizeObserver; cmdk (via Radix Dialog) requires it.
