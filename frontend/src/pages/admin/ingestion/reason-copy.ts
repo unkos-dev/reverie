@@ -134,7 +134,12 @@ function failureAlsoLabel(ref: FailureRef): string {
   return ref.source ? `${sourceLabel(ref.source)}, ${copy.inline}` : copy.label;
 }
 
+function alsoLine(labels: string[]): string {
+  return `Also: ${labels.join("; ")}`;
+}
+
 export {
+  alsoLine,
   INPUT_REASON_COPY,
   FAILURE_CLASS_COPY,
   inputGroupTitle,

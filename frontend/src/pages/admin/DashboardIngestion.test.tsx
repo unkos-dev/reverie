@@ -312,6 +312,22 @@ describe("Needs attention", () => {
     expect(vi.mocked(listInputs).mock.calls.map(([p]) => p.reason)).toEqual(["damaged"]);
   });
 
+  test("separates several secondary reasons in the Also line with semicolons", async () => {
+    vi.mocked(listInputs).mockResolvedValue({
+      items: [
+        inputItem(1, {
+          path: "incoming/Marlow - The Salt Archive.epub",
+          reasons: ["damaged", "invalid_structure", "unspecified"],
+        }),
+      ],
+      next_cursor: null,
+    });
+    renderPage();
+    expect(
+      await screen.findByText("Also: Not a valid EPUB; Reason not specified"),
+    ).toBeInTheDocument();
+  });
+
   test("collapsed groups make no requests; expanding one requests its own reason", async () => {
     renderPage();
     await screen.findByText("Marlow - The Salt Archive.epub");

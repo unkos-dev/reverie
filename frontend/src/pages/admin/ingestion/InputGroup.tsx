@@ -9,7 +9,7 @@ import { formatWhen, pluralise, splitPath } from "./format";
 import { GroupFooter } from "./GroupFooter";
 import { GroupFailed, GroupLoading } from "./GroupState";
 import { GroupShell } from "./GroupShell";
-import { INPUT_REASON_COPY, inputGroupTitle } from "./reason-copy";
+import { alsoLine, INPUT_REASON_COPY, inputGroupTitle } from "./reason-copy";
 import { usePagedGroup } from "./use-paged-group";
 
 type InputGroupProps = {
@@ -30,7 +30,7 @@ function InputRow({ item }: { item: InputItem }): ReactElement {
           {name}
         </div>
         {also.length > 0 ? (
-          <span className="text-fg-muted mt-0.5 block text-[13px]">Also: {also.join(", ")}</span>
+          <span className="text-fg-muted mt-0.5 block text-[13px]">{alsoLine(also)}</span>
         ) : null}
       </TableCell>
       <TableCell className="text-fg-muted py-2.5 pr-4 text-right align-top text-[13px]">

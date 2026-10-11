@@ -13,7 +13,7 @@ import { pluralise } from "./format";
 import { GroupFooter } from "./GroupFooter";
 import { GroupFailed, GroupLoading } from "./GroupState";
 import { GroupShell } from "./GroupShell";
-import { FAILURE_CLASS_COPY, failureAlsoLabel, failureGroupTitle } from "./reason-copy";
+import { alsoLine, FAILURE_CLASS_COPY, failureAlsoLabel, failureGroupTitle } from "./reason-copy";
 import { usePagedGroup } from "./use-paged-group";
 
 type EnrichmentGroupProps = {
@@ -106,7 +106,7 @@ function FailureRow({ item }: { item: FailureItem }): ReactElement {
         <span className="text-fg-muted ml-2 text-[13px]">{statusText(item)}</span>
         {item.also.length > 0 ? (
           <span className="text-fg-muted mt-0.5 block text-[13px]">
-            Also: {item.also.map(failureAlsoLabel).join("; ")}
+            {alsoLine(item.also.map(failureAlsoLabel))}
           </span>
         ) : null}
       </TableCell>
