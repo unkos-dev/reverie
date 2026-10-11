@@ -83,6 +83,13 @@ describe("getSettings", () => {
     await expect(getSettings()).rejects.toThrow();
   });
 
+  test("rejects an empty accepted format list", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      json({ ...GET_BODY, accepted_formats: [] }),
+    );
+    await expect(getSettings()).rejects.toThrow();
+  });
+
   test("surfaces a 403 as an ApiError", async () => {
     vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
       json(
@@ -166,6 +173,19 @@ describe("updateSettings", () => {
     expect(result.values.opds_page_size).toBe(25);
     expect(result.revision).toBe(8);
     expect(result.restartRequired).toBe(false);
+  });
+
+  test("rejects a write response with an empty accepted format list", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      json({
+        ...VALUES,
+        accepted_formats: [],
+        revision: 8,
+        updated_at: "2026-10-09T10:50:00Z",
+        restart_required: false,
+      }),
+    );
+    await expect(updateSettings({ opds_page_size: 25 })).rejects.toThrow();
   });
 
   test("a second write carries the tag the first write returned", async () => {

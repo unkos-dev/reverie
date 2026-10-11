@@ -134,10 +134,20 @@ describe("buildPatch", () => {
     });
   });
 
-  test("an unticked EPUB sends an empty format list", () => {
-    expect(buildPatch("acquisition", EPUB_OFF, BASE)).toEqual({
+  test("an unticked EPUB never builds an empty accepted format list", () => {
+    const built = buildPatch("acquisition", EPUB_OFF, BASE);
+    expect(built).toEqual({
+      ok: false,
+      errors: { accepted_formats: "Accept at least one format." },
+    });
+  });
+
+  test("a ticked EPUB sends the format list", () => {
+    const none: SettingsValues = { ...BASE, accepted_formats: [] };
+    const draft = setEpub(EMPTY_DRAFT, none, true);
+    expect(buildPatch("acquisition", draft, none)).toEqual({
       ok: true,
-      patch: { accepted_formats: [] },
+      patch: { accepted_formats: ["epub"] },
     });
   });
 });

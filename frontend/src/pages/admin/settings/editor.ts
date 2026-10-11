@@ -123,7 +123,8 @@ export function buildPatch(area: AreaId, draft: Draft, base: SettingsValues): Bu
     if (field.control === "switch") {
       patch[field.key] = shownBoolean(draft, base, field.key);
     } else if (field.control === "formats") {
-      patch.accepted_formats = shownEpub(draft, base) ? ["epub"] : [];
+      if (shownEpub(draft, base)) patch.accepted_formats = ["epub"];
+      else errors[key] = "Accept at least one format.";
     } else {
       const parsed = parseNumberField(field, shownText(draft, base, field.key));
       if (!parsed.ok) errors[key] = parsed.message;
