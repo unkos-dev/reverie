@@ -34,7 +34,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 /** Recent-batch page size requested from `/api/v1/dashboard/activity`. */
 export const ACTIVITY_LIMIT = 20;
 
-const NUMBER_FORMAT = new Intl.NumberFormat("en-US");
+const NUMBER_FORMAT = new Intl.NumberFormat(undefined);
 
 /** Format an integer with thousands separators (`1204` → `"1,204"`). */
 function formatNumber(n: number): string {
