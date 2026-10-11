@@ -1672,7 +1672,12 @@ mod tests {
             }
         }
 
-        async fn refused_callback(&self, subject: &str, email: &str, name: &str) {
+        async fn refused_callback(
+            &self,
+            subject: &str,
+            email: &str,
+            name: &str,
+        ) -> axum_test::TestResponse {
             use tower_sessions::SessionStore;
 
             self.mock
@@ -1709,6 +1714,7 @@ mod tests {
                 StatusCode::UNAUTHORIZED,
                 "a refused callback must not establish a session"
             );
+            cb_resp
         }
     }
 
@@ -1807,6 +1813,75 @@ mod tests {
             0,
             "the existing account is not linked"
         );
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn email_collision_refusal_is_indistinguishable_from_a_disabled_account(
+        pool: sqlx::PgPool,
+    ) {
+        use crate::models::role::Role;
+        use crate::models::user;
+
+        fn observable(response: &axum_test::TestResponse) -> serde_json::Value {
+            let mut headers = Vec::new();
+            let mut cookies = Vec::new();
+            for (name, value) in response.headers() {
+                let value = value.to_str().expect("ascii header").to_owned();
+                if name == axum::http::header::SET_COOKIE {
+                    let attributes: Vec<&str> = value.split(';').skip(1).map(str::trim).collect();
+                    cookies.push(attributes.join("; "));
+                } else {
+                    headers.push(format!("{name}: {value}"));
+                }
+            }
+            headers.sort();
+            cookies.sort();
+            serde_json::json!({
+                "status": response.status_code().as_u16(),
+                "headers": headers,
+                "set_cookie_attributes": cookies,
+                "body": response.json::<serde_json::Value>(),
+            })
+        }
+
+        let disabled_fixture = CallbackFixture::start(&pool).await;
+        let disabled_subject = "test-subject-disabled";
+        let disabled = user::upsert_from_oidc(
+            &disabled_fixture.app_pool,
+            disabled_fixture.mock.issuer(),
+            disabled_subject,
+            "Original Name",
+            Some("original@example.com"),
+        )
+        .await
+        .expect("seed identity");
+        user::disable_account(&disabled_fixture.app_pool, disabled.id)
+            .await
+            .expect("disable");
+        let disabled_response = disabled_fixture
+            .refused_callback(disabled_subject, "changed@example.com", "Changed Name")
+            .await;
+
+        let collision_fixture = CallbackFixture::start(&pool).await;
+        user::create_local(
+            &collision_fixture.app_pool,
+            "shared@example.com",
+            "Local Owner",
+            Role::Adult,
+            None,
+        )
+        .await
+        .expect("local account");
+        let collision_response = collision_fixture
+            .refused_callback("test-subject-collision", "shared@example.com", "Newcomer")
+            .await;
+
+        let disabled_observed = observable(&disabled_response);
+        assert!(
+            disabled_observed["body"]["instance"] == "/auth/callback",
+            "instance is the route path, not request-unique: {disabled_observed}"
+        );
+        assert_eq!(observable(&collision_response), disabled_observed);
     }
 
     /// A logged-in user re-hitting `/auth/oidc/login` (e.g. mistaken click,
