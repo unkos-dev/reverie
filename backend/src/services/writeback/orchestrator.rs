@@ -291,7 +291,11 @@ fn rewrite(
     };
     let (handle, pre_report) = epub::inspect(opened.file)?;
     if pre_report.outcome == epub::ValidationOutcome::Quarantined {
-        return Err(epub::EpubError::CandidateRejected("source archive rejected".into()).into());
+        return Err(epub::EpubError::CandidateRejected(
+            "source archive rejected".into(),
+            pre_report.issues,
+        )
+        .into());
     }
     let opf_path = pre_report
         .opf_data

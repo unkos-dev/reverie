@@ -1782,6 +1782,26 @@ fn forced_validator_error(candidate_path: &str) -> Option<crate::services::epub:
     } else if candidate_path.contains("force-candidate-rejected") {
         Some(crate::services::epub::EpubError::CandidateRejected(
             "forced candidate rejection (test seam)".into(),
+            Vec::new(),
+        ))
+    } else if candidate_path.contains("force-candidate-corrupt-entry") {
+        Some(crate::services::epub::EpubError::CandidateRejected(
+            "forced candidate rejection (test seam)".into(),
+            vec![crate::services::epub::Issue {
+                layer: crate::services::epub::Layer::Zip,
+                severity: crate::services::epub::Severity::Irrecoverable,
+                kind: crate::services::epub::IssueKind::CorruptEntry {
+                    entry_name: "OEBPS/chapter.xhtml".into(),
+                },
+            }],
+        ))
+    } else if candidate_path.contains("force-zip-error") {
+        Some(crate::services::epub::EpubError::Zip(
+            zip::result::ZipError::InvalidArchive("forced zip error (test seam)".into()),
+        ))
+    } else if candidate_path.contains("force-xml-error") {
+        Some(crate::services::epub::EpubError::Xml(
+            quick_xml::Error::Syntax(quick_xml::errors::SyntaxError::UnclosedTag),
         ))
     } else if candidate_path.contains("force-repair-error") {
         Some(crate::services::epub::EpubError::Repair(
@@ -1915,7 +1935,7 @@ async fn accepted_from_validation(
             let result = if file_defect {
                 ProcessResult::Failed(
                     "EPUB rejected: unrepairable".into(),
-                    vec![crate::models::ingestion_input::RejectionReason::Unspecified],
+                    crate::models::ingestion_input::RejectionReason::from_file_defect(&error),
                 )
             } else {
                 ProcessResult::Operational(
@@ -6453,7 +6473,12 @@ mod tests {
         bytes
     }
 
-    async fn assert_corrupt_epub_is_rejected(pool: &PgPool, name: &str, bytes: &[u8]) {
+    async fn assert_corrupt_epub_is_rejected(
+        pool: &PgPool,
+        name: &str,
+        bytes: &[u8],
+        expected_reasons: &[&str],
+    ) {
         use crate::models::ingestion_input::InputStatus;
         let (ingestion, library, config) = scan_env();
         let source = ingestion.path().join(name);
@@ -6466,6 +6491,14 @@ mod tests {
             .remove(0);
         assert_eq!(input.status, InputStatus::Rejected);
         assert!(input.reason.as_deref().unwrap().contains("EPUB rejected"));
+        let recorded = sqlx::query_scalar!(
+            "SELECT rejection_reasons AS \"rejection_reasons!\" FROM ingestion_inputs WHERE id = $1",
+            input.id,
+        )
+        .fetch_one(pool)
+        .await
+        .unwrap();
+        assert_eq!(recorded, expected_reasons);
         assert_eq!(std::fs::read(&source).unwrap(), bytes);
         assert_nothing_imported(pool, library.path()).await;
     }
@@ -6477,6 +6510,58 @@ mod tests {
             &pool,
             "Probe - force-candidate-rejected.epub",
             &make_minimal_epub(),
+            &["invalid_structure"],
+        )
+        .await;
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn capability_ingestion_owner_classes_a_rejected_candidate_by_its_issues(pool: PgPool) {
+        let pool = ingestion_pool_for(&pool).await;
+        assert_corrupt_epub_is_rejected(
+            &pool,
+            "Probe - force-candidate-corrupt-entry.epub",
+            &make_minimal_epub(),
+            &["damaged"],
+        )
+        .await;
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn capability_ingestion_owner_classes_an_unreadable_archive_as_damaged(pool: PgPool) {
+        let pool = ingestion_pool_for(&pool).await;
+        assert_corrupt_epub_is_rejected(
+            &pool,
+            "Probe - force-zip-error.epub",
+            &make_minimal_epub(),
+            &["damaged"],
+        )
+        .await;
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn capability_ingestion_owner_classes_malformed_xml_as_invalid_structure(pool: PgPool) {
+        let pool = ingestion_pool_for(&pool).await;
+        assert_corrupt_epub_is_rejected(
+            &pool,
+            "Probe - force-xml-error.epub",
+            &make_minimal_epub(),
+            &["invalid_structure"],
+        )
+        .await;
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn capability_ingestion_owner_rejects_truncated_package_document(pool: PgPool) {
+        let pool = ingestion_pool_for(&pool).await;
+        assert_corrupt_epub_is_rejected(
+            &pool,
+            "Bad - Truncated Package.epub",
+            &build_epub(
+                b"<package xmlns:dc=\"http://purl.org/dc/elements/1.1/\"><metadata><dc:title>Cut",
+                Some(CONTAINER_XML),
+            ),
+            &["damaged"],
         )
         .await;
     }
@@ -6488,6 +6573,7 @@ mod tests {
             &pool,
             "Probe - force-repair-error.epub",
             &make_minimal_epub(),
+            &["invalid_structure"],
         )
         .await;
     }
@@ -6499,6 +6585,7 @@ mod tests {
             &pool,
             "Bad - No Package.epub",
             &zip_without_package_document(),
+            &["invalid_structure"],
         )
         .await;
     }
@@ -6510,13 +6597,20 @@ mod tests {
             .finish()
             .unwrap()
             .into_inner();
-        assert_corrupt_epub_is_rejected(&pool, "Bad - Empty.epub", &empty).await;
+        assert_corrupt_epub_is_rejected(&pool, "Bad - Empty.epub", &empty, &["invalid_structure"])
+            .await;
     }
 
     #[sqlx::test(migrations = "./migrations")]
     async fn capability_ingestion_owner_rejects_epub_failing_crc(pool: PgPool) {
         let pool = ingestion_pool_for(&pool).await;
-        assert_corrupt_epub_is_rejected(&pool, "Bad - Crc.epub", &epub_with_failing_crc()).await;
+        assert_corrupt_epub_is_rejected(
+            &pool,
+            "Bad - Crc.epub",
+            &epub_with_failing_crc(),
+            &["damaged"],
+        )
+        .await;
     }
 
     #[sqlx::test(migrations = "./migrations")]

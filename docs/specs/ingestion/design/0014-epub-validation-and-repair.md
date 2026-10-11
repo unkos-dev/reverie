@@ -300,11 +300,12 @@ an upstream error string.
 
 An error the validator raises, as opposed to a finding in its report, is classified by `EpubError::is_file_defect`. A
 candidate refusal, a failed required repair, an XML rewrite error and a ZIP error that is not an I/O error are verdicts
-on the file; the ingestion caller rejects the input as it does a `Quarantined` outcome. An I/O error, a ZIP I/O error
-and an uncertain publication are faults in Reverie's own storage; the ingestion caller discards the candidate, imports
-nothing and records a transient failure, so the input retries and then exhausts. Writeback sends candidate rejection and
-errors to its existing failed/retry path. A missing or unreadable container with a discoverable OPF is repaired once,
-without duplicate container entries.
+on the file; the ingestion caller rejects the input as it does a `Quarantined` outcome. A candidate refusal carries the
+candidate's own issues, and the rejection classes come from them by the same issue-kind mapping as a `Quarantined`
+report. An I/O error, a ZIP I/O error and an uncertain publication are faults in Reverie's own storage; the ingestion
+caller discards the candidate, imports nothing and records a transient failure, so the input retries and then exhausts.
+Writeback sends candidate rejection and errors to its existing failed/retry path. A missing or unreadable container with
+a discoverable OPF is repaired once, without duplicate container entries.
 
 ## Security and operations
 

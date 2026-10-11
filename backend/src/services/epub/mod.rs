@@ -41,9 +41,9 @@ pub enum EpubError {
     /// `quick_xml` parse error surfaced during repack `XML` rewriting.
     #[error("XML parse error: {0}")]
     Xml(#[from] quick_xml::Error),
-    /// Candidate validation rejected the rewrite before publication.
+    /// Candidate validation rejected the rewrite before publication; carries the candidate's own issues.
     #[error("candidate validation regressed: {0}")]
-    CandidateRejected(String),
+    CandidateRejected(String, Vec<Issue>),
     /// A required repair could not produce its promised entry.
     #[error("required repair failed: {0}")]
     Repair(String),
@@ -63,7 +63,7 @@ impl EpubError {
     #[must_use]
     pub const fn is_file_defect(&self) -> bool {
         match self {
-            Self::CandidateRejected(_) | Self::Repair(_) | Self::Xml(_) => true,
+            Self::CandidateRejected(..) | Self::Repair(_) | Self::Xml(_) => true,
             Self::Zip(error) => !matches!(error, zip::result::ZipError::Io(_)),
             Self::Io(_) | Self::PublicationUncertain { .. } => false,
         }
@@ -786,7 +786,7 @@ mod tests {
                 &repair::RepairPlan::default(),
             )
         });
-        assert!(matches!(result, Err(EpubError::CandidateRejected(_))));
+        assert!(matches!(result, Err(EpubError::CandidateRejected(..))));
         assert_eq!(std::fs::read(&path).unwrap(), original);
     }
 
@@ -1006,7 +1006,7 @@ mod tests {
     #[test]
     fn only_content_verdicts_are_file_defects() {
         let io = || std::io::Error::other("storage");
-        assert!(EpubError::CandidateRejected("regressed".into()).is_file_defect());
+        assert!(EpubError::CandidateRejected("regressed".into(), Vec::new()).is_file_defect());
         assert!(EpubError::Repair("no entry".into()).is_file_defect());
         assert!(EpubError::Zip(zip::result::ZipError::FileNotFound).is_file_defect());
         assert!(!EpubError::Zip(zip::result::ZipError::Io(io())).is_file_defect());
