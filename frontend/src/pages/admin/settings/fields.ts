@@ -355,7 +355,7 @@ const mibSchema: z.ZodType<number, string> = numericText
     z
       .number()
       .gt(0, SIZE_MESSAGE)
-      .max(MIB_MAX, `Enter a size no larger than ${MIB_MAX.toLocaleString("en-AU")} MiB.`),
+      .max(MIB_MAX, `Enter a size no larger than ${MIB_MAX.toLocaleString(undefined)} MiB.`),
   )
   .transform((mib) => Math.round(mib * BYTES_PER_MIB))
   .pipe(z.number().min(1, SIZE_MESSAGE));
@@ -377,7 +377,7 @@ export function numberToText(key: NumberKey, value: number): string {
 }
 
 export function formatBytes(bytes: number): string {
-  return `${bytes.toLocaleString("en-AU")} bytes`;
+  return `${bytes.toLocaleString(undefined)} bytes`;
 }
 
 export function pluralise(count: number, one: string, many: string): string {

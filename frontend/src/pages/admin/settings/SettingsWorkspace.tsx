@@ -14,6 +14,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
+import { formatTime } from "@/lib/format/datetime";
 import { cn } from "@/lib/utils";
 
 import { FieldRow } from "./FieldRow";
@@ -30,7 +31,6 @@ import {
   type BooleanKey,
 } from "./fields";
 import { controlId } from "./ids";
-import { formatClock } from "./time";
 import { useSettingsEditor, type SettingsEditor } from "./use-settings-editor";
 
 type Props = { area: AreaId; base: SettingsSnapshot };
@@ -86,7 +86,7 @@ function barSummary(editor: SettingsEditor): ReactElement {
   const { notice, phase } = editor;
   if (phase !== "idle") return <span role="status">Saving {changeText(n)}</span>;
   if (notice.kind === "saved" && n === 0)
-    return <span role="status">Saved at {formatClock(notice.at)}.</span>;
+    return <span role="status">Saved at {formatTime(notice.at)}.</span>;
   if (notice.kind === "validation") {
     const count = Math.max(1, Object.keys(notice.errors).length);
     return (

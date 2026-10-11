@@ -10,6 +10,7 @@ import { Link, Navigate, useParams } from "react-router";
 
 import { ApiError } from "@/api/errors";
 import { useAuthMe } from "@/hooks/useAuthMe";
+import { formatDateTime, formatTimeWithAge } from "@/lib/format/datetime";
 import { queryKeys } from "@/lib/query/keys";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -18,7 +19,6 @@ import { Note, NoteText } from "./Notices";
 import { SettingsWorkspace } from "./SettingsWorkspace";
 import { AREA_IDS, AreaIdSchema, areaById } from "./fields";
 import { reloadStatusQueryOptions, settingsQueryOptions } from "./queries";
-import { formatClockWithAge, formatStamp } from "./time";
 
 function StatusItem({ label, children }: { label: string; children: ReactNode }): ReactElement {
   return (
@@ -40,12 +40,12 @@ function StatusLine({
 }): ReactElement {
   return (
     <div className="text-fg-muted mt-3 flex flex-wrap gap-4 text-sm leading-normal">
-      <StatusItem label="Last changed">{formatStamp(updatedAt)}</StatusItem>
+      <StatusItem label="Last changed">{formatDateTime(updatedAt)}</StatusItem>
       {reload === undefined ? null : (
         <StatusItem label="Server cache refreshed">
           {reload === null
             ? "Not refreshed since the server started. Values are read straight from the database, so this is normal."
-            : formatClockWithAge(reload, new Date())}
+            : formatTimeWithAge(reload, new Date())}
         </StatusItem>
       )}
     </div>

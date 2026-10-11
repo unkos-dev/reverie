@@ -576,7 +576,7 @@ describe("saving", () => {
         ifMatch: '"rev-1"',
       },
     ]);
-    expect(screen.getByText(/^Saved at \d\d:\d\d\.$/)).toBeInTheDocument();
+    expect(screen.getByText(/^Saved at .*\d.*\.$/)).toBeInTheDocument();
     expect(screen.getByRole("textbox", { name: "Concurrent lookups" })).toHaveValue("6");
     const nav = screen.getByRole("navigation", { name: "Settings areas" });
     expect(within(nav).getByText("On. 6 lookups at a time")).toBeInTheDocument();
@@ -1150,7 +1150,7 @@ describe("a stale write", () => {
     expect(await screen.findByText("Settings saved")).toBeInTheDocument();
     expect(screen.queryByText("Settings changed while you were editing")).not.toBeInTheDocument();
     expect(server.puts).toHaveLength(1);
-    expect(screen.getByText(/^Saved at \d\d:\d\d\.$/)).toBeInTheDocument();
+    expect(screen.getByText(/^Saved at .*\d.*\.$/)).toBeInTheDocument();
     expect(save()).toHaveAttribute("aria-disabled", "true");
   });
 
