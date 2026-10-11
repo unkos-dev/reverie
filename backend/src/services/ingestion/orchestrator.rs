@@ -1846,6 +1846,26 @@ async fn validate_candidate(
     .await
 }
 
+async fn discard_candidate(
+    candidate: copier::Candidate,
+    files: &LibraryFiles,
+    library_id: LibraryId,
+    result: ProcessResult,
+) -> ProcessResult {
+    match candidate.close() {
+        Ok(()) => result,
+        Err(error) => {
+            acquisition_failure(
+                copier::CopyError::DestinationIo(error),
+                files,
+                library_id,
+                false,
+            )
+            .await
+        }
+    }
+}
+
 async fn accepted_from_validation(
     candidate: copier::Candidate,
     path: crate::models::ingestion_input::InputPath,
@@ -1870,19 +1890,11 @@ async fn accepted_from_validation(
                     .map(|issue| format!("{:?}", issue.kind))
                     .collect::<Vec<_>>()
                     .join("; ");
-                if let Err(error) = candidate.close() {
-                    return acquisition_failure(
-                        copier::CopyError::DestinationIo(error),
-                        files,
-                        library_id,
-                        false,
-                    )
-                    .await;
-                }
-                return ProcessResult::Failed(
+                let rejected = ProcessResult::Failed(
                     format!("EPUB rejected: {reason}"),
                     crate::models::ingestion_input::RejectionReason::from_issues(&report.issues),
                 );
+                return discard_candidate(candidate, files, library_id, rejected).await;
             }
             let status = match report.outcome {
                 ValidationOutcome::Clean => ValidationStatus::Clean,
@@ -1900,16 +1912,7 @@ async fn accepted_from_validation(
         Err(error) => {
             let file_defect = error.is_file_defect();
             tracing::warn!(%error, file_defect, "EPUB could not be validated or repaired");
-            if let Err(error) = candidate.close() {
-                return acquisition_failure(
-                    copier::CopyError::DestinationIo(error),
-                    files,
-                    library_id,
-                    false,
-                )
-                .await;
-            }
-            return if file_defect {
+            let result = if file_defect {
                 ProcessResult::Failed(
                     "EPUB rejected: unrepairable".into(),
                     vec![crate::models::ingestion_input::RejectionReason::Unspecified],
@@ -1920,6 +1923,7 @@ async fn accepted_from_validation(
                     "validation could not complete".into(),
                 )
             };
+            return discard_candidate(candidate, files, library_id, result).await;
         }
     };
     let extracted = opf_data.as_ref().map(metadata::extractor::extract);
@@ -6750,26 +6754,27 @@ mod tests {
     /// work's `title_version_id` pointer references it.
     #[sqlx::test(migrations = "./migrations")]
     async fn ingest_without_opf_writes_heuristic_title_journal(pool: PgPool) {
-        let pool = ingestion_pool_for(&pool).await;
-        let (ingestion, library, config) = scan_env();
-
-        let marker = uuid::Uuid::new_v4().simple().to_string();
-        let source = ingestion.path().join(format!(
-            "Heuristic Author - Heuristic Title force-validator-error {marker}.epub"
-        ));
-        std::fs::write(&source, make_minimal_epub()).unwrap();
-
-        let result = drive_owner(&config, &pool).await.unwrap();
-        assert_eq!(result.processed, 1, "expected 1 processed");
-
-        let dest = library.path().join(format!(
-            "Heuristic Author/Heuristic Title force-validator-error {marker}.epub"
-        ));
-        assert!(dest.exists(), "expected file at {}", dest.display());
+        let ing = ingestion_pool_for(&pool).await;
+        let (_dir, _files, location, copied) =
+            claim_copy_fixture(&pool, "Heuristic Title.epub").await;
+        let vars =
+            path_template::heuristic_vars_from_filename("Heuristic Author - Heuristic Title.epub");
+        let meta = ManifestationMeta {
+            format: ManifestationFormat::Epub,
+            validation_status: ValidationStatus::Clean,
+            accessibility_metadata: &None,
+            has_embedded_cover: Some(false),
+            current_hash: &copied.sha256,
+            current_size: copied.file_size,
+        };
+        commit_ingest(&ing, &None, &vars, &location, &copied, meta)
+            .await
+            .unwrap();
+        let pool = ing;
 
         // The work should have its title_version_id pointing at the heuristic
         // row, which must have source='opf', field_name='title', confidence=0.2.
-        let dest_str = dest.strip_prefix(library.path()).unwrap().to_str().unwrap();
+        let dest_str = location.path.as_str();
         let row = sqlx::query!(
             "SELECT w.title_version_id, w.title FROM works w \
              JOIN manifestations m ON m.work_id = w.id \
