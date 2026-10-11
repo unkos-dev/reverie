@@ -43,8 +43,7 @@ From top to bottom:
 The Duplicates card and the paused-pipeline notice, when built, take the positions given under "Target design, not yet
 built".
 
-Counts on this page use en-AU digit grouping. Times on this page read "9 Oct, 4:12 pm": day, short month, a 12-hour
-clock and a lower-case "am" or "pm", in the viewer's time zone.
+Counts on this page use the viewer's locale digit grouping. Times are shown in the viewer's locale.
 
 ## Scan control
 
@@ -164,7 +163,8 @@ collapsed. The page opens on real files. Later refreshes do not change what the 
 - When the file has other reasons, a second line "Also: {labels}" using the other groups' headings, joined with "; ".
   For example "Also: Not a valid EPUB". The secondary reasons are never shown as rows in their own groups. (The
   separator is a target-design difference; see "Smaller differences from the page as built".)
-- On the right, the time the file was last tried, for example "9 Oct, 4:12 pm". A file never tried shows nothing.
+- On the right, the time the file was last tried, for example "9 Oct 2026, 4:12 pm" for an en-AU viewer. A file never
+  tried shows nothing.
 
 **Footer.** Each expanded group ends with "Showing {n} of {total}" on the left and, when more rows exist, an outline
 "Show more" on the right. Pages hold 25 rows. The next page is requested by its own cursor and the loaded rows stay.

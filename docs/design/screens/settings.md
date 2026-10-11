@@ -48,15 +48,15 @@ Shown on every area, and shown while the settings load:
 3. The intro: "Instance settings for this library. They apply to everyone who uses it, and they take effect without a
    restart."
 4. The status line, once the settings have loaded:
-   - "Last changed", then the time the settings were last saved, for example "9 Oct 2026, 18:31".
+   - "Last changed", then the time the settings were last saved, for example "9 Oct 2026, 6:31 pm" for an en-AU viewer.
    - "Server cache refreshed", then the time this server last refreshed its copy of the settings and how long ago, for
-     example "18:42 (4 minutes ago)". Under a minute reads "just now". When the server has not refreshed since it
-     started, the value is "Not refreshed since the server started. Values are read straight from the database, so this
-     is normal."
+     example "6:42 pm (4 minutes ago)" for an en-AU viewer. Under a minute reads "just now". When the server has not
+     refreshed since it started, the value is "Not refreshed since the server started. Values are read straight from the
+     database, so this is normal."
    - If the reload-status read (`GET /api/v1/settings/reload-status`) is still loading or fails, the "Server cache
      refreshed" item is omitted and the settings stay usable.
 
-Times on this screen use the viewer's time zone, en-AU formatting and a 24-hour clock.
+Times are shown in the viewer's locale.
 
 ### Body
 
@@ -123,8 +123,9 @@ Each area has a description under its heading.
 
 - **Largest cover file.** A size in MiB, which may be fractional and must be greater than 0. Help: "Covers larger than
   this are rejected. Stored as bytes; the exact value is shown below the field." Beneath the input, in fixed-width type,
-  the exact byte count with en-AU digit grouping, for example "10,485,760 bytes". It follows the input as the user types
-  and shows the saved byte count while the text is not a valid size. A size is converted to the nearest whole byte.
+  the exact byte count with the viewer's locale digit grouping, for example "10,485,760 bytes". It follows the input as
+  the user types and shows the saved byte count while the text is not a valid size. A size is converted to the nearest
+  whole byte.
 - **Download timeout.** A whole number of 1 or more, unit "seconds". Help: "How long Reverie waits for a cover to finish
   downloading."
 - **Smallest acceptable cover.** A whole number of 1 or more, unit "pixels". Help: "Covers whose longest side is shorter
