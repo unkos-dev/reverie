@@ -48,8 +48,8 @@ dispositions.
 
 It does not own committing a validation outcome to the database. The `validation_status` column, its Postgres enum, and
 the `ValidationStatus` Rust type that maps one-to-one onto this subject's own `ValidationOutcome` variants
-(`pending`/`clean`/`repaired`/`degraded`, plus a `failed` value this subject never produces itself) are written by the
-calling pipeline, chiefly the Design "Ingestion pipeline".
+(`pending`/`clean`/`repaired`/`degraded`, plus a `failed` value no ingestion path writes) are written by the calling
+pipeline, chiefly the Design "Ingestion pipeline".
 
 It does not own turning parsed OPF metadata into the canonical fields a work or manifestation row stores. `OpfData` is
 this subject's own output; a separate extractor, not part of this subject and not specific to any one subject by its
@@ -301,9 +301,10 @@ an upstream error string.
 An error the validator raises, as opposed to a finding in its report, is classified by `EpubError::is_file_defect`. A
 candidate refusal, a failed required repair, an XML rewrite error and a ZIP error that is not an I/O error are verdicts
 on the file; the ingestion caller rejects the input as it does a `Quarantined` outcome. An I/O error, a ZIP I/O error
-and an uncertain publication are faults in Reverie's own storage; the ingestion caller keeps the file and registers it
-with `validation_status = failed`. Writeback sends candidate rejection and errors to its existing failed/retry path. A
-missing or unreadable container with a discoverable OPF is repaired once, without duplicate container entries.
+and an uncertain publication are faults in Reverie's own storage; the ingestion caller discards the candidate, imports
+nothing and records a transient failure, so the input retries and then exhausts. Writeback sends candidate rejection and
+errors to its existing failed/retry path. A missing or unreadable container with a discoverable OPF is repaired once,
+without duplicate container entries.
 
 ## Security and operations
 

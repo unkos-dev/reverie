@@ -40,6 +40,8 @@ externally shared source bytes.
   same outcome. Checked by `capability_ingestion_owner_rejects_candidate_refused_by_validation` and
   `capability_ingestion_owner_rejects_epub_whose_required_repair_fails`; `only_content_verdicts_are_file_defects` fixes
   which errors count.
-- A validator error that is a storage fault is a separate trigger:
-  `capability_ingestion_owner_validator_error_stores_failed_status` checks that the accepted file can be registered with
-  validation status `failed`.
+- A validator error that is a storage fault is not a verdict on the file: the input is not rejected, no manifestation is
+  created, and the attempt records a transient failure that retries and then exhausts. Checked by
+  `capability_ingestion_owner_validator_io_error_is_transient_and_imports_nothing`,
+  `capability_ingestion_owner_publication_uncertainty_retries_into_one_import` and
+  `capability_ingestion_owner_repeated_validator_io_errors_exhaust_retries`.

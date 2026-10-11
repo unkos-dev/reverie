@@ -1771,6 +1771,9 @@ async fn process_file(
 }
 
 #[cfg(test)]
+static CLEARED_FAULTS: std::sync::Mutex<Vec<String>> = std::sync::Mutex::new(Vec::new());
+
+#[cfg(test)]
 fn forced_validator_error(candidate_path: &str) -> Option<crate::services::epub::EpubError> {
     if candidate_path.contains("force-validator-error") {
         Some(crate::services::epub::EpubError::Io(std::io::Error::other(
@@ -1784,6 +1787,17 @@ fn forced_validator_error(candidate_path: &str) -> Option<crate::services::epub:
         Some(crate::services::epub::EpubError::Repair(
             "forced repair error (test seam)".into(),
         ))
+    } else if candidate_path.contains("force-publication-uncertain")
+        && !CLEARED_FAULTS
+            .lock()
+            .is_ok_and(|cleared| cleared.iter().any(|path| path == candidate_path))
+    {
+        Some(crate::services::epub::EpubError::PublicationUncertain {
+            hash: "forced digest (test seam)".into(),
+            error: Box::new(crate::services::epub::EpubError::Io(std::io::Error::other(
+                "forced publication error (test seam)",
+            ))),
+        })
     } else {
         None
     }
@@ -1883,8 +1897,9 @@ async fn accepted_from_validation(
                 Some(report.has_usable_embedded_cover),
             )
         }
-        Err(error) if error.is_file_defect() => {
-            tracing::warn!(%error, "EPUB could not be validated or repaired");
+        Err(error) => {
+            let file_defect = error.is_file_defect();
+            tracing::warn!(%error, file_defect, "EPUB could not be validated or repaired");
             if let Err(error) = candidate.close() {
                 return acquisition_failure(
                     copier::CopyError::DestinationIo(error),
@@ -1894,11 +1909,17 @@ async fn accepted_from_validation(
                 )
                 .await;
             }
-            return ProcessResult::Failed("EPUB rejected: unrepairable".into());
-        }
-        Err(error) => {
-            tracing::warn!(%error, "EPUB validator execution failed");
-            (ValidationStatus::Failed, None, None, None)
+            return if file_defect {
+                ProcessResult::Failed(
+                    "EPUB rejected: unrepairable".into(),
+                    vec![crate::models::ingestion_input::RejectionReason::Unspecified],
+                )
+            } else {
+                ProcessResult::Operational(
+                    crate::models::ingestion_input::AttemptOutcome::TransientInput,
+                    "validation could not complete".into(),
+                )
+            };
         }
     };
     let extracted = opf_data.as_ref().map(metadata::extractor::extract);
@@ -6198,37 +6219,171 @@ mod tests {
     }
 
     #[sqlx::test(migrations = "./migrations")]
-    async fn capability_ingestion_owner_validator_error_stores_failed_status(pool: PgPool) {
-        // Cover the Ok(Err(_)) validator-crash arm end-to-end via the
-        // run_validator fault-injection seam (filename marker): the file is
-        // still ingested, but the row must record `failed` — not borrow
-        // `degraded`, which means "validator ran, found tolerable issues"
-        //.
-        use crate::models::validation_status::ValidationStatus;
+    async fn capability_ingestion_owner_validator_io_error_is_transient_and_imports_nothing(
+        pool: PgPool,
+    ) {
+        use crate::models::ingestion_input::{self, InputStatus};
         let pool = ingestion_pool_for(&pool).await;
         let (ingestion, library, config) = scan_env();
-
         let source = ingestion.path().join("Probe - force-validator-error.epub");
-        std::fs::write(&source, make_minimal_epub()).unwrap();
+        let bytes = make_minimal_epub();
+        std::fs::write(&source, &bytes).unwrap();
 
         let result = drive_owner(&config, &pool).await.unwrap();
-        assert_eq!(result.processed, 1, "expected 1 processed");
-        assert_eq!(result.failed, 0, "validator error must not fail ingestion");
 
-        let dest = library.path().join("Probe/force-validator-error.epub");
-        let dest_str = dest.strip_prefix(library.path()).unwrap().to_str().unwrap();
-        let status = sqlx::query_scalar!(
-            "SELECT validation_status AS \"validation_status!: ValidationStatus\" FROM manifestations WHERE file_path = $1",
-            dest_str,
-        )
-        .fetch_one(&pool)
-        .await
-        .unwrap();
+        assert_eq!((result.failed, result.processed), (1, 0));
+        let input = ingestion_input::current_page(&pool, None)
+            .await
+            .unwrap()
+            .remove(0);
+        assert_eq!(input.status, InputStatus::OperationalFailure);
         assert_eq!(
-            status,
-            ValidationStatus::Failed,
-            "expected validation_status=failed for validator crash"
+            ingestion_input::transient_count(&pool, &input)
+                .await
+                .unwrap(),
+            1
         );
+        assert_eq!(std::fs::read(&source).unwrap(), bytes);
+        assert_nothing_imported(&pool, library.path()).await;
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn capability_ingestion_owner_publication_uncertainty_retries_into_one_import(
+        pool: PgPool,
+    ) {
+        use crate::models::ingestion_input::{self, InputStatus};
+        let pool = ingestion_pool_for(&pool).await;
+        let (ingestion, library, config) = scan_env();
+        let library_id = crate::models::storage_library::default_library_id(&pool)
+            .await
+            .unwrap();
+        let files = LibraryFiles::open(
+            [(library_id, config.library_path.clone())],
+            &config.ingestion_path,
+        )
+        .unwrap();
+        let source = ingestion
+            .path()
+            .join("Probe - force-publication-uncertain.epub");
+        std::fs::write(&source, make_minimal_epub()).unwrap();
+        let mut owner = coordinator(pool.clone(), config, files);
+        owner.settings.write().await.ingestion.cleanup_imported = false;
+        owner.discover(false).await.unwrap();
+        let input = ingestion_input::current_page(&pool, None)
+            .await
+            .unwrap()
+            .remove(0);
+
+        attempt(&mut owner, input.clone()).await;
+
+        let retried = ingestion_input::current(&pool, input.id)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(retried.status, InputStatus::OperationalFailure);
+        assert_eq!(
+            ingestion_input::transient_count(&pool, &retried)
+                .await
+                .unwrap(),
+            1
+        );
+        assert_nothing_imported(&pool, library.path()).await;
+
+        CLEARED_FAULTS
+            .lock()
+            .unwrap()
+            .push("Probe/force-publication-uncertain.epub".into());
+        attempt(&mut owner, retried).await;
+
+        let imported = ingestion_input::current(&pool, input.id)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(imported.status, InputStatus::Imported);
+        let manifestations =
+            sqlx::query_scalar!("SELECT COUNT(*) AS \"count!\" FROM manifestations")
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        let works = sqlx::query_scalar!("SELECT COUNT(*) AS \"count!\" FROM works")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!((manifestations, works), (1, 1));
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn capability_ingestion_owner_repeated_validator_io_errors_exhaust_retries(pool: PgPool) {
+        use crate::models::ingestion_input::{self, InputStatus, TRANSIENT_ATTEMPT_LIMIT};
+        let pool = ingestion_pool_for(&pool).await;
+        let (ingestion, library, config) = scan_env();
+        let library_id = crate::models::storage_library::default_library_id(&pool)
+            .await
+            .unwrap();
+        let files = LibraryFiles::open(
+            [(library_id, config.library_path.clone())],
+            &config.ingestion_path,
+        )
+        .unwrap();
+        std::fs::write(
+            ingestion.path().join("Probe - force-validator-error.epub"),
+            make_minimal_epub(),
+        )
+        .unwrap();
+        let mut owner = coordinator(pool.clone(), config, files);
+        owner.discover(false).await.unwrap();
+        let first = ingestion_input::current_page(&pool, None)
+            .await
+            .unwrap()
+            .remove(0);
+        let class = || async {
+            sqlx::query_scalar!(
+                "SELECT reason_class AS \"reason_class!\" FROM ingestion_input_classes WHERE id = $1",
+                first.id,
+            )
+            .fetch_optional(&pool)
+            .await
+            .unwrap()
+        };
+
+        for count in 1..=TRANSIENT_ATTEMPT_LIMIT {
+            let input = ingestion_input::current(&pool, first.id)
+                .await
+                .unwrap()
+                .unwrap();
+            attempt(&mut owner, input).await;
+            let after = ingestion_input::current(&pool, first.id)
+                .await
+                .unwrap()
+                .unwrap();
+            assert_eq!(after.status, InputStatus::OperationalFailure);
+            assert_eq!(
+                ingestion_input::transient_count(&pool, &after)
+                    .await
+                    .unwrap(),
+                count
+            );
+            let exhausted = count == TRANSIENT_ATTEMPT_LIMIT;
+            assert_eq!(
+                class().await,
+                exhausted.then(|| "retries_exhausted".to_owned())
+            );
+        }
+        assert_nothing_imported(&pool, library.path()).await;
+    }
+
+    async fn assert_nothing_imported(pool: &PgPool, library: &Path) {
+        assert_eq!(std::fs::read_dir(library).unwrap().count(), 0);
+        let manifestations =
+            sqlx::query_scalar!("SELECT COUNT(*) AS \"count!\" FROM manifestations")
+                .fetch_one(pool)
+                .await
+                .unwrap();
+        let works = sqlx::query_scalar!("SELECT COUNT(*) AS \"count!\" FROM works")
+            .fetch_one(pool)
+            .await
+            .unwrap();
+        assert_eq!((manifestations, works), (0, 0));
     }
 
     #[sqlx::test(migrations = "./migrations")]
@@ -6308,17 +6463,7 @@ mod tests {
         assert_eq!(input.status, InputStatus::Rejected);
         assert!(input.reason.as_deref().unwrap().contains("EPUB rejected"));
         assert_eq!(std::fs::read(&source).unwrap(), bytes);
-        assert_eq!(std::fs::read_dir(library.path()).unwrap().count(), 0);
-        let manifestations =
-            sqlx::query_scalar!("SELECT COUNT(*) AS \"count!\" FROM manifestations")
-                .fetch_one(pool)
-                .await
-                .unwrap();
-        let works = sqlx::query_scalar!("SELECT COUNT(*) AS \"count!\" FROM works")
-            .fetch_one(pool)
-            .await
-            .unwrap();
-        assert_eq!((manifestations, works), (0, 0));
+        assert_nothing_imported(pool, library.path()).await;
     }
 
     #[sqlx::test(migrations = "./migrations")]
