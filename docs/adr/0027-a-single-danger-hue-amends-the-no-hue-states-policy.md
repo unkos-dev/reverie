@@ -40,7 +40,7 @@ the door to a general state-colour palette?
 ## Considered options
 
 - One reserved danger hue: introduce exactly one state hue, `--danger`, reserved for destructive and unrecoverable-error
-  semantics.
+  semantics and the border of an invalid input.
 - Zero state hues: keep the status quo, expressing destructive/error with weight plus a gold recovery action only.
 - Conventional state palette: introduce a full success/warning/info/danger palette.
 
@@ -49,9 +49,11 @@ the door to a general state-colour palette?
 Chosen option: **One reserved danger hue**, because destructive and unrecoverable-error semantics need one bounded
 exception to the no-hue-states policy, and a single reserved hue keeps that exception from spreading. `--danger`
 resolves to a generated red scale (solid `#B91C1C` at step 9, with theme-tuned text and border steps), in both themes;
-`--fg-on-danger` is white on the solid (6.47:1). It appears as a fill, border, or icon, never as body text, and per WCAG
-1.4.1 always pairs with an icon, weight, or text label, so colour alone never carries the meaning. The shadcn
-`destructive` alias routes to `--danger` (previously aliased to `--fg` under the no-hue policy).
+`--fg-on-danger` is white on the solid (6.47:1). It appears as a fill, border, or icon, never as body text, in exactly
+three contexts: irreversible destructive confirmation, unrecoverable system errors, and the border and ring of an
+invalid (`aria-invalid`) input. Per WCAG 1.4.1 it always pairs with an icon, weight, or text label, so colour alone
+never carries the meaning; on an invalid input the field's visible error message is that label. The shadcn `destructive`
+alias routes to `--danger` (previously aliased to `--fg` under the no-hue policy).
 
 No other state hue is introduced: success, warning, and info remain hue-less and continue to speak through weight,
 opacity, motion, and the gold accent. Decorative and categorical tones live in the atmosphere layer, never as a second
