@@ -1,5 +1,6 @@
 UPDATE public.settings
-SET accepted_formats = '{epub}'
+SET accepted_formats = '{epub}',
+    revision = revision + 1
 WHERE accepted_formats = '{}';
 
 ALTER TABLE public.settings

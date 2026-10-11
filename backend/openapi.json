@@ -8602,7 +8602,8 @@
             "items": {
               "$ref": "#/components/schemas/ManifestationFormat"
             },
-            "description": "Formats accepted for ingestion, at least one; currently only EPUB is supported."
+            "description": "Formats accepted for ingestion, at least one; currently only EPUB is supported.",
+            "minItems": 1
           },
           "cleanup_duplicates": {
             "type": "boolean",
@@ -10532,7 +10533,8 @@
             "items": {
               "$ref": "#/components/schemas/ManifestationFormat"
             },
-            "description": "Formats accepted for ingestion; must contain at least one format."
+            "description": "Formats accepted for ingestion; must contain at least one format.",
+            "minItems": 1
           },
           "cleanup_duplicates": {
             "type": [

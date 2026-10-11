@@ -12,7 +12,7 @@ use crate::models::manifestation_format::ManifestationFormat;
 #[derive(Debug, Clone, Serialize, sqlx::FromRow, utoipa::ToSchema)]
 pub struct IngestionSettings {
     /// Formats accepted for ingestion, at least one; currently only EPUB is supported.
-    #[schema(value_type = Vec<ManifestationFormat>)]
+    #[schema(value_type = Vec<ManifestationFormat>, min_items = 1)]
     pub accepted_formats: Vec<String>,
     /// Remove an imported source after its outcome is committed.
     pub cleanup_imported: bool,
@@ -133,6 +133,7 @@ pub struct UpdateSettings {
     pub opds_page_size: Option<i32>,
 
     /// Formats accepted for ingestion; must contain at least one format.
+    #[schema(min_items = 1)]
     pub accepted_formats: Option<Vec<ManifestationFormat>>,
     /// Remove imported source files.
     pub cleanup_imported: Option<bool>,
