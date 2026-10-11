@@ -25,3 +25,4 @@
 - [REV-DESIGN-0011](design/0011-sessions.md): Sessions
 - [REV-DESIGN-0012](design/0012-local-password-sign-in.md): Local password sign-in
 - [REV-DESIGN-0025](design/0025-oidc-outbound-transport.md): OIDC outbound transport
+- [REV-DESIGN-0026](design/0026-oidc-sign-in.md): OIDC sign-in
