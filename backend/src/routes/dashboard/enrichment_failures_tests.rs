@@ -174,8 +174,8 @@ async fn a_deferred_book_reports_its_attempt_time_and_retry_not_before_separatel
     let item = &body["items"][0];
     test_support::assert_rfc3339(item, "attempted_at");
     test_support::assert_rfc3339(item, "retry_not_before");
-    let attempted_at = chrono::DateTime::parse_from_rfc3339(item["attempted_at"].as_str().unwrap())
-        .unwrap();
+    let attempted_at =
+        chrono::DateTime::parse_from_rfc3339(item["attempted_at"].as_str().unwrap()).unwrap();
     let retry_not_before =
         chrono::DateTime::parse_from_rfc3339(item["retry_not_before"].as_str().unwrap()).unwrap();
     assert!(

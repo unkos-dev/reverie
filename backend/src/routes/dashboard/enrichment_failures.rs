@@ -176,6 +176,20 @@ fn also_failures(stored: serde_json::Value) -> Vec<FailureRef> {
     }
 }
 
+/// The cursor for the page after `items`, when more rows remain.
+fn next_cursor(items: &[FailureItem], has_more: bool, filter: String) -> Option<String> {
+    match items.last() {
+        Some(last) if has_more => Some(
+            FilteredIdCursor {
+                filter,
+                id: last.manifestation_id,
+            }
+            .encode(CURSOR_TAG),
+        ),
+        _ => None,
+    }
+}
+
 /// `GET /api/v1/dashboard/enrichment-failures`: books whose enrichment is
 /// failing or has stopped retrying, one page, ordered by id (admin only).
 ///
@@ -305,16 +319,7 @@ async fn list_failures(
         })
         .collect();
 
-    let next_cursor = match items.last() {
-        Some(last) if has_more => Some(
-            FilteredIdCursor {
-                filter,
-                id: last.manifestation_id,
-            }
-            .encode(CURSOR_TAG),
-        ),
-        _ => None,
-    };
+    let next_cursor = next_cursor(&items, has_more, filter);
 
     Ok((
         crate::routes::ingestion::next_link_headers(&uri, next_cursor.as_deref()),
