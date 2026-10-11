@@ -7,10 +7,9 @@ page's empty state hands administrators on to this page, and its copy is specifi
 This document is the specification a rendered page is compared against. Copy in double quotes is exact. Where a value is
 shown as `{n}` or similar, the screen fills it in.
 
-Three parts are part of the target design and are not built yet: the paused-pipeline notice, "Retry all" in group
-headers and the Duplicates card. They are collected under "Target design, not yet built", along with two smaller
-differences. Everything outside that section describes the page as it behaves now, except where a line points to that
-section.
+Three parts are approved but not yet implemented: the paused-pipeline notice, "Retry all" in group headers and the
+Duplicates card. They are collected under "Target design, not yet built", along with two smaller differences. Everything
+outside that section specifies the page as it is to behave, except where a line points to that section.
 
 ## Purpose
 
