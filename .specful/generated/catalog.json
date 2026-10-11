@@ -782,7 +782,6 @@
       "kind": "design",
       "path": "docs/specs/accounts/design/0026-oidc-sign-in.md",
       "satisfies": [
-        "REV-REQ-0032",
         "REV-REQ-0037"
       ],
       "title": "OIDC sign-in"

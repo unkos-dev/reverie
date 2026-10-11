@@ -4,7 +4,6 @@ profile-version: 1
 id: "REV-DESIGN-0026"
 title: "OIDC sign-in"
 satisfies:
-  - "REV-REQ-0032"
   - "REV-REQ-0037"
 governed-by:
   - "REV-ADR-0029"
@@ -33,15 +32,13 @@ Design "OIDC outbound transport" (REV-DESIGN-0025). It does not own the session 
 not own how a later request resolves to a caller, including the read-only lookup of a bearer token's `(issuer, subject)`
 against the links this subject writes, the Design "Request authentication" (REV-DESIGN-0010), or resource-server token
 validation (`backend/src/auth/jwt.rs`). It does not own email-and-password sign-in, the Design "Local password sign-in"
-(REV-DESIGN-0012), the first-administrator bootstrap, or the validation of the CSRF synchronizer token, the Design "CSRF
-protection" (REV-DESIGN-0008).
+(REV-DESIGN-0012), or the first-administrator bootstrap. It does not own minting or validating the CSRF synchronizer
+token, the Design "CSRF protection" (REV-DESIGN-0008), or the theme cookie; the callback only calls them, and this
+Design names the call sites.
 
 Depends on: the configured provider's authorization, token and signing-key endpoints through the runtime held in
 `AppState.oidc`; the `users` and `user_identities` tables; and the session layer. Depended on by: the sign-in page, and
 by Bearer resolution, which can resolve only the identities this subject has linked.
-
-ADR-0029 fixes OIDC as a co-equal sign-in mode that resolves to the same `users` row and session as local sign-in, with
-accounts matched on issuer and subject only; this Design is the mechanism that realises that decision on the OIDC side.
 
 ## Structure
 
@@ -101,8 +98,8 @@ overwrites all three. A successful callback removes them; no failing path does, 
 overwrites them or the session expires.
 
 An account is identified by `(issuer, subject)`, where the issuer is the verified `iss` claim and not the configured
-URL. `users.oidc_subject` is a legacy nullable column that this subject neither reads nor writes. Email is never an
-identity key.
+URL. `users.oidc_subject` is an unused nullable column that this subject never writes and never uses for identity. Email
+is never an identity key.
 
 On first sign-in, `upsert_from_oidc` creates a `users` row with the column defaults (role `adult`, not a child, session
 version 0, no promotion) and the link row. The display name is the `name` claim in its default locale, falling back to
@@ -132,8 +129,8 @@ nonce, writes the three session keys, and answers 307 to the provider's authoriz
 7. Refuse the account when `disabled_at` is set.
 8. Call `auth::session::login`, which rotates the session id before it attaches `user_id` and `session_version`.
 9. Remove the three transient keys, logging a warning for each removal that fails and continuing.
-10. Mint a 32-byte random `csrf_token` into the session, seed the theme cookie from the account's preference, and answer
-    307 to `/`.
+10. Insert a 32-byte random `csrf_token` into the session, call `set_theme_cookie` with the account's preference, and
+    answer 307 to `/`.
 
 **Resolution inside `upsert_from_oidc`.** One transaction takes a per-identity advisory lock keyed on issuer and
 subject, so two concurrent first sign-ins for one identity serialise and the second resolves to the row the first
@@ -159,12 +156,13 @@ non-administrator account. Sign-in never attaches an identity to an existing acc
 | First sign-in email held by a different account                 | 401     | Nothing; warning logged         |
 | Account disabled                                                | 401     | Nothing                         |
 | Database error during resolution or provisioning                | 500     | Nothing; transaction rolls back |
-| Session rotation or `csrf_token` write fails                    | 500     | Session store only              |
+| Session rotation or `csrf_token` write fails                    | 500     | Account write stays committed   |
 
 A provider that redirects back with an error and no `code` lands in the 400 row. The 401 refusals share one body, with a
 `WWW-Authenticate: Bearer` challenge, and reveal neither which check failed nor whether an email exists. A refused
 sign-in leaves the transient keys in the session; the user recovers by starting again at `/auth/oidc/login`, which
-replaces them. Nothing retries automatically.
+replaces them. Nothing retries automatically. When the session step fails after the account transaction committed, no
+session exists, and a retry resolves to the account and link already written.
 
 A returning identity whose provider email changed or became invalid still signs in, and the stored email is unchanged.
 Disabling an account refuses its next sign-in through the 401 above, and ends its live sessions through the gates of the
