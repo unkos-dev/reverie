@@ -100,9 +100,9 @@ dependency of the Library table cell editing and undo subject on this one.
 - `writeback_jobs`: insert-only from this subject, via `enqueue_writeback`, once per pointer-move inside the same
   transaction as the move. The Design "Writeback pipeline" owns every other writer and every reader of this table.
 - The manifestation's `enrichment_status`, `enrichment_rerun_requested`, `enrichment_attempt_count`,
-  `enrichment_attempted_at` and `enrichment_error` columns: conditionally reset by `apply_identifier_patches` when an
-  identifier map is touched (see Runtime behaviour); the enrichment worker is the other writer of these columns, out of
-  this subject's scope.
+  `enrichment_attempted_at`, `enrichment_retry_not_before` and `enrichment_error` columns: conditionally reset by
+  `apply_identifier_patches` when an identifier map is touched (see Runtime behaviour); the enrichment worker is the
+  other writer of these columns, out of this subject's scope.
 - `works.first_author_sort_name`: recomputed by `work::refresh_first_author_sort`, called whenever an `author`-role edit
   touches `work_authors` (both `apply_version`'s contributors arm and `apply_contributors_patch`, gated on
   `author_touched`).

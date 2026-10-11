@@ -137,7 +137,8 @@ fn panic_message(payload: &(dyn std::any::Any + Send)) -> String {
 /// Atomic claim: pick the oldest eligible row and flip it to `in_progress`.
 ///
 /// Returns `Some((id, new_attempt_count))` when a row was claimed; `None`
-/// when the queue is empty (or every row is still in its backoff window).
+/// when the queue is empty (or every row is still in its backoff window or
+/// deferred by a provider's `Retry-After`).
 ///
 /// The claim also clears `enrichment_rerun_requested`: a rerun requested
 /// before the claim is satisfied by this very run (its snapshot postdates
@@ -162,6 +163,10 @@ async fn claim_next(pool: &PgPool) -> sqlx::Result<Option<(Uuid, i32)>> {
                           ELSE INTERVAL '24 hours'
                         END
                       )
+               )
+               AND (
+                 enrichment_retry_not_before IS NULL
+                 OR enrichment_retry_not_before <= now()
                )
              ORDER BY enrichment_attempted_at NULLS FIRST, id
              LIMIT 1
@@ -271,6 +276,7 @@ async fn mark_complete(pool: &PgPool, id: Uuid) -> sqlx::Result<()> {
                                              THEN 0 ELSE enrichment_attempt_count END, \
              enrichment_attempted_at = CASE WHEN enrichment_rerun_requested \
                                             THEN NULL ELSE enrichment_attempted_at END, \
+             enrichment_retry_not_before = NULL, \
              enrichment_error = NULL, \
              enrichment_failures = '[]'::jsonb, \
              enrichment_rerun_requested = FALSE \
@@ -304,9 +310,9 @@ async fn mark_failed(
         EnrichmentStatus::Failed
     };
 
-    // When rate-limited, bump `enrichment_attempted_at` forward so the
-    // backoff window respects Retry-After semantics.
-    if let Some(ra) = retry_after {
+    // A rate-limited row that can still retry waits out the provider's
+    // Retry-After in `enrichment_retry_not_before`; a skipped row never retries.
+    if let Some(ra) = retry_after.filter(|_| next_status == EnrichmentStatus::Failed) {
         let secs = i64::try_from(ra.as_secs()).unwrap_or(i64::MAX);
         // `query!` borrows the bind argument; the `String` must outlive the
         // macro expansion, so `secs.to_string()` cannot be inlined into the
@@ -319,8 +325,10 @@ async fn mark_failed(
                  enrichment_attempt_count = CASE WHEN enrichment_rerun_requested \
                                                  THEN 0 ELSE enrichment_attempt_count END, \
                  enrichment_attempted_at = CASE WHEN enrichment_rerun_requested \
-                                                THEN NULL \
-                                                ELSE now() + ($2 || ' seconds')::interval END, \
+                                                THEN NULL ELSE enrichment_attempted_at END, \
+                 enrichment_retry_not_before = CASE WHEN enrichment_rerun_requested \
+                                                    THEN NULL \
+                                                    ELSE now() + ($2 || ' seconds')::interval END, \
                  enrichment_error = CASE WHEN enrichment_rerun_requested \
                                          THEN NULL ELSE $3 END, \
                  enrichment_failures = CASE WHEN enrichment_rerun_requested \
@@ -344,6 +352,7 @@ async fn mark_failed(
                                                  THEN 0 ELSE enrichment_attempt_count END, \
                  enrichment_attempted_at = CASE WHEN enrichment_rerun_requested \
                                                 THEN NULL ELSE enrichment_attempted_at END, \
+                 enrichment_retry_not_before = NULL, \
                  enrichment_error = CASE WHEN enrichment_rerun_requested \
                                          THEN NULL ELSE $2 END, \
                  enrichment_failures = CASE WHEN enrichment_rerun_requested \
@@ -863,6 +872,7 @@ mod tests {
         status: EnrichmentStatus,
         attempt_count: i32,
         attempted_at: Option<chrono::DateTime<chrono::Utc>>,
+        retry_not_before: Option<chrono::DateTime<chrono::Utc>>,
         error: Option<String>,
         rerun_requested: bool,
     }
@@ -871,6 +881,7 @@ mod tests {
         let r = sqlx::query!(
             "SELECT enrichment_status AS \"status!: EnrichmentStatus\", \
                     enrichment_attempt_count, enrichment_attempted_at, \
+                    enrichment_retry_not_before, \
                     enrichment_error, enrichment_rerun_requested \
              FROM manifestations WHERE id = $1",
             id,
@@ -882,6 +893,7 @@ mod tests {
             status: r.status,
             attempt_count: r.enrichment_attempt_count,
             attempted_at: r.enrichment_attempted_at,
+            retry_not_before: r.enrichment_retry_not_before,
             error: r.enrichment_error,
             rerun_requested: r.enrichment_rerun_requested,
         }
@@ -891,6 +903,19 @@ mod tests {
         sqlx::query!(
             "UPDATE manifestations SET enrichment_rerun_requested = TRUE WHERE id = $1",
             id,
+        )
+        .execute(pool)
+        .await
+        .unwrap();
+    }
+
+    async fn set_retry_not_before(pool: &PgPool, id: Uuid, offset_secs: i64) {
+        sqlx::query!(
+            "UPDATE manifestations \
+             SET enrichment_retry_not_before = now() + ($2 || ' seconds')::interval \
+             WHERE id = $1",
+            id,
+            offset_secs.to_string(),
         )
         .execute(pool)
         .await
@@ -946,6 +971,7 @@ mod tests {
         let (_work_id, m_id, _) =
             insert_queue_fixture(&pool, EnrichmentStatus::InProgress, 2, Some(10)).await;
         set_rerun_requested(&pool, m_id).await;
+        set_retry_not_before(&pool, m_id, 3600).await;
 
         mark_complete(&pool, m_id).await.unwrap();
 
@@ -958,6 +984,10 @@ mod tests {
         assert!(
             state.attempted_at.is_none(),
             "re-queue must null the attempt timestamp"
+        );
+        assert!(
+            state.retry_not_before.is_none(),
+            "re-queue must clear the deferral"
         );
         assert!(state.error.is_none());
         assert!(
@@ -978,11 +1008,16 @@ mod tests {
         let pool = ingestion_pool_for(&pool).await;
         let (_work_id, m_id, _) =
             insert_queue_fixture(&pool, EnrichmentStatus::InProgress, 1, Some(10)).await;
+        set_retry_not_before(&pool, m_id, -60).await;
 
         mark_complete(&pool, m_id).await.unwrap();
 
         let state = queue_row_state(&pool, m_id).await;
         assert_eq!(state.status, EnrichmentStatus::Complete);
+        assert!(
+            state.retry_not_before.is_none(),
+            "a successful run clears the deferral"
+        );
         assert_eq!(state.attempt_count, 1, "attempt bookkeeping is untouched");
     }
 
@@ -1004,6 +1039,7 @@ mod tests {
         )
         .await;
         set_rerun_requested(&pool, m_capped).await;
+        set_retry_not_before(&pool, m_capped, 3600).await;
         mark_failed(
             &pool,
             m_capped,
@@ -1021,6 +1057,7 @@ mod tests {
         let (_work_id, m_limited, _) =
             insert_queue_fixture(&pool, EnrichmentStatus::InProgress, 1, Some(10)).await;
         set_rerun_requested(&pool, m_limited).await;
+        set_retry_not_before(&pool, m_limited, 3600).await;
         mark_failed(
             &pool,
             m_limited,
@@ -1041,9 +1078,125 @@ mod tests {
                 state.attempted_at.is_none(),
                 "row {id}: attempt timestamp nulled"
             );
+            assert!(
+                state.retry_not_before.is_none(),
+                "row {id}: deferral cleared"
+            );
             assert!(state.error.is_none(), "row {id}: error cleared");
             assert!(!state.rerun_requested, "row {id}: flag consumed");
         }
+    }
+
+    /// A rate-limited attempt keeps the real attempt time in
+    /// `enrichment_attempted_at` and records the provider's deferral in
+    /// `enrichment_retry_not_before`.
+    #[sqlx::test(migrations = "./migrations")]
+    async fn rate_limited_failure_keeps_the_claim_time_and_defers_the_retry(pool: PgPool) {
+        let pool = ingestion_pool_for(&pool).await;
+        let (config, _files) = test_config_with_max_attempts(5);
+        let (_work_id, m_id, _) =
+            insert_queue_fixture(&pool, EnrichmentStatus::Pending, 0, None).await;
+        let (claimed_id, attempt_count) = claim_next(&pool).await.unwrap().expect("claim");
+        assert_eq!(claimed_id, m_id);
+        let claimed = queue_row_state(&pool, m_id).await;
+        let claimed_at = claimed.attempted_at.expect("the claim stamps the attempt");
+
+        mark_failed(
+            &pool,
+            m_id,
+            attempt_count,
+            &config,
+            Some(Duration::from_mins(2)),
+            Some("rate limited"),
+            &[],
+        )
+        .await
+        .unwrap();
+
+        let state = queue_row_state(&pool, m_id).await;
+        assert_eq!(state.status, EnrichmentStatus::Failed);
+        assert_eq!(
+            state.attempted_at,
+            Some(claimed_at),
+            "the attempt time stays the claim time"
+        );
+        assert!(
+            claimed_at <= chrono::Utc::now(),
+            "the attempt time is not in the future"
+        );
+        let not_before = state.retry_not_before.expect("the deferral is recorded");
+        assert!(
+            not_before >= claimed_at + chrono::Duration::seconds(120)
+                && not_before < claimed_at + chrono::Duration::seconds(150),
+            "the deferral is Retry-After from the failure, got {not_before} for claim {claimed_at}"
+        );
+    }
+
+    /// A row whose backoff window has elapsed is still skipped while its
+    /// `enrichment_retry_not_before` is in the future, and claimed once it
+    /// passes.
+    #[sqlx::test(migrations = "./migrations")]
+    async fn claim_skips_a_row_until_its_retry_not_before_passes(pool: PgPool) {
+        let pool = ingestion_pool_for(&pool).await;
+        let (_work_id, m_id, _) =
+            insert_queue_fixture(&pool, EnrichmentStatus::Failed, 1, Some(3600)).await;
+        set_retry_not_before(&pool, m_id, 600).await;
+
+        let deferred = claim_next(&pool).await.unwrap();
+        assert!(
+            deferred.is_none(),
+            "a row deferred by retry_not_before must not be claimable, got {deferred:?}"
+        );
+
+        set_retry_not_before(&pool, m_id, -1).await;
+
+        let (claimed_id, _) = claim_next(&pool)
+            .await
+            .unwrap()
+            .expect("a row past its retry_not_before is claimable");
+        assert_eq!(claimed_id, m_id);
+    }
+
+    /// A failure that carries no Retry-After clears an earlier deferral, and
+    /// a row that has used up its attempts is not left with one.
+    #[sqlx::test(migrations = "./migrations")]
+    async fn mark_failed_defers_only_while_retries_remain(pool: PgPool) {
+        let pool = ingestion_pool_for(&pool).await;
+        let (config, _files) = test_config_with_max_attempts(3);
+
+        let (_work_id, m_plain, _) =
+            insert_queue_fixture(&pool, EnrichmentStatus::InProgress, 1, Some(10)).await;
+        set_retry_not_before(&pool, m_plain, -60).await;
+        mark_failed(&pool, m_plain, 1, &config, None, Some("boom"), &[])
+            .await
+            .unwrap();
+
+        let (_work_id, m_capped, _) =
+            insert_queue_fixture(&pool, EnrichmentStatus::InProgress, 3, Some(10)).await;
+        mark_failed(
+            &pool,
+            m_capped,
+            3,
+            &config,
+            Some(Duration::from_mins(2)),
+            Some("rate limited"),
+            &[],
+        )
+        .await
+        .unwrap();
+
+        let plain = queue_row_state(&pool, m_plain).await;
+        assert_eq!(plain.status, EnrichmentStatus::Failed);
+        assert!(
+            plain.retry_not_before.is_none(),
+            "a failure without Retry-After clears the earlier deferral"
+        );
+        let capped = queue_row_state(&pool, m_capped).await;
+        assert_eq!(capped.status, EnrichmentStatus::Skipped);
+        assert!(
+            capped.retry_not_before.is_none(),
+            "a skipped row never retries, so it carries no deferral"
+        );
     }
 
     async fn stored_failures(pool: &PgPool, id: Uuid) -> serde_json::Value {
