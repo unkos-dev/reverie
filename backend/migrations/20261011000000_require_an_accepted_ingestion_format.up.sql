@@ -1,6 +1,6 @@
 UPDATE public.settings
 SET accepted_formats = '{epub}'
-WHERE cardinality(accepted_formats) = 0;
+WHERE accepted_formats = '{}';
 
 ALTER TABLE public.settings
-ADD CONSTRAINT settings_accepted_formats_nonempty CHECK (cardinality(accepted_formats) >= 1);
+ADD CONSTRAINT settings_accepted_formats_nonempty CHECK (accepted_formats <> '{}');
