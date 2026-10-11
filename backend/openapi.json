@@ -1504,6 +1504,201 @@
         ]
       }
     },
+    "/api/v1/dashboard/enrichment-failures": {
+      "get": {
+        "tags": [
+          "dashboard"
+        ],
+        "summary": "List books with failing enrichment",
+        "description": "Returns one page of books whose latest enrichment attempt failed, including those that stopped retrying, each under one primary failure. Admin only.",
+        "operationId": "list_failures",
+        "parameters": [
+          {
+            "name": "source",
+            "in": "query",
+            "description": "Lists only books whose primary failure came from this source; `none`\nlists only books whose primary failure has no source.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "class",
+            "in": "query",
+            "description": "Lists only books whose primary failure has this class.",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/FailureClass"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "Page size; clamped to 1..=100, default 25.",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "description": "Opaque cursor from a previous response's `next_cursor`.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "One page of books with failing enrichment. Admin only.",
+            "headers": {
+              "Link": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "RFC 8288 next-page link; emitted with rel=\"next\" when more rows remain"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FailuresResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Malformed query parameter",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Caller is not an admin",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Malformed cursor",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session_cookie": [
+              "admin"
+            ]
+          },
+          {
+            "device_token_bearer": [
+              "admin"
+            ]
+          },
+          {
+            "oidc_jwt_bearer": [
+              "admin"
+            ]
+          },
+          {
+            "opds_basic": [
+              "admin"
+            ]
+          }
+        ]
+      }
+    },
+    "/api/v1/dashboard/enrichment-failures/counts": {
+      "get": {
+        "tags": [
+          "dashboard"
+        ],
+        "summary": "Count books with failing enrichment by failure",
+        "description": "Returns the number of books under each primary failure group (source and class) and the total. Admin only.",
+        "operationId": "failure_counts",
+        "responses": {
+          "200": {
+            "description": "Per-group counts. Admin only.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FailureCountsResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Caller is not an admin",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session_cookie": [
+              "admin"
+            ]
+          },
+          {
+            "device_token_bearer": [
+              "admin"
+            ]
+          },
+          {
+            "oidc_jwt_bearer": [
+              "admin"
+            ]
+          },
+          {
+            "opds_basic": [
+              "admin"
+            ]
+          }
+        ]
+      }
+    },
     "/api/v1/dashboard/stats": {
       "get": {
         "tags": [
@@ -8488,6 +8683,156 @@
           "source": {
             "type": "string",
             "description": "Rating provider (`rating_sources.id`, e.g. `googlebooks`)."
+          }
+        }
+      },
+      "FailureClass": {
+        "type": "string",
+        "description": "Why one metadata source, or the run itself, failed.",
+        "enum": [
+          "timeout",
+          "rate_limited",
+          "source_error",
+          "not_found",
+          "unreachable",
+          "internal",
+          "unspecified"
+        ]
+      },
+      "FailureCount": {
+        "type": "object",
+        "description": "One failure group and the number of books listed under it.",
+        "required": [
+          "class",
+          "count"
+        ],
+        "properties": {
+          "class": {
+            "$ref": "#/components/schemas/FailureClass"
+          },
+          "count": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "source": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "FailureCountsResponse": {
+        "type": "object",
+        "description": "Response for the failures counts read.",
+        "required": [
+          "by_failure",
+          "total"
+        ],
+        "properties": {
+          "by_failure": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FailureCount"
+            },
+            "description": "Every group with at least one book, by source key then class."
+          },
+          "total": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Books with a failure: the sum of `by_failure`."
+          }
+        }
+      },
+      "FailureItem": {
+        "type": "object",
+        "description": "One book whose enrichment is failing or has stopped retrying.",
+        "required": [
+          "manifestation_id",
+          "work_id",
+          "title",
+          "status",
+          "attempt_count",
+          "primary",
+          "also"
+        ],
+        "properties": {
+          "also": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FailureRef"
+            },
+            "description": "Failures from other sources in the same attempt; never counted."
+          },
+          "attempt_count": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "attempted_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "manifestation_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "primary": {
+            "$ref": "#/components/schemas/FailureRef",
+            "description": "The failure the book is listed and counted under."
+          },
+          "status": {
+            "$ref": "#/components/schemas/EnrichmentStatus",
+            "description": "`failed` while retries remain, `skipped` once they are used up."
+          },
+          "title": {
+            "type": "string"
+          },
+          "work_id": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      },
+      "FailureRef": {
+        "type": "object",
+        "description": "One failure of a book's latest enrichment attempt.",
+        "required": [
+          "class"
+        ],
+        "properties": {
+          "class": {
+            "$ref": "#/components/schemas/FailureClass"
+          },
+          "source": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The failing source; absent for `internal` and `unspecified`."
+          }
+        }
+      },
+      "FailuresResponse": {
+        "type": "object",
+        "description": "Response for the failures list.",
+        "required": [
+          "items"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FailureItem"
+            }
+          },
+          "next_cursor": {
+            "type": [
+              "string",
+              "null"
+            ]
           }
         }
       },

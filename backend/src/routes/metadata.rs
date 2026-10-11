@@ -2598,7 +2598,9 @@ async fn apply_identifier_patches(
                  enrichment_attempted_at = CASE WHEN enrichment_status = 'in_progress' \
                                                 THEN enrichment_attempted_at ELSE NULL END, \
                  enrichment_error = CASE WHEN enrichment_status = 'in_progress' \
-                                         THEN enrichment_error ELSE NULL END \
+                                         THEN enrichment_error ELSE NULL END, \
+                 enrichment_failures = CASE WHEN enrichment_status = 'in_progress' \
+                                            THEN enrichment_failures ELSE '[]'::jsonb END \
              WHERE id = $1",
             manifestation_id,
         )
@@ -7487,7 +7489,8 @@ mod tests {
              SET enrichment_status = 'failed', \
                  enrichment_attempt_count = 3, \
                  enrichment_attempted_at = now(), \
-                 enrichment_error = 'boom' \
+                 enrichment_error = 'boom', \
+                 enrichment_failures = '[{\"source\": \"openlibrary\", \"class\": \"timeout\"}]' \
              WHERE id = $1",
             m_id,
         )
@@ -7576,7 +7579,8 @@ mod tests {
 
         let m = sqlx::query!(
             "SELECT enrichment_status::text AS \"enrichment_status!\", \
-                    enrichment_attempt_count, enrichment_attempted_at, enrichment_error \
+                    enrichment_attempt_count, enrichment_attempted_at, enrichment_error, \
+                    enrichment_failures \
              FROM manifestations WHERE id = $1",
             m_id,
         )
@@ -7593,6 +7597,7 @@ mod tests {
             "re-queue must null the attempt timestamp"
         );
         assert!(m.enrichment_error.is_none());
+        assert_eq!(m.enrichment_failures, serde_json::json!([]));
 
         assert_eq!(
             writeback_job_count(&app_pool, m_id).await,
