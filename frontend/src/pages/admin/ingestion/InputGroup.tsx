@@ -3,9 +3,10 @@ import { type ReactElement } from "react";
 import { listInputs } from "@/api/ingestion";
 import type { InputItem, InputReason } from "@/api/ingestion";
 import { Table, TableBody, TableCell, TableRow } from "@/components/ui/table";
+import { formatDateTime } from "@/lib/format/datetime";
 import { queryKeys } from "@/lib/query/keys";
 
-import { formatWhen, pluralise, splitPath } from "./format";
+import { pluralise, splitPath } from "./format";
 import { GroupFooter } from "./GroupFooter";
 import { GroupFailed, GroupLoading } from "./GroupState";
 import { GroupShell } from "./GroupShell";
@@ -34,7 +35,7 @@ function InputRow({ item }: { item: InputItem }): ReactElement {
         ) : null}
       </TableCell>
       <TableCell className="text-fg-muted py-2.5 pr-4 text-right align-top text-[13px]">
-        {item.completed_at ? formatWhen(item.completed_at) : null}
+        {item.completed_at ? formatDateTime(item.completed_at) : null}
       </TableCell>
     </TableRow>
   );

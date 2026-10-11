@@ -13,6 +13,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Activity, AlertTriangle, BookOpen, HardDrive } from "lucide-react";
 
 import { useAuthMe } from "@/hooks/useAuthMe";
+import { formatDateTime } from "@/lib/format/datetime";
 import { queryKeys } from "@/lib/query/keys";
 import { getDashboardStats } from "@/api/dashboard";
 import type { DashboardStats, DashboardActivity } from "@/api/dashboard";
@@ -340,7 +341,7 @@ function RecentBatches({
           {activity.map((b) => (
             <TableRow key={b.batch_id}>
               <TableCell className="font-medium">
-                {new Date(b.started_at).toLocaleString()}
+                {formatDateTime(b.started_at)}
                 {b.ended_at === null && (
                   <Badge variant="secondary" className="ml-2">
                     running
