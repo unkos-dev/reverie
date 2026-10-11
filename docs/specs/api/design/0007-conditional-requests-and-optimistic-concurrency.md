@@ -14,16 +14,15 @@ governed-by:
 # Conditional requests and optimistic concurrency
 
 This Design covers how Reverie protects a read-modify-write cycle against a lost update: the strong entity-tag grammar
-and comparison, the two independent mechanisms that produce a tag (a shared hash-based module and the shelves module's
-own timestamp-based one), the `If-Match` precondition contract every protected endpoint applies in the same relative
-order, and the client's capture and replay of the tag between a resource's GET/PATCH pair.
+and comparison, the shared hash-based module that produces a tag, the `If-Match` precondition contract every protected
+endpoint applies in the same relative order, and the client's capture and replay of the tag between a resource's
+GET/PATCH pair.
 
 ## Purpose and boundaries
 
 This subject owns the RFC 9110 §8.8.3 strong entity-tag grammar and §13.1.2 strong comparison as Reverie implements
 them; the shared hash-based tag constructor and `If-Match` parser in `backend/src/routes/etag.rs` (`hash_etag`,
-`StrongEntityTag`, `parse_if_match`, `if_match_mismatch`); the shelves module's separate, `updated_at`-derived tag
-constructor in `backend/src/routes/shelves/mod.rs`; the precondition contract common to every protected endpoint
+`StrongEntityTag`, `parse_if_match`, `if_match_mismatch`); the precondition contract common to every protected endpoint
 (missing header returns `428`, a mismatched tag returns `412`, a malformed or policy-refused header is rejected before
 either) and the point in each handler where that contract is evaluated relative to the existence check and the request
 body's own semantic validation; and the client-side capture and replay in `frontend/src/api/etags.ts` and
@@ -32,10 +31,11 @@ body's own semantic validation; and the client-side capture and replay in `front
 It does not own the business logic of any endpoint that uses this contract: what fields
 `PATCH /api/v1/books/{id}/reading` may change and its transition-stamp rules (the Design "Reading state"), the per-field
 apply/journal mechanics `PATCH /api/v1/books/{id}/metadata` runs once its precondition holds (the Design "Metadata
-review and editing"), or shelf CRUD and its handler-enforced ownership predicate (the Design "Shelves"). It does not own
-the content of any one endpoint's dedicated hash-input struct beyond the contract those structs must satisfy. It does
-not own the RFC 9457 Problem Details envelope the resulting errors render into, or the status-code selection rules that
-assign `400`/`412`/`428` to a failure class (Design "API error contract and OpenAPI").
+review and editing"), or shelf CRUD and its handler-enforced ownership predicate (the Design "Shelves"), whose responses
+carry no entity-tag. It does not own the content of any one endpoint's dedicated hash-input struct beyond the contract
+those structs must satisfy. It does not own the RFC 9457 Problem Details envelope the resulting errors render into, or
+the status-code selection rules that assign `400`/`412`/`428` to a failure class (Design "API error contract and
+OpenAPI").
 
 Depends on: RFC 9110 §8.8.3 (`entity-tag` grammar), §13.1.1 (`If-Match`), and §13.1.2 (strong comparison), and RFC 6585
 §3 (`428 Precondition Required`), all fixed for Reverie's surface by REV-ADR-0011; `axum::http::HeaderMap` and
@@ -49,10 +49,10 @@ tag through `apiFetch` rather than handling `If-Match` themselves.
 
 ## Structure
 
-### Two independent entity-tag mechanisms
+### The entity-tag mechanism
 
-Reverie has two independent ways of producing an entity-tag: a shared hash-based module and the shelves module's own
-timestamp-based one. Only the shared module's tags are ever checked: no shelf endpoint accepts `If-Match`.
+Reverie produces entity-tags in one place, a shared hash-based module. Only the endpoints that use it emit a tag or
+accept `If-Match`; shelf endpoints do neither.
 
 `backend/src/routes/etag.rs` is the shared mechanism, consumed by `backend/src/routes/reading.rs` and
 `backend/src/routes/metadata.rs`. `hash_etag<T: Serialize>` serialises `state` to JSON, SHA-256s the bytes, truncates
@@ -80,14 +80,6 @@ is the only way past this function, so any value reaching a handler is already k
 weak prefix. Its `matches` method compares the stored quoted wire form against a `HeaderValue`'s bytes with octet
 equality, no normalisation or case-folding. `if_match_mismatch` builds the `412` response for a stale tag and inserts
 the resource's current `ETag` into it, so a caller can recover in one round trip instead of issuing a follow-up `GET`.
-
-`backend/src/routes/shelves/mod.rs` carries its own private `etag_header`, not this module's. A shelf's entity-tag is
-`shelves.updated_at` itself, RFC 3339-formatted with the exact options chrono's `Serialize` impl uses for the response
-body (so the tag and the body's `updated_at` field are textually identical) and quoted, rather than a hash of any wider
-representation; this exact match holds because chrono, Reverie's first-party datetime crate, serialises `DateTime<Utc>`
-to that same RFC 3339 spelling by default, with no per-field formatting attribute to keep in step. The shelves module
-has no `If-Match` parser and no comparison: the tag is emitted for clients to read and is never accepted back as a
-precondition.
 
 ### The precondition contract's evaluation order
 
@@ -130,8 +122,6 @@ is reachable when an ETag-priming fetch loses a race against a very fast concurr
   `StrongEntityTag::matches(&self, current: &HeaderValue) -> bool` compares one, and
   `if_match_mismatch(current_etag: &HeaderValue) -> Response` builds the `412` response for a stale one — all four in
   `backend/src/routes/etag.rs`, the shared mechanism's public surface.
-- `etag_header(updated_at: DateTime<Utc>) -> Result<HeaderValue, AppError>` (`backend/src/routes/shelves/mod.rs`) is the
-  shelves-only tag constructor; it is module-private and has no parser counterpart.
 - `PATCH /api/v1/books/{id}/reading` and `PATCH /api/v1/books/{id}/metadata` are the two HTTP operations this contract
   protects; each declares its `If-Match` requirement and the `400`/`412`/`428` response set in its own `#[utoipa::path]`
   block, which this Design does not restate (Design "API error contract and OpenAPI" owns the generated shape).
@@ -145,15 +135,12 @@ is reachable when an ETag-priming fetch loses a race against a very fast concurr
 No entity-tag is stored. Every server-side tag is derived on demand, inside the request's own transaction, from the
 database row the request already locked for its own write:
 
-| Endpoint family | Constructor | Hash/comparison input |
-| --------------- | ----------- | --------------------- |
-| `GET`/`PATCH .../metadata` | `hash_etag` | `BookMetadata` (also the wire response body) |
-| `GET`/`PATCH .../reading` | `hash_etag` | `ReadingEtagFields<'a>` (private, distinct from wire type `ReadingState`) |
-| Shelf detail read, create/rename, item mutations | `etag_header` | `shelves.updated_at` directly, not hashed |
+| Endpoint family            | Constructor | Hash/comparison input                                                     |
+| -------------------------- | ----------- | ------------------------------------------------------------------------- |
+| `GET`/`PATCH .../metadata` | `hash_etag` | `BookMetadata` (also the wire response body)                              |
+| `GET`/`PATCH .../reading`  | `hash_etag` | `ReadingEtagFields<'a>` (private, distinct from wire type `ReadingState`) |
 
-`GET /api/v1/shelves` (the shelf list) emits no `ETag` at all: there is no single `updated_at` for a page of shelves,
-and the list carries no precondition-protected write of its own. No shelf endpoint reads an `If-Match` header, so a
-shelf's tag is informational.
+No shelf endpoint emits an `ETag` or reads an `If-Match` header.
 
 `ETAG_HASH_BYTES` (16, i.e. 128 bits of the SHA-256 digest) is the only adjustable value in the hashing path;
 `etag.rs`'s own comment records the rationale as collision resistance sufficient for concurrency checks between a
@@ -211,10 +198,9 @@ handler body executes at all). The response is `400`, problem type `.../malforme
   can never use one of these forms to bypass the freshness check. The shared module answers `400`,
   `.../malformed-header`, from `update_book_metadata` and `patch_reading`, and rejects a repeated `If-Match` header
   instance as a list form.
-- **`hash_etag` or `etag_header`'s own encoding failure.** Both return `AppError::Internal` (`500`) if serialising the
-  hash input or formatting the header value fails. Neither is reachable in ordinary operation: every hash input type is
-  a plain, always-serialisable struct, and the base64url/RFC 3339 output these functions produce is always valid
-  `HeaderValue` byte content.
+- **`hash_etag`'s own encoding failure.** It returns `AppError::Internal` (`500`) if serialising the hash input or
+  formatting the header value fails. Neither is reachable in ordinary operation: every hash input type is a plain,
+  always-serialisable struct, and the base64url output is always valid `HeaderValue` byte content.
 
 ## Security and operations
 

@@ -3,12 +3,6 @@
 //! Wire-format conventions follow the JSON-API conventions ADR
 //! (`docs/adr/0011-json-api-conventions-for-the-browser-facing-rest-surface.md`): snake_case field names,
 //! `Option<T>` for nullable, RFC 3339 timestamps.
-//!
-//! # `ETag`
-//!
-//! Every shelf read endpoint emits `ETag: "<updated_at RFC3339>"`.
-//! Item mutations issue an `UPDATE shelves SET updated_at = now()` in
-//! the same transaction so the tag moves with membership changes.
 
 use chrono::{DateTime, Utc};
 use serde::Serialize;
@@ -29,8 +23,7 @@ pub struct Shelf {
     pub is_system: bool,
     /// `shelves.created_at`.
     pub created_at: DateTime<Utc>,
-    /// `shelves.updated_at`; the value the shelf endpoints render into the
-    /// `ETag` response header.
+    /// `shelves.updated_at`; moves on every item add and remove.
     pub updated_at: DateTime<Utc>,
     /// Count of `shelf_items` rows on this shelf. Computed inline via
     /// a correlated scalar subquery on the list endpoint and surfaces

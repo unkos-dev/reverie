@@ -149,7 +149,7 @@ describe("getShelf", () => {
         }),
       )
       // A concurrent mutation bumped updated_at between pages — the
-      // assembled result must keep page 1's ETag value.
+      // assembled result must keep page 1's updated_at.
       .mockResolvedValueOnce(
         jsonResponse({
           ...identity,

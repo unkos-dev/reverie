@@ -81,18 +81,6 @@ async fn create_shelf_round_trips(pool: PgPool) {
     assert_eq!(body["item_count"].as_i64().unwrap(), 0);
     test_support::assert_rfc3339(&body, "created_at");
     test_support::assert_rfc3339(&body, "updated_at");
-    let etag = r
-        .headers()
-        .get(header::ETAG)
-        .expect("ETag on create")
-        .to_str()
-        .unwrap();
-    assert!(etag.starts_with('"'), "ETag must be quoted: {etag}");
-    assert_eq!(
-        etag.trim_matches('"'),
-        body["updated_at"].as_str().unwrap(),
-        "the ETag is the body's updated_at, so the two must agree textually",
-    );
 
     // List now includes the new shelf.
     let listed = server
@@ -282,13 +270,14 @@ async fn child_cannot_delete_shelf(pool: PgPool) {
 // Items: add / remove
 // ------------------------------------------------------------------
 
-fn etag_value(headers: &axum::http::HeaderMap) -> String {
-    headers
-        .get(header::ETAG)
-        .expect("ETag header present")
-        .to_str()
-        .expect("ETag ascii")
-        .to_owned()
+async fn shelf_updated_at(server: &axum_test::TestServer, basic: &str, shelf_id: Uuid) -> String {
+    let r = server
+        .get(&format!("/api/v1/shelves/{shelf_id}"))
+        .add_header(auth(basic).0.clone(), auth(basic).1.clone())
+        .await;
+    assert_eq!(r.status_code(), StatusCode::OK, "body: {}", r.text());
+    let body: serde_json::Value = r.json();
+    body["updated_at"].as_str().expect("updated_at").to_owned()
 }
 
 async fn make_owner_shelf_and_books(
@@ -311,7 +300,7 @@ async fn make_owner_shelf_and_books(
         .await;
         manifestation_ids.push(m);
     }
-    // Bypass POST /items so the shelf still has the original ETag.
+    // Bypass POST /items so the shelf keeps its original updated_at.
     for m_id in &manifestation_ids {
         sqlx::query!(
             "INSERT INTO shelf_items (shelf_id, manifestation_id) VALUES ($1, $2)",
@@ -326,7 +315,7 @@ async fn make_owner_shelf_and_books(
 }
 
 #[sqlx::test(migrations = "./migrations")]
-async fn add_shelf_item_appends_and_bumps_etag(pool: PgPool) {
+async fn add_shelf_item_appends_and_bumps_updated_at(pool: PgPool) {
     let app_pool = test_support::db::app_pool_for(&pool).await;
     let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
     let (a_id, a_basic) =
@@ -343,12 +332,7 @@ async fn add_shelf_item_appends_and_bumps_etag(pool: PgPool) {
     test_support::db::add_to_shelf(&app_pool, other, m_id).await;
 
     let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
-    // Snapshot the initial ETag (pre-POST).
-    let initial = server
-        .get(&format!("/api/v1/shelves/{shelf_id}"))
-        .add_header(auth(&a_basic).0.clone(), auth(&a_basic).1.clone())
-        .await;
-    let initial_etag = etag_value(initial.headers());
+    let initial = shelf_updated_at(&server, &a_basic, shelf_id).await;
 
     let r = server
         .post(&format!("/api/v1/shelves/{shelf_id}/items"))
@@ -361,10 +345,10 @@ async fn add_shelf_item_appends_and_bumps_etag(pool: PgPool) {
         "body: {}",
         r.text()
     );
-    let new_etag = etag_value(r.headers());
+    let bumped = shelf_updated_at(&server, &a_basic, shelf_id).await;
     assert_ne!(
-        initial_etag, new_etag,
-        "POST /items must bump the ETag (initial: {initial_etag}, new: {new_etag})",
+        initial, bumped,
+        "POST /items must bump updated_at (initial: {initial}, new: {bumped})",
     );
 }
 
@@ -403,24 +387,81 @@ async fn add_shelf_item_404_when_child_cannot_see_manifestation(pool: PgPool) {
 }
 
 #[sqlx::test(migrations = "./migrations")]
-async fn remove_shelf_item_bumps_etag(pool: PgPool) {
+async fn remove_shelf_item_bumps_updated_at(pool: PgPool) {
     let app_pool = test_support::db::app_pool_for(&pool).await;
     let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
     let (_uid, basic, shelf_id, ids) =
         make_owner_shelf_and_books(&pool, &app_pool, &ingestion_pool, "rm-bump", 2).await;
     let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
-    let initial = server
-        .get(&format!("/api/v1/shelves/{shelf_id}"))
-        .add_header(auth(&basic).0.clone(), auth(&basic).1.clone())
-        .await;
-    let initial_etag = etag_value(initial.headers());
+    let initial = shelf_updated_at(&server, &basic, shelf_id).await;
 
     let r = server
         .delete(&format!("/api/v1/shelves/{shelf_id}/items/{}", ids[0]))
         .add_header(auth(&basic).0.clone(), auth(&basic).1.clone())
         .await;
     assert_eq!(r.status_code(), StatusCode::NO_CONTENT);
-    assert_ne!(initial_etag, etag_value(r.headers()));
+    assert_ne!(initial, shelf_updated_at(&server, &basic, shelf_id).await);
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn shelf_responses_carry_no_etag(pool: PgPool) {
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let (a_id, basic) = test_support::db::create_adult_and_basic_auth(&app_pool, "no-etag").await;
+    let (_w, m_id) =
+        test_support::db::insert_work_and_manifestation(&ingestion_pool, "no-etag").await;
+    let visible = test_support::db::create_shelf(&app_pool, a_id, "Visible").await;
+    test_support::db::add_to_shelf(&app_pool, visible, m_id).await;
+    let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+
+    let created = server
+        .post("/api/v1/shelves")
+        .add_header(auth(&basic).0, auth(&basic).1)
+        .json(&json!({"name": "Fresh"}))
+        .await;
+    assert_eq!(created.status_code(), StatusCode::CREATED);
+    let shelf_id = created.json::<serde_json::Value>()["id"]
+        .as_str()
+        .expect("shelf id")
+        .to_owned();
+    let responses = [
+        created,
+        server
+            .patch(&format!("/api/v1/shelves/{shelf_id}"))
+            .add_header(auth(&basic).0, auth(&basic).1)
+            .json(&json!({"name": "Renamed"}))
+            .await,
+        server
+            .get(&format!("/api/v1/shelves/{shelf_id}"))
+            .add_header(auth(&basic).0, auth(&basic).1)
+            .await,
+        server
+            .post(&format!("/api/v1/shelves/{shelf_id}/items"))
+            .add_header(auth(&basic).0, auth(&basic).1)
+            .json(&json!({"manifestation_id": m_id}))
+            .await,
+        server
+            .delete(&format!("/api/v1/shelves/{shelf_id}/items/{m_id}"))
+            .add_header(auth(&basic).0, auth(&basic).1)
+            .await,
+    ];
+    let statuses: Vec<StatusCode> = responses
+        .iter()
+        .map(axum_test::TestResponse::status_code)
+        .collect();
+    assert_eq!(
+        statuses,
+        [
+            StatusCode::CREATED,
+            StatusCode::OK,
+            StatusCode::OK,
+            StatusCode::NO_CONTENT,
+            StatusCode::NO_CONTENT,
+        ],
+    );
+    for r in &responses {
+        assert!(r.headers().get(header::ETAG).is_none());
+    }
 }
 
 #[sqlx::test(migrations = "./migrations")]
@@ -436,7 +477,6 @@ async fn shelf_detail_wire_shape_has_timestamps_and_no_position(pool: PgPool) {
         .add_header(auth(&basic).0.clone(), auth(&basic).1.clone())
         .await;
     assert_eq!(r.status_code(), StatusCode::OK, "body: {}", r.text());
-    let etag = etag_value(r.headers());
     let body: serde_json::Value = r.json();
 
     // The detail envelope is route-local and re-declares both
@@ -456,12 +496,6 @@ async fn shelf_detail_wire_shape_has_timestamps_and_no_position(pool: PgPool) {
         keys.sort_unstable();
         assert_eq!(keys, ["added_at", "manifestation_id"]);
     }
-
-    assert_eq!(
-        etag.trim_matches('"'),
-        body["updated_at"].as_str().unwrap(),
-        "the ETag header and the body's updated_at must be the same text",
-    );
 }
 
 #[sqlx::test(migrations = "./migrations")]
@@ -964,11 +998,6 @@ async fn shelf_items_pagination_total_under_identical_sort_keys(pool: PgPool) {
             .add_header(auth(&a_basic).0.clone(), auth(&a_basic).1.clone())
             .await;
         assert_eq!(r.status_code(), StatusCode::OK);
-        // ETag rides on every items page, not just the first.
-        assert!(
-            r.headers().get(header::ETAG).is_some(),
-            "ETag on page {pages}"
-        );
         let body: serde_json::Value = r.json();
         for v in body["items"].as_array().unwrap() {
             let id: Uuid = v["manifestation_id"].as_str().unwrap().parse().unwrap();

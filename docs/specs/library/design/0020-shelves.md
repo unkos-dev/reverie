@@ -35,11 +35,9 @@ it only to answer "can this caller see this manifestation", never to scope `shel
 row-level-security policy at all. It does not own the three-axis scope, role, and ownership model or the cross-resource
 map of which tables use row-level security and which use a handler predicate; that narrative belongs to the Design
 "Authorization axes", which names `shelves`/`shelf_items` as the ownership-predicate side of that map and cites this
-subject's code as its evidence. It does not own entity-tag mechanics: the Design "Conditional requests and optimistic
-concurrency" owns the shared grammar and comparison and this module's own `etag_header` constructor, naming it as its
-one documented exception to the shared mechanism. No shelf endpoint accepts `If-Match`. This subject owns only shelf
-CRUD and the handler-level ownership predicate; Structure below states only where its own routes emit the tag. It does
-not own the keyset cursor framework or the `build_next_url`/`split_page` pagination helpers it borrows from
+subject's code as its evidence. It does not own entity-tag mechanics: no shelf endpoint emits an `ETag` or accepts
+`If-Match`, and the Design "Conditional requests and optimistic concurrency" owns the mechanisms the other resources
+use. It does not own the keyset cursor framework or the `build_next_url`/`split_page` pagination helpers it borrows from
 `backend/src/routes/library/mod.rs`, owned by the Design "Books list query contract", or that Design's library filter
 grammar `shelf` condition, which lets a books-list query scope to one shelf's membership and is referenced only as a
 dependent below.
@@ -78,10 +76,7 @@ bar's "add selection to shelf" action — all described below only as consumers,
   carries `(added_at, manifestation_id)`, matching the items query's all-ascending sort; the `manifestation_id`
   tiebreaker is load-bearing because `added_at` is not unique per shelf. The `idx_shelf_items_shelf_keyset` index over
   `(shelf_id, added_at, manifestation_id)` serves that sort.
-- `routes/shelves/mod.rs` defines its own `etag_header` rather than importing the shared `crate::routes::etag` module
-  that `backend/src/routes/reading.rs` (the Design "Reading state") uses. The Design "Conditional requests and
-  optimistic concurrency" owns both mechanisms and names this constructor as its one documented exception to the shared
-  module. Nothing in this module parses `If-Match`.
+- Nothing in `routes/shelves/mod.rs` builds an entity-tag or parses `If-Match`; shelf responses carry no `ETag` header.
 - On the client, `frontend/src/api/shelves.ts` is the sole HTTP boundary for this surface: it defines the Zod schemas
   for both wire shapes, walks every cursor-paginated response to completion internally so every caller receives a fully
   assembled array or object. `frontend/src/pages/shelves/ShelvesListPage.tsx` is the `/shelves` list-and-manage page
@@ -112,7 +107,7 @@ database acting on its own. What a reader needs is which call reaches which writ
 which fires on any `UPDATE` to the row regardless of which column changed. `rename_shelf` relies on the trigger alone:
 its own `UPDATE` sets only `name`, and the trigger supplies `updated_at`. `add_shelf_item` and `remove_shelf_item` each
 issue an explicit `UPDATE shelves SET updated_at = now() WHERE id = $1` purely to fire the trigger, since those two
-handlers would otherwise never touch the `shelves` row at all.
+handlers would otherwise never touch the `shelves` row at all and `updated_at` would not move with membership.
 
 `shelf_items` row existence changes only through `add_shelf_item`'s
 `INSERT … ON CONFLICT (shelf_id, manifestation_id) DO NOTHING` (so a duplicate add is a no-op for membership) and
@@ -174,11 +169,10 @@ books-list endpoint (`GET /api/v1/books`, `backend/src/routes/library/mod.rs`): 
 operator-configurable through `REVERIE_OPDS_PAGE_SIZE` (default 50, see `backend/src/config/opds.rs`). Nothing in this
 subject declares a page size of its own.
 
-Every `ETag` this subject emits is the shelf's `updated_at`. The Design "Conditional requests and optimistic
-concurrency" owns the tag's construction. Item paging never changes which `updated_at` is reported:
-`get_shelf_with_items` reads the shelf identity once per request regardless of which items page is requested, so a
-caller walking multiple item pages sees one stable entity-tag across the walk unless a concurrent write lands mid-walk
-(see Failure and recovery for what a client does about that).
+Item paging never changes which `updated_at` is reported: `get_shelf_with_items` reads the shelf identity once per
+request regardless of which items page is requested, so a caller walking multiple item pages sees one stable value
+across the walk unless a concurrent write lands mid-walk, in which case `api/shelves.ts` keeps the first page's
+identity.
 
 ## Runtime behaviour
 
@@ -193,7 +187,7 @@ caller walking multiple item pages sees one stable entity-tag across the walk un
    `shelves_set_updated_at` trigger fires on this `UPDATE` and sets `updated_at` to the transaction's current time; the
    handler never sets that column itself.
 5. It re-reads the item count with a separate `SELECT COUNT(*)` in the same transaction, commits, and returns the
-   `Shelf` response with an `ETag` header carrying the trigger-set `updated_at`.
+   `Shelf` response carrying the trigger-set `updated_at`.
 
 **Adding an item to a child's shelf**, `POST /api/v1/shelves/{id}/items`, exercised by
 `add_shelf_item_404_when_child_cannot_see_manifestation`:
@@ -211,7 +205,7 @@ caller walking multiple item pages sees one stable entity-tag across the walk un
    `SELECT id FROM shelves WHERE id = $1 AND user_id = $2 FOR UPDATE`, insert the item
    (`ON CONFLICT (shelf_id, manifestation_id) DO NOTHING`), bump `updated_at` explicitly, and commit.
 5. A repeat call with the same manifestation id is a no-op for `shelf_items` (the `ON CONFLICT` clause), but step 4's
-   `updated_at` bump still runs unconditionally, so the shelf's `ETag` changes on a duplicate add even though its
+   `updated_at` bump still runs unconditionally, so the shelf's `updated_at` changes on a duplicate add even though its
    membership does not.
 
 **Reading a shelf's items**, `GET /api/v1/shelves/{id}`:

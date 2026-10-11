@@ -3225,14 +3225,6 @@
         "responses": {
           "201": {
             "description": "Shelf created",
-            "headers": {
-              "ETag": {
-                "schema": {
-                  "type": "string"
-                },
-                "description": "Entity-tag carrying the shelf's updated_at (RFC 3339, quoted per RFC 9110)"
-              }
-            },
             "content": {
               "application/json": {
                 "schema": {
@@ -3329,12 +3321,6 @@
           "200": {
             "description": "Shelf identity plus one page of ordered items",
             "headers": {
-              "ETag": {
-                "schema": {
-                  "type": "string"
-                },
-                "description": "Entity-tag carrying the shelf's updated_at (RFC 3339, quoted per RFC 9110)"
-              },
               "Link": {
                 "schema": {
                   "type": "string"
@@ -3533,14 +3519,6 @@
         "responses": {
           "200": {
             "description": "Renamed shelf",
-            "headers": {
-              "ETag": {
-                "schema": {
-                  "type": "string"
-                },
-                "description": "Entity-tag carrying the shelf's updated_at (RFC 3339, quoted per RFC 9110)"
-              }
-            },
             "content": {
               "application/json": {
                 "schema": {
@@ -3656,15 +3634,7 @@
         },
         "responses": {
           "204": {
-            "description": "Item added (no-op if already on the shelf); shelf ETag bumped",
-            "headers": {
-              "ETag": {
-                "schema": {
-                  "type": "string"
-                },
-                "description": "Entity-tag carrying the shelf's new updated_at (RFC 3339, quoted per RFC 9110)"
-              }
-            }
+            "description": "Item added (no-op if already on the shelf)"
           },
           "401": {
             "description": "Authentication required",
@@ -3743,15 +3713,7 @@
         ],
         "responses": {
           "204": {
-            "description": "Item removed; shelf ETag bumped",
-            "headers": {
-              "ETag": {
-                "schema": {
-                  "type": "string"
-                },
-                "description": "Entity-tag carrying the shelf's new updated_at (RFC 3339, quoted per RFC 9110)"
-              }
-            }
+            "description": "Item removed"
           },
           "401": {
             "description": "Authentication required",
@@ -9279,7 +9241,7 @@
           "updated_at": {
             "type": "string",
             "format": "date-time",
-            "description": "`shelves.updated_at`; the value the shelf endpoints render into the\n`ETag` response header."
+            "description": "`shelves.updated_at`; moves on every item add and remove."
           }
         }
       },
@@ -9326,7 +9288,7 @@
           "updated_at": {
             "type": "string",
             "format": "date-time",
-            "description": "`shelves.updated_at` — the value of the `ETag` header."
+            "description": "`shelves.updated_at`."
           }
         }
       },

@@ -15,20 +15,13 @@
 //! runs an RLS-scoped probe on the target manifestation to prevent
 //! shelf-existence probing via random UUIDs (relevant for children,
 //! whose manifestation visibility is shelf-gated).
-//!
-//! # ETag
-//!
-//! Every shelf read endpoint emits `ETag: "<updated_at RFC3339>"`.
-//! The items-mutation handlers explicitly issue
-//! `UPDATE shelves SET updated_at = now() WHERE id = $1` in the same
-//! transaction so add/remove also move the ETag.
 
 use axum::extract::{OriginalUri, State};
-use axum::http::header::{ETAG, LINK};
+use axum::http::header::LINK;
 use axum::http::{HeaderMap, HeaderValue, StatusCode};
 use axum::response::IntoResponse;
 use axum_extra::extract::{Query, QueryRejection};
-use chrono::{DateTime, SecondsFormat, Utc};
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use sqlx::{Postgres, QueryBuilder, Row};
 use utoipa_axum::router::OpenApiRouter;
@@ -59,17 +52,6 @@ pub fn router() -> OpenApiRouter<AppState> {
         .routes(routes!(rename_shelf, delete_shelf, get_shelf_with_items))
         .routes(routes!(add_shelf_item))
         .routes(routes!(remove_shelf_item))
-}
-
-/// Format the `updated_at` timestamp as an RFC 9110 entity-tag (the
-/// header value carries the RFC 3339 timestamp wrapped in double
-/// quotes per RFC 9110 §8.8.3).
-fn etag_header(updated_at: DateTime<Utc>) -> Result<HeaderValue, AppError> {
-    // The tag must be the same RFC 3339 spelling serde writes into the
-    // response body. `to_rfc3339_opts(AutoSi, true)` is exactly what chrono's
-    // `Serialize` impl emits; `to_rfc3339()` is not (it writes `+00:00`).
-    let formatted = updated_at.to_rfc3339_opts(SecondsFormat::AutoSi, true);
-    HeaderValue::from_str(&format!("\"{formatted}\"")).map_err(|e| AppError::Internal(e.into()))
 }
 
 /// Cursor pagination input for `GET /api/v1/shelves`.
@@ -229,8 +211,7 @@ struct CreateShelfRequest {
     request_body = CreateShelfRequest,
     security(("session_cookie" = ["write"]), ("device_token_bearer" = ["write"]), ("oidc_jwt_bearer" = ["write"]), ("opds_basic" = ["write"])),
     responses(
-        (status = 201, description = "Shelf created", body = Shelf,
-         headers(("ETag" = String, description = "Entity-tag carrying the shelf's updated_at (RFC 3339, quoted per RFC 9110)"))),
+        (status = 201, description = "Shelf created", body = Shelf),
         (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 403, description = "Caller is a child account", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 422, description = "Empty name", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
@@ -274,9 +255,7 @@ async fn create_shelf(
         item_count: 0,
     };
 
-    let mut headers = HeaderMap::new();
-    headers.insert(ETAG, etag_header(shelf.updated_at)?);
-    Ok((StatusCode::CREATED, headers, axum::Json(shelf)))
+    Ok((StatusCode::CREATED, axum::Json(shelf)))
 }
 
 /// Body for `PATCH /api/v1/shelves/{id}`.
@@ -308,8 +287,7 @@ struct RenameShelfRequest {
     request_body = RenameShelfRequest,
     security(("session_cookie" = ["write"]), ("device_token_bearer" = ["write"]), ("oidc_jwt_bearer" = ["write"]), ("opds_basic" = ["write"])),
     responses(
-        (status = 200, description = "Renamed shelf", body = Shelf,
-         headers(("ETag" = String, description = "Entity-tag carrying the shelf's updated_at (RFC 3339, quoted per RFC 9110)"))),
+        (status = 200, description = "Renamed shelf", body = Shelf),
         (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 403, description = "Caller is a child account", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 404, description = "Shelf missing or owned by another user (existence-not-leaked)", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
@@ -384,9 +362,7 @@ async fn rename_shelf(
         updated_at: row.updated_at,
         item_count,
     };
-    let mut headers = HeaderMap::new();
-    headers.insert(ETAG, etag_header(shelf.updated_at)?);
-    Ok((headers, axum::Json(shelf)))
+    Ok(axum::Json(shelf))
 }
 
 /// `DELETE /api/v1/shelves/{id}` — delete a non-system shelf.
@@ -473,9 +449,7 @@ struct ShelfDetailResponse {
     // This envelope re-declares the model's timestamps rather than
     // embedding `Shelf`.
     created_at: DateTime<Utc>,
-    /// `shelves.updated_at` — the value of the `ETag` header.
-    // `etag_header` renders this field with the same RFC 3339 spelling
-    // serde writes here.
+    /// `shelves.updated_at`.
     updated_at: DateTime<Utc>,
     /// One page of items ordered by `added_at ASC, manifestation_id ASC`.
     items: Vec<ShelfItem>,
@@ -504,7 +478,6 @@ struct ShelfDetailResponse {
     responses(
         (status = 200, description = "Shelf identity plus one page of ordered items", body = ShelfDetailResponse,
          headers(
-            ("ETag" = String, description = "Entity-tag carrying the shelf's updated_at (RFC 3339, quoted per RFC 9110)"),
             ("Link" = String, description = "RFC 8288 next-page link; emitted with rel=\"next\" when more items remain")
          )),
         (status = 400, description = "Malformed query parameter", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
@@ -604,7 +577,6 @@ async fn get_shelf_with_items(
         next_cursor,
     };
     let mut headers = HeaderMap::new();
-    headers.insert(ETAG, etag_header(body.updated_at)?);
     if let Some(ref nc) = body.next_cursor {
         let next_url = build_next_url(&uri, nc);
         match HeaderValue::from_str(&format!("<{next_url}>; rel=\"next\"")) {
@@ -627,7 +599,7 @@ struct AddItemRequest {
 }
 
 /// `POST /api/v1/shelves/{id}/items` — add a manifestation to the shelf.
-/// Bumps the shelf's `updated_at` (`ETag`).
+/// Bumps the shelf's `updated_at`.
 ///
 /// # Errors
 /// - [`AppError::Validation`] when the request body is missing,
@@ -647,8 +619,7 @@ struct AddItemRequest {
     request_body = AddItemRequest,
     security(("session_cookie" = ["write"]), ("device_token_bearer" = ["write"]), ("oidc_jwt_bearer" = ["write"]), ("opds_basic" = ["write"])),
     responses(
-        (status = 204, description = "Item added (no-op if already on the shelf); shelf ETag bumped",
-         headers(("ETag" = String, description = "Entity-tag carrying the shelf's new updated_at (RFC 3339, quoted per RFC 9110)"))),
+        (status = 204, description = "Item added (no-op if already on the shelf)"),
         (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 404, description = "Shelf missing / not owned, or manifestation not visible to the caller", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
     )
@@ -707,32 +678,26 @@ async fn add_shelf_item(
     .execute(&mut *tx)
     .await
     .map_err(|e| AppError::Internal(e.into()))?;
-    let updated_at: DateTime<Utc> = sqlx::query_scalar!(
-        r#"UPDATE shelves SET updated_at = now() WHERE id = $1
-           RETURNING updated_at AS "ts!""#,
-        id,
-    )
-    .fetch_one(&mut *tx)
-    .await
-    .map_err(|e| AppError::Internal(e.into()))?;
+    sqlx::query!("UPDATE shelves SET updated_at = now() WHERE id = $1", id)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| AppError::Internal(e.into()))?;
     tx.commit()
         .await
         .map_err(|e| AppError::Internal(e.into()))?;
 
-    let mut headers = HeaderMap::new();
-    headers.insert(ETAG, etag_header(updated_at)?);
-    Ok((StatusCode::NO_CONTENT, headers))
+    Ok(StatusCode::NO_CONTENT)
 }
 
 /// `DELETE /api/v1/shelves/{id}/items/{manifestation_id}` — remove a
-/// shelf item. Bumps the shelf's `updated_at` (`ETag`).
+/// shelf item. Bumps the shelf's `updated_at`.
 ///
 /// # Errors
 /// - [`AppError::NotFound`] when the shelf is missing / not owned by
 ///   the caller, OR when the item is not on the shelf (the second
-///   case prevents silent `ETag` drift from a no-op delete: bumping
-///   `updated_at` on zero `rows_affected` would move the `ETag`
-///   without a membership change).
+///   case prevents `updated_at` drifting on a no-op delete: bumping it
+///   on zero `rows_affected` would move it without a membership
+///   change).
 /// - [`AppError::Internal`] on database errors.
 #[utoipa::path(
     delete,
@@ -746,8 +711,7 @@ async fn add_shelf_item(
     ),
     security(("session_cookie" = ["write"]), ("device_token_bearer" = ["write"]), ("oidc_jwt_bearer" = ["write"]), ("opds_basic" = ["write"])),
     responses(
-        (status = 204, description = "Item removed; shelf ETag bumped",
-         headers(("ETag" = String, description = "Entity-tag carrying the shelf's new updated_at (RFC 3339, quoted per RFC 9110)"))),
+        (status = 204, description = "Item removed"),
         (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 404, description = "Shelf missing / not owned, or item not on the shelf", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
     )
@@ -785,18 +749,15 @@ async fn remove_shelf_item(
     if deleted.rows_affected() == 0 {
         return Err(AppError::NotFound);
     }
-    let updated_at: DateTime<Utc> = sqlx::query_scalar!(
-        r#"UPDATE shelves SET updated_at = now() WHERE id = $1
-           RETURNING updated_at AS "ts!""#,
-        shelf_id,
+    sqlx::query!(
+        "UPDATE shelves SET updated_at = now() WHERE id = $1",
+        shelf_id
     )
-    .fetch_one(&mut *tx)
+    .execute(&mut *tx)
     .await
     .map_err(|e| AppError::Internal(e.into()))?;
     tx.commit()
         .await
         .map_err(|e| AppError::Internal(e.into()))?;
-    let mut headers = HeaderMap::new();
-    headers.insert(ETAG, etag_header(updated_at)?);
-    Ok((StatusCode::NO_CONTENT, headers))
+    Ok(StatusCode::NO_CONTENT)
 }
