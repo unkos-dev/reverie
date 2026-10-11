@@ -174,9 +174,12 @@ required context whose workflow lacks that trigger deadlocks the queue, and its 
 falls back to the run id, since the PR number is empty on a queue run and a shared empty key with `cancel-in-progress`
 would make queue entries cancel each other.
 
+`sonar.yml` runs advisory static analysis on main pushes and same-repository pull requests targeting main. Fork pull
+requests are skipped because they cannot access the analysis credential. Coverage reporting is disabled, and Sonar is
+not a required merge check.
+
 The rest are non-PR lanes: the release publish, the scheduled audits and mutation runs, the OSSF scorecard, the
-main-branch Sonar scan, the pull-request labelling on `pull_request_target`, and release automation. None of them has a
-PR-time surface to compose.
+pull-request labelling on `pull_request_target`, and release automation. None of them has a PR-time surface to compose.
 
 ## Repository-specific values
 

@@ -622,13 +622,17 @@ CREATE TABLE public.ingestion_inputs (
     completed_at timestamp with time zone,
     removed_at timestamp with time zone,
     removal_cause text,
+    rejection_reasons text[] DEFAULT '{}'::text[] NOT NULL,
+    retries_exhausted_at timestamp with time zone,
     CONSTRAINT ingestion_inputs_check CHECK (((status = 'removed'::public.ingestion_input_status) = ((removed_at IS NOT NULL) AND (removal_cause IS NOT NULL)))),
     CONSTRAINT ingestion_inputs_check1 CHECK (((status = 'removed'::public.ingestion_input_status) OR ((removed_at IS NULL) AND (removal_cause IS NULL)))),
     CONSTRAINT ingestion_inputs_completed_at_check CHECK (((completed_at >= '0001-01-01 00:00:00+00'::timestamp with time zone) AND (completed_at < '10000-01-01 00:00:00+00'::timestamp with time zone))),
     CONSTRAINT ingestion_inputs_generation_check CHECK ((generation > 0)),
     CONSTRAINT ingestion_inputs_observed_at_check CHECK (((observed_at >= '0001-01-01 00:00:00+00'::timestamp with time zone) AND (observed_at < '10000-01-01 00:00:00+00'::timestamp with time zone))),
+    CONSTRAINT ingestion_inputs_rejection_reasons_check CHECK ((rejection_reasons <@ ARRAY['unsafe_contents'::text, 'damaged'::text, 'invalid_structure'::text, 'over_limits'::text, 'unspecified'::text])),
     CONSTRAINT ingestion_inputs_removal_cause_check CHECK ((removal_cause = ANY (ARRAY['automatic_cleanup'::text, 'admin_deletion'::text, 'external_disappearance'::text, 'unattributed_disappearance'::text]))),
     CONSTRAINT ingestion_inputs_removed_at_check CHECK (((removed_at >= '0001-01-01 00:00:00+00'::timestamp with time zone) AND (removed_at < '10000-01-01 00:00:00+00'::timestamp with time zone))),
+    CONSTRAINT ingestion_inputs_retries_exhausted_at_check CHECK (((retries_exhausted_at >= '0001-01-01 00:00:00+00'::timestamp with time zone) AND (retries_exhausted_at < '10000-01-01 00:00:00+00'::timestamp with time zone))),
     CONSTRAINT ingestion_inputs_retry_reset_at_check CHECK (((retry_reset_at >= '0001-01-01 00:00:00+00'::timestamp with time zone) AND (retry_reset_at < '10000-01-01 00:00:00+00'::timestamp with time zone))),
     CONSTRAINT ingestion_inputs_source_path_check CHECK ((octet_length(source_path) > 0))
 );
@@ -675,6 +679,38 @@ CREATE TABLE public.ingestion_jobs (
 
 
 ALTER TABLE public.ingestion_jobs OWNER TO reverie_migrator;
+
+--
+-- Name: ingestion_input_classes; Type: VIEW; Schema: public; Owner: reverie_migrator
+--
+
+CREATE VIEW public.ingestion_input_classes WITH (security_invoker='true') AS
+ SELECT i.id,
+    i.status,
+    latest.outcome,
+    c.reason_class
+   FROM ((public.ingestion_inputs i
+     LEFT JOIN LATERAL ( SELECT j.outcome
+           FROM public.ingestion_jobs j
+          WHERE ((j.input_id = i.id) AND (j.input_generation = i.generation) AND (j.outcome IS NOT NULL))
+          ORDER BY j.created_at DESC, j.id DESC
+         LIMIT 1) latest ON (true))
+     JOIN LATERAL ( SELECT
+                CASE i.status
+                    WHEN 'rejected'::public.ingestion_input_status THEN COALESCE(i.rejection_reasons[1], 'unspecified'::text)
+                    WHEN 'not_accepted'::public.ingestion_input_status THEN 'format_not_accepted'::text
+                    WHEN 'operational_failure'::public.ingestion_input_status THEN
+                    CASE
+                        WHEN (latest.outcome = 'needs_change'::public.ingestion_attempt_outcome) THEN 'needs_change'::text
+                        WHEN ((latest.outcome = 'transient_input'::public.ingestion_attempt_outcome) AND (i.retries_exhausted_at IS NOT NULL)) THEN 'retries_exhausted'::text
+                        ELSE NULL::text
+                    END
+                    ELSE NULL::text
+                END AS reason_class) c ON (true))
+  WHERE (c.reason_class IS NOT NULL);
+
+
+ALTER VIEW public.ingestion_input_classes OWNER TO reverie_migrator;
 
 --
 -- Name: instance_bootstrap; Type: TABLE; Schema: public; Owner: reverie_migrator
@@ -3643,6 +3679,15 @@ GRANT SELECT ON TABLE public.ingestion_inputs TO reverie_readonly;
 GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.ingestion_jobs TO reverie_app;
 GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.ingestion_jobs TO reverie_ingestion;
 GRANT SELECT ON TABLE public.ingestion_jobs TO reverie_readonly;
+
+
+--
+-- Name: TABLE ingestion_input_classes; Type: ACL; Schema: public; Owner: reverie_migrator
+--
+
+GRANT SELECT ON TABLE public.ingestion_input_classes TO reverie_app;
+GRANT SELECT ON TABLE public.ingestion_input_classes TO reverie_ingestion;
+GRANT SELECT ON TABLE public.ingestion_input_classes TO reverie_readonly;
 
 
 --
