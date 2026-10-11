@@ -1087,9 +1087,6 @@ mod tests {
         }
     }
 
-    /// A rate-limited attempt keeps the real attempt time in
-    /// `enrichment_attempted_at` and records the provider's deferral in
-    /// `enrichment_retry_not_before`.
     #[sqlx::test(migrations = "./migrations")]
     async fn rate_limited_failure_keeps_the_claim_time_and_defers_the_retry(pool: PgPool) {
         let pool = ingestion_pool_for(&pool).await;
@@ -1132,9 +1129,6 @@ mod tests {
         );
     }
 
-    /// A row whose backoff window has elapsed is still skipped while its
-    /// `enrichment_retry_not_before` is in the future, and claimed once it
-    /// passes.
     #[sqlx::test(migrations = "./migrations")]
     async fn claim_skips_a_row_until_its_retry_not_before_passes(pool: PgPool) {
         let pool = ingestion_pool_for(&pool).await;
@@ -1157,8 +1151,6 @@ mod tests {
         assert_eq!(claimed_id, m_id);
     }
 
-    /// A failure that carries no Retry-After clears an earlier deferral, and
-    /// a row that has used up its attempts is not left with one.
     #[sqlx::test(migrations = "./migrations")]
     async fn mark_failed_defers_only_while_retries_remain(pool: PgPool) {
         let pool = ingestion_pool_for(&pool).await;
