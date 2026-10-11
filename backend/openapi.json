@@ -5208,7 +5208,7 @@
           "auth"
         ],
         "summary": "Complete OIDC login",
-        "description": "Completes the OIDC authorization-code flow, establishes a session, and redirects to the app. No authentication is required to call it. Returns 401 if the anti-forgery state does not match or the ID token fails validation.",
+        "description": "Completes the OIDC authorization-code flow, establishes a session, and redirects to the app. No authentication is required to call it. Returns 401 if the anti-forgery state, PKCE verifier or nonce is missing or the state does not match, the account is disabled, or the email belongs to a different account. Returns 500 if the token exchange fails or the ID token is missing or fails validation.",
         "operationId": "callback",
         "parameters": [
           {
@@ -5245,7 +5245,17 @@
             }
           },
           "401": {
-            "description": "Anti-forgery state missing/mismatched, ID-token validation failed, account disabled, or email belongs to a different account",
+            "description": "Anti-forgery state, PKCE verifier or nonce missing, state mismatched, account disabled, or email belongs to a different account",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Token exchange failed, ID token missing or failed validation, or a database or session storage error; details are hidden",
             "content": {
               "application/problem+json": {
                 "schema": {
