@@ -486,6 +486,8 @@ describe("accepted formats", () => {
     const row = within(screen.getByRole("form", { name: "Acquisition settings" }));
     expect(row.getByText("Reverie imports EPUB files.")).toBeInTheDocument();
     expect(row.queryByRole("checkbox", { name: "EPUB" })).not.toBeInTheDocument();
+    expect(row.queryByText(/is the only format Reverie supports/)).not.toBeInTheDocument();
+    expect(document.getElementById("help-accepted_formats")).toBeNull();
     const field = document.querySelector('[data-field="accepted_formats"]');
     expect(field?.querySelector("input, button, a[href], [tabindex], [role=checkbox]")).toBeNull();
     expect(screen.queryByText(/can't be turned off/)).not.toBeInTheDocument();
@@ -514,6 +516,7 @@ describe("accepted formats", () => {
       const user = userEvent.setup();
       await loaded("acquisition");
       expect(screen.queryByText("Reverie imports EPUB files.")).not.toBeInTheDocument();
+      expect(document.getElementById("help-accepted_formats")).toBeNull();
       const epub = screen.getByRole("checkbox", { name: "EPUB" });
       const pdf = screen.getByRole("checkbox", { name: "PDF" });
       expect(epub).toBeChecked();

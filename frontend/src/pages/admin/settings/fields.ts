@@ -86,18 +86,23 @@ export function isNumberKey(key: SettingsKey): key is NumberKey {
   return NUMBER_KEYS.some((k) => k === key);
 }
 
-type FieldBase = { key: SettingsKey; area: AreaId; label: string; help: string };
+type FieldBase = { key: SettingsKey; area: AreaId; label: string; help?: string };
+type HelpedField = FieldBase & { help: string };
 
-export type SwitchField = FieldBase & { control: "switch"; key: BooleanKey; destructive: boolean };
+export type SwitchField = HelpedField & {
+  control: "switch";
+  key: BooleanKey;
+  destructive: boolean;
+};
 export type FormatsField = FieldBase & { control: "formats"; key: typeof FORMATS_KEY };
-export type IntField = FieldBase & {
+export type IntField = HelpedField & {
   control: "int";
   key: Exclude<NumberKey, "cover_max_bytes">;
   unit: string;
   min: number;
   max: number | null;
 };
-export type MibField = FieldBase & { control: "mib"; key: "cover_max_bytes" };
+export type MibField = HelpedField & { control: "mib"; key: "cover_max_bytes" };
 export type Field = SwitchField | FormatsField | IntField | MibField;
 
 const WHOLE_1_OR_MORE = "Enter a whole number of 1 or more.";
@@ -108,7 +113,6 @@ export const FIELDS: readonly Field[] = [
     area: "acquisition",
     control: "formats",
     label: "Accepted formats",
-    help: "Only these formats are imported. EPUB is the only format Reverie supports at present.",
   },
   {
     key: "cleanup_imported",

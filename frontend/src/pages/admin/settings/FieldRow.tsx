@@ -161,7 +161,7 @@ function FormatsControl({ field, base, editor }: Props): ReactElement {
   const lockId = `lock-${field.key}`;
   const lastEnabled = enabledFormatCount(editor.draft, base.values) === 1;
   return (
-    <div role="group" aria-labelledby={labelId(field.key)} aria-describedby={`help-${field.key}`}>
+    <div role="group" aria-labelledby={labelId(field.key)}>
       {SUPPORTED_FORMATS.map((format, index) => {
         const checked = shownFormat(editor.draft, base.values, format);
         const locked = checked && lastEnabled;
@@ -318,12 +318,14 @@ export function FieldRow({ field, base, editor }: Props): ReactElement {
           {was !== undefined ? <Tag tone="plain">Changed elsewhere</Tag> : null}
           {restart ? <Tag tone="dashed">Restart required</Tag> : null}
         </div>
-        <p
-          id={`help-${field.key}`}
-          className="text-fg-muted mt-0.5 max-w-[52ch] text-sm leading-normal"
-        >
-          {field.help}
-        </p>
+        {field.help === undefined ? null : (
+          <p
+            id={`help-${field.key}`}
+            className="text-fg-muted mt-0.5 max-w-[52ch] text-sm leading-normal"
+          >
+            {field.help}
+          </p>
+        )}
       </div>
       <div className="pt-0.5">
         <Control field={field} base={base} editor={editor} />
