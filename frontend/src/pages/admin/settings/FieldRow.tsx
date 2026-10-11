@@ -9,7 +9,7 @@ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
 
-import { shownBoolean, shownEpub, shownText } from "./editor";
+import { enabledFormatCount, shownBoolean, shownEpub, shownText } from "./editor";
 import {
   deletionCopy,
   describeValue,
@@ -153,19 +153,31 @@ function SwitchControl({ field, base, editor }: Props & { field: SwitchField }):
 }
 
 function FormatsControl({ field, base, editor }: Props): ReactElement {
+  const checked = shownEpub(editor.draft, base.values);
+  const lastEnabled = checked && enabledFormatCount(editor.draft, base.values) <= 1;
+  const lockId = `lock-${field.key}`;
   return (
     <div role="group" aria-labelledby={labelId(field.key)} aria-describedby={`help-${field.key}`}>
-      <Label className="inline-flex cursor-pointer items-center gap-2 text-sm font-normal">
+      <Label className="inline-flex cursor-pointer items-center gap-2 text-sm font-normal has-[[aria-disabled=true]]:cursor-not-allowed">
         <Checkbox
           id={controlId(field.key)}
-          checked={shownEpub(editor.draft, base.values)}
+          checked={checked}
           disabled={editor.phase !== "idle"}
+          aria-disabled={lastEnabled ? true : undefined}
+          aria-describedby={lastEnabled ? lockId : undefined}
           onCheckedChange={(value) => {
+            if (lastEnabled) return;
             editor.editEpub(value === true);
           }}
         />
         EPUB
       </Label>
+      {lastEnabled ? (
+        <p id={lockId} className="text-fg-muted mt-1.5 max-w-[52ch] text-[13px] leading-normal">
+          EPUB can't be turned off. At least one format must stay selected, or Reverie would have
+          nothing to import.
+        </p>
+      ) : null}
     </div>
   );
 }
@@ -221,7 +233,6 @@ function Extras({ field, base, editor }: Props): ReactElement {
   const row = conflictRow(editor, field.key);
   const dirty = editor.dirty.includes(field.key);
   const was = editor.elsewhere[field.key];
-  const formatsEmpty = field.control === "formats" && !shownEpub(editor.draft, base.values);
   const deletion = field.control === "switch" ? deletionCopy(field.key) : null;
   const deletionOn =
     field.control === "switch" &&
@@ -241,18 +252,6 @@ function Extras({ field, base, editor }: Props): ReactElement {
           {error}
         </div>
       )}
-      {formatsEmpty ? (
-        <div
-          role="status"
-          className="bg-accent-soft border-border-strong mt-2.5 grid gap-1.5 rounded-lg border px-3 py-2.5"
-        >
-          <h3 className="text-base font-semibold">Importing will stop</h3>
-          <p className="text-fg text-sm leading-normal">
-            No formats are selected. Reverie will not import new books until you select at least
-            one.
-          </p>
-        </div>
-      ) : null}
       {deletionOn ? (
         <div
           role="status"

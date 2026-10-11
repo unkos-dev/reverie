@@ -70,7 +70,12 @@ export function setText(draft: Draft, base: SettingsValues, key: NumberKey, text
   return { ...draft, numbers: { ...draft.numbers, [key]: text } };
 }
 
+export function enabledFormatCount(draft: Draft, base: SettingsValues): number {
+  return shownEpub(draft, base) ? 1 : 0;
+}
+
 export function setEpub(draft: Draft, base: SettingsValues, value: boolean): Draft {
+  if (!value && enabledFormatCount(draft, base) <= 1) return draft;
   return { ...draft, epub: value === baseEpub(base) ? null : value };
 }
 

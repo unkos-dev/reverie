@@ -469,14 +469,27 @@ describe("editing", () => {
     expect(screen.getByText("No unsaved changes.")).toBeInTheDocument();
   });
 
-  test("an empty accepted-formats list warns that importing will stop and still saves", async () => {
+  test("the last accepted format stays ticked and the screen says why", async () => {
     const user = userEvent.setup();
     await loaded("acquisition");
-    await user.click(screen.getByRole("checkbox", { name: "EPUB" }));
-    expect(screen.getByText("Importing will stop")).toBeInTheDocument();
-    await user.click(save());
-    await screen.findByText("Settings saved");
-    expect(server.puts[0]?.patch).toEqual({ accepted_formats: [] });
+    const epub = screen.getByRole("checkbox", { name: "EPUB" });
+    expect(epub).toBeChecked();
+    expect(epub).toHaveAttribute("aria-disabled", "true");
+    expect(epub).not.toHaveAttribute("disabled");
+    expect(epub).toHaveAccessibleDescription(
+      /EPUB can't be turned off\. At least one format must stay selected, or Reverie would have nothing to import\./,
+    );
+    await user.click(epub);
+    expect(epub).toBeChecked();
+    act(() => {
+      epub.focus();
+    });
+    await user.keyboard(" ");
+    expect(epub).toBeChecked();
+    expect(epub).toHaveFocus();
+    expect(screen.getByText("No unsaved changes.")).toBeInTheDocument();
+    expect(save()).toHaveAttribute("aria-disabled", "true");
+    expect(server.puts).toEqual([]);
   });
 });
 

@@ -4,6 +4,7 @@ import type { SettingsValues } from "@/api/settings";
 
 import {
   EMPTY_DRAFT,
+  type Draft,
   buildPatch,
   changedKeys,
   classify,
@@ -11,6 +12,7 @@ import {
   dirtyKeys,
   dropKeys,
   elsewhereSummary,
+  enabledFormatCount,
   fieldForServerDetail,
   patchKeys,
   setBoolean,
@@ -21,6 +23,8 @@ import {
   shownText,
   withoutKeys,
 } from "./editor";
+
+const EPUB_OFF: Draft = { ...EMPTY_DRAFT, epub: false };
 
 const BASE: SettingsValues = {
   accepted_formats: ["epub"],
@@ -64,7 +68,7 @@ describe("draft edits", () => {
 
   test("booleans and the EPUB checkbox track dirtiness against the base", () => {
     let draft = setBoolean(EMPTY_DRAFT, BASE, "cleanup_duplicates", true);
-    draft = setEpub(draft, BASE, false);
+    draft = { ...draft, epub: false };
     expect(dirtyKeys("acquisition", draft, BASE)).toEqual([
       "accepted_formats",
       "cleanup_duplicates",
@@ -74,6 +78,18 @@ describe("draft edits", () => {
     draft = setBoolean(draft, BASE, "cleanup_duplicates", false);
     draft = setEpub(draft, BASE, true);
     expect(dirtyKeys("acquisition", draft, BASE)).toEqual([]);
+  });
+
+  test("the last accepted format cannot be removed", () => {
+    expect(enabledFormatCount(EMPTY_DRAFT, BASE)).toBe(1);
+    expect(setEpub(EMPTY_DRAFT, BASE, false)).toBe(EMPTY_DRAFT);
+    expect(shownEpub(setEpub(EMPTY_DRAFT, BASE, false), BASE)).toBe(true);
+  });
+
+  test("a format can be added to a saved list that has none", () => {
+    const none: SettingsValues = { ...BASE, accepted_formats: [] };
+    expect(enabledFormatCount(EMPTY_DRAFT, none)).toBe(0);
+    expect(shownEpub(setEpub(EMPTY_DRAFT, none, true), none)).toBe(true);
   });
 
   test("dirtiness is scoped to the open area", () => {
@@ -119,8 +135,7 @@ describe("buildPatch", () => {
   });
 
   test("an unticked EPUB sends an empty format list", () => {
-    const draft = setEpub(EMPTY_DRAFT, BASE, false);
-    expect(buildPatch("acquisition", draft, BASE)).toEqual({
+    expect(buildPatch("acquisition", EPUB_OFF, BASE)).toEqual({
       ok: true,
       patch: { accepted_formats: [] },
     });
@@ -175,16 +190,15 @@ describe("classify", () => {
 
 describe("describeDraftValue", () => {
   test("quotes each control kind as the draft holds it", () => {
-    const draft = setEpub(
-      setBoolean(
+    const draft: Draft = {
+      ...setBoolean(
         setText(EMPTY_DRAFT, BASE, "enrichment_concurrency", "9"),
         BASE,
         "cleanup_imported",
         false,
       ),
-      BASE,
-      false,
-    );
+      epub: false,
+    };
     expect(describeDraftValue("enrichment_concurrency", draft, BASE)).toBe("9 lookups");
     expect(describeDraftValue("cleanup_imported", draft, BASE)).toBe("Off");
     expect(describeDraftValue("accepted_formats", draft, BASE)).toBe("None");
