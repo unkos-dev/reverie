@@ -5,14 +5,21 @@
   "type": "object",
   "properties": {
     "accepted_formats": {
-      "description": "Accepted ingestion formats (`REVERIE_ACCEPTED_FORMATS`, comma-separated;\ndefault `epub`). Seeds settings once; saved values win. An empty list suspends acquisition.",
+      "description": "Accepted ingestion formats (`REVERIE_ACCEPTED_FORMATS`, comma-separated;\ndefault `epub`). Seeds settings once; saved values win. At least one format is required.",
       "type": "array",
       "default": [
         "epub"
       ],
       "items": {
-        "$ref": "#/$defs/ManifestationFormat"
-      }
+        "oneOf": [
+          {
+            "description": "EPUB 2 / 3 reflowable e-book.",
+            "type": "string",
+            "const": "epub"
+          }
+        ]
+      },
+      "minItems": 1
     },
     "auto_migrate": {
       "description": "Run pending migrations in-process at startup\n(`REVERIE_AUTO_MIGRATE`, default `false`). The shipped default is\nout-of-band migration via `reverie migrate`; when this is `true` the\nlong-lived server process carries the migration credential for its\nwhole lifetime, so it is an opt-in escape hatch only. Requires\n[`Self::migration_database_url`] to be set.",
@@ -342,41 +349,6 @@
           "minimum": 0
         }
       }
-    },
-    "ManifestationFormat": {
-      "description": "Canonical file format of a manifestation.\n\nClosed set shared by the Postgres `manifestation_format` `ENUM`, the\n`REVERIE_ACCEPTED_FORMATS` env-var parser, and download-path content\nnegotiation. Extending the set requires both a Rust variant and a\nmatching `ALTER TYPE … ADD VALUE` migration.",
-      "oneOf": [
-        {
-          "description": "EPUB 2 / 3 reflowable e-book.",
-          "type": "string",
-          "const": "epub"
-        },
-        {
-          "description": "Portable Document Format.",
-          "type": "string",
-          "const": "pdf"
-        },
-        {
-          "description": "Mobipocket / older Kindle format.",
-          "type": "string",
-          "const": "mobi"
-        },
-        {
-          "description": "Amazon Kindle Format 8 (`.azw3`).",
-          "type": "string",
-          "const": "azw3"
-        },
-        {
-          "description": "Comic Book ZIP archive.",
-          "type": "string",
-          "const": "cbz"
-        },
-        {
-          "description": "Comic Book RAR archive.",
-          "type": "string",
-          "const": "cbr"
-        }
-      ]
     },
     "OpdsConfig": {
       "description": "OPDS catalog configuration. When `enabled`, `/opds/*` is mounted behind a\nBasic-only extractor and `public_url` must be set: feeds emit absolute URLs\nrooted at `public_url`.\n\nNote: the dual-mounted cover handlers at `/api/v1/books/:id/cover{,/thumb}` are\nmounted independently of `enabled` because the web UI needs them\nregardless of OPDS availability.",

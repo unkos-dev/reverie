@@ -81,14 +81,15 @@ class and reason. An acknowledged evidence transaction precedes visibility. Regi
 transaction as the imported outcome. A partial keyset index supports 100-row recovery pages; unresolved inputs are
 excluded from new attempts.
 
-The accepted-format set permits only EPUB and defaults to EPUB; an empty set accepts no format. Imported cleanup
-defaults to enabled and duplicate cleanup to disabled. Other extensions, including sidecars, are independent
-not-accepted inputs. Rejection and non-acceptance have no deletion option. Changes to accepted formats are observed from
-the existing live settings cache. Before serving or worker startup, the settings service conditionally seeds these three
-fields from validated configuration. The internal `ingestion_seeded` marker prevents restart overwrite; supplying any
-ingestion setting marks the row as saved, including empty acceptance or default values. Other settings saves leave an
-unseeded row eligible at any revision. The marker defaults to false regardless of existing revision. The seed advances
-revision and returns the winning row from one transaction; failure stops startup.
+The accepted-format set permits only EPUB, defaults to EPUB and is never empty: a database constraint, the settings
+validation (422) and configuration parsing each refuse an empty set. Imported cleanup defaults to enabled and duplicate
+cleanup to disabled. Other extensions, including sidecars, are independent not-accepted inputs. Rejection and
+non-acceptance have no deletion option. Changes to accepted formats are observed from the existing live settings cache.
+Before serving or worker startup, the settings service conditionally seeds these three fields from validated
+configuration. The internal `ingestion_seeded` marker prevents restart overwrite; supplying any ingestion setting marks
+the row as saved, including default values. Other settings saves leave an unseeded row eligible at any revision. The
+marker defaults to false regardless of existing revision. The seed advances revision and returns the winning row from
+one transaction; failure stops startup.
 
 ## Runtime behaviour
 

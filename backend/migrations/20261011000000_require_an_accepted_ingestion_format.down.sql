@@ -1,0 +1,1 @@
+ALTER TABLE public.settings DROP CONSTRAINT settings_accepted_formats_nonempty;

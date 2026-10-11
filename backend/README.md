@@ -176,11 +176,11 @@ counts describe discovery; they do not identify a separate import batch or promi
 Startup and admin scans discover the full tree. Watcher events recheck affected names and directory trees, and
 finalisation refreshes only its source. Unchanged observations do not rewrite database rows or restart readiness.
 
-EPUB is the only accepted format and the default. An empty accepted-format set accepts nothing. Hidden entries and
-`Thumbs.db` are ignored; other files, including sidecars, remain independent inputs. Rejection preserves the original,
-records its reason and creates neither a manifestation nor a quarantine copy. Unchanged rejected inputs remain
-suppressed across restart. A changed fingerprint creates a new generation. Content duplicates link the existing work; a
-destination-path collision selects a suffix and does not establish duplication.
+EPUB is the only accepted format and the default. The accepted-format set is never empty. Hidden entries and `Thumbs.db`
+are ignored; other files, including sidecars, remain independent inputs. Rejection preserves the original, records its
+reason and creates neither a manifestation nor a quarantine copy. Unchanged rejected inputs remain suppressed across
+restart. A changed fingerprint creates a new generation. Content duplicates link the existing work; a destination-path
+collision selects a suffix and does not establish duplication.
 
 `GET /api/v1/ingestion/inputs` (admin only) lists the inputs that need attention, one page at a time, each under one
 reason class: `unsafe_contents`, `damaged`, `invalid_structure`, `over_limits` or `unspecified` for a rejected file (the
