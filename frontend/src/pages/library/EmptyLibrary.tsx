@@ -30,7 +30,7 @@ const STEPS = [
   },
 ] as const;
 
-const COUNT_FORMAT = new Intl.NumberFormat("en-AU");
+const COUNT_FORMAT = new Intl.NumberFormat(undefined);
 
 function plural(n: number, singular: string): string {
   return `${COUNT_FORMAT.format(n)} ${n === 1 ? singular : `${singular}s`}`;
