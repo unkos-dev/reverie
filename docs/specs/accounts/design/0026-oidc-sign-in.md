@@ -5,6 +5,7 @@ id: "REV-DESIGN-0026"
 title: "OIDC sign-in"
 satisfies:
   - "REV-REQ-0037"
+  - "REV-REQ-0067"
 governed-by:
   - "REV-ADR-0029"
 ---

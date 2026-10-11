@@ -782,7 +782,8 @@
       "kind": "design",
       "path": "docs/specs/accounts/design/0026-oidc-sign-in.md",
       "satisfies": [
-        "REV-REQ-0037"
+        "REV-REQ-0037",
+        "REV-REQ-0067"
       ],
       "title": "OIDC sign-in"
     },
@@ -1328,6 +1329,15 @@
       "kind": "req",
       "path": "docs/specs/operations/requirements/0066-required-storage-directories-are-available-before-serving.md",
       "title": "Required storage directories are available before serving"
+    },
+    {
+      "governed-by": [
+        "REV-ADR-0029"
+      ],
+      "id": "REV-REQ-0067",
+      "kind": "req",
+      "path": "docs/specs/accounts/requirements/0067-an-oidc-sign-in-never-links-to-or-overwrites-an-existing-account-by-email.md",
+      "title": "An OIDC sign-in never links to or overwrites an existing account by email"
     }
   ]
 }

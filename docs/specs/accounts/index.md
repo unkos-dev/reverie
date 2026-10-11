@@ -18,6 +18,7 @@
 - [REV-REQ-0040](requirements/0040-a-failed-sign-in-does-not-reveal-whether-the-account-exists.md): A failed sign-in does not reveal whether the account exists
 - [REV-REQ-0041](requirements/0041-a-password-over-the-configured-maximum-is-refused-without-a-brea.md): A password over the configured maximum is refused without a breach-check request
 - [REV-REQ-0042](requirements/0042-a-self-registered-account-is-an-adult-account.md): A self-registered account is an adult account
+- [REV-REQ-0067](requirements/0067-an-oidc-sign-in-never-links-to-or-overwrites-an-existing-account-by-email.md): An OIDC sign-in never links to or overwrites an existing account by email
 
 ## Designs
 
