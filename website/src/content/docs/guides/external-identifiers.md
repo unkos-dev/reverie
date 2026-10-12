@@ -79,6 +79,10 @@ PUT /api/v1/settings
 { "provider_visibility": { "googlebooks": false, "asin": false } }
 ```
 
+The request must carry an `If-Match` header holding the `ETag` from a prior `GET /api/v1/settings`. If another admin has
+saved in the meantime, the server answers `412 Precondition Failed` and changes nothing; fetch the settings again and
+retry.
+
 Hiding a provider hides both its identifiers and its rating wherever the two share a key. Amazon is the exception by
 construction: its identifiers use the `asin` key and its rating uses `amazon`, so the two surfaces are toggled
 independently. Visibility is display-only; a hidden provider is still stored and still used by enrichment. Changes apply

@@ -23,6 +23,39 @@ beforeEach(() => {
   __seedCsrfTokenForTesting("test-csrf-token-0000000000000000000000000");
 });
 
+// Formatting reads the viewer's locale and time zone. Pin them so assertions
+// on formatted dates and numbers do not depend on the machine running the suite.
+const VIEWER_LOCALE = "en-AU";
+const VIEWER_TIME_ZONE = "UTC";
+
+class ViewerDateTimeFormat extends Intl.DateTimeFormat {
+  constructor(locales?: Intl.LocalesArgument, options?: Intl.DateTimeFormatOptions) {
+    super(locales ?? VIEWER_LOCALE, { timeZone: VIEWER_TIME_ZONE, ...options });
+  }
+}
+class ViewerNumberFormat extends Intl.NumberFormat {
+  constructor(locales?: Intl.LocalesArgument, options?: Intl.NumberFormatOptions) {
+    super(locales ?? VIEWER_LOCALE, options);
+  }
+}
+class ViewerRelativeTimeFormat extends Intl.RelativeTimeFormat {
+  constructor(locales?: Intl.LocalesArgument, options?: Intl.RelativeTimeFormatOptions) {
+    super(locales ?? VIEWER_LOCALE, options);
+  }
+}
+globalThis.Intl = Object.create(Intl, {
+  DateTimeFormat: { value: ViewerDateTimeFormat },
+  NumberFormat: { value: ViewerNumberFormat },
+  RelativeTimeFormat: { value: ViewerRelativeTimeFormat },
+}) as typeof Intl;
+Number.prototype.toLocaleString = function toLocaleString(
+  this: number,
+  locales?: Intl.LocalesArgument,
+  options?: Intl.NumberFormatOptions,
+): string {
+  return new Intl.NumberFormat(locales, options).format(this);
+};
+
 // jsdom has no ResizeObserver; cmdk (via Radix Dialog) requires it.
 // No-op stub is sufficient — tests don't observe resizes themselves.
 if (typeof globalThis.ResizeObserver === "undefined") {

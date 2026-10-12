@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE manifestations SET enrichment_attempted_at = now() - INTERVAL '1 minute', enrichment_retry_not_before = now() + INTERVAL '1 hour' WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "efb31171992e00608d4d42d63e32e0a1fc2565da7e08a9d4fdeb83358ac49238"
+}

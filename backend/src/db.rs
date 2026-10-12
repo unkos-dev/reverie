@@ -1325,6 +1325,39 @@ mod tests {
         }
     }
 
+    #[sqlx::test(migrations = "./migrations")]
+    async fn readonly_role_is_refused_credential_tables(pool: PgPool) {
+        let readonly = crate::test_support::db::readonly_pool_for(&pool).await;
+
+        let tokens = sqlx::query_scalar!("SELECT id FROM device_tokens")
+            .fetch_all(&readonly)
+            .await
+            .unwrap_err();
+        assert_eq!(storage_sqlstate(&tokens), "42501", "{tokens:?}");
+
+        let credentials = sqlx::query_scalar!("SELECT user_id FROM local_credentials")
+            .fetch_all(&readonly)
+            .await
+            .unwrap_err();
+        assert_eq!(storage_sqlstate(&credentials), "42501", "{credentials:?}");
+
+        let token_hashes = sqlx::query_scalar!("SELECT token_hash FROM device_tokens")
+            .fetch_all(&readonly)
+            .await
+            .unwrap_err();
+        assert_eq!(storage_sqlstate(&token_hashes), "42501", "{token_hashes:?}");
+
+        let password_hashes = sqlx::query_scalar!("SELECT password_hash FROM local_credentials")
+            .fetch_all(&readonly)
+            .await
+            .unwrap_err();
+        assert_eq!(
+            storage_sqlstate(&password_hashes),
+            "42501",
+            "{password_hashes:?}"
+        );
+    }
+
     #[sqlx::test(migrations = false)]
     async fn library_storage_schema_fresh_up_down(pool: PgPool) {
         run_migrations_inner(&pool).await.unwrap();

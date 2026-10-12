@@ -38,7 +38,7 @@ export function BatchBar({
   hasMorePages,
   onClearSelection,
   onCompleted,
-}: BatchBarProps): ReactElement | null {
+}: Readonly<BatchBarProps>): ReactElement | null {
   const queryClient = useQueryClient();
   const [running, setRunning] = useState(false);
   const {

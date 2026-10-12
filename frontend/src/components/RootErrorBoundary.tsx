@@ -69,7 +69,7 @@ interface ErrorSurfaceProps {
   detail: string;
 }
 
-function ErrorSurface({ title, detail }: ErrorSurfaceProps): ReactElement {
+function ErrorSurface({ title, detail }: Readonly<ErrorSurfaceProps>): ReactElement {
   return (
     <div className="bg-canvas text-fg flex min-h-screen items-center justify-center px-6 py-16">
       <div className="border-border bg-surface-1 max-w-lg rounded-md border p-8 text-center">

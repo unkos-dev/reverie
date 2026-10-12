@@ -395,7 +395,7 @@ const BASE_COLUMNS: readonly GridColumn<BookListItem>[] = [
  * too, mirroring the grid card's spine fallback. Hidden in compact
  * density, where the row is too short to carry it.
  */
-function TitleCellMark({ row }: { row: BookListItem }): ReactElement {
+function TitleCellMark({ row }: Readonly<{ row: BookListItem }>): ReactElement {
   const [coverFailed, setCoverFailed] = useState(false);
   if (row.cover_url !== "" && !coverFailed) {
     return (
@@ -571,7 +571,7 @@ export function LibraryTableView({
   selectedIds,
   onSelectionChange,
   onRowActivate,
-}: Props): ReactElement {
+}: Readonly<Props>): ReactElement {
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   useShortcutsHotkey(setShortcutsOpen);
   const isMobile = useMediaQuery(TABLE_MOBILE_MEDIA_QUERY);
@@ -675,7 +675,7 @@ function PagingFooter({
   isFetchingNextPage,
   isFetchNextPageError,
   onLoadMore,
-}: PagingFooterProps): ReactElement | null {
+}: Readonly<PagingFooterProps>): ReactElement | null {
   if (isFetchingNextPage) {
     return (
       <output className="flex items-center gap-2">

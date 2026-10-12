@@ -172,13 +172,13 @@ variant.
 ### Query assembly (`library/mod.rs`)
 
 The `list` handler runs its checks in a fixed order before it ever opens a transaction: `Query<ListParams>` decode,
-`filters::validate`, `SortSpec::parse` (with parse errors explicitly re-wrapped as `AppError::MalformedQuery`, not left
-as `AppError::Validation`), the filter fingerprint, then `SortCursor::parse_for` against that spec and fingerprint. Only
-once all of that has succeeded does it call `db::acquire_with_rls` and build the query: a fixed `SELECT` naming every
-column the response needs plus a `LEFT JOIN LATERAL` that picks at most one series per work (lowest position,
-`NULLS LAST`, then series id, so a work in several series always reports the same one across pages),
-`filters::push_filter_predicates`, the general keyset predicate, the `ORDER BY`, and `LIMIT page_size + 1` — one extra
-row fetched so `split_page` can tell whether a further page exists without a second query.
+`filters::validate`, `SortSpec::parse` (a parse error maps to `AppError::Validation`, the `422` class of a filter
+bound), the filter fingerprint, then `SortCursor::parse_for` against that spec and fingerprint. Only once all of that
+has succeeded does it call `db::acquire_with_rls` and build the query: a fixed `SELECT` naming every column the response
+needs plus a `LEFT JOIN LATERAL` that picks at most one series per work (lowest position, `NULLS LAST`, then series id,
+so a work in several series always reports the same one across pages), `filters::push_filter_predicates`, the general
+keyset predicate, the `ORDER BY`, and `LIMIT page_size + 1` — one extra row fetched so `split_page` can tell whether a
+further page exists without a second query.
 
 `push_cursor_predicate` builds the keyset "advance past the boundary" clause for an arbitrary sort stack as one
 `OR`-chain of per-level branches: level `i`'s branch requires exact equality on every level before it
@@ -280,10 +280,10 @@ added for, but read identically here, so an operator who changes it changes both
   `AppError::MalformedQuery` (`400`), via the crate-wide `From<QueryRejection>` conversion.
 - **A `?sort=` value that names an unwhitelisted field, repeats a column, or exceeds three levels** decodes as a
   syntactically valid string (`sort` is a plain `Option<String>` at the extractor boundary) but fails inside
-  `SortSpec::parse`; `list` re-wraps every `SortSpecError` as `AppError::MalformedQuery`, the same `400` class as a
-  decode failure, rather than as `AppError::Validation`. This differs from `filters::validate`'s semantic-bound checks,
-  which use `422`, even though an unwhitelisted sort field and an over-cap filter list are both "the value named
-  something outside what the server accepts."
+  `SortSpec::parse`; `list` maps every `SortSpecError` to `AppError::Validation` (`422`), before any query is built.
+  This is the same class as `filters::validate`'s semantic-bound checks, because an unwhitelisted sort field and an
+  over-cap filter list are both "the value named something outside what the server accepts." Only extractor-level decode
+  failures answer `400`.
 - **A filter value that decodes but violates a semantic bound** — an over-cap multi-value list, over-long trimmed text,
   an out-of-range rating, a negative page bound, an inverted `pages`, `rating` or `created_at` range, or a
   `status_any`/`status_none` token that is neither a real status nor `unread` — is rejected by `filters::validate` as

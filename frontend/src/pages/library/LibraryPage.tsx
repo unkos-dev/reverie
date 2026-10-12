@@ -42,7 +42,6 @@ import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Skeleton } from "@/components/ui/skeleton";
-import { useAuthMe } from "@/hooks/useAuthMe";
 import { useCinematicMode } from "@/hooks/useCinematicMode";
 import { useLibraryFilters, useLibrarySearchParams } from "@/lib/hooks/use-library-filters";
 import { queryKeys } from "@/lib/query/keys";
@@ -58,6 +57,7 @@ import {
 
 import { BatchBar } from "./BatchBar";
 import { BookDetailDrawer } from "./BookDetailDrawer";
+import { EmptyLibrary } from "./EmptyLibrary";
 import { FilterChips } from "./FilterChips";
 import { LibraryToolbar } from "./LibraryToolbar";
 import { TableChunkBoundary } from "./TableChunkBoundary";
@@ -237,7 +237,7 @@ function LibraryContent(): ReactElement {
   function renderBooks(): ReactElement {
     if (items.length === 0) {
       if (hasActiveFilterState(filterState)) return <FilteredEmptyState onClear={clearAll} />;
-      return <EmptyState />;
+      return <EmptyLibrary />;
     }
     if (viewMode === "grid") return <BookGrid items={items} />;
     return (
@@ -475,7 +475,7 @@ interface BookCardProps {
   book: BookListItem;
 }
 
-function BookCard({ book }: BookCardProps): ReactElement {
+function BookCard({ book }: Readonly<BookCardProps>): ReactElement {
   // Spine fallback active when there is no art to fall back FROM, or
   // the art failed to load. The floating series badge renders only
   // over real cover art — over a typographic spine it collides with
@@ -530,26 +530,6 @@ function BookCard({ book }: BookCardProps): ReactElement {
   );
 }
 
-/**
- * True-empty state: the library genuinely holds no books. An admin can
- * reach ingestion in one hop, so offer the link; non-admin readers (adult
- * and child alike) see the holding copy only and get no dead-end action.
- */
-function EmptyState(): ReactElement {
-  const { data: me } = useAuthMe();
-  return (
-    <div className="border-border text-fg-muted flex min-h-[40vh] flex-col items-center justify-center rounded-md border border-dashed py-16 text-center">
-      <p className="font-display text-fg mb-2 text-xl font-semibold">No books yet</p>
-      <p className="text-sm">Once ingestion completes, books appear here.</p>
-      {me?.role === "admin" ? (
-        <Button asChild variant="outline" size="sm" className="mt-6">
-          <Link to="/admin/dashboard">Go to ingestion</Link>
-        </Button>
-      ) : null}
-    </div>
-  );
-}
-
 interface FilteredEmptyStateProps {
   /** Drops every filter param, returning the browse to the full library. */
   onClear: () => void;
@@ -561,7 +541,7 @@ interface FilteredEmptyStateProps {
  * empty library) — same shell, accurate copy, plus a one-click escape so
  * an over-narrow filter is never a dead-end.
  */
-function FilteredEmptyState({ onClear }: FilteredEmptyStateProps): ReactElement {
+function FilteredEmptyState({ onClear }: Readonly<FilteredEmptyStateProps>): ReactElement {
   return (
     <div className="border-border text-fg-muted flex min-h-[40vh] flex-col items-center justify-center rounded-md border border-dashed py-16 text-center">
       <p className="font-display text-fg mb-2 text-xl font-semibold">

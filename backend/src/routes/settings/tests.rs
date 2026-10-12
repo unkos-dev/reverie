@@ -8,6 +8,48 @@ fn server(app_pool: &PgPool, ingestion_pool: &PgPool) -> axum_test::TestServer {
     test_support::db::server_with_real_pools(app_pool, ingestion_pool)
 }
 
+async fn current_etag(server: &axum_test::TestServer, basic: &str) -> String {
+    let r = server
+        .get("/api/v1/settings")
+        .add_header(axum::http::header::AUTHORIZATION, basic.to_owned())
+        .await;
+    assert_eq!(r.status_code(), StatusCode::OK);
+    r.header(axum::http::header::ETAG)
+        .to_str()
+        .expect("ETag is ASCII")
+        .to_owned()
+}
+
+async fn put_settings(
+    server: &axum_test::TestServer,
+    basic: &str,
+    body: &serde_json::Value,
+) -> axum_test::TestResponse {
+    put_settings_with_etag(server, basic, &current_etag(server, basic).await, body).await
+}
+
+async fn put_settings_with_etag(
+    server: &axum_test::TestServer,
+    basic: &str,
+    etag: &str,
+    body: &serde_json::Value,
+) -> axum_test::TestResponse {
+    server
+        .put("/api/v1/settings")
+        .add_header(axum::http::header::AUTHORIZATION, basic.to_owned())
+        .add_header(axum::http::header::IF_MATCH, etag.to_owned())
+        .json(body)
+        .await
+}
+
+async fn get_body(server: &axum_test::TestServer, basic: &str) -> serde_json::Value {
+    server
+        .get("/api/v1/settings")
+        .add_header(axum::http::header::AUTHORIZATION, basic.to_owned())
+        .await
+        .json()
+}
+
 #[tokio::test]
 async fn get_settings_unauthenticated_returns_401() {
     let server = test_support::test_server();
@@ -45,14 +87,82 @@ async fn get_settings_as_admin_returns_200(pool: PgPool) {
     assert!(body["restart_required_fields"].is_array());
     test_support::assert_rfc3339(&body, "updated_at");
     assert!(
-        body.get("last_successful_reload_at").is_some(),
-        "last_successful_reload_at must be present in response"
+        body.get("last_successful_reload_at").is_none(),
+        "reload health is not part of the settings representation"
     );
-    assert!(
-        body["last_successful_reload_at"].is_null()
-            || body["last_successful_reload_at"].is_string(),
-        "last_successful_reload_at must be null or RFC 3339 string"
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn reload_status_as_admin_reports_the_last_successful_reload(pool: PgPool) {
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let (_admin_id, admin_basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+    let server = server(&app_pool, &ingestion_pool);
+
+    let r = server
+        .get("/api/v1/settings/reload-status")
+        .add_header(axum::http::header::AUTHORIZATION, admin_basic)
+        .await;
+    assert_eq!(r.status_code(), StatusCode::OK);
+    assert!(r.maybe_header(axum::http::header::ETAG).is_none());
+    let body: serde_json::Value = r.json();
+    assert!(body["last_successful_reload_at"].is_null());
+    assert_eq!(body.as_object().map(serde_json::Map::len), Some(1));
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn reload_status_reports_a_recorded_reload_as_rfc3339(pool: PgPool) {
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let (_admin_id, admin_basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+    let recorded = chrono::Utc::now();
+    let server = test_support::db::server_with_last_reload(&app_pool, &ingestion_pool, recorded);
+
+    let r = server
+        .get("/api/v1/settings/reload-status")
+        .add_header(axum::http::header::AUTHORIZATION, admin_basic)
+        .await;
+    assert_eq!(r.status_code(), StatusCode::OK);
+    let body: serde_json::Value = r.json();
+    let reported = test_support::assert_rfc3339(&body, "last_successful_reload_at");
+    assert_eq!(reported, recorded);
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn a_background_reload_does_not_change_the_settings_body_or_etag(pool: PgPool) {
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let (_admin_id, admin_basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+    let before = server(&app_pool, &ingestion_pool);
+    let after =
+        test_support::db::server_with_last_reload(&app_pool, &ingestion_pool, chrono::Utc::now());
+
+    assert_eq!(
+        current_etag(&before, &admin_basic).await,
+        current_etag(&after, &admin_basic).await
     );
+    assert_eq!(
+        get_body(&before, &admin_basic).await,
+        get_body(&after, &admin_basic).await
+    );
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn reload_status_requires_authentication_and_the_admin_role(pool: PgPool) {
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let (_adult_id, adult_basic) =
+        test_support::db::create_adult_and_basic_auth(&app_pool, "reload-adult").await;
+    let server = server(&app_pool, &ingestion_pool);
+
+    let r = server.get("/api/v1/settings/reload-status").await;
+    assert_eq!(r.status_code(), StatusCode::UNAUTHORIZED);
+
+    let r = server
+        .get("/api/v1/settings/reload-status")
+        .add_header(axum::http::header::AUTHORIZATION, adult_basic)
+        .await;
+    test_support::assert_problem(&r, problems::FORBIDDEN, StatusCode::FORBIDDEN);
 }
 
 #[sqlx::test(migrations = "./migrations")]
@@ -84,11 +194,12 @@ async fn put_settings_updates_enrichment_concurrency(pool: PgPool) {
     let (_admin_id, admin_basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
     let server = server(&app_pool, &ingestion_pool);
 
-    let r = server
-        .put("/api/v1/settings")
-        .add_header(axum::http::header::AUTHORIZATION, admin_basic.clone())
-        .json(&serde_json::json!({"enrichment_concurrency": 7}))
-        .await;
+    let r = put_settings(
+        &server,
+        &admin_basic,
+        &serde_json::json!({"enrichment_concurrency": 7}),
+    )
+    .await;
     assert_eq!(r.status_code(), StatusCode::OK);
 
     let body: serde_json::Value = r.json();
@@ -126,11 +237,12 @@ async fn put_settings_invalid_concurrency_returns_422(pool: PgPool) {
     let (_admin_id, admin_basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
     let server = server(&app_pool, &ingestion_pool);
 
-    let r = server
-        .put("/api/v1/settings")
-        .add_header(axum::http::header::AUTHORIZATION, admin_basic)
-        .json(&serde_json::json!({"enrichment_concurrency": -1}))
-        .await;
+    let r = put_settings(
+        &server,
+        &admin_basic,
+        &serde_json::json!({"enrichment_concurrency": -1}),
+    )
+    .await;
     assert_eq!(r.status_code(), StatusCode::UNPROCESSABLE_ENTITY);
 
     let body: serde_json::Value = r.json();
@@ -148,11 +260,7 @@ async fn put_settings_empty_body_returns_422(pool: PgPool) {
     let (_admin_id, admin_basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
     let server = server(&app_pool, &ingestion_pool);
 
-    let r = server
-        .put("/api/v1/settings")
-        .add_header(axum::http::header::AUTHORIZATION, admin_basic)
-        .json(&serde_json::json!({}))
-        .await;
+    let r = put_settings(&server, &admin_basic, &serde_json::json!({})).await;
     assert_eq!(r.status_code(), StatusCode::UNPROCESSABLE_ENTITY);
 }
 
@@ -163,11 +271,12 @@ async fn put_settings_invalid_accepted_formats_returns_422(pool: PgPool) {
     let (_admin_id, admin_basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
     let server = server(&app_pool, &ingestion_pool);
 
-    let r = server
-        .put("/api/v1/settings")
-        .add_header(axum::http::header::AUTHORIZATION, admin_basic)
-        .json(&serde_json::json!({"accepted_formats": ["epub", "banana"]}))
-        .await;
+    let r = put_settings(
+        &server,
+        &admin_basic,
+        &serde_json::json!({"accepted_formats": ["epub", "banana"]}),
+    )
+    .await;
     test_support::assert_problem(
         &r,
         problems::INVALID_REQUEST_BODY,
@@ -182,11 +291,12 @@ async fn put_settings_valid_accepted_formats_persists(pool: PgPool) {
     let (_admin_id, admin_basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
     let server = server(&app_pool, &ingestion_pool);
 
-    let r = server
-        .put("/api/v1/settings")
-        .add_header(axum::http::header::AUTHORIZATION, admin_basic.clone())
-        .json(&serde_json::json!({"accepted_formats": ["epub"]}))
-        .await;
+    let r = put_settings(
+        &server,
+        &admin_basic,
+        &serde_json::json!({"accepted_formats": ["epub"]}),
+    )
+    .await;
     assert_eq!(r.status_code(), StatusCode::OK);
 
     let r2 = server
@@ -210,11 +320,12 @@ async fn put_settings_invalid_cleanup_imported_returns_422(pool: PgPool) {
     let (_admin_id, admin_basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
     let server = server(&app_pool, &ingestion_pool);
 
-    let r = server
-        .put("/api/v1/settings")
-        .add_header(axum::http::header::AUTHORIZATION, admin_basic)
-        .json(&serde_json::json!({"cleanup_imported": "yeet"}))
-        .await;
+    let r = put_settings(
+        &server,
+        &admin_basic,
+        &serde_json::json!({"cleanup_imported": "yeet"}),
+    )
+    .await;
     assert_eq!(r.status_code(), StatusCode::UNPROCESSABLE_ENTITY);
 }
 
@@ -225,15 +336,16 @@ async fn put_settings_multiple_fields_at_once(pool: PgPool) {
     let (_admin_id, admin_basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
     let server = server(&app_pool, &ingestion_pool);
 
-    let r = server
-        .put("/api/v1/settings")
-        .add_header(axum::http::header::AUTHORIZATION, admin_basic.clone())
-        .json(&serde_json::json!({
+    let r = put_settings(
+        &server,
+        &admin_basic,
+        &serde_json::json!({
             "enrichment_concurrency": 5,
             "writeback_enabled": false,
             "opds_page_size": 100
-        }))
-        .await;
+        }),
+    )
+    .await;
     assert_eq!(r.status_code(), StatusCode::OK);
 
     let body: serde_json::Value = r.json();
@@ -249,11 +361,12 @@ async fn put_settings_duplicate_accepted_formats_returns_422(pool: PgPool) {
     let (_admin_id, admin_basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
     let server = server(&app_pool, &ingestion_pool);
 
-    let r = server
-        .put("/api/v1/settings")
-        .add_header(axum::http::header::AUTHORIZATION, admin_basic)
-        .json(&serde_json::json!({"accepted_formats": ["epub", "epub"]}))
-        .await;
+    let r = put_settings(
+        &server,
+        &admin_basic,
+        &serde_json::json!({"accepted_formats": ["epub", "epub"]}),
+    )
+    .await;
     assert_eq!(r.status_code(), StatusCode::UNPROCESSABLE_ENTITY);
 
     let body: serde_json::Value = r.json();
@@ -271,11 +384,12 @@ async fn put_settings_empty_accepted_formats_persists(pool: PgPool) {
     let (_admin_id, admin_basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
     let server = server(&app_pool, &ingestion_pool);
 
-    let r = server
-        .put("/api/v1/settings")
-        .add_header(axum::http::header::AUTHORIZATION, admin_basic)
-        .json(&serde_json::json!({"accepted_formats": []}))
-        .await;
+    let r = put_settings(
+        &server,
+        &admin_basic,
+        &serde_json::json!({"accepted_formats": []}),
+    )
+    .await;
     assert_eq!(r.status_code(), StatusCode::OK);
 }
 
@@ -286,11 +400,12 @@ async fn put_settings_unknown_field_returns_422(pool: PgPool) {
     let (_admin_id, admin_basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
     let server = server(&app_pool, &ingestion_pool);
 
-    let r = server
-        .put("/api/v1/settings")
-        .add_header(axum::http::header::AUTHORIZATION, admin_basic)
-        .json(&serde_json::json!({"enrichment_concurency": 5}))
-        .await;
+    let r = put_settings(
+        &server,
+        &admin_basic,
+        &serde_json::json!({"enrichment_concurency": 5}),
+    )
+    .await;
     assert_eq!(r.status_code(), StatusCode::UNPROCESSABLE_ENTITY);
 }
 
@@ -301,11 +416,12 @@ async fn put_settings_provider_visibility_persists_and_round_trips(pool: PgPool)
     let (_admin_id, admin_basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
     let server = server(&app_pool, &ingestion_pool);
 
-    let r = server
-        .put("/api/v1/settings")
-        .add_header(axum::http::header::AUTHORIZATION, admin_basic.clone())
-        .json(&serde_json::json!({"provider_visibility": {"googlebooks": false, "asin": true}}))
-        .await;
+    let r = put_settings(
+        &server,
+        &admin_basic,
+        &serde_json::json!({"provider_visibility": {"googlebooks": false, "asin": true}}),
+    )
+    .await;
     assert_eq!(r.status_code(), StatusCode::OK, "body = {}", r.text());
     let body: serde_json::Value = r.json();
     assert_eq!(
@@ -325,6 +441,32 @@ async fn put_settings_provider_visibility_persists_and_round_trips(pool: PgPool)
 }
 
 #[sqlx::test(migrations = "./migrations")]
+async fn put_settings_provider_visibility_needs_only_the_transaction_connection(pool: PgPool) {
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let (_admin_id, admin_basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+    let single_connection = sqlx::postgres::PgPoolOptions::new()
+        .max_connections(1)
+        .acquire_timeout(std::time::Duration::from_secs(2))
+        .connect_with((*app_pool.connect_options()).clone())
+        .await
+        .expect("single-connection pool");
+    let server = server(&single_connection, &ingestion_pool);
+
+    let r = put_settings(
+        &server,
+        &admin_basic,
+        &serde_json::json!({"provider_visibility": {"googlebooks": false}}),
+    )
+    .await;
+    assert_eq!(r.status_code(), StatusCode::OK, "body = {}", r.text());
+    assert_eq!(
+        r.json::<serde_json::Value>()["provider_visibility"],
+        serde_json::json!({"googlebooks": false})
+    );
+}
+
+#[sqlx::test(migrations = "./migrations")]
 async fn put_settings_provider_visibility_unknown_key_returns_422(pool: PgPool) {
     let app_pool = test_support::db::app_pool_for(&pool).await;
     let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
@@ -333,11 +475,12 @@ async fn put_settings_provider_visibility_unknown_key_returns_422(pool: PgPool) 
 
     // `manual` exists in metadata_sources but is neither an identifier
     // scheme nor a rating source, so it is not a valid visibility key.
-    let r = server
-        .put("/api/v1/settings")
-        .add_header(axum::http::header::AUTHORIZATION, admin_basic)
-        .json(&serde_json::json!({"provider_visibility": {"manual": false}}))
-        .await;
+    let r = put_settings(
+        &server,
+        &admin_basic,
+        &serde_json::json!({"provider_visibility": {"manual": false}}),
+    )
+    .await;
     assert_eq!(r.status_code(), StatusCode::UNPROCESSABLE_ENTITY);
 
     let body: serde_json::Value = r.json();
@@ -355,11 +498,12 @@ async fn put_settings_provider_visibility_non_bool_value_returns_422(pool: PgPoo
     let (_admin_id, admin_basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
     let server = server(&app_pool, &ingestion_pool);
 
-    let r = server
-        .put("/api/v1/settings")
-        .add_header(axum::http::header::AUTHORIZATION, admin_basic)
-        .json(&serde_json::json!({"provider_visibility": {"googlebooks": "hidden"}}))
-        .await;
+    let r = put_settings(
+        &server,
+        &admin_basic,
+        &serde_json::json!({"provider_visibility": {"googlebooks": "hidden"}}),
+    )
+    .await;
     assert_eq!(r.status_code(), StatusCode::UNPROCESSABLE_ENTITY);
 }
 
@@ -373,11 +517,12 @@ async fn put_settings_provider_visibility_over_cap_returns_422(pool: PgPool) {
     let visibility: serde_json::Map<String, serde_json::Value> = (0..65)
         .map(|i| (format!("provider{i}"), serde_json::Value::Bool(true)))
         .collect();
-    let r = server
-        .put("/api/v1/settings")
-        .add_header(axum::http::header::AUTHORIZATION, admin_basic)
-        .json(&serde_json::json!({"provider_visibility": visibility}))
-        .await;
+    let r = put_settings(
+        &server,
+        &admin_basic,
+        &serde_json::json!({"provider_visibility": visibility}),
+    )
+    .await;
     assert_eq!(r.status_code(), StatusCode::UNPROCESSABLE_ENTITY);
     let body: serde_json::Value = r.json();
     let detail = body["detail"].as_str().unwrap_or_default();
@@ -401,11 +546,12 @@ async fn put_settings_provider_visibility_at_cap_passes_count_check(pool: PgPool
     let visibility: serde_json::Map<String, serde_json::Value> = (0..64)
         .map(|i| (format!("provider{i}"), serde_json::Value::Bool(true)))
         .collect();
-    let r = server
-        .put("/api/v1/settings")
-        .add_header(axum::http::header::AUTHORIZATION, admin_basic)
-        .json(&serde_json::json!({"provider_visibility": visibility}))
-        .await;
+    let r = put_settings(
+        &server,
+        &admin_basic,
+        &serde_json::json!({"provider_visibility": visibility}),
+    )
+    .await;
     assert_eq!(r.status_code(), StatusCode::UNPROCESSABLE_ENTITY);
     let body: serde_json::Value = r.json();
     let detail = body["detail"].as_str().unwrap_or_default();
@@ -422,21 +568,23 @@ async fn put_settings_revision_increases_per_update(pool: PgPool) {
     let (_admin_id, admin_basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
     let server = server(&app_pool, &ingestion_pool);
 
-    let r1 = server
-        .put("/api/v1/settings")
-        .add_header(axum::http::header::AUTHORIZATION, admin_basic.clone())
-        .json(&serde_json::json!({"opds_page_size": 60}))
-        .await;
+    let r1 = put_settings(
+        &server,
+        &admin_basic,
+        &serde_json::json!({"opds_page_size": 60}),
+    )
+    .await;
     assert_eq!(r1.status_code(), StatusCode::OK);
     let rev1 = r1.json::<serde_json::Value>()["revision"]
         .as_i64()
         .expect("revision in response");
 
-    let r2 = server
-        .put("/api/v1/settings")
-        .add_header(axum::http::header::AUTHORIZATION, admin_basic)
-        .json(&serde_json::json!({"opds_page_size": 70}))
-        .await;
+    let r2 = put_settings(
+        &server,
+        &admin_basic,
+        &serde_json::json!({"opds_page_size": 70}),
+    )
+    .await;
     assert_eq!(r2.status_code(), StatusCode::OK);
     let rev2 = r2.json::<serde_json::Value>()["revision"]
         .as_i64()
@@ -454,11 +602,12 @@ async fn put_settings_zero_cover_max_bytes_returns_422(pool: PgPool) {
     let (_admin_id, admin_basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
     let server = server(&app_pool, &ingestion_pool);
 
-    let r = server
-        .put("/api/v1/settings")
-        .add_header(axum::http::header::AUTHORIZATION, admin_basic)
-        .json(&serde_json::json!({"cover_max_bytes": 0}))
-        .await;
+    let r = put_settings(
+        &server,
+        &admin_basic,
+        &serde_json::json!({"cover_max_bytes": 0}),
+    )
+    .await;
     assert_eq!(r.status_code(), StatusCode::UNPROCESSABLE_ENTITY);
 
     let body: serde_json::Value = r.json();
@@ -466,5 +615,200 @@ async fn put_settings_zero_cover_max_bytes_returns_422(pool: PgPool) {
     assert!(
         detail.contains("positive"),
         "expected 'positive' in detail, got {detail}"
+    );
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn get_settings_returns_a_strong_etag_that_moves_with_each_write(pool: PgPool) {
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let (_admin_id, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+    let server = server(&app_pool, &ingestion_pool);
+
+    let first = current_etag(&server, &basic).await;
+    assert!(
+        first.starts_with('"') && first.ends_with('"') && !first.starts_with("W/"),
+        "expected a quoted strong entity-tag, got {first}"
+    );
+    assert_eq!(first, current_etag(&server, &basic).await);
+
+    let r = put_settings(&server, &basic, &serde_json::json!({"opds_page_size": 61})).await;
+    assert_eq!(r.status_code(), StatusCode::OK);
+    assert_ne!(first, current_etag(&server, &basic).await);
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn put_settings_with_matching_etag_persists_and_returns_the_new_etag(pool: PgPool) {
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let (_admin_id, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+    let server = server(&app_pool, &ingestion_pool);
+
+    let etag = current_etag(&server, &basic).await;
+    let r = put_settings_with_etag(
+        &server,
+        &basic,
+        &etag,
+        &serde_json::json!({"opds_page_size": 62}),
+    )
+    .await;
+    assert_eq!(r.status_code(), StatusCode::OK, "body = {}", r.text());
+    let put_etag = r
+        .header(axum::http::header::ETAG)
+        .to_str()
+        .unwrap()
+        .to_owned();
+    assert_ne!(put_etag, etag);
+    assert_eq!(put_etag, current_etag(&server, &basic).await);
+    assert_eq!(get_body(&server, &basic).await["opds_page_size"], 62);
+
+    let chained = put_settings_with_etag(
+        &server,
+        &basic,
+        &put_etag,
+        &serde_json::json!({"opds_page_size": 63}),
+    )
+    .await;
+    assert_eq!(chained.status_code(), StatusCode::OK);
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn put_settings_with_stale_etag_returns_412_and_leaves_settings_unchanged(pool: PgPool) {
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let (_admin_id, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+    let server = server(&app_pool, &ingestion_pool);
+
+    let stale = current_etag(&server, &basic).await;
+    let winner = put_settings(&server, &basic, &serde_json::json!({"opds_page_size": 70})).await;
+    assert_eq!(winner.status_code(), StatusCode::OK);
+    let before = get_body(&server, &basic).await;
+
+    let r = put_settings_with_etag(
+        &server,
+        &basic,
+        &stale,
+        &serde_json::json!({"opds_page_size": 80, "enrichment_concurrency": 9}),
+    )
+    .await;
+    test_support::assert_problem(
+        &r,
+        problems::IF_MATCH_MISMATCH,
+        StatusCode::PRECONDITION_FAILED,
+    );
+    assert_eq!(
+        r.header(axum::http::header::ETAG).to_str().unwrap(),
+        current_etag(&server, &basic).await,
+        "the 412 must carry the current ETag"
+    );
+
+    let after = get_body(&server, &basic).await;
+    assert_eq!(before, after, "a rejected write must not change the row");
+    assert_eq!(after["opds_page_size"], 70);
+    assert_eq!(after["revision"], before["revision"]);
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn put_settings_stale_etag_is_reported_before_body_validation(pool: PgPool) {
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let (_admin_id, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+    let server = server(&app_pool, &ingestion_pool);
+
+    let stale = current_etag(&server, &basic).await;
+    let bump = put_settings(&server, &basic, &serde_json::json!({"opds_page_size": 71})).await;
+    assert_eq!(bump.status_code(), StatusCode::OK);
+
+    let r = put_settings_with_etag(
+        &server,
+        &basic,
+        &stale,
+        &serde_json::json!({"enrichment_concurrency": -1}),
+    )
+    .await;
+    assert_eq!(r.status_code(), StatusCode::PRECONDITION_FAILED);
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn put_settings_without_if_match_returns_428_and_leaves_settings_unchanged(pool: PgPool) {
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let (_admin_id, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+    let server = server(&app_pool, &ingestion_pool);
+
+    let before = get_body(&server, &basic).await;
+    let r = server
+        .put("/api/v1/settings")
+        .add_header(axum::http::header::AUTHORIZATION, basic.clone())
+        .json(&serde_json::json!({"opds_page_size": 90}))
+        .await;
+    test_support::assert_problem(
+        &r,
+        problems::IF_MATCH_REQUIRED,
+        StatusCode::PRECONDITION_REQUIRED,
+    );
+    assert_eq!(before, get_body(&server, &basic).await);
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn put_settings_refuses_wildcard_weak_and_listed_if_match(pool: PgPool) {
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let (_admin_id, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+    let server = server(&app_pool, &ingestion_pool);
+
+    let current = current_etag(&server, &basic).await;
+    let before = get_body(&server, &basic).await;
+    for value in [
+        "*".to_owned(),
+        format!("W/{current}"),
+        format!("{current}, \"other\""),
+    ] {
+        let r = put_settings_with_etag(
+            &server,
+            &basic,
+            &value,
+            &serde_json::json!({"opds_page_size": 91}),
+        )
+        .await;
+        assert_eq!(
+            r.status_code(),
+            StatusCode::BAD_REQUEST,
+            "If-Match: {value}"
+        );
+    }
+    assert_eq!(before, get_body(&server, &basic).await);
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn put_settings_concurrent_writers_with_one_etag_yield_one_winner(pool: PgPool) {
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let (_admin_id, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+    let server = server(&app_pool, &ingestion_pool);
+
+    let etag = current_etag(&server, &basic).await;
+    let first = serde_json::json!({"opds_page_size": 101});
+    let second = serde_json::json!({"opds_page_size": 102});
+    let (a, b) = tokio::join!(
+        put_settings_with_etag(&server, &basic, &etag, &first),
+        put_settings_with_etag(&server, &basic, &etag, &second),
+    );
+
+    let mut statuses = [a.status_code(), b.status_code()];
+    statuses.sort();
+    assert_eq!(
+        statuses,
+        [StatusCode::OK, StatusCode::PRECONDITION_FAILED],
+        "exactly one writer may win"
+    );
+    let winning_size = if a.status_code() == StatusCode::OK {
+        101
+    } else {
+        102
+    };
+    assert_eq!(
+        get_body(&server, &basic).await["opds_page_size"],
+        winning_size
     );
 }

@@ -12,6 +12,8 @@ These are absolute invariants for the Reverie repository.
 5. **Tests are mandatory for the shipped product:**
    - Every feature or fix in `backend/` or `frontend/` ships with happy-path and edge-case tests in the same PR.
    - Do not submit product code without tests.
+   - A change made only to satisfy a static-analysis rule, with behaviour unchanged, needs no new tests. The existing
+     suite must pass, and the pull request must show why behaviour is unchanged.
    - Executable tooling anywhere else in the tree (`scripts/`, the justfiles, `.github/`, `docker/`, the root configs)
      is judged on one question: can it fail quietly?
    - Prose and generated documentation are not in scope here; "Docs are part of done" below governs them.

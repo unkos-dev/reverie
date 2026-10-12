@@ -48,7 +48,7 @@ interface BookContentProps {
   id: string;
 }
 
-function BookContent({ id }: BookContentProps): ReactElement {
+function BookContent({ id }: Readonly<BookContentProps>): ReactElement {
   const { data: book } = useSuspenseQuery({
     queryKey: queryKeys.books.detail(id),
     queryFn: ({ signal }) => getBook(id, signal),
@@ -134,7 +134,7 @@ interface DetailCoverProps {
  * detail page mirrors the grid tile so a missing or failing cover
  * never renders the browser's broken-image glyph.
  */
-function DetailCover({ book }: DetailCoverProps): ReactElement {
+function DetailCover({ book }: Readonly<DetailCoverProps>): ReactElement {
   const [failed, setFailed] = useState(false);
   if (book.cover_url === "" || failed) {
     return <CoverArtwork bookId={book.id} title={book.title} authors={book.authors} />;
@@ -157,7 +157,7 @@ interface TabProps {
   book: BookDetail;
 }
 
-function OverviewTab({ book }: TabProps): ReactElement {
+function OverviewTab({ book }: Readonly<TabProps>): ReactElement {
   return (
     <div className="space-y-6">
       {book.description !== null ? (
@@ -195,7 +195,7 @@ interface FieldProps {
   mono?: boolean;
 }
 
-function Field({ label, value, mono = false }: FieldProps): ReactElement {
+function Field({ label, value, mono = false }: Readonly<FieldProps>): ReactElement {
   return (
     <div>
       <dt className="text-fg-muted mb-1 text-xs uppercase tracking-wide">{label}</dt>

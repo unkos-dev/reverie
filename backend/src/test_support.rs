@@ -607,7 +607,26 @@ pub mod db {
     pub fn server_with_config(
         app_pool: &PgPool,
         ingestion_pool: &PgPool,
+        config: crate::config::Config,
+    ) -> axum_test::TestServer {
+        server_with_reload_state(app_pool, ingestion_pool, config, None)
+    }
+
+    /// Same as [`server_with_real_pools`] with the live-reload task's last
+    /// successful reload already recorded as `at`.
+    pub fn server_with_last_reload(
+        app_pool: &PgPool,
+        ingestion_pool: &PgPool,
+        at: chrono::DateTime<chrono::Utc>,
+    ) -> axum_test::TestServer {
+        server_with_reload_state(app_pool, ingestion_pool, super::test_config(), Some(at))
+    }
+
+    fn server_with_reload_state(
+        app_pool: &PgPool,
+        ingestion_pool: &PgPool,
         mut config: crate::config::Config,
+        last_reload: Option<chrono::DateTime<chrono::Utc>>,
     ) -> axum_test::TestServer {
         use crate::state::AppState;
         let (storage_config, library_files) = crate::test_support::test_storage_config(
@@ -626,7 +645,7 @@ pub mod db {
             jwt_validator: None,
             login_limiter: super::test_login_limiter(),
             settings: super::test_settings(),
-            last_settings_reload: std::sync::Arc::new(tokio::sync::RwLock::new(None)),
+            last_settings_reload: std::sync::Arc::new(tokio::sync::RwLock::new(last_reload)),
         };
         let app = crate::build_router(state);
         axum_test::TestServer::new(app)

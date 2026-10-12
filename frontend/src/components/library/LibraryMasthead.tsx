@@ -31,7 +31,7 @@ type LibraryMastheadProps = {
 export function LibraryMasthead({
   title = "Library",
   heroBleedClassName = "-mx-6 -mt-10 sm:-mx-10",
-}: LibraryMastheadProps): ReactElement {
+}: Readonly<LibraryMastheadProps>): ReactElement {
   const { effective } = useTheme();
   const variant = effective === "light" ? "-light" : "";
   return (

@@ -11,10 +11,11 @@ governed-by:
 
 ## Statement
 
-WHEN a `PATCH` request to a book's metadata resource or to a book's reading-state resource carries an `If-Match` header,
-the server MUST compare the header's entity-tag with the resource's current entity tag by strong comparison of every
-octet, with no normalisation or case-folding of the opaque content, and MUST answer `412 Precondition Failed` when any
-octet differs; the `412` response MUST carry the resource's current `ETag`.
+WHEN a `PATCH` request to a book's metadata resource or to a book's reading-state resource, or a `PUT` request to the
+settings resource, carries an `If-Match` header, the server MUST compare the header's entity-tag with the resource's
+current entity tag by strong comparison of every octet, with no normalisation or case-folding of the opaque content, and
+MUST answer `412 Precondition Failed` when any octet differs; the `412` response MUST carry the resource's current
+`ETag`.
 
 ## Rationale
 
@@ -33,10 +34,14 @@ a follow-up `GET`.
 - A `PATCH` to a book's reading state carrying an `If-Match` that does not match the resource's current entity tag
   answers `412` and the response carries the resource's current `ETag`. Checked by
   `patch_reading_with_stale_if_match_returns_412_with_current_etag` in `backend/src/routes/reading.rs`.
-- A `PATCH` to either resource carrying an `If-Match` that matches the resource's current entity tag exactly is not
-  refused on precondition grounds. Checked by `patch_metadata_with_matching_if_match_succeeds` in
-  `backend/src/routes/metadata.rs` and `patch_reading_with_matching_if_match_succeeds` in
-  `backend/src/routes/reading.rs`.
+- A `PUT` to the settings resource carrying an `If-Match` that does not match the resource's current entity tag answers
+  `412`, the response carries the resource's current `ETag`, and the stored settings are unchanged. Checked by
+  `put_settings_with_stale_etag_returns_412_and_leaves_settings_unchanged` in `backend/src/routes/settings/tests.rs`.
+- A `PATCH` to either book resource, or a `PUT` to the settings resource, carrying an `If-Match` that matches the
+  resource's current entity tag exactly is not refused on precondition grounds. Checked by
+  `patch_metadata_with_matching_if_match_succeeds` in `backend/src/routes/metadata.rs`,
+  `patch_reading_with_matching_if_match_succeeds` in `backend/src/routes/reading.rs`, and
+  `put_settings_with_matching_etag_persists_and_returns_the_new_etag` in `backend/src/routes/settings/tests.rs`.
 - The comparison is octet-exact and case-sensitive, so two entity-tags differing only in the case of their opaque
   content do not match. Checked by `strong_comparison_is_octet_exact` in `backend/src/routes/etag.rs`.
 - The comparison holds for `obs-text` octets (`%x80`-`%xFF`) in the opaque content, which are valid entity-tag content
