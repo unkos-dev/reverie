@@ -2,25 +2,19 @@ import { QueryClientProvider } from "@tanstack/react-query";
 import { render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vite-plus/test";
 import { RouterProvider, createMemoryRouter, type RouteObject } from "react-router";
-import type { ReactElement, ReactNode } from "react";
+import type { ReactElement } from "react";
 
 import { ApiError } from "@/api";
 import { STUB_ME } from "@/__fixtures__/auth";
 
-import App from "./App";
-import { queryClient, setUnauthenticatedHandler } from "./lib/query/client";
-import { queryKeys } from "./lib/query/keys";
+import { queryClient, setUnauthenticatedHandler } from "@/lib/query/client";
+import { queryKeys } from "@/lib/query/keys";
 
-// The shell's own behavior (rail, drawer, admin zone) is covered in
-// components/shell/*.test.tsx — here it would only drag auth/shelves
-// fetches into a test about the 401 boundary.
-vi.mock("@/components/shell/AppShell", () => ({
-  AppShell: ({ children }: { children: ReactNode }) => <div>{children}</div>,
-}));
+import { AuthenticatedBoundary } from "./AuthenticatedBoundary";
 
 const originalLocation = window.location;
 
-// `App` now consumes the shared `/auth/me` query via useSessionRecovery, so
+// The boundary consumes the shared `/auth/me` query via useSessionRecovery, so
 // every test must answer it. Default to an authenticated 200 so recovery stays
 // quiet and the QueryCache.onError funnel tests below stay isolated; the
 // cold-load test overrides this with a 401.
@@ -77,12 +71,11 @@ function mockLocation(): MockLocation {
   return loc;
 }
 
-function renderApp(): void {
+function renderBoundary(): void {
   const routes: RouteObject[] = [
     {
-      path: "/",
-      element: <App />,
-      children: [{ index: true, element: <p>HOME_ROUTE_RENDERED</p> }],
+      element: <AuthenticatedBoundary />,
+      children: [{ path: "/", element: <p>HOME_ROUTE_RENDERED</p> }],
     },
   ];
   const router = createMemoryRouter(routes, { initialEntries: ["/"] });
@@ -97,15 +90,15 @@ function renderApp(): void {
   render(<Wrapper />);
 }
 
-describe("App — auth boundary", () => {
+describe("AuthenticatedBoundary", () => {
   test("redirects to /login (full page nav) on ApiError 401", async () => {
     const loc = mockLocation();
-    renderApp();
+    renderBoundary();
     expect(await screen.findByText("HOME_ROUTE_RENDERED")).toBeInTheDocument();
 
     await queryClient
       .query({
-        queryKey: ["__app-test", "401"],
+        queryKey: ["__boundary-test", "401"],
         queryFn: () => {
           throw new ApiError(401, null, "Unauthorized", "");
         },
@@ -120,12 +113,12 @@ describe("App — auth boundary", () => {
 
   test("does NOT redirect on a non-401 error", async () => {
     const loc = mockLocation();
-    renderApp();
+    renderBoundary();
     expect(await screen.findByText("HOME_ROUTE_RENDERED")).toBeInTheDocument();
 
     await queryClient
       .query({
-        queryKey: ["__app-test", "500"],
+        queryKey: ["__boundary-test", "500"],
         queryFn: () => {
           throw new ApiError(500, null, "Internal Server Error", "");
         },
@@ -140,7 +133,7 @@ describe("App — auth boundary", () => {
   test("cold-load lapsed session (GET /auth/me 401) redirects to /login", async () => {
     mockAuthMe(401);
     const loc = mockLocation();
-    renderApp();
+    renderBoundary();
 
     await waitFor(() => {
       expect(loc.assign).toHaveBeenCalledWith("/login");
@@ -155,7 +148,7 @@ describe("App — auth boundary", () => {
     });
     mockAuthMe(401);
     const loc = mockLocation();
-    renderApp();
+    renderBoundary();
 
     await waitFor(() => {
       expect(loc.assign).toHaveBeenCalledWith("/auth/oidc/login");
@@ -165,7 +158,7 @@ describe("App — auth boundary", () => {
   test("navigates once when the me-query 401s and an ApiError 401 also fires", async () => {
     mockAuthMe(401);
     const loc = mockLocation();
-    renderApp();
+    renderBoundary();
 
     await waitFor(() => {
       expect(loc.assign).toHaveBeenCalledWith("/login");
@@ -173,7 +166,7 @@ describe("App — auth boundary", () => {
 
     await queryClient
       .query({
-        queryKey: ["__app-test", "concurrent-401"],
+        queryKey: ["__boundary-test", "concurrent-401"],
         queryFn: () => {
           throw new ApiError(401, null, "Unauthorized", "");
         },

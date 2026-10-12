@@ -1,4 +1,0 @@
-self-hosted-runner:
-  # Dev-deploy runner, provisioned outside this repository.
-  labels:
-    - reverie-dev-deployer

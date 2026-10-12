@@ -30,7 +30,7 @@ write or clear the identity claims a session carries (`backend/src/auth/session.
 (`backend/src/routes/auth.rs`); and, on the client, the shared `/auth/me` query, the once-guarded funnel that reacts to
 a lapsed session, and the per-device hint that scopes client caches to the last confirmed account
 (`frontend/src/hooks/useAuthMe.ts`, `frontend/src/hooks/useSessionRecovery.ts`, `frontend/src/lib/query/client.ts`,
-`frontend/src/lib/active-user.ts`, `frontend/src/App.tsx`).
+`frontend/src/lib/active-user.ts`, `frontend/src/components/AuthenticatedBoundary.tsx`).
 
 It does not own how a session's identity claims are read back and turned into a `CurrentUser`, the disabled-account and
 stale-`session_version` checks that decide whether a rehydrated session is still valid, or the Basic/Bearer credential
@@ -52,11 +52,12 @@ a session's claims are still valid; the CSRF token minted into the session at th
 cached `GET /auth/setup/status` response the client reads to choose a redirect target for a lapsed session.
 
 Depended on by: every request whose identity resolution reaches the session-cookie leg of `CurrentUser`; the local and
-OIDC sign-in handlers, which call this subject's `login` helper once a credential is verified; the app shell
-(`frontend/src/App.tsx`, `frontend/src/components/shell/AppShell.tsx` and everything it renders), which mounts the
-401-recovery funnel and reads the shared `/auth/me` query for the signed-in identity; and the library's first-paint
-display-preference mirror, which reads the per-device active-user hint this subject writes to know whose cached values
-to seed before its own request resolves.
+OIDC sign-in handlers, which call this subject's `login` helper once a credential is verified; the authenticated
+boundary (`frontend/src/components/AuthenticatedBoundary.tsx`), which mounts the 401-recovery funnel above every route
+that requires a session, and the app shell (`frontend/src/App.tsx`, `frontend/src/components/shell/AppShell.tsx` and
+everything it renders), which reads the shared `/auth/me` query for the signed-in identity; and the library's
+first-paint display-preference mirror, which reads the per-device active-user hint this subject writes to know whose
+cached values to seed before its own request resolves.
 
 ## Structure
 
@@ -81,12 +82,13 @@ Call sites that dispatch to those owners:
   `auth::session::logout` call site (the `logout` handler, same file); every other request that carries a session
   re-saves the same row unchanged through `with_always_save(true)`, which recomputes `expiry_date` without touching
   `data`.
-- `unauthenticatedHandler`: replaced once, by the `<App/>` mount effect in `frontend/src/App.tsx`, and reset to a no-op
-  on unmount. `redirecting` is reset by the same call (`setUnauthenticatedHandler`) and flipped exactly once per lapse
-  by `invokeUnauthenticatedHandler`.
-- `invokeUnauthenticatedHandler` is called from two places: `queryClient`'s `QueryCache.onError`, for any query that
-  rejects with an `ApiError` whose status is 401, and `useSessionRecovery`'s effect, when the shared `/auth/me` query
-  settles with `data === undefined` (a 401 or 403 response, per `useAuthMe`).
+- `unauthenticatedHandler`: replaced once, by the mount effect in `AuthenticatedBoundary`
+  (`frontend/src/components/AuthenticatedBoundary.tsx`), and reset to a no-op on unmount. `redirecting` is reset by the
+  same call (`setUnauthenticatedHandler`) and flipped exactly once per lapse by `invokeUnauthenticatedHandler`.
+- `invokeUnauthenticatedHandler` is called from three places: `queryClient`'s `QueryCache.onError`, for any query that
+  rejects with an `ApiError` whose status is 401; its `MutationCache.onError`, for any mutation that does; and
+  `useSessionRecovery`'s effect, when the shared `/auth/me` query settles with `data === undefined` (a 401 or 403
+  response, per `useAuthMe`).
 - `rememberActiveUser`: the one call site is inside `useAuthMe`'s `queryFn`, on every successful parse of `/auth/me`,
   not only at login, so a boot with an already-live session records the hint the same way a fresh sign-in does.
 - `forgetActiveUser`: two call sites, `invokeUnauthenticatedHandler` (the 401/lapsed-session path) and the sign-out
@@ -120,10 +122,11 @@ around `/auth/callback`); this subject's write authority over `data` is limited 
   for a caller that does have one.
 - On the client, `frontend/src/hooks/useAuthMe.ts` is the one `/auth/me` query every other piece of this subject reads
   or reacts to: `frontend/src/hooks/useSessionRecovery.ts` observes its settled state, and
-  `frontend/src/components/shell/UserMenu.tsx` reads its `data` to render the signed-in identity. `App.tsx` wires
-  `useSessionRecovery` and the `QueryCache` handler together at the app shell's root, in a declared order it documents
-  as load-bearing (see Failure and recovery). `frontend/src/lib/query/client.ts` is the one module owning the
-  once-guarded funnel both paths call into.
+  `frontend/src/components/shell/UserMenu.tsx` reads its `data` to render the signed-in identity.
+  `AuthenticatedBoundary` wires `useSessionRecovery` and the `QueryCache` and `MutationCache` handler together in a
+  pathless layout route that every authenticated route sits under (the app shell route and `/account/password`), in a
+  declared order it documents as load-bearing (see Failure and recovery). `frontend/src/lib/query/client.ts` is the one
+  module owning the once-guarded funnel both paths call into.
 
 ## Interfaces and dependencies
 
@@ -218,23 +221,26 @@ requires the capability field in its Zod schema rather than assuming it when abs
    the same way a mutation does, because the save is unconditional on the layer, not on whether the handler wrote to
    `session`.
 
-**Reacting to a lapsed session on the client**, the funnel two independent triggers share:
+**Reacting to a lapsed session on the client**, the funnel its independent triggers share. Every authenticated route is
+a descendant of the `AuthenticatedBoundary` layout route; the pre-auth screens (`/login`, `/setup`, `/forgot-password`)
+are siblings of it, so no handler is wired there and a 401 from a sign-in attempt does not redirect:
 
-1. `App.tsx`'s mount effect calls `setUnauthenticatedHandler` with a provider-aware redirect (the OIDC initiator when
-   the cached `/auth/setup/status` reports OIDC enabled, `/login` otherwise, falling back to `/login` if that query
-   itself fails) before any other effect in the tree runs, because React commits effects in declaration order and this
-   effect is declared first.
+1. `AuthenticatedBoundary`'s mount effect calls `setUnauthenticatedHandler` with a provider-aware redirect (the OIDC
+   initiator when the cached `/auth/setup/status` reports OIDC enabled, `/login` otherwise, falling back to `/login` if
+   that query itself fails) before any other effect in the tree runs, because React commits effects in declaration order
+   and this effect is declared first.
 2. `useSessionRecovery` (mounted immediately after) reads the shared `/auth/me` query via `useAuthMe`; when that query
    has settled (`!isLoading`) without an operational error (`!isError`) and its data is `undefined`, the shape a 401 or
    403 response takes, its own effect calls `invokeUnauthenticatedHandler()`.
 3. Independently, any other query on the page that rejects with an `ApiError` whose status is 401 trips the same call
-   through `queryClient`'s `QueryCache.onError`. A lapsed session commonly trips several queries in the same tick (every
+   through `queryClient`'s `QueryCache.onError`, and any mutation that does so through its `MutationCache.onError`; a
+   mutation's own `onError` still runs. A lapsed session commonly trips several requests in the same tick (every
    in-flight request on the page); each one calls `invokeUnauthenticatedHandler`, but only the first to run finds
    `redirecting` still `false`, it sets the guard, clears the active-user hint via `forgetActiveUser()`, and invokes the
    wired handler (a `window.location.assign` to the resolved target); every other caller in the same tick or after finds
    the guard already set and returns without effect.
 4. The full-page navigation the handler performs ends the funnel: the guard and the handler reference are discarded with
-   the rest of the JS realm, and a fresh page load re-wires both from `App.tsx`'s mount effect.
+   the rest of the JS realm, and a fresh page load re-wires both from `AuthenticatedBoundary`'s mount effect.
 
 **The hourly sweep**, driven from `run` alongside the other background workers: `run_sweep` ticks on a fixed one-hour
 interval (the first tick is skipped so startup does not burst) and calls `sweep_once`, which runs
@@ -263,9 +269,10 @@ the timer branch, so a shutdown in progress returns promptly rather than waiting
   the next tick retries. This is availability hardening only: `PostgresStore::load`'s `expiry_date > now()` filter is
   what actually keeps an expired session from authenticating, so an accumulating backlog of rows awaiting the sweep
   degrades table size, never access control.
-- **The `/auth/setup/status` lookup failing during redirect resolution.** `resolveLoginRedirect` (`App.tsx`) wraps the
-  cached query in a `try`/`catch` and falls back to `/login` on any failure, so a lapsed session's redirect never
-  strands the caller on a broken provider-detection request; it degrades to the always-valid local login form.
+- **The `/auth/setup/status` lookup failing during redirect resolution.** `resolveLoginRedirect`
+  (`AuthenticatedBoundary.tsx`) wraps the cached query in a `try`/`catch` and falls back to `/login` on any failure, so
+  a lapsed session's redirect never strands the caller on a broken provider-detection request; it degrades to the
+  always-valid local login form.
 - **Sign-out whose `/auth/logout` request fails.** The sign-out handler inside `UserChip` in
   `frontend/src/components/shell/UserMenu.tsx` logs the error to the console and still calls `forgetActiveUser()` and
   navigates to `/login`: the client-visible outcome of sign-out does not depend on the request having reached the

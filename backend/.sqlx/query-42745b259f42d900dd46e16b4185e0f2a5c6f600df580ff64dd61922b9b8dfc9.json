@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "INSERT INTO ingestion_inputs (source_path, fingerprint)\n           SELECT path, fingerprint FROM UNNEST($1::bytea[], $2::jsonb[]) AS observed(path, fingerprint)\n           ON CONFLICT (source_path) WHERE status <> 'removed'\n           DO UPDATE SET\n             fingerprint = EXCLUDED.fingerprint,\n             generation = ingestion_inputs.generation + 1,\n             status = 'pending', reason = NULL, work_id = NULL, completed_at = NULL,\n             retry_reset_at = now(), observed_at = now()\n           WHERE ingestion_inputs.fingerprint <> EXCLUDED.fingerprint\n           RETURNING id, source_path, fingerprint AS \"fingerprint: sqlx::types::Json<Fingerprint>\",\n             generation, status AS \"status: InputStatus\", reason, work_id, retry_reset_at, observed_at",
+  "query": "INSERT INTO ingestion_inputs (source_path, fingerprint)\n           SELECT path, fingerprint FROM UNNEST($1::bytea[], $2::jsonb[]) AS observed(path, fingerprint)\n           ON CONFLICT (source_path) WHERE status <> 'removed'\n           DO UPDATE SET\n             fingerprint = EXCLUDED.fingerprint,\n             generation = ingestion_inputs.generation + 1,\n             status = 'pending', reason = NULL, work_id = NULL, completed_at = NULL,\n             retry_reset_at = now(), retries_exhausted_at = NULL, observed_at = now()\n           WHERE ingestion_inputs.fingerprint <> EXCLUDED.fingerprint\n           RETURNING id, source_path, fingerprint AS \"fingerprint: sqlx::types::Json<Fingerprint>\",\n             generation, status AS \"status: InputStatus\", reason, work_id, retry_reset_at, observed_at",
   "describe": {
     "columns": [
       {
@@ -137,5 +137,5 @@
       false
     ]
   },
-  "hash": "1d17960f0fee7a9a0699627feb4f535c78e6ff2019fb35940c596c9dabc41c66"
+  "hash": "42745b259f42d900dd46e16b4185e0f2a5c6f600df580ff64dd61922b9b8dfc9"
 }

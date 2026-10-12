@@ -1216,7 +1216,7 @@ async fn pages_sort_walk(pool: PgPool) {
 }
 
 #[sqlx::test(migrations = "./migrations")]
-async fn list_filter_duplicate_sort_column_returns_400(pool: PgPool) {
+async fn list_filter_duplicate_sort_column_returns_422(pool: PgPool) {
     let app_pool = test_support::db::app_pool_for(&pool).await;
     let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
     let (_admin, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
@@ -1228,15 +1228,15 @@ async fn list_filter_duplicate_sort_column_returns_400(pool: PgPool) {
         .await;
     let body = test_support::assert_problem(
         &response,
-        problems::MALFORMED_QUERY,
-        StatusCode::BAD_REQUEST,
+        problems::VALIDATION,
+        StatusCode::UNPROCESSABLE_ENTITY,
     );
     let detail = body["detail"].as_str().expect("detail string");
     assert!(detail.contains("invalid sort"), "got detail: {detail}");
 }
 
 #[sqlx::test(migrations = "./migrations")]
-async fn list_filter_too_many_sort_levels_returns_400(pool: PgPool) {
+async fn list_filter_too_many_sort_levels_returns_422(pool: PgPool) {
     let app_pool = test_support::db::app_pool_for(&pool).await;
     let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
     let (_admin, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
@@ -1248,8 +1248,8 @@ async fn list_filter_too_many_sort_levels_returns_400(pool: PgPool) {
         .await;
     let body = test_support::assert_problem(
         &response,
-        problems::MALFORMED_QUERY,
-        StatusCode::BAD_REQUEST,
+        problems::VALIDATION,
+        StatusCode::UNPROCESSABLE_ENTITY,
     );
     let detail = body["detail"].as_str().expect("detail string");
     assert!(detail.contains("invalid sort"), "got detail: {detail}");
@@ -2395,12 +2395,11 @@ async fn list_filter_malformed_shelf_uuid_returns_400(pool: PgPool) {
 }
 
 #[sqlx::test(migrations = "./migrations")]
-async fn list_filter_malformed_sort_returns_400(pool: PgPool) {
+async fn list_filter_unknown_sort_field_returns_422(pool: PgPool) {
     // `?sort=` is validated in-handler against the `SortColumn`
-    // whitelist (`SortSpec::parse`), a structurally distinct decode
-    // path from the `Option<Uuid>` filter params: a field outside the
-    // whitelist must still surface as RFC 9457 400, not a silent
-    // default-sort fallthrough.
+    // whitelist (`SortSpec::parse`) after the query string decodes: a
+    // field outside the whitelist must surface as RFC 9457 422, not a
+    // silent default-sort fallthrough.
     let app_pool = test_support::db::app_pool_for(&pool).await;
     let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
     let (_admin, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
@@ -2412,8 +2411,8 @@ async fn list_filter_malformed_sort_returns_400(pool: PgPool) {
         .await;
     let body = test_support::assert_problem(
         &response,
-        problems::MALFORMED_QUERY,
-        StatusCode::BAD_REQUEST,
+        problems::VALIDATION,
+        StatusCode::UNPROCESSABLE_ENTITY,
     );
     let detail = body["detail"].as_str().expect("detail string");
     assert!(detail.contains("invalid sort"), "got detail: {detail}");

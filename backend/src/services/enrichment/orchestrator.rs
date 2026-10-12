@@ -27,6 +27,7 @@ use tracing::{info, warn};
 use uuid::Uuid;
 
 use crate::config::Config;
+use crate::models::enrichment_failure::FailureClass;
 use crate::models::external_identifier::{
     IdentifierLevel, get_manifestation_identifier, get_work_identifier,
     upsert_manifestation_identifier, upsert_work_identifier,
@@ -79,6 +80,8 @@ pub struct SourceFailure {
     pub retry_after: Option<Duration>,
     /// `true` if the error was non-retryable (4xx other than 429).
     pub terminal: bool,
+    /// Closed class persisted in place of the error text.
+    pub class: FailureClass,
 }
 
 /// Snapshot of canonical field state + lookup key, shared between
@@ -1314,6 +1317,16 @@ fn parse_iso_date(s: &str) -> Option<chrono::NaiveDate> {
     .then_some(date)
 }
 
+const fn failure_class(err: &SourceError) -> FailureClass {
+    match err {
+        SourceError::NotFound => FailureClass::NotFound,
+        SourceError::RateLimited { .. } => FailureClass::RateLimited,
+        SourceError::Http(_) => FailureClass::SourceError,
+        SourceError::Timeout => FailureClass::Timeout,
+        SourceError::Other(_) => FailureClass::Unreachable,
+    }
+}
+
 fn summarise_failure(source_id: &str, err: &SourceError) -> SourceFailure {
     let (retry_after, terminal) = match err {
         SourceError::RateLimited { retry_after } => (*retry_after, false),
@@ -1333,6 +1346,7 @@ fn summarise_failure(source_id: &str, err: &SourceError) -> SourceFailure {
         error: format!("{err:#}"),
         retry_after,
         terminal,
+        class: failure_class(err),
     }
 }
 
@@ -2301,6 +2315,30 @@ mod tests {
     // The phase decomposition makes it cheap to exercise tail-of-distribution
     // scenarios that would otherwise need three configured wiremock servers
     // and a full `run_once` integration call.
+
+    #[test]
+    fn every_source_error_maps_to_one_closed_class() {
+        use reqwest::StatusCode;
+        let cases = [
+            (SourceError::NotFound, FailureClass::NotFound),
+            (
+                SourceError::RateLimited { retry_after: None },
+                FailureClass::RateLimited,
+            ),
+            (
+                SourceError::Http(StatusCode::BAD_GATEWAY),
+                FailureClass::SourceError,
+            ),
+            (SourceError::Timeout, FailureClass::Timeout),
+            (
+                SourceError::Other(anyhow::anyhow!("connection reset")),
+                FailureClass::Unreachable,
+            ),
+        ];
+        for (error, class) in cases {
+            assert_eq!(summarise_failure("openlibrary", &error).class, class);
+        }
+    }
 
     /// Every source returned an error → no journal rows, all failures
     /// summarised with correct `retry_after` / terminal flags. The
