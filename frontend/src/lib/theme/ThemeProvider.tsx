@@ -91,7 +91,7 @@ interface ThemeProviderProps {
  * @param props.children - Subtree that consumes `useTheme()`.
  * @returns React element wrapping the children in the theme context.
  */
-export function ThemeProvider({ children }: ThemeProviderProps): ReactElement {
+export function ThemeProvider({ children }: Readonly<ThemeProviderProps>): ReactElement {
   const initial = useMemo(() => deriveInitialState(), []);
   // Raw `useState` setters intentionally suffixed with `State` because the
   // public `setPreference` (line below) is the async callback that wraps

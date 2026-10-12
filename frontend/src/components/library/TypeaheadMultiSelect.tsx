@@ -76,7 +76,7 @@ export function TypeaheadMultiSelect({
   selected,
   onChange,
   disabled = false,
-}: Props): ReactElement {
+}: Readonly<Props>): ReactElement {
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
   const debounced = useDebounced(query.trim(), DEBOUNCE_MS);
@@ -204,7 +204,7 @@ function StatusRow({
   isFetching,
   isError,
   hasResults,
-}: StatusRowProps): ReactElement | null {
+}: Readonly<StatusRowProps>): ReactElement | null {
   if (query.length < MIN_Q_LEN) {
     return <CommandEmpty>Type at least {MIN_Q_LEN} characters to search.</CommandEmpty>;
   }

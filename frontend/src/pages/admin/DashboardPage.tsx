@@ -132,7 +132,7 @@ interface StatCardProps {
   icon: ReactElement;
 }
 
-function StatCard({ label, value, icon }: StatCardProps): ReactElement {
+function StatCard({ label, value, icon }: Readonly<StatCardProps>): ReactElement {
   return (
     <Card>
       <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
@@ -146,7 +146,7 @@ function StatCard({ label, value, icon }: StatCardProps): ReactElement {
   );
 }
 
-function StatsView({ stats }: { stats: DashboardStats }): ReactElement {
+function StatsView({ stats }: Readonly<{ stats: DashboardStats }>): ReactElement {
   const failedValidation = countFor(stats.validation_breakdown, "degraded");
   const cov = stats.metadata_coverage;
   const coverageRows = [
@@ -273,10 +273,10 @@ function StatsView({ stats }: { stats: DashboardStats }): ReactElement {
 function RecentBatches({
   activity,
   error,
-}: {
+}: Readonly<{
   activity: DashboardActivity["batches"];
   error: Error | null;
-}): ReactElement {
+}>): ReactElement {
   let body: ReactElement;
   if (error) {
     body = (
