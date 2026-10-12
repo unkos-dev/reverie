@@ -475,7 +475,7 @@ interface BookCardProps {
   book: BookListItem;
 }
 
-function BookCard({ book }: BookCardProps): ReactElement {
+function BookCard({ book }: Readonly<BookCardProps>): ReactElement {
   // Spine fallback active when there is no art to fall back FROM, or
   // the art failed to load. The floating series badge renders only
   // over real cover art — over a typographic spine it collides with
@@ -561,7 +561,7 @@ interface FilteredEmptyStateProps {
  * empty library) — same shell, accurate copy, plus a one-click escape so
  * an over-narrow filter is never a dead-end.
  */
-function FilteredEmptyState({ onClear }: FilteredEmptyStateProps): ReactElement {
+function FilteredEmptyState({ onClear }: Readonly<FilteredEmptyStateProps>): ReactElement {
   return (
     <div className="border-border text-fg-muted flex min-h-[40vh] flex-col items-center justify-center rounded-md border border-dashed py-16 text-center">
       <p className="font-display text-fg mb-2 text-xl font-semibold">

@@ -47,7 +47,7 @@ export function BookDetailDrawer({
   bookId,
   onOpenChange,
   onCloseAutoFocus,
-}: BookDetailDrawerProps): ReactElement {
+}: Readonly<BookDetailDrawerProps>): ReactElement {
   return (
     <Sheet open={bookId !== null} onOpenChange={onOpenChange}>
       <SheetContent
@@ -62,7 +62,7 @@ export function BookDetailDrawer({
   );
 }
 
-function DrawerBody({ bookId }: { bookId: string }): ReactElement {
+function DrawerBody({ bookId }: Readonly<{ bookId: string }>): ReactElement {
   const [coverFailed, setCoverFailed] = useState(false);
   const {
     data: book,
@@ -189,7 +189,7 @@ function DrawerBody({ bookId }: { bookId: string }): ReactElement {
   );
 }
 
-function DetailRow({ label, value }: { label: string; value: string }): ReactElement {
+function DetailRow({ label, value }: Readonly<{ label: string; value: string }>): ReactElement {
   return (
     <div className="border-border grid grid-cols-[86px_1fr] gap-3 border-b py-3">
       <dt className="text-fg-muted font-mono text-[0.65rem] uppercase leading-5 tracking-[0.1em]">
@@ -210,7 +210,10 @@ function formatDate(iso: string): string {
  * The shelves list is invalidated on success so the left rail's per-shelf
  * counts stay honest.
  */
-function AddToShelf({ bookId, bookTitle }: { bookId: string; bookTitle: string }): ReactElement {
+function AddToShelf({
+  bookId,
+  bookTitle,
+}: Readonly<{ bookId: string; bookTitle: string }>): ReactElement {
   const queryClient = useQueryClient();
   const {
     data: shelves,

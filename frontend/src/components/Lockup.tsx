@@ -42,7 +42,11 @@ const THICK_SLOT_BELOW_PX = 24;
  *   inner glyph carries `aria-hidden` so screen readers only announce
  *   the brand name once.
  */
-export function Lockup({ size = 28, theme = "dark", className }: LockupProps): ReactElement {
+export function Lockup({
+  size = 28,
+  theme = "dark",
+  className,
+}: Readonly<LockupProps>): ReactElement {
   const glyphSize = size * GLYPH_RATIO;
   const glyphPath = glyphSize < THICK_SLOT_BELOW_PX ? THICK_GLYPH_PATH : STANDARD_GLYPH_PATH;
   const wordColor = theme === "dark" ? CREAM : INK;
