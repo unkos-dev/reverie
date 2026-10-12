@@ -334,11 +334,9 @@ struct LocalLoginRequest {
     security(()),
     request_body = LocalLoginRequest,
     responses(
+        crate::openapi::JsonBodyErrors,
         (status = 204, description = "Login succeeded; session established (id rotated, CSRF token minted, theme cookie seeded)"),
-        (status = 400, description = "The request body is not valid JSON", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 404, description = "Local authentication is disabled on this instance", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
-        (status = 413, description = "The request body is too large", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
-        (status = 415, description = "The request body is not sent as application/json", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 422, description = "Invalid credentials (generic; identical for unknown email and wrong password)", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 429, description = "Too many login attempts", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
     )
@@ -547,11 +545,9 @@ struct SetupRequest {
     security(()),
     request_body = SetupRequest,
     responses(
+        crate::openapi::JsonBodyErrors,
         (status = 201, description = "First administrator created (no auto-login)"),
-        (status = 400, description = "The request body is not valid JSON", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 409, description = "An administrator already exists", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
-        (status = 413, description = "The request body is too large", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
-        (status = 415, description = "The request body is not sent as application/json", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 422, description = "Validation failed", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 429, description = "Too many requests", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
     )
@@ -636,12 +632,10 @@ struct RegisterRequest {
     security(()),
     request_body = RegisterRequest,
     responses(
+        crate::openapi::JsonBodyErrors,
         (status = 201, description = "Account created (no auto-login)"),
-        (status = 400, description = "The request body is not valid JSON", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 404, description = "Self-registration is disabled on this instance", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 409, description = "Email already in use", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
-        (status = 413, description = "The request body is too large", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
-        (status = 415, description = "The request body is not sent as application/json", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 422, description = "Validation failed", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 429, description = "Too many requests", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
     )
@@ -740,11 +734,9 @@ struct ForgotPasswordRequest {
     security(()),
     request_body = ForgotPasswordRequest,
     responses(
+        crate::openapi::JsonBodyErrors,
         (status = 200, description = "Recovery started if the account exists (generic; no enumeration)"),
-        (status = 400, description = "The request body is not valid JSON", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 404, description = "Local authentication is disabled", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
-        (status = 413, description = "The request body is too large", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
-        (status = 415, description = "The request body is not sent as application/json", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 422, description = "The request body is missing a required field or has a field of the wrong type", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 429, description = "Too many requests", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
     )
@@ -848,11 +840,9 @@ struct ResetPasswordRequest {
     security(()),
     request_body = ResetPasswordRequest,
     responses(
+        crate::openapi::JsonBodyErrors,
         (status = 200, description = "Password reset; no session established (re-authentication required)"),
-        (status = 400, description = "The request body is not valid JSON", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 404, description = "Local authentication is disabled", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
-        (status = 413, description = "The request body is too large", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
-        (status = 415, description = "The request body is not sent as application/json", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 422, description = "Invalid or expired reset request (generic)", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 429, description = "Too many requests", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
     )
@@ -1099,11 +1089,9 @@ struct ThemeResponse {
     tag = "auth",
     request_body = UpdateThemeRequest,
     responses(
+        crate::openapi::JsonBodyErrors,
         (status = 200, description = "Preference persisted; `reverie_theme` cookie refreshed", body = ThemeResponse),
-        (status = 400, description = "The request body is not valid JSON", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
-        (status = 413, description = "The request body is too large", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
-        (status = 415, description = "The request body is not sent as application/json", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 422, description = "Unknown theme_preference value", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
     )
 )]

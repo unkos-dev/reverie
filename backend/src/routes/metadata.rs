@@ -262,13 +262,12 @@ struct LockPayload {
     params(("id" = Uuid, Path, description = "Manifestation id")),
     request_body = VersionPayload,
     responses(
+        crate::openapi::JsonBodyErrors,
         (status = 200, description = "Version promoted to canonical; accepted ISBN changes may re-match the work"),
         (status = 400, description = "The request body is not valid JSON, or a path parameter is malformed", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 403, description = "Caller is a child account", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 404, description = "Version not found for this manifestation, already rejected, or RLS-hidden", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
-        (status = 413, description = "The request body is too large", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
-        (status = 415, description = "The request body is not sent as application/json", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 422, description = "Stored value fails field parsing", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
     )
 )]
@@ -371,13 +370,12 @@ async fn lock_version_review(
     params(("id" = Uuid, Path, description = "Manifestation id")),
     request_body = VersionPayload,
     responses(
+        crate::openapi::JsonBodyErrors,
         (status = 200, description = "Version marked rejected"),
         (status = 400, description = "The request body is not valid JSON, or a path parameter is malformed", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 403, description = "Caller is a child account", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 404, description = "Version not found for this manifestation, or RLS-hidden", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
-        (status = 413, description = "The request body is too large", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
-        (status = 415, description = "The request body is not sent as application/json", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 422, description = "The request body is missing a required field or has a field of the wrong type", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
     )
 )]
@@ -438,13 +436,12 @@ async fn reject_manifestation(
     params(("id" = Uuid, Path, description = "Manifestation id")),
     request_body = RevertPayload,
     responses(
+        crate::openapi::JsonBodyErrors,
         (status = 200, description = "Field reverted to the given version, or cleared when version_id is null"),
         (status = 400, description = "The request body is not valid JSON, or a path parameter is malformed", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 403, description = "Caller is a child account", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 404, description = "Manifestation or version missing, or RLS-hidden", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
-        (status = 413, description = "The request body is too large", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
-        (status = 415, description = "The request body is not sent as application/json", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 422, description = "Field cannot be cleared or stored value fails parsing", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
     )
 )]
@@ -539,13 +536,12 @@ async fn revert_manifestation(
     params(("id" = Uuid, Path, description = "Manifestation id")),
     request_body = LockPayload,
     responses(
+        crate::openapi::JsonBodyErrors,
         (status = 201, description = "Lock recorded (idempotent)"),
         (status = 400, description = "The request body is not valid JSON, or a path parameter is malformed", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 403, description = "Caller is a child account", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 404, description = "Manifestation missing or RLS-hidden (existence-not-leaked)", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
-        (status = 413, description = "The request body is too large", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
-        (status = 415, description = "The request body is not sent as application/json", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 422, description = "Unknown entity_type", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
     )
 )]
@@ -597,13 +593,12 @@ async fn lock_field(
     params(("id" = Uuid, Path, description = "Manifestation id")),
     request_body = LockPayload,
     responses(
+        crate::openapi::JsonBodyErrors,
         (status = 200, description = "Lock removed"),
         (status = 400, description = "The request body is not valid JSON, or a path parameter is malformed", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 403, description = "Caller is a child account", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 404, description = "Manifestation missing or RLS-hidden, or no matching lock", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
-        (status = 413, description = "The request body is too large", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
-        (status = 415, description = "The request body is not sent as application/json", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 422, description = "Unknown entity_type", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
     )
 )]
@@ -2291,6 +2286,7 @@ async fn load_manifestation_identifiers(
     ),
     request_body(content = UpdateMetadataFields, description = "RFC 7396 JSON Merge Patch: absent fields are unchanged, `null` clears (except `title`)"),
     responses(
+        crate::openapi::JsonBodyErrors,
         (status = 200, description = "Manual edit recorded as a `manual` metadata version and promoted to canonical (or cleared); body carries the applied value and version pointers per field", body = UpdateMetadataResponse,
          headers(("ETag" = String, description = "Strong entity-tag hashing every PATCH-modifiable field, reflecting the state after this write"))),
         (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
@@ -2299,8 +2295,6 @@ async fn load_manifestation_identifiers(
         (status = 412, description = "If-Match does not match the manifestation's current metadata ETag", body = crate::openapi::ProblemDetails, content_type = "application/problem+json",
          headers(("ETag" = String, description = "Current entity-tag, so the caller can resync without a follow-up GET"))),
         (status = 400, description = "If-Match is malformed, or carries a form this API refuses by policy: the * wildcard, an entity-tag list, a weak tag, or a repeated header instance, the request body is not valid JSON, or a path parameter is malformed", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
-        (status = 413, description = "The request body is too large", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
-        (status = 415, description = "The request body is not sent as application/json", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 422, description = "No populated fields, ISBN/date parse failure, or attempt to clear title. Evaluated only after If-Match has matched, so a stale tag returns 412 instead", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 428, description = "If-Match header absent", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
     )

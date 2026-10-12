@@ -191,13 +191,12 @@ struct UpdateRoleRequest {
     params(("id" = Uuid, Path, description = "Target user id")),
     request_body = UpdateRoleRequest,
     responses(
+        crate::openapi::JsonBodyErrors,
         (status = 200, description = "Updated user. The target's active sessions are invalidated. Admin only.", body = UserResponse),
         (status = 400, description = "The request body is not valid JSON, or a path parameter is malformed", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 403, description = "Caller is not an admin", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 404, description = "Target user does not exist", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
-        (status = 413, description = "The request body is too large", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
-        (status = 415, description = "The request body is not sent as application/json", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 422, description = "Demotion would leave zero admins, the role change conflicts with the target's child status, or the request body is malformed / contains an unknown role value", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
     )
 )]
@@ -318,13 +317,12 @@ struct UpdateChildStatusRequest {
     params(("id" = Uuid, Path, description = "Target user id")),
     request_body = UpdateChildStatusRequest,
     responses(
+        crate::openapi::JsonBodyErrors,
         (status = 200, description = "Updated user. Enabling child status also sets role to `child`; disabling reverts `child` to `adult` (other roles unchanged). The target's active sessions are invalidated. Admin only.", body = UserResponse),
         (status = 400, description = "The request body is not valid JSON, or a path parameter is malformed", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 403, description = "Caller is not an admin", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 404, description = "Target user does not exist", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
-        (status = 413, description = "The request body is too large", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
-        (status = 415, description = "The request body is not sent as application/json", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 422, description = "Marking the last admin as child would leave zero admins, or the request body is malformed", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
     )
 )]
@@ -444,13 +442,11 @@ struct CreateUserRequest {
     security(("session_cookie" = ["admin"]), ("device_token_bearer" = ["admin"]), ("oidc_jwt_bearer" = ["admin"]), ("opds_basic" = ["admin"])),
     request_body = CreateUserRequest,
     responses(
+        crate::openapi::JsonBodyErrors,
         (status = 201, description = "Created user. Admin only.", body = UserResponse),
-        (status = 400, description = "The request body is not valid JSON", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 403, description = "Caller is not an admin", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 409, description = "Email already in use", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
-        (status = 413, description = "The request body is too large", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
-        (status = 415, description = "The request body is not sent as application/json", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 422, description = "Invalid email, or password rejected by the policy", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
     )
 )]
@@ -530,13 +526,12 @@ struct AccountStatusRequest {
     params(("id" = Uuid, Path, description = "Target user id")),
     request_body = AccountStatusRequest,
     responses(
+        crate::openapi::JsonBodyErrors,
         (status = 200, description = "Updated user. Disabling invalidates the target's sessions. Admin only.", body = UserResponse),
         (status = 400, description = "The request body is not valid JSON, or a path parameter is malformed", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 403, description = "Caller is not an admin", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 404, description = "Target user does not exist", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
-        (status = 413, description = "The request body is too large", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
-        (status = 415, description = "The request body is not sent as application/json", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 422, description = "Cannot disable your own account, or disabling would leave zero enabled admins", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
     )
 )]
@@ -660,13 +655,12 @@ struct AdminPasswordResetRequest {
     params(("id" = Uuid, Path, description = "Target user id")),
     request_body = AdminPasswordResetRequest,
     responses(
+        crate::openapi::JsonBodyErrors,
         (status = 200, description = "Password reset; the target's sessions are invalidated. Admin only."),
         (status = 400, description = "The request body is not valid JSON, or a path parameter is malformed", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 403, description = "Caller is not an admin", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 404, description = "Target user does not exist", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
-        (status = 413, description = "The request body is too large", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
-        (status = 415, description = "The request body is not sent as application/json", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 422, description = "Password rejected by the policy", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
     )
 )]
@@ -757,11 +751,9 @@ struct ChangePasswordRequest {
     security(("session_cookie" = ["write"]), ("device_token_bearer" = ["write"]), ("oidc_jwt_bearer" = ["write"]), ("opds_basic" = ["write"])),
     request_body = ChangePasswordRequest,
     responses(
+        crate::openapi::JsonBodyErrors,
         (status = 200, description = "Password changed; all of the caller's sessions are invalidated."),
-        (status = 400, description = "The request body is not valid JSON", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
-        (status = 413, description = "The request body is too large", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
-        (status = 415, description = "The request body is not sent as application/json", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 422, description = "Wrong current password, rejected new password, no local credential, or concurrent credential change", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
     )
 )]
@@ -946,13 +938,12 @@ fn validate_patch_email(raw: &str, admin_id: Uuid, target_user_id: Uuid) -> Resu
     params(("id" = Uuid, Path, description = "Target user id")),
     request_body(content = UpdateUserRequest, description = "RFC 7396 JSON Merge Patch: absent fields are unchanged; explicit `null` clears `email` and is rejected for `display_name`"),
     responses(
+        crate::openapi::JsonBodyErrors,
         (status = 200, description = "Updated user. Does not invalidate the target's sessions (neither field gates access). Admin only.", body = UserResponse),
         (status = 400, description = "The request body is not valid JSON, or a path parameter is malformed", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 403, description = "Caller is not an admin", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 404, description = "Target user does not exist", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
-        (status = 413, description = "The request body is too large", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
-        (status = 415, description = "The request body is not sent as application/json", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 422, description = "Null/empty display_name, malformed email, or email already in use", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
     )
 )]

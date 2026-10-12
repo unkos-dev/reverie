@@ -204,6 +204,32 @@ pub struct ProblemDetails {
     pub instance: Option<String>,
 }
 
+/// Shared JSON body extraction failures for operation response declarations.
+#[derive(utoipa::IntoResponses)]
+pub enum JsonBodyErrors {
+    /// The request body is not valid JSON.
+    #[response(
+        status = 400,
+        description = "The request body is not valid JSON",
+        content_type = "application/problem+json"
+    )]
+    Malformed(ProblemDetails),
+    /// The request body exceeds the size limit.
+    #[response(
+        status = 413,
+        description = "The request body is too large",
+        content_type = "application/problem+json"
+    )]
+    TooLarge(ProblemDetails),
+    /// The request does not declare JSON content.
+    #[response(
+        status = 415,
+        description = "The request body is not sent as application/json",
+        content_type = "application/problem+json"
+    )]
+    UnsupportedMediaType(ProblemDetails),
+}
+
 impl axum::response::IntoResponse for ProblemDetails {
     /// Serialize as `application/problem+json` with the status taken from
     /// the body's `status` field. When `instance` is unset, it is populated
