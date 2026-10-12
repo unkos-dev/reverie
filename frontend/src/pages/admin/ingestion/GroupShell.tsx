@@ -19,7 +19,7 @@ type GroupShellProps = {
   children: ReactNode;
 };
 
-function StatusTag({ tag }: { tag: InputStatusTag }): ReactElement {
+function StatusTag({ tag }: Readonly<{ tag: InputStatusTag }>): ReactElement {
   return (
     <Badge
       variant="outline"
@@ -41,7 +41,7 @@ function GroupShell({
   muted = false,
   defaultOpen,
   children,
-}: GroupShellProps): ReactElement {
+}: Readonly<GroupShellProps>): ReactElement {
   return (
     <Collapsible defaultOpen={defaultOpen} className="border-border border-t">
       <CollapsibleTrigger asChild>

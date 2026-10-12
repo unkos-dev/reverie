@@ -20,7 +20,7 @@ type InputGroupProps = {
   pollInterval: number | false;
 };
 
-function InputRow({ item }: { item: InputItem }): ReactElement {
+function InputRow({ item }: Readonly<{ item: InputItem }>): ReactElement {
   const { dir, name } = splitPath(item.path);
   const also = item.reasons.slice(1).map((r) => INPUT_REASON_COPY[r].label);
   return (
@@ -45,7 +45,7 @@ function InputGroupBody({
   reason,
   count,
   pollInterval,
-}: Omit<InputGroupProps, "defaultOpen">): ReactElement {
+}: Readonly<Omit<InputGroupProps, "defaultOpen">>): ReactElement {
   const group = usePagedGroup<InputItem>({
     firstKey: queryKeys.ingestion.groupFirst(reason),
     afterKey: (cursor) => queryKeys.ingestion.groupAfter(reason, cursor),
@@ -74,7 +74,12 @@ function InputGroupBody({
   );
 }
 
-function InputGroup({ reason, count, defaultOpen, pollInterval }: InputGroupProps): ReactElement {
+function InputGroup({
+  reason,
+  count,
+  defaultOpen,
+  pollInterval,
+}: Readonly<InputGroupProps>): ReactElement {
   const copy = INPUT_REASON_COPY[reason];
   return (
     <GroupShell

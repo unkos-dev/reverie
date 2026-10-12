@@ -33,20 +33,21 @@ const STEPS = [
 const COUNT_FORMAT = new Intl.NumberFormat(undefined);
 
 function plural(n: number, singular: string): string {
-  return `${COUNT_FORMAT.format(n)} ${n === 1 ? singular : `${singular}s`}`;
+  const noun = n === 1 ? singular : `${singular}s`;
+  return `${COUNT_FORMAT.format(n)} ${noun}`;
 }
 
-function Heading({ children }: { children: ReactNode }): ReactElement {
+function Heading({ children }: Readonly<{ children: ReactNode }>): ReactElement {
   return <p className="font-display text-fg mb-2 text-xl font-semibold">{children}</p>;
 }
 
 function OpenIngestion({
   primary = false,
   children,
-}: {
+}: Readonly<{
   primary?: boolean;
   children: ReactNode;
-}): ReactElement {
+}>): ReactElement {
   return (
     <Button asChild variant={primary ? "default" : "outline"} className="mt-6">
       <Link to="/admin/dashboard">
@@ -110,7 +111,7 @@ function DefaultGuidance(): ReactElement {
   );
 }
 
-function UnderwayGuidance({ batch }: { batch: BatchRow }): ReactElement {
+function UnderwayGuidance({ batch }: Readonly<{ batch: BatchRow }>): ReactElement {
   const percent = batch.total === 0 ? 0 : Math.round((batch.completed / batch.total) * 100);
   return (
     <div className={SHELL_CLASS}>
@@ -136,7 +137,7 @@ function UnderwayGuidance({ batch }: { batch: BatchRow }): ReactElement {
   );
 }
 
-function AttentionGuidance({ total }: { total: number }): ReactElement {
+function AttentionGuidance({ total }: Readonly<{ total: number }>): ReactElement {
   return (
     <div className={SHELL_CLASS}>
       <Heading>No books yet</Heading>

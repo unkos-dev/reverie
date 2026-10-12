@@ -26,7 +26,7 @@ function NoticeLine({
   boxed = false,
   spin = false,
   extra,
-}: NoticeLineProps): ReactElement {
+}: Readonly<NoticeLineProps>): ReactElement {
   return (
     <div
       className={cn(
@@ -57,7 +57,7 @@ function batchSummary(batch: BatchRow, includeInProgress: boolean): string {
   return `${pluralise(batch.total, "file")} in the latest batch: ${parts.join(", ")}`;
 }
 
-function AcceptedNotice({ result }: { result: DiscoveryResult }): ReactElement {
+function AcceptedNotice({ result }: Readonly<{ result: DiscoveryResult }>): ReactElement {
   const { queued, deferred, suppressed } = result;
   if (queued === 0 && deferred === 0 && suppressed === 0) {
     return (
@@ -91,7 +91,7 @@ function AcceptedNotice({ result }: { result: DiscoveryResult }): ReactElement {
   );
 }
 
-function ActivityLine({ batch }: { batch: BatchRow }): ReactElement {
+function ActivityLine({ batch }: Readonly<{ batch: BatchRow }>): ReactElement {
   return (
     <span className="ml-7 text-[13px]">
       <b className="font-bold">Latest activity.</b>{" "}
@@ -141,7 +141,7 @@ function ScanNotice({
   running,
   latestBatch,
   onRetry,
-}: ScanNoticeProps): ReactElement {
+}: Readonly<ScanNoticeProps>): ReactElement {
   const failure = !scanPending && scanFailure !== null ? FAILURE_COPY[scanFailure] : null;
   const showActivity = running && latestBatch !== undefined && !scanPending;
   let body: ReactNode = null;

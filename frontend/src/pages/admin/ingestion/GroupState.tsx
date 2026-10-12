@@ -3,7 +3,7 @@ import { type ReactElement } from "react";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 
-function GroupLoading({ label }: { label: string }): ReactElement {
+function GroupLoading({ label }: Readonly<{ label: string }>): ReactElement {
   return (
     <div aria-busy="true" className="grid gap-3 px-4 py-4 pl-12">
       <span role="status" className="sr-only">
@@ -23,7 +23,10 @@ function focusGroupHeader(from: HTMLElement): void {
     ?.focus();
 }
 
-function GroupFailed({ message, onRetry }: { message: string; onRetry: () => void }): ReactElement {
+function GroupFailed({
+  message,
+  onRetry,
+}: Readonly<{ message: string; onRetry: () => void }>): ReactElement {
   return (
     <div className="text-fg-muted flex items-center justify-between gap-4 px-4 py-2 pl-12 text-[13px]">
       <span role="alert">{message}</span>

@@ -11,7 +11,10 @@ import { queryKeys } from "@/lib/query/keys";
 import { pluralise } from "./format";
 import { EnrichmentGroup } from "./EnrichmentGroup";
 
-function CardHead({ total, children }: { total?: string; children?: ReactElement }): ReactElement {
+function CardHead({
+  total,
+  children,
+}: Readonly<{ total?: string; children?: ReactElement }>): ReactElement {
   return (
     <div className="px-4 pt-4 pb-3">
       <h2

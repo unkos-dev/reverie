@@ -9,7 +9,7 @@
 import { useState } from "react";
 import { useQueries, useQuery } from "@tanstack/react-query";
 
-type Page<TItem> = { items: TItem[]; next_cursor?: string | null | undefined };
+type Page<TItem> = { items: TItem[]; next_cursor?: string | null };
 
 type PagedGroupOptions<TItem> = {
   firstKey: readonly unknown[];

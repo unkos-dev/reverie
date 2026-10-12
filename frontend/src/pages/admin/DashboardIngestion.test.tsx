@@ -587,7 +587,7 @@ describe("Needs attention", () => {
     renderPage();
     await screen.findByText("Book 6.epub");
     const card = screen.getByRole("region", { name: /Needs attention/ });
-    expect(within(card).queryByText(/\d:\d\d (am|pm)/)).not.toBeInTheDocument();
+    expect(within(card).queryAllByText(/\d{1,2}:\d{2}/)).toHaveLength(0);
   });
 
   test("shows the empty message when no class needs attention", async () => {
@@ -697,7 +697,7 @@ describe("Enrichment problems", () => {
     await screen.findByText("Book title 1");
     expect(screen.queryByText(/2099|Jan/)).not.toBeInTheDocument();
     const card = screen.getByRole("region", { name: /Enrichment problems/ });
-    expect(within(card).queryByText(/\d:\d\d (am|pm)/)).not.toBeInTheDocument();
+    expect(within(card).queryAllByText(/\d{1,2}:\d{2}/)).toHaveLength(0);
   });
 
   test("a group with no source requests its class alone", async () => {
@@ -898,7 +898,7 @@ describe("polling", () => {
     await act(async () => {
       await vi.advanceTimersByTimeAsync(POLL_INTERVAL_MS * 10);
     });
-    expect(vi.mocked(getInputCounts).mock.calls.length).toBe(counts);
+    expect(vi.mocked(getInputCounts).mock.calls).toHaveLength(counts);
   });
 
   test("announces that the latest activity finished once a running batch ends", async () => {
@@ -1022,7 +1022,7 @@ describe("polling", () => {
     await act(async () => {
       await vi.advanceTimersByTimeAsync(POLL_INTERVAL_MS * 10);
     });
-    expect(vi.mocked(getInputCounts).mock.calls.length).toBe(stopped);
+    expect(vi.mocked(getInputCounts).mock.calls).toHaveLength(stopped);
   });
 
   test("refetches activity and counts on window focus once polling has stopped", async () => {
@@ -1039,8 +1039,8 @@ describe("polling", () => {
       focusManager.setFocused(true);
       await vi.advanceTimersByTimeAsync(20);
     });
-    expect(vi.mocked(getInputCounts).mock.calls.length).toBe(counts + 1);
-    expect(vi.mocked(getDashboardActivity).mock.calls.length).toBe(activity + 1);
+    expect(vi.mocked(getInputCounts).mock.calls).toHaveLength(counts + 1);
+    expect(vi.mocked(getDashboardActivity).mock.calls).toHaveLength(activity + 1);
     expect(screen.getByText("9 files, 1 reason")).toBeInTheDocument();
   });
 
@@ -1059,7 +1059,7 @@ describe("polling", () => {
     await act(async () => {
       await vi.advanceTimersByTimeAsync(POLL_INTERVAL_MS * 10);
     });
-    expect(vi.mocked(getInputCounts).mock.calls.length).toBe(afterScan);
+    expect(vi.mocked(getInputCounts).mock.calls).toHaveLength(afterScan);
   });
 
   test("the enrichment lists are not polled", async () => {
@@ -1071,8 +1071,8 @@ describe("polling", () => {
     await act(async () => {
       await vi.advanceTimersByTimeAsync(POLL_INTERVAL_MS * 5);
     });
-    expect(vi.mocked(getEnrichmentFailureCounts).mock.calls.length).toBe(enrichment);
-    expect(vi.mocked(listEnrichmentFailures).mock.calls.length).toBe(lists);
+    expect(vi.mocked(getEnrichmentFailureCounts).mock.calls).toHaveLength(enrichment);
+    expect(vi.mocked(listEnrichmentFailures).mock.calls).toHaveLength(lists);
   });
 
   test("polling does not refetch later pages", async () => {
@@ -1097,7 +1097,7 @@ describe("polling", () => {
     await act(async () => {
       await vi.advanceTimersByTimeAsync(POLL_INTERVAL_MS * 4);
     });
-    expect(vi.mocked(listInputs).mock.calls.filter(([p]) => p.cursor !== undefined).length).toBe(
+    expect(vi.mocked(listInputs).mock.calls.filter(([p]) => p.cursor !== undefined)).toHaveLength(
       laterBefore,
     );
   });

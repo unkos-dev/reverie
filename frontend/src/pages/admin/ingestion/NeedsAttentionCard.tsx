@@ -20,7 +20,10 @@ type NeedsAttentionCardProps = {
 
 type Group = { reason: InputReason; count: number };
 
-function CardHead({ children, total }: { children?: ReactElement; total?: string }): ReactElement {
+function CardHead({
+  children,
+  total,
+}: Readonly<{ children?: ReactElement; total?: string }>): ReactElement {
   return (
     <div className="px-4 pt-4 pb-3">
       <h2
@@ -50,7 +53,7 @@ function NeedsAttentionCard({
   onRetry,
   pollInterval,
   afterScan,
-}: NeedsAttentionCardProps): ReactElement {
+}: Readonly<NeedsAttentionCardProps>): ReactElement {
   const [openOnLoad, setOpenOnLoad] = useState<InputReason | null | undefined>(undefined);
   const groups = counts === undefined ? [] : groupsFrom(counts);
   const attention = groups.filter((g) => g.reason !== "format_not_accepted");

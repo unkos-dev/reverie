@@ -18,7 +18,7 @@ type GroupFooterProps = {
 };
 
 /** "Showing n of total", "Show more" and the page-failure state of one group. */
-function GroupFooter({ group, total, noun }: GroupFooterProps): ReactElement {
+function GroupFooter({ group, total, noun }: Readonly<GroupFooterProps>): ReactElement {
   const { rows, hasMore, isLoadingMore, isMoreError, loadedMore, showMore, retry } = group;
   const moreRef = useRef<HTMLButtonElement>(null);
   const retryRef = useRef<HTMLButtonElement>(null);
@@ -30,10 +30,13 @@ function GroupFooter({ group, total, noun }: GroupFooterProps): ReactElement {
     restoreFocus.current = false;
     const active = document.activeElement;
     if (active !== null && active !== document.body) return undefined;
-    const target = isMoreError ? retryRef : hasMore ? moreRef : countRef;
+    const settledTarget = hasMore ? moreRef : countRef;
+    const target = isMoreError ? retryRef : settledTarget;
     target.current?.focus();
     return undefined;
   }, [isLoadingMore, isMoreError, hasMore]);
+
+  const loadedNoun = loadedMore === 1 ? noun.slice(0, -1) : noun;
 
   return (
     <div className="border-border text-fg-muted flex items-center justify-between gap-4 border-t px-4 py-2 pl-12 text-[13px]">
@@ -81,7 +84,7 @@ function GroupFooter({ group, total, noun }: GroupFooterProps): ReactElement {
       )}
       <span className="sr-only" role="status">
         {loadedMore > 0 && !isLoadingMore
-          ? `Loaded ${formatCount(loadedMore)} more ${loadedMore === 1 ? noun.slice(0, -1) : noun}`
+          ? `Loaded ${formatCount(loadedMore)} more ${loadedNoun}`
           : ""}
       </span>
     </div>

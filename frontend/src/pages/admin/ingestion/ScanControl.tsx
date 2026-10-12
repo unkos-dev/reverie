@@ -11,7 +11,7 @@ type ScanControlProps = {
 };
 
 /** The page's one Primary button, with its hint beneath. */
-function ScanControl({ pending, forbidden, onScan }: ScanControlProps): ReactElement {
+function ScanControl({ pending, forbidden, onScan }: Readonly<ScanControlProps>): ReactElement {
   return (
     <div className="flex flex-col items-end gap-1.5">
       <Button

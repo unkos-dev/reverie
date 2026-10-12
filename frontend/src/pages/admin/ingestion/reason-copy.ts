@@ -120,7 +120,7 @@ function sourceLabel(source: string): string {
   return SOURCE_LABELS[source] ?? source;
 }
 
-type FailureRef = { source?: string | null | undefined; class: FailureClass };
+type FailureRef = { source?: string | null; class: FailureClass };
 
 /** `"Open Library: timed out"`, or the class label alone with no source. */
 function failureGroupTitle(ref: FailureRef): string {

@@ -46,7 +46,7 @@ function attemptKey(item: FailureItem): string {
   return `${item.attempted_at ?? ""}|${String(item.attempt_count)}`;
 }
 
-function RetryControl({ item }: { item: FailureItem }): ReactElement {
+function RetryControl({ item }: Readonly<{ item: FailureItem }>): ReactElement {
   const queryClient = useQueryClient();
   const mutation = useMutation({
     mutationFn: (_attempt: string) => triggerEnrichment(item.manifestation_id),
@@ -93,7 +93,7 @@ function RetryControl({ item }: { item: FailureItem }): ReactElement {
   );
 }
 
-function FailureRow({ item }: { item: FailureItem }): ReactElement {
+function FailureRow({ item }: Readonly<{ item: FailureItem }>): ReactElement {
   return (
     <TableRow className="border-border hover:bg-transparent">
       <TableCell className="py-2.5 pl-12 align-top whitespace-normal">
@@ -121,7 +121,7 @@ function EnrichmentGroupBody({
   source,
   failureClass,
   count,
-}: Omit<EnrichmentGroupProps, "defaultOpen">): ReactElement {
+}: Readonly<Omit<EnrichmentGroupProps, "defaultOpen">>): ReactElement {
   const group = usePagedGroup<FailureItem>({
     firstKey: queryKeys.enrichmentFailures.groupFirst(source, failureClass),
     afterKey: (cursor) => queryKeys.enrichmentFailures.groupAfter(source, failureClass, cursor),
@@ -160,7 +160,7 @@ function EnrichmentGroup({
   failureClass,
   count,
   defaultOpen,
-}: EnrichmentGroupProps): ReactElement {
+}: Readonly<EnrichmentGroupProps>): ReactElement {
   return (
     <GroupShell
       title={failureGroupTitle({ source, class: failureClass })}
