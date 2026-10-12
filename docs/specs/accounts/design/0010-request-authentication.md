@@ -136,12 +136,13 @@ resolution path across every `/api/v1` operation to prove the scope gate behind 
   tear a rejected session down.
 - `crate::error::AppError` (`backend/src/error/mod.rs`) is the shared error type every leg returns through, but not the
   sole production source of `AppError::Unauthorized`: `routes/auth.rs`'s `/auth/callback` handler returns it for its own
-  OIDC anti-forgery, PKCE, and nonce checks and for a disabled account caught after upsert, and both `routes/auth.rs`'s
-  `me` handler and `routes/users/mod.rs`'s `change_own_password` return it when the session's `user_id` no longer
-  resolves to a row, none of these share this subject's resolution path. This subject is the only production source of
-  `AppError::InvalidCredential` (a credential presented and rejected; `BasicOnly` re-maps both variants into
-  `AppError::BasicAuthRequired`). That module's `IntoResponse` impl is what attaches the `WWW-Authenticate` challenge
-  each variant carries; this subject only chooses which variant to return.
+  OIDC anti-forgery, PKCE, and nonce checks, for a disabled account caught after upsert, and for a first sign-in whose
+  email belongs to a different account, and both `routes/auth.rs`'s `me` handler and `routes/users/mod.rs`'s
+  `change_own_password` return it when the session's `user_id` no longer resolves to a row, none of these share this
+  subject's resolution path. This subject is the only production source of `AppError::InvalidCredential` (a credential
+  presented and rejected; `BasicOnly` re-maps both variants into `AppError::BasicAuthRequired`). That module's
+  `IntoResponse` impl is what attaches the `WWW-Authenticate` challenge each variant carries; this subject only chooses
+  which variant to return.
 
 ## Data and state
 

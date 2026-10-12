@@ -43,7 +43,7 @@ enum SourceFilter {
 impl SourceFilter {
     /// The reserved `source` value that selects books with no primary
     /// source. It cannot be a source key.
-    const UNSOURCED: &'static str = "none";
+    const UNSOURCED: &str = "none";
 
     fn as_str(&self) -> &str {
         match self {
