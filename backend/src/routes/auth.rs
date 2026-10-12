@@ -131,22 +131,25 @@ async fn oidc_login(
 /// the code, establish the session, and issue the CSRF synchronizer token.
 ///
 /// # Errors
-/// - [`AppError::Unauthorized`] when the anti-forgery state is missing or
-///   mismatched, the ID token fails validation, the account is disabled, or a
-///   first sign-in's email belongs to a different account.
-/// - [`AppError::Internal`] on token-exchange or session-storage failure.
+/// - [`AppError::Unauthorized`] when the stored anti-forgery state, PKCE
+///   verifier or nonce is missing, the echoed state differs, the account is
+///   disabled, or a first sign-in's email belongs to a different account.
+/// - [`AppError::Internal`] when the token exchange fails, the response carries
+///   no ID token, the ID token fails validation, or a database or session
+///   storage operation fails.
 #[utoipa::path(
     get,
     path = "/auth/callback",
     summary = "Complete OIDC login",
-    description = "Completes the OIDC authorization-code flow, establishes a session, and redirects to the app. No authentication is required to call it. Returns 401 if the anti-forgery state does not match or the ID token fails validation.",
+    description = "Completes the OIDC authorization-code flow, establishes a session, and redirects to the app. No authentication is required to call it. Returns 401 if the anti-forgery state, PKCE verifier or nonce is missing or the state does not match, the account is disabled, or the email belongs to a different account. Returns 500 if the token exchange fails or the ID token is missing or fails validation.",
     tag = "auth",
     security(()),
     params(CallbackParams),
     responses(
         (status = 307, description = "Login complete; session established, theme cookie seeded, redirect to /"),
         (status = 400, description = "Malformed query parameter", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
-        (status = 401, description = "Anti-forgery state missing/mismatched, ID-token validation failed, account disabled, or email belongs to a different account", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
+        (status = 401, description = "Anti-forgery state, PKCE verifier or nonce missing, state mismatched, account disabled, or email belongs to a different account", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
+        (status = 500, description = "Token exchange failed, ID token missing or failed validation, or a database or session storage error; details are hidden", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
     )
 )]
 async fn callback(
