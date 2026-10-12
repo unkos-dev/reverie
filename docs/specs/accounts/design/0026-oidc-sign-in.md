@@ -17,7 +17,7 @@ governed-by:
 This Design covers interactive sign-in through an operator-configured OpenID Connect provider: the authorization-code
 flow with PKCE that starts at `GET /auth/oidc/login` and finishes at `GET /auth/callback`, the validation the callback
 applies, the resolution of the verified identity to a Reverie account, first-login provisioning, and the refusals that
-end a sign-in without a session.
+end a sign-in without establishing a new authenticated session.
 
 ## Purpose and boundaries
 
@@ -26,8 +26,8 @@ resolution and provisioning function `upsert_from_oidc` with its error type `Oid
 `validated_oidc_email` in `backend/src/models/user.rs`, and the identity-link queries in
 `backend/src/models/user_identities.rs`. It owns the three transient session keys the flow writes and clears:
 `pkce_verifier`, `oidc_csrf_state` and `nonce`. On the client it owns only the "Sign in with OIDC" action in
-`frontend/src/routes/auth-login.tsx` and the provider-aware redirect in `frontend/src/App.tsx`, both of which navigate
-the browser to `/auth/oidc/login` when `GET /auth/setup/status` reports `oidc_enabled`.
+`frontend/src/routes/auth-login.tsx`. The action appears when `GET /auth/setup/status` reports `oidc_enabled` and
+navigates the browser to `/auth/oidc/login`.
 
 It does not own the provider client, discovery, endpoint policy or the HTTP client that performs the token exchange, the
 Design "OIDC outbound transport" (REV-DESIGN-0025). It does not own the session a successful sign-in produces:
@@ -94,11 +94,12 @@ caller-supplied return target: success always redirects to `/`.
 
 ## Data and state
 
-The flow state lives in the anonymous session row that `oidc_login` creates, under three keys: `oidc_csrf_state` (the
-state the provider echoes back), `pkce_verifier` and `nonce`. They are distinct from the long-lived `csrf_token`
+The flow state lives in the browser's session, which may already be authenticated, under three keys: `oidc_csrf_state`
+(the state the provider echoes back), `pkce_verifier` and `nonce`. They are distinct from the long-lived `csrf_token`
 synchronizer key, so a transient value never overwrites it. A second `GET /auth/oidc/login` in the same session
-overwrites all three. A successful callback removes them; no failing path does, so they remain until a later login
-overwrites them or the session expires.
+overwrites all three. After login, the callback attempts to remove them, logging removal failures and continuing.
+Failures before session rotation leave the stored flow state in place. Rotation deletes the old session row before the
+response middleware persists its replacement, so a later failure can leave the browser without that flow state.
 
 An account is identified by `(issuer, subject)`, where the issuer is the verified `iss` claim and not the configured
 URL. `users.oidc_subject` is an unused nullable column that this subject never writes and never uses for identity. Email
@@ -150,22 +151,26 @@ non-administrator account. Sign-in never attaches an identity to an existing acc
 
 ## Failure and recovery
 
-| Condition                                                       | Outcome | Written                         |
-| --------------------------------------------------------------- | ------- | ------------------------------- |
-| OIDC not configured                                             | 404     | Nothing                         |
-| `code` or `state` missing or malformed                          | 400     | Nothing                         |
-| Stored state, verifier or nonce absent; echoed state differs    | 401     | Nothing                         |
-| Token exchange fails, ID token absent, or ID token fails checks | 500     | Nothing                         |
-| First sign-in email held by a different account                 | 401     | Nothing; warning logged         |
-| Account disabled                                                | 401     | Nothing                         |
-| Database error during resolution or provisioning                | 500     | Nothing; transaction rolls back |
-| Session rotation or `csrf_token` write fails                    | 500     | Account write stays committed   |
+| Condition                                                             | Outcome | Written                         |
+| --------------------------------------------------------------------- | ------- | ------------------------------- |
+| OIDC not configured                                                   | 404     | Nothing                         |
+| `code` or `state` missing or malformed                                | 400     | Nothing                         |
+| Stored state, verifier or nonce absent; echoed state differs          | 401     | Nothing                         |
+| Token exchange fails, ID token absent, or ID token fails checks       | 500     | Nothing                         |
+| First sign-in email held by a different account                       | 401     | Nothing; warning logged         |
+| Account disabled                                                      | 401     | Nothing                         |
+| Database error during resolution or provisioning                      | 500     | Nothing; transaction rolls back |
+| Session rotation, `csrf_token` write or replacement persistence fails | 500     | Account write stays committed   |
 
 A provider that redirects back with an error and no `code` lands in the 400 row. The 401 refusals share one body, with a
 `WWW-Authenticate: Bearer` challenge, and reveal neither which check failed nor whether an email exists. A refused
 sign-in leaves the transient keys in the session; the user recovers by starting again at `/auth/oidc/login`, which
-replaces them. Nothing retries automatically. When the session step fails after the account transaction committed, no
-session exists, and a retry resolves to the account and link already written.
+replaces them. Nothing retries automatically.
+
+The account transaction commits before session rotation. If deleting the old session fails, its stored state may remain,
+including an existing authenticated session. If deletion succeeds but a later session write or replacement persistence
+fails, the old row is already gone. The 500 does not roll back the account or identity link. Restarting at
+`/auth/oidc/login` establishes fresh flow state, and the next callback resolves to the account and link already written.
 
 A returning identity whose provider email changed or became invalid still signs in, and the stored email is unchanged.
 Disabling an account refuses its next sign-in through the 401 above, and ends its live sessions through the gates of the
@@ -187,8 +192,8 @@ claim is validated by shape, and an invalid value is logged by length only, neve
 A self-hoster registers `/auth/callback` on the public origin at the provider and sets `OIDC_REDIRECT_URI` to match. The
 session cookie's `SameSite=Lax` policy is what lets the cross-site redirect back from the provider carry the session.
 The flow has no linking step, so a refused collision stays refused until the other account no longer holds the email. A
-500 from the callback points at the provider's reachability or ID token; the server log carries the token-exchange or
-ID-token error.
+500 from the callback can reflect token exchange, ID-token validation, database or session-storage failure; the server
+log identifies the failing operation.
 
 ## More information
 
