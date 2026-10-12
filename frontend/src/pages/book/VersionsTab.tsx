@@ -58,7 +58,7 @@ interface VersionsTabProps {
 export function VersionsTab({ book }: Readonly<VersionsTabProps>): ReactElement {
   const [editOpen, setEditOpen] = useState(false);
   const grouped = groupByField(book.metadata_versions);
-  const fieldsWithDrafts = Object.keys(grouped).sort();
+  const fieldsWithDrafts = Object.keys(grouped).sort((a, b) => a.localeCompare(b));
   // Name/label defs only: EditMetadataDialog seeds each field's canonical
   // value itself from a fresh GET, not from this (possibly stale) `book`.
   const editableFields = (
