@@ -46,7 +46,7 @@ describe("display-storage", () => {
     forgetActiveUser();
     writeDisplayPreferences({ density: "compact" });
     expect(readDisplayPreferences()).toEqual(NO_HINT);
-    expect(localStorage.length).toBe(0);
+    expect(localStorage).toHaveLength(0);
   });
 
   test("one account's mirror never reads as another's", () => {

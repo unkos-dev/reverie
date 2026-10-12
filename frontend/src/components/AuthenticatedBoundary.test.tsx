@@ -20,7 +20,14 @@ const originalLocation = window.location;
 // cold-load test overrides this with a 401.
 function mockAuthMe(status: number): void {
   vi.spyOn(globalThis, "fetch").mockImplementation((input) => {
-    const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+    let url: string;
+    if (typeof input === "string") {
+      url = input;
+    } else if (input instanceof URL) {
+      url = input.href;
+    } else {
+      url = input.url;
+    }
     if (url.includes("/auth/me")) {
       const body = status === 200 ? JSON.stringify(STUB_ME) : null;
       return Promise.resolve(

@@ -34,7 +34,7 @@ export default defineConfig({
     ],
   },
   lint: {
-    plugins: ["typescript", "react"],
+    plugins: ["typescript", "react", "vitest"],
     categories: {
       correctness: "off",
     },
@@ -50,6 +50,10 @@ export default defineConfig({
       {
         files: ["frontend/**/*.{ts,tsx}"],
         rules: {
+          "sonarjs/no-nested-conditional": "error",
+          "sonarjs/no-nested-template-literals": "error",
+          "sonarjs/no-redundant-optional": "error",
+          "vitest/prefer-to-have-length": "error",
           "constructor-super": "error",
           "for-direction": "error",
           "getter-return": "error",
@@ -367,6 +371,7 @@ export default defineConfig({
       },
     },
     jsPlugins: [
+      "eslint-plugin-sonarjs",
       {
         name: "vite-plus",
         specifier: "vite-plus/oxlint-plugin",

@@ -286,6 +286,8 @@ function LibraryContent(): ReactElement {
     .map(([id, name]) => ({ id, name }))
     .sort((a, b) => a.name.localeCompare(b.name));
 
+  const nextPageLabel = isFetchNextPageError ? "Retry" : "Load more";
+
   return (
     <>
       <Atmosphere />
@@ -390,10 +392,8 @@ function LibraryContent(): ReactElement {
                     <Loader2 className="mr-2 size-4 animate-spin" aria-hidden="true" />
                     Loading…
                   </>
-                ) : isFetchNextPageError ? (
-                  "Retry"
                 ) : (
-                  "Load more"
+                  nextPageLabel
                 )}
               </Button>
             </div>

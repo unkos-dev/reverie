@@ -107,7 +107,11 @@ export function AuthorsCellEditor({
                 type="button"
                 variant="ghost"
                 size="icon-xs"
-                aria-label={`Remove ${entry.value === "" ? `author ${String(index + 1)}` : entry.value}`}
+                aria-label={
+                  entry.value === ""
+                    ? `Remove author ${String(index + 1)}`
+                    : `Remove ${entry.value}`
+                }
                 onClick={() => {
                   removeName(entry.id);
                 }}

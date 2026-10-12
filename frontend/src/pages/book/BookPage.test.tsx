@@ -101,6 +101,18 @@ describe("BookPage", () => {
     expect(within(overviewPanel).getByText(/passionate, polyphonic novel/)).toBeInTheDocument();
   });
 
+  test.each([
+    [0, "No pending drafts. Manually edit any field below."],
+    [1, "1 pending draft await review."],
+    [3, "3 pending drafts await review."],
+  ])("Versions tab describes %i pending drafts", async (pending, message) => {
+    const user = userEvent.setup();
+    renderBook(bookFixture({ metadata_version_summary: { pending, accepted: 0 } }));
+    await user.click(await screen.findByRole("tab", { name: /versions/i }));
+    const panel = await screen.findByRole("tabpanel", { name: /versions/i });
+    expect(within(panel).getByText(message)).toBeInTheDocument();
+  });
+
   test("Versions tab badges the pending count and exposes the editor", async () => {
     const user = userEvent.setup();
     renderBook(

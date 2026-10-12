@@ -9,12 +9,12 @@ type Props = {
 };
 
 export function PasswordPolicyHint({ policy, failed }: Props): ReactElement {
-  const message =
-    policy !== undefined
-      ? `Use ${String(policy.password_min_length)} to ${String(policy.password_max_length)} characters. Avoid common words or passwords from known data breaches.`
-      : failed
-        ? "Could not load the password policy. Reload to try again."
-        : "Loading password policy…";
+  let message = "Loading password policy…";
+  if (policy !== undefined) {
+    message = `Use ${String(policy.password_min_length)} to ${String(policy.password_max_length)} characters. Avoid common words or passwords from known data breaches.`;
+  } else if (failed) {
+    message = "Could not load the password policy. Reload to try again.";
+  }
   return (
     <FieldDescription role={policy === undefined && failed ? "alert" : undefined}>
       {message}

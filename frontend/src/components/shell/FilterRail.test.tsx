@@ -43,7 +43,14 @@ function jsonResponse(body: unknown): Response {
 
 function mockFetchByUrl(): void {
   vi.spyOn(window, "fetch").mockImplementation((input) => {
-    const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+    let url: string;
+    if (typeof input === "string") {
+      url = input;
+    } else if (input instanceof URL) {
+      url = input.href;
+    } else {
+      url = input.url;
+    }
     if (url.includes("/shelves"))
       return Promise.resolve(jsonResponse({ items: SHELVES, next_cursor: null }));
     if (url.includes("/authors")) return Promise.resolve(jsonResponse({ items: [] }));

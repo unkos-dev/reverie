@@ -15,6 +15,7 @@ describe("AuthorsCellEditor", () => {
     );
     expect(screen.getByLabelText("Author 1")).toHaveValue("Frank Herbert");
     expect(screen.getByLabelText("Author 2")).toHaveValue("Brian Herbert");
+    expect(screen.getByRole("button", { name: "Remove Frank Herbert" })).toBeInTheDocument();
   });
 
   test("adding an author and saving commits the extended author list", async () => {
@@ -113,6 +114,7 @@ describe("AuthorsCellEditor", () => {
     await user.clear(screen.getByLabelText("Author 1"));
 
     expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Remove author 1" })).toBeInTheDocument();
   });
 
   test("saving trims leading and trailing whitespace from each committed author name", async () => {

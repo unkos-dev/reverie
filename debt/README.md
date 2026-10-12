@@ -117,6 +117,8 @@ by definition active debt, the roadmap reads the directory as-is: no status filt
 
 <!-- listed most-stale first; new entries go to the top -->
 
+- [Sonar rules with partial local coverage](2026-10-12-sonar-local-rule-coverage.md): lifts when Vite+ enforces
+  read-only props, optional type aliases and specific assertions through `vite-plus/test`.
 - [CodeQL Rust extraction ignores the declared Rust version](2026-10-09-codeql-rust-ignore-rust-version.md): lifts when
   a supported upstream mechanism handles a declared minimum newer than the extractor's toolchain and extraction without
   the workaround preserves macro coverage.

@@ -954,8 +954,14 @@ describe("LibraryPage", () => {
       // fetch from an unrelated query cannot eat the scripted rejection.
       let detailCalls = 0;
       const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation((input) => {
-        const url =
-          typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+        let url: string;
+        if (typeof input === "string") {
+          url = input;
+        } else if (input instanceof URL) {
+          url = input.href;
+        } else {
+          url = input.url;
+        }
         if (url.includes(`/books/${book.id}`)) {
           detailCalls += 1;
           if (detailCalls === 1) return Promise.reject(new Error("network down"));
@@ -1042,8 +1048,14 @@ describe("LibraryPage", () => {
       const requests: URLSearchParams[] = [];
       const book = bookFixture();
       const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation((input) => {
-        const raw =
-          typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+        let raw: string;
+        if (typeof input === "string") {
+          raw = input;
+        } else if (input instanceof URL) {
+          raw = input.href;
+        } else {
+          raw = input.url;
+        }
         const url = new URL(raw, window.location.origin);
         if (url.pathname === "/api/v1/books") {
           requests.push(url.searchParams);
@@ -1672,8 +1684,14 @@ describe("LibraryPage", () => {
       let resolveRead: ((value: Response) => void) | undefined;
       const listCalls: string[] = [];
       const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation((input, init) => {
-        const url =
-          typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+        let url: string;
+        if (typeof input === "string") {
+          url = input;
+        } else if (input instanceof URL) {
+          url = input.href;
+        } else {
+          url = input.url;
+        }
         if (url.includes(PREFERENCES_PATH) && init?.method !== "PATCH") {
           return new Promise<Response>((resolve) => {
             resolveRead = resolve;

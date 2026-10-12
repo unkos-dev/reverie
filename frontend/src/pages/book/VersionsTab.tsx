@@ -68,13 +68,15 @@ export function VersionsTab({ book }: VersionsTabProps): ReactElement {
     label: FIELD_LABEL[name] ?? name,
   }));
 
+  const draftNoun = book.metadata_version_summary.pending === 1 ? "draft" : "drafts";
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <p className="text-fg-muted text-sm">
           {book.metadata_version_summary.pending === 0
             ? "No pending drafts. Manually edit any field below."
-            : `${String(book.metadata_version_summary.pending)} pending draft${book.metadata_version_summary.pending === 1 ? "" : "s"} await review.`}
+            : `${String(book.metadata_version_summary.pending)} pending ${draftNoun} await review.`}
         </p>
         <Button
           variant="outline"

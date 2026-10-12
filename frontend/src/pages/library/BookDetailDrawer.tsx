@@ -117,12 +117,13 @@ function DrawerBody({ bookId }: { bookId: string }): ReactElement {
     );
   }
 
-  const seriesText =
-    book.series === null
-      ? EMPTY_CELL
-      : book.series.position === null
+  let seriesText = EMPTY_CELL;
+  if (book.series !== null) {
+    seriesText =
+      book.series.position === null
         ? book.series.name
         : `${book.series.name} · #${String(book.series.position)}`;
+  }
   const addedText = formatDate(book.created_at);
 
   return (
@@ -240,6 +241,13 @@ function AddToShelf({ bookId, bookTitle }: { bookId: string; bookTitle: string }
     },
   });
 
+  let shelfStatus = "No shelves yet";
+  if (isError) {
+    shelfStatus = "Couldn't load shelves";
+  } else if (shelves === undefined) {
+    shelfStatus = "Loading…";
+  }
+
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -254,13 +262,7 @@ function AddToShelf({ bookId, bookTitle }: { bookId: string; bookTitle: string }
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start">
         {shelves === undefined || shelves.length === 0 ? (
-          <DropdownMenuItem disabled>
-            {isError
-              ? "Couldn't load shelves"
-              : shelves === undefined
-                ? "Loading…"
-                : "No shelves yet"}
-          </DropdownMenuItem>
+          <DropdownMenuItem disabled>{shelfStatus}</DropdownMenuItem>
         ) : (
           shelves.map((shelf) => (
             <DropdownMenuItem
