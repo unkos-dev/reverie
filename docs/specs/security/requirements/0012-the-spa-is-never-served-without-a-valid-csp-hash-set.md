@@ -35,11 +35,13 @@ far from the operator mistake that caused it. Refusing to start shows the failur
 - Starting with a present, well-formed, non-empty hash set succeeds, and the server then serves the application.
 - With no build directory configured, the server never serves the application, so this obligation holds without a hash
   set being checked.
+- The spawned-binary tests in `backend/tests/frontend_dist_startup.rs` assert the missing, malformed and invalid cases
+  above, each as a non-zero exit carrying the validation error and no database connection attempt, and assert that a
+  valid hash set lets startup continue past validation.
 
 ## More information
 
 - This obligation covers the hash set's validity when the server accepts its first request. It does not require the
   served document to keep matching that set later; a build replaced under a running process is a separate condition.
-- The hash-set cases are checked by the `validate_frontend_dist` unit tests in
-  `backend/src/security/dist_validation.rs`, which cover the validation step the startup path calls. No test asserts the
-  process exit itself.
+- The `validate_frontend_dist` unit tests in `backend/src/security/dist_validation.rs` cover the validation step the
+  startup path calls.
