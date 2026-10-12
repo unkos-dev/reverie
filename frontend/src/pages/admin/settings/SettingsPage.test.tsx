@@ -2,7 +2,7 @@ import { QueryCache, QueryClient, QueryClientProvider } from "@tanstack/react-qu
 import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { ReactElement } from "react";
-import { RouterProvider, createMemoryRouter } from "react-router";
+import { RouterProvider, createMemoryRouter, type RouteObject } from "react-router";
 import { z } from "zod";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vite-plus/test";
 
@@ -13,6 +13,8 @@ import {
   queryClient as appQueryClient,
   setUnauthenticatedHandler,
 } from "@/lib/query/client";
+
+import { adminSettingsRoute } from "@/routes/production";
 
 import { SettingsPage } from "./SettingsPage";
 
@@ -228,15 +230,13 @@ function newClient(): QueryClient {
 function renderSettings(
   area = "enrichment",
   client: QueryClient = newClient(),
+  route: RouteObject = { path: "/admin/settings/:area", element: <SettingsPage /> },
 ): {
   router: ReturnType<typeof createMemoryRouter>;
   client: QueryClient;
 } {
   const router = createMemoryRouter(
-    [
-      { path: "/admin/settings/:area", element: <SettingsPage /> },
-      { path: "/library", element: <div>Library page</div> },
-    ],
+    [route, { path: "/library", element: <div>Library page</div> }],
     { initialEntries: [`/admin/settings/${area}`] },
   );
   function Harness(): ReactElement {
@@ -291,6 +291,59 @@ afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
   setUnauthenticatedHandler(() => {});
+});
+
+describe("production settings navigation", () => {
+  beforeEach(() => {
+    appQueryClient.clear();
+  });
+
+  afterEach(() => {
+    appQueryClient.clear();
+  });
+
+  test("revisiting the active area preserves the draft revision and detects a concurrent edit", async () => {
+    const user = userEvent.setup();
+    const { router } = renderSettings("enrichment", appQueryClient, adminSettingsRoute);
+    await screen.findByRole("form", { name: /settings$/ });
+    await type(user, "Concurrent lookups", "6");
+    server.values.enrichment_concurrency = 5;
+    server.revision += 1;
+
+    const nav = screen.getByRole("navigation", { name: "Settings areas" });
+    await user.click(within(nav).getByRole("link", { name: /^Enrichment/ }));
+    await waitFor(() => {
+      expect(router.state.navigation.state).toBe("idle");
+    });
+    expect(screen.getByRole("textbox", { name: "Concurrent lookups" })).toHaveValue("6");
+    await user.click(save());
+    await waitFor(() => {
+      expect(server.puts).toHaveLength(1);
+    });
+    expect(server.puts[0]?.ifMatch).toBe('"rev-1"');
+    expect(await screen.findByText("Settings changed while you were editing")).toBeInTheDocument();
+    expect(server.values.enrichment_concurrency).toBe(5);
+    expect(server.puts).toHaveLength(1);
+  });
+
+  test("leaving a dirty area still confirms discard and loads fresh settings for the next area", async () => {
+    const user = userEvent.setup();
+    renderSettings("enrichment", appQueryClient, adminSettingsRoute);
+    await screen.findByRole("form", { name: /settings$/ });
+    await type(user, "Concurrent lookups", "6");
+    server.values.enrichment_concurrency = 5;
+    server.revision += 1;
+
+    const nav = screen.getByRole("navigation", { name: "Settings areas" });
+    await user.click(within(nav).getByRole("link", { name: /^Writeback/ }));
+    expect(await screen.findByRole("alertdialog")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Leave and discard changes" }));
+    await screen.findByRole("form", { name: "Writeback settings" });
+    await user.click(screen.getByRole("link", { name: /^Enrichment/ }));
+    expect(await screen.findByRole("textbox", { name: "Concurrent lookups" })).toHaveValue("5");
+    expect(server.puts).toHaveLength(0);
+    expect(server.gets).toBe(3);
+  });
 });
 
 describe("access", () => {

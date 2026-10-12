@@ -108,6 +108,7 @@ export const adminSettingsIndexRoute: RouteObject = {
 /** `/admin/settings/:area` — admin-only instance settings, one page per area. */
 export const adminSettingsRoute: RouteObject = {
   path: "admin/settings/:area",
+  shouldRevalidate: ({ currentParams, nextParams }) => currentParams.area !== nextParams.area,
   // Shell tone shift to canvas-2 (spec §2 admin zone).
   handle: { zone: "admin" } satisfies ZoneHandle,
   lazy: async () => {
