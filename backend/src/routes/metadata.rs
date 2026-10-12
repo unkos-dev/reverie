@@ -2597,6 +2597,8 @@ async fn apply_identifier_patches(
                                                  THEN enrichment_attempt_count ELSE 0 END, \
                  enrichment_attempted_at = CASE WHEN enrichment_status = 'in_progress' \
                                                 THEN enrichment_attempted_at ELSE NULL END, \
+                 enrichment_retry_not_before = CASE WHEN enrichment_status = 'in_progress' \
+                                                    THEN enrichment_retry_not_before ELSE NULL END, \
                  enrichment_error = CASE WHEN enrichment_status = 'in_progress' \
                                          THEN enrichment_error ELSE NULL END, \
                  enrichment_failures = CASE WHEN enrichment_status = 'in_progress' \
@@ -7489,6 +7491,7 @@ mod tests {
              SET enrichment_status = 'failed', \
                  enrichment_attempt_count = 3, \
                  enrichment_attempted_at = now(), \
+                 enrichment_retry_not_before = now() + INTERVAL '1 hour', \
                  enrichment_error = 'boom', \
                  enrichment_failures = '[{\"source\": \"openlibrary\", \"class\": \"timeout\"}]' \
              WHERE id = $1",
@@ -7579,7 +7582,8 @@ mod tests {
 
         let m = sqlx::query!(
             "SELECT enrichment_status::text AS \"enrichment_status!\", \
-                    enrichment_attempt_count, enrichment_attempted_at, enrichment_error, \
+                    enrichment_attempt_count, enrichment_attempted_at, \
+                    enrichment_retry_not_before, enrichment_error, \
                     enrichment_failures \
              FROM manifestations WHERE id = $1",
             m_id,
@@ -7595,6 +7599,10 @@ mod tests {
         assert!(
             m.enrichment_attempted_at.is_none(),
             "re-queue must null the attempt timestamp"
+        );
+        assert!(
+            m.enrichment_retry_not_before.is_none(),
+            "re-queue must clear the deferral"
         );
         assert!(m.enrichment_error.is_none());
         assert_eq!(m.enrichment_failures, serde_json::json!([]));
@@ -7653,7 +7661,7 @@ mod tests {
         let m = sqlx::query!(
             "SELECT enrichment_status::text AS \"enrichment_status!\", \
                     enrichment_attempt_count, enrichment_attempted_at, \
-                    enrichment_rerun_requested \
+                    enrichment_retry_not_before, enrichment_rerun_requested \
              FROM manifestations WHERE id = $1",
             m_id,
         )
@@ -7663,6 +7671,7 @@ mod tests {
         assert_eq!(m.enrichment_status, "pending");
         assert_eq!(m.enrichment_attempt_count, 0);
         assert!(m.enrichment_attempted_at.is_none());
+        assert!(m.enrichment_retry_not_before.is_none());
         assert!(
             !m.enrichment_rerun_requested,
             "an idle-row edit re-queues directly; no rerun request is left behind"

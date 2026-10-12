@@ -8783,7 +8783,8 @@
               "string",
               "null"
             ],
-            "format": "date-time"
+            "format": "date-time",
+            "description": "When the latest attempt started."
           },
           "manifestation_id": {
             "type": "string",
@@ -8792,6 +8793,14 @@
           "primary": {
             "$ref": "#/components/schemas/FailureRef",
             "description": "The failure the book is listed and counted under."
+          },
+          "retry_not_before": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "description": "Set while a provider's `Retry-After` defers the next attempt: the queue will not retry before it."
           },
           "status": {
             "$ref": "#/components/schemas/EnrichmentStatus",

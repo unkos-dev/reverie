@@ -113,7 +113,10 @@ struct FailureItem {
     /// `failed` while retries remain, `skipped` once they are used up.
     status: EnrichmentStatus,
     attempt_count: i32,
+    /// When the latest attempt started.
     attempted_at: Option<DateTime<Utc>>,
+    /// Set while a provider's `Retry-After` defers the next attempt: the queue will not retry before it.
+    retry_not_before: Option<DateTime<Utc>>,
     /// The failure the book is listed and counted under.
     primary: FailureRef,
     /// Failures from other sources in the same attempt; never counted.
@@ -170,6 +173,20 @@ fn also_failures(stored: serde_json::Value) -> Vec<FailureRef> {
             tracing::warn!(error = %e, "enrichment failures: unreadable stored failures");
             Vec::new()
         }
+    }
+}
+
+/// The cursor for the page after `items`, when more rows remain.
+fn next_cursor(items: &[FailureItem], has_more: bool, filter: String) -> Option<String> {
+    match items.last() {
+        Some(last) if has_more => Some(
+            FilteredIdCursor {
+                filter,
+                id: last.manifestation_id,
+            }
+            .encode(CURSOR_TAG),
+        ),
+        _ => None,
     }
 }
 
@@ -247,6 +264,7 @@ async fn list_failures(
                   m.enrichment_status AS "status!: EnrichmentStatus",
                   m.enrichment_attempt_count AS "attempt_count!",
                   m.enrichment_attempted_at AS attempted_at,
+                  m.enrichment_retry_not_before AS retry_not_before,
                   m.enrichment_failures AS "failures!",
                   p.source AS primary_source,
                   p.class AS "primary_class!"
@@ -292,6 +310,7 @@ async fn list_failures(
             status: row.status,
             attempt_count: row.attempt_count,
             attempted_at: row.attempted_at,
+            retry_not_before: row.retry_not_before,
             primary: FailureRef {
                 source: row.primary_source,
                 class: FailureClass::from_stored(&row.primary_class),
@@ -300,16 +319,7 @@ async fn list_failures(
         })
         .collect();
 
-    let next_cursor = match items.last() {
-        Some(last) if has_more => Some(
-            FilteredIdCursor {
-                filter,
-                id: last.manifestation_id,
-            }
-            .encode(CURSOR_TAG),
-        ),
-        _ => None,
-    };
+    let next_cursor = next_cursor(&items, has_more, filter);
 
     Ok((
         crate::routes::ingestion::next_link_headers(&uri, next_cursor.as_deref()),

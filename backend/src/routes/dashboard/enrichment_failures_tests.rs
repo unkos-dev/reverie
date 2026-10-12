@@ -144,9 +144,48 @@ async fn lists_a_failing_book_with_its_primary_and_other_sources(pool: PgPool) {
     assert_eq!(item["status"], "failed");
     assert_eq!(item["attempt_count"], 3);
     test_support::assert_rfc3339(item, "attempted_at");
+    assert_eq!(item.get("retry_not_before"), Some(&Value::Null));
     assert_eq!(item["primary"], entry("hardcover", "timeout"));
     assert_eq!(item["also"], json!([entry("openlibrary", "rate_limited")]));
     assert!(item["work_id"].is_string());
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn a_deferred_book_reports_its_attempt_time_and_retry_not_before_separately(pool: PgPool) {
+    let env = env(&pool).await;
+    let id = failing(
+        &env,
+        "Rate Limited",
+        json!([entry("openlibrary", "rate_limited")]),
+    )
+    .await;
+    sqlx::query!(
+        "UPDATE manifestations \
+         SET enrichment_attempted_at = now() - INTERVAL '1 minute', \
+             enrichment_retry_not_before = now() + INTERVAL '1 hour' \
+         WHERE id = $1",
+        id,
+    )
+    .execute(&env.ing)
+    .await
+    .unwrap();
+
+    let body = list(&env, "").await;
+    let item = &body["items"][0];
+    test_support::assert_rfc3339(item, "attempted_at");
+    test_support::assert_rfc3339(item, "retry_not_before");
+    let attempted_at =
+        chrono::DateTime::parse_from_rfc3339(item["attempted_at"].as_str().unwrap()).unwrap();
+    let retry_not_before =
+        chrono::DateTime::parse_from_rfc3339(item["retry_not_before"].as_str().unwrap()).unwrap();
+    assert!(
+        attempted_at < chrono::Utc::now(),
+        "attempted_at is a past instant"
+    );
+    assert!(
+        retry_not_before > chrono::Utc::now(),
+        "retry_not_before is the future deferral"
+    );
 }
 
 #[sqlx::test(migrations = "./migrations")]
