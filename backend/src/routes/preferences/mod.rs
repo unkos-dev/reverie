@@ -195,7 +195,6 @@ impl UpdatePreferencesRequest {
     security(("session_cookie" = ["write"]), ("device_token_bearer" = ["write"]), ("oidc_jwt_bearer" = ["write"]), ("opds_basic" = ["write"])),
     request_body(content = UpdatePreferencesRequest, description = "RFC 7396 JSON Merge Patch: absent groups are unchanged, `null` resets a group to the installation default"),
     responses(
-        crate::openapi::JsonBodyErrors,
         (status = 200, description = "Preferences after the merge, in the same shape as the read", body = PreferencesResponse),
         (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 422, description = "Unknown density or view, or an out-of-range sort", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),

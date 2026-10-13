@@ -77,7 +77,6 @@ async fn assert_shelf_owned(
     params(("shelf_id" = Uuid, Path, description = "Shelf id")),
     responses(
         (status = 200, description = "OPDS navigation feed linking the shelf's New / Authors / Series subcatalogs", content_type = "application/atom+xml;profile=opds-catalog;kind=navigation", body = String),
-        (status = 400, description = "A path parameter is malformed", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 401, description = "Basic authentication required (WWW-Authenticate: Basic)", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 404, description = "Shelf missing or not owned by the caller", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
     )

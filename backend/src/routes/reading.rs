@@ -134,7 +134,6 @@ impl ReadingStateRow {
     responses(
         (status = 200, description = "Caller's reading state; all-null fields mean unread (no row yet)", body = ReadingState,
          headers(("ETag" = String, description = "Strong entity-tag hashing every PATCH-modifiable field; echo as If-Match on a protected write"))),
-        (status = 400, description = "A path parameter is malformed", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 404, description = "Manifestation missing or RLS-hidden (existence-not-leaked)", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
     )
@@ -289,7 +288,6 @@ fn apply_patch(existing: ReadingStateRow, req: &UpdateReadingRequest) -> Reading
     ),
     request_body(content = UpdateReadingRequest, description = "RFC 7396 JSON Merge Patch: absent fields are unchanged, `null` clears"),
     responses(
-        crate::openapi::JsonBodyErrors,
         (status = 200, description = "Reading state after the patch and any transition stamps", body = ReadingState,
          headers(("ETag" = String, description = "Strong entity-tag hashing every PATCH-modifiable field, reflecting the state after this write"))),
         (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),

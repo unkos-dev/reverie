@@ -201,7 +201,6 @@ struct PutSettingsResponse {
     request_body(content = UpdateSettings, description = "RFC 7396 JSON Merge Patch: absent fields are unchanged; at least one field is required"),
     security(("session_cookie" = ["admin"]), ("device_token_bearer" = ["admin"]), ("oidc_jwt_bearer" = ["admin"]), ("opds_basic" = ["admin"])),
     responses(
-        crate::openapi::JsonBodyErrors,
         (status = 200, description = "Updated settings. `restart_required` is true when a changed field only takes effect after restart. Admin only.", body = PutSettingsResponse,
          headers(("ETag" = String, description = "Strong entity-tag of the settings after this write"))),
         (status = 400, description = "The request body is not valid JSON, or If-Match is malformed or carries a form this API refuses by policy: the * wildcard, an entity-tag list, a weak tag, or a repeated header instance", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),

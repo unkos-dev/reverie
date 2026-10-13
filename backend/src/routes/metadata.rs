@@ -98,7 +98,6 @@ struct MetadataRow {
     params(("id" = Uuid, Path, description = "Manifestation id")),
     responses(
         (status = 200, description = "Metadata version rows for the manifestation, newest first (empty when the manifestation is missing or RLS-hidden)", body = [MetadataRow]),
-        (status = 400, description = "A path parameter is malformed", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 403, description = "Caller is a child account", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
     )
@@ -132,7 +131,6 @@ async fn get_manifestation_metadata(
     params(("id" = Uuid, Path, description = "Work id")),
     responses(
         (status = 200, description = "Metadata version rows across the work's manifestations, newest first (empty when the work is missing or RLS-hidden)", body = [MetadataRow]),
-        (status = 400, description = "A path parameter is malformed", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 403, description = "Caller is a child account", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
     )
@@ -262,9 +260,7 @@ struct LockPayload {
     params(("id" = Uuid, Path, description = "Manifestation id")),
     request_body = VersionPayload,
     responses(
-        crate::openapi::JsonBodyErrors,
         (status = 200, description = "Version promoted to canonical; accepted ISBN changes may re-match the work"),
-        (status = 400, description = "The request body is not valid JSON, or a path parameter is malformed", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 403, description = "Caller is a child account", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 404, description = "Version not found for this manifestation, already rejected, or RLS-hidden", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
@@ -370,13 +366,10 @@ async fn lock_version_review(
     params(("id" = Uuid, Path, description = "Manifestation id")),
     request_body = VersionPayload,
     responses(
-        crate::openapi::JsonBodyErrors,
         (status = 200, description = "Version marked rejected"),
-        (status = 400, description = "The request body is not valid JSON, or a path parameter is malformed", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 403, description = "Caller is a child account", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 404, description = "Version not found for this manifestation, or RLS-hidden", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
-        (status = 422, description = "The request body is missing a required field or has a field of the wrong type", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
     )
 )]
 async fn reject_manifestation(
@@ -436,9 +429,7 @@ async fn reject_manifestation(
     params(("id" = Uuid, Path, description = "Manifestation id")),
     request_body = RevertPayload,
     responses(
-        crate::openapi::JsonBodyErrors,
         (status = 200, description = "Field reverted to the given version, or cleared when version_id is null"),
-        (status = 400, description = "The request body is not valid JSON, or a path parameter is malformed", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 403, description = "Caller is a child account", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 404, description = "Manifestation or version missing, or RLS-hidden", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
@@ -536,9 +527,7 @@ async fn revert_manifestation(
     params(("id" = Uuid, Path, description = "Manifestation id")),
     request_body = LockPayload,
     responses(
-        crate::openapi::JsonBodyErrors,
         (status = 201, description = "Lock recorded (idempotent)"),
-        (status = 400, description = "The request body is not valid JSON, or a path parameter is malformed", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 403, description = "Caller is a child account", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 404, description = "Manifestation missing or RLS-hidden (existence-not-leaked)", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
@@ -593,9 +582,7 @@ async fn lock_field(
     params(("id" = Uuid, Path, description = "Manifestation id")),
     request_body = LockPayload,
     responses(
-        crate::openapi::JsonBodyErrors,
         (status = 200, description = "Lock removed"),
-        (status = 400, description = "The request body is not valid JSON, or a path parameter is malformed", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 403, description = "Caller is a child account", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 404, description = "Manifestation missing or RLS-hidden, or no matching lock", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
@@ -2131,7 +2118,6 @@ async fn load_book_metadata(
     responses(
         (status = 200, description = "The editable metadata span, matching what PATCH accepts", body = BookMetadata,
          headers(("ETag" = String, description = "Strong entity-tag hashing this response body. Echo as If-Match on PATCH /api/v1/books/{id}/metadata"))),
-        (status = 400, description = "A path parameter is malformed", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 403, description = "Caller is a child account", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 404, description = "Manifestation missing or RLS-hidden (existence-not-leaked)", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
@@ -2286,7 +2272,6 @@ async fn load_manifestation_identifiers(
     ),
     request_body(content = UpdateMetadataFields, description = "RFC 7396 JSON Merge Patch: absent fields are unchanged, `null` clears (except `title`)"),
     responses(
-        crate::openapi::JsonBodyErrors,
         (status = 200, description = "Manual edit recorded as a `manual` metadata version and promoted to canonical (or cleared); body carries the applied value and version pointers per field", body = UpdateMetadataResponse,
          headers(("ETag" = String, description = "Strong entity-tag hashing every PATCH-modifiable field, reflecting the state after this write"))),
         (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),

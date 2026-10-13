@@ -110,7 +110,6 @@ struct TokenListItem {
     request_body = CreateTokenRequest,
     security(("session_cookie" = ["write"]), ("device_token_bearer" = ["write"]), ("oidc_jwt_bearer" = ["write"]), ("opds_basic" = ["write"])),
     responses(
-        crate::openapi::JsonBodyErrors,
         (status = 201, description = "Token created. The `token` field is the Bearer credential, returned exactly once — only its SHA-256 hash is persisted.", body = CreateTokenResponse),
         (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 403, description = "Caller's credential lacks the write scope, or a requested scope exceeds the caller's role ceiling", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
@@ -251,7 +250,6 @@ async fn list_tokens(
     security(("session_cookie" = ["write"]), ("device_token_bearer" = ["write"]), ("oidc_jwt_bearer" = ["write"]), ("opds_basic" = ["write"])),
     responses(
         (status = 204, description = "Token revoked"),
-        (status = 400, description = "A path parameter is malformed", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 403, description = "Caller's credential lacks the write scope", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 404, description = "Token does not exist, belongs to another user, or is already revoked", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
