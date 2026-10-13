@@ -65,7 +65,7 @@ type ScanResponse = services::ingestion::DiscoveryResult;
     summary = "Scan the ingestion directory",
     description = "Discovers current ingestion inputs and reports queued, deferred and suppressed counts with the activity monitor. Admin only.",
     tag = "ingestion",
-    security(("session_cookie" = ["admin"]), ("device_token_bearer" = ["admin"]), ("oidc_jwt_bearer" = ["admin"]), ("opds_basic" = ["admin"])),
+    security(("session_cookie" = ["admin"]), ("device_token_bearer" = ["admin"]), ("opds_basic" = ["admin"])),
     responses(
         (status = 202, description = "Discovery complete; processing follows readiness. Admin only.", body = ScanResponse),
         (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
@@ -210,7 +210,7 @@ struct InputCountsResponse {
     description = "Returns one page of ingestion inputs that were rejected, need a change or have used their retries, each under one primary reason class. With reason=format_not_accepted it lists ignored files instead. Admin only.",
     tag = "ingestion",
     params(InputsParams),
-    security(("session_cookie" = ["admin"]), ("device_token_bearer" = ["admin"]), ("oidc_jwt_bearer" = ["admin"]), ("opds_basic" = ["admin"])),
+    security(("session_cookie" = ["admin"]), ("device_token_bearer" = ["admin"]), ("opds_basic" = ["admin"])),
     responses(
         (status = 200, description = "One page of inputs needing attention. Admin only.", body = InputsResponse,
             headers(("Link" = String, description = "RFC 8288 next-page link; emitted with rel=\"next\" when more rows remain"))),
@@ -339,7 +339,7 @@ pub(crate) fn next_link_headers(uri: &axum::http::Uri, next_cursor: Option<&str>
     summary = "Count ingestion inputs by reason",
     description = "Returns the number of inputs under each primary reason class, and the total needing attention (every class except format_not_accepted). Admin only.",
     tag = "ingestion",
-    security(("session_cookie" = ["admin"]), ("device_token_bearer" = ["admin"]), ("oidc_jwt_bearer" = ["admin"]), ("opds_basic" = ["admin"])),
+    security(("session_cookie" = ["admin"]), ("device_token_bearer" = ["admin"]), ("opds_basic" = ["admin"])),
     responses(
         (status = 200, description = "Per-class counts. Admin only.", body = InputCountsResponse),
         (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),

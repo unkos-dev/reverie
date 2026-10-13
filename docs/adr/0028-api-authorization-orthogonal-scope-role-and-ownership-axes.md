@@ -3,7 +3,9 @@ type: ADR
 profile-version: 1
 id: "REV-ADR-0028"
 title: "API authorization: orthogonal scope, role, and ownership axes"
-status: "accepted"
+status: "superseded"
+superseded-by:
+  - "REV-ADR-0056"
 recorded-on: "2026-09-05"
 decided-on: "2026-06-23"
 decision-makers:

@@ -4,15 +4,15 @@ profile-version: 1
 id: "REV-REQ-0030"
 title: "A disabled account is refused on every credential type"
 governed-by:
-  - "REV-ADR-0028"
+  - "REV-ADR-0056"
 ---
 
 # A disabled account is refused on every credential type
 
 ## Statement
 
-A disabled account MUST be refused whichever credential type presents it: a browser session, HTTP Basic credentials, a
-bearer device token, or a bearer access token. The refusal MUST answer with HTTP status 401.
+A disabled account MUST be refused whichever credential type presents it: a browser session, HTTP Basic credentials, or
+a bearer device token. The refusal MUST answer with HTTP status 401.
 
 ## Rationale
 
@@ -28,5 +28,3 @@ capability an administrator meant to withdraw reachable through a side door. See
 - A disabled account's device token is refused. Checked over HTTP Basic by `disabled_user_device_token_is_rejected` in
   `backend/src/routes/auth.rs`; a bearer device token resolves through the identical lookup, so this one test covers
   both transports.
-- A disabled account's bearer access token (RFC 9068 resource-server JWT) is refused. Checked by
-  `disabled_account_rejected_via_jwt` in `backend/src/auth/middleware.rs`.

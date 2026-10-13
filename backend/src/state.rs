@@ -16,7 +16,6 @@ use tokio::sync::RwLock;
 
 use chrono::{DateTime, Utc};
 
-use crate::auth::jwt::JwtValidator;
 use crate::auth::oidc::OidcRuntime;
 use crate::auth::rate_limit::LoginLimiter;
 use crate::config::Config;
@@ -53,12 +52,6 @@ pub struct AppState {
     /// the callback's token exchange reuses this runtime's transport instead of
     /// building a client per request.
     pub oidc: Option<Arc<OidcRuntime>>,
-    /// Resource-server JWT validator for IdP-issued Bearer access tokens, or
-    /// `None` when resource-server JWT validation is not configured
-    /// ([`crate::config::Config::resource_server_configured`]). Built once
-    /// at startup in [`crate::auth::jwt::init_jwt_validator`]; `Arc`-wrapped
-    /// because [`JwtValidator`] itself holds no cheap-clone guarantee.
-    pub jwt_validator: Option<Arc<JwtValidator>>,
     /// Per-source (per-IP) login rate limiter, shared across the login,
     /// forgot-password, and reset-password handlers. Built once at startup from
     /// `config.login_rate_per_min`. The IP-independent per-account backoff lives

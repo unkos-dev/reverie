@@ -4,7 +4,7 @@ profile-version: 1
 id: "REV-REQ-0007"
 title: "RLS-gated rows are unreadable without a user context"
 governed-by:
-  - "REV-ADR-0028"
+  - "REV-ADR-0056"
 ---
 
 # RLS-gated rows are unreadable without a user context

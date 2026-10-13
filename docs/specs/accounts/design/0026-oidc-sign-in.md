@@ -32,16 +32,13 @@ navigates the browser to `/auth/oidc/login`.
 It does not own the provider client, discovery, endpoint policy or the HTTP client that performs the token exchange, the
 Design "OIDC outbound transport" (REV-DESIGN-0025). It does not own the session a successful sign-in produces:
 `auth::session::login`, the cookie policy and the idle expiry belong to the Design "Sessions" (REV-DESIGN-0011). It does
-not own how a later request resolves to a caller, including the read-only lookup of a bearer token's `(issuer, subject)`
-against the links this subject writes, the Design "Request authentication" (REV-DESIGN-0010), or resource-server token
-validation (`backend/src/auth/jwt.rs`). It does not own email-and-password sign-in, the Design "Local password sign-in"
-(REV-DESIGN-0012), or the first-administrator bootstrap. It does not own minting or validating the CSRF synchronizer
-token, the Design "CSRF protection" (REV-DESIGN-0008), or the theme cookie; the callback only calls them, and this
-Design names the call sites.
+not own how a later request resolves to a caller, the Design "Request authentication" (REV-DESIGN-0010). It does not own
+email-and-password sign-in, the Design "Local password sign-in" (REV-DESIGN-0012), or the first-administrator bootstrap.
+It does not own minting or validating the CSRF synchronizer token, the Design "CSRF protection" (REV-DESIGN-0008), or
+the theme cookie; the callback only calls them, and this Design names the call sites.
 
 Depends on: the configured provider's authorization, token and signing-key endpoints through the runtime held in
-`AppState.oidc`; the `users` and `user_identities` tables; and the session layer. Depended on by: the sign-in page, and
-by Bearer resolution, which can resolve only the identities this subject has linked.
+`AppState.oidc`; the `users` and `user_identities` tables; and the session layer. Depended on by: the sign-in page.
 
 ## Structure
 

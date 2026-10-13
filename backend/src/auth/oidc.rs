@@ -1,12 +1,12 @@
 //! Shared outbound OIDC transport and startup provider discovery.
 //!
-//! Discovery, token exchange and resource-server JWKS retrieval share one bounded
+//! Discovery, signing-key retrieval and token exchange share one bounded
 //! HTTPS client. Operator-selected private HTTPS providers remain supported.
 //! TLS uses the platform trust store; there is no certificate override.
 //!
 //! THREAT: the operator-selected issuer controls trusted signing keys.
 //! THREAT: disabled redirects prevent an endpoint from forwarding credentials or key resolution.
-//! THREAT: timeouts bound stalled provider requests, including JWKS cache refreshes.
+//! THREAT: timeouts bound stalled provider requests, including signing-key retrieval.
 
 use secrecy::ExposeSecret;
 use std::time::Duration;
@@ -63,10 +63,9 @@ impl SchemePolicy {
     }
 }
 
-/// One connection pool shared by configured interactive and resource-server OIDC roles.
+/// One connection pool for interactive OIDC sign-in.
 ///
-/// Clones share the underlying pool. The OAuth adapter and direct JWKS client
-/// use the same timeouts, redirect policy and User-Agent.
+/// Clones share the underlying pool and transport policy.
 #[derive(Clone, Debug)]
 pub struct OidcTransport {
     http: reqwest::Client,
@@ -123,6 +122,7 @@ impl OidcTransport {
         oauth2_reqwest::ReqwestClient::from(self.http.clone())
     }
 
+    #[cfg(test)]
     pub(crate) fn raw_client(&self) -> reqwest::Client {
         self.http.clone()
     }
@@ -173,10 +173,10 @@ impl OidcTransport {
     }
 }
 
-/// Whether either configured OIDC role needs the shared transport.
+/// Whether interactive OIDC sign-in needs the transport.
 #[must_use]
 pub fn transport_required(config: &Config) -> bool {
-    config.oidc_configured() || config.resource_server_configured()
+    config.oidc_configured()
 }
 
 /// Fully-configured OIDC `CoreClient` with `redirect_uri` set.
@@ -381,12 +381,10 @@ mod tests {
     }
 
     #[test]
-    fn transport_is_required_only_for_configured_roles() {
+    fn transport_is_required_only_for_oidc_sign_in() {
         let mut local = crate::test_support::test_config();
         assert!(!transport_required(&local));
         assert!(transport_required(&config("https://auth.example.com")));
-        local.resource_server_issuer = "https://auth.example.com".to_owned();
-        assert!(transport_required(&local));
         local.oidc_issuer_url = "https://auth.example.com".to_owned();
         assert!(transport_required(&local));
     }

@@ -552,7 +552,7 @@ async fn query_publishers(
     description = "Returns genre names attached to a manifestation the caller can see, ranked by prefix match against `q` and then by similarity. Scoped to the caller's own visible library.",
     tag = "suggest",
     params(SuggestParams),
-    security(("session_cookie" = ["read"]), ("device_token_bearer" = ["read"]), ("oidc_jwt_bearer" = ["read"]), ("opds_basic" = ["read"])),
+    security(("session_cookie" = ["read"]), ("device_token_bearer" = ["read"]), ("opds_basic" = ["read"])),
     responses(
         (status = 200, description = "Genre names in use on a visible manifestation, ranked prefix-first then by similarity", body = SuggestResponse),
         (status = 400, description = "Malformed query parameter", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
@@ -591,7 +591,7 @@ async fn suggest_genres(
     description = "Returns mood names attached to a manifestation the caller can see, ranked by prefix match against `q` and then by similarity. Scoped to the caller's own visible library.",
     tag = "suggest",
     params(SuggestParams),
-    security(("session_cookie" = ["read"]), ("device_token_bearer" = ["read"]), ("oidc_jwt_bearer" = ["read"]), ("opds_basic" = ["read"])),
+    security(("session_cookie" = ["read"]), ("device_token_bearer" = ["read"]), ("opds_basic" = ["read"])),
     responses(
         (status = 200, description = "Mood names in use on a visible manifestation, ranked prefix-first then by similarity", body = SuggestResponse),
         (status = 400, description = "Malformed query parameter", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
@@ -630,7 +630,7 @@ async fn suggest_moods(
     description = "Returns tag names attached to a manifestation the caller can see, ranked by prefix match against `q` and then by similarity. Scoped to the caller's own visible library.",
     tag = "suggest",
     params(SuggestParams),
-    security(("session_cookie" = ["read"]), ("device_token_bearer" = ["read"]), ("oidc_jwt_bearer" = ["read"]), ("opds_basic" = ["read"])),
+    security(("session_cookie" = ["read"]), ("device_token_bearer" = ["read"]), ("opds_basic" = ["read"])),
     responses(
         (status = 200, description = "Tag names in use on a visible manifestation, ranked prefix-first then by similarity", body = SuggestResponse),
         (status = 400, description = "Malformed query parameter", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
@@ -671,7 +671,7 @@ async fn suggest_tags(
     description = "Returns author names credited on a manifestation the caller can see, ranked by prefix match against `q` and then by similarity. Only the `author` credit role is matched, not editors, translators, or narrators. Scoped to the caller's own visible library.",
     tag = "suggest",
     params(SuggestParams),
-    security(("session_cookie" = ["read"]), ("device_token_bearer" = ["read"]), ("oidc_jwt_bearer" = ["read"]), ("opds_basic" = ["read"])),
+    security(("session_cookie" = ["read"]), ("device_token_bearer" = ["read"]), ("opds_basic" = ["read"])),
     responses(
         (status = 200, description = "Author names in use on a visible manifestation, ranked prefix-first then by similarity", body = SuggestResponse),
         (status = 400, description = "Malformed query parameter", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
@@ -725,7 +725,7 @@ async fn suggest_authors(
     description = "Resolves the given `id` values to author display names, for labelling a restored filter chip. Ids are scoped to the caller's own visible library and to the `author` credit role; an id the caller cannot see, or one that is not an author, is silently omitted rather than reported as missing. Requires at least one `id` and rejects more than 60.",
     tag = "suggest",
     params(AuthorsByIdParams),
-    security(("session_cookie" = ["read"]), ("device_token_bearer" = ["read"]), ("oidc_jwt_bearer" = ["read"]), ("opds_basic" = ["read"])),
+    security(("session_cookie" = ["read"]), ("device_token_bearer" = ["read"]), ("opds_basic" = ["read"])),
     responses(
         (status = 200, description = "Resolved author labels for the requested ids", body = AuthorsResponse),
         (status = 400, description = "Malformed id parameter", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
@@ -790,7 +790,7 @@ async fn authors_by_id(
     description = "Returns series names attached to a manifestation the caller can see, ranked by prefix match against `q` and then by similarity. Scoped to the caller's own visible library.",
     tag = "suggest",
     params(SuggestParams),
-    security(("session_cookie" = ["read"]), ("device_token_bearer" = ["read"]), ("oidc_jwt_bearer" = ["read"]), ("opds_basic" = ["read"])),
+    security(("session_cookie" = ["read"]), ("device_token_bearer" = ["read"]), ("opds_basic" = ["read"])),
     responses(
         (status = 200, description = "Series names in use on a visible manifestation, ranked prefix-first then by similarity", body = SuggestResponse),
         (status = 400, description = "Malformed query parameter", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
@@ -831,7 +831,7 @@ async fn suggest_series(
     description = "Returns distinct publisher values recorded on a manifestation the caller can see, ranked by prefix match against `q` and then by similarity. Scoped to the caller's own visible library.",
     tag = "suggest",
     params(SuggestParams),
-    security(("session_cookie" = ["read"]), ("device_token_bearer" = ["read"]), ("oidc_jwt_bearer" = ["read"]), ("opds_basic" = ["read"])),
+    security(("session_cookie" = ["read"]), ("device_token_bearer" = ["read"]), ("opds_basic" = ["read"])),
     responses(
         (status = 200, description = "Distinct publisher values in use on a visible manifestation, ranked prefix-first then by similarity", body = SuggestResponse),
         (status = 400, description = "Malformed query parameter", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),

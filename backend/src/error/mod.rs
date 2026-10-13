@@ -67,7 +67,7 @@ pub enum AppError {
     /// rejected.
     #[error("unauthorized")]
     Unauthorized,
-    /// Caller presented a credential (device token, JWT, or a malformed
+    /// Caller presented a credential (device token, unsupported Bearer value, or a malformed
     /// `Authorization` header) and it was rejected. Identical RFC 9457 body
     /// to [`Self::Unauthorized`] (same slug, title, detail, HTTP 401) but
     /// with `WWW-Authenticate: Bearer error="invalid_token"` (RFC 6750 §3.1)

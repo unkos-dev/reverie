@@ -4,7 +4,7 @@ profile-version: 1
 id: "REV-REQ-0029"
 title: "A session predating a change to its account is refused and destroyed"
 governed-by:
-  - "REV-ADR-0028"
+  - "REV-ADR-0056"
 ---
 
 # A session predating a change to its account is refused and destroyed
@@ -23,8 +23,8 @@ calls for a session to be renewed or invalidated whenever the privilege level it
 change is an administrative or self-service recovery action (a role or child-status change, an account disable, an
 administrator's password reset, a self-service password change, or a PIN-based recovery reset), so a session that
 outlives one of them would let a caller keep acting under a role, scope, or credential the account no longer has.
-[REV-ADR-0028](../../../adr/0028-api-authorization-orthogonal-scope-role-and-ownership-axes.md) records the
-authorisation model this obligation keeps honest across a change to the underlying account.
+[REV-ADR-0056](../../../adr/0056-api-authorisation-scope-role-and-ownership-axes-over-reverie-issued-credentials.md)
+records the authorisation model this obligation keeps honest across a change to the underlying account.
 
 ## Acceptance criteria
 

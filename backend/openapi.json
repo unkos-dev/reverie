@@ -95,11 +95,6 @@
             ]
           },
           {
-            "oidc_jwt_bearer": [
-              "write"
-            ]
-          },
-          {
             "opds_basic": [
               "write"
             ]
@@ -180,11 +175,6 @@
           },
           {
             "device_token_bearer": [
-              "read"
-            ]
-          },
-          {
-            "oidc_jwt_bearer": [
               "read"
             ]
           },
@@ -275,11 +265,6 @@
           },
           {
             "device_token_bearer": [
-              "read"
-            ]
-          },
-          {
-            "oidc_jwt_bearer": [
               "read"
             ]
           },
@@ -728,11 +713,6 @@
             ]
           },
           {
-            "oidc_jwt_bearer": [
-              "read"
-            ]
-          },
-          {
             "opds_basic": [
               "read"
             ]
@@ -814,11 +794,6 @@
             ]
           },
           {
-            "oidc_jwt_bearer": [
-              "read"
-            ]
-          },
-          {
             "opds_basic": [
               "read"
             ]
@@ -896,11 +871,6 @@
             ]
           },
           {
-            "oidc_jwt_bearer": [
-              "read"
-            ]
-          },
-          {
             "opds_basic": [
               "read"
             ]
@@ -974,11 +944,6 @@
           },
           {
             "device_token_bearer": [
-              "read"
-            ]
-          },
-          {
-            "oidc_jwt_bearer": [
               "read"
             ]
           },
@@ -1078,11 +1043,6 @@
           },
           {
             "device_token_bearer": [
-              "read"
-            ]
-          },
-          {
-            "oidc_jwt_bearer": [
               "read"
             ]
           },
@@ -1262,11 +1222,6 @@
             ]
           },
           {
-            "oidc_jwt_bearer": [
-              "write"
-            ]
-          },
-          {
             "opds_basic": [
               "write"
             ]
@@ -1352,11 +1307,6 @@
           },
           {
             "device_token_bearer": [
-              "read"
-            ]
-          },
-          {
-            "oidc_jwt_bearer": [
               "read"
             ]
           },
@@ -1526,11 +1476,6 @@
             ]
           },
           {
-            "oidc_jwt_bearer": [
-              "write"
-            ]
-          },
-          {
             "opds_basic": [
               "write"
             ]
@@ -1608,11 +1553,6 @@
           },
           {
             "device_token_bearer": [
-              "admin"
-            ]
-          },
-          {
-            "oidc_jwt_bearer": [
               "admin"
             ]
           },
@@ -1743,11 +1683,6 @@
             ]
           },
           {
-            "oidc_jwt_bearer": [
-              "admin"
-            ]
-          },
-          {
             "opds_basic": [
               "admin"
             ]
@@ -1803,11 +1738,6 @@
           },
           {
             "device_token_bearer": [
-              "admin"
-            ]
-          },
-          {
-            "oidc_jwt_bearer": [
               "admin"
             ]
           },
@@ -1871,11 +1801,6 @@
             ]
           },
           {
-            "oidc_jwt_bearer": [
-              "admin"
-            ]
-          },
-          {
             "opds_basic": [
               "admin"
             ]
@@ -1931,11 +1856,6 @@
           },
           {
             "device_token_bearer": [
-              "read"
-            ]
-          },
-          {
-            "oidc_jwt_bearer": [
               "read"
             ]
           },
@@ -2026,11 +1946,6 @@
           },
           {
             "device_token_bearer": [
-              "read"
-            ]
-          },
-          {
-            "oidc_jwt_bearer": [
               "read"
             ]
           },
@@ -2152,11 +2067,6 @@
             ]
           },
           {
-            "oidc_jwt_bearer": [
-              "admin"
-            ]
-          },
-          {
             "opds_basic": [
               "admin"
             ]
@@ -2216,11 +2126,6 @@
             ]
           },
           {
-            "oidc_jwt_bearer": [
-              "admin"
-            ]
-          },
-          {
             "opds_basic": [
               "admin"
             ]
@@ -2276,11 +2181,6 @@
           },
           {
             "device_token_bearer": [
-              "admin"
-            ]
-          },
-          {
-            "oidc_jwt_bearer": [
               "admin"
             ]
           },
@@ -2376,11 +2276,6 @@
             ]
           },
           {
-            "oidc_jwt_bearer": [
-              "read"
-            ]
-          },
-          {
             "opds_basic": [
               "read"
             ]
@@ -2465,11 +2360,6 @@
             ]
           },
           {
-            "oidc_jwt_bearer": [
-              "write"
-            ]
-          },
-          {
             "opds_basic": [
               "write"
             ]
@@ -2550,11 +2440,6 @@
           },
           {
             "device_token_bearer": [
-              "read"
-            ]
-          },
-          {
-            "oidc_jwt_bearer": [
               "read"
             ]
           },
@@ -2683,11 +2568,6 @@
             ]
           },
           {
-            "oidc_jwt_bearer": [
-              "write"
-            ]
-          },
-          {
             "opds_basic": [
               "write"
             ]
@@ -2808,11 +2688,6 @@
           },
           {
             "device_token_bearer": [
-              "write"
-            ]
-          },
-          {
-            "oidc_jwt_bearer": [
               "write"
             ]
           },
@@ -2941,11 +2816,6 @@
             ]
           },
           {
-            "oidc_jwt_bearer": [
-              "write"
-            ]
-          },
-          {
             "opds_basic": [
               "write"
             ]
@@ -3066,11 +2936,6 @@
           },
           {
             "device_token_bearer": [
-              "write"
-            ]
-          },
-          {
-            "oidc_jwt_bearer": [
               "write"
             ]
           },
@@ -3199,11 +3064,6 @@
             ]
           },
           {
-            "oidc_jwt_bearer": [
-              "write"
-            ]
-          },
-          {
             "opds_basic": [
               "write"
             ]
@@ -3290,11 +3150,6 @@
           },
           {
             "device_token_bearer": [
-              "read"
-            ]
-          },
-          {
-            "oidc_jwt_bearer": [
               "read"
             ]
           },
@@ -3389,11 +3244,6 @@
             ]
           },
           {
-            "oidc_jwt_bearer": [
-              "read"
-            ]
-          },
-          {
             "opds_basic": [
               "read"
             ]
@@ -3470,11 +3320,6 @@
           },
           {
             "device_token_bearer": [
-              "read"
-            ]
-          },
-          {
-            "oidc_jwt_bearer": [
               "read"
             ]
           },
@@ -3569,11 +3414,6 @@
             ]
           },
           {
-            "oidc_jwt_bearer": [
-              "read"
-            ]
-          },
-          {
             "opds_basic": [
               "read"
             ]
@@ -3655,11 +3495,6 @@
             ]
           },
           {
-            "oidc_jwt_bearer": [
-              "read"
-            ]
-          },
-          {
             "opds_basic": [
               "read"
             ]
@@ -3723,11 +3558,6 @@
           },
           {
             "device_token_bearer": [
-              "admin"
-            ]
-          },
-          {
-            "oidc_jwt_bearer": [
               "admin"
             ]
           },
@@ -3887,11 +3717,6 @@
             ]
           },
           {
-            "oidc_jwt_bearer": [
-              "admin"
-            ]
-          },
-          {
             "opds_basic": [
               "admin"
             ]
@@ -3947,11 +3772,6 @@
           },
           {
             "device_token_bearer": [
-              "admin"
-            ]
-          },
-          {
-            "oidc_jwt_bearer": [
               "admin"
             ]
           },
@@ -4040,11 +3860,6 @@
           },
           {
             "device_token_bearer": [
-              "read"
-            ]
-          },
-          {
-            "oidc_jwt_bearer": [
               "read"
             ]
           },
@@ -4152,11 +3967,6 @@
           },
           {
             "device_token_bearer": [
-              "write"
-            ]
-          },
-          {
-            "oidc_jwt_bearer": [
               "write"
             ]
           },
@@ -4269,11 +4079,6 @@
             ]
           },
           {
-            "oidc_jwt_bearer": [
-              "read"
-            ]
-          },
-          {
             "opds_basic": [
               "read"
             ]
@@ -4362,11 +4167,6 @@
           },
           {
             "device_token_bearer": [
-              "write"
-            ]
-          },
-          {
-            "oidc_jwt_bearer": [
               "write"
             ]
           },
@@ -4510,11 +4310,6 @@
             ]
           },
           {
-            "oidc_jwt_bearer": [
-              "write"
-            ]
-          },
-          {
             "opds_basic": [
               "write"
             ]
@@ -4629,11 +4424,6 @@
             ]
           },
           {
-            "oidc_jwt_bearer": [
-              "write"
-            ]
-          },
-          {
             "opds_basic": [
               "write"
             ]
@@ -4714,11 +4504,6 @@
           },
           {
             "device_token_bearer": [
-              "write"
-            ]
-          },
-          {
-            "oidc_jwt_bearer": [
               "write"
             ]
           },
@@ -4813,11 +4598,6 @@
             ]
           },
           {
-            "oidc_jwt_bearer": [
-              "read"
-            ]
-          },
-          {
             "opds_basic": [
               "read"
             ]
@@ -4866,11 +4646,6 @@
           },
           {
             "device_token_bearer": [
-              "read"
-            ]
-          },
-          {
-            "oidc_jwt_bearer": [
               "read"
             ]
           },
@@ -4982,11 +4757,6 @@
             ]
           },
           {
-            "oidc_jwt_bearer": [
-              "write"
-            ]
-          },
-          {
             "opds_basic": [
               "write"
             ]
@@ -5071,11 +4841,6 @@
             ]
           },
           {
-            "oidc_jwt_bearer": [
-              "write"
-            ]
-          },
-          {
             "opds_basic": [
               "write"
             ]
@@ -5134,11 +4899,6 @@
           },
           {
             "device_token_bearer": [
-              "admin"
-            ]
-          },
-          {
-            "oidc_jwt_bearer": [
               "admin"
             ]
           },
@@ -5256,11 +5016,6 @@
           },
           {
             "device_token_bearer": [
-              "admin"
-            ]
-          },
-          {
-            "oidc_jwt_bearer": [
               "admin"
             ]
           },
@@ -5397,11 +5152,6 @@
             ]
           },
           {
-            "oidc_jwt_bearer": [
-              "admin"
-            ]
-          },
-          {
             "opds_basic": [
               "admin"
             ]
@@ -5529,11 +5279,6 @@
           },
           {
             "device_token_bearer": [
-              "admin"
-            ]
-          },
-          {
-            "oidc_jwt_bearer": [
               "admin"
             ]
           },
@@ -5669,11 +5414,6 @@
             ]
           },
           {
-            "oidc_jwt_bearer": [
-              "admin"
-            ]
-          },
-          {
             "opds_basic": [
               "admin"
             ]
@@ -5794,11 +5534,6 @@
           },
           {
             "device_token_bearer": [
-              "admin"
-            ]
-          },
-          {
-            "oidc_jwt_bearer": [
               "admin"
             ]
           },
@@ -5934,11 +5669,6 @@
             ]
           },
           {
-            "oidc_jwt_bearer": [
-              "admin"
-            ]
-          },
-          {
             "opds_basic": [
               "admin"
             ]
@@ -6016,11 +5746,6 @@
           },
           {
             "device_token_bearer": [
-              "read"
-            ]
-          },
-          {
-            "oidc_jwt_bearer": [
               "read"
             ]
           },
@@ -6105,11 +5830,6 @@
           },
           {
             "device_token_bearer": [
-              "read"
-            ]
-          },
-          {
-            "oidc_jwt_bearer": [
               "read"
             ]
           },
@@ -6477,11 +6197,6 @@
             ]
           },
           {
-            "oidc_jwt_bearer": [
-              "read"
-            ]
-          },
-          {
             "opds_basic": [
               "read"
             ]
@@ -6576,11 +6291,6 @@
           },
           {
             "device_token_bearer": [
-              "write"
-            ]
-          },
-          {
-            "oidc_jwt_bearer": [
               "write"
             ]
           },
@@ -12068,12 +11778,6 @@
         "type": "http",
         "scheme": "bearer",
         "description": "Personal device-token credential (`{prefix}{token_id}.{secret}`). MUST be used over HTTPS in production; the token is otherwise exposed in transit."
-      },
-      "oidc_jwt_bearer": {
-        "type": "http",
-        "scheme": "bearer",
-        "bearerFormat": "JWT",
-        "description": "RFC 9068 resource-server access token issued by the configured IdP. MUST be used over HTTPS in production; the token is otherwise exposed in transit."
       },
       "opds_basic": {
         "type": "http",

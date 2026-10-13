@@ -185,7 +185,7 @@ async fn opds_cover_thumb(
     summary = "Get a book's cover",
     description = "Streams the full-size cover image for a manifestation as `image/jpeg`, `image/png`, or `image/webp`, with a strong `ETag` and a day-long `Cache-Control`, for the web UI. Requires a session cookie, HTTP Basic authentication, a device token, or an OIDC bearer token.",
     tag = "library",
-    security(("session_cookie" = ["read"]), ("device_token_bearer" = ["read"]), ("oidc_jwt_bearer" = ["read"]), ("opds_basic" = ["read"])),
+    security(("session_cookie" = ["read"]), ("device_token_bearer" = ["read"]), ("opds_basic" = ["read"])),
     params(("id" = Uuid, Path, description = "Manifestation id")),
     responses(
         (status = 200, description = "Cover image stream (`image/jpeg` / `image/png` / `image/webp`); Cache-Control: private, max-age=86400; carries a strong ETag"),
@@ -220,7 +220,7 @@ async fn api_cover(
     summary = "Get a book's cover thumbnail",
     description = "Streams the thumbnail cover image for a manifestation as `image/jpeg`, with a strong `ETag` and a day-long `Cache-Control`, for the web UI. Requires a session cookie, HTTP Basic authentication, a device token, or an OIDC bearer token.",
     tag = "library",
-    security(("session_cookie" = ["read"]), ("device_token_bearer" = ["read"]), ("oidc_jwt_bearer" = ["read"]), ("opds_basic" = ["read"])),
+    security(("session_cookie" = ["read"]), ("device_token_bearer" = ["read"]), ("opds_basic" = ["read"])),
     params(("id" = Uuid, Path, description = "Manifestation id")),
     responses(
         (status = 200, description = "Thumbnail image stream (`image/jpeg`); Cache-Control: private, max-age=86400; carries a strong ETag"),

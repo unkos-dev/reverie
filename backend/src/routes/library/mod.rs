@@ -284,7 +284,7 @@ struct BookListResponse {
     description = "Returns one page of the manifestations visible to the caller, filterable and sortable via query parameters.",
     tag = "library",
     params(ListParams),
-    security(("session_cookie" = ["read"]), ("device_token_bearer" = ["read"]), ("oidc_jwt_bearer" = ["read"]), ("opds_basic" = ["read"])),
+    security(("session_cookie" = ["read"]), ("device_token_bearer" = ["read"]), ("opds_basic" = ["read"])),
     responses(
         (status = 200, description = "Paginated list of visible books", body = BookListResponse,
             headers(("Link" = String, description = "RFC 8288 next-page link; emitted with rel=\"next\" when more rows remain"))),
@@ -1048,7 +1048,7 @@ fn merge_external_ids(
     description = "Returns detail for one manifestation, including work-level prose and a metadata-version summary. A manifestation hidden from the caller is reported as 404 rather than leaking its existence. A child account receives an empty pending-version list and a pending count of zero.",
     tag = "library",
     params(("id" = Uuid, Path, description = "Manifestation id")),
-    security(("session_cookie" = ["read"]), ("device_token_bearer" = ["read"]), ("oidc_jwt_bearer" = ["read"]), ("opds_basic" = ["read"])),
+    security(("session_cookie" = ["read"]), ("device_token_bearer" = ["read"]), ("opds_basic" = ["read"])),
     responses(
         (status = 200, description = "Book detail", body = BookDetail),
         (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
@@ -1559,7 +1559,7 @@ fn accepted_pointer_count(row: &DetailRow) -> u32 {
     description = "Returns work-level prose plus every manifestation of that work visible to the caller. Fails with 404 when the work is missing or every manifestation is hidden from the caller.",
     tag = "library",
     params(("id" = Uuid, Path, description = "Work id")),
-    security(("session_cookie" = ["read"]), ("device_token_bearer" = ["read"]), ("oidc_jwt_bearer" = ["read"]), ("opds_basic" = ["read"])),
+    security(("session_cookie" = ["read"]), ("device_token_bearer" = ["read"]), ("opds_basic" = ["read"])),
     responses(
         (status = 200, description = "Work detail with visible manifestations", body = WorkDetail),
         (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),

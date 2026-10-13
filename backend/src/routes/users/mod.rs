@@ -120,7 +120,7 @@ const MAX_LISTED_USERS: i64 = 500;
     summary = "List users",
     description = "Returns every user, oldest first, capped at 500 rows. Admin only.",
     tag = "users",
-    security(("session_cookie" = ["admin"]), ("device_token_bearer" = ["admin"]), ("oidc_jwt_bearer" = ["admin"]), ("opds_basic" = ["admin"])),
+    security(("session_cookie" = ["admin"]), ("device_token_bearer" = ["admin"]), ("opds_basic" = ["admin"])),
     responses(
         (status = 200, description = "All users, oldest first, defensively capped at 500 rows. Admin only.", body = [UserResponse]),
         (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
@@ -187,7 +187,7 @@ struct UpdateRoleRequest {
     summary = "Change a user's role",
     description = "Sets the target user's role and invalidates their active sessions. Admin only. Returns 422 if the change would leave zero administrators or conflicts with the target's child status.",
     tag = "users",
-    security(("session_cookie" = ["admin"]), ("device_token_bearer" = ["admin"]), ("oidc_jwt_bearer" = ["admin"]), ("opds_basic" = ["admin"])),
+    security(("session_cookie" = ["admin"]), ("device_token_bearer" = ["admin"]), ("opds_basic" = ["admin"])),
     params(("id" = Uuid, Path, description = "Target user id")),
     request_body = UpdateRoleRequest,
     responses(
@@ -311,7 +311,7 @@ struct UpdateChildStatusRequest {
     summary = "Change a user's child status",
     description = "Toggles whether child content-visibility rules apply to the target user and invalidates their active sessions. Enabling child status also sets the role to `child`; disabling it reverts `child` to `adult` and leaves other roles unchanged. Admin only. Returns 422 if marking the last administrator as a child would leave zero administrators.",
     tag = "users",
-    security(("session_cookie" = ["admin"]), ("device_token_bearer" = ["admin"]), ("oidc_jwt_bearer" = ["admin"]), ("opds_basic" = ["admin"])),
+    security(("session_cookie" = ["admin"]), ("device_token_bearer" = ["admin"]), ("opds_basic" = ["admin"])),
     params(("id" = Uuid, Path, description = "Target user id")),
     request_body = UpdateChildStatusRequest,
     responses(
@@ -435,7 +435,7 @@ struct CreateUserRequest {
     summary = "Create a user",
     description = "Creates an account with an administrator-typed initial password, for the administrator to relay out of band. Admin only; the caller must not be a child. Returns 409 if the email is already in use.",
     tag = "users",
-    security(("session_cookie" = ["admin"]), ("device_token_bearer" = ["admin"]), ("oidc_jwt_bearer" = ["admin"]), ("opds_basic" = ["admin"])),
+    security(("session_cookie" = ["admin"]), ("device_token_bearer" = ["admin"]), ("opds_basic" = ["admin"])),
     request_body = CreateUserRequest,
     responses(
         (status = 201, description = "Created user. Admin only.", body = UserResponse),
@@ -517,7 +517,7 @@ struct AccountStatusRequest {
     summary = "Enable or disable an account",
     description = "Soft-disables or re-enables the target account. Disabling invalidates the target's active sessions; an administrator cannot disable their own account. Admin only; the caller must not be a child. Returns 422 if disabling would leave zero enabled administrators.",
     tag = "users",
-    security(("session_cookie" = ["admin"]), ("device_token_bearer" = ["admin"]), ("oidc_jwt_bearer" = ["admin"]), ("opds_basic" = ["admin"])),
+    security(("session_cookie" = ["admin"]), ("device_token_bearer" = ["admin"]), ("opds_basic" = ["admin"])),
     params(("id" = Uuid, Path, description = "Target user id")),
     request_body = AccountStatusRequest,
     responses(
@@ -644,7 +644,7 @@ struct AdminPasswordResetRequest {
     summary = "Reset a user's password",
     description = "Sets a new password for the target account, for the administrator to relay out of band, and invalidates the target's active sessions. Admin only; the caller must not be a child.",
     tag = "users",
-    security(("session_cookie" = ["admin"]), ("device_token_bearer" = ["admin"]), ("oidc_jwt_bearer" = ["admin"]), ("opds_basic" = ["admin"])),
+    security(("session_cookie" = ["admin"]), ("device_token_bearer" = ["admin"]), ("opds_basic" = ["admin"])),
     params(("id" = Uuid, Path, description = "Target user id")),
     request_body = AdminPasswordResetRequest,
     responses(
@@ -739,7 +739,7 @@ struct ChangePasswordRequest {
     summary = "Change your own password",
     description = "Verifies the caller's current password and sets a new one only if that credential is unchanged, invalidating all of the caller's sessions including the one making this request. Returns 422 for a wrong current password, a rejected new password, no local credential, or a concurrent credential change.",
     tag = "users",
-    security(("session_cookie" = ["write"]), ("device_token_bearer" = ["write"]), ("oidc_jwt_bearer" = ["write"]), ("opds_basic" = ["write"])),
+    security(("session_cookie" = ["write"]), ("device_token_bearer" = ["write"]), ("opds_basic" = ["write"])),
     request_body = ChangePasswordRequest,
     responses(
         (status = 200, description = "Password changed; all of the caller's sessions are invalidated."),
@@ -924,7 +924,7 @@ fn validate_patch_email(raw: &str, admin_id: Uuid, target_user_id: Uuid) -> Resu
     summary = "Update a user's name or email",
     description = "Updates the target user's `display_name` and `email` using JSON Merge Patch: an absent field is unchanged, and an explicit `null` clears `email` but is rejected for `display_name`. Neither field invalidates the target's sessions. Admin only. Returns 422 for an empty `display_name` or an `email` already in use.",
     tag = "users",
-    security(("session_cookie" = ["admin"]), ("device_token_bearer" = ["admin"]), ("oidc_jwt_bearer" = ["admin"]), ("opds_basic" = ["admin"])),
+    security(("session_cookie" = ["admin"]), ("device_token_bearer" = ["admin"]), ("opds_basic" = ["admin"])),
     params(("id" = Uuid, Path, description = "Target user id")),
     request_body(content = UpdateUserRequest, description = "RFC 7396 JSON Merge Patch: absent fields are unchanged; explicit `null` clears `email` and is rejected for `display_name`"),
     responses(

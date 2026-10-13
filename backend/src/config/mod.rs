@@ -93,21 +93,6 @@ const OIDC_FIELDS: &[(&str, RequiredFieldAccessor)] = &[
     ("OIDC_REDIRECT_URI", |c| c.oidc_redirect_uri.as_str()),
 ];
 
-/// Resource-server fields that become required *together* once resource-server
-/// JWT validation is configured (the issuer URL is present). Mirrors
-/// [`OIDC_FIELDS`]'s "required together iff trigger set" pattern, scoped to
-/// just `issuer` + `audience`; `resource_server_jwks_url` and
-/// `resource_server_require_at_jwt` are independently optional with safe
-/// defaults (OIDC discovery, relaxed `typ` policy) and are never required.
-const RESOURCE_SERVER_FIELDS: &[(&str, RequiredFieldAccessor)] = &[
-    ("REVERIE_RESOURCE_SERVER_ISSUER", |c| {
-        c.resource_server_issuer.as_str()
-    }),
-    ("REVERIE_RESOURCE_SERVER_AUDIENCE", |c| {
-        c.resource_server_audience.as_str()
-    }),
-];
-
 /// Resolved process-wide configuration.
 ///
 /// Fields reflect the settled view of
@@ -249,89 +234,6 @@ pub struct Config {
     /// startup (Gate 3): at least one auth provider must remain usable or the
     /// instance locks everyone out.
     pub local_auth_enabled: bool,
-    /// OIDC issuer URL for resource-server JWT validation
-    /// (`REVERIE_RESOURCE_SERVER_ISSUER`). Distinct from `oidc_issuer_url`
-    /// (interactive login): a resource-server JWT authenticates an API
-    /// caller through the `CurrentUser` extractor and never establishes a
-    /// session. Empty (default) disables JWT Bearer authentication
-    /// entirely, so a Bearer credential that is not an `rvpat_` personal
-    /// token then 401s at the extractor dispatch.
-    ///
-    /// Prerequisite: a JWT only ever authenticates an identity that already
-    /// exists in Reverie. The token's `(iss, sub)` pair must already be
-    /// linked to a user through a prior interactive OIDC login (that login
-    /// is the only path that creates the link); a correctly signed token
-    /// for an issuer/subject Reverie has never seen is rejected, not
-    /// auto-provisioned. Interactive login must therefore be configured and
-    /// exercised at least once for a given user before resource-server JWTs
-    /// for that user will authenticate.
-    ///
-    /// THREAT: this is the trust anchor for API-caller signatures. The
-    /// JWKS URL used to verify tokens derives from this issuer (via OIDC
-    /// discovery, or the explicit `resource_server_jwks_url` override),
-    /// never from a claim inside an incoming token. An operator pointing
-    /// this at a malicious or compromised issuer can induce Reverie to
-    /// trust attacker-controlled JWKS, enabling access-token forgery (the
-    /// same operator-level threat documented on `oidc_issuer_url`). It carries
-    /// the same transport constraints: `https`, no query, no fragment, checked
-    /// at startup even when an explicit JWKS override is supplied.
-    pub resource_server_issuer: String,
-    /// Expected `aud` claim for resource-server JWT validation
-    /// (`REVERIE_RESOURCE_SERVER_AUDIENCE`). Required together with
-    /// `resource_server_issuer` (both set, or neither).
-    ///
-    /// Use a DEDICATED `IdP` client/audience for API access, distinct from
-    /// the interactive-login `oidc_client_id`: if the same audience were
-    /// accepted for both, an ID token minted for interactive login could
-    /// be replayed as an API access token (cross-JWT confusion).
-    ///
-    /// Not for machine-to-machine callers: a service account, CI job, or
-    /// script that can never complete an interactive login has no
-    /// `(iss, sub)` link to resolve against and is rejected outright (see
-    /// the prerequisite documented on `resource_server_issuer`). Mint it a
-    /// personal access token instead (`rvpat_`-prefixed, `POST
-    /// /api/v1/tokens` or the token-management screen): that credential is
-    /// exactly what this config is not for.
-    pub resource_server_audience: String,
-    /// Explicit JWKS endpoint override for resource-server JWT validation
-    /// (`REVERIE_RESOURCE_SERVER_JWKS_URL`). Empty (default) derives the
-    /// JWKS URL from `resource_server_issuer` via OIDC discovery at
-    /// startup. Set this only for an `IdP` that does not publish
-    /// `.well-known/openid-configuration` (or exposes a JWKS endpoint
-    /// outside its discovery document); the resolved URL is fixed for the
-    /// process lifetime and is never read from an incoming token (RFC 8725
-    /// §3.9/§3.10: `jku`/`x5u` header values are never followed).
-    ///
-    /// The resolved endpoint must use `https`, whether it came from this
-    /// override or from discovery; startup fails otherwise.
-    ///
-    /// Fetches against it run over the shared OIDC transport, so they carry
-    /// explicit connect and request timeouts and never follow redirects (the
-    /// configured URL must be the final endpoint); resolved keys are cached
-    /// in-process. Missing
-    /// keys are NOT negatively cached: each Bearer credential naming an
-    /// unknown `kid` triggers a fresh JWKS fetch, so a flood of such
-    /// credentials drives outbound fetches to the `IdP` roughly 1:1. On an
-    /// internet-exposed instance, put the API behind an edge rate limiter
-    /// (reverse proxy or WAF) to bound that amplification.
-    pub resource_server_jwks_url: String,
-    /// Whether the `typ` header of a resource-server JWT must be `at+jwt` /
-    /// `application/at+jwt` per RFC 9068 §4
-    /// (`REVERIE_RESOURCE_SERVER_REQUIRE_AT_JWT`, default `false`).
-    ///
-    /// `true` (strict): only `at+jwt` / `application/at+jwt` is accepted.
-    /// `false` (relaxed, default): a bare `JWT` or an absent `typ` is
-    /// additionally accepted. In both modes any OTHER explicit `typ`
-    /// (e.g. `logout+jwt`, `dpop+jwt`) is rejected, closing the replay of a
-    /// same-key token declared for another purpose (Authentik, for one,
-    /// signs logout tokens with the same key as access tokens). Set `true`
-    /// for a conforming `IdP` (Authelia, Kanidm, Keycloak 26.2+ with the
-    /// `at+jwt` toggle enabled); most self-hosted `IdPs` surveyed
-    /// 2026-07-02 (Authentik, Zitadel, Casdoor, Hydra/fosite) emit a bare
-    /// `typ: JWT` or omit it entirely, hence the relaxed default. Revisit
-    /// once upstream `IdPs` converge (tracked upstream:
-    /// goauthentik/authentik#22070).
-    pub resource_server_require_at_jwt: bool,
     /// Migration DSN (`DATABASE_URL_MIGRATION`). `reverie_migrator`
     /// credentials for the ephemeral migration pool. `None` on the default
     /// server path: the application process holds no migration credential
@@ -539,19 +441,7 @@ impl Config {
             });
         }
 
-        // Gate 4: resource-server fields required together. Deliberately
-        // NOT folded into the interactive-provider guard above: JWTs
-        // cannot establish a session, so a resource-server-only config
-        // (no local auth, no OIDC login) still refuses to start there.
-        if cfg.resource_server_configured() {
-            for &(var, field) in RESOURCE_SERVER_FIELDS {
-                if field(&cfg).trim().is_empty() {
-                    return Err(ConfigError::MissingVar(var.into()));
-                }
-            }
-        }
-
-        // Gate 5: the operator contact is embedded verbatim in the outbound
+        // Gate 4: the operator contact is embedded verbatim in the outbound
         // `User-Agent`, and reqwest refuses to build a client whose UA is not
         // a valid header value. Rejecting it here turns a per-request panic in
         // the UA-setting constructors into a startup error.
@@ -582,16 +472,6 @@ impl Config {
     /// present, so callers can treat a configured instance as fully usable.
     pub fn oidc_configured(&self) -> bool {
         !self.oidc_issuer_url.trim().is_empty()
-    }
-
-    /// Whether resource-server JWT Bearer authentication is enabled,
-    /// signalled by a non-blank issuer URL; mirrors [`Self::oidc_configured`].
-    /// Gate 4 in [`Self::from_figment`] guarantees that when this is `true`,
-    /// `resource_server_audience` is also present. Does NOT count toward the
-    /// interactive-provider guard: a resource-server-only instance still
-    /// requires local auth or OIDC login to be usable at all.
-    pub fn resource_server_configured(&self) -> bool {
-        !self.resource_server_issuer.trim().is_empty()
     }
 
     /// `User-Agent` string for outbound metadata API requests.  `OpenLibrary`
@@ -831,11 +711,6 @@ impl Default for Config {
             oidc_redirect_uri: String::new(),
             // Local-first default; Gate 3 guards the lock-out case.
             local_auth_enabled: true,
-            // REQUIRED-TOGETHER — empty sentinels (Gate 4).
-            resource_server_issuer: String::new(),
-            resource_server_audience: String::new(),
-            resource_server_jwks_url: String::new(),
-            resource_server_require_at_jwt: false,
             migration_database_url: None,
             auto_migrate: false,
             ingestion_database_url: String::new().into(),
@@ -1710,75 +1585,6 @@ mod tests {
         let config = cfg_from_owned(&vars).expect("OIDC-only config loads");
         assert!(!config.local_auth_enabled);
         assert!(config.oidc_configured());
-    }
-
-    #[test]
-    fn resource_server_unconfigured_by_default() {
-        let config = cfg_from(BASE_VARS).unwrap();
-        assert!(!config.resource_server_configured());
-        assert!(!config.resource_server_require_at_jwt);
-    }
-
-    #[test]
-    fn resource_server_both_fields_set_is_ok() {
-        let vars = with_overrides(&[
-            ("REVERIE_RESOURCE_SERVER_ISSUER", "https://idp.example.com"),
-            ("REVERIE_RESOURCE_SERVER_AUDIENCE", "reverie-api"),
-        ]);
-        let config = cfg_from_owned(&vars).expect("resource-server config loads");
-        assert!(config.resource_server_configured());
-        assert_eq!(config.resource_server_audience, "reverie-api");
-    }
-
-    #[test]
-    fn resource_server_audience_missing_is_rejected_when_issuer_set() {
-        // Gate 4: once the issuer is set, resource-server JWT validation is
-        // "configured", so audience becomes required together — mirrors
-        // partial_oidc_block_is_rejected_when_configured (Gate 3).
-        let vars = with_overrides(&[("REVERIE_RESOURCE_SERVER_ISSUER", "https://idp.example.com")]);
-        let err = cfg_from_owned(&vars).unwrap_err();
-        assert!(
-            matches!(&err, ConfigError::MissingVar(v) if v == "REVERIE_RESOURCE_SERVER_AUDIENCE"),
-            "expected MissingVar(REVERIE_RESOURCE_SERVER_AUDIENCE), got: {err:?}"
-        );
-    }
-
-    #[test]
-    fn resource_server_only_config_does_not_satisfy_interactive_provider_guard() {
-        // A JWT resource server cannot establish a session, so it must not
-        // count toward the "at least one auth provider" guard: local auth
-        // off + no OIDC login + resource-server-only still refuses to start.
-        let mut vars = without_keys(&[
-            "OIDC_ISSUER_URL",
-            "OIDC_CLIENT_ID",
-            "OIDC_CLIENT_SECRET",
-            "OIDC_REDIRECT_URI",
-        ]);
-        vars.push(("REVERIE_LOCAL_AUTH_ENABLED".into(), "false".into()));
-        vars.push((
-            "REVERIE_RESOURCE_SERVER_ISSUER".into(),
-            "https://idp.example.com".into(),
-        ));
-        vars.push((
-            "REVERIE_RESOURCE_SERVER_AUDIENCE".into(),
-            "reverie-api".into(),
-        ));
-        let err = cfg_from_owned(&vars).unwrap_err();
-        assert!(
-            matches!(&err, ConfigError::Invalid { var, .. } if var == "REVERIE_LOCAL_AUTH_ENABLED"),
-            "resource-server-only config must still trip the interactive-provider guard, got: {err:?}"
-        );
-    }
-
-    #[test]
-    fn resource_server_require_at_jwt_defaults_false_and_parses_strict_bool() {
-        let vars = with_overrides(&[
-            ("REVERIE_RESOURCE_SERVER_ISSUER", "https://idp.example.com"),
-            ("REVERIE_RESOURCE_SERVER_AUDIENCE", "reverie-api"),
-            ("REVERIE_RESOURCE_SERVER_REQUIRE_AT_JWT", "true"),
-        ]);
-        let config = cfg_from_owned(&vars).expect("resource-server config loads");
-        assert!(config.resource_server_require_at_jwt);
     }
 
     #[test]

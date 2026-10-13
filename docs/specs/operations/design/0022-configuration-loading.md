@@ -91,7 +91,7 @@ Gate 1 clears the migration field. Unknown `_FILE` variables, including the boot
 provider retains the `RUST_LOG`/`REVERIE_LOG_LEVEL` precedence cascade and `ENV_MAP`'s explicit flat/nested paths.
 Non-credential empty values retain their existing handling, including explicit empty roots and accepted-format sets.
 
-Six registries in `backend/src/config/mod.rs` and `provider.rs` together decide what varies and what is required, and
+Five registries in `backend/src/config/mod.rs` and `provider.rs` together decide what varies and what is required, and
 each has a distinct shape and a distinct completeness check:
 
 - `ENV_MAP` (`provider.rs`): every operator-facing variable name paired with the dotted field path it feeds. This is the
@@ -106,10 +106,10 @@ each has a distinct shape and a distinct completeness check:
 - `SERVER_REQUIRED_FIELDS` (`mod.rs`): the same name-plus-accessor shape, read by `Config::validate_server` and
   `reference.rs::required_label`. Its ingestion DSN entry is required for normal server startup and rendered as
   conditional in the reference; administrative commands do not run that validation.
-- `OIDC_FIELDS` and `RESOURCE_SERVER_FIELDS` (`mod.rs`): the same name-plus-accessor shape as `REQUIRED_FIELDS`, but
-  conditionally required together once a trigger field (`oidc_issuer_url`, `resource_server_issuer`) is non-blank.
-  `OIDC_FIELDS` lists the issuer field first deliberately, so an issuer-only block reports the next missing field rather
-  than reporting the issuer itself as missing when it is in fact the one field already present.
+- `OIDC_FIELDS` (`mod.rs`): the same name-plus-accessor shape as `REQUIRED_FIELDS`, but conditionally required together
+  once `oidc_issuer_url` is non-blank. `OIDC_FIELDS` lists the issuer field first deliberately, so an issuer-only block
+  reports the next missing field rather than reporting the issuer itself as missing when it is in fact the one field
+  already present.
 - `SECRET_FIELDS` (`mod.rs`): six dotted paths (`database_url`, `migration_database_url`, `ingestion_database_url`,
   `oidc_client_secret`, `googlebooks_api_key`, `hardcover_api_token`) consulted by parsing and validation error mapping
   before either can retain a credential value.
@@ -195,8 +195,8 @@ stops startup. Other worker settings retain their own loading behaviour.
 6. Gate 3 checks `oidc_configured()` (a non-blank `oidc_issuer_url`); by default it is blank, so the OIDC-fields loop is
    skipped, and the `local_auth_enabled`-or-`oidc_configured()` check passes because `local_auth_enabled` defaults to
    `true`.
-7. Gate 4 checks `resource_server_configured()`; blank by default, so it is skipped. Gate 5 builds the `User-Agent`
-   string from `operator_contact` (`None` by default) and confirms it parses as a valid header value.
+7. Gate 4 builds the `User-Agent` string from `operator_contact` (`None` by default) and confirms it parses as a valid
+   header value.
 8. `cfg.validate()` runs the `#[validate(range(...))]` attributes and the struct-level cross-field functions
    (`validate_security_config`, `validate_opds_config`); every range-checked field's default satisfies its own range,
    `validate_security_config` passes because every security default is `false`/`None`, and `validate_opds_config` passes
@@ -222,14 +222,10 @@ because the loop iterates `OIDC_FIELDS` in the order the constant declares it an
 loop's own field (the issuer) is checked and passes immediately, and the loop reports `MissingVar("OIDC_CLIENT_ID")` on
 the next entry rather than naming the issuer that is in fact present.
 
-**`REVERIE_LOCAL_AUTH_ENABLED=false` with no OIDC configured and no resource server configured**: Gate 3's OIDC branch
-is skipped (`oidc_configured()` is `false`), but the following check,
-`!cfg.local_auth_enabled && !cfg.oidc_configured()`, is true, so `from_figment` returns
+**`REVERIE_LOCAL_AUTH_ENABLED=false` with no OIDC configured**: Gate 3's OIDC branch is skipped (`oidc_configured()` is
+`false`), but the following check, `!cfg.local_auth_enabled && !cfg.oidc_configured()`, is true, so `from_figment`
+returns
 `ConfigError::Invalid { var: "REVERIE_LOCAL_AUTH_ENABLED", reason: "at least one auth provider must be enabled: ..." }`.
-Configuring `resource_server_issuer` and `resource_server_audience` in the same scenario does not change the outcome:
-Gate 4 (resource-server-fields-required-together) is a separate check from the interactive-provider guard above it,
-because a resource-server JWT authenticates an API caller without ever establishing a session, so it cannot itself
-satisfy "at least one usable auth provider".
 
 **Reference and schema generation**: `reference_markdown` builds the schema once, then for each `(var, path)` pair in
 `ENV_MAP`, calls `node_for_path` to resolve `path` (following `$ref` links at each dotted segment) to a schema node,
@@ -258,10 +254,9 @@ failure across the whole struct tree into `ConfigError::Multiple`, via `collect_
 on the `ValidationError`, because those failures key under the tree's synthetic `"__all__"` entry, which no dotted path
 resolves.
 
-A required variable left unset is always `ConfigError::MissingVar`, never `Invalid`: Gate 2, the OIDC-fields loop and
-the resource-server-fields loop each check this before any other gate can turn the same absence into a different error,
-so the operator-facing message says "set the variable" rather than "fix the value" for every field these three gates
-cover.
+A required variable left unset is always `ConfigError::MissingVar`, never `Invalid`: Gate 2 and the OIDC-fields loop
+check this before any other gate can turn the same absence into a different error, so the operator-facing message says
+"set the variable" rather than "fix the value" for every field these gates cover.
 
 The `ENV_MAP`-to-schema completeness the module's doc comment describes is checked in two different ways with two
 different failure signatures, not by one shared assertion. `reference.rs`'s `every_schema_field_has_an_env_map_entry`

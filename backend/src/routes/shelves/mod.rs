@@ -89,7 +89,7 @@ struct ShelfListResponse {
     description = "Returns one page of the caller's own shelves, ordered with system shelves first then by name.",
     tag = "shelves",
     params(ShelfListParams),
-    security(("session_cookie" = ["read"]), ("device_token_bearer" = ["read"]), ("oidc_jwt_bearer" = ["read"]), ("opds_basic" = ["read"])),
+    security(("session_cookie" = ["read"]), ("device_token_bearer" = ["read"]), ("opds_basic" = ["read"])),
     responses(
         (status = 200, description = "One page of the caller's shelves, system shelves first then by name", body = ShelfListResponse,
             headers(("Link" = String, description = "RFC 8288 next-page link; emitted with rel=\"next\" when more rows remain"))),
@@ -209,7 +209,7 @@ struct CreateShelfRequest {
     description = "Creates a new shelf for the caller. Available to adult accounts only.",
     tag = "shelves",
     request_body = CreateShelfRequest,
-    security(("session_cookie" = ["write"]), ("device_token_bearer" = ["write"]), ("oidc_jwt_bearer" = ["write"]), ("opds_basic" = ["write"])),
+    security(("session_cookie" = ["write"]), ("device_token_bearer" = ["write"]), ("opds_basic" = ["write"])),
     responses(
         (status = 201, description = "Shelf created", body = Shelf),
         (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
@@ -285,7 +285,7 @@ struct RenameShelfRequest {
     tag = "shelves",
     params(("id" = Uuid, Path, description = "Shelf id")),
     request_body = RenameShelfRequest,
-    security(("session_cookie" = ["write"]), ("device_token_bearer" = ["write"]), ("oidc_jwt_bearer" = ["write"]), ("opds_basic" = ["write"])),
+    security(("session_cookie" = ["write"]), ("device_token_bearer" = ["write"]), ("opds_basic" = ["write"])),
     responses(
         (status = 200, description = "Renamed shelf", body = Shelf),
         (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
@@ -380,7 +380,7 @@ async fn rename_shelf(
     description = "Deletes a shelf owned by the caller. Available to adult accounts only. System shelves cannot be deleted and return 409.",
     tag = "shelves",
     params(("id" = Uuid, Path, description = "Shelf id")),
-    security(("session_cookie" = ["write"]), ("device_token_bearer" = ["write"]), ("oidc_jwt_bearer" = ["write"]), ("opds_basic" = ["write"])),
+    security(("session_cookie" = ["write"]), ("device_token_bearer" = ["write"]), ("opds_basic" = ["write"])),
     responses(
         (status = 204, description = "Shelf deleted"),
         (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
@@ -473,7 +473,7 @@ struct ShelfDetailResponse {
     description = "Returns a shelf's identity plus one page of its items ordered by when they were added. Restricted to shelves the caller owns.",
     tag = "shelves",
     params(("id" = Uuid, Path, description = "Shelf id"), ShelfItemsParams),
-    security(("session_cookie" = ["read"]), ("device_token_bearer" = ["read"]), ("oidc_jwt_bearer" = ["read"]), ("opds_basic" = ["read"])),
+    security(("session_cookie" = ["read"]), ("device_token_bearer" = ["read"]), ("opds_basic" = ["read"])),
     responses(
         (status = 200, description = "Shelf identity plus one page of ordered items", body = ShelfDetailResponse,
          headers(
@@ -616,7 +616,7 @@ struct AddItemRequest {
     tag = "shelves",
     params(("id" = Uuid, Path, description = "Shelf id")),
     request_body = AddItemRequest,
-    security(("session_cookie" = ["write"]), ("device_token_bearer" = ["write"]), ("oidc_jwt_bearer" = ["write"]), ("opds_basic" = ["write"])),
+    security(("session_cookie" = ["write"]), ("device_token_bearer" = ["write"]), ("opds_basic" = ["write"])),
     responses(
         (status = 204, description = "Item added (no-op if already on the shelf)"),
         (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
@@ -708,7 +708,7 @@ async fn add_shelf_item(
         ("id" = Uuid, Path, description = "Shelf id"),
         ("manifestation_id" = Uuid, Path, description = "Manifestation to remove")
     ),
-    security(("session_cookie" = ["write"]), ("device_token_bearer" = ["write"]), ("oidc_jwt_bearer" = ["write"]), ("opds_basic" = ["write"])),
+    security(("session_cookie" = ["write"]), ("device_token_bearer" = ["write"]), ("opds_basic" = ["write"])),
     responses(
         (status = 204, description = "Item removed"),
         (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),

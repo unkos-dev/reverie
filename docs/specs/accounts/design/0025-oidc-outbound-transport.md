@@ -9,37 +9,33 @@ governed-by:
 
 # OIDC outbound transport
 
-The interactive OIDC client and resource-server JWT validator share one HTTP connection pool for provider discovery,
-callback token exchange and signing-key retrieval. This Design describes the transport policy and the interfaces that
-carry it across both authentication paths.
+The interactive OIDC client uses one HTTP connection pool for provider discovery, callback token exchange and
+signing-key retrieval. This Design describes the transport policy and its interfaces.
 
 ## Purpose and boundaries
 
-This subject owns `OidcTransport`, its endpoint policy, and the transport references retained by `OidcRuntime` and
-`ReverieJwksSource`. It depends on `Config` for configured issuer and endpoint URLs, `reqwest` for HTTP and TLS,
-`oauth2-reqwest` for the OAuth HTTP interface, and `openidconnect` for discovery. The interactive callback and
-resource-server key source consume its clients.
+This subject owns `OidcTransport`, its endpoint policy, and the transport retained by `OidcRuntime`. It depends on
+`Config` for configured issuer and endpoint URLs, `reqwest` for HTTP and TLS, `oauth2-reqwest` for the OAuth HTTP
+interface, and `openidconnect` for discovery. The interactive callback consumes its client.
 
 [Application runtime](../../operations/design/0024-application-runtime-startup-workers-and-shutdown.md) owns
-construction order and whether either authentication role is enabled. This subject does not own login state, PKCE,
-ID-token validation, account provisioning, JWT claim validation, or the signing-key cache. It does not own outbound
-enrichment clients.
+construction order and whether OIDC sign-in is enabled. This subject does not own login state, PKCE, ID-token validation
+or account provisioning. It does not own outbound enrichment clients.
 
 ## Structure
 
 - `OidcTransport` holds a `reqwest::Client` and an endpoint scheme policy in `backend/src/auth/oidc.rs`.
 - `OidcRuntime` pairs the discovered interactive client with a clone of its transport; `AppState.oidc` holds the runtime
   behind an `Arc`.
-- `ReverieJwksSource` in `backend/src/auth/jwt.rs` holds a raw client clone and the resolved signing-key URL.
 
 Client clones share the connection pool. Constructing an OAuth adapter wraps a clone of the same client, so discovery,
-code exchange and direct JWKS fetches use the same client configuration.
+code exchange and discovery-time JWKS fetches use the same client configuration.
 
 ## Interfaces and dependencies
 
-[`OidcTransport`](../../../../backend/src/auth/oidc.rs) offers `oauth_client()` to `openidconnect` and `raw_client()` to
-[`ReverieJwksSource`](../../../../backend/src/auth/jwt.rs). `check_endpoint()` takes an endpoint kind, its configuration
-or discovery source, and a parsed URL; failures identify that source.
+[`OidcTransport`](../../../../backend/src/auth/oidc.rs) offers `oauth_client()` to `openidconnect`. Its test-only
+`raw_client()` method supports transport tests. `check_endpoint()` takes an endpoint kind, its configuration or
+discovery source, and a parsed URL; failures identify that source.
 
 | Endpoint kind              | Scheme | Query     | Fragment |
 | -------------------------- | ------ | --------- | -------- |
@@ -56,8 +52,7 @@ The upstream OAuth adapter is exact-pinned. Its dependency constraint and lift c
 ## Data and state
 
 The pool and interactive provider metadata live for the lifetime of the configured runtime. Discovery populates the
-interactive metadata once at startup; the transport does not refresh it. Resource-server key caching is owned by
-`JwksClient`, outside this subject.
+interactive metadata once at startup; the transport does not refresh it.
 
 Each request uses a 5-second connect timeout, a 10-second total timeout through response-body completion, no redirects,
 and `reverie/<package-version>` as its User-Agent. Production clients enforce HTTPS at the HTTP layer. Test-only
@@ -75,26 +70,18 @@ interactive client to the callback URI and transport.
 The [callback](../../../../backend/src/routes/auth.rs) obtains the adapter from `AppState.oidc` for code exchange. It
 retains the same transport used at discovery; the callback's PKCE and ID-token verification remain separate operations.
 
-Resource-server initialisation checks `REVERIE_RESOURCE_SERVER_ISSUER` even when an explicit
-`REVERIE_RESOURCE_SERVER_JWKS_URL` is supplied. A non-blank override supplies the key URL directly; otherwise discovery
-resolves it through the OAuth adapter, including the library-owned JWKS fetch. The resolved URL is checked before
-`ReverieJwksSource` retains it. Later key fetches use the raw client clone.
-
 ## Failure and recovery
 
 Client construction, URL parsing, endpoint rejection and discovery failures propagate to startup and prevent the server
-from accepting requests. Endpoint errors name the configuration field or discovered metadata field. A configured role
+from accepting requests. Endpoint errors name the configuration field or discovered metadata field. Configured OIDC
 without a transport also fails startup, as described by the application runtime Design.
 
 Redirect responses are returned to the calling library without following their destination. Timeouts terminate stalled
-requests. Callback exchange failures become `AppError::Internal`; direct JWKS request, status and JSON failures become
-provider errors consumed by the validator. This transport supplies no application retry loop; recovery and cached-key
-fallback belong to its consumers.
+requests. Callback exchange failures become `AppError::Internal`. This transport supplies no application retry loop.
 
 ## Security and operations
 
-Configured issuers and explicit key URLs are operator trust inputs. Token headers cannot select a signing-key URL;
-`ReverieJwksSource` only fetches its retained endpoint. Scheme enforcement remains active during the library-owned JWKS
+The configured issuer is an operator trust input. Scheme enforcement remains active during the library-owned JWKS
 request, before initialisation can inspect endpoint components in the returned metadata.
 
 Private HTTPS providers are supported. TLS verification uses the platform trust store through

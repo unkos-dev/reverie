@@ -213,7 +213,7 @@ fn next_cursor(items: &[FailureItem], has_more: bool, filter: String) -> Option<
     description = "Returns one page of books whose latest enrichment attempt failed, including those that stopped retrying, each under one primary failure. Admin only.",
     tag = "dashboard",
     params(FailuresParams),
-    security(("session_cookie" = ["admin"]), ("device_token_bearer" = ["admin"]), ("oidc_jwt_bearer" = ["admin"]), ("opds_basic" = ["admin"])),
+    security(("session_cookie" = ["admin"]), ("device_token_bearer" = ["admin"]), ("opds_basic" = ["admin"])),
     responses(
         (status = 200, description = "One page of books with failing enrichment. Admin only.", body = FailuresResponse,
             headers(("Link" = String, description = "RFC 8288 next-page link; emitted with rel=\"next\" when more rows remain"))),
@@ -342,7 +342,7 @@ async fn list_failures(
     summary = "Count books with failing enrichment by failure",
     description = "Returns the number of books under each primary failure group (source and class) and the total. Admin only.",
     tag = "dashboard",
-    security(("session_cookie" = ["admin"]), ("device_token_bearer" = ["admin"]), ("oidc_jwt_bearer" = ["admin"]), ("opds_basic" = ["admin"])),
+    security(("session_cookie" = ["admin"]), ("device_token_bearer" = ["admin"]), ("opds_basic" = ["admin"])),
     responses(
         (status = 200, description = "Per-group counts. Admin only.", body = FailureCountsResponse),
         (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),

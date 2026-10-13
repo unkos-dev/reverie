@@ -4,7 +4,7 @@ profile-version: 1
 id: "REV-REQ-0056"
 title: "A child account cannot change catalogue metadata"
 governed-by:
-  - "REV-ADR-0028"
+  - "REV-ADR-0056"
 ---
 
 # A child account cannot change catalogue metadata

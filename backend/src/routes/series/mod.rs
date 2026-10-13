@@ -53,7 +53,7 @@ pub fn router() -> OpenApiRouter<AppState> {
     description = "Returns the series identity plus its works in order, each with the manifestations visible to the caller.",
     tag = "series",
     params(("id" = Uuid, Path, description = "Series id")),
-    security(("session_cookie" = ["read"]), ("device_token_bearer" = ["read"]), ("oidc_jwt_bearer" = ["read"]), ("opds_basic" = ["read"])),
+    security(("session_cookie" = ["read"]), ("device_token_bearer" = ["read"]), ("opds_basic" = ["read"])),
     responses(
         (status = 200, description = "Series identity + ordered works with visible manifestations", body = SeriesDetail),
         (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),

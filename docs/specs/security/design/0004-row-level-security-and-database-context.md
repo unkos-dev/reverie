@@ -9,7 +9,7 @@ satisfies:
   - "REV-REQ-0009"
   - "REV-REQ-0010"
 governed-by:
-  - "REV-ADR-0028"
+  - "REV-ADR-0056"
   - "REV-ADR-0017"
   - "REV-ADR-0052"
 ---
@@ -303,7 +303,7 @@ shares server connections between transactions, a connection the writeback pool 
 transaction, and the system-context policies would then admit every `manifestations` row to that request. Reverie pools
 in-process (REV-ADR-0017); an operator who puts a pooler of their own in front of PostgreSQL needs it in session mode.
 
-The ownership axis that REV-ADR-0028 assigns to the data layer takes two forms. `reading_state` and `user_preferences`
+The ownership axis that REV-ADR-0056 assigns to the data layer takes two forms. `reading_state` and `user_preferences`
 enforce it with row-level security, in this subject. `shelves` and `shelf_items` enforce it with a `WHERE user_id = …`
 predicate in handler code (`backend/src/routes/shelves/mod.rs`), which this subject relies on but does not own.
 
