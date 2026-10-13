@@ -307,9 +307,9 @@ When a part is built, it moves into the sections above.
 
 - **"Also" separator for files.** Secondary reasons on a file row are joined with "; ", as enrichment rows already are.
   The built page joins file labels with ", ", which differs only for a file with three or more reasons.
-- **Enrichment times.** Each enrichment row shows "Last tried {time}", the time of the book's most recent attempt. When
-  a source has asked Reverie to wait, it also shows "Retry after {time}", shown only when that field is present. The
-  built page shows neither.
+- **Enrichment times.** Each enrichment row shows the time of the book's most recent attempt. When a source has asked
+  Reverie to wait, it also shows the earliest retry time, only when that field is present. The labels are not yet
+  settled. The built page shows neither.
 
 ### Paused-pipeline notice
 
@@ -362,13 +362,13 @@ wording for "Paused by an administrator" is settled together with its sentence a
 - **Eligible groups.** Among files, only Needs a change and Failed after several tries. Among books, every group. Not
   the rejected groups, the ignored group or the Duplicates card.
 - **No confirmation.** One press queues the group. A retry is cheap and the label states the number.
+- **Provider wait.** Bulk enrichment retry preserves the earliest retry time requested by the source. Queuing a group
+  does not skip that wait.
 - **Label.** "Retry all {n}", where {n} is the group's count. A group of one reads "Retry 1 file" or "Retry 1 book".
 - **Pending.** The button reads "Queuing {n}" and is marked `aria-disabled`.
 - **Feedback.** A line beneath the header, visible when the group is collapsed and kept when the group's count drops:
   - "Queued {n}" when the whole group was queued. The button then reads "Queued" and is inactive.
   - "Queued {n}, {m} remaining" when a limit on one press left some behind. The button then reads "Retry the rest {m}".
-  - For a rate-limited book group, the feedback adds "Retrying skipped the wait the source asked for, so it may refuse
-    them again."
   - While ingestion is paused, file feedback adds "Ingestion is paused, so they will run once it resumes. They return
     here if they fail again."
 - **Nothing to retry.** "Nothing to retry. This group changed after the page loaded."
