@@ -2,12 +2,12 @@
 type: REQ
 profile-version: 1
 id: "REV-REQ-0018"
-title: "Metadata and reading-state PATCH compare If-Match byte for byte"
+title: "Precondition-protected writes compare If-Match byte for byte"
 governed-by:
   - "REV-ADR-0011"
 ---
 
-# Metadata and reading-state PATCH compare If-Match byte for byte
+# Precondition-protected writes compare If-Match byte for byte
 
 ## Statement
 
