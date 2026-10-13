@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO shelf_items (shelf_id, manifestation_id) VALUES ($1, $2) ON CONFLICT (shelf_id, manifestation_id) DO NOTHING",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "4aab845f9d71d6395974aee3b273f4849db0e8e41ee82be0c97a230c4867ea59"
+}
