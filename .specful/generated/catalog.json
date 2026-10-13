@@ -933,7 +933,7 @@
       "id": "REV-REQ-0018",
       "kind": "req",
       "path": "docs/specs/api/requirements/0018-metadata-and-reading-state-patch-compare-if-match-byte-for-byte.md",
-      "title": "Metadata and reading-state PATCH compare If-Match byte for byte"
+      "title": "Precondition-protected writes compare If-Match byte for byte"
     },
     {
       "id": "REV-REQ-0019",
