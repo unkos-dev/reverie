@@ -101,18 +101,21 @@ and the 401 recovery funnel in `frontend/src/lib/query/client.ts` (the Design "S
   `enrichment`, `ingestion`, `auth`, `preferences`, and the OPDS cover-download dual mount). `router()` takes the
   axum-router half for `crate::build_router` to mount; `spec_json()` merges the OPDS feed routes' own `OpenApiRouter` on
   top of `pilot_router()` first — documenting them unconditionally even though their runtime mount is gated on the
-  `opds.enabled` setting — then serialises the merged document as pretty-printed JSON with a trailing newline.
+  `opds.enabled` setting. `ExtractorResponses`, a `utoipa::Modify` implementation, adds missing extractor responses to
+  this complete document before `spec_json()` serialises it as pretty-printed JSON with a trailing newline.
 - Each documented handler carries its own `#[utoipa::path(...)]` annotation naming its path, tag, per-operation
   `security` requirement, and a hand-chosen `responses(...)` list. A handler is wired into `pilot_router()` through the
   `routes!(handler, ...)` macro, which resolves a compiler-generated `__path_<handler>` module the annotation produces;
   a handler passed to `routes!` without the annotation fails to compile; there is no way to register a route through
   this mechanism and leave it undocumented.
 - `backend/tests/gen_openapi.rs` is the drift gate: `spec_json()` must render byte-identical to the committed
-  `backend/openapi.json` (`REGEN=1 cargo test --test gen_openapi` rewrites it), plus five narrower assertions — every
+  `backend/openapi.json` (`REGEN=1 cargo test --test gen_openapi` rewrites it), plus narrower assertions: every
   `ProblemDetails`-referencing response declares `application/problem+json` as its only content type, the document
   reports `openapi: "3.1.x"` and covers `/health`/`/health/ready`, the four security schemes and the document-level
   deny-by-default are present, and a handful of library, series and dashboard routes and their DTO schemas are
-  registered.
+  registered. The extractor coverage test requires `400`/`413`/`415`/`422` for JSON-body operations and `400` for
+  path-parameter operations, each as `application/problem+json`, and rejects an empty operation census. Unit tests in
+  `openapi.rs` exercise the modifier's classification, preservation of explicit responses and repeated application.
 - `frontend/src/api/errors.ts` declares `ApiError extends Error` (`status`, `type`, `title`, `detail`, and a
   `problemSlug` computed property that takes the last path segment of `type`) plus two free functions,
   `isIfMatchMismatch`/`isIfMatchRequired`, that test `status` and `problemSlug` together — built entirely on
@@ -137,15 +140,18 @@ and the 401 recovery funnel in `frontend/src/lib/query/client.ts` (the Design "S
   module doc on `backend/src/openapi.rs` names this "intentional... the resulting openapi↔error circularity is the point
   — one struct owns the RFC 9457 wire shape, so the spec and the bytes on the wire cannot drift." Splitting the struct
   into a documentation-only copy and a runtime-only copy would reopen exactly the drift this design avoids.
-- `backend/openapi.json` is consumed downstream by the docs site's generated API reference (linked in More information)
-  and, in-process rather than from the file, by `authz_matrix.rs`'s completeness sweep — both read the same generated
-  shape, never a hand-maintained one.
-- Per-operation `responses(...)` documentation is authored by hand at each `#[utoipa::path]` site and is not derived
-  from `AppError`'s full variant set: `POST /api/v1/tokens`, for example, documents `401`/`403`/`422` but not the
-  `400`/`413`/`415` statuses its own `ApiJson<CreateTokenRequest>` extractor could also raise for a malformed request
-  body. The drift gate checks that whatever `ProblemDetails` responses a handler does declare use
-  `application/problem+json` and nothing else as their content type; it does not check that every status an endpoint can
-  actually return is declared.
+- `spec_json()` is the single complete-document producer. The regeneration test writes its output to
+  `backend/openapi.json`; `website/astro.config.mjs` reads that artifact to build the served API reference.
+  `authz_matrix.rs` and the document tests call `spec_json()` directly. The backend exposes no separate HTTP endpoint
+  for the spec. Runtime router assembly discards its intermediate OpenAPI documents.
+- `ExtractorResponses` identifies JSON bodies by their inline `application/json` request-body declaration and path
+  parameters by their inline operation-level or inherited path-item declarations. It supplies missing `400` responses
+  for either shape and missing `413`/`415`/`422` responses for JSON bodies, each as `application/problem+json`
+  referencing `ProblemDetails`. The generic `400` description distinguishes JSON-only, path-only and combined failures.
+  Operation-specific responses remain inline and take precedence without changes to descriptions, headers or schemas.
+  Classification depends on accurate request-body and parameter annotations; it does not inspect Rust extractor types or
+  resolve referenced request bodies and parameters. The document tests check extractor status coverage and the Problem
+  Details content type; they do not infer every business error an endpoint can return.
 - On the client, `apiFetch` (`frontend/src/api/fetch.ts`) is the sole interface between the SPA and `fetch()`, and
   `ApiError` is the sole typed error surface every caller under `frontend/src/` branches on.
 

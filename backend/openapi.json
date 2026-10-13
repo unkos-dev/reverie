@@ -32,8 +32,38 @@
           "200": {
             "description": "Password changed; all of the caller's sessions are invalidated."
           },
+          "400": {
+            "description": "The request body is not valid JSON",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
           "401": {
             "description": "Authentication required",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "The request body is too large",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "The request body is not sent as application/json",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -741,6 +771,16 @@
               }
             }
           },
+          "400": {
+            "description": "A path parameter is malformed",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
           "401": {
             "description": "Authentication required",
             "content": {
@@ -813,6 +853,16 @@
           "304": {
             "description": "Not Modified — the request's If-None-Match matched the cover ETag"
           },
+          "400": {
+            "description": "A path parameter is malformed",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
           "401": {
             "description": "Authentication required",
             "content": {
@@ -884,6 +934,16 @@
           },
           "304": {
             "description": "Not Modified — the request's If-None-Match matched the cover ETag"
+          },
+          "400": {
+            "description": "A path parameter is malformed",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
           },
           "401": {
             "description": "Authentication required",
@@ -965,6 +1025,16 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/BookMetadata"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "A path parameter is malformed",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
                 }
               }
             }
@@ -1082,7 +1152,7 @@
             }
           },
           "400": {
-            "description": "If-Match is malformed, or carries a form this API refuses by policy: the * wildcard, an entity-tag list, a weak tag, or a repeated header instance",
+            "description": "If-Match is malformed, or carries a form this API refuses by policy: the * wildcard, an entity-tag list, a weak tag, or a repeated header instance, the request body is not valid JSON, or a path parameter is malformed",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -1131,6 +1201,26 @@
                 "description": "Current entity-tag, so the caller can resync without a follow-up GET"
               }
             },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "The request body is too large",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "The request body is not sent as application/json",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -1219,6 +1309,16 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ReadingState"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "A path parameter is malformed",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
                 }
               }
             }
@@ -1326,7 +1426,7 @@
             }
           },
           "400": {
-            "description": "If-Match is malformed, or carries a form this API refuses by policy: the * wildcard, an entity-tag list, a weak tag, or a repeated header instance",
+            "description": "If-Match is malformed, or carries a form this API refuses by policy: the * wildcard, an entity-tag list, a weak tag, or a repeated header instance, the request body is not valid JSON, or a path parameter is malformed",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -1365,6 +1465,26 @@
                 "description": "Current entity-tag, so the caller can resync without a follow-up GET"
               }
             },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "The request body is too large",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "The request body is not sent as application/json",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -2203,6 +2323,16 @@
               }
             }
           },
+          "400": {
+            "description": "A path parameter is malformed",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
           "401": {
             "description": "Authentication required",
             "content": {
@@ -2281,6 +2411,16 @@
         "responses": {
           "202": {
             "description": "Re-run scheduled: an idle manifestation is reset to pending for the background worker's next poll; one with an active run is re-queued when that run completes"
+          },
+          "400": {
+            "description": "A path parameter is malformed",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
           },
           "401": {
             "description": "Authentication required",
@@ -2371,6 +2511,16 @@
               }
             }
           },
+          "400": {
+            "description": "A path parameter is malformed",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
           "401": {
             "description": "Authentication required",
             "content": {
@@ -2450,6 +2600,16 @@
           "200": {
             "description": "Version promoted to canonical; accepted ISBN changes may re-match the work"
           },
+          "400": {
+            "description": "The request body is not valid JSON, or a path parameter is malformed",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
           "401": {
             "description": "Authentication required",
             "content": {
@@ -2472,6 +2632,26 @@
           },
           "404": {
             "description": "Version not found for this manifestation, already rejected, or RLS-hidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "The request body is too large",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "The request body is not sent as application/json",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -2549,6 +2729,16 @@
           "201": {
             "description": "Lock recorded (idempotent)"
           },
+          "400": {
+            "description": "The request body is not valid JSON, or a path parameter is malformed",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
           "401": {
             "description": "Authentication required",
             "content": {
@@ -2571,6 +2761,26 @@
           },
           "404": {
             "description": "Manifestation missing or RLS-hidden (existence-not-leaked)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "The request body is too large",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "The request body is not sent as application/json",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -2648,6 +2858,16 @@
           "200": {
             "description": "Version marked rejected"
           },
+          "400": {
+            "description": "The request body is not valid JSON, or a path parameter is malformed",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
           "401": {
             "description": "Authentication required",
             "content": {
@@ -2670,6 +2890,36 @@
           },
           "404": {
             "description": "Version not found for this manifestation, or RLS-hidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "The request body is too large",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "The request body is not sent as application/json",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The request body is missing a required field or has a field of the wrong type",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -2737,6 +2987,16 @@
           "200": {
             "description": "Field reverted to the given version, or cleared when version_id is null"
           },
+          "400": {
+            "description": "The request body is not valid JSON, or a path parameter is malformed",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
           "401": {
             "description": "Authentication required",
             "content": {
@@ -2759,6 +3019,26 @@
           },
           "404": {
             "description": "Manifestation or version missing, or RLS-hidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "The request body is too large",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "The request body is not sent as application/json",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -2836,6 +3116,16 @@
           "200": {
             "description": "Lock removed"
           },
+          "400": {
+            "description": "The request body is not valid JSON, or a path parameter is malformed",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
           "401": {
             "description": "Authentication required",
             "content": {
@@ -2858,6 +3148,26 @@
           },
           "404": {
             "description": "Manifestation missing or RLS-hidden, or no matching lock",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "The request body is too large",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "The request body is not sent as application/json",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -3302,6 +3612,16 @@
               }
             }
           },
+          "400": {
+            "description": "A path parameter is malformed",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
           "401": {
             "description": "Authentication required",
             "content": {
@@ -3467,7 +3787,7 @@
             }
           },
           "400": {
-            "description": "If-Match is malformed, or carries a form this API refuses by policy: the * wildcard, an entity-tag list, a weak tag, or a repeated header instance",
+            "description": "The request body is not valid JSON, or If-Match is malformed or carries a form this API refuses by policy: the * wildcard, an entity-tag list, a weak tag, or a repeated header instance",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -3514,8 +3834,28 @@
               }
             }
           },
+          "413": {
+            "description": "The request body is too large",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "The request body is not sent as application/json",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
           "422": {
-            "description": "Empty patch or invalid field values. Evaluated only after If-Match has matched, so a stale tag returns 412 instead",
+            "description": "The request body has invalid field types, or the patch is empty or has invalid field values. Patch validation occurs only after If-Match has matched, so a stale tag returns 412 instead",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -3751,6 +4091,16 @@
               }
             }
           },
+          "400": {
+            "description": "The request body is not valid JSON",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
           "401": {
             "description": "Authentication required",
             "content": {
@@ -3763,6 +4113,26 @@
           },
           "403": {
             "description": "Caller is a child account",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "The request body is too large",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "The request body is not sent as application/json",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -3861,7 +4231,7 @@
             }
           },
           "400": {
-            "description": "Malformed query parameter",
+            "description": "Malformed query or path parameter",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -3946,6 +4316,16 @@
         "responses": {
           "204": {
             "description": "Shelf deleted"
+          },
+          "400": {
+            "description": "A path parameter is malformed",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
           },
           "401": {
             "description": "Authentication required",
@@ -4059,6 +4439,16 @@
               }
             }
           },
+          "400": {
+            "description": "The request body is not valid JSON, or a path parameter is malformed",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
           "401": {
             "description": "Authentication required",
             "content": {
@@ -4091,6 +4481,26 @@
           },
           "409": {
             "description": "System shelves cannot be renamed",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "The request body is too large",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "The request body is not sent as application/json",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -4185,6 +4595,16 @@
               }
             }
           },
+          "400": {
+            "description": "The request body is not valid JSON, or a path parameter is malformed",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
           "401": {
             "description": "Authentication required",
             "content": {
@@ -4207,6 +4627,26 @@
           },
           "412": {
             "description": "If-Match does not match the shelf's current updated_at",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "The request body is too large",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "The request body is not sent as application/json",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -4300,6 +4740,16 @@
               }
             }
           },
+          "400": {
+            "description": "The request body is not valid JSON, or a path parameter is malformed",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
           "401": {
             "description": "Authentication required",
             "content": {
@@ -4312,6 +4762,36 @@
           },
           "404": {
             "description": "Shelf missing / not owned, or manifestation not visible to the caller",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "The request body is too large",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "The request body is not sent as application/json",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The request body is missing a required field or has a field of the wrong type",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -4384,6 +4864,16 @@
                   "type": "string"
                 },
                 "description": "Entity-tag carrying the shelf's new updated_at (RFC 3339, quoted per RFC 9110)"
+              }
+            }
+          },
+          "400": {
+            "description": "A path parameter is malformed",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
               }
             }
           },
@@ -4611,6 +5101,16 @@
               }
             }
           },
+          "400": {
+            "description": "The request body is not valid JSON",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
           "401": {
             "description": "Authentication required",
             "content": {
@@ -4623,6 +5123,26 @@
           },
           "403": {
             "description": "Caller's credential lacks the write scope, or a requested scope exceeds the caller's role ceiling",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "The request body is too large",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "The request body is not sent as application/json",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -4689,6 +5209,16 @@
         "responses": {
           "204": {
             "description": "Token revoked"
+          },
+          "400": {
+            "description": "A path parameter is malformed",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
           },
           "401": {
             "description": "Authentication required",
@@ -4839,6 +5369,16 @@
               }
             }
           },
+          "400": {
+            "description": "The request body is not valid JSON",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
           "401": {
             "description": "Authentication required",
             "content": {
@@ -4861,6 +5401,26 @@
           },
           "409": {
             "description": "Email already in use",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "The request body is too large",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "The request body is not sent as application/json",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -4946,6 +5506,16 @@
               }
             }
           },
+          "400": {
+            "description": "The request body is not valid JSON, or a path parameter is malformed",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
           "401": {
             "description": "Authentication required",
             "content": {
@@ -4968,6 +5538,26 @@
           },
           "404": {
             "description": "Target user does not exist",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "The request body is too large",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "The request body is not sent as application/json",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -5052,6 +5642,16 @@
               }
             }
           },
+          "400": {
+            "description": "The request body is not valid JSON, or a path parameter is malformed",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
           "401": {
             "description": "Authentication required",
             "content": {
@@ -5074,6 +5674,26 @@
           },
           "404": {
             "description": "Target user does not exist",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "The request body is too large",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "The request body is not sent as application/json",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -5158,6 +5778,16 @@
               }
             }
           },
+          "400": {
+            "description": "The request body is not valid JSON, or a path parameter is malformed",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
           "401": {
             "description": "Authentication required",
             "content": {
@@ -5180,6 +5810,26 @@
           },
           "404": {
             "description": "Target user does not exist",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "The request body is too large",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "The request body is not sent as application/json",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -5257,6 +5907,16 @@
           "200": {
             "description": "Password reset; the target's sessions are invalidated. Admin only."
           },
+          "400": {
+            "description": "The request body is not valid JSON, or a path parameter is malformed",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
           "401": {
             "description": "Authentication required",
             "content": {
@@ -5279,6 +5939,26 @@
           },
           "404": {
             "description": "Target user does not exist",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "The request body is too large",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "The request body is not sent as application/json",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -5363,6 +6043,16 @@
               }
             }
           },
+          "400": {
+            "description": "The request body is not valid JSON, or a path parameter is malformed",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
           "401": {
             "description": "Authentication required",
             "content": {
@@ -5385,6 +6075,26 @@
           },
           "404": {
             "description": "Target user does not exist",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "The request body is too large",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "The request body is not sent as application/json",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -5455,6 +6165,16 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/WorkDetail"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "A path parameter is malformed",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
                 }
               }
             }
@@ -5534,6 +6254,16 @@
                   "items": {
                     "$ref": "#/components/schemas/MetadataRow"
                   }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "A path parameter is malformed",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
                 }
               }
             }
@@ -5673,8 +6403,48 @@
           "200": {
             "description": "Recovery started if the account exists (generic; no enumeration)"
           },
+          "400": {
+            "description": "The request body is not valid JSON",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
           "404": {
             "description": "Local authentication is disabled",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "The request body is too large",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "The request body is not sent as application/json",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The request body is missing a required field or has a field of the wrong type",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -5721,8 +6491,38 @@
           "204": {
             "description": "Login succeeded; session established (id rotated, CSRF token minted, theme cookie seeded)"
           },
+          "400": {
+            "description": "The request body is not valid JSON",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
           "404": {
             "description": "Local authentication is disabled on this instance",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "The request body is too large",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "The request body is not sent as application/json",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -5909,8 +6709,38 @@
               }
             }
           },
+          "400": {
+            "description": "The request body is not valid JSON",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
           "401": {
             "description": "Authentication required",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "The request body is too large",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "The request body is not sent as application/json",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -5983,8 +6813,38 @@
               }
             }
           },
+          "400": {
+            "description": "The request body is not valid JSON",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
           "401": {
             "description": "Authentication required",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "The request body is too large",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "The request body is not sent as application/json",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -6056,6 +6916,16 @@
           "201": {
             "description": "Account created (no auto-login)"
           },
+          "400": {
+            "description": "The request body is not valid JSON",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
           "404": {
             "description": "Self-registration is disabled on this instance",
             "content": {
@@ -6068,6 +6938,26 @@
           },
           "409": {
             "description": "Email already in use",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "The request body is too large",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "The request body is not sent as application/json",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -6124,8 +7014,38 @@
           "200": {
             "description": "Password reset; no session established (re-authentication required)"
           },
+          "400": {
+            "description": "The request body is not valid JSON",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
           "404": {
             "description": "Local authentication is disabled",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "The request body is too large",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "The request body is not sent as application/json",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -6182,8 +7102,38 @@
           "201": {
             "description": "First administrator created (no auto-login)"
           },
+          "400": {
+            "description": "The request body is not valid JSON",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
           "409": {
             "description": "An administrator already exists",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "The request body is too large",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "The request body is not sent as application/json",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -6367,6 +7317,16 @@
           "304": {
             "description": "Not Modified — the request's If-None-Match matched the cover ETag"
           },
+          "400": {
+            "description": "A path parameter is malformed",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
           "401": {
             "description": "Basic authentication required (WWW-Authenticate: Basic)",
             "content": {
@@ -6422,6 +7382,16 @@
           "304": {
             "description": "Not Modified — the request's If-None-Match matched the cover ETag"
           },
+          "400": {
+            "description": "A path parameter is malformed",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
           "401": {
             "description": "Basic authentication required (WWW-Authenticate: Basic)",
             "content": {
@@ -6475,6 +7445,16 @@
             "description": "EPUB byte stream; Content-Disposition: attachment with a title-derived filename",
             "content": {
               "application/epub+zip": {}
+            }
+          },
+          "400": {
+            "description": "A path parameter is malformed",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
             }
           },
           "401": {
@@ -6671,7 +7651,7 @@
             }
           },
           "400": {
-            "description": "Malformed query parameter",
+            "description": "Malformed query or path parameter",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -6980,7 +7960,7 @@
             }
           },
           "400": {
-            "description": "Malformed query parameter",
+            "description": "Malformed query or path parameter",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -7044,6 +8024,16 @@
               "application/atom+xml;profile=opds-catalog;kind=navigation": {
                 "schema": {
                   "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "A path parameter is malformed",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
                 }
               }
             }
@@ -7117,7 +8107,7 @@
             }
           },
           "400": {
-            "description": "Malformed query parameter",
+            "description": "Malformed query or path parameter",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -7215,7 +8205,7 @@
             }
           },
           "400": {
-            "description": "Malformed query parameter",
+            "description": "Malformed query or path parameter",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -7303,7 +8293,7 @@
             }
           },
           "400": {
-            "description": "Malformed query parameter",
+            "description": "Malformed query or path parameter",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -7381,6 +8371,16 @@
               }
             }
           },
+          "400": {
+            "description": "A path parameter is malformed",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
           "401": {
             "description": "Basic authentication required (WWW-Authenticate: Basic)",
             "content": {
@@ -7450,7 +8450,7 @@
             }
           },
           "400": {
-            "description": "Malformed query parameter",
+            "description": "Malformed query or path parameter",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -7528,7 +8528,7 @@
             }
           },
           "400": {
-            "description": "Malformed query parameter",
+            "description": "Malformed query or path parameter",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -7626,7 +8626,7 @@
             }
           },
           "400": {
-            "description": "Malformed query parameter",
+            "description": "Malformed query or path parameter",
             "content": {
               "application/problem+json": {
                 "schema": {

@@ -2892,6 +2892,23 @@ mod tests {
     }
 
     #[sqlx::test(migrations = "./migrations")]
+    async fn a_json_body_missing_a_required_field_is_a_422_problem(pool: sqlx::PgPool) {
+        let app_pool = test_support::db::app_pool_for(&pool).await;
+        let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+        let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+
+        let resp = server
+            .post("/auth/forgot-password")
+            .json(&serde_json::json!({}))
+            .await;
+        test_support::assert_problem(
+            &resp,
+            crate::error::problems::INVALID_REQUEST_BODY,
+            StatusCode::UNPROCESSABLE_ENTITY,
+        );
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
     async fn reset_password_with_invalid_pin_is_generic_422(pool: sqlx::PgPool) {
         let app_pool = test_support::db::app_pool_for(&pool).await;
         let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;

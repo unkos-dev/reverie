@@ -23,7 +23,10 @@
 //! Anyone splitting `ProblemDetails` out of this module must move both
 //! halves together.
 
+use utoipa::openapi::path::{Parameter, ParameterIn};
+use utoipa::openapi::response::{Response, ResponseBuilder};
 use utoipa::openapi::security::{ApiKey, ApiKeyValue, HttpAuthScheme, HttpBuilder, SecurityScheme};
+use utoipa::openapi::{ContentBuilder, Ref, RefOr};
 use utoipa::{Modify, OpenApi};
 use utoipa_axum::router::OpenApiRouter;
 
@@ -204,6 +207,89 @@ pub struct ProblemDetails {
     pub instance: Option<String>,
 }
 
+struct ExtractorResponses;
+
+impl Modify for ExtractorResponses {
+    fn modify(&self, openapi: &mut utoipa::openapi::OpenApi) {
+        for path in openapi.paths.paths.values_mut() {
+            let inherited_path_parameter = has_path_parameter(path.parameters.as_deref());
+            for operation in [
+                &mut path.get,
+                &mut path.put,
+                &mut path.post,
+                &mut path.delete,
+                &mut path.options,
+                &mut path.head,
+                &mut path.patch,
+                &mut path.trace,
+                &mut path.query,
+            ]
+            .into_iter()
+            .flatten()
+            .chain(path.additional_operations.values_mut())
+            {
+                let takes_json_body = operation.request_body.as_ref().is_some_and(|body| {
+                    matches!(body, RefOr::T(body) if body.content.contains_key("application/json"))
+                });
+                let takes_path_parameter =
+                    inherited_path_parameter || has_path_parameter(operation.parameters.as_deref());
+                let malformed = match (takes_json_body, takes_path_parameter) {
+                    (true, true) => {
+                        Some("The request body is not valid JSON, or a path parameter is malformed")
+                    }
+                    (true, false) => Some("The request body is not valid JSON"),
+                    (false, true) => Some("A path parameter is malformed"),
+                    (false, false) => None,
+                };
+                if let Some(description) = malformed {
+                    operation
+                        .responses
+                        .responses
+                        .entry("400".into())
+                        .or_insert_with(|| problem_response(description));
+                }
+                if takes_json_body {
+                    for (status, description) in [
+                        ("413", "The request body is too large"),
+                        ("415", "The request body is not sent as application/json"),
+                        (
+                            "422",
+                            "The request body is missing a required field or has a field of the wrong type",
+                        ),
+                    ] {
+                        operation
+                            .responses
+                            .responses
+                            .entry(status.into())
+                            .or_insert_with(|| problem_response(description));
+                    }
+                }
+            }
+        }
+    }
+}
+
+fn has_path_parameter(parameters: Option<&[RefOr<Parameter>]>) -> bool {
+    parameters.is_some_and(|parameters| {
+        parameters.iter().any(|parameter| {
+        matches!(parameter, RefOr::T(parameter) if parameter.parameter_in == ParameterIn::Path)
+    })
+    })
+}
+
+fn problem_response(description: &str) -> RefOr<Response> {
+    ResponseBuilder::new()
+        .description(description)
+        .content(
+            "application/problem+json",
+            ContentBuilder::new()
+                .schema(Some(Ref::from_schema_name("ProblemDetails")))
+                .build(),
+        )
+        .build()
+        .into()
+}
+
 impl axum::response::IntoResponse for ProblemDetails {
     /// Serialize as `application/problem+json` with the status taken from
     /// the body's `status` field. When `instance` is unset, it is populated
@@ -282,12 +368,145 @@ pub fn router() -> axum::Router<AppState> {
 pub fn spec_json() -> anyhow::Result<String> {
     use anyhow::Context as _;
 
-    let (_, api) = pilot_router()
+    let (_, mut api) = pilot_router()
         .merge(crate::routes::opds::openapi_router())
         .split_for_parts();
+    ExtractorResponses.modify(&mut api);
     let mut json = api
         .to_pretty_json()
         .context("serialize OpenAPI document to JSON")?;
     json.push('\n');
     Ok(json)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::ExtractorResponses;
+    use serde_json::json;
+    use utoipa::Modify;
+
+    #[test]
+    fn extractor_responses_follow_operation_shape() {
+        for (method, media_type, parameter_location, inherited, expected, description) in [
+            ("get", None, None, false, vec!["200"], None),
+            ("post", Some("text/plain"), None, false, vec!["200"], None),
+            ("get", None, Some("query"), false, vec!["200"], None),
+            (
+                "post",
+                Some("application/json"),
+                None,
+                false,
+                vec!["200", "400", "413", "415", "422"],
+                Some("The request body is not valid JSON"),
+            ),
+            (
+                "delete",
+                None,
+                Some("path"),
+                false,
+                vec!["200", "400"],
+                Some("A path parameter is malformed"),
+            ),
+            (
+                "get",
+                None,
+                Some("path"),
+                true,
+                vec!["200", "400"],
+                Some("A path parameter is malformed"),
+            ),
+            (
+                "patch",
+                Some("application/json"),
+                Some("path"),
+                false,
+                vec!["200", "400", "413", "415", "422"],
+                Some("The request body is not valid JSON, or a path parameter is malformed"),
+            ),
+        ] {
+            let mut operation = json!({"responses": {"200": {"description": "Success"}}});
+            if let Some(media_type) = media_type {
+                operation["requestBody"] = json!({
+                    "content": {(media_type): {"schema": {"type": "object"}}}
+                });
+            }
+            let mut path_item = json!({});
+            if let Some(location) = parameter_location {
+                let parameters = json!([{
+                    "name": "id", "in": location, "required": true, "schema": {"type": "string"}
+                }]);
+                if inherited {
+                    path_item["parameters"] = parameters;
+                } else {
+                    operation["parameters"] = parameters;
+                }
+            }
+            path_item[method] = operation;
+            let mut document: utoipa::openapi::OpenApi = serde_json::from_value(json!({
+                "openapi": "3.1.0", "info": {"title": "Test", "version": "1"},
+                "paths": {"/resource": path_item}
+            }))
+            .expect("valid OpenAPI fixture");
+
+            ExtractorResponses.modify(&mut document);
+
+            let rendered = serde_json::to_value(&document).expect("serialize document");
+            let responses = &rendered["paths"]["/resource"][method]["responses"];
+            assert_eq!(
+                responses
+                    .as_object()
+                    .expect("response map")
+                    .keys()
+                    .map(String::as_str)
+                    .collect::<Vec<_>>(),
+                expected,
+                "{method} {media_type:?} {parameter_location:?}"
+            );
+            if let Some(description) = description {
+                assert_eq!(responses["400"]["description"], description);
+            }
+            for status in expected.iter().filter(|status| **status != "200") {
+                assert_eq!(
+                    responses[status]["content"],
+                    json!({
+                        "application/problem+json": {"schema": {"$ref": "#/components/schemas/ProblemDetails"}}
+                    })
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn extractor_responses_preserve_explicit_contracts_and_are_idempotent() {
+        let responses = json!({
+            "200": {"description": "Success"},
+            "400": {
+                "description": "Malformed JSON or If-Match",
+                "headers": {"ETag": {"schema": {"type": "string"}}},
+                "content": {"application/problem+json": {
+                    "schema": {"$ref": "#/components/schemas/ProblemDetails"}
+                }}
+            },
+            "413": {"description": "Upload exceeds its operation-specific limit"},
+            "415": {"description": "Operation-specific media type restriction"},
+            "422": {"description": "Invalid patch after the precondition matches"}
+        });
+        let mut document: utoipa::openapi::OpenApi = serde_json::from_value(json!({
+            "openapi": "3.1.0", "info": {"title": "Test", "version": "1"},
+            "paths": {"/resource": {"put": {
+                "requestBody": {"content": {"application/json": {"schema": {"type": "object"}}}},
+                "responses": responses
+            }}}
+        }))
+        .expect("valid OpenAPI fixture");
+
+        ExtractorResponses.modify(&mut document);
+        let once = serde_json::to_value(&document).expect("serialize document");
+        assert_eq!(once["paths"]["/resource"]["put"]["responses"], responses);
+        ExtractorResponses.modify(&mut document);
+        assert_eq!(
+            serde_json::to_value(document).expect("serialize document"),
+            once
+        );
+    }
 }
