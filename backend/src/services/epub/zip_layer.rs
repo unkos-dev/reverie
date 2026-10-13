@@ -26,6 +26,7 @@ use std::io::Read;
 use flate2::read::DeflateDecoder;
 use rawzip::{CompressionMethod, FileReader, ZipArchive, ZipArchiveEntryWayfinder, ZipEntry};
 
+use super::container_layer::CONTAINER_PATH;
 use super::repack::{MIMETYPE_CONTENT, MIMETYPE_ENTRY};
 use super::{
     Issue, IssueKind, Layer, MAX_AGGREGATE_UNCOMPRESSED_BYTES, MAX_ARCHIVE_BYTES,
@@ -488,6 +489,105 @@ fn push_mimetype_issues(issues: &mut Vec<Issue>, facts: Option<&MimetypeFacts>) 
     }
 }
 
+/// Pushes an `Irrecoverable` `CorruptEntry` for the first admitted entry whose
+/// bytes fail the declared CRC-32 or size.
+///
+/// Each entry is streamed through its decompressor under a verifying reader,
+/// bounded by its declared size plus one byte, which `validate` already caps
+/// per entry and in aggregate. The `container.xml` entry is exempt because
+/// Layer 2 regenerates an unreadable one from a discoverable package document.
+///
+/// # Errors
+/// Returns a storage error when an admitted entry cannot be read.
+pub fn verify_entries(handle: &ZipHandle, issues: &mut Vec<Issue>) -> Result<(), super::EpubError> {
+    let Some(archive) = handle.archive.as_ref() else {
+        return Ok(());
+    };
+    for name in &handle.entries {
+        if name.as_str() == CONTAINER_PATH {
+            continue;
+        }
+        let corrupt = match handle.index.get(name.as_str()) {
+            Some(&(record, method)) => match archive.get_entry(record) {
+                Ok(entry) => entry_is_corrupt(
+                    &entry,
+                    method,
+                    record.uncompressed_size_hint().saturating_add(1),
+                    entry.reader(),
+                )?,
+                Err(error) => match error.into_kind() {
+                    rawzip::ErrorKind::IO(error)
+                        if error.kind() != std::io::ErrorKind::UnexpectedEof =>
+                    {
+                        return Err(error.into());
+                    }
+                    _ => true,
+                },
+            },
+            None => true,
+        };
+        if corrupt {
+            issues.push(Issue {
+                layer: Layer::Zip,
+                severity: Severity::Irrecoverable,
+                kind: IssueKind::CorruptEntry {
+                    entry_name: name.clone(),
+                },
+            });
+            break;
+        }
+    }
+    Ok(())
+}
+
+struct StorageReader<R> {
+    inner: R,
+    error: Option<std::io::Error>,
+}
+
+impl<R: Read> Read for StorageReader<R> {
+    fn read(&mut self, bytes: &mut [u8]) -> std::io::Result<usize> {
+        match self.inner.read(bytes) {
+            Err(error) if error.kind() != std::io::ErrorKind::Interrupted => {
+                let kind = error.kind();
+                self.error = Some(error);
+                Err(kind.into())
+            }
+            result => result,
+        }
+    }
+}
+
+fn entry_is_corrupt(
+    entry: &ZipEntry<'_, FileReader>,
+    method: CompressionMethod,
+    cap: u64,
+    reader: impl Read,
+) -> std::io::Result<bool> {
+    let mut reader = StorageReader {
+        inner: reader,
+        error: None,
+    };
+    let mut sink = std::io::sink();
+    let copied = if method == CompressionMethod::DEFLATE {
+        std::io::copy(
+            &mut entry
+                .verifying_reader(DeflateDecoder::new(&mut reader))
+                .take(cap),
+            &mut sink,
+        )
+    } else {
+        std::io::copy(
+            &mut entry.verifying_reader(&mut reader).take(cap),
+            &mut sink,
+        )
+    };
+    if let Some(error) = reader.error {
+        return Err(error);
+    }
+    Ok(!copied.is_ok_and(|bytes| bytes < cap))
+}
+
 /// Read an admitted indexed entry, verifying its declared CRC and size.
 #[must_use]
 pub fn read_entry(handle: &ZipHandle, entry_name: &str) -> Option<Vec<u8>> {
@@ -524,6 +624,87 @@ mod tests {
     use super::*;
     use crate::services::epub::{IssueKind, Severity};
     use std::io::Write;
+
+    #[test]
+    fn entry_read_errors_remain_storage_errors() {
+        struct FailedRead(std::io::ErrorKind);
+        impl Read for FailedRead {
+            fn read(&mut self, _: &mut [u8]) -> std::io::Result<usize> {
+                Err(std::io::Error::new(self.0, "storage read failed"))
+            }
+        }
+        let handle = ZipHandle::from_bytes(&make_zip(&[("content", b"content")]));
+        let archive = handle.archive.as_ref().unwrap();
+        let (record, _) = handle.index["content"];
+        let entry = archive.get_entry(record).unwrap();
+        for method in [CompressionMethod::STORE, CompressionMethod::DEFLATE] {
+            for kind in [std::io::ErrorKind::Other, std::io::ErrorKind::InvalidData] {
+                let error = entry_is_corrupt(&entry, method, 8, FailedRead(kind)).unwrap_err();
+                assert_eq!(error.kind(), kind);
+                assert_eq!(error.to_string(), "storage read failed");
+            }
+        }
+    }
+
+    #[test]
+    fn entry_header_read_error_does_not_mark_file_corrupt() {
+        let mut handle = ZipHandle::from_bytes(&make_zip(&[("content", b"content")]));
+        let file = tempfile::NamedTempFile::new().unwrap();
+        let write_only = std::fs::OpenOptions::new()
+            .write(true)
+            .open(file.path())
+            .unwrap();
+        *handle.archive.as_mut().unwrap().get_mut() = FileReader::from(write_only);
+        let mut issues = Vec::new();
+        let error = verify_entries(&handle, &mut issues).unwrap_err();
+        assert!(!error.is_file_defect());
+        assert!(issues.is_empty());
+    }
+
+    #[test]
+    fn truncated_entry_header_remains_corrupt() {
+        let handle = ZipHandle::from_bytes(&make_zip(&[("content", b"content")]));
+        handle.file.as_ref().unwrap().set_len(0).unwrap();
+        let mut issues = Vec::new();
+        verify_entries(&handle, &mut issues).unwrap();
+        assert!(issues.iter().any(|issue| {
+            issue.severity == Severity::Irrecoverable
+                && matches!(&issue.kind, IssueKind::CorruptEntry { entry_name } if entry_name == "content")
+        }));
+    }
+
+    #[test]
+    fn checksum_and_decoder_errors_remain_corrupt() {
+        let handle = ZipHandle::from_bytes(&make_zip(&[("content", b"content")]));
+        let archive = handle.archive.as_ref().unwrap();
+        let (record, _) = handle.index["content"];
+        let entry = archive.get_entry(record).unwrap();
+        for (method, bytes) in [
+            (CompressionMethod::STORE, b"corrupt".as_slice()),
+            (CompressionMethod::DEFLATE, b"\xff".as_slice()),
+        ] {
+            assert!(entry_is_corrupt(&entry, method, 8, bytes).unwrap());
+        }
+    }
+
+    #[test]
+    fn interrupted_entry_read_can_complete_verification() {
+        struct InterruptedOnce<R>(bool, R);
+        impl<R: Read> Read for InterruptedOnce<R> {
+            fn read(&mut self, bytes: &mut [u8]) -> std::io::Result<usize> {
+                if std::mem::take(&mut self.0) {
+                    return Err(std::io::ErrorKind::Interrupted.into());
+                }
+                self.1.read(bytes)
+            }
+        }
+        let handle = ZipHandle::from_bytes(&make_zip(&[("content", b"content")]));
+        let archive = handle.archive.as_ref().unwrap();
+        let (record, method) = handle.index["content"];
+        let entry = archive.get_entry(record).unwrap();
+        let reader = InterruptedOnce(true, entry.reader());
+        assert!(!entry_is_corrupt(&entry, method, 8, reader).unwrap());
+    }
 
     fn make_zip(entries: &[(&str, &[u8])]) -> Vec<u8> {
         let buf = std::io::Cursor::new(Vec::new());

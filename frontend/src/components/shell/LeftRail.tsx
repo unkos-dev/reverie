@@ -107,7 +107,7 @@ interface RailItemProps {
  * spec-S3 placeholders — visible, `aria-disabled`, out of tab order,
  * described by the "planned" tooltip (spec §9.4).
  */
-function RailItem({ item }: RailItemProps): ReactElement {
+function RailItem({ item }: Readonly<RailItemProps>): ReactElement {
   if (item.disabled === true || item.to === undefined) {
     const descId = `nav-planned-${item.label.toLowerCase()}`;
     return (
@@ -162,7 +162,7 @@ interface ShelfListProps {
  * until the shelves query resolves — the nav is functional without
  * counts, and a fetch failure simply leaves the rail shelf-less.
  */
-function ShelfList({ shelves }: ShelfListProps): ReactElement | null {
+function ShelfList({ shelves }: Readonly<ShelfListProps>): ReactElement | null {
   if (shelves === undefined || shelves.length === 0) return null;
   const visible = shelves.slice(0, SHELF_CAP);
   return (

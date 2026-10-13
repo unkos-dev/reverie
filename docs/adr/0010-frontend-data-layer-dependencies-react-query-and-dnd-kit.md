@@ -17,9 +17,9 @@ decision-makers:
 The JSON REST API conventions work put a production browser UI on top of new JSON endpoints. The frontend was a Vite +
 React 19 + Tailwind v4 + shadcn (radix-nova) tree with no data-fetching library: the only network calls were theme
 persistence and OPDS testing helpers, each a one-off `fetch()` call. There was no centralised cache, no request
-deduplication, no loading state machine, and no mutation-invalidation framework. The work also needed drag-to-reorder
-for shelf items, operable from the keyboard. Which packages should serve server-state caching and mutation handling, a
-devtools surface for that cache, and accessible drag-and-drop?
+deduplication, no loading state machine, and no mutation-invalidation framework. The planned grid column management work
+also needs column reordering, operable from the keyboard. Which packages should serve server-state caching and mutation
+handling, a devtools surface for that cache, and accessible drag-and-drop?
 
 ## Decision drivers
 
@@ -27,8 +27,8 @@ devtools surface for that cache, and accessible drag-and-drop?
   cache invalidation, since the existing tree hand-rolled neither.
 - The cache's state is the most cross-cutting state in the app, so a runtime inspector for it turns a long debugging
   session into a short one.
-- Shelf-item reordering must be operable from the keyboard: sortable rows are an interactive component, and WCAG 2.2 AA
-  requires keyboard operability for those.
+- Grid column reordering must be operable from the keyboard: sortable columns are an interactive component, and WCAG 2.2
+  AA requires keyboard operability for those.
 - A global auth-failure handler and prefetch-on-route-load both need first-class support from the caching library, not a
   pattern threaded by hand through every call site.
 - Packages that share maintainership and an active release cadence keep the supply-chain audit posture consistent.
@@ -45,11 +45,11 @@ devtools surface for that cache, and accessible drag-and-drop?
 ## Decision outcome
 
 Chosen option: **React Query with its devtools, and dnd-kit**, because together they give the frontend request
-deduplication, mutation-driven cache invalidation, a runtime cache inspector, and keyboard-accessible drag-to-reorder,
-without hand-rolling any of the three.
+deduplication, mutation-driven cache invalidation, a runtime cache inspector, and keyboard-accessible grid column
+reordering, without hand-rolling any of the three.
 
 React Query owns server-state caching and mutation invalidation, its devtools inspect that cache during development, and
-dnd-kit handles accessible drag-to-reorder.
+dnd-kit handles accessible grid column reordering.
 
 ### Consequences
 
@@ -114,7 +114,7 @@ react-dnd is the older drag-and-drop library, with its last meaningful release i
 
 The maintained successor to the archived `react-beautiful-dnd`, with a smaller API surface focused on vertical lists.
 
-- Negative: shelf-item reordering is one of several drag-and-drop interactions Reverie may need over time (for example,
+- Negative: grid column reordering is one of several drag-and-drop interactions Reverie may need over time (for example,
   admin user-role drag or shelf-grid card sort); dnd-kit's broader primitive set is the more durable choice to adopt
   once and reuse.
 

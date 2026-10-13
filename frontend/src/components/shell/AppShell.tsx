@@ -39,7 +39,7 @@ interface AppShellProps {
 }
 
 /** Shell chrome: skip link, left rail (or drawer), main column. */
-export function AppShell({ children }: AppShellProps): ReactElement {
+export function AppShell({ children }: Readonly<AppShellProps>): ReactElement {
   const matches = useMatches();
   const isAdminZone = matches.some((match) => hasAdminZone(match.handle));
 

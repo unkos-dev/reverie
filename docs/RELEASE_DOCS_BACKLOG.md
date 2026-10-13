@@ -38,16 +38,16 @@ library/validation UI surface that exposes them lands. The dev-facing reference,
 task
 
 The OIDC `email` claim is signature-verified but not format-checked upstream. Reverie validates it against RFC 5322
-_addr-spec_ rules before persisting. Two operator-visible behaviours:
+_addr-spec_ rules before persisting. Three operator-visible behaviours:
 
 - **Invalid format degrades to NULL, not a login failure.** A malformed claim (display-name form
   `Alice <alice@example.com>`, domain-literal `alice@[127.0.0.1]`, or a non-email string) is discarded and `users.email`
   stored as `NULL`. Login still succeeds, identity is `(issuer, subject)` resolved through `user_identities`, not the
   email claim (OIDC Core §5.7: email is optional and non-identifying).
-- **Malformed claim on re-login overwrites a previously-stored valid email to NULL.** If an IdP changes from a valid to
-  an invalid claim, the stored email is cleared on next login. The rejection is logged at `warn` with a
-  `had_prior_email` field so operators can tell a known-good value being wiped (IdP misconfiguration) apart from a
-  first-login carrying junk.
+- **A returning identity keeps its stored email.** The claim is read only when the account is created, so an IdP that
+  later changes or invalidates the email never rewrites it, and the user still signs in.
+- **A first sign-in whose email belongs to a different account is refused.** Accounts are matched on `(issuer, subject)`
+  only, never on email, so the attempt writes and links nothing and ends in the same generic 401 as a disabled account.
 
 Write an operator-facing Starlight page covering email-claim validation behaviour when the admin user-management surface
 lands.

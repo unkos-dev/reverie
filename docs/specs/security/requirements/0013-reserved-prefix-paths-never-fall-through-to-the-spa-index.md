@@ -28,6 +28,9 @@ cannot read as the error it is.
   `/auth/__nope__`, returns the same `404` Problem Details response.
 - A `GET` to a path that shares only a leading string with a reserved prefix, without the following `/`, for example
   `/apiology` or `/authed`, is outside this obligation and may be answered as an application route.
+- The request tests in `backend/src/security/headers.rs` assert the first two criteria, and
+  `bare_reserved_prefixes_never_fall_through_to_the_spa_index` there requests the bare prefixes against a server that
+  has a frontend build to fall through to.
 
 ## More information
 
@@ -35,5 +38,5 @@ cannot read as the error it is.
   prefix, but whose raw form does not, is not covered.
 - A request that matches a route under a reserved prefix with an unsupported method gets `405 Method Not Allowed` on
   that route and is outside this obligation.
-- The sub-path case is covered by request tests. The bare-prefix case is checked through `is_reserved_prefix` in
-  isolation, not through a request.
+- `/health` is itself a route, so a bare request is answered by that route and never reaches the fallback; the test
+  asserts that answer is not `index.html`.

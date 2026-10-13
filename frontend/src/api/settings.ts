@@ -3,15 +3,16 @@
  *
  * Mirrors `SettingsResponse` and `PutSettingsResponse` in
  * `backend/src/routes/settings/mod.rs`. The `PUT` is an RFC 7396 merge patch
- * guarded by `If-Match`: `etags.ts` keys this path, so the tag a `GET` or
- * `PUT` returns is echoed on the next `PUT` by `apiFetch`, and a `412` or
- * `428` surfaces as an {@link ApiError} the caller reconciles.
+ * guarded by `If-Match`. Each validated snapshot holds its response tag;
+ * saves send that tag explicitly and reconcile `412` or `428` failures.
  */
 import { z } from "zod";
 
-import { apiFetch } from "./fetch";
+import { apiFetch, apiFetchWithHeaders } from "./fetch";
 
 const MANIFESTATION_FORMATS = ["epub", "pdf", "mobi", "azw3", "cbz", "cbr"] as const;
+
+const EtagSchema = z.string().min(1);
 
 const int32 = z.number().int().min(-2147483648).max(2147483647);
 const int64 = z.number().int().refine(Number.isSafeInteger, "exceeds the exact integer range");
@@ -62,6 +63,7 @@ const PutSettingsSchema = SettingsValuesSchema.extend({
 
 /** One consistent read of the settings row. */
 export type SettingsSnapshot = {
+  etag: string;
   values: SettingsValues;
   revision: number;
   updatedAt: string;
@@ -70,6 +72,7 @@ export type SettingsSnapshot = {
 
 /** The settings row after a successful write. */
 export type SettingsWriteResult = {
+  etag: string;
   values: SettingsValues;
   revision: number;
   updatedAt: string;
@@ -78,9 +81,11 @@ export type SettingsWriteResult = {
 
 /** `GET /api/v1/settings` — the current settings. */
 export async function getSettings(signal?: AbortSignal): Promise<SettingsSnapshot> {
-  const raw = await apiFetch("/api/v1/settings", { signal });
-  const { revision, updated_at, restart_required_fields, ...values } = GetSettingsSchema.parse(raw);
+  const { body, headers } = await apiFetchWithHeaders("/api/v1/settings", { signal });
+  const { revision, updated_at, restart_required_fields, ...values } =
+    GetSettingsSchema.parse(body);
   return {
+    etag: EtagSchema.parse(headers.get("ETag")),
     values,
     revision,
     updatedAt: updated_at,
@@ -99,18 +104,25 @@ export async function getReloadStatus(signal?: AbortSignal): Promise<string | nu
 }
 
 /**
- * `PUT /api/v1/settings` — apply a merge patch. `If-Match` rides on the tag
- * the last `GET` or `PUT` returned; callers never set it.
+ * Apply a settings merge patch against the tag held with the caller's validated snapshot.
  */
 export async function updateSettings(
   patch: SettingsPatch,
+  etag: string,
   signal?: AbortSignal,
 ): Promise<SettingsWriteResult> {
-  const raw = await apiFetch("/api/v1/settings", {
+  const { body, headers } = await apiFetchWithHeaders("/api/v1/settings", {
     method: "PUT",
+    headers: { "If-Match": etag },
     body: JSON.stringify(patch),
     signal,
   });
-  const { revision, updated_at, restart_required, ...values } = PutSettingsSchema.parse(raw);
-  return { values, revision, updatedAt: updated_at, restartRequired: restart_required };
+  const { revision, updated_at, restart_required, ...values } = PutSettingsSchema.parse(body);
+  return {
+    etag: EtagSchema.parse(headers.get("ETag")),
+    values,
+    revision,
+    updatedAt: updated_at,
+    restartRequired: restart_required,
+  };
 }

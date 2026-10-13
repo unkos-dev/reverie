@@ -50,7 +50,7 @@ export function LibraryToolbar({
   onToggleColumn,
   canResetColumns,
   onResetColumns,
-}: LibraryToolbarProps): ReactElement {
+}: Readonly<LibraryToolbarProps>): ReactElement {
   return (
     <div data-chrome="" className="mb-4 flex flex-wrap items-center gap-2">
       <QuickSearch />

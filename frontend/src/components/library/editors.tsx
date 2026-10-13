@@ -61,7 +61,11 @@ type TextFilterEditorProps = {
   onChange: (next: TextFilter) => void;
 };
 
-export function TextFilterEditor({ value, ops, onChange }: TextFilterEditorProps): ReactElement {
+export function TextFilterEditor({
+  value,
+  ops,
+  onChange,
+}: Readonly<TextFilterEditorProps>): ReactElement {
   const id = useId();
   const [op, setOp] = useState<TextOp>(() => deriveTextOp(value, ops));
   const committed = value.contains ?? value.eq ?? value.ne ?? "";
@@ -193,7 +197,7 @@ function DraftBoundInput<T extends BoundValue>({
   format,
   compare,
   onChange,
-}: DraftBoundInputProps<T>): ReactElement {
+}: Readonly<DraftBoundInputProps<T>>): ReactElement {
   const canonical = value === undefined ? "" : format(value);
   const [draft, setDraft] = useState(canonical);
   const [syncedCanonical, setSyncedCanonical] = useState(canonical);
@@ -333,7 +337,7 @@ export function RangeFilterEditor({
   max,
   allowEmpty = false,
   onChange,
-}: RangeFilterEditorProps): ReactElement {
+}: Readonly<RangeFilterEditorProps>): ReactElement {
   const id = useId();
   const isEmpty = value.empty === true;
   return (
@@ -396,7 +400,11 @@ type DateRangeEditorProps = {
   onChange: (next: { after?: string; before?: string }) => void;
 };
 
-export function DateRangeEditor({ after, before, onChange }: DateRangeEditorProps): ReactElement {
+export function DateRangeEditor({
+  after,
+  before,
+  onChange,
+}: Readonly<DateRangeEditorProps>): ReactElement {
   const id = useId();
   return (
     <div className="flex items-start gap-2">
@@ -446,7 +454,7 @@ type StatusEditorProps = {
   onChange: (next: string[]) => void;
 };
 
-export function StatusEditor({ value, onChange }: StatusEditorProps): ReactElement {
+export function StatusEditor({ value, onChange }: Readonly<StatusEditorProps>): ReactElement {
   const id = useId();
   function toggle(token: string, checked: boolean): void {
     const without = value.filter((current) => current !== token);

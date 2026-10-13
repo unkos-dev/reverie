@@ -7,7 +7,7 @@
  * newer values and otherwise hands the user a conflict to resolve.
  */
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { useRef, useState } from "react";
+import { useState } from "react";
 
 import { ApiError, isIfMatchMismatch, isIfMatchRequired } from "@/api/errors";
 import {
@@ -17,6 +17,7 @@ import {
   type SettingsPatch,
   type SettingsSnapshot,
   type SettingsValues,
+  type SettingsWriteResult,
 } from "@/api/settings";
 import { invokeUnauthenticatedHandler } from "@/lib/query/client";
 import { queryKeys } from "@/lib/query/keys";
@@ -120,12 +121,10 @@ function isPrecondition(err: unknown): boolean {
   return isIfMatchMismatch(err) || isIfMatchRequired(err);
 }
 
-function merged(
-  base: SettingsSnapshot,
-  written: { values: SettingsValues; revision: number; updatedAt: string },
-): SettingsSnapshot {
+function merged(base: SettingsSnapshot, written: SettingsWriteResult): SettingsSnapshot {
   return {
     ...base,
+    etag: written.etag,
     values: written.values,
     revision: written.revision,
     updatedAt: written.updatedAt,
@@ -138,7 +137,6 @@ export function useSettingsEditor(area: AreaId, base: SettingsSnapshot): Setting
   const [notice, setNotice] = useState<Notice>({ kind: "none" });
   const [elsewhere, setElsewhere] = useState<Elsewhere>({});
   const [pendingConfirm, setPendingConfirm] = useState<BooleanKey | null>(null);
-  const unreconciledRevision = useRef<number | null>(null);
 
   const dirty = dirtyKeys(area, draft, base.values);
 
@@ -146,34 +144,23 @@ export function useSettingsEditor(area: AreaId, base: SettingsSnapshot): Setting
     return queryClient.query({ ...settingsQueryOptions(), staleTime: 0 });
   }
 
-  async function reload(held: SettingsSnapshot): Promise<SettingsSnapshot> {
-    try {
-      return await refetch();
-    } catch (err) {
-      unreconciledRevision.current = held.revision;
-      throw err;
-    }
-  }
-
   async function runSave({ base: start, patch }: SaveArgs): Promise<Outcome> {
-    if (unreconciledRevision.current !== start.revision) {
-      try {
-        const written = await updateSettings(patch);
-        return {
-          kind: "saved",
-          written: merged(start, written),
-          reapplied: false,
-          changed: [],
-          base: start.values,
-          restart: written.restartRequired,
-        };
-      } catch (err) {
-        if (!isPrecondition(err)) throw err;
-      }
+    try {
+      const written = await updateSettings(patch, start.etag);
+      return {
+        kind: "saved",
+        written: merged(start, written),
+        reapplied: false,
+        changed: [],
+        base: start.values,
+        restart: written.restartRequired,
+      };
+    } catch (err) {
+      if (!isPrecondition(err)) throw err;
     }
 
     setNotice({ kind: "reapplying" });
-    const fresh = await reload(start);
+    const fresh = await refetch();
     const found = classify(start.values, fresh.values, patch);
     if (found.overlap.length > 0) {
       return {
@@ -190,7 +177,7 @@ export function useSettingsEditor(area: AreaId, base: SettingsSnapshot): Setting
       return { kind: "agreed", fresh, base: start.values, changed: found.changedByOthers };
     }
     try {
-      const written = await updateSettings(remaining);
+      const written = await updateSettings(remaining, fresh.etag);
       return {
         kind: "saved",
         written: merged(fresh, written),
@@ -203,7 +190,7 @@ export function useSettingsEditor(area: AreaId, base: SettingsSnapshot): Setting
       if (!isPrecondition(err)) throw err;
     }
 
-    const latest = await reload(fresh);
+    const latest = await refetch();
     const again = classify(start.values, latest.values, patch);
     return {
       kind: "conflict",

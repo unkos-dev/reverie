@@ -329,6 +329,21 @@ fn read_element_text(reader: &mut Reader<&[u8]>, end: QName) -> Option<String> {
     result
 }
 
+/// Whether the document parses to its end with every element closed.
+fn is_balanced(xml: &str) -> bool {
+    let mut reader = Reader::from_str(xml);
+    let mut depth: usize = 0;
+    loop {
+        match reader.read_event() {
+            Ok(Event::Start(_)) => depth += 1,
+            Ok(Event::End(_)) => depth = depth.saturating_sub(1),
+            Ok(Event::Eof) => return depth == 0,
+            Ok(_) => {}
+            Err(_) => return false,
+        }
+    }
+}
+
 /// Parse the `OPF` package document at `opf_path` and return structured metadata.
 ///
 /// Extracts the manifest, spine, Dublin Core fields, W3C accessibility `<meta>`
@@ -338,7 +353,8 @@ fn read_element_text(reader: &mut Reader<&[u8]>, end: QName) -> Option<String> {
 /// `Degraded` issue.
 ///
 /// Returns `None` if `opf_path` is `None`, the entry cannot be read from
-/// `handle`, or the entry bytes are not valid `UTF-8`.
+/// `handle`, the entry bytes are not valid `UTF-8`, or the document is not
+/// well-formed to its end (a parse error or an unclosed element).
 #[expect(
     clippy::too_many_lines,
     reason = "OPF parser handles the full EPUB 2/3 metadata element set in one pass; the per-element cases are mechanical and cannot meaningfully be split without introducing a second parse pass"
@@ -351,6 +367,9 @@ pub fn validate(
     let path = opf_path?;
     let bytes = read_entry(handle, path)?;
     let xml = std::str::from_utf8(&bytes).ok()?;
+    if !is_balanced(xml) {
+        return None;
+    }
 
     let mut manifest: HashMap<String, String> = HashMap::new();
     // id -> media-type, kept alongside `manifest` only to gate EPUB 2 meta
@@ -1548,18 +1567,16 @@ mod tests {
 
     #[test]
     fn truncated_document_missing_end_tag_yields_none() {
-        // A document that ends before an open element's end tag must not
-        // salvage the partial text seen so far: quick-xml delivers this as a
-        // clean `Event::Eof` rather than an error (it does not validate tag
-        // balance), so treating `Eof` as "found the end" would silently
-        // return truncated content instead of signalling the missing field.
+        // A document that ends before an open element's end tag is rejected
+        // outright: quick-xml delivers this as a clean `Event::Eof` rather
+        // than an error (it does not validate tag balance), so the layer
+        // checks balance itself instead of salvaging truncated content.
         let opf = br#"<package xmlns:dc="http://purl.org/dc/elements/1.1/">
             <metadata>
                 <dc:title>Cut off mid"#;
         let handle = make_handle(opf);
         let mut issues = Vec::new();
-        let data = validate(&handle, Some("OEBPS/content.opf"), &mut issues).unwrap();
-        assert!(data.title.is_none());
+        assert!(validate(&handle, Some("OEBPS/content.opf"), &mut issues).is_none());
     }
 
     #[test]

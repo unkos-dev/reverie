@@ -354,8 +354,9 @@ pub struct Config {
     #[schemars(with = "String", default = "String::new")]
     pub ingestion_database_url: SecretString,
     /// Accepted ingestion formats (`REVERIE_ACCEPTED_FORMATS`, comma-separated;
-    /// default `epub`). Seeds settings once; saved values win. An empty list suspends acquisition.
+    /// default `epub`). Seeds settings once; saved values win. At least one format is required.
     #[serde(deserialize_with = "de_accepted_formats")]
+    #[schemars(schema_with = "accepted_formats_schema")]
     pub accepted_formats: Vec<ManifestationFormat>,
     /// Initial imported-source cleanup setting (`REVERIE_CLEANUP_IMPORTED`, default `true`); saved values win.
     pub cleanup_imported: bool,
@@ -617,8 +618,10 @@ where
     D: serde::Deserializer<'de>,
 {
     let raw = <String as serde::Deserialize>::deserialize(de)?;
-    if raw.is_empty() {
-        return Ok(Vec::new());
+    if raw.trim().is_empty() {
+        return Err(serde::de::Error::custom(
+            "at least one format is required; supported: epub",
+        ));
     }
     let formats = raw
         .split(',')
@@ -638,6 +641,25 @@ where
         ));
     }
     Ok(formats)
+}
+
+/// Schema for `accepted_formats`: the formats ingestion supports (a subset of
+/// [`ManifestationFormat`]), with at least one required.
+fn accepted_formats_schema(_: &mut schemars::SchemaGenerator) -> schemars::Schema {
+    schemars::json_schema!({
+        "type": "array",
+        "default": ["epub"],
+        "minItems": 1,
+        "items": {
+            "oneOf": [
+                {
+                    "description": "EPUB 2 / 3 reflowable e-book.",
+                    "type": "string",
+                    "const": "epub"
+                }
+            ]
+        }
+    })
 }
 
 // ---------------------------------------------------------------------------
@@ -1165,6 +1187,17 @@ mod tests {
             "postgres://ingestion@localhost/reverie_dev"
         );
         assert_eq!(config.accepted_formats, vec![ManifestationFormat::Epub]);
+    }
+
+    #[test]
+    fn accepted_formats_empty_is_rejected() {
+        for blank in ["", "  "] {
+            let vars = with_overrides(&[("REVERIE_ACCEPTED_FORMATS", blank)]);
+            let err = cfg_from_owned(&vars).unwrap_err();
+            let msg = err.to_string();
+            assert!(msg.contains("REVERIE_ACCEPTED_FORMATS"), "{msg}");
+            assert!(msg.contains("at least one format"), "{msg}");
+        }
     }
 
     #[test]

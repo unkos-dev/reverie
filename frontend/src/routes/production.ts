@@ -58,7 +58,7 @@ export const shelvesRoute: RouteObject = {
   },
 };
 
-/** `/shelves/:id` — shelf detail with drag-to-reorder items. */
+/** `/shelves/:id` — shelf detail. */
 export const shelfDetailRoute: RouteObject = {
   path: "shelves/:id",
   lazy: async () => {

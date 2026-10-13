@@ -127,7 +127,7 @@ pub enum AppError {
     SystemShelfImmutable,
     /// A query-string parameter failed to deserialize at the extractor
     /// boundary (e.g. a malformed UUID in `?author=` / `?series=` /
-    /// `?shelf=`, or an unknown `?sort=` variant). RFC 9457 `type`
+    /// `?shelf=`). RFC 9457 `type`
     /// [`problems::MALFORMED_QUERY`]. HTTP 400 Bad Request. Distinct
     /// from [`Self::Validation`] (422): this is a syntactic decode
     /// failure, not a business-rule rejection. The inner string is

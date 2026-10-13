@@ -35,7 +35,7 @@ const GET_BODY = {
 function json(body: unknown, headers: Record<string, string> = {}, status = 200): Response {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { "Content-Type": "application/json", ...headers },
+    headers: { "Content-Type": "application/json", ETag: '"rev-7"', ...headers },
   });
 }
 
@@ -55,6 +55,7 @@ describe("getSettings", () => {
 
     const snapshot = await getSettings();
 
+    expect(snapshot.etag).toBe('"rev-7"');
     expect(snapshot.revision).toBe(7);
     expect(snapshot.updatedAt).toBe("2026-10-09T10:31:00Z");
     expect(snapshot.restartRequiredFields).toEqual(["cover_max_bytes"]);
@@ -86,6 +87,15 @@ describe("getSettings", () => {
   test("rejects an empty accepted format list", async () => {
     vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
       json({ ...GET_BODY, accepted_formats: [] }),
+    );
+    await expect(getSettings()).rejects.toThrow();
+  });
+
+  test.each([null, ""])("rejects a successful read with ETag %s", async (etag) => {
+    const headers = new Headers({ "Content-Type": "application/json" });
+    if (etag !== null) headers.set("ETag", etag);
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      new Response(JSON.stringify(GET_BODY), { headers }),
     );
     await expect(getSettings()).rejects.toThrow();
   });
@@ -136,9 +146,9 @@ describe("getReloadStatus", () => {
         }),
       );
 
-    await getSettings();
+    const snapshot = await getSettings();
     await getReloadStatus();
-    await updateSettings({ opds_page_size: 25 });
+    await updateSettings({ opds_page_size: 25 }, snapshot.etag);
 
     expect(new Headers(fetchSpy.mock.calls[2]?.[1]?.headers).get("If-Match")).toBe('"rev-7"');
   });
@@ -162,8 +172,8 @@ describe("updateSettings", () => {
         ),
       );
 
-    await getSettings();
-    const result = await updateSettings({ opds_page_size: 25 });
+    const snapshot = await getSettings();
+    const result = await updateSettings({ opds_page_size: 25 }, snapshot.etag);
 
     const [url, init] = fetchSpy.mock.calls[1] ?? [];
     expect(url).toBe("/api/v1/settings");
@@ -171,6 +181,7 @@ describe("updateSettings", () => {
     expect(init?.body).toBe('{"opds_page_size":25}');
     expect(new Headers(init?.headers).get("If-Match")).toBe('"rev-7"');
     expect(result.values.opds_page_size).toBe(25);
+    expect(result.etag).toBe('"rev-8"');
     expect(result.revision).toBe(8);
     expect(result.restartRequired).toBe(false);
   });
@@ -185,7 +196,44 @@ describe("updateSettings", () => {
         restart_required: false,
       }),
     );
-    await expect(updateSettings({ opds_page_size: 25 })).rejects.toThrow();
+    await expect(updateSettings({ opds_page_size: 25 }, '"rev-7"')).rejects.toThrow();
+  });
+
+  test("a later read cannot change the tag held with an earlier snapshot", async () => {
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(json(GET_BODY, { ETag: '"rev-7"' }))
+      .mockResolvedValueOnce(json({ ...GET_BODY, revision: 8 }, { ETag: '"rev-8"' }))
+      .mockResolvedValueOnce(
+        json(
+          {
+            ...VALUES,
+            revision: 9,
+            updated_at: GET_BODY.updated_at,
+            restart_required: false,
+          },
+          { ETag: '"rev-9"' },
+        ),
+      );
+    const held = await getSettings();
+    await getSettings();
+    await updateSettings({ opds_page_size: 25 }, held.etag);
+    expect(new Headers(fetchSpy.mock.calls[2]?.[1]?.headers).get("If-Match")).toBe('"rev-7"');
+  });
+
+  test("rejects a successful write without its response tag", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          ...VALUES,
+          revision: 8,
+          updated_at: GET_BODY.updated_at,
+          restart_required: false,
+        }),
+        { headers: { "Content-Type": "application/json" } },
+      ),
+    );
+    await expect(updateSettings({ opds_page_size: 25 }, '"rev-7"')).rejects.toThrow();
   });
 
   test("a second write carries the tag the first write returned", async () => {
@@ -201,9 +249,9 @@ describe("updateSettings", () => {
       .mockResolvedValueOnce(json(written, { ETag: '"rev-8"' }))
       .mockResolvedValueOnce(json({ ...written, revision: 9 }, { ETag: '"rev-9"' }));
 
-    await getSettings();
-    await updateSettings({ opds_page_size: 25 });
-    await updateSettings({ opds_page_size: 30 });
+    const snapshot = await getSettings();
+    const first = await updateSettings({ opds_page_size: 25 }, snapshot.etag);
+    await updateSettings({ opds_page_size: 30 }, first.etag);
 
     const headers = new Headers(fetchSpy.mock.calls[2]?.[1]?.headers);
     expect(headers.get("If-Match")).toBe('"rev-8"');
@@ -224,8 +272,10 @@ describe("updateSettings", () => {
         ),
       );
 
-    await getSettings();
-    const err: unknown = await updateSettings({ opds_page_size: 25 }).catch((e: unknown) => e);
+    const snapshot = await getSettings();
+    const err: unknown = await updateSettings({ opds_page_size: 25 }, snapshot.etag).catch(
+      (e: unknown) => e,
+    );
 
     expect(isIfMatchMismatch(err)).toBe(true);
   });

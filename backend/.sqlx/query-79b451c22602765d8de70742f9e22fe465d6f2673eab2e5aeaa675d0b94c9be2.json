@@ -1,0 +1,46 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "WITH inserted AS (INSERT INTO manifestations (library_id, work_id, format, file_path, ingestion_file_hash, current_file_hash, file_size_bytes, ingestion_status, validation_status, enrichment_status, enrichment_attempt_count, enrichment_attempted_at, enrichment_error, enrichment_failures) VALUES ((SELECT id FROM libraries WHERE configuration_key = 'default'), $1, 'epub'::manifestation_format, $2, $3, $3, 1000, 'complete'::ingestion_status, 'clean'::validation_status, $4, 3, now(), $5, $6) RETURNING *), claimed AS (INSERT INTO library_path_claims (library_id, path, manifestation_id) SELECT library_id, file_path, id FROM inserted) SELECT id AS \"id!\" FROM inserted",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id!",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "manifestations",
+            "name": "id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Text",
+        {
+          "Custom": {
+            "name": "enrichment_status",
+            "kind": {
+              "Enum": [
+                "pending",
+                "in_progress",
+                "complete",
+                "failed",
+                "skipped"
+              ]
+            }
+          }
+        },
+        "Text",
+        "Jsonb"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "79b451c22602765d8de70742f9e22fe465d6f2673eab2e5aeaa675d0b94c9be2"
+}

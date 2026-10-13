@@ -326,6 +326,42 @@ describe("production settings navigation", () => {
     expect(server.puts).toHaveLength(1);
   });
 
+  test.each(["invalid JSON", "invalid schema"])(
+    "a failed re-entry read with %s cannot authorise a stale save",
+    async (failure) => {
+      const user = userEvent.setup();
+      const { router } = renderSettings("enrichment", appQueryClient, adminSettingsRoute);
+      await screen.findByRole("form", { name: /settings$/ });
+      await act(() => router.navigate("/library"));
+      server.values.enrichment_concurrency = 5;
+      server.revision += 1;
+      const realFetch = vi.mocked(globalThis.fetch).getMockImplementation();
+      vi.mocked(globalThis.fetch).mockImplementation((input, init) => {
+        if (urlOf(input).pathname === "/api/v1/settings" && (init?.method ?? "GET") === "GET") {
+          return Promise.resolve(
+            new Response(failure === "invalid JSON" ? "{" : "{}", {
+              headers: { "Content-Type": "application/json", ETag: etag() },
+            }),
+          );
+        }
+        return realFetch === undefined ? Promise.resolve(new Response()) : realFetch(input, init);
+      });
+      await act(() => router.navigate("/admin/settings/enrichment"));
+      await screen.findByRole("form", { name: /settings$/ });
+      installFetch();
+      await type(user, "Concurrent lookups", "6");
+      await user.click(save());
+      await waitFor(() => {
+        expect(server.puts).toHaveLength(1);
+      });
+      expect(server.puts[0]?.ifMatch).toBe('"rev-1"');
+      expect(server.values.enrichment_concurrency).toBe(5);
+      expect(
+        await screen.findByText("Settings changed while you were editing"),
+      ).toBeInTheDocument();
+    },
+  );
+
   test("leaving a dirty area still confirms discard and loads fresh settings for the next area", async () => {
     const user = userEvent.setup();
     renderSettings("enrichment", appQueryClient, adminSettingsRoute);
@@ -453,6 +489,17 @@ describe("loading", () => {
       "true",
     );
     expect(save()).toHaveAttribute("aria-disabled", "true");
+  });
+
+  test("reload age uses the time the server status was read", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      vi.setSystemTime(new Date("2026-10-09T10:46:00Z"));
+      await loaded();
+      expect(await screen.findByText(/4 minutes ago/)).toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   test("a null reload time reads as the normal never-refreshed state", async () => {
@@ -1307,6 +1354,35 @@ describe("a stale write", () => {
     expect(server.values.enrichment_concurrency).toBe(9);
   });
 
+  test.each(["invalid JSON", "invalid schema"])(
+    "a write response with %s leaves the held values and tag together",
+    async (failure) => {
+      const user = userEvent.setup();
+      await loaded();
+      await type(user, "Concurrent lookups", "6");
+      const realFetch = vi.mocked(globalThis.fetch).getMockImplementation();
+      vi.mocked(globalThis.fetch).mockImplementation(async (input, init) => {
+        const response = realFetch === undefined ? new Response() : await realFetch(input, init);
+        if (urlOf(input).pathname === "/api/v1/settings" && init?.method === "PUT") {
+          return new Response(failure === "invalid JSON" ? "{" : "{}", {
+            headers: { "Content-Type": "application/json", ETag: etag() },
+          });
+        }
+        return response;
+      });
+      await user.click(save());
+      await screen.findByText("The server returned an error. Your edits are still here.");
+      expect(screen.getByRole("textbox", { name: "Concurrent lookups" })).toHaveValue("6");
+      installFetch();
+      await user.click(save());
+      await screen.findByText("Settings saved");
+      expect(server.puts).toHaveLength(2);
+      expect(server.puts[1]?.ifMatch).toBe('"rev-1"');
+      expect(server.values.enrichment_concurrency).toBe(6);
+      expect(server.revision).toBe(2);
+    },
+  );
+
   test("a failed reload after a stale answer cannot carry the newer tag over the old values", async () => {
     server.stale.set(1, () => {
       server.values.enrichment_concurrency = 8;
@@ -1323,7 +1399,8 @@ describe("a stale write", () => {
     server.getStatus = 200;
     await user.click(save());
     expect(await screen.findByText("Settings changed while you were editing")).toBeInTheDocument();
-    expect(server.puts).toHaveLength(1);
+    expect(server.puts).toHaveLength(2);
+    expect(server.puts[1]?.ifMatch).toBe('"rev-1"');
     expect(server.values.enrichment_concurrency).toBe(8);
   });
 
@@ -1348,7 +1425,8 @@ describe("a stale write", () => {
     server.stale.clear();
     await user.click(save());
     expect(await screen.findByText("Settings changed while you were editing")).toBeInTheDocument();
-    expect(server.puts).toHaveLength(2);
+    expect(server.puts).toHaveLength(3);
+    expect(server.puts[2]?.ifMatch).toBe('"rev-2"');
     expect(server.values.enrichment_concurrency).toBe(8);
   });
 

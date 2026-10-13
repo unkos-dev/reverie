@@ -31,8 +31,8 @@ Edited rows are highlighted and show the saved value beneath them. **Save change
 and **Discard changes** puts the area back as it was. Numbers are checked against the same limits the server enforces,
 so a mistake is marked on the field before anything is sent.
 
-An instance always accepts at least one format. The last selected format cannot be turned off, and the page says so
-beside it.
+An instance always accepts at least one format. While EPUB is the only supported format, the page shows "Reverie imports
+EPUB files." without a format control.
 
 Edits belong to the area you are on. Moving to another area, or leaving Settings, with unsaved edits asks first. Choose
 **Stay on this page** to keep editing or **Leave and discard changes** to drop them.

@@ -255,7 +255,7 @@ async fn credential_file_migrate_child(pool: sqlx::PgPool) {
     let url = pool.connect_options().to_url_lossy();
     let mut file = tempfile::NamedTempFile::new().unwrap();
     writeln!(file, "{}", url.as_str()).unwrap();
-    let output = Command::new(env!("CARGO_BIN_EXE_reverie-api"))
+    let output = tokio::process::Command::new(env!("CARGO_BIN_EXE_reverie-api"))
         .arg("migrate")
         .env_clear()
         .env("DATABASE_URL_MIGRATION_FILE", file.path())
@@ -263,6 +263,7 @@ async fn credential_file_migrate_child(pool: sqlx::PgPool) {
         .env("DATABASE_URL_INGESTION_FILE", "/unreadable-ingestion")
         .env("OIDC_CLIENT_SECRET_FILE", "/unreadable-oidc")
         .output()
+        .await
         .unwrap();
     assert!(!String::from_utf8_lossy(&output.stderr).contains(url.as_str()));
     assert!(!String::from_utf8_lossy(&output.stdout).contains(url.as_str()));

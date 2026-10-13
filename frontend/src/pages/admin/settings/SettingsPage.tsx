@@ -34,9 +34,11 @@ function StatusItem({ label, children }: { label: string; children: ReactNode })
 function StatusLine({
   updatedAt,
   reload,
+  observedAt,
 }: {
   updatedAt: string;
   reload: string | null | undefined;
+  observedAt: number;
 }): ReactElement {
   return (
     <div className="text-fg-muted mt-3 flex flex-wrap gap-4 text-sm leading-normal">
@@ -45,7 +47,7 @@ function StatusLine({
         <StatusItem label="Server cache refreshed">
           {reload === null
             ? "Not refreshed since the server started. Values are read straight from the database, so this is normal."
-            : formatTimeWithAge(reload, new Date())}
+            : formatTimeWithAge(reload, new Date(observedAt))}
         </StatusItem>
       )}
     </div>
@@ -121,6 +123,7 @@ export function SettingsPage(): ReactElement {
       <StatusLine
         updatedAt={snapshot.data.updatedAt}
         reload={reload.isSuccess ? reload.data : undefined}
+        observedAt={reload.dataUpdatedAt}
       />
     );
     body = <SettingsWorkspace key={area} area={area} base={snapshot.data} />;

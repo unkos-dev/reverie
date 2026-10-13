@@ -191,11 +191,11 @@ session's `csrf_token`; tab B's `cachedToken`, populated before that happened, s
 3. `sendRequest` sends the original request again with the refreshed header. `csrf_required` finds a match this time and
    forwards it; the retried response's status is what `apiFetch` returns or throws.
 
-**A Basic-authenticated OPDS request**, for example an e-reader client issuing `PUT` against the shelves reorder
-endpoint with device-token or HTTP Basic credentials and no browser cookie: `csrf_required` reads the session's
-`user_id` claim, finds none (no session cookie was presented, or the cookie names no user), and calls `next.run`
-immediately. The request reaches its handler and whatever scope and role checks it applies, without ever reading a
-header this client was never asked to send.
+**A Basic-authenticated OPDS request**, for example an e-reader client issuing `POST` against the shelf items endpoint
+with device-token or HTTP Basic credentials and no browser cookie: `csrf_required` reads the session's `user_id` claim,
+finds none (no session cookie was presented, or the cookie names no user), and calls `next.run` immediately. The request
+reaches its handler and whatever scope and role checks it applies, without ever reading a header this client was never
+asked to send.
 
 **A session-store read failure inside the middleware itself**, for example a transient database error while reading the
 `user_id` or `csrf_token` session key: `csrf_required` maps the store error to `AppError::Internal`, which logs at

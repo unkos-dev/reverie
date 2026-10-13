@@ -174,7 +174,7 @@ export function CoverArtwork({
   title,
   authors,
   className,
-}: CoverArtworkProps): ReactElement {
+}: Readonly<CoverArtworkProps>): ReactElement {
   // Stable per-mount, url(#…)-safe id namespace for the SVG defs.
   const svgId = useId().replace(/:/g, "");
   const binding = BINDINGS[hashId(bookId) % BINDINGS.length] ?? {

@@ -13,8 +13,8 @@ governed-by:
 
 WHEN a request to `GET /api/v1/books` carries a `?sort=` value that names a column outside the endpoint's published sort
 vocabulary, names the same column more than once, or names more than three columns, the server MUST refuse the request
-with `400 Bad Request` and MUST NOT build or execute a list query for it; only a column name from the published
-vocabulary MAY reach the ordering clause of any query the endpoint runs.
+with `422 Unprocessable Content` and MUST NOT build or execute a list query for it; only a column name from the
+published vocabulary MAY reach the ordering clause of any query the endpoint runs.
 
 ## Rationale
 
@@ -28,16 +28,16 @@ the three-level cap this obligation enforces.
 
 ## Acceptance criteria
 
-- A `?sort=` value naming a column outside the published vocabulary answers `400`. Checked by
-  `list_filter_malformed_sort_returns_400` in `backend/src/routes/library/tests.rs` and `rejects_unknown_field` in
+- A `?sort=` value naming a column outside the published vocabulary answers `422`. Checked by
+  `list_filter_unknown_sort_field_returns_422` in `backend/src/routes/library/tests.rs` and `rejects_unknown_field` in
   `backend/src/routes/sort_spec.rs`.
-- A `?sort=` value naming the same column twice, in either direction, answers `400`. Checked by
-  `list_filter_duplicate_sort_column_returns_400` in `backend/src/routes/library/tests.rs` and
+- A `?sort=` value naming the same column twice, in either direction, answers `422`. Checked by
+  `list_filter_duplicate_sort_column_returns_422` in `backend/src/routes/library/tests.rs` and
   `rejects_duplicate_column` in `backend/src/routes/sort_spec.rs`.
-- A `?sort=` value naming four or more columns answers `400`. Checked by `list_filter_too_many_sort_levels_returns_400`
+- A `?sort=` value naming four or more columns answers `422`. Checked by `list_filter_too_many_sort_levels_returns_422`
   in `backend/src/routes/library/tests.rs` and `rejects_more_than_three_levels` in `backend/src/routes/sort_spec.rs`.
 - A column name is matched case-sensitively against the vocabulary, so a differently cased spelling of a published name
-  answers `400`. Checked by `rejects_uppercase_field_case_sensitively` in `backend/src/routes/sort_spec.rs`.
+  answers `422`. Checked by `rejects_uppercase_field_case_sensitively` in `backend/src/routes/sort_spec.rs`.
 - The refusal happens before any query is built: the parse of the sort value completes, and fails, before the endpoint
   constructs its query. Satisfaction is determined by reading the handler's order of operations; no automated check
   asserts the absence of a query on the refusal path.

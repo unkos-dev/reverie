@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT retries_exhausted_at IS NOT NULL AS \"recorded!\" FROM ingestion_inputs WHERE id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "recorded!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "ba76ff36f020f3b94bb3db9d09a5085f5f7ae04f7388606fc7d7748c45efef6a"
+}

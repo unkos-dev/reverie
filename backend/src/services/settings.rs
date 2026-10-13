@@ -430,7 +430,6 @@ mod tests {
         assert!(!seeded.ingestion.cleanup_duplicates);
         assert_eq!(seeded.revision, before.revision + 1);
         let changed = crate::config::Config {
-            accepted_formats: vec![],
             cleanup_imported: false,
             cleanup_duplicates: true,
             ..Default::default()
@@ -445,18 +444,17 @@ mod tests {
     }
 
     #[sqlx::test(migrations = "./migrations")]
-    async fn capability_ingestion_seed_empty_environment_and_unrelated_save(pool: PgPool) {
+    async fn capability_ingestion_seed_environment_and_unrelated_save(pool: PgPool) {
         let mut request = empty_update();
         request.opds_page_size = Some(77);
         let saved = save(&pool, &request).await.unwrap();
         let config = crate::config::Config {
-            accepted_formats: vec![],
             cleanup_imported: false,
             cleanup_duplicates: true,
             ..Default::default()
         };
         let seeded = seed_ingestion(&pool, &config).await.unwrap();
-        assert_eq!(seeded.ingestion.accepted_formats, Vec::<String>::new());
+        assert_eq!(seeded.ingestion.accepted_formats, ["epub"]);
         assert!(!seeded.ingestion.cleanup_imported);
         assert!(seeded.ingestion.cleanup_duplicates);
         assert_eq!(seeded.opds_page_size, 77);
@@ -464,31 +462,22 @@ mod tests {
     }
 
     #[sqlx::test(migrations = "./migrations")]
-    async fn capability_ingestion_seed_saved_default_or_empty_prevents_environment_override(
-        pool: PgPool,
-    ) {
-        for formats in [
-            vec![crate::models::manifestation_format::ManifestationFormat::Epub],
-            vec![],
-        ] {
-            let mut request = empty_update();
-            request.accepted_formats = Some(formats.clone());
-            let saved = save(&pool, &request).await.unwrap();
-            let config = crate::config::Config {
-                accepted_formats: vec![],
-                cleanup_imported: false,
-                cleanup_duplicates: true,
-                ..Default::default()
-            };
-            let seeded = seed_ingestion(&pool, &config).await.unwrap();
-            assert_eq!(seeded.revision, saved.revision);
-            assert_eq!(
-                seeded.ingestion.accepted_formats,
-                formats.iter().map(ToString::to_string).collect::<Vec<_>>()
-            );
-            assert!(seeded.ingestion.cleanup_imported);
-            assert!(!seeded.ingestion.cleanup_duplicates);
-        }
+    async fn capability_ingestion_seed_saved_default_prevents_environment_override(pool: PgPool) {
+        let mut request = empty_update();
+        request.accepted_formats = Some(vec![
+            crate::models::manifestation_format::ManifestationFormat::Epub,
+        ]);
+        let saved = save(&pool, &request).await.unwrap();
+        let config = crate::config::Config {
+            cleanup_imported: false,
+            cleanup_duplicates: true,
+            ..Default::default()
+        };
+        let seeded = seed_ingestion(&pool, &config).await.unwrap();
+        assert_eq!(seeded.revision, saved.revision);
+        assert_eq!(seeded.ingestion.accepted_formats, ["epub"]);
+        assert!(seeded.ingestion.cleanup_imported);
+        assert!(!seeded.ingestion.cleanup_duplicates);
     }
 
     #[sqlx::test(migrations = "./migrations")]
@@ -499,21 +488,23 @@ mod tests {
             ..Default::default()
         };
         let mut request = empty_update();
-        request.accepted_formats = Some(vec![]);
+        request.accepted_formats = Some(vec![
+            crate::models::manifestation_format::ManifestationFormat::Epub,
+        ]);
         request.cleanup_imported = Some(true);
         request.cleanup_duplicates = Some(false);
         let (seeded, saved) = tokio::join!(seed_ingestion(&pool, &config), save(&pool, &request));
         let seeded = seeded.unwrap();
         let saved = saved.unwrap();
         let latest = load(&pool).await.unwrap();
-        assert_eq!(latest.ingestion.accepted_formats, Vec::<String>::new());
+        assert_eq!(latest.ingestion.accepted_formats, ["epub"]);
         assert!(latest.ingestion.cleanup_imported);
         assert!(!latest.ingestion.cleanup_duplicates);
         let mut resident = seeded;
         apply_if_newer(&mut resident, saved);
         apply_if_newer(&mut resident, latest.clone());
         assert_eq!(resident.revision, latest.revision);
-        assert_eq!(resident.ingestion.accepted_formats, Vec::<String>::new());
+        assert_eq!(resident.ingestion.accepted_formats, ["epub"]);
         pool.close().await;
         assert!(seed_ingestion(&pool, &config).await.is_err());
     }
@@ -536,17 +527,56 @@ mod tests {
                 .unwrap()
         );
         let config = crate::config::Config {
-            accepted_formats: vec![],
             cleanup_imported: false,
             cleanup_duplicates: true,
             ..Default::default()
         };
         let seeded = seed_ingestion(&pool, &config).await.unwrap();
         assert_eq!(seeded.revision, saved.revision + 1);
-        assert_eq!(seeded.ingestion.accepted_formats, Vec::<String>::new());
+        assert_eq!(seeded.ingestion.accepted_formats, ["epub"]);
         assert!(!seeded.ingestion.cleanup_imported);
         assert!(seeded.ingestion.cleanup_duplicates);
         assert_eq!(seeded.opds_page_size, 77);
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn accepted_format_migration_updates_only_repaired_rows(pool: PgPool) {
+        let migrator = sqlx::migrate!("./migrations");
+        for formats in [
+            vec![],
+            vec![crate::models::manifestation_format::ManifestationFormat::Epub],
+        ] {
+            migrator.undo(&pool, 20_261_011_000_000).await.unwrap();
+            let needs_repair = formats.is_empty();
+            let mut request = empty_update();
+            request.accepted_formats = Some(formats);
+            let before = save(&pool, &request).await.unwrap();
+            migrator.run(&pool).await.unwrap();
+            let after = load(&pool).await.unwrap();
+            assert_eq!(after.ingestion.accepted_formats, ["epub"]);
+            if needs_repair {
+                assert_eq!(after.revision, before.revision + 1);
+                assert!(after.updated_at > before.updated_at);
+            } else {
+                assert_eq!(after.revision, before.revision);
+                assert_eq!(after.updated_at, before.updated_at);
+            }
+        }
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn save_refuses_an_empty_accepted_formats_list_at_the_database(pool: PgPool) {
+        let before = load(&pool).await.unwrap();
+        let mut request = empty_update();
+        request.accepted_formats = Some(vec![]);
+        let err = save(&pool, &request).await.unwrap_err();
+        let sqlx::Error::Database(db) = &err else {
+            panic!("expected a database error, got {err:?}");
+        };
+        assert_eq!(db.constraint(), Some("settings_accepted_formats_nonempty"));
+        let after = load(&pool).await.unwrap();
+        assert_eq!(after.ingestion.accepted_formats, ["epub"]);
+        assert_eq!(after.revision, before.revision);
     }
 
     #[sqlx::test(migrations = "./migrations")]

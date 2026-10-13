@@ -200,7 +200,7 @@ function NameDialog({
   pending,
   onClose,
   onSubmit,
-}: NameDialogProps): ReactElement {
+}: Readonly<NameDialogProps>): ReactElement {
   const [name, setName] = useState(initialName);
   function handleSubmit(e: SyntheticEvent<HTMLFormElement>): void {
     e.preventDefault();

@@ -18,14 +18,12 @@
  *    funnelled into {@link ApiError} so callers branch on `.status` /
  *    `.problemSlug` instead of re-parsing JSON.
  *
- * 4. **If-Match ETag retention** — a GET, PATCH or PUT response carrying an
+ * 4. **If-Match ETag retention** — a GET or PATCH response carrying an
  *    `ETag` for a protected resource (the reading-state and metadata PATCH
- *    surfaces and the settings PUT; see `etags.ts`) is cached by resource
- *    identity and echoed back as `If-Match` on that resource's next PATCH or
- *    PUT. Captured from every
+ *    surfaces; see `etags.ts`) is cached by resource identity and echoed
+ *    back as `If-Match` on that resource's next PATCH. Captured from every
  *    response regardless of status, so a `412`'s current tag replaces a
- *    stale one without a follow-up GET. Every other endpoint, including
- *    the shelves reorder PUT's own `If-Match` scheme, is untouched.
+ *    stale one without a follow-up GET. Every other endpoint is untouched.
  *
  * Out of scope: route-level retries, request deduplication (react-query
  * owns that), suspense/loading state (react-query owns that too).
@@ -79,6 +77,15 @@ type ProblemDetails = z.infer<typeof ProblemDetailsSchema>;
  *   with `DOMException("AbortError")`).
  */
 export async function apiFetch(input: RequestInfo | URL, init?: RequestInit): Promise<unknown> {
+  const { body } = await apiFetchWithHeaders(input, init);
+  return body;
+}
+
+/** Return decoded JSON and its response headers for callers that retain a validated representation. */
+export async function apiFetchWithHeaders(
+  input: RequestInfo | URL,
+  init?: RequestInit,
+): Promise<{ body: unknown; headers: Headers }> {
   const method = (init?.method ?? "GET").toUpperCase();
   const mutating = MUTATING_METHODS.has(method);
 
@@ -107,11 +114,11 @@ export async function apiFetch(input: RequestInfo | URL, init?: RequestInit): Pr
       await refreshCsrfToken(init?.signal ?? undefined);
       const retried = await sendRequest(input, init, method, mutating);
       captureEtag(input, retried);
-      return decodeSuccess(retried);
+      return { body: await decodeSuccess(retried), headers: retried.headers };
     }
     throw problemToApiError(response.status, response.statusText, problem);
   }
-  return decodeSuccess(response);
+  return { body: await decodeSuccess(response), headers: response.headers };
 }
 
 /** Resolve a `fetch()` input to the pathname `etagKeyForPath` matches on. */
@@ -195,11 +202,9 @@ async function sendRequest(
       headers.set("Content-Type", "application/json");
     }
   }
-  // Auto-echo a retained ETag as If-Match on that resource's own PATCH or
-  // PUT. Only paths `etags.ts` keys resolve to a tag, so the shelves reorder
-  // PUT (which sets its own timestamp-derived If-Match) is never touched, and
-  // a caller-set header always wins over the cache.
-  if ((method === "PATCH" || method === "PUT") && !headers.has("If-Match")) {
+  // Auto-echo a retained ETag as If-Match on that resource's own PATCH.
+  // A caller-set header always wins over the cache.
+  if (method === "PATCH" && !headers.has("If-Match")) {
     const key = etagKeyForPath(pathnameOf(input));
     if (key !== null) {
       const etag = getRememberedEtag(key);

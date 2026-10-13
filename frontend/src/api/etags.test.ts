@@ -20,8 +20,8 @@ describe("etagKeyForPath", () => {
     expect(etagKeyForPath("/api/v1/books/abc-123/metadata")).toBe("metadata:abc-123");
   });
 
-  test("matches the settings GET and PUT path", () => {
-    expect(etagKeyForPath("/api/v1/settings")).toBe("settings");
+  test("does not cache the snapshot-owned settings tag", () => {
+    expect(etagKeyForPath("/api/v1/settings")).toBeNull();
   });
 
   test("does not match paths that merely start with the settings path", () => {

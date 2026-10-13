@@ -2279,7 +2279,7 @@ async fn load_manifestation_identifiers(
         (status = 404, description = "Manifestation missing or RLS-hidden (existence-not-leaked)", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 412, description = "If-Match does not match the manifestation's current metadata ETag", body = crate::openapi::ProblemDetails, content_type = "application/problem+json",
          headers(("ETag" = String, description = "Current entity-tag, so the caller can resync without a follow-up GET"))),
-        (status = 400, description = "If-Match is malformed, or carries a form this API refuses by policy: the * wildcard, an entity-tag list, a weak tag, or a repeated header instance", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
+        (status = 400, description = "If-Match is malformed, or carries a form this API refuses by policy: the * wildcard, an entity-tag list, a weak tag, or a repeated header instance, the request body is not valid JSON, or a path parameter is malformed", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 422, description = "No populated fields, ISBN/date parse failure, or attempt to clear title. Evaluated only after If-Match has matched, so a stale tag returns 412 instead", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 428, description = "If-Match header absent", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
     )
@@ -2597,8 +2597,12 @@ async fn apply_identifier_patches(
                                                  THEN enrichment_attempt_count ELSE 0 END, \
                  enrichment_attempted_at = CASE WHEN enrichment_status = 'in_progress' \
                                                 THEN enrichment_attempted_at ELSE NULL END, \
+                 enrichment_retry_not_before = CASE WHEN enrichment_status = 'in_progress' \
+                                                    THEN enrichment_retry_not_before ELSE NULL END, \
                  enrichment_error = CASE WHEN enrichment_status = 'in_progress' \
-                                         THEN enrichment_error ELSE NULL END \
+                                         THEN enrichment_error ELSE NULL END, \
+                 enrichment_failures = CASE WHEN enrichment_status = 'in_progress' \
+                                            THEN enrichment_failures ELSE '[]'::jsonb END \
              WHERE id = $1",
             manifestation_id,
         )
@@ -7487,7 +7491,9 @@ mod tests {
              SET enrichment_status = 'failed', \
                  enrichment_attempt_count = 3, \
                  enrichment_attempted_at = now(), \
-                 enrichment_error = 'boom' \
+                 enrichment_retry_not_before = now() + INTERVAL '1 hour', \
+                 enrichment_error = 'boom', \
+                 enrichment_failures = '[{\"source\": \"openlibrary\", \"class\": \"timeout\"}]' \
              WHERE id = $1",
             m_id,
         )
@@ -7576,7 +7582,9 @@ mod tests {
 
         let m = sqlx::query!(
             "SELECT enrichment_status::text AS \"enrichment_status!\", \
-                    enrichment_attempt_count, enrichment_attempted_at, enrichment_error \
+                    enrichment_attempt_count, enrichment_attempted_at, \
+                    enrichment_retry_not_before, enrichment_error, \
+                    enrichment_failures \
              FROM manifestations WHERE id = $1",
             m_id,
         )
@@ -7592,7 +7600,12 @@ mod tests {
             m.enrichment_attempted_at.is_none(),
             "re-queue must null the attempt timestamp"
         );
+        assert!(
+            m.enrichment_retry_not_before.is_none(),
+            "re-queue must clear the deferral"
+        );
         assert!(m.enrichment_error.is_none());
+        assert_eq!(m.enrichment_failures, serde_json::json!([]));
 
         assert_eq!(
             writeback_job_count(&app_pool, m_id).await,
@@ -7648,7 +7661,7 @@ mod tests {
         let m = sqlx::query!(
             "SELECT enrichment_status::text AS \"enrichment_status!\", \
                     enrichment_attempt_count, enrichment_attempted_at, \
-                    enrichment_rerun_requested \
+                    enrichment_retry_not_before, enrichment_rerun_requested \
              FROM manifestations WHERE id = $1",
             m_id,
         )
@@ -7658,6 +7671,7 @@ mod tests {
         assert_eq!(m.enrichment_status, "pending");
         assert_eq!(m.enrichment_attempt_count, 0);
         assert!(m.enrichment_attempted_at.is_none());
+        assert!(m.enrichment_retry_not_before.is_none());
         assert!(
             !m.enrichment_rerun_requested,
             "an idle-row edit re-queues directly; no rerun request is left behind"
