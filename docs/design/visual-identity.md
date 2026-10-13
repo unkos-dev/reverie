@@ -52,7 +52,7 @@ the hex, so treat the primitive as canonical and the hex as informative.
 | `--accent-strong` | `gold-10` | `#967100` | `#BE9E56` | Pressed accent |
 | `--accent-text` | `gold-11` | `#5A3E00` | `#D9B970` | Text-grade gold and the focus ring |
 | `--fg-on-accent` | `gold-contrast` | `#0E0D0A` | `#0E0D0A` | Text on the saturated `bg-accent` fill only |
-| `--danger` | `danger-9` | `#B91C1C` | `#B91C1C` | Destructive and unrecoverable error; never decorative |
+| `--danger` | `danger-9` | `#B91C1C` | `#B91C1C` | Destructive, unrecoverable error, and invalid-input border; never decorative |
 | `--danger-text` | `danger-11` | `#900000` | `#FF9082` | Text-grade danger |
 | `--danger-soft` | `danger-3` | `#D4C2BF` | `#410A08` | Danger background wash |
 | `--fg-on-danger` | `danger-contrast` | `#FFFFFF` | `#FFFFFF` | Text on the `bg-danger` fill (6.47:1) |

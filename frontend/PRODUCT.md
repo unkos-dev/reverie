@@ -104,9 +104,9 @@ editorial-typographic"), the second reflex hasn't been avoided either. Both must
 
 2. **One accent, one danger hue, everything else is weight.** Reverie Gold says "this matters"; a single danger hue says
    "stop." The danger hue is a bounded exception to the no-hue-states rule — reserved for irreversible-destructive
-   confirmation and unrecoverable system errors, never a severity ladder. State, hierarchy, and emphasis below that
-   level are communicated through weight, opacity, type scale, density, and motion, never through additional hues.
-   Success, warning, and info stay hue-less.
+   confirmation, unrecoverable system errors, and invalid-input borders, never a severity ladder. State, hierarchy, and
+   emphasis below that level are communicated through weight, opacity, type scale, density, and motion, never through
+   additional hues. Success, warning, and info stay hue-less.
 
 3. **The library does identity work; the reader recedes.** The cinematic-boutique register lives in the
    collector's-archive surfaces (home, library grid, book detail). The reader inherits palette and motion language but
@@ -135,8 +135,8 @@ Target: **WCAG 2.2 Level AA** as a design invariant, not a post-hoc check.
   or gold text are the right signal: the surface is misusing the accent.
 - The danger hue is the only sanctioned state colour and is fill, border, or icon only — never body text. It is a
   generated, AA-correct warm red (its on-colour is white, clearing AA for normal text), shared across both themes and
-  reserved strictly for irreversible-destructive confirmation and unrecoverable system errors. Per WCAG 1.4.1 it always
-  pairs with an icon, weight, or text label, so colour alone never carries the meaning.
+  reserved strictly for irreversible-destructive confirmation, unrecoverable system errors, and invalid-input borders.
+  Per WCAG 1.4.1 it always pairs with an icon, weight, or text label, so colour alone never carries the meaning.
 - Colour-blind safety is engineered in: the danger hue is reinforcement, never the primary channel. Destructive intent
   and unrecoverable error are communicated through copy, friction, and iconography first; colour amplifies for users who
   can perceive it. The design must work with the colour stripped.

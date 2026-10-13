@@ -190,8 +190,8 @@ gradients).
 - Editorial pairing: Author (display) + Satoshi (workhorse) + JetBrains Mono (metadata). Sans-only; no content serif.
 - Two anchored canvases: Parchment (`#E8DCC2`) for light, Ink (`#0E0D0A`) for dark. Both surface ramps tint warmly
   toward the brand hue. No neutral greys.
-- Single gold accent (≤10% of any screen), single danger hue (bounded exception, destructive/error only,
-  fill/border/icon — never body text).
+- Single gold accent (≤10% of any screen), single danger hue (bounded exception, destructive, error and invalid-input
+  only, fill/border/icon — never body text).
 - Flat by default; the one signature shadow is the accent-glow cover-lift on the Library grid. Atmospheric depth on the
   Library page comes from the sealed `--atm-*` tier.
 - Motion budget: 180–320 ms ease-out (`--ease-standard` / `--ease-emphasised`), no bounce, no spring; route crossfades
@@ -218,10 +218,10 @@ neutrals. sRGB hex is the floor; a P3 wide-gamut layer (OKLCH) progressively enh
 
 - **Danger** (`#B91C1C` solid, both themes): the one sanctioned state hue (`--danger`, `danger-9`), a generated
   AA-correct warm red. A bounded exception to the no-hue-states rule, reserved strictly for irreversible-destructive
-  confirmation and unrecoverable system errors. Appears as fill, border, or icon — **never body text** — and per WCAG
-  1.4.1 always pairs with an icon, weight, or text label. `--fg-on-danger` is white (`#FFFFFF`), the one sanctioned use
-  of pure white, clearing 6.47:1 on the solid. Text-weight companions: `--danger-text` (`#FF9082` dark / `#900000`
-  light); soft fill `--danger-soft` (`#410A08` dark / `#D4C2BF` light).
+  confirmation, unrecoverable system errors, and invalid-input borders. Appears as fill, border, or icon —
+  **never body text** — and per WCAG 1.4.1 always pairs with an icon, weight, or text label. `--fg-on-danger` is white
+  (`#FFFFFF`), the one sanctioned use of pure white, clearing 6.47:1 on the solid. Text-weight companions:
+  `--danger-text` (`#FF9082` dark / `#900000` light); soft fill `--danger-soft` (`#410A08` dark / `#D4C2BF` light).
 
 ### Neutral — surface ramp (Light theme · Parchment-anchored)
 
@@ -264,10 +264,12 @@ these are read via raw `var(--atm-*)` only, on the Library page and the cover ar
 matters" are communicated through weight, opacity, type scale, density, and motion — never through additional hues.
 There is no severity ladder.
 
-**The Danger Carve-Out Rule.** The danger hue is the single exception to no-hue-states. It appears in exactly two
+**The Danger Carve-Out Rule.** The danger hue is the single exception to no-hue-states. It appears in exactly three
 contexts: (1) irreversible destructive confirmation (alongside typed-name confirmation and an undo window where
-feasible), and (2) unrecoverable system errors that would otherwise survive as a wrong "it's working" mental model.
-Nowhere else, never decorative, always paired with a non-colour signal. Success, warning, and info remain hue-less.
+feasible), (2) unrecoverable system errors that would otherwise survive as a wrong "it's working" mental model, and (3)
+the border (and its ring) of an invalid form control (`aria-invalid`), paired with the field's visible error message.
+Nowhere else, never decorative, always paired with a non-colour signal (a glyph or text). Success, warning, and info
+remain hue-less.
 
 **The Light-Gold Restriction Rule.** On Parchment, gold-9 (`#A77C00`) measures 2.80:1, which clears neither WCAG 1.4.11
 as a hairline nor 1.4.3 as text of any size. Darkening it far enough to clear 3:1 stops it reading as gold, so contrast
@@ -537,8 +539,9 @@ use its glyph or wordmark separately as decorative elements.
   legitimate page backgrounds.
 - **Do** use Reverie Gold for primary CTAs, recovery actions, the active-nav slot bar, and the Slot mark fill. Use the
   darker `accent-text` step where gold must read as text or a hairline (e.g. the focus ring); nothing else.
-- **Do** restrict the danger hue (`#B91C1C`) to fill, border, or icon — never body text — in exactly the two carve-out
-  contexts (irreversible destructive confirm, unrecoverable system error), always paired with a non-colour signal.
+- **Do** restrict the danger hue (`#B91C1C`) to fill, border, or icon — never body text — in exactly the three carve-out
+  contexts (irreversible destructive confirm, unrecoverable system error, invalid-input border), always paired with a
+  non-colour signal.
 - **Do** carry hierarchy through weight, opacity, type scale, density, and motion. Author or Satoshi at different
   weights is the system's primary expressiveness.
 - **Do** cap body text at 65–75ch on prose surfaces; cards and detail panels are not prose and may run wider.
