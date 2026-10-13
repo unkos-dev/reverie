@@ -8,14 +8,14 @@ import { FIELDS, fieldCountText, restartLabels } from "./fields";
 import { controlId } from "./ids";
 import type { Notice } from "./use-settings-editor";
 
-type NoteProps = {
+type NoteProps = Readonly<{
   title: string;
   role: "status" | "alert";
   strong?: boolean;
   children: ReactNode;
   actions?: ReactNode;
   focusRef?: React.RefObject<HTMLDivElement | null>;
-};
+}>;
 
 export function Note({
   title,
@@ -42,15 +42,15 @@ export function Note({
   );
 }
 
-export function NoteText({ children }: { children: ReactNode }): ReactElement {
+export function NoteText({ children }: Readonly<{ children: ReactNode }>): ReactElement {
   return <p className="text-fg-muted max-w-[70ch] text-sm leading-normal">{children}</p>;
 }
 
 function ValidationNote({
   notice,
-}: {
+}: Readonly<{
   notice: Extract<Notice, { kind: "validation" }>;
-}): ReactElement {
+}>): ReactElement {
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
     ref.current?.focus();
@@ -88,7 +88,7 @@ function ValidationNote({
   );
 }
 
-export function Notices({ notice }: { notice: Notice }): ReactElement | null {
+export function Notices({ notice }: Readonly<{ notice: Notice }>): ReactElement | null {
   switch (notice.kind) {
     case "none":
       return null;

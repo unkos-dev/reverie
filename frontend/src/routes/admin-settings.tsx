@@ -6,7 +6,6 @@ import { queryClient } from "@/lib/query/client";
 import { queryKeys } from "@/lib/query/keys";
 import type { AuthMe } from "@/hooks/useAuthMe";
 import { settingsQueryOptions } from "@/pages/admin/settings/queries";
-import { SettingsPage } from "@/pages/admin/settings/SettingsPage";
 
 /**
  * Loader for `/admin/settings/:area` — fetches a fresh settings snapshot for
@@ -24,4 +23,4 @@ export async function loader(): Promise<null> {
 }
 
 /** Component export consumed by the route's `lazy()` callback. */
-export const Component = SettingsPage;
+export { SettingsPage as Component } from "@/pages/admin/settings/SettingsPage";

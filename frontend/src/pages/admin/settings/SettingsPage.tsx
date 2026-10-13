@@ -20,7 +20,10 @@ import { SettingsWorkspace } from "./SettingsWorkspace";
 import { AREA_IDS, AreaIdSchema, areaById } from "./fields";
 import { reloadStatusQueryOptions, settingsQueryOptions } from "./queries";
 
-function StatusItem({ label, children }: { label: string; children: ReactNode }): ReactElement {
+function StatusItem({
+  label,
+  children,
+}: Readonly<{ label: string; children: ReactNode }>): ReactElement {
   return (
     <span>
       <span className="text-fg-faint mr-1.5 font-mono text-xs uppercase tracking-[0.04em]">
@@ -35,11 +38,11 @@ function StatusLine({
   updatedAt,
   reload,
   observedAt,
-}: {
+}: Readonly<{
   updatedAt: string;
   reload: string | null | undefined;
   observedAt: number;
-}): ReactElement {
+}>): ReactElement {
   return (
     <div className="text-fg-muted mt-3 flex flex-wrap gap-4 text-sm leading-normal">
       <StatusItem label="Last changed">{formatDateTime(updatedAt)}</StatusItem>
@@ -147,7 +150,7 @@ export function SettingsPage(): ReactElement {
   );
 }
 
-function LoadError({ retry }: { retry: () => void }): ReactElement {
+function LoadError({ retry }: Readonly<{ retry: () => void }>): ReactElement {
   return (
     <Note
       title="Settings could not be loaded"

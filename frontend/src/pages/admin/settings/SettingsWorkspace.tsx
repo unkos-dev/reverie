@@ -33,7 +33,7 @@ import {
 import { controlId } from "./ids";
 import { useSettingsEditor, type SettingsEditor } from "./use-settings-editor";
 
-type Props = { area: AreaId; base: SettingsSnapshot };
+type Props = Readonly<{ area: AreaId; base: SettingsSnapshot }>;
 
 const DIALOG_CONTENT = "gap-2 p-6 data-[size=default]:sm:max-w-[30rem]";
 const DIALOG_FOOTER = "mx-0 mb-0 mt-4 border-t-0 bg-transparent p-0";
@@ -46,11 +46,11 @@ function SubNav({
   area,
   base,
   dirty,
-}: {
+}: Readonly<{
   area: AreaId;
   base: SettingsSnapshot;
   dirty: boolean;
-}): ReactElement {
+}>): ReactElement {
   return (
     <nav aria-label="Settings areas" className="sticky top-16 self-start">
       {AREAS.map((item) => (
@@ -116,11 +116,12 @@ function barSummary(editor: SettingsEditor): ReactElement {
   );
 }
 
-function SaveBar({ editor }: { editor: SettingsEditor }): ReactElement {
+function SaveBar({ editor }: Readonly<{ editor: SettingsEditor }>): ReactElement {
   const conflict = editor.notice.kind === "conflict";
   const busy = editor.phase !== "idle";
   const idle = editor.dirty.length === 0 || busy;
   const inactive = conflict ? busy : idle;
+  const saveLabel = conflict ? "Save my choices" : "Save changes";
   return (
     <div className="bg-surface border-border-strong sticky bottom-0 z-20 -mx-10 mt-8 flex items-center gap-3 border-t px-10 py-3">
       <div className="text-fg-muted mr-auto text-sm">{barSummary(editor)}</div>
@@ -146,7 +147,7 @@ function SaveBar({ editor }: { editor: SettingsEditor }): ReactElement {
           if (inactive) event.preventDefault();
         }}
       >
-        {busy ? "Saving" : conflict ? "Save my choices" : "Save changes"}
+        {busy ? "Saving" : saveLabel}
       </Button>
     </div>
   );
@@ -156,11 +157,11 @@ function LeaveDialog({
   area,
   count,
   blocker,
-}: {
+}: Readonly<{
   area: AreaId;
   count: number;
   blocker: ReturnType<typeof useBlocker>;
-}): ReactElement {
+}>): ReactElement {
   const title = areaById(area).title;
   const opener = useRef<HTMLElement | null>(null);
   return (
@@ -207,7 +208,7 @@ function LeaveDialog({
   );
 }
 
-function DeletionDialog({ editor }: { editor: SettingsEditor }): ReactElement {
+function DeletionDialog({ editor }: Readonly<{ editor: SettingsEditor }>): ReactElement {
   const key = editor.pendingConfirm;
   const returnTo = useRef<BooleanKey | null>(null);
   useEffect(() => {

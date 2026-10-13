@@ -79,11 +79,13 @@ export const NUMBER_KEYS = [
 export type NumberKey = (typeof NUMBER_KEYS)[number];
 
 export function isBooleanKey(key: SettingsKey): key is BooleanKey {
-  return BOOLEAN_KEYS.some((k) => k === key);
+  const keys: readonly SettingsKey[] = BOOLEAN_KEYS;
+  return keys.includes(key);
 }
 
 export function isNumberKey(key: SettingsKey): key is NumberKey {
-  return NUMBER_KEYS.some((k) => k === key);
+  const keys: readonly SettingsKey[] = NUMBER_KEYS;
+  return keys.includes(key);
 }
 
 type FieldBase = { key: SettingsKey; area: AreaId; label: string; help?: string };
@@ -322,7 +324,7 @@ function boundsMessage(field: IntField): string {
 export type ParseResult<T> = { ok: true; value: T } | { ok: false; message: string };
 
 const INTEGER_TEXT = /^-?\d+$/;
-const DECIMAL_TEXT = /^\d*\.?\d+$/;
+const DECIMAL_TEXT = /^(?:\d+|\d*\.\d+)$/;
 const NOT_A_NUMBER = "Enter a number.";
 const SIZE_MESSAGE = "Enter a size greater than 0.";
 

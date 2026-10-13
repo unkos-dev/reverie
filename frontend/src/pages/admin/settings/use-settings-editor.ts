@@ -294,7 +294,8 @@ export function useSettingsEditor(area: AreaId, snapshot: SettingsSnapshot): Set
   });
 
   const pending = mutation.isPending;
-  const phase = !pending ? "idle" : notice.kind === "reapplying" ? "reapplying" : "saving";
+  const savingPhase = notice.kind === "reapplying" ? "reapplying" : "saving";
+  const phase = pending ? savingPhase : "idle";
 
   function afterEdit(key: SettingsKey, next: Draft): void {
     setElsewhere({});

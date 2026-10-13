@@ -129,6 +129,13 @@ describe("parseMib", () => {
     expect(parseMib("10")).toEqual({ ok: true, value: 10_485_760 });
     expect(parseMib("0.5")).toEqual({ ok: true, value: 524_288 });
     expect(parseMib(".5")).toEqual({ ok: true, value: 524_288 });
+    expect(parseMib("000.5")).toEqual({ ok: true, value: 524_288 });
+  });
+
+  test("rejects exponent and incomplete decimal notation", () => {
+    for (const text of ["1e1", "1.", `${"0".repeat(30_000)}e0`]) {
+      expect(parseMib(text)).toEqual({ ok: false, message: "Enter a size greater than 0." });
+    }
   });
 
   test("an exact byte count survives a display and parse round trip", () => {

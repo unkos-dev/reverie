@@ -30,10 +30,10 @@ const TAG =
 function Tag({
   children,
   tone,
-}: {
+}: Readonly<{
   children: ReactNode;
   tone: "edited" | "plain" | "dashed";
-}): ReactElement {
+}>): ReactElement {
   return (
     <span
       className={cn(
@@ -48,11 +48,11 @@ function Tag({
   );
 }
 
-type Props = {
+type Props = Readonly<{
   field: Field;
   base: SettingsSnapshot;
   editor: SettingsEditor;
-};
+}>;
 
 function errorFor(editor: SettingsEditor, key: SettingsKey): string | null {
   const { notice } = editor;
@@ -64,7 +64,7 @@ function conflictRow(editor: SettingsEditor, key: SettingsKey): ConflictRow | nu
   return notice.kind === "conflict" ? (notice.rows.find((row) => row.key === key) ?? null) : null;
 }
 
-function IntControl({ field, base, editor }: Props & { field: IntField }): ReactElement {
+function IntControl({ field, base, editor }: Readonly<Props & { field: IntField }>): ReactElement {
   const error = errorFor(editor, field.key);
   const busy = editor.phase !== "idle";
   const describedBy = [`help-${field.key}`, error === null ? null : `error-${field.key}`]
@@ -91,7 +91,7 @@ function IntControl({ field, base, editor }: Props & { field: IntField }): React
   );
 }
 
-function MibControl({ field, base, editor }: Props & { field: MibField }): ReactElement {
+function MibControl({ field, base, editor }: Readonly<Props & { field: MibField }>): ReactElement {
   const error = errorFor(editor, field.key);
   const busy = editor.phase !== "idle";
   const text = shownText(editor.draft, base.values, field.key);
@@ -128,7 +128,11 @@ function MibControl({ field, base, editor }: Props & { field: MibField }): React
   );
 }
 
-function SwitchControl({ field, base, editor }: Props & { field: SwitchField }): ReactElement {
+function SwitchControl({
+  field,
+  base,
+  editor,
+}: Readonly<Props & { field: SwitchField }>): ReactElement {
   const on = shownBoolean(editor.draft, base.values, field.key);
   return (
     <div className="inline-flex items-center gap-2.5">
@@ -211,10 +215,10 @@ function Control({ field, base, editor }: Props): ReactElement {
 function ConflictChoices({
   row,
   editor,
-}: {
+}: Readonly<{
   row: ConflictRow;
   editor: SettingsEditor;
-}): ReactElement {
+}>): ReactElement {
   const prefix = `choice-${row.key}`;
   return (
     <fieldset className="m-0 mt-2.5 border-0 p-0">
