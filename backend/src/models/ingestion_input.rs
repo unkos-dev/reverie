@@ -157,6 +157,23 @@ impl RejectionReason {
         }
         reasons
     }
+
+    /// Classes of a validator error that is a verdict on the file; `[Unspecified]`
+    /// for the errors that are not.
+    pub fn from_file_defect(error: &crate::services::epub::EpubError) -> Vec<Self> {
+        use crate::services::epub::EpubError;
+        match error {
+            EpubError::Zip(zip::result::ZipError::Io(_))
+            | EpubError::Io(_)
+            | EpubError::PublicationUncertain { .. } => vec![Self::Unspecified],
+            EpubError::Zip(_) => vec![Self::Damaged],
+            EpubError::Xml(_) | EpubError::Repair(_) => vec![Self::InvalidStructure],
+            EpubError::CandidateRejected(_, issues) => match Self::from_issues(issues).as_slice() {
+                [Self::Unspecified] => vec![Self::InvalidStructure],
+                reasons => reasons.to_vec(),
+            },
+        }
+    }
 }
 
 /// Renders an ingestion-relative path for display: valid UTF-8 spans verbatim
@@ -687,6 +704,59 @@ mod tests {
             RejectionReason::from_issues(&[]),
             vec![RejectionReason::Unspecified]
         );
+    }
+
+    #[test]
+    fn file_defect_errors_map_to_bounded_reasons() {
+        use crate::services::epub::{EpubError, IssueKind, Severity};
+        let io = || std::io::Error::other("storage");
+        let rejected = |issues| EpubError::CandidateRejected("regressed".into(), issues);
+        let cases = [
+            (
+                EpubError::Zip(zip::result::ZipError::InvalidArchive("bad".into())),
+                vec![RejectionReason::Damaged],
+            ),
+            (
+                EpubError::Zip(zip::result::ZipError::Io(io())),
+                vec![RejectionReason::Unspecified],
+            ),
+            (
+                EpubError::Xml(quick_xml::Error::Syntax(
+                    quick_xml::errors::SyntaxError::UnclosedTag,
+                )),
+                vec![RejectionReason::InvalidStructure],
+            ),
+            (
+                EpubError::Repair("no entry".into()),
+                vec![RejectionReason::InvalidStructure],
+            ),
+            (
+                rejected(vec![issue(
+                    Severity::Irrecoverable,
+                    IssueKind::CorruptEntry {
+                        entry_name: "a".into(),
+                    },
+                )]),
+                vec![RejectionReason::Damaged],
+            ),
+            (
+                rejected(vec![issue(
+                    Severity::Degraded,
+                    IssueKind::CorruptEntry {
+                        entry_name: "a".into(),
+                    },
+                )]),
+                vec![RejectionReason::InvalidStructure],
+            ),
+            (
+                rejected(Vec::new()),
+                vec![RejectionReason::InvalidStructure],
+            ),
+            (EpubError::Io(io()), vec![RejectionReason::Unspecified]),
+        ];
+        for (error, expected) in cases {
+            assert_eq!(RejectionReason::from_file_defect(&error), expected);
+        }
     }
 
     #[test]

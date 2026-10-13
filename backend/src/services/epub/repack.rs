@@ -101,10 +101,10 @@ pub(super) fn publish_with_validator(
                     .iter()
                     .any(|issue| issue.severity == Severity::Repaired)
             {
-                return Err(EpubError::CandidateRejected(format!(
-                    "source={:?} candidate={:?}",
-                    source.outcome, report.outcome
-                )));
+                return Err(EpubError::CandidateRejected(
+                    format!("source={:?} candidate={:?}", source.outcome, report.outcome),
+                    report.issues,
+                ));
             }
             let hash = hash_file(&mut file)?;
             let size = file.metadata()?.len();
