@@ -37,7 +37,7 @@ export function FilterChips({
   seriesNames,
   onRemove,
   onClearAll,
-}: FilterChipsProps): ReactElement | null {
+}: Readonly<FilterChipsProps>): ReactElement | null {
   const authorIds = [
     ...new Set([...filters.authors.all, ...filters.authors.any, ...filters.authors.none]),
   ];

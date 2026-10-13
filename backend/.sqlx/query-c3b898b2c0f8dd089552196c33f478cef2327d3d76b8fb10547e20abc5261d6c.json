@@ -1,0 +1,33 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT reason_class AS \"class!\", COUNT(*) AS \"count!\"\n           FROM ingestion_input_classes\n           GROUP BY reason_class",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "class!",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "ingestion_input_classes",
+            "name": "reason_class"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "count!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      true,
+      null
+    ]
+  },
+  "hash": "c3b898b2c0f8dd089552196c33f478cef2327d3d76b8fb10547e20abc5261d6c"
+}

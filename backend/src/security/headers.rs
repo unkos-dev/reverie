@@ -547,6 +547,37 @@ mod tests {
         assert!(csp.contains("default-src 'none'"));
     }
 
+    #[tokio::test]
+    async fn bare_reserved_prefixes_never_fall_through_to_the_spa_index() {
+        let index = "<!doctype html><title>spa-index-marker</title>";
+        let dist = fixture_dist(index.as_bytes());
+        let server = dist_server(&dist);
+
+        for path in ["/api", "/auth", "/opds"] {
+            let r = server.get(path).await;
+            let body = crate::test_support::assert_problem(
+                &r,
+                crate::error::problems::NOT_FOUND,
+                StatusCode::NOT_FOUND,
+            );
+            assert_eq!(body["instance"].as_str(), Some(path), "{path}");
+            assert!(!r.text().contains("spa-index-marker"), "{path}");
+            assert_eq!(
+                r.headers().get(header::CONTENT_SECURITY_POLICY).unwrap(),
+                "default-src 'none'",
+                "{path}"
+            );
+        }
+
+        let health = server.get("/health").await;
+        health.assert_status_ok();
+        assert!(!health.text().contains("spa-index-marker"));
+
+        let control = server.get("/library").await;
+        control.assert_status_ok();
+        assert!(control.text().contains("spa-index-marker"));
+    }
+
     // --- Wrong method on a matched API route: 405 problem details ---
 
     #[tokio::test]

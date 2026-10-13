@@ -14,17 +14,29 @@ use super::{
     zip_layer::{ZipHandle, read_entry},
 };
 
-const CONTAINER_PATH: &str = "META-INF/container.xml";
+pub(super) const CONTAINER_PATH: &str = "META-INF/container.xml";
 
 /// Parse `container.xml` and return the `OPF` path.
 ///
 /// If `container.xml` is missing, scans for a `.opf` file and regenerates.
-/// Appends issues to `issues`. Returns `None` if no `OPF` can be found, or
-/// if the discovered candidate fails the path-safety check (an
+/// Appends issues to `issues`. Returns `None` if no `OPF` can be found (an
+/// `Irrecoverable` `MissingContainer` or `CorruptEntry` issue is recorded),
+/// or if the discovered candidate fails the path-safety check (an
 /// `UnsafeOpfPath` `Irrecoverable` issue is recorded in that case).
 pub fn validate(handle: &ZipHandle, issues: &mut Vec<Issue>) -> Option<String> {
     if let Some(bytes) = read_entry(handle, CONTAINER_PATH) {
-        extract_opf_path(&bytes, issues)
+        let recorded = issues.len();
+        let path = extract_opf_path(&bytes, issues);
+        if path.is_none() && issues.len() == recorded {
+            issues.push(Issue {
+                layer: Layer::Container,
+                severity: Severity::Irrecoverable,
+                kind: IssueKind::CorruptEntry {
+                    entry_name: CONTAINER_PATH.to_string(),
+                },
+            });
+        }
+        path
     } else {
         // Attempt regeneration: scan for .opf file
         let candidate = handle
@@ -35,7 +47,11 @@ pub fn validate(handle: &ZipHandle, issues: &mut Vec<Issue>) -> Option<String> {
 
         issues.push(Issue {
             layer: Layer::Container,
-            severity: Severity::Repaired,
+            severity: if candidate.is_some() {
+                Severity::Repaired
+            } else {
+                Severity::Irrecoverable
+            },
             kind: IssueKind::MissingContainer {
                 opf_candidate: candidate.clone(),
             },
@@ -63,10 +79,29 @@ fn extract_opf_path(bytes: &[u8], issues: &mut Vec<Issue>) -> Option<String> {
     let xml = std::str::from_utf8(bytes).ok()?;
     let mut reader = Reader::from_str(xml);
     reader.config_mut().trim_text(true);
+    let mut depth: usize = 0;
+    let mut has_root = false;
+    let mut selected_path = None;
 
     loop {
-        match reader.read_event().ok()? {
-            Event::Empty(e) | Event::Start(e) if e.name().as_ref() == "rootfile" => {
+        let event = reader.read_event().ok()?;
+        if depth == 0 && matches!(&event, Event::Start(_) | Event::Empty(_)) {
+            if has_root {
+                return None;
+            }
+            has_root = true;
+        }
+        match &event {
+            Event::Start(_) => depth += 1,
+            Event::End(_) => depth = depth.checked_sub(1)?,
+            Event::Eof => return if depth == 0 { selected_path } else { None },
+            Event::Text(_) | Event::CData(_) | Event::GeneralRef(_) if depth == 0 => return None,
+            _ => {}
+        }
+        match event {
+            Event::Empty(e) | Event::Start(e)
+                if selected_path.is_none() && e.name().as_ref() == "rootfile" =>
+            {
                 if let Some(path) = e
                     .attributes()
                     .flatten()
@@ -82,14 +117,12 @@ fn extract_opf_path(bytes: &[u8], issues: &mut Vec<Issue>) -> Option<String> {
                         });
                         return None;
                     }
-                    return Some(raw);
+                    selected_path = Some(raw);
                 }
             }
-            Event::Eof => break,
             _ => {}
         }
     }
-    None
 }
 
 #[cfg(test)]
@@ -156,11 +189,37 @@ mod tests {
     <rootfile full-path="OEBPS/content.opf" media-type="application/oebps-package+xml"/>
   </rootfiles>
 </container>"#;
-        let handle =
-            make_handle_with_entries(&[("META-INF/container.xml", container_xml.to_vec())]);
-        let mut issues = Vec::new();
-        let result = validate(&handle, &mut issues);
-        assert_eq!(result.as_deref(), Some("OEBPS/content.opf"));
-        assert!(issues.is_empty());
+        for tail in [b"".as_slice(), b" \n<!-- end --><?done?>\n".as_slice()] {
+            let mut xml = container_xml.to_vec();
+            xml.extend_from_slice(tail);
+            let handle = make_handle_with_entries(&[(CONTAINER_PATH, xml)]);
+            let mut issues = Vec::new();
+            let result = validate(&handle, &mut issues);
+            assert_eq!(result.as_deref(), Some("OEBPS/content.opf"));
+            assert!(issues.is_empty());
+        }
+    }
+
+    #[test]
+    fn malformed_xml_after_rootfile_is_irrecoverable() {
+        for tail in [
+            "<broken",
+            "",
+            "</wrong>",
+            "</rootfiles></container><extra/>",
+            "</rootfiles></container>trailing text",
+            "</rootfiles></container><![CDATA[tail]]>",
+            "</rootfiles></container>&amp;",
+        ] {
+            let xml =
+                format!("<container><rootfiles><rootfile full-path=\"OEBPS/content.opf\"/>{tail}");
+            let handle = make_handle_with_entries(&[(CONTAINER_PATH, xml.into_bytes())]);
+            let mut issues = Vec::new();
+            assert!(validate(&handle, &mut issues).is_none(), "tail: {tail}");
+            assert!(issues.iter().any(|issue| {
+                issue.severity == Severity::Irrecoverable
+                    && matches!(&issue.kind, IssueKind::CorruptEntry { entry_name } if entry_name == CONTAINER_PATH)
+            }));
+        }
     }
 }

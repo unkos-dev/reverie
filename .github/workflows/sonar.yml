@@ -1,11 +1,11 @@
-# Main-baseline static analysis; PR decoration is deliberately absent.
 name: Sonar
 
 on:
-  # THREAT: workflow_run's branch filter also matches fork PRs from a branch
-  # named main, putting fork code in a job whose environment holds SONAR_TOKEN.
   push:
     branches: [main]
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened, ready_for_review]
 
 permissions:
   contents: read
@@ -13,6 +13,8 @@ permissions:
 jobs:
   scan:
     name: SonarQube Cloud
+    # THREAT: fork pull requests must not receive the analysis credential.
+    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:

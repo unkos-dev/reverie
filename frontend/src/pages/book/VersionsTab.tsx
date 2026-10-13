@@ -55,10 +55,10 @@ interface VersionsTabProps {
  * each row to [`PendingRow`] so accept/reject can render without
  * shared state.
  */
-export function VersionsTab({ book }: VersionsTabProps): ReactElement {
+export function VersionsTab({ book }: Readonly<VersionsTabProps>): ReactElement {
   const [editOpen, setEditOpen] = useState(false);
   const grouped = groupByField(book.metadata_versions);
-  const fieldsWithDrafts = Object.keys(grouped).sort();
+  const fieldsWithDrafts = Object.keys(grouped).sort((a, b) => a.localeCompare(b));
   // Name/label defs only: EditMetadataDialog seeds each field's canonical
   // value itself from a fresh GET, not from this (possibly stale) `book`.
   const editableFields = (
@@ -118,7 +118,12 @@ interface FieldGroupProps {
 }
 
 /** One field's section: current canonical row + pending alternatives. */
-function FieldGroup({ manifestationId, field, canonical, rows }: FieldGroupProps): ReactElement {
+function FieldGroup({
+  manifestationId,
+  field,
+  canonical,
+  rows,
+}: Readonly<FieldGroupProps>): ReactElement {
   const queryClient = useQueryClient();
   const [confirmOpen, setConfirmOpen] = useState(false);
   const invalidate = () =>
@@ -199,7 +204,7 @@ interface CanonicalRowProps {
   canonical: string | null;
 }
 
-function CanonicalRow({ canonical }: CanonicalRowProps): ReactElement {
+function CanonicalRow({ canonical }: Readonly<CanonicalRowProps>): ReactElement {
   return (
     <div className="border-border bg-surface-1 flex items-start justify-between gap-4 rounded-sm border p-3">
       <div className="min-w-0 flex-1">
@@ -219,7 +224,7 @@ interface PendingRowProps {
   row: MetadataVersionRow;
 }
 
-function PendingRow({ manifestationId, field, row }: PendingRowProps): ReactElement {
+function PendingRow({ manifestationId, field, row }: Readonly<PendingRowProps>): ReactElement {
   const queryClient = useQueryClient();
   const invalidate = () =>
     queryClient.invalidateQueries({

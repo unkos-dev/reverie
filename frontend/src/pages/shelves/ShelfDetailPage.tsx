@@ -53,7 +53,7 @@ type ShelfItemRowProps = {
   id: string;
 };
 
-function ShelfItemRow({ id }: ShelfItemRowProps): ReactElement {
+function ShelfItemRow({ id }: Readonly<ShelfItemRowProps>): ReactElement {
   return (
     <li className="border-border bg-surface-1 flex items-center gap-3 rounded-md border p-3">
       <span className="font-mono text-fg-muted text-xs">{id.slice(0, 8)}</span>

@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE ingestion_inputs SET status = 'processing', retries_exhausted_at = now() WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "401b381f3b358c2d927f8933e3878be38d40495ad938cdb67cbb30e3c4c8f767"
+}

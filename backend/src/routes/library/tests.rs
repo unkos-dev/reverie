@@ -1216,7 +1216,7 @@ async fn pages_sort_walk(pool: PgPool) {
 }
 
 #[sqlx::test(migrations = "./migrations")]
-async fn list_filter_duplicate_sort_column_returns_400(pool: PgPool) {
+async fn list_filter_duplicate_sort_column_returns_422(pool: PgPool) {
     let app_pool = test_support::db::app_pool_for(&pool).await;
     let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
     let (_admin, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
@@ -1228,15 +1228,15 @@ async fn list_filter_duplicate_sort_column_returns_400(pool: PgPool) {
         .await;
     let body = test_support::assert_problem(
         &response,
-        problems::MALFORMED_QUERY,
-        StatusCode::BAD_REQUEST,
+        problems::VALIDATION,
+        StatusCode::UNPROCESSABLE_ENTITY,
     );
     let detail = body["detail"].as_str().expect("detail string");
     assert!(detail.contains("invalid sort"), "got detail: {detail}");
 }
 
 #[sqlx::test(migrations = "./migrations")]
-async fn list_filter_too_many_sort_levels_returns_400(pool: PgPool) {
+async fn list_filter_too_many_sort_levels_returns_422(pool: PgPool) {
     let app_pool = test_support::db::app_pool_for(&pool).await;
     let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
     let (_admin, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
@@ -1248,8 +1248,8 @@ async fn list_filter_too_many_sort_levels_returns_400(pool: PgPool) {
         .await;
     let body = test_support::assert_problem(
         &response,
-        problems::MALFORMED_QUERY,
-        StatusCode::BAD_REQUEST,
+        problems::VALIDATION,
+        StatusCode::UNPROCESSABLE_ENTITY,
     );
     let detail = body["detail"].as_str().expect("detail string");
     assert!(detail.contains("invalid sort"), "got detail: {detail}");
@@ -2395,12 +2395,11 @@ async fn list_filter_malformed_shelf_uuid_returns_400(pool: PgPool) {
 }
 
 #[sqlx::test(migrations = "./migrations")]
-async fn list_filter_malformed_sort_returns_400(pool: PgPool) {
+async fn list_filter_unknown_sort_field_returns_422(pool: PgPool) {
     // `?sort=` is validated in-handler against the `SortColumn`
-    // whitelist (`SortSpec::parse`), a structurally distinct decode
-    // path from the `Option<Uuid>` filter params: a field outside the
-    // whitelist must still surface as RFC 9457 400, not a silent
-    // default-sort fallthrough.
+    // whitelist (`SortSpec::parse`) after the query string decodes: a
+    // field outside the whitelist must surface as RFC 9457 422, not a
+    // silent default-sort fallthrough.
     let app_pool = test_support::db::app_pool_for(&pool).await;
     let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
     let (_admin, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
@@ -2412,8 +2411,8 @@ async fn list_filter_malformed_sort_returns_400(pool: PgPool) {
         .await;
     let body = test_support::assert_problem(
         &response,
-        problems::MALFORMED_QUERY,
-        StatusCode::BAD_REQUEST,
+        problems::VALIDATION,
+        StatusCode::UNPROCESSABLE_ENTITY,
     );
     let detail = body["detail"].as_str().expect("detail string");
     assert!(detail.contains("invalid sort"), "got detail: {detail}");
@@ -4841,9 +4840,15 @@ async fn hidden_provider_absent_from_projection_and_hot_reloads(pool: PgPool) {
 
     // Hide googlebooks (ids + rating share the key) and asin (ids only;
     // Amazon's rating key is 'amazon' and stays visible).
+    let settings_etag = server
+        .get("/api/v1/settings")
+        .add_header(AUTHORIZATION, basic.clone())
+        .await
+        .header(axum::http::header::ETAG);
     let put = server
         .put("/api/v1/settings")
         .add_header(AUTHORIZATION, basic.clone())
+        .add_header(axum::http::header::IF_MATCH, settings_etag)
         .json(&serde_json::json!({"provider_visibility": {"googlebooks": false, "asin": false}}))
         .await;
     assert_eq!(put.status_code(), StatusCode::OK, "body = {}", put.text());
@@ -4872,9 +4877,15 @@ async fn hidden_provider_absent_from_projection_and_hot_reloads(pool: PgPool) {
 
     // Unhide everything: the next read reflects it without a restart —
     // the projection reads the hot-reloaded settings cache per request.
+    let settings_etag = server
+        .get("/api/v1/settings")
+        .add_header(AUTHORIZATION, basic.clone())
+        .await
+        .header(axum::http::header::ETAG);
     let put = server
         .put("/api/v1/settings")
         .add_header(AUTHORIZATION, basic.clone())
+        .add_header(axum::http::header::IF_MATCH, settings_etag)
         .json(&serde_json::json!({"provider_visibility": {}}))
         .await;
     assert_eq!(put.status_code(), StatusCode::OK);

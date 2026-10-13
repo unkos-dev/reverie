@@ -36,15 +36,14 @@ values this subject reads back, the Design "Sessions", which this subject depend
 extractor and the two session keys. It does not own local-password verification, breach-checking, or per-account
 throttling, the Design "Local password sign-in", whose successful outcome is what reaches the session-cookie leg's write
 side (`auth::session::login`, in "Sessions") for a `POST /auth/local/login` caller. It does not own JWT signature,
-issuer, audience, or JWKS validation (`backend/src/auth/jwt.rs`) or interactive OIDC login and account provisioning
-(`backend/src/auth/oidc.rs`), the JWT validation subject and the OIDC login subject; this subject only calls
-`JwtValidator::validate` once a Bearer credential has been classified as non-device-token, and reads the
-`user_identities` row that OIDC login alone writes. It does not own the scope hierarchy, the role-to-scope ceiling, the
-deny-by-default matrix, or the RLS-vs-handler-predicate ownership map, the Design "Authorization axes". This subject
-only carries the `scopes` field the assertion methods read and derives or clamps it on each of the three resolution
-legs. It does not own device-token minting, the per-user cap, or revocation (`backend/src/models/device_token.rs`,
-`backend/src/routes/tokens.rs`), the device-token subject, or CSRF synchronizer-token validation
-(`backend/src/security/csrf.rs`), the Design "CSRF protection".
+issuer, audience, or JWKS validation (`backend/src/auth/jwt.rs`) or interactive OIDC login and account provisioning, the
+JWT validation subject and the Design "OIDC sign-in"; this subject only calls `JwtValidator::validate` once a Bearer
+credential has been classified as non-device-token, and reads the `user_identities` row that OIDC login alone writes. It
+does not own the scope hierarchy, the role-to-scope ceiling, the deny-by-default matrix, or the RLS-vs-handler-predicate
+ownership map, the Design "Authorization axes". This subject only carries the `scopes` field the assertion methods read
+and derives or clamps it on each of the three resolution legs. It does not own device-token minting, the per-user cap,
+or revocation (`backend/src/models/device_token.rs`, `backend/src/routes/tokens.rs`), the device-token subject, or CSRF
+synchronizer-token validation (`backend/src/security/csrf.rs`), the Design "CSRF protection".
 
 Depends on: the `users` row's `role`, `is_child`, `session_version`, and `disabled_at` columns
 (`crate::models::user::find_by_id`, `find_by_oidc_identity`); the `device_tokens` row's `scopes`, `token_hash`, and
@@ -135,13 +134,13 @@ resolution path across every `/api/v1` operation to prove the scope gate behind 
   (`auth::session::login`); this subject never writes either key, only reads them back and calls `session.flush()` to
   tear a rejected session down.
 - `crate::error::AppError` (`backend/src/error/mod.rs`) is the shared error type every leg returns through, but not the
-  sole production source of `AppError::Unauthorized`: `routes/auth.rs`'s `/auth/callback` handler returns it for its own
-  OIDC anti-forgery, PKCE, and nonce checks and for a disabled account caught after upsert, and both `routes/auth.rs`'s
-  `me` handler and `routes/users/mod.rs`'s `change_own_password` return it when the session's `user_id` no longer
-  resolves to a row, none of these share this subject's resolution path. This subject is the only production source of
-  `AppError::InvalidCredential` (a credential presented and rejected; `BasicOnly` re-maps both variants into
-  `AppError::BasicAuthRequired`). That module's `IntoResponse` impl is what attaches the `WWW-Authenticate` challenge
-  each variant carries; this subject only chooses which variant to return.
+  sole production source of `AppError::Unauthorized`: `routes/auth.rs`'s `/auth/callback` handler returns it for the
+  refusals the Design "OIDC sign-in" lists, and both `routes/auth.rs`'s `me` handler and `routes/users/mod.rs`'s
+  `change_own_password` return it when the session's `user_id` no longer resolves to a row, none of these share this
+  subject's resolution path. This subject is the only production source of `AppError::InvalidCredential` (a credential
+  presented and rejected; `BasicOnly` re-maps both variants into `AppError::BasicAuthRequired`). That module's
+  `IntoResponse` impl is what attaches the `WWW-Authenticate` challenge each variant carries; this subject only chooses
+  which variant to return.
 
 ## Data and state
 

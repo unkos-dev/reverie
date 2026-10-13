@@ -33,7 +33,7 @@ jobs:
         uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
         with:
           # renovate: datasource=github-releases depName=jdx/mise extractVersion=^v(?<version>.+)$
-          version: "2026.10.3"
+          version: "2026.10.7"
           install_args: github:EmbarkStudios/cargo-deny
 
       # Advisories only; license/bans/sources policy is checked PR-time (ci.yml).
@@ -91,7 +91,7 @@ jobs:
         uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
         with:
           # renovate: datasource=github-releases depName=jdx/mise extractVersion=^v(?<version>.+)$
-          version: "2026.10.3"
+          version: "2026.10.7"
           install_args: trivy
 
       # --platform is load-bearing: :main is an arm64-only manifest list, and
@@ -142,11 +142,11 @@ jobs:
           persist-credentials: false
 
       - name: TruffleHog full-history scan
-        uses: trufflesecurity/trufflehog@4c282f54c0160102ccbebba421b89f3c3af6404d # v3.98.1
+        uses: trufflesecurity/trufflehog@e76dff8a7e57d6df0c60ad8cbf5d5cba505a8fc9 # v3.99.2
         with:
           # Pin the image (default is :latest).
           # renovate: datasource=github-releases depName=trufflesecurity/trufflehog extractVersion=^v(?<version>.+)$
-          version: "3.98.1"
+          version: "3.99.2"
           # verified-only: unverifiable test DSNs would red the cron daily as
           # noise; a real live leak still verifies.
           extra_args: --results=verified

@@ -37,7 +37,7 @@ export function TextCellEditor({
   onDraft,
   kind,
   required = false,
-}: TextCellEditorProps): ReactElement {
+}: Readonly<TextCellEditorProps>): ReactElement {
   const inputRef = useRef<HTMLInputElement>(null);
   const [text, setText] = useState(value ?? "");
   const [invalid, setInvalid] = useState(false);

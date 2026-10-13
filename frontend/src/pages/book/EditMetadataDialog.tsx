@@ -122,7 +122,7 @@ export function EditMetadataDialog({
   open,
   onOpenChange,
   fields,
-}: EditMetadataDialogProps): ReactElement {
+}: Readonly<EditMetadataDialogProps>): ReactElement {
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent side="right" className="flex w-full flex-col sm:max-w-lg">
@@ -162,7 +162,7 @@ function EditMetadataForm({
   manifestationId,
   fields,
   onDone,
-}: EditMetadataFormProps): ReactElement {
+}: Readonly<EditMetadataFormProps>): ReactElement {
   const metadataQuery = useQuery({
     queryKey: queryKeys.books.metadata(manifestationId),
     queryFn: ({ signal }) => getBookMetadata(manifestationId, signal),
@@ -214,7 +214,7 @@ function EditMetadataFields({
   fields,
   metadata,
   onDone,
-}: EditMetadataFieldsProps): ReactElement {
+}: Readonly<EditMetadataFieldsProps>): ReactElement {
   const queryClient = useQueryClient();
   const [state, setState] = useState<FieldState>(() => buildInitialState(fields, metadata));
   const [pendingClearConfirm, setPendingClearConfirm] = useState<UpdateBookMetadataFields | null>(
@@ -379,7 +379,12 @@ interface FieldRowProps {
   onChange: (value: string) => void;
 }
 
-function FieldRow({ field, hasCanonicalValue, state, onChange }: FieldRowProps): ReactElement {
+function FieldRow({
+  field,
+  hasCanonicalValue,
+  state,
+  onChange,
+}: Readonly<FieldRowProps>): ReactElement {
   const id = `edit-${field.name}`;
   const useTextarea = FIELDS_AS_TEXTAREA.has(field.name);
   return (

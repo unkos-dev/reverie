@@ -37,6 +37,19 @@ shared path exclusion; final registration reserves the manifestation's path clai
 after discovery, with queued, deferred and suppressed counts and `/api/v1/dashboard/activity` as the monitor. The
 response describes discovery, without promising a separately attributable batch or completed imports.
 
+`GET /api/v1/ingestion/inputs` lists the inputs that need attention and `GET /api/v1/ingestion/inputs/counts` counts
+them, both under the same admin scope and role. Each input appears once, under a primary reason class: the most severe
+recorded rejection class (`unsafe_contents`, `damaged`, `invalid_structure`, `over_limits`, `unspecified`),
+`needs_change` for an operational failure whose latest attempt outcome is needs-change, `retries_exhausted` for an
+operational failure whose latest outcome is transient and whose recorded retry budget is spent, and
+`format_not_accepted` for ignored files. An operational failure still waiting for an automatic retry is in none of these
+and is not listed. Secondary rejection classes are returned in `reasons`, primary first, and never counted. Without a
+`reason` filter the list holds every class except `format_not_accepted`; `reason` selects exactly the inputs whose
+primary class it names, so it also selects the input status. The list is ordered by id with a cursor bound to the
+filter, a limit clamped to 1 through 100 and a `Link` header; the counts read ignores cursor, limit and filter and
+reports `attention_total` as the sum without `format_not_accepted`. Items carry the ingestion-relative path, with
+non-UTF-8 bytes escaped, and the latest attempt outcome. Stored `reason` text never leaves the server.
+
 `LibraryFiles` supplies immutable ingestion and library directory capabilities. The ingestion database pool reads
 current inputs and linked attempts and writes works, manifestations, metadata drafts and claims. Settings use the
 existing singleton row, API and monotonic live cache. Tokio supplies cancellation, clock control and the deadline queue;
@@ -49,7 +62,11 @@ application-role DSN is never substituted. One-shot administrative commands reta
 ## Data and state
 
 `ingestion_inputs` stores a byte-preserving ingestion-relative path, full source fingerprint, generation, current
-status, reason, optional work link, observation and retry-reset times, completion time and removal cause. A partial
+status, reason, rejection classes, optional work link, observation and retry-reset times, the time its retries were
+exhausted, completion time and removal cause. The rejection classes are a closed list written with a rejection, most
+severe first, from the irrecoverable validator issues or the validator error; a rejection recorded without them reads as
+`unspecified`. The `ingestion_input_classes` view maps status, latest attempt outcome on the current generation and the
+exhaustion time to the single class the inputs list and counts report, and holds only inputs that have one. A partial
 unique index permits one present input per path; a removed input keeps its identity and history while a later arrival
 gets a new record. Fingerprints include device, `inode`, size, modification time and change time.
 
@@ -64,14 +81,15 @@ class and reason. An acknowledged evidence transaction precedes visibility. Regi
 transaction as the imported outcome. A partial keyset index supports 100-row recovery pages; unresolved inputs are
 excluded from new attempts.
 
-The accepted-format set permits only EPUB and defaults to EPUB; an empty set accepts no format. Imported cleanup
-defaults to enabled and duplicate cleanup to disabled. Other extensions, including sidecars, are independent
-not-accepted inputs. Rejection and non-acceptance have no deletion option. Changes to accepted formats are observed from
-the existing live settings cache. Before serving or worker startup, the settings service conditionally seeds these three
-fields from validated configuration. The internal `ingestion_seeded` marker prevents restart overwrite; supplying any
-ingestion setting marks the row as saved, including empty acceptance or default values. Other settings saves leave an
-unseeded row eligible at any revision. The marker defaults to false regardless of existing revision. The seed advances
-revision and returns the winning row from one transaction; failure stops startup.
+The accepted-format set permits only EPUB, defaults to EPUB and is never empty: a database constraint, the settings
+validation (422) and configuration parsing each refuse an empty set. Imported cleanup defaults to enabled and duplicate
+cleanup to disabled. Other extensions, including sidecars, are independent not-accepted inputs. Rejection and
+non-acceptance have no deletion option. Changes to accepted formats are observed from the existing live settings cache.
+Before serving or worker startup, the settings service conditionally seeds these three fields from validated
+configuration. The internal `ingestion_seeded` marker prevents restart overwrite; supplying any ingestion setting marks
+the row as saved, including default values. Other settings saves leave an unseeded row eligible at any revision. The
+marker defaults to false regardless of existing revision. The seed advances revision and returns the winning row from
+one transaction; failure stops startup.
 
 ## Runtime behaviour
 
@@ -110,8 +128,17 @@ preserves entries arriving during pruning. Unrelated empty directories are untou
 ## Failure and recovery
 
 An irrecoverable EPUB discards the candidate, preserves the original and records rejection without a manifestation or
-quarantine copy. A validator execution error retains the separate failed-validation contract: accepted bytes can be
-registered with validation status `failed`.
+quarantine copy. An EPUB is irrecoverable when its archive is unreadable or fails a CRC-32 or size check, or when no
+package document can be located and parsed: an empty archive, an archive with no `container.xml` and no `.opf` file, a
+`container.xml` that names no package document, and a package document that is absent or cannot be parsed. A readable
+archive with a parseable package document is not irrecoverable however many recoverable findings it carries; it
+registers as `repaired` or `degraded`. A validator error that is a verdict on the file, such as a refused repair
+candidate or a failed required repair, is rejected the same way, with a fixed reason that names no archive content and a
+class taken from the error: a ZIP error that is not an I/O error is `damaged`, an XML or required-repair error is
+`invalid_structure`, and a refused candidate takes the classes of its own irrecoverable issues, or `invalid_structure`
+when it has none. A validator error that is a fault in Reverie's own storage, an I/O error or an uncertain publication,
+is not a verdict on the file: the candidate is discarded, nothing is imported, and the attempt records a transient
+failure under the retry schedule below.
 
 Each attempt has a child of the worker's shutdown token, a progress counter and typed streaming, validation and
 publication phases. Source hashing and streaming check cancellation between chunks and increment progress after each
@@ -138,9 +165,11 @@ Operational failures are classified before retry:
   automatic retry. Exhausted suffix selection and confirmed database constraint or protocol errors also need change;
   serialization and deadlock errors are transient.
 
-Retry counts use linked history since the persisted reset marker, excluding shared and interrupted outcomes. New
-generation, startup reconstruction and admin scans reset exhausted and needs-change inputs, subject to readiness;
-unchanged rejection suppression is preserved. These timings and budgets are internal constants.
+Retry counts use linked history since the persisted reset marker, excluding shared and interrupted outcomes. The
+terminal write that records the transient outcome reaching the limit also records the exhaustion time on the input, in
+the same transaction, and the scheduler suppresses an input that carries it. New generation, startup reconstruction and
+admin scans reset exhausted and needs-change inputs, subject to readiness, and every reset of the marker clears the
+exhaustion time; unchanged rejection suppression is preserved. These timings and budgets are internal constants.
 
 Startup reconciles unresolved publication evidence under the session advisory lock before reclaiming interrupted
 attempts. It first checks this exact attempt's imported outcome, preserving committed files even after writeback changes
@@ -166,10 +195,11 @@ Library and ingestion capabilities are acquired before serving; no quarantine au
 refuses symlink parents and non-regular files. Independent staging prevents repair from mutating a source shared through
 a hardlink. Shared path exclusion protects publication, registration and cleanup across ingestion and writeback.
 
-The coordinator logs pause, resume, failures and stalled attempts. The activity endpoint exposes attempt history.
-Operators manage retained originals on disk and request another scan after correction. An outage can strand eligible
-inputs until probes succeed; a blocked read can delay process shutdown. Abrupt termination can leave temporary
-directories, and no scavenging is supplied. Local tests do not establish NAS server durability.
+The coordinator logs pause, resume, failures and stalled attempts. The activity endpoint exposes attempt history. The
+inputs list names retained originals by ingestion-relative path to administrators only, and exposes failure reasons as
+closed classes. Operators manage retained originals on disk and request another scan after correction. An outage can
+strand eligible inputs until probes succeed; a blocked read can delay process shutdown. Abrupt termination can leave
+temporary directories, and no scavenging is supplied. Local tests do not establish NAS server durability.
 
 ## More information
 

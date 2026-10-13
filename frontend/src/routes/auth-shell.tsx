@@ -19,7 +19,12 @@ type AuthShellProps = {
  * styles and canonical SVG paths so the whole mark renders before the
  * theme CSS resolves; its wordmark tint follows the effective theme.
  */
-export function AuthShell({ title, description, children, footer }: AuthShellProps): ReactElement {
+export function AuthShell({
+  title,
+  description,
+  children,
+  footer,
+}: Readonly<AuthShellProps>): ReactElement {
   const { effective } = useTheme();
   return (
     <main className="bg-canvas text-fg flex min-h-screen items-center justify-center px-6 py-16">

@@ -1325,6 +1325,39 @@ mod tests {
         }
     }
 
+    #[sqlx::test(migrations = "./migrations")]
+    async fn readonly_role_is_refused_credential_tables(pool: PgPool) {
+        let readonly = crate::test_support::db::readonly_pool_for(&pool).await;
+
+        let tokens = sqlx::query_scalar!("SELECT id FROM device_tokens")
+            .fetch_all(&readonly)
+            .await
+            .unwrap_err();
+        assert_eq!(storage_sqlstate(&tokens), "42501", "{tokens:?}");
+
+        let credentials = sqlx::query_scalar!("SELECT user_id FROM local_credentials")
+            .fetch_all(&readonly)
+            .await
+            .unwrap_err();
+        assert_eq!(storage_sqlstate(&credentials), "42501", "{credentials:?}");
+
+        let token_hashes = sqlx::query_scalar!("SELECT token_hash FROM device_tokens")
+            .fetch_all(&readonly)
+            .await
+            .unwrap_err();
+        assert_eq!(storage_sqlstate(&token_hashes), "42501", "{token_hashes:?}");
+
+        let password_hashes = sqlx::query_scalar!("SELECT password_hash FROM local_credentials")
+            .fetch_all(&readonly)
+            .await
+            .unwrap_err();
+        assert_eq!(
+            storage_sqlstate(&password_hashes),
+            "42501",
+            "{password_hashes:?}"
+        );
+    }
+
     #[sqlx::test(migrations = false)]
     async fn library_storage_schema_fresh_up_down(pool: PgPool) {
         run_migrations_inner(&pool).await.unwrap();
@@ -1707,6 +1740,42 @@ mod tests {
         assert_eq!(
             row_count_after.0, 0,
             "batch rollback should leave zero tracking rows"
+        );
+    }
+
+    #[sqlx::test(migrations = false)]
+    async fn a_batch_failing_after_a_success_leaves_neither_record_nor_schema(pool: PgPool) {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("20260101000000_creates_probe.sql"),
+            "CREATE TABLE batch_probe (id integer);",
+        )
+        .unwrap();
+        std::fs::write(dir.path().join("20260101000001_fails.sql"), "SELECT 1 / 0;").unwrap();
+        let migrator = sqlx::migrate::Migrator::new(dir.path()).await.unwrap();
+        let mut conn = pool.acquire().await.unwrap();
+
+        let err = run_locked(&mut conn, &migrator).await.unwrap_err();
+        assert!(
+            matches!(err, MigrationError::BatchFailed(_)),
+            "expected BatchFailed, got: {err}"
+        );
+
+        let recorded = sqlx::query_scalar!("SELECT count(*) AS \"count!\" FROM _sqlx_migrations")
+            .fetch_one(&mut *conn)
+            .await
+            .unwrap();
+        assert_eq!(
+            recorded, 0,
+            "the succeeded migration must not stay recorded"
+        );
+        let probe = sqlx::query_scalar!("SELECT to_regclass('batch_probe')::text")
+            .fetch_one(&mut *conn)
+            .await
+            .unwrap();
+        assert_eq!(
+            probe, None,
+            "the succeeded migration's table must not exist"
         );
     }
 

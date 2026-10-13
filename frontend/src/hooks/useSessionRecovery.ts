@@ -11,7 +11,7 @@
  * re-auth when the upstream SSO is still valid), the local login form `/login`
  * otherwise.
  *
- * Mount this only inside the auth-required shell, and only after the effect that
+ * Mount this only inside the authenticated boundary, and only after the effect that
  * wires the handler via `setUnauthenticatedHandler`: React runs effects in
  * declaration order, so wiring must commit before this hook's effect or a
  * first-render-settled query (e.g. a stale cached 401) would fire recovery

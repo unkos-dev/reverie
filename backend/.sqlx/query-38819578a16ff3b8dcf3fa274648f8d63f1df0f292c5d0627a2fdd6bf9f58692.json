@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE ingestion_inputs SET status = 'rejected' WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "38819578a16ff3b8dcf3fa274648f8d63f1df0f292c5d0627a2fdd6bf9f58692"
+}

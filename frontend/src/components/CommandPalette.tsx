@@ -250,7 +250,7 @@ interface BookHitRowProps {
   hit: SearchHit;
 }
 
-function BookHitRow({ hit }: BookHitRowProps): ReactElement {
+function BookHitRow({ hit }: Readonly<BookHitRowProps>): ReactElement {
   return (
     <div className="flex flex-col gap-0.5">
       <span className="text-fg text-sm font-medium">{hit.title}</span>
@@ -275,7 +275,10 @@ interface HighlightedSnippetProps {
  * rendering (no `dangerouslySetInnerHTML`) — safe against
  * HTML-bearing titles or descriptions.
  */
-export function HighlightedSnippet({ text, className }: HighlightedSnippetProps): ReactElement {
+export function HighlightedSnippet({
+  text,
+  className,
+}: Readonly<HighlightedSnippetProps>): ReactElement {
   const parts: { text: string; highlight: boolean; start: number }[] = [];
   let cursor = 0;
   let highlight = false;

@@ -31,7 +31,7 @@ export function RatingCellEditor({
   value,
   onCommit,
   onDraft,
-}: RatingCellEditorProps): ReactElement {
+}: Readonly<RatingCellEditorProps>): ReactElement {
   const [draft, setDraft] = useState(value);
   const groupRef = useRef<HTMLDivElement>(null);
 

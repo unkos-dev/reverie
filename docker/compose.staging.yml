@@ -1,14 +1,14 @@
-# Staging compose — OCI/LXC deploy target.
+# Staging compose — the published Reverie image and its postgres.
 #
 # This file is *not* used for local dev. Local devs run only postgres via the
 # `docker/compose.dev.yml` (port 5432 exposed for `cargo run`); staging
 # bundles postgres + the published Reverie image into one network with no
-# host port exposure on postgres (LXC-internal only).
+# host port exposure on postgres.
 #
-# Routing/TLS terminate at the host's reverse proxy via out-of-tree dynamic
-# config — no traefik labels here. The `.env` and `.env.runtime` files
-# alongside this file are populated by the host secret-management agent
-# (out-of-tree); compose only consumes them.
+# The file publishes no ports and carries no reverse-proxy labels; routing and
+# TLS belong to whatever proxy the operator runs in front. The `.env`,
+# `.env.runtime` and `.env.migrate` files alongside this file hold the values
+# compose consumes; compose only reads them.
 #
 # Three env files keep each credential scoped to the one container that
 # needs it, so a compromise of any single container leaks only that
@@ -179,19 +179,12 @@ services:
     # Healthcheck baked into the runtime image (see Dockerfile) — compose
     # inherits HEALTHCHECK from the image so no override here.
     #
-    # No `ports:` mapping and no Traefik labels by design. Routing/TLS
-    # terminate at the host's reverse proxy (out-of-tree). The operator
-    # is expected to attach this service to a Traefik-reachable docker
-    # network out-of-band — typically:
-    #
-    #   docker network connect <traefik-net> docker-reverie-1
-    #
-    # or, if the operator's deploy automation already declares the
-    # Traefik network as `external`, an override compose file extends
-    # this service with the appropriate `networks:` entry. Keeping the
-    # in-tree compose minimal means the same file works regardless of
-    # the operator's reverse-proxy choice (Traefik file provider,
-    # Traefik docker provider, Caddy, nginx-proxy, etc.).
+    # No `ports:` mapping and no reverse-proxy labels by design. Routing and
+    # TLS belong to the operator's proxy, which reaches this service by
+    # attaching it to a network the proxy shares, either with
+    # `docker network connect` or through an override compose file that
+    # extends this service with a `networks:` entry. Keeping this file minimal
+    # means it works with any reverse proxy.
     restart: unless-stopped
 
 volumes:

@@ -43,9 +43,9 @@ Depends on: RFC 9110 §8.8.3 (`entity-tag` grammar), §13.1.1 (`If-Match`), and 
 race-free against a concurrent writer (owned by that endpoint's own subject, not restated here).
 
 Depended on by: `PATCH /api/v1/books/{id}/reading` (the Design "Reading state"), `PATCH /api/v1/books/{id}/metadata`
-(the Design "Metadata review and editing") on the server side; the metadata edit dialog and the library table's
-cell-editing surface (the Library table cell editing and undo subject) on the client side, both of which read a captured
-tag through `apiFetch` rather than handling `If-Match` themselves.
+(the Design "Metadata review and editing"), and `PUT /api/v1/settings` (`backend/src/routes/settings/mod.rs`) on the
+server side; the metadata edit dialog and the library table's cell-editing surface (the Library table cell editing and
+undo subject) on the client side, both of which read a captured tag through `apiFetch`.
 
 ## Structure
 
@@ -54,18 +54,23 @@ tag through `apiFetch` rather than handling `If-Match` themselves.
 Reverie produces entity-tags in one place, a shared hash-based module. Only the endpoints that use it emit a tag or
 accept `If-Match`; shelf endpoints do neither.
 
-`backend/src/routes/etag.rs` is the shared mechanism, consumed by `backend/src/routes/reading.rs` and
-`backend/src/routes/metadata.rs`. `hash_etag<T: Serialize>` serialises `state` to JSON, SHA-256s the bytes, truncates
-the digest to 16 bytes, base64url-encodes it without padding, and wraps the result in double quotes. Its doc comment
-states the contract every caller must satisfy: `state` must be a dedicated struct with a fixed field order covering at
-least every field the paired `PATCH` can modify, never the raw `updated_at` column, so the tag changes exactly when the
-covered representation does and never leaks a timestamp. `reading.rs` satisfies this with `ReadingEtagFields`, a private
-struct distinct from the wire type `ReadingState` (built to borrow `notes` as `&str` rather than clone it).
-`metadata.rs` satisfies it differently: `load_book_metadata` returns the same `BookMetadata` struct that both
-`get_book_metadata` serves as the response body and `update_book_metadata` feeds into `hash_etag`, a deliberate choice
-recorded on `load_book_metadata`'s own doc comment ("Sharing this assembly means the precondition check, the post-write
-`ETag`, and the matched `GET` all hash the identical representation through one code path rather than three
-independently maintained ones") rather than an accidental byproduct of unrelated reuse.
+`backend/src/routes/etag.rs` is the shared mechanism, consumed by `backend/src/routes/reading.rs`,
+`backend/src/routes/metadata.rs` and `backend/src/routes/settings/mod.rs`. `hash_etag<T: Serialize>` serialises `state`
+to JSON, SHA-256s the bytes, truncates the digest to 16 bytes, base64url-encodes it without padding, and wraps the
+result in double quotes. Its doc comment states the contract every caller must satisfy: `state` must be a dedicated
+struct with a fixed field order covering at least every field the paired `PATCH` can modify, never the raw `updated_at`
+column, so the tag changes exactly when the covered representation does and never leaks a timestamp. `reading.rs`
+satisfies this with `ReadingEtagFields`, a private struct distinct from the wire type `ReadingState` (built to borrow
+`notes` as `&str` rather than clone it). `metadata.rs` satisfies it differently: `load_book_metadata` returns the same
+`BookMetadata` struct that both `get_book_metadata` serves as the response body and `update_book_metadata` feeds into
+`hash_etag`, a deliberate choice recorded on `load_book_metadata`'s own doc comment ("Sharing this assembly means the
+precondition check, the post-write `ETag`, and the matched `GET` all hash the identical representation through one code
+path rather than three independently maintained ones") rather than an accidental byproduct of unrelated reuse.
+`settings/mod.rs` hashes `SettingsEtagFields`, a private struct holding only the settings row's `revision`, which every
+write to the row increments, so the tag changes exactly when any setting does; both `GET` and `PUT /api/v1/settings`
+emit it. The `GET` body is a function of that row alone, so one tag never covers two different bodies. Process state
+that changes without a revision, the last successful live reload, is served separately by the admin-only
+`GET /api/v1/settings/reload-status`, which carries no `ETag`.
 
 `parse_if_match` reads the request's `If-Match` header and returns `Ok(None)` when absent, `Ok(Some(StrongEntityTag))`
 for one well-formed strong tag, or `Err(AppError::MalformedHeader)`. It rejects more than one `If-Match` header instance
@@ -83,32 +88,35 @@ the resource's current `ETag` into it, so a caller can recover in one round trip
 
 ### The precondition contract's evaluation order
 
-Two handlers apply this contract: `update_book_metadata` and `patch_reading` — the complete set of production call sites
-of `AppError::IfMatchRequired` and `AppError::IfMatchMismatch`. Both follow the same relative order, checked directly in
-each handler's body: `CurrentUser::require_scope` (and `require_not_child` where the endpoint has one) runs first;
-parsing the `If-Match` header and rejecting it as absent (`428`) or malformed/policy-refused (`400`) runs second, before
-any database work; the request then resolves whether the target manifestation exists and is visible to the caller,
-returning `404` at this point when it does not, after the header has already been accepted as well-formed.
-`update_book_metadata` answers that question with a `SELECT ... FOR UPDATE` whose locked row the entity-tag comparison
-then reads; `patch_reading` answers it with a separate, unlocked `SELECT` against `manifestations`, then locks a
-`reading_state` row `FOR UPDATE` for the comparison only after an `INSERT ... ON CONFLICT DO NOTHING` has already seeded
-that row, so the row this handler locks does not itself answer the existence question. The entity-tag comparison against
-the row each handler locks runs next, returning `412` on a mismatch; and the endpoint's own semantic body validation —
-an empty patch, an out-of-range rating — runs last, only once the precondition has held. Each PATCH handler's own doc
-comment states the rationale for placing body validation last: RFC 9110 §13.2.1 places precondition evaluation after the
-normal request checks and before the request content is processed, so a caller holding a stale representation learns
-that first and refetches, rather than being sent to fix a body a concurrent write may already have made irrelevant.
+Three handlers apply this contract: `update_book_metadata`, `patch_reading`, and `put_settings`. These are the complete
+set of production call sites of `AppError::IfMatchRequired` and `AppError::IfMatchMismatch`. All three follow the same
+relative order: `CurrentUser::require_scope` and the endpoint's role check run first; parsing the `If-Match` header and
+rejecting it as absent (`428`) or malformed/policy-refused (`400`) runs second, before any database work.
+
+For metadata and reading, the request then resolves whether the target manifestation exists and is visible to the
+caller, returning `404` when it does not. `update_book_metadata` uses a `SELECT ... FOR UPDATE` whose locked row the
+entity-tag comparison then reads. `patch_reading` uses a separate, unlocked `SELECT` against `manifestations`, then
+locks a `reading_state` row `FOR UPDATE` for the comparison after an `INSERT ... ON CONFLICT DO NOTHING` has seeded that
+row. The row this handler locks does not itself answer the existence question. `put_settings` has no existence step,
+since the settings row is a singleton: after `require_scope`, `require_admin` and the header parse, it opens a
+transaction and locks the row `FOR UPDATE` through `services::settings::lock_revision`. The update commits under that
+same lock.
+
+The entity-tag comparison against the locked row runs next, returning `412` on a mismatch. Semantic body validation runs
+only once the precondition holds: an empty patch, an out-of-range rating, or settings field validation and the
+provider-key registry check. RFC 9110 §13.2.1 places precondition evaluation after the normal request checks and before
+the request content is processed, so a caller holding a stale representation learns that first and refetches.
 
 ### The client's capture and replay
 
 `frontend/src/api/etags.ts` holds a module-level `Map<string, string>` keyed by resource identity, with two key
 families: `reading:{id}` and `metadata:{id}`, resolved from a request path by `etagKeyForPath`. It is the client
-counterpart to exactly the two `hash_etag`-based endpoint families above; every other path, including the shelf
-endpoints, resolves to no key and is never touched by this cache. `frontend/src/api/fetch.ts`'s `apiFetch` calls
-`captureEtag` on every response it receives, for every status code: when the response carries an `ETag` header and its
-path resolves to a key, `rememberEtag` overwrites that key's value. `sendRequest`, the single-attempt request builder
-`apiFetch` calls, auto-echoes a cached tag as `If-Match` only for a `PATCH` request whose caller did not already set
-that header, so a caller-supplied header always wins over the cache.
+counterpart to the metadata and reading endpoint families; every other path, including the shelf endpoints, resolves to
+no key and is never touched by this cache. `frontend/src/api/fetch.ts`'s `apiFetch` calls `captureEtag` on every
+response it receives, for every status code: when the response carries an `ETag` header and its path resolves to a key,
+`rememberEtag` overwrites that key's value. `sendRequest`, the single-attempt request builder `apiFetch` calls,
+auto-echoes a cached tag as `If-Match` only for a `PATCH` request whose caller did not already set that header, so a
+caller-supplied header always wins over the cache.
 
 `frontend/src/api/errors.ts` exposes `isIfMatchMismatch` and `isIfMatchRequired`, both scoped to the shared module's two
 problem-type slugs (`if-match-mismatch`, `if-match-required`) and their statuses (`412`, `428`); its doc comment treats
@@ -122,9 +130,10 @@ is reachable when an ETag-priming fetch loses a race against a very fast concurr
   `StrongEntityTag::matches(&self, current: &HeaderValue) -> bool` compares one, and
   `if_match_mismatch(current_etag: &HeaderValue) -> Response` builds the `412` response for a stale one — all four in
   `backend/src/routes/etag.rs`, the shared mechanism's public surface.
-- `PATCH /api/v1/books/{id}/reading` and `PATCH /api/v1/books/{id}/metadata` are the two HTTP operations this contract
-  protects; each declares its `If-Match` requirement and the `400`/`412`/`428` response set in its own `#[utoipa::path]`
-  block, which this Design does not restate (Design "API error contract and OpenAPI" owns the generated shape).
+- `PATCH /api/v1/books/{id}/reading`, `PATCH /api/v1/books/{id}/metadata`, and `PUT /api/v1/settings` are the three HTTP
+  operations this contract protects; each declares its `If-Match` requirement and the `400`/`412`/`428` response set in
+  its own `#[utoipa::path]` block, which this Design does not restate (Design "API error contract and OpenAPI" owns the
+  generated shape).
 - `etagKeyForPath`, `rememberEtag`, `getRememberedEtag` (`frontend/src/api/etags.ts`) and the `captureEtag`/ auto-echo
   logic inside `apiFetch`/`sendRequest` (`frontend/src/api/fetch.ts`) are the client's capture-and-replay surface for
   the two shared-module resource families. `isIfMatchMismatch`/`isIfMatchRequired` (`frontend/src/api/errors.ts`) are
@@ -135,10 +144,11 @@ is reachable when an ETag-priming fetch loses a race against a very fast concurr
 No entity-tag is stored. Every server-side tag is derived on demand, inside the request's own transaction, from the
 database row the request already locked for its own write:
 
-| Endpoint family            | Constructor | Hash/comparison input                                                     |
-| -------------------------- | ----------- | ------------------------------------------------------------------------- |
-| `GET`/`PATCH .../metadata` | `hash_etag` | `BookMetadata` (also the wire response body)                              |
-| `GET`/`PATCH .../reading`  | `hash_etag` | `ReadingEtagFields<'a>` (private, distinct from wire type `ReadingState`) |
+| Endpoint family | Constructor | Hash/comparison input |
+| --------------- | ----------- | --------------------- |
+| `GET`/`PATCH .../metadata` | `hash_etag` | `BookMetadata` (also the wire response body) |
+| `GET`/`PATCH .../reading` | `hash_etag` | `ReadingEtagFields<'a>` (private, distinct from wire type `ReadingState`) |
+| `GET`/`PUT /api/v1/settings` | `hash_etag` | `SettingsEtagFields` (the row's `revision` only) |
 
 No shelf endpoint emits an `ETag` or reads an `If-Match` header.
 
@@ -185,41 +195,43 @@ handler body executes at all). The response is `400`, problem type `.../malforme
 
 ## Failure and recovery
 
-- **Missing `If-Match`.** Both protected endpoints return `AppError::IfMatchRequired` (`428`, `.../if-match-required`)
-  when the header is absent, checked before any database work. The client treats this the same as a `412`:
-  `isIfMatchRequired` exists alongside `isIfMatchMismatch` precisely because the two share a recovery path (reload, then
-  retry), and the frontend's own doc names the mechanism by which a genuine caller can reach `428` in practice — an
-  ETag-priming fetch losing a race against a very fast concurrent commit that already advanced the resource past the tag
-  the priming fetch was about to return.
-- **Stale `If-Match`.** `AppError::IfMatchMismatch` (`412`) from `update_book_metadata` or `patch_reading` carries the
-  resource's current `ETag` on the response, via `if_match_mismatch`, so `captureEtag` refreshes the client cache from
-  the failure response itself and a retry needs no extra round trip.
-- **Malformed, weak, wildcard, or list-form `If-Match`.** Rejected as satisfying nothing, on both endpoints, so a caller
-  can never use one of these forms to bypass the freshness check. The shared module answers `400`,
-  `.../malformed-header`, from `update_book_metadata` and `patch_reading`, and rejects a repeated `If-Match` header
-  instance as a list form.
+- **Missing `If-Match`.** All three protected endpoints return `AppError::IfMatchRequired` (`428`,
+  `.../if-match-required`) when the header is absent, checked before any database work. The client treats this the same
+  as a `412`: `isIfMatchRequired` exists alongside `isIfMatchMismatch` precisely because the two share a recovery path
+  (reload, then retry), and the frontend's own doc names the mechanism by which a genuine caller can reach `428` in
+  practice — an ETag-priming fetch losing a race against a very fast concurrent commit that already advanced the
+  resource past the tag the priming fetch was about to return.
+- **Stale `If-Match`.** `AppError::IfMatchMismatch` (`412`) from `update_book_metadata`, `patch_reading` or
+  `put_settings` carries the resource's current `ETag` on the response, via `if_match_mismatch`. For metadata and
+  reading, `captureEtag` refreshes the client cache from the failure response itself and a retry needs no extra round
+  trip. For settings, `etagKeyForPath` has no key and automatic replay applies only to `PATCH`, so the caller reads the
+  tag from `GET`, `PUT` or `412` and sends it explicitly on the next `PUT`.
+- **Malformed, weak, wildcard, or list-form `If-Match`.** Rejected as satisfying nothing on all three endpoints, so a
+  caller can never use one of these forms to bypass the freshness check. The shared module answers `400`,
+  `.../malformed-header`, from `update_book_metadata`, `patch_reading` and `put_settings`, and rejects a repeated
+  `If-Match` header instance as a list form.
 - **`hash_etag`'s own encoding failure.** It returns `AppError::Internal` (`500`) if serialising the hash input or
   formatting the header value fails. Neither is reachable in ordinary operation: every hash input type is a plain,
   always-serialisable struct, and the base64url output is always valid `HeaderValue` byte content.
 
 ## Security and operations
 
-This mechanism is a data-integrity control against a lost update, not an authorisation boundary. On both protected
-endpoints, the scope/role check (`require_scope`, and `require_not_child` where present) and the row-level-security or
-ownership check both run independently of the `If-Match` comparison, and both run before it (see Structure's
-evaluation-order description) — a caller who lacks read access to a resource is refused with `401`/`403`/`404` before
-the entity-tag comparison ever executes, so the `412` response's echoed current tag never reaches a caller who could not
-already read the resource through its own `GET`. Rejecting the `*` wildcard, weak validators, and entity-tag lists is a
-deliberate policy choice on top of the RFC 9110 grammar: `etag.rs`'s own doc comment states the wildcard is refused
-because "accepting the wildcard would let a caller opt out of the freshness check it exists to enforce" — accepting any
-of these forms as satisfying `If-Match` would let a caller skip the comparison this subject exists to perform, not gain
-unauthorised access. The byte-level, obs-text-aware grammar parsing in the shared module exists to avoid rejecting a
-well-formed opaque tag, not as a defence against a crafted header; `http`'s own header-value construction already
-refuses the C0 control characters and DEL that the parser tests exercise defensively for inputs a `HeaderValue` cannot
-itself represent in production.
+This mechanism is a data-integrity control against a lost update, not an authorisation boundary. On all three protected
+endpoints, the scope/role check (`require_scope`, and `require_not_child` or `require_admin` where present) and the
+row-level-security or ownership check both run independently of the `If-Match` comparison, and both run before it (see
+Structure's evaluation-order description) — a caller who lacks read access to a resource is refused with
+`401`/`403`/`404` before the entity-tag comparison ever executes, so the `412` response's echoed current tag never
+reaches a caller who could not already read the resource through its own `GET`. Rejecting the `*` wildcard, weak
+validators, and entity-tag lists is a deliberate policy choice on top of the RFC 9110 grammar: `etag.rs`'s own doc
+comment states the wildcard is refused because "accepting the wildcard would let a caller opt out of the freshness check
+it exists to enforce" — accepting any of these forms as satisfying `If-Match` would let a caller skip the comparison
+this subject exists to perform, not gain unauthorised access. The byte-level, obs-text-aware grammar parsing in the
+shared module exists to avoid rejecting a well-formed opaque tag, not as a defence against a crafted header; `http`'s
+own header-value construction already refuses the C0 control characters and DEL that the parser tests exercise
+defensively for inputs a `HeaderValue` cannot itself represent in production.
 
 The shared module's `400` conforms to the status REV-ADR-0011's own status-code-selection rule assigns to a
-syntactically refused header form. Every malformed or policy-refused form is refused as satisfying nothing on both
+syntactically refused header form. Every malformed or policy-refused form is refused as satisfying nothing on all three
 endpoints, so no caller can turn a malformed `If-Match` into a successful write it should not have been able to make.
 Reverie has no operational surface specific to this subject: it has no service to run, restart, or scale, and no
 credential of its own.

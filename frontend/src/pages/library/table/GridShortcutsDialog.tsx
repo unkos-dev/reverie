@@ -110,7 +110,7 @@ type GridShortcutsDialogProps = {
 export function GridShortcutsDialog({
   open,
   onOpenChange,
-}: GridShortcutsDialogProps): ReactElement {
+}: Readonly<GridShortcutsDialogProps>): ReactElement {
   const invokerRef = useRef<HTMLElement | null>(null);
   const wasOpenRef = useRef(open);
 
@@ -184,9 +184,9 @@ export function GridShortcutsDialog({
 /** Toolbar affordance that opens {@link GridShortcutsDialog}. */
 export function GridShortcutsTrigger({
   onOpenChange,
-}: {
+}: Readonly<{
   onOpenChange: (open: boolean) => void;
-}): ReactElement {
+}>): ReactElement {
   return (
     <Button
       type="button"
