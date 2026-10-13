@@ -807,7 +807,7 @@
           "library"
         ],
         "summary": "Get a book's cover",
-        "description": "Streams the full-size cover image for a manifestation as `image/jpeg`, `image/png`, or `image/webp`, with a strong `ETag` and a day-long `Cache-Control`, for the web UI. Requires a session cookie, HTTP Basic authentication, a device token, or an OIDC bearer token.",
+        "description": "Streams the full-size cover image for a manifestation as `image/jpeg`, `image/png`, or `image/webp`, with a strong `ETag` and a day-long `Cache-Control`, for the web UI. Requires a session cookie, HTTP Basic authentication, or a device token.",
         "operationId": "api_cover",
         "parameters": [
           {
@@ -884,7 +884,7 @@
           "library"
         ],
         "summary": "Get a book's cover thumbnail",
-        "description": "Streams the thumbnail cover image for a manifestation as `image/jpeg`, with a strong `ETag` and a day-long `Cache-Control`, for the web UI. Requires a session cookie, HTTP Basic authentication, a device token, or an OIDC bearer token.",
+        "description": "Streams the thumbnail cover image for a manifestation as `image/jpeg`, with a strong `ETag` and a day-long `Cache-Control`, for the web UI. Requires a session cookie, HTTP Basic authentication, or a device token.",
         "operationId": "api_cover_thumb",
         "parameters": [
           {

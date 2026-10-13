@@ -168,9 +168,9 @@ non-file entry or another contained-open error fails the operation.
   Design "Ingestion pipeline" calls.
 - Four `GET` endpoints, documented in the OpenAPI spec generated from `routes/opds/covers.rs`: `/opds/books/{id}/cover`,
   `/opds/books/{id}/cover/thumb` (Basic auth), `/api/v1/books/{id}/cover`, `/api/v1/books/{id}/cover/thumb` (session
-  cookie, device-token bearer, OIDC bearer, or Basic). Each returns the image bytes with `Cache-Control`, a strong
-  `ETag`, and `Vary`; a matching `If-None-Match` returns `304`; a missing manifestation, an RLS-hidden one, or one with
-  no cover returns `404`.
+  cookie, device-token bearer, or Basic). Each returns the image bytes with `Cache-Control`, a strong `ETag`, and
+  `Vary`; a matching `If-None-Match` returns `304`; a missing manifestation, an RLS-hidden one, or one with no cover
+  returns `404`.
 - The acquisition feed (a component of the OPDS catalogue subject) links each entry to both tiers via the
   `http://opds-spec.org/image` and `http://opds-spec.org/image/thumbnail` link relations, pointing at the OPDS mount.
 - `CoverArtwork({ bookId, title, authors, className }) => ReactElement`, the client's spine-fallback component; it takes
@@ -322,11 +322,10 @@ pulling a font-shaping stack into the dependency tree.
 `private, max-age=86400` plus `Vary: Authorization, Cookie` on a cover fit to serve keeps a shared cache (a proxy, or a
 shared browser profile switching between Reverie accounts) from storing or replaying an RLS-scoped cover across a
 credential boundary; on the API mount, `Authorization` covers every credential the mount's `CurrentUser` extractor
-accepts that arrives in that header: Basic, a device-token bearer, and an OIDC bearer alike, not only Basic as the OPDS
-mount alone would suggest. A response that carries no image bytes and no `ETag` (the no-cover, RLS-hidden, and
-archive-rejected cases) carries neither directive at all; without an explicit `Cache-Control`, whether and how long such
-a response is cacheable is left to each cache's own heuristic freshness calculation under RFC 9111 §4.2.2, not to
-anything this subject specifies.
+accepts that arrives in that header: Basic or a device-token bearer. A response that carries no image bytes and no
+`ETag` (the no-cover, RLS-hidden, and archive-rejected cases) carries neither directive at all; without an explicit
+`Cache-Control`, whether and how long such a response is cacheable is left to each cache's own heuristic freshness
+calculation under RFC 9111 §4.2.2, not to anything this subject specifies.
 
 Library-root acquisition belongs to startup, which supplies immutable capability bindings. This subject uses only
 recorded library identities and locations; rendering title or author metadata never selects a source or cache root.

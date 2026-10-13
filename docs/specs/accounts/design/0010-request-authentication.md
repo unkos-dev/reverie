@@ -191,8 +191,8 @@ has just disabled:
 
 **A Bearer credential**, after the session and Basic legs have not resolved an identity:
 
-1. `verify_bearer` reads the credential after `Bearer `. A value starting with `token::TOKEN_PREFIX` is split into token
-   id and secret and passed to `resolve_device_token`, the same lookup Basic uses.
+1. `verify_bearer` reads the credential after `Bearer` followed by a space. A value starting with `token::TOKEN_PREFIX`
+   is split into token id and secret and passed to `resolve_device_token`, the same lookup Basic uses.
 2. An unsupported value, including an external access token, returns `AppError::InvalidCredential`: 401 with
    `WWW-Authenticate: Bearer error="invalid_token"`. No signature validation, provider request or identity write occurs.
 3. A valid earlier session returns before this leg, so an unsupported Bearer value cannot displace that session.

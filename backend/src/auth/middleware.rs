@@ -431,6 +431,17 @@ mod tests {
         format!("Bearer {}{}.{plaintext}", token::TOKEN_PREFIX, dt.id)
     }
 
+    async fn identity_count(pool: &PgPool, issuer: &str, subject: &str) -> i64 {
+        sqlx::query_scalar!(
+            "SELECT count(*) AS \"c!\" FROM user_identities WHERE issuer = $1 AND subject = $2",
+            issuer,
+            subject,
+        )
+        .fetch_one(pool)
+        .await
+        .expect("count identities")
+    }
+
     #[sqlx::test(migrations = "./migrations")]
     async fn external_bearer_rejected_without_identity_writes(pool: PgPool) {
         let app_pool = db::app_pool_for(&pool).await;
@@ -452,14 +463,7 @@ mod tests {
             .expect("count users");
 
         for subject in ["linked", "unlinked"] {
-            let links_before = sqlx::query_scalar!(
-                "SELECT count(*) AS \"c!\" FROM user_identities WHERE issuer = $1 AND subject = $2",
-                issuer,
-                subject,
-            )
-            .fetch_one(&pool)
-            .await
-            .expect("count identities");
+            let links_before = identity_count(&pool, issuer, subject).await;
             let claims = serde_json::json!({"iss": issuer, "sub": subject, "aud": "reverie"});
             let credential = format!(
                 "Bearer {}.{}.signature",
@@ -483,14 +487,7 @@ mod tests {
                 .fetch_one(&pool)
                 .await
                 .expect("count users");
-            let links_after = sqlx::query_scalar!(
-                "SELECT count(*) AS \"c!\" FROM user_identities WHERE issuer = $1 AND subject = $2",
-                issuer,
-                subject,
-            )
-            .fetch_one(&pool)
-            .await
-            .expect("count identities");
+            let links_after = identity_count(&pool, issuer, subject).await;
             assert_eq!(users_after, users_before);
             assert_eq!(links_after, links_before);
         }
