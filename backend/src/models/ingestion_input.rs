@@ -948,7 +948,7 @@ mod tests {
         assert!(config.cleanup_imported);
         assert!(!config.cleanup_duplicates);
         for (formats, valid) in [
-            (serde_json::json!([]), true),
+            (serde_json::json!([]), false),
             (serde_json::json!(["epub"]), true),
             (serde_json::json!(["pdf"]), false),
             (serde_json::json!(["epub", "epub"]), false),

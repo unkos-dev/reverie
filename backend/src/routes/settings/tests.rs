@@ -378,7 +378,7 @@ async fn put_settings_duplicate_accepted_formats_returns_422(pool: PgPool) {
 }
 
 #[sqlx::test(migrations = "./migrations")]
-async fn put_settings_empty_accepted_formats_persists(pool: PgPool) {
+async fn put_settings_empty_accepted_formats_returns_422_and_keeps_stored_value(pool: PgPool) {
     let app_pool = test_support::db::app_pool_for(&pool).await;
     let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
     let (_admin_id, admin_basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
@@ -390,7 +390,16 @@ async fn put_settings_empty_accepted_formats_persists(pool: PgPool) {
         &serde_json::json!({"accepted_formats": []}),
     )
     .await;
-    assert_eq!(r.status_code(), StatusCode::OK);
+    assert_eq!(r.status_code(), StatusCode::UNPROCESSABLE_ENTITY);
+    let body: serde_json::Value = r.json();
+    let detail = body["detail"].as_str().unwrap_or_default();
+    assert!(
+        detail.contains("accepted_formats must contain at least one format"),
+        "expected the field-level message, got {detail}"
+    );
+
+    let stored = get_body(&server, &admin_basic).await;
+    assert_eq!(stored["accepted_formats"], serde_json::json!(["epub"]));
 }
 
 #[sqlx::test(migrations = "./migrations")]

@@ -9966,7 +9966,8 @@
             "items": {
               "$ref": "#/components/schemas/ManifestationFormat"
             },
-            "description": "Formats accepted for ingestion; currently only EPUB is supported."
+            "description": "Formats accepted for ingestion, at least one; currently only EPUB is supported.",
+            "minItems": 1
           },
           "cleanup_duplicates": {
             "type": "boolean",
@@ -11886,7 +11887,7 @@
       },
       "UpdateSettings": {
         "type": "object",
-        "description": "Partial update request for `PUT /api/v1/settings`.\n\nAll fields optional — absent fields are left unchanged (JSON Merge\nPatch semantics per RFC 7396). `ManifestationFormat` is validated at\ndeserialization time; EPUB-only membership and duplicates are checked by\n[`validate_update`].",
+        "description": "Partial update request for `PUT /api/v1/settings`.\n\nAll fields optional — absent fields are left unchanged (JSON Merge\nPatch semantics per RFC 7396). `ManifestationFormat` is validated at\ndeserialization time; a non-empty list, EPUB-only membership and\nduplicates are checked by [`validate_update`].",
         "properties": {
           "accepted_formats": {
             "type": [
@@ -11896,7 +11897,8 @@
             "items": {
               "$ref": "#/components/schemas/ManifestationFormat"
             },
-            "description": "Formats accepted for ingestion; an empty list suspends acquisition."
+            "description": "Formats accepted for ingestion; must contain at least one format.",
+            "minItems": 1
           },
           "cleanup_duplicates": {
             "type": [

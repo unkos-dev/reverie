@@ -11,8 +11,8 @@ use crate::models::manifestation_format::ManifestationFormat;
 /// Live acquisition and source-cleanup policy.
 #[derive(Debug, Clone, Serialize, sqlx::FromRow, utoipa::ToSchema)]
 pub struct IngestionSettings {
-    /// Formats accepted for ingestion; currently only EPUB is supported.
-    #[schema(value_type = Vec<ManifestationFormat>)]
+    /// Formats accepted for ingestion, at least one; currently only EPUB is supported.
+    #[schema(value_type = Vec<ManifestationFormat>, min_items = 1)]
     pub accepted_formats: Vec<String>,
     /// Remove an imported source after its outcome is committed.
     pub cleanup_imported: bool,
@@ -95,8 +95,8 @@ pub struct Settings {
 ///
 /// All fields optional — absent fields are left unchanged (JSON Merge
 /// Patch semantics per RFC 7396). `ManifestationFormat` is validated at
-/// deserialization time; EPUB-only membership and duplicates are checked by
-/// [`validate_update`].
+/// deserialization time; a non-empty list, EPUB-only membership and
+/// duplicates are checked by [`validate_update`].
 #[derive(Debug, Deserialize, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct UpdateSettings {
@@ -132,7 +132,8 @@ pub struct UpdateSettings {
     /// OPDS feed page size (1–500).
     pub opds_page_size: Option<i32>,
 
-    /// Formats accepted for ingestion; an empty list suspends acquisition.
+    /// Formats accepted for ingestion; must contain at least one format.
+    #[schema(min_items = 1)]
     pub accepted_formats: Option<Vec<ManifestationFormat>>,
     /// Remove imported source files.
     pub cleanup_imported: Option<bool>,
@@ -200,7 +201,7 @@ impl UpdateSettings {
 ///
 /// Serde validates enum membership (`ManifestationFormat`)
 /// at deserialization time. This function validates range constraints and
-/// EPUB-only membership and duplicate entries.
+/// a non-empty `accepted_formats`, EPUB-only membership and duplicate entries.
 ///
 /// Returns `Err(message)` on first validation failure.
 ///
@@ -223,6 +224,9 @@ pub fn validate_update(req: &UpdateSettings) -> Result<(), String> {
         return Err("opds_page_size must be between 1 and 500".into());
     }
     if let Some(ref fp) = req.accepted_formats {
+        if fp.is_empty() {
+            return Err("accepted_formats must contain at least one format".into());
+        }
         let mut seen = std::collections::HashSet::new();
         for f in fp {
             if *f != ManifestationFormat::Epub {

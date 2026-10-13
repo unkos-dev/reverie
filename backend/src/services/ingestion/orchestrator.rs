@@ -4037,11 +4037,11 @@ mod tests {
         )
         .unwrap();
         std::fs::write(source.path().join("book.epub"), make_minimal_epub()).unwrap();
-        config.accepted_formats.clear();
         config.cleanup_imported = true;
-        let seeded = crate::services::settings::seed_ingestion(&pool, &config)
+        let mut seeded = crate::services::settings::seed_ingestion(&pool, &config)
             .await
             .unwrap();
+        seeded.ingestion.accepted_formats.clear();
         let settings = std::sync::Arc::new(tokio::sync::RwLock::new(seeded));
         let cancel = CancellationToken::new();
         let (handle, commands) = coordinator_channel();
