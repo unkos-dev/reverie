@@ -103,6 +103,24 @@ pub fn api_router() -> OpenApiRouter<AppState> {
         .routes(routes!(api_cover_thumb))
 }
 
+#[derive(utoipa::ToResponse)]
+#[response(description = "Not Modified — the request's If-None-Match matched the cover ETag")]
+struct CoverNotModifiedResponse;
+
+struct CoverNotFoundResponse;
+
+impl<'r> utoipa::ToResponse<'r> for CoverNotFoundResponse {
+    fn response() -> (
+        &'r str,
+        utoipa::openapi::RefOr<utoipa::openapi::response::Response>,
+    ) {
+        (
+            "CoverNotFoundResponse",
+            crate::openapi::problem_response("Manifestation missing, RLS-hidden, or coverless"),
+        )
+    }
+}
+
 /// `GET /opds/books/{id}/cover` — full-size cover, Basic auth.
 ///
 /// # Errors
@@ -119,9 +137,9 @@ pub fn api_router() -> OpenApiRouter<AppState> {
     params(("id" = Uuid, Path, description = "Manifestation id")),
     responses(
         (status = 200, description = "Cover image stream (`image/jpeg` / `image/png`); Cache-Control: private, max-age=86400; carries a strong ETag"),
-        (status = 304, description = "Not Modified — the request's If-None-Match matched the cover ETag"),
+        (status = 304, response = inline(CoverNotModifiedResponse)),
         (status = 401, description = "Basic authentication required (WWW-Authenticate: Basic)", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
-        (status = 404, description = "Manifestation missing, RLS-hidden, or coverless", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
+        (status = 404, response = inline(CoverNotFoundResponse)),
     )
 )]
 async fn opds_cover(
@@ -154,9 +172,9 @@ async fn opds_cover(
     params(("id" = Uuid, Path, description = "Manifestation id")),
     responses(
         (status = 200, description = "Thumbnail image stream (`image/jpeg`); Cache-Control: private, max-age=86400; carries a strong ETag"),
-        (status = 304, description = "Not Modified — the request's If-None-Match matched the cover ETag"),
+        (status = 304, response = inline(CoverNotModifiedResponse)),
         (status = 401, description = "Basic authentication required (WWW-Authenticate: Basic)", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
-        (status = 404, description = "Manifestation missing, RLS-hidden, or coverless", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
+        (status = 404, response = inline(CoverNotFoundResponse)),
     )
 )]
 async fn opds_cover_thumb(
@@ -189,9 +207,9 @@ async fn opds_cover_thumb(
     params(("id" = Uuid, Path, description = "Manifestation id")),
     responses(
         (status = 200, description = "Cover image stream (`image/jpeg` / `image/png` / `image/webp`); Cache-Control: private, max-age=86400; carries a strong ETag"),
-        (status = 304, description = "Not Modified — the request's If-None-Match matched the cover ETag"),
-        (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
-        (status = 404, description = "Manifestation missing, RLS-hidden, or coverless", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
+        (status = 304, response = inline(CoverNotModifiedResponse)),
+        (status = 401, response = inline(crate::openapi::AuthenticationRequiredResponse)),
+        (status = 404, response = inline(CoverNotFoundResponse)),
     )
 )]
 async fn api_cover(
@@ -224,9 +242,9 @@ async fn api_cover(
     params(("id" = Uuid, Path, description = "Manifestation id")),
     responses(
         (status = 200, description = "Thumbnail image stream (`image/jpeg`); Cache-Control: private, max-age=86400; carries a strong ETag"),
-        (status = 304, description = "Not Modified — the request's If-None-Match matched the cover ETag"),
-        (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
-        (status = 404, description = "Manifestation missing, RLS-hidden, or coverless", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
+        (status = 304, response = inline(CoverNotModifiedResponse)),
+        (status = 401, response = inline(crate::openapi::AuthenticationRequiredResponse)),
+        (status = 404, response = inline(CoverNotFoundResponse)),
     )
 )]
 async fn api_cover_thumb(

@@ -94,7 +94,7 @@ struct ShelfListResponse {
         (status = 200, description = "One page of the caller's shelves, system shelves first then by name", body = ShelfListResponse,
             headers(("Link" = String, description = "RFC 8288 next-page link; emitted with rel=\"next\" when more rows remain"))),
         (status = 400, description = "Malformed query parameter", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
-        (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
+        (status = 401, response = inline(crate::openapi::AuthenticationRequiredResponse)),
         (status = 422, description = "Malformed cursor", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
     )
 )]
@@ -212,8 +212,8 @@ struct CreateShelfRequest {
     security(("session_cookie" = ["write"]), ("device_token_bearer" = ["write"]), ("opds_basic" = ["write"])),
     responses(
         (status = 201, description = "Shelf created", body = Shelf),
-        (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
-        (status = 403, description = "Caller is a child account", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
+        (status = 401, response = inline(crate::openapi::AuthenticationRequiredResponse)),
+        (status = 403, response = inline(crate::openapi::AdultRequiredResponse)),
         (status = 422, description = "Empty name", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
     )
 )]
@@ -288,8 +288,8 @@ struct RenameShelfRequest {
     security(("session_cookie" = ["write"]), ("device_token_bearer" = ["write"]), ("opds_basic" = ["write"])),
     responses(
         (status = 200, description = "Renamed shelf", body = Shelf),
-        (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
-        (status = 403, description = "Caller is a child account", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
+        (status = 401, response = inline(crate::openapi::AuthenticationRequiredResponse)),
+        (status = 403, response = inline(crate::openapi::AdultRequiredResponse)),
         (status = 404, description = "Shelf missing or owned by another user (existence-not-leaked)", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 409, description = "System shelves cannot be renamed", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 422, description = "Empty name", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
@@ -383,8 +383,8 @@ async fn rename_shelf(
     security(("session_cookie" = ["write"]), ("device_token_bearer" = ["write"]), ("opds_basic" = ["write"])),
     responses(
         (status = 204, description = "Shelf deleted"),
-        (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
-        (status = 403, description = "Caller is a child account", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
+        (status = 401, response = inline(crate::openapi::AuthenticationRequiredResponse)),
+        (status = 403, response = inline(crate::openapi::AdultRequiredResponse)),
         (status = 404, description = "Shelf missing or owned by another user (existence-not-leaked)", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 409, description = "System shelves cannot be deleted", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
     )
@@ -480,7 +480,7 @@ struct ShelfDetailResponse {
             ("Link" = String, description = "RFC 8288 next-page link; emitted with rel=\"next\" when more items remain")
          )),
         (status = 400, description = "Malformed query or path parameter", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
-        (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
+        (status = 401, response = inline(crate::openapi::AuthenticationRequiredResponse)),
         (status = 404, description = "Shelf missing or owned by another user (existence-not-leaked)", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 422, description = "Malformed cursor", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
     )
@@ -619,7 +619,7 @@ struct AddItemRequest {
     security(("session_cookie" = ["write"]), ("device_token_bearer" = ["write"]), ("opds_basic" = ["write"])),
     responses(
         (status = 204, description = "Item added (no-op if already on the shelf)"),
-        (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
+        (status = 401, response = inline(crate::openapi::AuthenticationRequiredResponse)),
         (status = 404, description = "Shelf missing / not owned, or manifestation not visible to the caller", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
     )
 )]
@@ -711,7 +711,7 @@ async fn add_shelf_item(
     security(("session_cookie" = ["write"]), ("device_token_bearer" = ["write"]), ("opds_basic" = ["write"])),
     responses(
         (status = 204, description = "Item removed"),
-        (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
+        (status = 401, response = inline(crate::openapi::AuthenticationRequiredResponse)),
         (status = 404, description = "Shelf missing / not owned, or item not on the shelf", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
     )
 )]
