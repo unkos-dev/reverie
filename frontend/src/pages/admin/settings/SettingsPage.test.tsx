@@ -302,6 +302,20 @@ describe("production settings navigation", () => {
     appQueryClient.clear();
   });
 
+  test("a fresh visit refused with 403 hides a previously cached settings snapshot", async () => {
+    const { router } = renderSettings("enrichment", appQueryClient, adminSettingsRoute);
+    await screen.findByRole("form", { name: /settings$/ });
+    await act(() => router.navigate("/library"));
+    server.getStatus = 403;
+
+    await act(() => router.navigate("/admin/settings/enrichment"));
+
+    expect(await screen.findByText("Settings are for administrators")).toBeInTheDocument();
+    expect(screen.queryByRole("form")).not.toBeInTheDocument();
+    expect(server.gets).toBeGreaterThan(1);
+    expect(server.puts).toHaveLength(0);
+  });
+
   test("revisiting the active area preserves the draft revision and detects a concurrent edit", async () => {
     const user = userEvent.setup();
     const { router } = renderSettings("enrichment", appQueryClient, adminSettingsRoute);
@@ -886,6 +900,29 @@ describe("validation", () => {
 });
 
 describe("save failures", () => {
+  test.each([412, 428])("a 403 while reconciling %i keeps the draft", async (status) => {
+    const user = userEvent.setup();
+    await loaded();
+    await type(user, "Concurrent lookups", "6");
+    server.getStatus = 403;
+    if (status === 428) server.putMode = "428-first";
+    else
+      server.stale.set(1, () => {
+        server.revision += 1;
+      });
+
+    await user.click(save());
+
+    expect(await screen.findByText("Nothing was saved")).toBeInTheDocument();
+    expect(screen.getByRole("textbox", { name: "Concurrent lookups" })).toHaveValue("6");
+    expect(server.gets).toBe(2);
+    expect(server.puts).toHaveLength(1);
+    expect(server.values.enrichment_concurrency).toBe(4);
+    await user.click(screen.getByRole("link", { name: "Leave settings" }));
+    expect(await screen.findByText("Library page")).toBeInTheDocument();
+    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+  });
+
   test("a 403 keeps the edits, says nothing was saved and leaves without the discard prompt", async () => {
     server.putMode = "403";
     const user = userEvent.setup();

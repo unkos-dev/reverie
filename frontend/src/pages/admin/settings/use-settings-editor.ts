@@ -11,6 +11,7 @@ import { useState } from "react";
 
 import { ApiError, isIfMatchMismatch, isIfMatchRequired } from "@/api/errors";
 import {
+  getSettings,
   updateSettings,
   type ManifestationFormat,
   type SettingsKey,
@@ -49,7 +50,6 @@ import {
   type BooleanKey,
   type NumberKey,
 } from "./fields";
-import { settingsQueryOptions } from "./queries";
 
 export type ConflictChoice = "mine" | "theirs";
 
@@ -141,7 +141,9 @@ export function useSettingsEditor(area: AreaId, base: SettingsSnapshot): Setting
   const dirty = dirtyKeys(area, draft, base.values);
 
   async function refetch(): Promise<SettingsSnapshot> {
-    return queryClient.query({ ...settingsQueryOptions(), staleTime: 0 });
+    const fresh = await getSettings();
+    queryClient.setQueryData(queryKeys.settings.snapshot(), fresh);
+    return fresh;
   }
 
   async function runSave({ base: start, patch }: SaveArgs): Promise<Outcome> {
