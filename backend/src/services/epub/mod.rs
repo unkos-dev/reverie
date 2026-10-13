@@ -345,7 +345,7 @@ pub fn inspect(file: File) -> Result<(zip_layer::ZipHandle, ValidationReport), E
         ));
     }
 
-    zip_layer::verify_entries(&zip_result, &mut issues);
+    zip_layer::verify_entries(&zip_result, &mut issues)?;
     if issues.iter().any(|i| i.severity == Severity::Irrecoverable) {
         return Ok((
             zip_result,
@@ -1056,6 +1056,28 @@ mod tests {
             &report,
             |kind| matches!(kind, IssueKind::CorruptEntry { entry_name } if entry_name == "META-INF/container.xml"),
         );
+    }
+
+    #[test]
+    fn malformed_container_tail_is_quarantined() {
+        for tail in [
+            "<broken",
+            "",
+            "</wrong>",
+            "</rootfiles></container><extra/>",
+            "</rootfiles></container>trailing text",
+        ] {
+            let xml =
+                format!("<container><rootfiles><rootfile full-path=\"OEBPS/content.opf\"/>{tail}");
+            let report = quarantine_of(&[
+                ("META-INF/container.xml", xml.as_bytes()),
+                ("OEBPS/content.opf", CONTENT_OPF),
+            ]);
+            assert_irrecoverable(
+                &report,
+                |kind| matches!(kind, IssueKind::CorruptEntry { entry_name } if entry_name == "META-INF/container.xml"),
+            );
+        }
     }
 
     #[test]
