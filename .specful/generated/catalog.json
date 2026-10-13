@@ -776,6 +776,21 @@
     },
     {
       "governed-by": [
+        "REV-ADR-0029"
+      ],
+      "id": "REV-DESIGN-0026",
+      "kind": "design",
+      "path": "docs/specs/accounts/design/0026-oidc-sign-in.md",
+      "satisfies": [
+        "REV-REQ-0037",
+        "REV-REQ-0067",
+        "REV-REQ-0068",
+        "REV-REQ-0069"
+      ],
+      "title": "OIDC sign-in"
+    },
+    {
+      "governed-by": [
         "REV-ADR-0047"
       ],
       "id": "REV-REQ-0001",
@@ -1316,6 +1331,33 @@
       "kind": "req",
       "path": "docs/specs/operations/requirements/0066-required-storage-directories-are-available-before-serving.md",
       "title": "Required storage directories are available before serving"
+    },
+    {
+      "governed-by": [
+        "REV-ADR-0029"
+      ],
+      "id": "REV-REQ-0067",
+      "kind": "req",
+      "path": "docs/specs/accounts/requirements/0067-an-oidc-identity-resolves-to-an-account-on-issuer-and-subject-never-on-email.md",
+      "title": "An OIDC identity resolves to an account on issuer and subject, never on email"
+    },
+    {
+      "governed-by": [
+        "REV-ADR-0029"
+      ],
+      "id": "REV-REQ-0068",
+      "kind": "req",
+      "path": "docs/specs/accounts/requirements/0068-a-first-oidc-sign-in-whose-email-another-account-holds-is-refused-and-writes-nothing.md",
+      "title": "A first OIDC sign-in whose email another account holds is refused and writes nothing"
+    },
+    {
+      "governed-by": [
+        "REV-ADR-0029"
+      ],
+      "id": "REV-REQ-0069",
+      "kind": "req",
+      "path": "docs/specs/accounts/requirements/0069-a-returning-oidc-identity-keeps-its-stored-email.md",
+      "title": "A returning OIDC identity keeps its stored email"
     }
   ]
 }

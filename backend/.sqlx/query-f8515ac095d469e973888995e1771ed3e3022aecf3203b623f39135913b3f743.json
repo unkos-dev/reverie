@@ -1,31 +1,13 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT enrichment_status AS \"status!: EnrichmentStatus\", enrichment_attempt_count, enrichment_attempted_at, enrichment_error, enrichment_rerun_requested FROM manifestations WHERE id = $1",
+  "query": "SELECT enrichment_status::text AS \"enrichment_status!\", enrichment_attempt_count, enrichment_attempted_at, enrichment_retry_not_before, enrichment_error, enrichment_failures FROM manifestations WHERE id = $1",
   "describe": {
     "columns": [
       {
         "ordinal": 0,
-        "name": "status!: EnrichmentStatus",
-        "type_info": {
-          "Custom": {
-            "name": "enrichment_status",
-            "kind": {
-              "Enum": [
-                "pending",
-                "in_progress",
-                "complete",
-                "failed",
-                "skipped"
-              ]
-            }
-          }
-        },
-        "origin": {
-          "Table": {
-            "table": "manifestations",
-            "name": "enrichment_status"
-          }
-        }
+        "name": "enrichment_status!",
+        "type_info": "Text",
+        "origin": "Expression"
       },
       {
         "ordinal": 1,
@@ -51,6 +33,17 @@
       },
       {
         "ordinal": 3,
+        "name": "enrichment_retry_not_before",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "manifestations",
+            "name": "enrichment_retry_not_before"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
         "name": "enrichment_error",
         "type_info": "Text",
         "origin": {
@@ -61,13 +54,13 @@
         }
       },
       {
-        "ordinal": 4,
-        "name": "enrichment_rerun_requested",
-        "type_info": "Bool",
+        "ordinal": 5,
+        "name": "enrichment_failures",
+        "type_info": "Jsonb",
         "origin": {
           "Table": {
             "table": "manifestations",
-            "name": "enrichment_rerun_requested"
+            "name": "enrichment_failures"
           }
         }
       }
@@ -78,12 +71,13 @@
       ]
     },
     "nullable": [
+      null,
       false,
-      false,
+      true,
       true,
       true,
       false
     ]
   },
-  "hash": "d9a64c419da66965968a07dda63efedc61d65ec7a8ee901db9dd0e5d36ccea23"
+  "hash": "f8515ac095d469e973888995e1771ed3e3022aecf3203b623f39135913b3f743"
 }

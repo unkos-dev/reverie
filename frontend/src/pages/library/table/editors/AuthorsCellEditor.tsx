@@ -30,7 +30,7 @@ export function AuthorsCellEditor({
   authors,
   onCommit,
   onCancel,
-}: AuthorsCellEditorProps): ReactElement {
+}: Readonly<AuthorsCellEditorProps>): ReactElement {
   // Numeric ids exist purely so list items keep a stable React key across
   // add/remove/edit: author names are plain strings on the wire (no id of
   // their own) and are not necessarily unique.

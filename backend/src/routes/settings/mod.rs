@@ -203,12 +203,12 @@ struct PutSettingsResponse {
     responses(
         (status = 200, description = "Updated settings. `restart_required` is true when a changed field only takes effect after restart. Admin only.", body = PutSettingsResponse,
          headers(("ETag" = String, description = "Strong entity-tag of the settings after this write"))),
-        (status = 400, description = "If-Match is malformed, or carries a form this API refuses by policy: the * wildcard, an entity-tag list, a weak tag, or a repeated header instance", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
+        (status = 400, description = "The request body is not valid JSON, or If-Match is malformed or carries a form this API refuses by policy: the * wildcard, an entity-tag list, a weak tag, or a repeated header instance", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 403, description = "Caller is not an admin", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 412, description = "If-Match does not match the current settings ETag", body = crate::openapi::ProblemDetails, content_type = "application/problem+json",
          headers(("ETag" = String, description = "Current entity-tag, so the caller can resync without a follow-up GET"))),
-        (status = 422, description = "Empty patch or invalid field values. Evaluated only after If-Match has matched, so a stale tag returns 412 instead", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
+        (status = 422, description = "The request body has invalid field types, or the patch is empty or has invalid field values. Patch validation occurs only after If-Match has matched, so a stale tag returns 412 instead", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 428, description = "If-Match header absent", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
     )
 )]

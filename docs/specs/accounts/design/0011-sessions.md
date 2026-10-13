@@ -43,7 +43,7 @@ token receives `403`, before this subject's `logout` handler runs; the handler's
 It does not own the row-level-security exemption or the role grants on `tower_sessions.session`, which are the Design
 "Row-level security and database context". It does not own the local password or OIDC credential flows that call into
 this subject's `login` helper once a credential has already been verified, those being the Design "Local password
-sign-in" and the OIDC login subject (`backend/src/routes/auth.rs::callback`). It does not own the response security
+sign-in" and the Design "OIDC sign-in" (`backend/src/routes/auth.rs::callback`). It does not own the response security
 headers a session-layer failure response lacks, only the fact that it lacks them; that is the Design "Response security
 headers and CSP".
 

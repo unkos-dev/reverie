@@ -29,7 +29,10 @@ function isReadingStatus(candidate: string): candidate is ReadingStatus {
   return STATUS_OPTIONS.some((option) => option.value === candidate);
 }
 
-export function StatusCellEditor({ value, onCommit }: StatusCellEditorProps): ReactElement {
+export function StatusCellEditor({
+  value,
+  onCommit,
+}: Readonly<StatusCellEditorProps>): ReactElement {
   const selectRef = useRef<HTMLSelectElement>(null);
 
   useEffect(() => {

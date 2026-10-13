@@ -546,7 +546,7 @@ mod tests {
             vec![],
             vec![crate::models::manifestation_format::ManifestationFormat::Epub],
         ] {
-            migrator.undo(&pool, 20_261_009_000_000).await.unwrap();
+            migrator.undo(&pool, 20_261_011_000_000).await.unwrap();
             let needs_repair = formats.is_empty();
             let mut request = empty_update();
             request.accepted_formats = Some(formats);

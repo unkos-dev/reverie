@@ -73,10 +73,11 @@ metadata counts.
 
 ### State-writer census
 
-- `manifestations.enrichment_status`, `_attempt_count`, `_attempted_at`, `_error`, `_rerun_requested`: written by
-  `queue.rs`'s `claim_next`/`mark_complete`/`mark_failed`/`revert_in_progress` (the queue's own lifecycle), plus two
-  external re-queue writers sharing the identical CASE-guarded `UPDATE` shape: `routes/enrichment.rs::trigger` and
-  `routes/metadata.rs::apply_identifier_patches` (a manual identifier edit implicitly re-queues enrichment).
+- `manifestations.enrichment_status`, `_attempt_count`, `_attempted_at`, `_retry_not_before`, `_error`, `_failures`,
+  `_rerun_requested`: written by `queue.rs`'s `claim_next`/`mark_complete`/`mark_failed`/`revert_in_progress` (the
+  queue's own lifecycle), plus two external re-queue writers sharing the identical CASE-guarded `UPDATE` shape:
+  `routes/enrichment.rs::trigger` and `routes/metadata.rs::apply_identifier_patches` (a manual identifier edit
+  implicitly re-queues enrichment).
 - `metadata_versions` rows have three writer classes. This subject's own automated observations: written by
   `orchestrator::upsert_journal_row` (insert, or an `observation_count` bump on conflict) and by
   `apply_canonical_batch`'s own `confidence_score` update. A second writer with no overlap in code path: ingestion-time
@@ -115,8 +116,10 @@ locks arbitrate canonical writes. The two re-queue call sites share the same cla
   enrichment is enabled, before the first poll and again on cancellation, it reverts orphaned `in_progress` rows to
   `pending` so a fresh process can reclaim work left by an abrupt exit. `claim_next` is one `FOR UPDATE SKIP LOCKED` CTE
   with the retry-backoff window folded into its `WHERE` clause as a `CASE` expression (5m, 30m, 2h, 8h, then 24h): the
-  sole, authoritative copy of that schedule. At startup with enrichment enabled, `revert_in_progress` treats every
-  `in_progress` row as orphaned under the single-instance deployment decision.
+  sole, authoritative copy of that schedule. A row whose `enrichment_retry_not_before` is still in the future is also
+  ineligible, so a rate-limited row waits for both the backoff window and the provider's `Retry-After`. At startup with
+  enrichment enabled, `revert_in_progress` treats every `in_progress` row as orphaned under the single-instance
+  deployment decision.
 - `orchestrator.rs` is the per-manifestation flow. `load_snapshot` reads the current canonical state, the active
   identifier-registry slots and the `metadata_sources.base_priority` values, and derives the ordered `lookup_keys` list
   via `derive_lookup_keys`. `fan_out_with_fallback` tries each key in order under one shared wall-clock budget,
@@ -181,6 +184,12 @@ ambient path and has no production caller.
   (`AppError::NotFound` on a miss), drops that transaction, then calls `dry_run::preview` on `state.ingestion_pool`, the
   same pool the queue itself runs on, chosen because the preview reads several joined tables without re-checking
   row-level security at each step. Returns `DryRunDiff` (`would_apply`/`would_stage`/`locked`/`source_failures`).
+- `GET /api/v1/dashboard/enrichment-failures` and `.../counts`: admin scope and role, under `acquire_with_rls`. They
+  list and count manifestations in `failed`, or `skipped` with an `enrichment_error`, each once under its primary
+  failure, with the work title, `attempted_at`, `retry_not_before` and the other failing sources in `also`. `source` and
+  `class` filters match the primary only, and `source=none` selects books whose primary failure has no source; the list
+  is ordered by id with a cursor bound to the filters and a limit clamped to 1 through 100. Only closed failure classes
+  leave the server, never `enrichment_error`. The existing trigger endpoint is the retry action.
 - `GET /api/v1/enrichment/status`: requires a non-child caller and read scope; aggregates
   `manifestations.enrichment_status` counts under `acquire_with_rls`, so a child sees counts scoped to its own visible
   manifestations like any other row-level-security-gated read.
@@ -204,7 +213,9 @@ sidecar within the same library. Neither has a live production input. Staging do
 
 - `manifestations.enrichment_status` is a five-value enum (`Pending`, `InProgress`, `Complete`, `Failed`, `Skipped`),
   backed by the partial index `idx_manifestations_enrichment_queue` that `claim_next` reads (on `enrichment_status` and
-  `enrichment_attempted_at`, `NULLS FIRST`). `Skipped` is terminal: `claim_next`'s eligibility check only ever selects
+  `enrichment_attempted_at`, `NULLS FIRST`). `enrichment_attempted_at` is when the latest attempt was claimed;
+  `enrichment_retry_not_before` is null except while a provider's `Retry-After` defers the next attempt, when it holds
+  the earliest time the queue may retry. `Skipped` is terminal: `claim_next`'s eligibility check only ever selects
   `pending` or `failed` rows, so only an external re-queue write (`trigger`, or a manual identifier edit) can return a
   skipped row to circulation.
 - `metadata_versions.status` is a two-value enum, `pending` or `rejected`; there is no `applied` value. An automated
@@ -274,14 +285,16 @@ compatibility path.
 5. The transaction commits once, carrying the journal writes, the canonical updates, the rematch outcome and every
    writeback enqueue together.
 6. `finish` (in `queue.rs`) inspects the outcome: if every enabled source failed non-terminally and nothing applied or
-   staged, the row is marked `Failed` (eligible for retry) with the longest reported `Retry-After` honoured; otherwise
-   (anything applied or staged, or a terminal per-source failure alongside a live outcome) it is marked `Complete`.
+   staged, the row is marked `Failed` (eligible for retry) with the longest reported `Retry-After` recorded in
+   `enrichment_retry_not_before`, leaving `enrichment_attempted_at` at the claim time; otherwise (anything applied or
+   staged, or a terminal per-source failure alongside a live outcome) it is marked `Complete`.
 
 **A manual trigger** (`POST .../enrichment/trigger`) on an idle row resets it straight to `pending` with a cleared
-attempt count and error; on an `in_progress` row it leaves the claim untouched and sets `enrichment_rerun_requested`, so
-a second worker can never pick up a row the first is still processing. The same CASE-guarded `UPDATE` shape appears in
-`routes/metadata.rs::apply_identifier_patches`, fired whenever a manual identifier `PATCH` sets or clears at least one
-identifier: an identifier edit re-queues enrichment exactly as a trigger would.
+attempt count, retry deferral and error; on an `in_progress` row it leaves the claim untouched and sets
+`enrichment_rerun_requested`, so a second worker can never pick up a row the first is still processing. The same
+CASE-guarded `UPDATE` shape appears in `routes/metadata.rs::apply_identifier_patches`, fired whenever a manual
+identifier `PATCH` sets or clears at least one identifier: an identifier edit re-queues enrichment exactly as a trigger
+would.
 
 **A dry run** (`POST .../enrichment/dry-run`) repeats the fan-out and the cache writes but calls `policy::decide` with a
 synthetic `PolicyInputRow` (`id: Uuid::nil()`) never written to the journal, so its `would_apply`/`would_stage` split is
@@ -293,6 +306,18 @@ a projection, not a preview of a specific journal row a subsequent real run woul
   `SourceFailure` with a `terminal` flag (true only for a non-429 4xx) and, for `RateLimited`, a `retry_after`. `finish`
   only marks a row `Failed` when every enabled source failed non-terminally with nothing applied or staged; a terminal
   failure alongside a live result from another source still counts as `Complete`.
+- Each non-terminal failed attempt also persists `manifestations.enrichment_failures`, a JSON array of source and class
+  pairs ordered by source key, so the first entry is the primary failure. Classes are closed: `timeout`, `rate_limited`,
+  `source_error` (an unexpected HTTP status), `not_found`, `unreachable` (any other transport or decode failure),
+  `internal` and `unspecified`. A source that failed on several lookup keys in one run contributes its last failure. A
+  run that errors as a whole, including a panic, records the single class `internal`, with no source. A row holding
+  `enrichment_error` without classes reads as `unspecified`, with no source; a stored class this build does not know
+  reads as `unspecified` and keeps its source. The classes are meaningful only while `enrichment_error` is set, and
+  every write that clears `enrichment_error` clears them in the same statement: a retry through `trigger`, an identifier
+  edit, a rerun request consumed at the end of a run, and a successful run.
+- `enrichment_retry_not_before` is set only by a rate-limited failure that leaves the row `Failed`. A failure without a
+  `Retry-After`, an exhausted row, a successful run, a rerun request consumed at the end of a run, `trigger` and an
+  identifier edit on an idle row each leave it null.
 - Google Books removes the request URL from transport and JSON-decoding errors before wrapping them as
   `SourceError::Other`. Cache payloads and dry-run failure summaries retain the error cause without its query
   credential; timeout errors remain `SourceError::Timeout`.

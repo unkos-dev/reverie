@@ -98,8 +98,12 @@ async fn trigger(
                                              THEN enrichment_attempt_count ELSE 0 END, \
              enrichment_attempted_at = CASE WHEN enrichment_status = 'in_progress' \
                                             THEN enrichment_attempted_at ELSE NULL END, \
+             enrichment_retry_not_before = CASE WHEN enrichment_status = 'in_progress' \
+                                                THEN enrichment_retry_not_before ELSE NULL END, \
              enrichment_error = CASE WHEN enrichment_status = 'in_progress' \
-                                     THEN enrichment_error ELSE NULL END \
+                                     THEN enrichment_error ELSE NULL END, \
+             enrichment_failures = CASE WHEN enrichment_status = 'in_progress' \
+                                        THEN enrichment_failures ELSE '[]'::jsonb END \
          WHERE id = $1",
         id,
     )
@@ -296,7 +300,9 @@ mod tests {
              SET enrichment_status = 'failed'::enrichment_status, \
                  enrichment_attempt_count = 3, \
                  enrichment_attempted_at = now(), \
-                 enrichment_error = 'simulated failure' \
+                 enrichment_retry_not_before = now() + INTERVAL '1 hour', \
+                 enrichment_error = 'simulated failure', \
+                 enrichment_failures = '[{\"source\": \"openlibrary\", \"class\": \"timeout\"}]' \
              WHERE id = $1",
             m_id,
         )
@@ -320,7 +326,8 @@ mod tests {
         // `reverie_app` and the verification SELECT carries no session context.
         let row = sqlx::query!(
             "SELECT enrichment_status AS \"status!: crate::models::enrichment_status::EnrichmentStatus\", \
-                    enrichment_attempt_count, enrichment_error \
+                    enrichment_attempt_count, enrichment_retry_not_before, \
+                    enrichment_error, enrichment_failures \
              FROM manifestations WHERE id = $1",
             m_id,
         )
@@ -333,7 +340,16 @@ mod tests {
             "enrichment_status not reset"
         );
         assert_eq!(row.enrichment_attempt_count, 0, "attempt_count not reset");
+        assert_eq!(
+            row.enrichment_retry_not_before, None,
+            "enrichment_retry_not_before not cleared"
+        );
         assert_eq!(row.enrichment_error, None, "enrichment_error not cleared");
+        assert_eq!(
+            row.enrichment_failures,
+            serde_json::json!([]),
+            "enrichment_failures not cleared"
+        );
     }
 
     /// A trigger while a run is active must not release the worker's claim

@@ -8,7 +8,7 @@ type Props = {
   failed: boolean;
 };
 
-export function PasswordPolicyHint({ policy, failed }: Props): ReactElement {
+export function PasswordPolicyHint({ policy, failed }: Readonly<Props>): ReactElement {
   const message =
     policy !== undefined
       ? `Use ${String(policy.password_min_length)} to ${String(policy.password_max_length)} characters. Avoid common words or passwords from known data breaches.`

@@ -138,7 +138,7 @@ interface SortableItemProps {
   id: string;
 }
 
-function SortableItem({ id }: SortableItemProps): ReactElement {
+function SortableItem({ id }: Readonly<SortableItemProps>): ReactElement {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id,
   });

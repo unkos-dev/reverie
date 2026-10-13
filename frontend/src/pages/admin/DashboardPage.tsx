@@ -13,8 +13,9 @@ import { useQuery } from "@tanstack/react-query";
 import { Activity, AlertTriangle, BookOpen, HardDrive } from "lucide-react";
 
 import { useAuthMe } from "@/hooks/useAuthMe";
+import { formatDateTime } from "@/lib/format/datetime";
 import { queryKeys } from "@/lib/query/keys";
-import { getDashboardStats, getDashboardActivity } from "@/api/dashboard";
+import { getDashboardStats } from "@/api/dashboard";
 import type { DashboardStats, DashboardActivity } from "@/api/dashboard";
 import { ApiError } from "@/api";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -29,11 +30,16 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Skeleton } from "@/components/ui/skeleton";
+import { EnrichmentCard } from "./ingestion/EnrichmentCard";
+import { NeedsAttentionCard } from "./ingestion/NeedsAttentionCard";
+import { ScanControl } from "./ingestion/ScanControl";
+import { ScanNotice } from "./ingestion/ScanNotice";
+import { useIngestionMonitor } from "./ingestion/use-ingestion-monitor";
 
 /** Recent-batch page size requested from `/api/v1/dashboard/activity`. */
 export const ACTIVITY_LIMIT = 20;
 
-const NUMBER_FORMAT = new Intl.NumberFormat("en-US");
+const NUMBER_FORMAT = new Intl.NumberFormat(undefined);
 
 /** Format an integer with thousands separators (`1204` → `"1,204"`). */
 function formatNumber(n: number): string {
@@ -72,11 +78,8 @@ function DashboardPage(): ReactElement {
     enabled: isAdmin,
   });
 
-  const { data: activity, error: activityError } = useQuery({
-    queryKey: queryKeys.dashboard.activity(ACTIVITY_LIMIT),
-    queryFn: ({ signal }) => getDashboardActivity(ACTIVITY_LIMIT, signal),
-    enabled: isAdmin,
-  });
+  const monitor = useIngestionMonitor({ enabled: isAdmin, activityLimit: ACTIVITY_LIMIT });
+  const { data: activity, error: activityError } = monitor.activity;
 
   if (meLoading) {
     return (
@@ -102,7 +105,41 @@ function DashboardPage(): ReactElement {
 
   return (
     <div className="mx-auto max-w-6xl space-y-6 p-6">
-      <h1 className="text-2xl font-bold text-fg">Library health</h1>
+      <div className="flex items-start justify-between gap-8">
+        <div>
+          <h1 className="text-2xl font-bold text-fg">Library health</h1>
+          <p className="text-fg-muted mt-1.5 max-w-[72ch] text-sm">
+            Reverie watches the ingestion folder and files each new EPUB into the library. A scan
+            checks every file again and retries files that were set aside for another try.
+          </p>
+        </div>
+        <ScanControl
+          pending={monitor.scanPending}
+          forbidden={monitor.scanForbidden}
+          onScan={monitor.scan}
+        />
+      </div>
+
+      <ScanNotice
+        notice={monitor.notice}
+        failure={monitor.scanFailure}
+        scanPending={monitor.scanPending}
+        running={monitor.running}
+        latestBatch={monitor.latestBatch}
+        onRetry={monitor.scan}
+      />
+
+      <NeedsAttentionCard
+        counts={monitor.counts.data}
+        isPending={monitor.counts.isPending}
+        onRetry={() => {
+          void monitor.counts.refetch();
+        }}
+        pollInterval={monitor.pollInterval}
+        afterScan={monitor.notice?.kind === "accepted" && monitor.notice.afterScan}
+      />
+
+      <EnrichmentCard />
 
       {statsLoading && (
         <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
@@ -132,7 +169,7 @@ interface StatCardProps {
   icon: ReactElement;
 }
 
-function StatCard({ label, value, icon }: StatCardProps): ReactElement {
+function StatCard({ label, value, icon }: Readonly<StatCardProps>): ReactElement {
   return (
     <Card>
       <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
@@ -146,7 +183,7 @@ function StatCard({ label, value, icon }: StatCardProps): ReactElement {
   );
 }
 
-function StatsView({ stats }: { stats: DashboardStats }): ReactElement {
+function StatsView({ stats }: Readonly<{ stats: DashboardStats }>): ReactElement {
   const failedValidation = countFor(stats.validation_breakdown, "degraded");
   const cov = stats.metadata_coverage;
   const coverageRows = [
@@ -273,10 +310,10 @@ function StatsView({ stats }: { stats: DashboardStats }): ReactElement {
 function RecentBatches({
   activity,
   error,
-}: {
+}: Readonly<{
   activity: DashboardActivity["batches"];
   error: Error | null;
-}): ReactElement {
+}>): ReactElement {
   let body: ReactElement;
   if (error) {
     body = (
@@ -304,7 +341,7 @@ function RecentBatches({
           {activity.map((b) => (
             <TableRow key={b.batch_id}>
               <TableCell className="font-medium">
-                {new Date(b.started_at).toLocaleString()}
+                {formatDateTime(b.started_at)}
                 {b.ended_at === null && (
                   <Badge variant="secondary" className="ml-2">
                     running

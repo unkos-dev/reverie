@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT enrichment_status::text AS \"enrichment_status!\", enrichment_attempt_count, enrichment_attempted_at, enrichment_error FROM manifestations WHERE id = $1",
+  "query": "SELECT enrichment_status::text AS \"enrichment_status!\", enrichment_attempt_count, enrichment_attempted_at, enrichment_retry_not_before, enrichment_rerun_requested FROM manifestations WHERE id = $1",
   "describe": {
     "columns": [
       {
@@ -33,12 +33,23 @@
       },
       {
         "ordinal": 3,
-        "name": "enrichment_error",
-        "type_info": "Text",
+        "name": "enrichment_retry_not_before",
+        "type_info": "Timestamptz",
         "origin": {
           "Table": {
             "table": "manifestations",
-            "name": "enrichment_error"
+            "name": "enrichment_retry_not_before"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "enrichment_rerun_requested",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "manifestations",
+            "name": "enrichment_rerun_requested"
           }
         }
       }
@@ -52,8 +63,9 @@
       null,
       false,
       true,
-      true
+      true,
+      false
     ]
   },
-  "hash": "b49305938aacd4060b6009607aafc3d9ba1b7e928169701b82a5a748a8b65eaf"
+  "hash": "5a3a06e7fe78f30ccaeca5321f201aa2d4ed323c895c3c3b7d122c9b5b9b3b12"
 }

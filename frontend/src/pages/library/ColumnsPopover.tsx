@@ -36,7 +36,7 @@ export function ColumnsPopover({
   onToggleColumn,
   canReset,
   onReset,
-}: ColumnsPopoverProps): ReactElement {
+}: Readonly<ColumnsPopoverProps>): ReactElement {
   return (
     <Popover>
       <PopoverTrigger asChild>
