@@ -303,7 +303,7 @@ export function SettingsWorkspace({ area, base }: Props): ReactElement {
               </p>
             </header>
             {fieldsForArea(area).map((field) => (
-              <FieldRow key={field.key} field={field} base={base} editor={editor} />
+              <FieldRow key={field.key} field={field} base={editor.base} editor={editor} />
             ))}
           </section>
           <SaveBar editor={editor} />

@@ -125,6 +125,11 @@ or write leaves the previous values and tag together. `useSettingsEditor` sends 
 on a save, and a reconciled retry uses the tag from the validated fresh snapshot. A `412` supplies no replacement
 snapshot: the editor reads current settings before comparing concurrent changes or retrying.
 
+Each area retains its base snapshot with its draft from the first edit. Shared cache updates, including a previous
+area's pending save, do not replace that base. Field rendering, dirty comparisons and writes use the retained snapshot.
+Only the editor's own validated reconciliation read replaces its draft base; clearing the draft releases it so the
+pristine editor follows the shared snapshot.
+
 `frontend/src/api/errors.ts` exposes `isIfMatchMismatch` and `isIfMatchRequired`, both scoped to the shared module's two
 problem-type slugs (`if-match-mismatch`, `if-match-required`) and their statuses (`412`, `428`); its doc comment treats
 a `428` the same as a `412` for recovery purposes, since the remedy — reload, then retry — is identical, and notes `428`

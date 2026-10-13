@@ -78,6 +78,7 @@ export type Notice =
 export type Elsewhere = Partial<Record<SettingsKey, string>>;
 
 export type SettingsEditor = {
+  base: SettingsSnapshot;
   draft: Draft;
   dirty: SettingsKey[];
   notice: Notice;
@@ -131,18 +132,25 @@ function merged(base: SettingsSnapshot, written: SettingsWriteResult): SettingsS
   };
 }
 
-export function useSettingsEditor(area: AreaId, base: SettingsSnapshot): SettingsEditor {
+export function useSettingsEditor(area: AreaId, snapshot: SettingsSnapshot): SettingsEditor {
   const queryClient = useQueryClient();
-  const [draft, setDraft] = useState<Draft>(EMPTY_DRAFT);
+  const [edit, setEdit] = useState<{ base: SettingsSnapshot; draft: Draft } | null>(null);
+  const base = edit?.base ?? snapshot;
+  const draft = edit?.draft ?? EMPTY_DRAFT;
   const [notice, setNotice] = useState<Notice>({ kind: "none" });
   const [elsewhere, setElsewhere] = useState<Elsewhere>({});
   const [pendingConfirm, setPendingConfirm] = useState<BooleanKey | null>(null);
 
   const dirty = dirtyKeys(area, draft, base.values);
 
+  function setDraft(next: Draft): void {
+    setEdit(dirtyKeys(area, next, base.values).length === 0 ? null : { base, draft: next });
+  }
+
   async function refetch(): Promise<SettingsSnapshot> {
     const fresh = await getSettings();
     queryClient.setQueryData(queryKeys.settings.snapshot(), fresh);
+    setEdit((current) => (current === null ? null : { ...current, base: fresh }));
     return fresh;
   }
 
@@ -408,6 +416,7 @@ export function useSettingsEditor(area: AreaId, base: SettingsSnapshot): Setting
   }
 
   return {
+    base,
     draft,
     dirty,
     notice,

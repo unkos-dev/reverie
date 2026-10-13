@@ -302,6 +302,46 @@ describe("production settings navigation", () => {
     appQueryClient.clear();
   });
 
+  test("a previous area's pending reconciliation cannot rebase the current dirty draft", async () => {
+    const user = userEvent.setup();
+    renderSettings("acquisition", appQueryClient, adminSettingsRoute);
+    await screen.findByRole("form", { name: "Acquisition settings" });
+    await user.click(
+      screen.getByRole("switch", { name: "Remove the source file after a successful import" }),
+    );
+    const release = holdPut();
+    await user.click(save());
+    await user.click(
+      within(screen.getByRole("navigation", { name: "Settings areas" })).getByRole("link", {
+        name: /^Enrichment/,
+      }),
+    );
+    await user.click(await screen.findByRole("button", { name: "Leave and discard changes" }));
+    await screen.findByRole("form", { name: "Enrichment settings" });
+    await type(user, "Concurrent lookups", "6");
+    server.values.enrichment_concurrency = 5;
+    server.revision += 1;
+
+    release();
+    await waitFor(() => {
+      expect(server.values.cleanup_imported).toBe(false);
+    });
+    expect(server.puts).toHaveLength(2);
+    expect(screen.getByText("Saved value: 4 lookups")).toBeInTheDocument();
+    await user.click(save());
+
+    expect(await screen.findByText("Settings changed while you were editing")).toBeInTheDocument();
+    expect(server.puts).toHaveLength(3);
+    expect(server.puts[2]?.ifMatch).toBe('"rev-1"');
+    expect(server.values.enrichment_concurrency).toBe(5);
+    expect(screen.getByRole("textbox", { name: "Concurrent lookups" })).toHaveValue("6");
+    await user.click(screen.getByRole("button", { name: "Save my choices" }));
+    await screen.findByText("Settings saved");
+    expect(server.puts).toHaveLength(4);
+    expect(server.puts[3]?.ifMatch).toBe('"rev-3"');
+    expect(server.values.enrichment_concurrency).toBe(6);
+  });
+
   test("a fresh visit refused with 403 hides a previously cached settings snapshot", async () => {
     const { router } = renderSettings("enrichment", appQueryClient, adminSettingsRoute);
     await screen.findByRole("form", { name: /settings$/ });
