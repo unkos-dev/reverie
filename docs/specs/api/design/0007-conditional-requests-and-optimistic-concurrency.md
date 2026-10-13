@@ -118,6 +118,18 @@ response it receives, for every status code: when the response carries an `ETag`
 auto-echoes a cached tag as `If-Match` only for a `PATCH` request whose caller did not already set that header, so a
 caller-supplied header always wins over the cache.
 
+Settings retain each tag with its validated values. `apiFetchWithHeaders` exposes the decoded body and response headers
+without caching settings tags. `getSettings` and `updateSettings` validate the body and require a non-empty response
+`ETag` before returning one object containing both. The React Query settings snapshot holds that object; a failed read
+or write leaves the previous values and tag together. `useSettingsEditor` sends the starting snapshot's tag explicitly
+on a save, and a reconciled retry uses the tag from the validated fresh snapshot. A `412` supplies no replacement
+snapshot: the editor reads current settings before comparing concurrent changes or retrying.
+
+Each area retains its base snapshot with its draft from the first edit. Shared cache updates, including a previous
+area's pending save, do not replace that base. Field rendering, dirty comparisons and writes use the retained snapshot.
+Only the editor's own validated reconciliation read replaces its draft base; clearing the draft releases it so the
+pristine editor follows the shared snapshot.
+
 `frontend/src/api/errors.ts` exposes `isIfMatchMismatch` and `isIfMatchRequired`, both scoped to the shared module's two
 problem-type slugs (`if-match-mismatch`, `if-match-required`) and their statuses (`412`, `428`); its doc comment treats
 a `428` the same as a `412` for recovery purposes, since the remedy — reload, then retry — is identical, and notes `428`
@@ -204,8 +216,8 @@ handler body executes at all). The response is `400`, problem type `.../malforme
 - **Stale `If-Match`.** `AppError::IfMatchMismatch` (`412`) from `update_book_metadata`, `patch_reading` or
   `put_settings` carries the resource's current `ETag` on the response, via `if_match_mismatch`. For metadata and
   reading, `captureEtag` refreshes the client cache from the failure response itself and a retry needs no extra round
-  trip. For settings, `etagKeyForPath` has no key and automatic replay applies only to `PATCH`, so the caller reads the
-  tag from `GET`, `PUT` or `412` and sends it explicitly on the next `PUT`.
+  trip. For settings, a `412` leaves the held snapshot and tag unchanged. The editor obtains a validated `GET` snapshot
+  before reconciling changes; only a validated `GET` or `PUT` result replaces its values and tag.
 - **Malformed, weak, wildcard, or list-form `If-Match`.** Rejected as satisfying nothing on all three endpoints, so a
   caller can never use one of these forms to bypass the freshness check. The shared module answers `400`,
   `.../malformed-header`, from `update_book_metadata`, `patch_reading` and `put_settings`, and rejects a repeated

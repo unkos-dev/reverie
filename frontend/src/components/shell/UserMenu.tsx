@@ -92,10 +92,11 @@ export function UserChip(): ReactElement | null {
           ) : null}
         </DropdownMenuLabel>
         <DropdownMenuSeparator />
-        <DropdownMenuItem disabled>
-          Settings
-          <span className="text-fg-faint ml-auto text-xs">planned</span>
-        </DropdownMenuItem>
+        {me.role === "admin" ? (
+          <DropdownMenuItem asChild>
+            <Link to="/admin/settings">Settings</Link>
+          </DropdownMenuItem>
+        ) : null}
         {me.has_local_password ? (
           <DropdownMenuItem asChild>
             <Link to="/account/password">Change password</Link>

@@ -31,6 +31,13 @@
    so the FOUC script can flip the theme synchronously before hydration. */
 @custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
 
+/* The shadcn primitives write `data-checked:` and `data-unchecked:`, which
+   match a `data-checked` attribute; Radix reports the state as
+   `data-state="checked"` instead, so without these the checked styling of
+   Switch, Checkbox and RadioGroup never applies. */
+@custom-variant data-checked (&[data-state="checked"]);
+@custom-variant data-unchecked (&[data-state="unchecked"]);
+
 /* Tokens that generate utilities (bg-canvas, text-fg, border-border, etc.).
    `inline` keyword is what allows tokens to reference runtime var(--…) values. */
 @theme inline {

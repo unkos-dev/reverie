@@ -5,6 +5,8 @@ import { AuthenticatedBoundary } from "./components/AuthenticatedBoundary";
 import { RootErrorBoundary } from "./components/RootErrorBoundary";
 import {
   adminDashboardRoute,
+  adminSettingsIndexRoute,
+  adminSettingsRoute,
   adminUsersRoute,
   bookRoute,
   libraryRoute,
@@ -35,6 +37,8 @@ export const routes: RouteObject[] = [
           tokensRoute,
           adminUsersRoute,
           adminDashboardRoute,
+          adminSettingsIndexRoute,
+          adminSettingsRoute,
         ],
       },
       {

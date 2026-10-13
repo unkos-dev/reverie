@@ -77,6 +77,15 @@ type ProblemDetails = z.infer<typeof ProblemDetailsSchema>;
  *   with `DOMException("AbortError")`).
  */
 export async function apiFetch(input: RequestInfo | URL, init?: RequestInit): Promise<unknown> {
+  const { body } = await apiFetchWithHeaders(input, init);
+  return body;
+}
+
+/** Return decoded JSON and its response headers for callers that retain a validated representation. */
+export async function apiFetchWithHeaders(
+  input: RequestInfo | URL,
+  init?: RequestInit,
+): Promise<{ body: unknown; headers: Headers }> {
   const method = (init?.method ?? "GET").toUpperCase();
   const mutating = MUTATING_METHODS.has(method);
 
@@ -105,11 +114,11 @@ export async function apiFetch(input: RequestInfo | URL, init?: RequestInit): Pr
       await refreshCsrfToken(init?.signal ?? undefined);
       const retried = await sendRequest(input, init, method, mutating);
       captureEtag(input, retried);
-      return decodeSuccess(retried);
+      return { body: await decodeSuccess(retried), headers: retried.headers };
     }
     throw problemToApiError(response.status, response.statusText, problem);
   }
-  return decodeSuccess(response);
+  return { body: await decodeSuccess(response), headers: response.headers };
 }
 
 /** Resolve a `fetch()` input to the pathname `etagKeyForPath` matches on. */
