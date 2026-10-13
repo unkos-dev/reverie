@@ -196,13 +196,13 @@ collapsed. The page opens on real files. Later refreshes do not change what the 
 Books whose latest metadata lookup failed, grouped by source and reason. Each book is listed once, under its most recent
 failing source. Any other failing source appears on its row.
 
-### Head
+### Enrichment card head
 
 - The heading "Enrichment problems" and, in fixed-width type, "{n} books, {m} reasons" ("1 book", "1 reason").
 - The intro: "Books where the metadata sources could not be reached or returned nothing usable, grouped by source and
   reason. Each book is listed once, under its main reason."
 
-### Groups
+### Enrichment groups
 
 A group is a source plus a failure class. The heading is "{Source}: {class}", for example "Open Library: timed out". A
 failure that belongs to no source uses the class's capitalised name alone, for example "Timed out". Source names are the
@@ -246,7 +246,7 @@ The row also carries two times, described under "Smaller differences from the pa
   on the next window focus or visit. If the book fails again, a newer attempt shows on its row and the button returns to
   "Try again".
 
-### States
+### Enrichment states
 
 - **Loading:** a busy skeleton with the status text "Loading books with enrichment problems".
 - **Empty:** the heading shows no total, with "No enrichment problems." / "Every book was enriched, or is waiting its

@@ -18,6 +18,10 @@ style = "dash"
 [MD025]
 front-matter-title = ""
 
+[MD024]
+siblings-only = false
+allow-different-link-anchors = false
+
 [MD013]
 line-length = 120
 headings = true
