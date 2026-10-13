@@ -540,6 +540,31 @@ mod tests {
     }
 
     #[sqlx::test(migrations = "./migrations")]
+    async fn accepted_format_migration_updates_only_repaired_rows(pool: PgPool) {
+        let migrator = sqlx::migrate!("./migrations");
+        for formats in [
+            vec![],
+            vec![crate::models::manifestation_format::ManifestationFormat::Epub],
+        ] {
+            migrator.undo(&pool, 20_261_009_000_000).await.unwrap();
+            let needs_repair = formats.is_empty();
+            let mut request = empty_update();
+            request.accepted_formats = Some(formats);
+            let before = save(&pool, &request).await.unwrap();
+            migrator.run(&pool).await.unwrap();
+            let after = load(&pool).await.unwrap();
+            assert_eq!(after.ingestion.accepted_formats, ["epub"]);
+            if needs_repair {
+                assert_eq!(after.revision, before.revision + 1);
+                assert!(after.updated_at > before.updated_at);
+            } else {
+                assert_eq!(after.revision, before.revision);
+                assert_eq!(after.updated_at, before.updated_at);
+            }
+        }
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
     async fn save_refuses_an_empty_accepted_formats_list_at_the_database(pool: PgPool) {
         let before = load(&pool).await.unwrap();
         let mut request = empty_update();

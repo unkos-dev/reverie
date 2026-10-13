@@ -1,6 +1,7 @@
 UPDATE public.settings
 SET accepted_formats = '{epub}',
-    revision = revision + 1
+    revision = revision + 1,
+    updated_at = now()
 WHERE accepted_formats = '{}';
 
 ALTER TABLE public.settings
