@@ -7,7 +7,7 @@ satisfies:
   - "REV-REQ-0018"
   - "REV-REQ-0020"
 governed-by:
-  - "REV-ADR-0028"
+  - "REV-ADR-0056"
   - "REV-ADR-0011"
 ---
 
@@ -262,7 +262,7 @@ gates both handlers on a different table's policy — manifestation visibility, 
 either statement runs; that check belongs to the Design "Row-level security and database context" and is not this one's
 own axis. Neither handler calls `require_not_child`: the module's own doc comment states this is deliberate, since
 reading state is data a reader keeps about themselves, not a curation surface a child is barred from. This is the
-ownership axis REV-ADR-0028 assigns to the data layer, used here in place of, not alongside, a role gate.
+ownership axis REV-ADR-0056 assigns to the data layer, used here in place of, not alongside, a role gate.
 
 `notes` and `rating` are bounded twice: once in the handler (`NOTES_MAX_CHARS`, the `1..=5` range check) and once by a
 database `CHECK` constraint on the same column, so a value reaching the table by any write path other than this

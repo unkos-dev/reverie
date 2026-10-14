@@ -83,7 +83,7 @@ struct SettingsResponse {
     summary = "Get settings",
     description = "Returns the currently persisted application settings, including the fields that only take effect after a process restart. Admin only.",
     tag = "settings",
-    security(("session_cookie" = ["admin"]), ("device_token_bearer" = ["admin"]), ("oidc_jwt_bearer" = ["admin"]), ("opds_basic" = ["admin"])),
+    security(("session_cookie" = ["admin"]), ("device_token_bearer" = ["admin"]), ("opds_basic" = ["admin"])),
     responses(
         (status = 200, description = "Current persisted settings. Admin only.", body = SettingsResponse,
          headers(("ETag" = String, description = "Strong entity-tag of the current settings, to echo as `If-Match` on `PUT`"))),
@@ -135,7 +135,7 @@ struct ReloadStatusResponse {
     summary = "Get settings reload status",
     description = "Returns the timestamp of the last successful live reload of settings in this process, or null before the first reload. Admin only.",
     tag = "settings",
-    security(("session_cookie" = ["admin"]), ("device_token_bearer" = ["admin"]), ("oidc_jwt_bearer" = ["admin"]), ("opds_basic" = ["admin"])),
+    security(("session_cookie" = ["admin"]), ("device_token_bearer" = ["admin"]), ("opds_basic" = ["admin"])),
     responses(
         (status = 200, description = "Last successful settings reload in this process. Admin only.", body = ReloadStatusResponse),
         (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
@@ -199,7 +199,7 @@ struct PutSettingsResponse {
         ("If-Match" = String, Header, description = "Exactly one quoted strong entity-tag, as returned in a prior GET or PUT response's ETag header. The * wildcard, entity-tag lists, weak tags, and repeated instances of this field are refused with 400. Required: absent means 428; unequal means 412")
     ),
     request_body(content = UpdateSettings, description = "RFC 7396 JSON Merge Patch: absent fields are unchanged; at least one field is required"),
-    security(("session_cookie" = ["admin"]), ("device_token_bearer" = ["admin"]), ("oidc_jwt_bearer" = ["admin"]), ("opds_basic" = ["admin"])),
+    security(("session_cookie" = ["admin"]), ("device_token_bearer" = ["admin"]), ("opds_basic" = ["admin"])),
     responses(
         (status = 200, description = "Updated settings. `restart_required` is true when a changed field only takes effect after restart. Admin only.", body = PutSettingsResponse,
          headers(("ETag" = String, description = "Strong entity-tag of the settings after this write"))),

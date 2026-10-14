@@ -94,7 +94,7 @@ struct MetadataRow {
     summary = "List a manifestation's metadata versions",
     description = "Returns the metadata review queue for one manifestation, newest first; the list is empty when the manifestation is missing or hidden from the caller. Available to adult accounts only.",
     tag = "metadata",
-    security(("session_cookie" = ["read"]), ("device_token_bearer" = ["read"]), ("oidc_jwt_bearer" = ["read"]), ("opds_basic" = ["read"])),
+    security(("session_cookie" = ["read"]), ("device_token_bearer" = ["read"]), ("opds_basic" = ["read"])),
     params(("id" = Uuid, Path, description = "Manifestation id")),
     responses(
         (status = 200, description = "Metadata version rows for the manifestation, newest first (empty when the manifestation is missing or RLS-hidden)", body = [MetadataRow]),
@@ -127,7 +127,7 @@ async fn get_manifestation_metadata(
     summary = "List a work's metadata versions",
     description = "Returns the metadata review queue across every manifestation of a work, newest first; the list is empty when the work is missing or hidden from the caller. Available to adult accounts only.",
     tag = "metadata",
-    security(("session_cookie" = ["read"]), ("device_token_bearer" = ["read"]), ("oidc_jwt_bearer" = ["read"]), ("opds_basic" = ["read"])),
+    security(("session_cookie" = ["read"]), ("device_token_bearer" = ["read"]), ("opds_basic" = ["read"])),
     params(("id" = Uuid, Path, description = "Work id")),
     responses(
         (status = 200, description = "Metadata version rows across the work's manifestations, newest first (empty when the work is missing or RLS-hidden)", body = [MetadataRow]),
@@ -256,7 +256,7 @@ struct LockPayload {
     summary = "Accept a metadata version",
     description = "Promotes a pending metadata version to canonical for a manifestation. Acceptance leaves review status pending; repeated acceptance is allowed and enqueues another writeback job for file-backed fields. Accepting an ISBN change may trigger a re-match against other works. Available to adult accounts only. Returns 404 when the version is missing, belongs to another manifestation, or is already rejected; returns 422 if the stored value fails field parsing.",
     tag = "metadata",
-    security(("session_cookie" = ["write"]), ("device_token_bearer" = ["write"]), ("oidc_jwt_bearer" = ["write"]), ("opds_basic" = ["write"])),
+    security(("session_cookie" = ["write"]), ("device_token_bearer" = ["write"]), ("opds_basic" = ["write"])),
     params(("id" = Uuid, Path, description = "Manifestation id")),
     request_body = VersionPayload,
     responses(
@@ -362,7 +362,7 @@ async fn lock_version_review(
     summary = "Reject a metadata version",
     description = "Marks a pending metadata version as rejected. Available to adult accounts only.",
     tag = "metadata",
-    security(("session_cookie" = ["write"]), ("device_token_bearer" = ["write"]), ("oidc_jwt_bearer" = ["write"]), ("opds_basic" = ["write"])),
+    security(("session_cookie" = ["write"]), ("device_token_bearer" = ["write"]), ("opds_basic" = ["write"])),
     params(("id" = Uuid, Path, description = "Manifestation id")),
     request_body = VersionPayload,
     responses(
@@ -425,7 +425,7 @@ async fn reject_manifestation(
     summary = "Revert a metadata field",
     description = "Restores a prior metadata version as canonical for a field, or clears the field entirely when no version is given. Available to adult accounts only. Returns 422 if the field cannot be cleared or the stored value fails parsing.",
     tag = "metadata",
-    security(("session_cookie" = ["write"]), ("device_token_bearer" = ["write"]), ("oidc_jwt_bearer" = ["write"]), ("opds_basic" = ["write"])),
+    security(("session_cookie" = ["write"]), ("device_token_bearer" = ["write"]), ("opds_basic" = ["write"])),
     params(("id" = Uuid, Path, description = "Manifestation id")),
     request_body = RevertPayload,
     responses(
@@ -523,7 +523,7 @@ async fn revert_manifestation(
     summary = "Lock a metadata field",
     description = "Locks a metadata field against future automated enrichment writes; locking an already-locked field is a no-op. Available to adult accounts only.",
     tag = "metadata",
-    security(("session_cookie" = ["write"]), ("device_token_bearer" = ["write"]), ("oidc_jwt_bearer" = ["write"]), ("opds_basic" = ["write"])),
+    security(("session_cookie" = ["write"]), ("device_token_bearer" = ["write"]), ("opds_basic" = ["write"])),
     params(("id" = Uuid, Path, description = "Manifestation id")),
     request_body = LockPayload,
     responses(
@@ -578,7 +578,7 @@ async fn lock_field(
     summary = "Unlock a metadata field",
     description = "Removes a lock on a metadata field, allowing future automated enrichment writes to resume. Available to adult accounts only.",
     tag = "metadata",
-    security(("session_cookie" = ["write"]), ("device_token_bearer" = ["write"]), ("oidc_jwt_bearer" = ["write"]), ("opds_basic" = ["write"])),
+    security(("session_cookie" = ["write"]), ("device_token_bearer" = ["write"]), ("opds_basic" = ["write"])),
     params(("id" = Uuid, Path, description = "Manifestation id")),
     request_body = LockPayload,
     responses(
@@ -2113,7 +2113,7 @@ async fn load_book_metadata(
     summary = "Get a book's editable metadata",
     description = "Returns the editable metadata span for one manifestation, matching what the corresponding PATCH accepts. Available to adult accounts only.",
     tag = "metadata",
-    security(("session_cookie" = ["read"]), ("device_token_bearer" = ["read"]), ("oidc_jwt_bearer" = ["read"]), ("opds_basic" = ["read"])),
+    security(("session_cookie" = ["read"]), ("device_token_bearer" = ["read"]), ("opds_basic" = ["read"])),
     params(("id" = Uuid, Path, description = "Manifestation id")),
     responses(
         (status = 200, description = "The editable metadata span, matching what PATCH accepts", body = BookMetadata,
@@ -2265,7 +2265,7 @@ async fn load_manifestation_identifiers(
     summary = "Update a book's metadata",
     description = "Applies a manual operator edit to a manifestation's metadata; each touched field is recorded as a new metadata version. Requires an `If-Match` header; fails with 428 when it is absent, 412 when it does not match, and 400 when it is malformed or refused by policy. Available to adult accounts only.",
     tag = "metadata",
-    security(("session_cookie" = ["write"]), ("device_token_bearer" = ["write"]), ("oidc_jwt_bearer" = ["write"]), ("opds_basic" = ["write"])),
+    security(("session_cookie" = ["write"]), ("device_token_bearer" = ["write"]), ("opds_basic" = ["write"])),
     params(
         ("id" = Uuid, Path, description = "Manifestation id"),
         ("If-Match" = String, Header, description = "Exactly one quoted strong entity-tag, as returned in a prior GET or PATCH response's ETag header. Opaque content follows the full RFC 9110 8.8.3 grammar, obs-text included. The * wildcard, entity-tag lists, weak tags, and repeated instances of this field are refused with 400. Required: absent means 428; unequal means 412")

@@ -18,8 +18,8 @@ not a private homelab deploy.
 ## OIDC & sessions
 
 - The login callback must only read OIDC identity claims from a verified ID token (signature + claims validated by the
-  `openidconnect` crate). Never from unverified responses. Bearer access tokens are a separate path, validated by
-  `JwtValidator` under REV-ADR-0028.
+  `openidconnect` crate). Never from unverified responses. API Bearer authentication accepts only Reverie-issued scoped
+  tokens under REV-ADR-0056.
 - Session cookies: `HttpOnly=true`, `SameSite=Lax`, and `Secure` whenever `REVERIE_BEHIND_HTTPS=true` (a TLS-fronted
   deployment). An HTTP-only deployment gets no `Secure` flag.
 - Session tokens must never appear in logs, error messages, or serialised output.

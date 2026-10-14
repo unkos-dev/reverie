@@ -341,22 +341,6 @@ pub async fn run() -> anyhow::Result<()> {
         None
     };
 
-    // Resource-server JWT validation is likewise optional: a local-only or
-    // OIDC-only instance carries no validator, and the extractor's JWT path
-    // 401s inertly (see `auth::middleware::verify_bearer`).
-    let jwt_validator = if config.resource_server_configured() {
-        let transport = oidc_transport.as_ref().context(
-            "resource-server JWT validation is configured but no OIDC transport was built",
-        )?;
-        Some(std::sync::Arc::new(
-            auth::jwt::init_jwt_validator(&config, transport)
-                .await
-                .context("failed to initialize JWT validator")?,
-        ))
-    } else {
-        None
-    };
-
     let ingestion_pool = db::init_pool(
         config.ingestion_database_url.expose_secret(),
         config.db_max_connections,
@@ -386,7 +370,6 @@ pub async fn run() -> anyhow::Result<()> {
         library_files,
         config: config.clone(),
         oidc,
-        jwt_validator,
         login_limiter,
         settings,
         last_settings_reload,

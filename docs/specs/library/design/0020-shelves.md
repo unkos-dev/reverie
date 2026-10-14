@@ -7,7 +7,7 @@ satisfies:
   - "REV-REQ-0057"
   - "REV-REQ-0059"
 governed-by:
-  - "REV-ADR-0028"
+  - "REV-ADR-0056"
   - "REV-ADR-0011"
 ---
 
@@ -133,14 +133,14 @@ it guards against does not arise from any caller-reachable action.
 - `POST /api/v1/shelves/{id}/items` — add a manifestation, `write` scope, available to a child.
 - `DELETE /api/v1/shelves/{id}/items/{manifestation_id}` — remove an item, `write` scope, available to a child.
 
-Every operation's `security(...)` annotation lists the same scope across all four credential transports
-(`session_cookie`, `device_token_bearer`, `oidc_jwt_bearer`, `opds_basic`); the Design "Authorization axes" covers why
-that array is one list rather than four, and the deny-by-default grid that proves each declared scope has a working
-gate. The two read-scope operations (`list_shelves`, `get_shelf_with_items`) call no `require_scope` themselves:
-`CurrentUser`'s extraction already refuses a scopeless credential, so any resolved caller already holds at least `read`.
-`create_shelf`, `rename_shelf` and `delete_shelf` additionally call `require_not_child`; `add_shelf_item` and
-`remove_shelf_item` do not, so a child account can add and remove items on its own shelves and read them, but cannot
-create, rename, or delete a shelf.
+Every operation's `security(...)` annotation lists the same scope across all three credential transports
+(`session_cookie`, `device_token_bearer`, `opds_basic`); the Design "Authorization axes" covers why that array is one
+list rather than three, and the deny-by-default grid that proves each declared scope has a working gate. The two
+read-scope operations (`list_shelves`, `get_shelf_with_items`) call no `require_scope` themselves: `CurrentUser`'s
+extraction already refuses a scopeless credential, so any resolved caller already holds at least `read`. `create_shelf`,
+`rename_shelf` and `delete_shelf` additionally call `require_not_child`; `add_shelf_item` and `remove_shelf_item` do
+not, so a child account can add and remove items on its own shelves and read them, but cannot create, rename, or delete
+a shelf.
 
 `ApiJson` and `ApiPath` (`backend/src/extract.rs`) are the request-body and path-parameter extractors every mutating
 handler uses; their rejection behaviour is the API error contract's concern, referenced here only as the extractors in
@@ -254,7 +254,7 @@ precedes them in the same transaction. This is a documented, deliberate divergen
 one of these predicates is dropped: the `reverie_app` role's grant on both tables is unconditional, so a query missing
 its ownership clause would compile, run, and return rows across every account. The `add_shelf_item` row-level-security
 probe is the one place this subject touches that mechanism, and only to prevent an existence-probing attack against
-manifestation visibility, never to scope the shelf itself. This is the ownership axis REV-ADR-0028 assigns to the data
+manifestation visibility, never to scope the shelf itself. This is the ownership axis REV-ADR-0056 assigns to the data
 layer, enforced by this subject on every route regardless of the additional role gate three of them apply.
 
 Read access to a shelf and its items requires no more than the operation's declared `read` scope and no role check

@@ -22,7 +22,7 @@ readiness probes, and the runtime stage of the container image that packages all
 
 This subject owns: CLI subcommand dispatch (`Command`, `parse_command`); the ordered, fallible setup sequence inside
 `run` (configuration load, CSP header finalisation, tracing, database pools, the schema apply-or-verify step, admin
-storage-root acquisition, admin bootstrap, OIDC and JWT client construction, settings load, login limiter construction,
+storage-root acquisition, admin bootstrap, OIDC client construction, settings load, login limiter construction,
 `AppState` assembly, router build, listener bind); when and in what order the five background workers are spawned; the
 shared-deadline drain that awaits them on shutdown; the `/health` and `/health/ready` probes; and the `runtime` stage of
 `Dockerfile` (its `ENTRYPOINT`, `HEALTHCHECK`, `USER` and `EXPOSE`).
@@ -33,21 +33,20 @@ validation of individual configuration fields, or the `figment` pipeline that pr
 (`backend/src/config/`); how a schema migration is applied, verified, or which role runs it (`backend/src/db.rs`); the
 content of the CSP headers `run` finalises, or the frontend-dist validation it calls (`backend/src/security/csp.rs`,
 `backend/src/security/dist_validation.rs`); session cookie attributes or the session store's own persistence
-(`backend/src/auth/session.rs`, `backend/src/auth/store.rs`); OIDC discovery or JWT validation internals
-(`backend/src/auth/oidc.rs`, `backend/src/auth/jwt.rs`); or the identity mechanics behind the `bootstrap`,
-`reset-password` and `unlock-account` subcommands, which this subject only dispatches to (`backend/src/models/user.rs`,
-`backend/src/auth/recovery.rs`, `backend/src/models/login_throttle.rs`). It does not own the builder or frontend stages
-of `Dockerfile`, only the `runtime` stage that consumes their output. It does not own cross-instance coordination,
-because there is none to own: `run` performs no leader election, node discovery or peer handshake, and every instance of
-the process spawns the same five workers and serves the same routes.
+(`backend/src/auth/session.rs`, `backend/src/auth/store.rs`); OIDC discovery internals (`backend/src/auth/oidc.rs`); or
+the identity mechanics behind the `bootstrap`, `reset-password` and `unlock-account` subcommands, which this subject
+only dispatches to (`backend/src/models/user.rs`, `backend/src/auth/recovery.rs`,
+`backend/src/models/login_throttle.rs`). It does not own the builder or frontend stages of `Dockerfile`, only the
+`runtime` stage that consumes their output. It does not own cross-instance coordination, because there is none to own:
+`run` performs no leader election, node discovery or peer handshake, and every instance of the process spawns the same
+five workers and serves the same routes.
 
 Depends on: `config::Config` for every setting `run` reads; `db::init_pool`, `db::init_writeback_pool`,
 `db::run_migrations` and `db::verify_schema_current` for every database connection it opens;
-`auth::oidc::init_oidc_client` and `auth::jwt::init_jwt_validator` for the two optional identity clients it constructs;
-`security::csp::build_api_csp`, `security::csp::build_html_csp` and `security::dist_validation::validate_frontend_dist`
-for the CSP headers it finalises before building the router; `services::settings::seed_ingestion` for the initial
-settings snapshot; `build_router` for the Axum router it serves; and the five worker entry points named in Structure
-below.
+`auth::oidc::init_oidc_client` for the optional OIDC client it constructs; `security::csp::build_api_csp`,
+`security::csp::build_html_csp` and `security::dist_validation::validate_frontend_dist` for the CSP headers it finalises
+before building the router; `services::settings::seed_ingestion` for the initial settings snapshot; `build_router` for
+the Axum router it serves; and the five worker entry points named in Structure below.
 
 Depended on by: `main.rs`, whose `#[tokio::main]` `main` is the sole caller of `parse_command` and the command
 entrypoints; the container image's `ENTRYPOINT`, which invokes the compiled binary with no arguments (the `Serve` path)
@@ -149,12 +148,12 @@ observation. Watchdog ticks and completion precede queued watcher traffic.
 
 - **`AppState`** (`backend/src/state.rs`) is built exactly once in `run`, after every fallible setup step has succeeded,
   and is `Clone` for cheap distribution to handlers and workers: `pool` and `ingestion_pool` are `Arc`-backed `PgPool`s;
-  `config` is owned, cloned data; `library_files` is a cheap shared `LibraryFiles` handle; `oidc` and `jwt_validator`
-  are `Option<Arc<_>>`s, `None` on an instance that has not configured the corresponding identity mode; `login_limiter`
-  is an `Arc<LoginLimiter>`; `last_settings_reload` is an `Arc<RwLock<..>>` handle written only by the settings worker,
-  not by this subject; `settings` is likewise an `Arc<RwLock<..>>` handle, but it has a second writer outside this
-  subject — the `PUT /api/v1/settings` route handler also writes it directly, as an immediate local-cache update guarded
-  by `apply_if_newer`'s revision check — so neither writer belongs to this subject, but there is more than one.
+  `config` is owned, cloned data; `library_files` is a cheap shared `LibraryFiles` handle; `oidc` is an
+  `Option<Arc<_>>`, `None` on an instance that has not configured OIDC; `login_limiter` is an `Arc<LoginLimiter>`;
+  `last_settings_reload` is an `Arc<RwLock<..>>` handle written only by the settings worker, not by this subject;
+  `settings` is likewise an `Arc<RwLock<..>>` handle, but it has a second writer outside this subject — the
+  `PUT /api/v1/settings` route handler also writes it directly, as an immediate local-cache update guarded by
+  `apply_if_newer`'s revision check — so neither writer belongs to this subject, but there is more than one.
 - **The writeback pool** (`backend/src/db.rs::init_writeback_pool`) is built after `AppState` and is deliberately not
   one of its fields: it is handed directly to the writeback worker's `tokio::spawn` closure and nowhere else. No request
   handler receives it, because no request handler receives anything not reachable through `AppState`.
@@ -196,12 +195,11 @@ observation. Watchdog ticks and completion precede queued watcher traffic.
    context, and the enabled breach check. The breach-check client uses the shared SSRF protections and a ten-second
    timeout; an unavailable breach service logs a warning and permits a sufficiently strong password. Policy rejection
    stops startup without creating the administrator.
-8. One bounded HTTPS OIDC transport is built when either identity mode is configured; local-only mode builds none. The
-   interactive runtime pairs the discovered client with that transport when `config.oidc_configured()` is true,
-   otherwise `AppState.oidc` stays `None`. The resource-server JWT validator is constructed independently when
-   `config.resource_server_configured()` is true, using the same transport. A configured role without a transport fails
-   startup. [OIDC outbound transport](../../accounts/design/0025-oidc-outbound-transport.md) describes the shared client
-   policy and request paths.
+8. One bounded HTTPS OIDC transport is built when `config.oidc_configured()` is true; local-only mode builds none. The
+   interactive runtime pairs the discovered client with that transport; otherwise `AppState.oidc` stays `None`.
+   Configured OIDC without a transport fails startup.
+   [OIDC outbound transport](../../accounts/design/0025-oidc-outbound-transport.md) describes the client policy and
+   request paths.
 9. `db::init_pool` opens the ingestion pool; `services::settings::seed_ingestion` conditionally seeds ingestion fields
    through the primary pool and reads the winning settings row in one transaction; the login rate limiter is built from
    `config.login_rate_per_min`.
@@ -271,11 +269,11 @@ is never reached.
   non-zero process exit: configuration load, an API or HTML CSP string that fails to parse as a valid header value,
   frontend-dist validation, tracing-subscriber installation, any of the three pool opens (application, ingestion,
   writeback), the schema apply-or-verify step, the administrator bootstrap from the environment seed, OIDC discovery,
-  JWT-validator construction, the initial settings load, the login limiter's rate conversion, the TCP listener bind, or
-  reading the bound address back from the listener. Because none of these runs after the first `tokio::spawn`, none of
-  them can leave a worker running with nothing left to drain it. `axum::serve` also returns its error to `main.rs`, but
-  it runs after the workers are spawned; that path is the unclean shutdown in Runtime behaviour, where the workers are
-  drained before `run` returns.
+  the initial settings load, the login limiter's rate conversion, the TCP listener bind, or reading the bound address
+  back from the listener. Because none of these runs after the first `tokio::spawn`, none of them can leave a worker
+  running with nothing left to drain it. `axum::serve` also returns its error to `main.rs`, but it runs after the
+  workers are spawned; that path is the unclean shutdown in Runtime behaviour, where the workers are drained before
+  `run` returns.
 - **Storage-root acquisition failing.** Startup stops before seeds, workers or requests. Configuration errors name the
   root variable; acquisition errors identify the required directory. No request retries acquisition.
 - **Download access failing.** Established escapes map to 403, missing files to 404, and unknown library identities,

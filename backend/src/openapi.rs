@@ -64,20 +64,14 @@ const API_VERSION: &str = "0.1.0";
 ///   ([`crate::auth::token::TOKEN_PREFIX`]). Resolves through the same
 ///   `resolve_device_token` indexed lookup as `opds_basic`; both transports
 ///   share one credential model.
-/// - `oidc_jwt_bearer`: HTTP Bearer, an RFC 9068 resource-server access
-///   token issued by the configured `IdP`. Resolves through
-///   [`crate::auth::jwt::JwtValidator`] and a read-only `(iss, sub)` lookup;
-///   inert (the scheme documents a surface that always 401s) when the
-///   resource-server config is absent. Never provisions an account — see
-///   the module docs on `crate::auth::middleware::verify_bearer`.
 ///
-/// All four schemes carry a `description` documenting that HTTPS is mandatory
+/// All three schemes carry a `description` documenting that HTTPS is mandatory
 /// in production, since Basic credentials, Bearer tokens, and session cookies
 /// are otherwise exposed in cleartext. Transport is enforced operationally
 /// (reverse-proxy TLS; the session cookie is `Secure` when `behind_https`),
 /// not by the spec, so the residual cleartext-credential findings are justified
 /// skips: `owasp-no-http-basic` on `opds_basic`, and `owasp-jwt-best-practices`
-/// on the Bearer schemes. Both are registered in `.vacuum.yaml`.
+/// on the Bearer scheme. Both are registered in `.vacuum.yaml`.
 ///
 /// See `docs/adr/0016-api-versioning-by-url-path-with-openapi-as-the-contract.md`.
 struct SecurityAddon;
@@ -118,20 +112,6 @@ impl Modify for SecurityAddon {
                         "Personal device-token credential (`{prefix}{token_id}.{secret}`). \
                          MUST be used over HTTPS in production; the token is otherwise \
                          exposed in transit.",
-                    ))
-                    .build(),
-            ),
-        );
-        components.add_security_scheme(
-            "oidc_jwt_bearer",
-            SecurityScheme::Http(
-                HttpBuilder::new()
-                    .scheme(HttpAuthScheme::Bearer)
-                    .bearer_format("JWT")
-                    .description(Some(
-                        "RFC 9068 resource-server access token issued by the configured IdP. \
-                         MUST be used over HTTPS in production; the token is otherwise exposed \
-                         in transit.",
                     ))
                     .build(),
             ),

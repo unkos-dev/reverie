@@ -130,7 +130,7 @@ struct StatsResponse {
     summary = "Get library-wide health metrics",
     description = "Returns aggregate library statistics: manifestation and work counts, storage usage by format, validation and enrichment status breakdowns, and metadata coverage. Admin only.",
     tag = "dashboard",
-    security(("session_cookie" = ["admin"]), ("device_token_bearer" = ["admin"]), ("oidc_jwt_bearer" = ["admin"]), ("opds_basic" = ["admin"])),
+    security(("session_cookie" = ["admin"]), ("device_token_bearer" = ["admin"]), ("opds_basic" = ["admin"])),
     responses(
         (status = 200, description = "Library-wide aggregate health metrics. Admin only.", body = StatsResponse),
         (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
@@ -320,7 +320,7 @@ struct ActivityResponse {
     description = "Returns the most recent ingestion batches, newest first, with per-batch outcome counts. Clamped to 1 to 100 batches (default 20). Admin only.",
     tag = "dashboard",
     params(ActivityParams),
-    security(("session_cookie" = ["admin"]), ("device_token_bearer" = ["admin"]), ("oidc_jwt_bearer" = ["admin"]), ("opds_basic" = ["admin"])),
+    security(("session_cookie" = ["admin"]), ("device_token_bearer" = ["admin"]), ("opds_basic" = ["admin"])),
     responses(
         (status = 200, description = "Most-recent ingestion batches, newest first. Admin only.", body = ActivityResponse),
         (status = 400, description = "Malformed query parameter", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),

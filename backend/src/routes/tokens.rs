@@ -108,7 +108,7 @@ struct TokenListItem {
     description = "Issues a device token for the caller and returns its Bearer credential exactly once; only its hash is persisted afterwards. Returns 403 if a requested scope exceeds the caller's role and 422 if the caller already has 10 active tokens.",
     tag = "tokens",
     request_body = CreateTokenRequest,
-    security(("session_cookie" = ["write"]), ("device_token_bearer" = ["write"]), ("oidc_jwt_bearer" = ["write"]), ("opds_basic" = ["write"])),
+    security(("session_cookie" = ["write"]), ("device_token_bearer" = ["write"]), ("opds_basic" = ["write"])),
     responses(
         (status = 201, description = "Token created. The `token` field is the Bearer credential, returned exactly once — only its SHA-256 hash is persisted.", body = CreateTokenResponse),
         (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
@@ -205,7 +205,7 @@ async fn create_token(
     summary = "List device tokens",
     description = "Returns the caller's active device tokens, without the plaintext credential or its stored hash.",
     tag = "tokens",
-    security(("session_cookie" = ["read"]), ("device_token_bearer" = ["read"]), ("oidc_jwt_bearer" = ["read"]), ("opds_basic" = ["read"])),
+    security(("session_cookie" = ["read"]), ("device_token_bearer" = ["read"]), ("opds_basic" = ["read"])),
     responses(
         (status = 200, description = "The caller's active device tokens, hash and plaintext elided", body = [TokenListItem]),
         (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
@@ -247,7 +247,7 @@ async fn list_tokens(
     description = "Revokes one of the caller's device tokens by id. Returns 404 if the token does not exist, belongs to another user, or is already revoked (ownership is not leaked).",
     tag = "tokens",
     params(("id" = Uuid, Path, description = "Token row id")),
-    security(("session_cookie" = ["write"]), ("device_token_bearer" = ["write"]), ("oidc_jwt_bearer" = ["write"]), ("opds_basic" = ["write"])),
+    security(("session_cookie" = ["write"]), ("device_token_bearer" = ["write"]), ("opds_basic" = ["write"])),
     responses(
         (status = 204, description = "Token revoked"),
         (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
@@ -353,7 +353,6 @@ mod tests {
             library_files,
             config,
             oidc: Some(std::sync::Arc::new(test_support::test_oidc_runtime())),
-            jwt_validator: None,
             login_limiter: test_support::test_login_limiter(),
             settings: test_support::test_settings(),
             last_settings_reload: std::sync::Arc::new(tokio::sync::RwLock::new(None)),

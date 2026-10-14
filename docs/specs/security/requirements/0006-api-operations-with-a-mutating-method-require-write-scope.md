@@ -4,7 +4,7 @@ profile-version: 1
 id: "REV-REQ-0006"
 title: "API operations with a mutating method require write scope"
 governed-by:
-  - "REV-ADR-0028"
+  - "REV-ADR-0056"
 ---
 
 # API operations with a mutating method require write scope
@@ -28,7 +28,6 @@ write their responses to `api_cache`; it changes no manifestation.
   `mutating_verb_ops_require_write_scope` in `backend/src/authz_matrix.rs`, which also fails when an allow-list entry
   matches no operation, so the list holds no stale route. The check reads route paths only; that the allow-listed
   operation still writes no manifestation, metadata version or writeback job is held by review.
-- A credential carrying only `read` is refused with `403` by every operation declared at `write` or higher, for both
-  device-token and JWT credentials. Checked by `read_token_blocked_from_every_mutation` and
-  `jwt_read_scope_claim_blocked_from_every_mutation`.
+- A credential carrying only `read` is refused with `403` by every operation declared at `write` or higher, using device
+  tokens. Checked by `read_token_blocked_from_every_mutation`.
 - `POST /api/v1/manifestations/{id}/enrichment/dry-run` declares `read` and is reachable with a `read` credential.

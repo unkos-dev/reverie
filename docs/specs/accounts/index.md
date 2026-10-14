@@ -7,7 +7,7 @@
 - [REV-REQ-0029](requirements/0029-a-session-predating-a-change-to-its-account-is-refused-and-destr.md): A session predating a change to its account is refused and destroyed
 - [REV-REQ-0030](requirements/0030-a-disabled-account-is-refused-on-every-credential-type.md): A disabled account is refused on every credential type
 - [REV-REQ-0031](requirements/0031-a-credential-s-scope-is-never-widened-beyond-what-it-grants.md): A credential's scope is never widened beyond what it grants
-- [REV-REQ-0032](requirements/0032-a-bearer-token-for-an-unlinked-identity-never-provisions-an-acco.md): A bearer token for an unlinked identity never provisions an account
+- [REV-REQ-0032](requirements/0032-a-bearer-token-for-an-unlinked-identity-never-provisions-an-acco.md): External bearer tokens never authenticate API requests
 - [REV-REQ-0033](requirements/0033-an-authentication-failure-carries-the-challenge-for-the-route-s.md): An authentication failure carries the challenge for the route's credential type
 - [REV-REQ-0034](requirements/0034-an-expired-session-never-authenticates-a-request.md): An expired session never authenticates a request
 - [REV-REQ-0035](requirements/0035-a-lapsed-session-redirects-the-browser-to-sign-in-once.md): A lapsed session redirects the browser to sign-in once

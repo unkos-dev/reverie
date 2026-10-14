@@ -19,9 +19,6 @@
 
 pub mod basic_only;
 
-/// Resource-server JWT (RFC 9068 access token) validation for API callers.
-pub mod jwt;
-
 /// `CurrentUser` extractor: resolves identity via session cookie or Basic auth.
 pub mod middleware;
 

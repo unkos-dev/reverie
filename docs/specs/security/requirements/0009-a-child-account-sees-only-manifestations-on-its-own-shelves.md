@@ -4,7 +4,7 @@ profile-version: 1
 id: "REV-REQ-0009"
 title: "A child account sees only manifestations on its own shelves"
 governed-by:
-  - "REV-ADR-0028"
+  - "REV-ADR-0056"
 ---
 
 # A child account sees only manifestations on its own shelves

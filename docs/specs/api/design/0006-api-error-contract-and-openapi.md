@@ -90,17 +90,17 @@ and the 401 recovery funnel in `frontend/src/lib/query/client.ts` (the Design "S
   `axum::extract::Path` or a bare `axum::Json` as a request extractor. Query-string extraction has no equivalent
   wrapper: every query-accepting handler instead declares `params: Result<Query<T>, QueryRejection>` from
   `axum_extra::extract` and `?`-propagates it, relying on the `From<QueryRejection>` impl directly.
-- `backend/src/openapi.rs` is the document generator. `SecurityAddon` (a `utoipa::Modify` impl) registers the four
-  security schemes (`session_cookie`, `opds_basic`, `device_token_bearer`, `oidc_jwt_bearer`); `ApiDoc` carries the
-  document metadata, the document-level `security(("session_cookie" = []))` default, the component-schema list, and the
-  tag descriptions. `ProblemDetails` is the shared runtime-and-schema struct: `AppError::into_response` and
-  `health::ready` both construct it directly, and its own `IntoResponse` impl sets the `application/problem+json`
-  content type and fills `instance` from `current_request_uri()` when the caller left it `None`. `pilot_router()` seeds
-  an `OpenApiRouter` with `ApiDoc::openapi()` and merges the `OpenApiRouter` each documented module exposes (`health`,
-  `library`, `suggest`, `series`, `dashboard`, `shelves`, `users`, `settings`, `tokens`, `metadata`, `reading`,
-  `enrichment`, `ingestion`, `auth`, `preferences`, and the OPDS cover-download dual mount). `router()` takes the
-  axum-router half for `crate::build_router` to mount; `spec_json()` merges the OPDS feed routes' own `OpenApiRouter` on
-  top of `pilot_router()` first — documenting them unconditionally even though their runtime mount is gated on the
+- `backend/src/openapi.rs` is the document generator. `SecurityAddon` (a `utoipa::Modify` impl) registers the three
+  security schemes (`session_cookie`, `opds_basic`, `device_token_bearer`); `ApiDoc` carries the document metadata, the
+  document-level `security(("session_cookie" = []))` default, the component-schema list, and the tag descriptions.
+  `ProblemDetails` is the shared runtime-and-schema struct: `AppError::into_response` and `health::ready` both construct
+  it directly, and its own `IntoResponse` impl sets the `application/problem+json` content type and fills `instance`
+  from `current_request_uri()` when the caller left it `None`. `pilot_router()` seeds an `OpenApiRouter` with
+  `ApiDoc::openapi()` and merges the `OpenApiRouter` each documented module exposes (`health`, `library`, `suggest`,
+  `series`, `dashboard`, `shelves`, `users`, `settings`, `tokens`, `metadata`, `reading`, `enrichment`, `ingestion`,
+  `auth`, `preferences`, and the OPDS cover-download dual mount). `router()` takes the axum-router half for
+  `crate::build_router` to mount; `spec_json()` merges the OPDS feed routes' own `OpenApiRouter` on top of
+  `pilot_router()` first — documenting them unconditionally even though their runtime mount is gated on the
   `opds.enabled` setting. `ExtractorResponses`, a `utoipa::Modify` implementation, adds missing extractor responses to
   this complete document before `spec_json()` serialises it as pretty-printed JSON with a trailing newline.
 - Each documented handler carries its own `#[utoipa::path(...)]` annotation naming its path, tag, per-operation
@@ -111,7 +111,7 @@ and the 401 recovery funnel in `frontend/src/lib/query/client.ts` (the Design "S
 - `backend/tests/gen_openapi.rs` is the drift gate: `spec_json()` must render byte-identical to the committed
   `backend/openapi.json` (`REGEN=1 cargo test --test gen_openapi` rewrites it), plus narrower assertions: every
   `ProblemDetails`-referencing response declares `application/problem+json` as its only content type, the document
-  reports `openapi: "3.1.x"` and covers `/health`/`/health/ready`, the four security schemes and the document-level
+  reports `openapi: "3.1.x"` and covers `/health`/`/health/ready`, the three security schemes and the document-level
   deny-by-default are present, and a handful of library, series and dashboard routes and their DTO schemas are
   registered. The extractor coverage test requires `400`/`413`/`415`/`422` for JSON-body operations and `400` for
   path-parameter operations, each as `application/problem+json`, and rejects an empty operation census. Unit tests in

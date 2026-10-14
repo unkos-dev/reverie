@@ -193,7 +193,10 @@
       "id": "REV-ADR-0028",
       "kind": "adr",
       "path": "docs/adr/0028-api-authorization-orthogonal-scope-role-and-ownership-axes.md",
-      "status": "accepted",
+      "status": "superseded",
+      "superseded-by": [
+        "REV-ADR-0056"
+      ],
       "title": "API authorization: orthogonal scope, role, and ownership axes"
     },
     {
@@ -404,6 +407,16 @@
       "title": "Production analysis and credential test boundaries"
     },
     {
+      "id": "REV-ADR-0056",
+      "kind": "adr",
+      "path": "docs/adr/0056-api-authorisation-scope-role-and-ownership-axes-over-reverie-issued-credentials.md",
+      "status": "accepted",
+      "supersedes": [
+        "REV-ADR-0028"
+      ],
+      "title": "API authorisation: scope, role and ownership axes over Reverie-issued credentials"
+    },
+    {
       "governed-by": [
         "REV-ADR-0041",
         "REV-ADR-0047"
@@ -432,7 +445,7 @@
     },
     {
       "governed-by": [
-        "REV-ADR-0028"
+        "REV-ADR-0056"
       ],
       "id": "REV-DESIGN-0003",
       "kind": "design",
@@ -445,7 +458,7 @@
     },
     {
       "governed-by": [
-        "REV-ADR-0028",
+        "REV-ADR-0056",
         "REV-ADR-0017",
         "REV-ADR-0052"
       ],
@@ -538,7 +551,7 @@
     },
     {
       "governed-by": [
-        "REV-ADR-0028"
+        "REV-ADR-0056"
       ],
       "id": "REV-DESIGN-0010",
       "kind": "design",
@@ -693,7 +706,7 @@
     },
     {
       "governed-by": [
-        "REV-ADR-0028",
+        "REV-ADR-0056",
         "REV-ADR-0011"
       ],
       "id": "REV-DESIGN-0020",
@@ -707,7 +720,7 @@
     },
     {
       "governed-by": [
-        "REV-ADR-0028",
+        "REV-ADR-0056",
         "REV-ADR-0011"
       ],
       "id": "REV-DESIGN-0021",
@@ -823,7 +836,7 @@
     },
     {
       "governed-by": [
-        "REV-ADR-0028"
+        "REV-ADR-0056"
       ],
       "id": "REV-REQ-0005",
       "kind": "req",
@@ -832,7 +845,7 @@
     },
     {
       "governed-by": [
-        "REV-ADR-0028"
+        "REV-ADR-0056"
       ],
       "id": "REV-REQ-0006",
       "kind": "req",
@@ -841,7 +854,7 @@
     },
     {
       "governed-by": [
-        "REV-ADR-0028"
+        "REV-ADR-0056"
       ],
       "id": "REV-REQ-0007",
       "kind": "req",
@@ -850,7 +863,7 @@
     },
     {
       "governed-by": [
-        "REV-ADR-0028"
+        "REV-ADR-0056"
       ],
       "id": "REV-REQ-0008",
       "kind": "req",
@@ -859,7 +872,7 @@
     },
     {
       "governed-by": [
-        "REV-ADR-0028"
+        "REV-ADR-0056"
       ],
       "id": "REV-REQ-0009",
       "kind": "req",
@@ -1012,7 +1025,7 @@
     },
     {
       "governed-by": [
-        "REV-ADR-0028"
+        "REV-ADR-0056"
       ],
       "id": "REV-REQ-0029",
       "kind": "req",
@@ -1021,7 +1034,7 @@
     },
     {
       "governed-by": [
-        "REV-ADR-0028"
+        "REV-ADR-0056"
       ],
       "id": "REV-REQ-0030",
       "kind": "req",
@@ -1030,7 +1043,7 @@
     },
     {
       "governed-by": [
-        "REV-ADR-0028"
+        "REV-ADR-0056"
       ],
       "id": "REV-REQ-0031",
       "kind": "req",
@@ -1039,16 +1052,16 @@
     },
     {
       "governed-by": [
-        "REV-ADR-0028"
+        "REV-ADR-0056"
       ],
       "id": "REV-REQ-0032",
       "kind": "req",
       "path": "docs/specs/accounts/requirements/0032-a-bearer-token-for-an-unlinked-identity-never-provisions-an-acco.md",
-      "title": "A bearer token for an unlinked identity never provisions an account"
+      "title": "External bearer tokens never authenticate API requests"
     },
     {
       "governed-by": [
-        "REV-ADR-0028"
+        "REV-ADR-0056"
       ],
       "id": "REV-REQ-0033",
       "kind": "req",
@@ -1237,7 +1250,7 @@
     },
     {
       "governed-by": [
-        "REV-ADR-0028"
+        "REV-ADR-0056"
       ],
       "id": "REV-REQ-0056",
       "kind": "req",
@@ -1264,7 +1277,7 @@
     },
     {
       "governed-by": [
-        "REV-ADR-0028"
+        "REV-ADR-0056"
       ],
       "id": "REV-REQ-0059",
       "kind": "req",

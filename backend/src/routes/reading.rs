@@ -129,7 +129,7 @@ impl ReadingStateRow {
     summary = "Get reading state",
     description = "Returns the caller's reading state for one book; all-null fields mean the book is unread.",
     tag = "reading",
-    security(("session_cookie" = ["read"]), ("device_token_bearer" = ["read"]), ("oidc_jwt_bearer" = ["read"]), ("opds_basic" = ["read"])),
+    security(("session_cookie" = ["read"]), ("device_token_bearer" = ["read"]), ("opds_basic" = ["read"])),
     params(("id" = Uuid, Path, description = "Manifestation id")),
     responses(
         (status = 200, description = "Caller's reading state; all-null fields mean unread (no row yet)", body = ReadingState,
@@ -281,7 +281,7 @@ fn apply_patch(existing: ReadingStateRow, req: &UpdateReadingRequest) -> Reading
     summary = "Update reading state",
     description = "Applies a partial update to the caller's reading state for one book, such as status, rating, or notes. Requires an `If-Match` header; fails with 428 when it is absent, 412 when it does not match the caller's current entity-tag, and 400 when it is malformed or refused by policy.",
     tag = "reading",
-    security(("session_cookie" = ["write"]), ("device_token_bearer" = ["write"]), ("oidc_jwt_bearer" = ["write"]), ("opds_basic" = ["write"])),
+    security(("session_cookie" = ["write"]), ("device_token_bearer" = ["write"]), ("opds_basic" = ["write"])),
     params(
         ("id" = Uuid, Path, description = "Manifestation id"),
         ("If-Match" = String, Header, description = "Exactly one quoted strong entity-tag, as returned in a prior GET or PATCH response's ETag header. Opaque content follows the full RFC 9110 8.8.3 grammar, obs-text included. The * wildcard, entity-tag lists, weak tags, and repeated instances of this field are refused with 400. Required: absent means 428; unequal means 412")

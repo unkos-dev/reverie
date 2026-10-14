@@ -4,7 +4,7 @@ profile-version: 1
 id: "REV-REQ-0008"
 title: "Requests write manifestations only within the caller's RLS scope"
 governed-by:
-  - "REV-ADR-0028"
+  - "REV-ADR-0056"
 ---
 
 # Requests write manifestations only within the caller's RLS scope

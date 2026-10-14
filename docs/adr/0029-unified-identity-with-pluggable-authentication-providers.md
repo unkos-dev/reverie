@@ -195,9 +195,9 @@ OIDC becomes optional, and secrets accept a file-based variant in addition to en
   ([First-party session layer on the tower-sessions core](./0015-first-party-session-layer-on-the-tower-sessions-core.md)):
   both providers reuse that layer's session login routine (`cycle_id` on login, `session_version` force-logout)
   unchanged.
-- API authorization (scopes, scoped tokens, and resource-server token validation) is decided separately in the
-  [API authorization model ADR](./0028-api-authorization-orthogonal-scope-role-and-ownership-axes.md) and is out of
-  scope here.
+- API authorisation (scopes, roles, ownership and Reverie-issued credentials) is decided separately in the
+  [API authorisation model ADR](./0056-api-authorisation-scope-role-and-ownership-axes-over-reverie-issued-credentials.md)
+  and is out of scope here.
 - Deferred to later work, named here so the boundary is explicit: multi-factor authentication, email-based self-service
   reset, recovery codes, a first-run setup token, trusting edge-asserted identity, administrator impersonation,
   WebAuthn/FIDO2 passkeys, and a multi-issuer runtime. Passkeys land in their own credentials table (one user to many),

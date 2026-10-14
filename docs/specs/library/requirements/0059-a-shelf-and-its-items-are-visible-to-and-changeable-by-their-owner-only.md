@@ -4,7 +4,7 @@ profile-version: 1
 id: "REV-REQ-0059"
 title: "A shelf and its items are visible to and changeable by their owner only"
 governed-by:
-  - "REV-ADR-0028"
+  - "REV-ADR-0056"
 ---
 
 # A shelf and its items are visible to and changeable by their owner only
@@ -23,8 +23,8 @@ it, including a child account on the same instance whose reading is scoped away 
 shelf tables are not protected by the database's row-level policies, so the ownership check in the request path is the
 only thing standing between one account's shelves and the rest; if it were missing on a single route, that route would
 leak or alter another account's arrangement with nothing else to catch it. The
-[authorization axes decision](../../../adr/0028-api-authorization-orthogonal-scope-role-and-ownership-axes.md) names
-resource ownership as an axis every mutating route enforces server-side.
+[authorization axes decision](../../../adr/0056-api-authorisation-scope-role-and-ownership-axes-over-reverie-issued-credentials.md)
+names resource ownership as an axis every mutating route enforces server-side.
 
 ## Acceptance criteria
 

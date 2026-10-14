@@ -4,7 +4,7 @@ profile-version: 1
 id: "REV-REQ-0033"
 title: "An authentication failure carries the challenge for the route's credential type"
 governed-by:
-  - "REV-ADR-0028"
+  - "REV-ADR-0056"
 ---
 
 # An authentication failure carries the challenge for the route's credential type

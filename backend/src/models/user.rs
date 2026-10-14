@@ -404,6 +404,7 @@ pub async fn enable_account(
 /// # Errors
 ///
 /// Returns [`sqlx::Error`] from the identity lookup or the user `SELECT`.
+#[cfg(test)]
 pub async fn find_by_oidc_identity(
     pool: &PgPool,
     issuer: &str,

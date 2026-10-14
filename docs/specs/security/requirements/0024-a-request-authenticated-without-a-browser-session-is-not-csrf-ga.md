@@ -17,7 +17,7 @@ CSRF token, including a request authenticated by a device token or HTTP Basic cr
 ## Rationale
 
 The OWASP CSRF threat model rests on the browser attaching a credential to a cross-site request on its own, and the
-cookie is the credential it attaches that way. A Bearer device token or JWT is set by the client alone. A cached Basic
+cookie is the credential it attaches that way. A Bearer device token is set by the client alone. A cached Basic
 credential is re-sent by a browser only within the protection space where it was challenged
 ([RFC 7617 §2.2](https://www.rfc-editor.org/rfc/rfc7617#section-2.2)); Reverie issues its Basic challenge on the OPDS
 routes alone, no mutating route exists there, and the `/api/v1` challenge is `Bearer`, which prompts for nothing. A
@@ -25,7 +25,7 @@ request that carries only an `Authorization` header therefore reaches a mutating
 header there, and gating it on a token it was never asked to send would refuse every reader app and device-token
 consumer for no security benefit. See the
 [OWASP CSRF cheat sheet](https://cheatsheetseries.owasp.org/cheatsheets/Cross-Site_Request_Forgery_Prevention_Cheat_Sheet.html).
-[REV-ADR-0028](../../../adr/0028-api-authorization-orthogonal-scope-role-and-ownership-axes.md) and
+[REV-ADR-0056](../../../adr/0056-api-authorisation-scope-role-and-ownership-axes-over-reverie-issued-credentials.md) and
 [REV-ADR-0029](../../../adr/0029-unified-identity-with-pluggable-authentication-providers.md) record the credential
 types this exemption covers.
 
@@ -35,7 +35,7 @@ types this exemption covers.
   rather than being refused for a missing or mismatched token. Checked by `change_own_password_oidc_only_returns_422` in
   `backend/src/routes/users/tests.rs` and the Basic-authenticated `create_token_*` tests in
   `backend/src/routes/tokens.rs`.
-- A `POST` mutation authenticated by a bearer device token or JWT, carrying no `X-CSRF-Token` header, reaches its
-  handler rather than being refused for a missing or mismatched token. No automated check exercises this case directly;
-  it is verified by inspection of `csrf_required` in `backend/src/security/csrf.rs`, whose exemption reads only the
-  session's `user_id` claim and does not distinguish a Bearer-authenticated request from any other session-less request.
+- A `POST` mutation authenticated by a bearer device token, carrying no `X-CSRF-Token` header, reaches its handler
+  rather than being refused for a missing or mismatched token. No automated check exercises this case directly; it is
+  verified by inspection of `csrf_required` in `backend/src/security/csrf.rs`, whose exemption reads only the session's
+  `user_id` claim and does not distinguish a Bearer-authenticated request from any other session-less request.

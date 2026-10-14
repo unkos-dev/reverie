@@ -90,8 +90,8 @@
         "description": "Cross-cutting (accepted): one canonical users identity with pluggable providers. user_identities keyed on (issuer, subject); local_credentials holds password hashes; users.oidc_subject is vestigial/nullable. OIDC first-user auto-promotion is retired (first login is non-admin; admin only via bootstrap). Single first-admin path, shared session-establishment, and verified-email linking are load-bearing invariants."
       },
       {
-        "path": "docs/adr/0028-api-authorization-orthogonal-scope-role-and-ownership-axes.md",
-        "description": "Cross-cutting (accepted): API authorization on orthogonal scope, role, and ownership axes enforced server-side. Resource-server token validation pins iss + aud and the alg from the JWK; scope/role/child/ownership checks live at the data layer, not in handler prose."
+        "path": "docs/adr/0056-api-authorisation-scope-role-and-ownership-axes-over-reverie-issued-credentials.md",
+        "description": "Cross-cutting (accepted): API authorisation keeps scope, role and ownership as independent server-side checks. API credentials are Reverie-issued scoped tokens; external identity-provider bearer tokens are refused. Local sign-in and OIDC browser sign-in establish Reverie sessions."
       },
       {
         "path": "docs/adr/0016-api-versioning-by-url-path-with-openapi-as-the-contract.md",
