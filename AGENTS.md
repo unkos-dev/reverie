@@ -191,8 +191,8 @@ Two aggregates anchor the local loop and should be the default reflex:
   the token-gated ones.
 - `just preflight-detach [scoped|full]` runs either gate detached from the terminal (setsid), so a long run survives a
   session or turn boundary without a hand-rolled setsid-plus-log-file pipeline. It prints the log path immediately and
-  returns; the log lands under the same `$XDG_STATE_HOME/reverie/gate/` area the lane records use, and `just
-gate-status` replays the verdict once the run finishes.
+  returns; the log lands under the same `$XDG_STATE_HOME/reverie/gate/` area the lane records use, and
+  `just gate-status` replays the verdict once the run finishes.
 
 Both gates end with a single verdict line, `GATE: PASS <label> (...)` or `GATE: FAIL <label> at <lane> (...)`. Read that
 line, not the tail of the last lane's output: piping a gate run replaces its exit status with the pipe's, and a
