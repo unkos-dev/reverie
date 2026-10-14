@@ -152,11 +152,6 @@ and the 401 recovery funnel in `frontend/src/lib/query/client.ts` (the Design "S
   Classification depends on accurate request-body and parameter annotations; it does not inspect Rust extractor types or
   resolve referenced request bodies and parameters. The document tests check extractor status coverage and the Problem
   Details content type; they do not infer every business error an endpoint can return.
-- Shared response types in `openapi.rs` own the identical authentication-required and adult-required responses used by
-  metadata, token, shelf and API cover operations. Cover-specific response types in `routes/opds/covers.rs` own the
-  shared not-modified and missing-cover responses. Handler annotations expand these through Utoipa's inline `ToResponse`
-  support; the generated responses remain inline. Operation-specific descriptions and security requirements stay with
-  each handler.
 - On the client, `apiFetch` (`frontend/src/api/fetch.ts`) is the sole interface between the SPA and `fetch()`, and
   `ApiError` is the sole typed error surface every caller under `frontend/src/` branches on.
 

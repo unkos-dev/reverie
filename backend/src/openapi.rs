@@ -187,30 +187,6 @@ pub struct ProblemDetails {
     pub instance: Option<String>,
 }
 
-/// Authentication failure on the JSON API surface.
-pub(crate) struct AuthenticationRequiredResponse;
-
-impl<'r> utoipa::ToResponse<'r> for AuthenticationRequiredResponse {
-    fn response() -> (&'r str, RefOr<Response>) {
-        (
-            "AuthenticationRequiredResponse",
-            problem_response("Authentication required"),
-        )
-    }
-}
-
-/// Role refusal for operations restricted to adult accounts.
-pub(crate) struct AdultRequiredResponse;
-
-impl<'r> utoipa::ToResponse<'r> for AdultRequiredResponse {
-    fn response() -> (&'r str, RefOr<Response>) {
-        (
-            "AdultRequiredResponse",
-            problem_response("Caller is a child account"),
-        )
-    }
-}
-
 struct ExtractorResponses;
 
 impl Modify for ExtractorResponses {
@@ -281,7 +257,7 @@ fn has_path_parameter(parameters: Option<&[RefOr<Parameter>]>) -> bool {
     })
 }
 
-pub(crate) fn problem_response(description: &str) -> RefOr<Response> {
+fn problem_response(description: &str) -> RefOr<Response> {
     ResponseBuilder::new()
         .description(description)
         .content(
