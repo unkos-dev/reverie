@@ -1808,38 +1808,28 @@ fn string_property_names() -> utoipa::openapi::schema::Object {
 }
 
 fn update_metadata_work_identifiers_schema() -> utoipa::openapi::schema::Object {
-    use utoipa::openapi::schema::{ObjectBuilder, SchemaType, Type};
-    ObjectBuilder::new()
-        .schema_type(SchemaType::from_iter([Type::Object, Type::Null]))
-        .description(Some(
-            "Work-level external identifiers keyed by scheme (e.g.\n\
+    update_metadata_identifiers_schema(
+        "Work-level external identifiers keyed by scheme (e.g.\n\
              `{\"openlibrary\": \"OL45804W\"}`). Each entry independently sets its\n\
              scheme's single slot; a `null` entry clears it. Absent (or `null`)\n\
              leaves all work-level identifiers unchanged. Handled separately from\n\
              the scalar fields — not part of [`Self::populated`].",
-        ))
-        .additional_properties(Some(utoipa::openapi::Schema::Object(
-            nullable_string_value_schema(),
-        )))
-        .property_names(Some(
-            ObjectBuilder::new()
-                .schema_type(Type::String)
-                .max_length(Some(12))
-                .build(),
-        ))
-        .max_properties(Some(MAX_IDENTIFIERS_PER_LEVEL))
-        .build()
+    )
 }
 
 fn update_metadata_manifestation_identifiers_schema() -> utoipa::openapi::schema::Object {
+    update_metadata_identifiers_schema(
+        "Manifestation-level external identifiers keyed by scheme (e.g.\n\
+             `{\"googlebooks\": \"zyTZAAAAYAAJ\"}`). Same per-entry set/clear semantics\n\
+             as `work_identifiers`.",
+    )
+}
+
+fn update_metadata_identifiers_schema(description: &str) -> utoipa::openapi::schema::Object {
     use utoipa::openapi::schema::{ObjectBuilder, SchemaType, Type};
     ObjectBuilder::new()
         .schema_type(SchemaType::from_iter([Type::Object, Type::Null]))
-        .description(Some(
-            "Manifestation-level external identifiers keyed by scheme (e.g.\n\
-             `{\"googlebooks\": \"zyTZAAAAYAAJ\"}`). Same per-entry set/clear semantics\n\
-             as `work_identifiers`.",
-        ))
+        .description(Some(description))
         .additional_properties(Some(utoipa::openapi::Schema::Object(
             nullable_string_value_schema(),
         )))
