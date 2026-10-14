@@ -325,7 +325,18 @@ as described above.
 
 ### Paused reasons
 
-A paused notice carries exactly one reason:
+Administrator suspension and dependency health are separate conditions. One paused notice shows both when both apply;
+neither condition hides the other. Re-enabling ingestion clears administrator suspension but does not clear a dependency
+problem. The status API represents these conditions separately.
+
+Disabling ingestion stops new attempts. An admitted attempt can finish, and publication recovery, discovery and scans
+continue. The notice must not imply that disabling ingestion stops all work immediately.
+
+The live `ingestion_enabled` setting is persisted in the database and defaults to true. It has no environment variable
+or seed marker.
+
+The dependency reason uses the corresponding sentence and check below. Administrator suspension appears in the same
+notice when ingestion is disabled by an administrator; its wording remains unsettled.
 
 | Reason | Sentence | What to check |
 | ------ | -------- | ------------- |
@@ -338,7 +349,9 @@ A paused notice carries exactly one reason:
 | Paused by an administrator | Copy not yet settled. | Copy not yet settled. |
 
 The closing sentences of the paused notice ("Reverie checks again every few minutes ...") also depend on the reason. The
-wording for "Paused by an administrator" is settled together with its sentence and check.
+wording for "Paused by an administrator" is settled together with its sentence and check. When both conditions apply,
+the notice must distinguish dependency recovery from administrator action: a successful probe does not re-enable
+ingestion. The combined wording remains unsettled.
 
 ### Other paused-notice states
 
@@ -348,8 +361,8 @@ wording for "Paused by an administrator" is settled together with its sentence a
 - **Session ended (401).** "Your session has ended" / "Sign in again to see ingestion status."
 - **While paused or stopped:**
   - The scan hint reads "Imports wait while ingestion is paused."
-  - An accepted scan keeps its title and its detail reads "Ingestion is paused, so nothing is being imported yet. Queued
-    and waiting files start by themselves once it resumes. Unchanged files were left as they are."
+  - An accepted scan keeps its title. Its detail explains that new attempts wait until ingestion is enabled and its
+    dependencies are healthy, while an admitted attempt can finish. The final wording remains unsettled.
   - The latest-activity line is hidden, so a stale "running" batch cannot contradict the notice.
 - **Refresh.** The status is read when the page opens and on window focus, and every 30 seconds while the page is
   visible.
