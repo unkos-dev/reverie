@@ -359,10 +359,15 @@ ingestion. The combined wording remains unsettled.
   importing." with an outline "Try again".
 - **Forbidden (403).** An alert: "This account cannot see ingestion status" / "Sign in as an administrator."
 - **Session ended (401).** "Your session has ended" / "Sign in again to see ingestion status."
-- **While paused or stopped:**
+- **While paused:**
   - The scan hint reads "Imports wait while ingestion is paused."
   - An accepted scan keeps its title. Its detail explains that new attempts wait until ingestion is enabled and its
     dependencies are healthy, while an admitted attempt can finish. The final wording remains unsettled.
+- **While stopped:**
+  - The scan hint and any retained accepted-scan feedback explain that the worker has stopped and Reverie must be
+    restarted. They do not promise that admitted attempts can finish or that enabling ingestion or fixing a dependency
+    restarts the worker. The final wording remains unsettled.
+- **While paused or stopped:**
   - The latest-activity line is hidden, so a stale "running" batch cannot contradict the notice.
 - **Refresh.** The status is read when the page opens and on window focus, and every 30 seconds while the page is
   visible.
