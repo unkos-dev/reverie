@@ -57,6 +57,7 @@ pub struct CallbackParams {
     code: String,
     /// OIDC anti-forgery state echoed back by the `IdP`; must match the
     /// value `/auth/oidc/login` stored in the session.
+    #[param(max_length = 22)]
     state: String,
 }
 

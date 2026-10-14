@@ -10,11 +10,13 @@ lift-when: All temporary string-limit and array-limit paths are removed after ve
 # Request bounds exposed by Vacuum 0.32.0
 
 Vacuum now detects request schemas previously missed by its OWASP rules. The temporary baseline in
-[.vacuum-ignore.yaml](../.vacuum-ignore.yaml) covers 152 string-limit and 18 array-limit findings on adoption. Both
-rules remain enabled; this defers schema corrections and runtime hardening.
+[.vacuum-ignore.yaml](../.vacuum-ignore.yaml) covers 88 string-limit and one array-limit finding. Both rules remain
+enabled; this defers schema corrections and runtime hardening.
 
 - Existing runtime bounds: publish accurate schema limits or enums, then remove the corresponding paths.
-- Normalised inputs and missing bounds: agree raw-input limits, enforce them with boundary tests, and remove the paths.
+- Normalised inputs: preserve supported cleanup before validation; remove paths only when the schema describes that
+  acceptance.
+- Missing bounds: agree limits, enforce them with boundary tests, and remove the paths.
 - Contract-dependent inputs: decide each contract separately, then replace its temporary path with a verified bound or a
   documented exception.
 

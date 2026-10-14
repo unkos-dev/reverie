@@ -68,7 +68,7 @@ pub fn router() -> OpenApiRouter<AppState> {
     description = "Re-queues the manifestation for a fresh enrichment pass. An idle manifestation is reset to pending immediately; one with an active run is re-queued once that run completes. Not available to child accounts.",
     tag = "enrichment",
     security(("session_cookie" = ["write"]), ("device_token_bearer" = ["write"]), ("opds_basic" = ["write"])),
-    params(("id" = Uuid, Path, description = "Manifestation id")),
+    params(("id" = Uuid, Path, max_length = 45, description = "Manifestation id")),
     responses(
         (status = 202, description = "Re-run scheduled: an idle manifestation is reset to pending for the background worker's next poll; one with an active run is re-queued when that run completes"),
         (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
@@ -138,7 +138,7 @@ async fn trigger(
     description = "Runs the enrichment pipeline synchronously against the manifestation without saving any change, and returns the diff it would make. Per-source failures are listed in the response rather than failing the request. Not available to child accounts.",
     tag = "enrichment",
     security(("session_cookie" = ["read"]), ("device_token_bearer" = ["read"]), ("opds_basic" = ["read"])),
-    params(("id" = Uuid, Path, description = "Manifestation id")),
+    params(("id" = Uuid, Path, max_length = 45, description = "Manifestation id")),
     responses(
         (status = 200, description = "Diff of changes an enrichment pass would make; per-source failures are listed, not fatal", body = crate::services::enrichment::dry_run::DryRunDiff),
         (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),

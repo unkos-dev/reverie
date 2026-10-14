@@ -52,7 +52,7 @@ pub fn router() -> OpenApiRouter<AppState> {
     summary = "Get a series",
     description = "Returns the series identity plus its works in order, each with the manifestations visible to the caller.",
     tag = "series",
-    params(("id" = Uuid, Path, description = "Series id")),
+    params(("id" = Uuid, Path, max_length = 45, description = "Series id")),
     security(("session_cookie" = ["read"]), ("device_token_bearer" = ["read"]), ("opds_basic" = ["read"])),
     responses(
         (status = 200, description = "Series identity + ordered works with visible manifestations", body = SeriesDetail),

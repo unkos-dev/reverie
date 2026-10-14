@@ -283,7 +283,7 @@ struct RenameShelfRequest {
     summary = "Rename a shelf",
     description = "Renames a shelf owned by the caller. Available to adult accounts only. System shelves cannot be renamed and return 409.",
     tag = "shelves",
-    params(("id" = Uuid, Path, description = "Shelf id")),
+    params(("id" = Uuid, Path, max_length = 45, description = "Shelf id")),
     request_body = RenameShelfRequest,
     security(("session_cookie" = ["write"]), ("device_token_bearer" = ["write"]), ("opds_basic" = ["write"])),
     responses(
@@ -379,7 +379,7 @@ async fn rename_shelf(
     summary = "Delete a shelf",
     description = "Deletes a shelf owned by the caller. Available to adult accounts only. System shelves cannot be deleted and return 409.",
     tag = "shelves",
-    params(("id" = Uuid, Path, description = "Shelf id")),
+    params(("id" = Uuid, Path, max_length = 45, description = "Shelf id")),
     security(("session_cookie" = ["write"]), ("device_token_bearer" = ["write"]), ("opds_basic" = ["write"])),
     responses(
         (status = 204, description = "Shelf deleted"),
@@ -472,7 +472,7 @@ struct ShelfDetailResponse {
     summary = "Get a shelf with its items",
     description = "Returns a shelf's identity plus one page of its items ordered by when they were added. Restricted to shelves the caller owns.",
     tag = "shelves",
-    params(("id" = Uuid, Path, description = "Shelf id"), ShelfItemsParams),
+    params(("id" = Uuid, Path, max_length = 45, description = "Shelf id"), ShelfItemsParams),
     security(("session_cookie" = ["read"]), ("device_token_bearer" = ["read"]), ("opds_basic" = ["read"])),
     responses(
         (status = 200, description = "Shelf identity plus one page of ordered items", body = ShelfDetailResponse,
@@ -594,6 +594,7 @@ async fn get_shelf_with_items(
 #[derive(Debug, Deserialize, utoipa::ToSchema)]
 struct AddItemRequest {
     /// Manifestation to add; must be visible to the caller.
+    #[schema(max_length = 45)]
     manifestation_id: Uuid,
 }
 
@@ -614,7 +615,7 @@ struct AddItemRequest {
     summary = "Add an item to a shelf",
     description = "Adds a manifestation to the caller's shelf; adding one already on the shelf is a no-op. Returns 404 if the manifestation is not visible to the caller.",
     tag = "shelves",
-    params(("id" = Uuid, Path, description = "Shelf id")),
+    params(("id" = Uuid, Path, max_length = 45, description = "Shelf id")),
     request_body = AddItemRequest,
     security(("session_cookie" = ["write"]), ("device_token_bearer" = ["write"]), ("opds_basic" = ["write"])),
     responses(
@@ -705,8 +706,8 @@ async fn add_shelf_item(
     description = "Removes a manifestation from the caller's shelf. Returns 404 if the manifestation is not currently on the shelf.",
     tag = "shelves",
     params(
-        ("id" = Uuid, Path, description = "Shelf id"),
-        ("manifestation_id" = Uuid, Path, description = "Manifestation to remove")
+        ("id" = Uuid, Path, max_length = 45, description = "Shelf id"),
+        ("manifestation_id" = Uuid, Path, max_length = 45, description = "Manifestation to remove")
     ),
     security(("session_cookie" = ["write"]), ("device_token_bearer" = ["write"]), ("opds_basic" = ["write"])),
     responses(

@@ -120,8 +120,10 @@
               "type": "array",
               "items": {
                 "type": "string",
-                "format": "uuid"
-              }
+                "format": "uuid",
+                "maxLength": 45
+              },
+              "maxItems": 60
             }
           }
         ],
@@ -299,7 +301,8 @@
             "description": "Sort stack, JSON:API grammar: comma-separated whitelisted field\nnames (`title`, `author`, `created_at`, `pages`); a leading `-`\nreverses that level to descending; order of appearance sets\npriority (the first field is the primary key). An unwhitelisted\nfield, a repeated column, or more than three levels is a 422.\nOmitted, this is `-created_at` (today's \"recent\" order).",
             "required": false,
             "schema": {
-              "type": "string"
+              "type": "string",
+              "maxLength": 26
             },
             "example": "-created_at,title"
           },
@@ -312,8 +315,10 @@
               "type": "array",
               "items": {
                 "type": "string",
-                "format": "uuid"
-              }
+                "format": "uuid",
+                "maxLength": 45
+              },
+              "maxItems": 20
             }
           },
           {
@@ -325,8 +330,10 @@
               "type": "array",
               "items": {
                 "type": "string",
-                "format": "uuid"
-              }
+                "format": "uuid",
+                "maxLength": 45
+              },
+              "maxItems": 20
             }
           },
           {
@@ -338,8 +345,10 @@
               "type": "array",
               "items": {
                 "type": "string",
-                "format": "uuid"
-              }
+                "format": "uuid",
+                "maxLength": 45
+              },
+              "maxItems": 20
             }
           },
           {
@@ -348,7 +357,8 @@
             "required": false,
             "schema": {
               "type": "string",
-              "format": "uuid"
+              "format": "uuid",
+              "maxLength": 45
             }
           },
           {
@@ -357,7 +367,8 @@
             "required": false,
             "schema": {
               "type": "string",
-              "format": "uuid"
+              "format": "uuid",
+              "maxLength": 45
             }
           },
           {
@@ -368,7 +379,8 @@
               "type": "array",
               "items": {
                 "type": "string"
-              }
+              },
+              "maxItems": 20
             }
           },
           {
@@ -380,7 +392,8 @@
               "type": "array",
               "items": {
                 "type": "string"
-              }
+              },
+              "maxItems": 20
             }
           },
           {
@@ -392,7 +405,8 @@
               "type": "array",
               "items": {
                 "type": "string"
-              }
+              },
+              "maxItems": 20
             }
           },
           {
@@ -404,7 +418,8 @@
               "type": "array",
               "items": {
                 "type": "string"
-              }
+              },
+              "maxItems": 20
             }
           },
           {
@@ -416,7 +431,8 @@
               "type": "array",
               "items": {
                 "type": "string"
-              }
+              },
+              "maxItems": 20
             }
           },
           {
@@ -428,7 +444,8 @@
               "type": "array",
               "items": {
                 "type": "string"
-              }
+              },
+              "maxItems": 20
             }
           },
           {
@@ -440,7 +457,8 @@
               "type": "array",
               "items": {
                 "type": "string"
-              }
+              },
+              "maxItems": 20
             }
           },
           {
@@ -452,7 +470,8 @@
               "type": "array",
               "items": {
                 "type": "string"
-              }
+              },
+              "maxItems": 20
             }
           },
           {
@@ -464,7 +483,8 @@
               "type": "array",
               "items": {
                 "type": "string"
-              }
+              },
+              "maxItems": 20
             }
           },
           {
@@ -596,8 +616,10 @@
             "schema": {
               "type": "array",
               "items": {
-                "type": "string"
-              }
+                "type": "string",
+                "maxLength": 12
+              },
+              "maxItems": 20
             }
           },
           {
@@ -608,8 +630,10 @@
             "schema": {
               "type": "array",
               "items": {
-                "type": "string"
-              }
+                "type": "string",
+                "maxLength": 12
+              },
+              "maxItems": 20
             }
           },
           {
@@ -736,7 +760,8 @@
             "required": true,
             "schema": {
               "type": "string",
-              "format": "uuid"
+              "format": "uuid",
+              "maxLength": 45
             }
           }
         ],
@@ -817,7 +842,8 @@
             "required": true,
             "schema": {
               "type": "string",
-              "format": "uuid"
+              "format": "uuid",
+              "maxLength": 45
             }
           }
         ],
@@ -894,7 +920,8 @@
             "required": true,
             "schema": {
               "type": "string",
-              "format": "uuid"
+              "format": "uuid",
+              "maxLength": 45
             }
           }
         ],
@@ -971,7 +998,8 @@
             "required": true,
             "schema": {
               "type": "string",
-              "format": "uuid"
+              "format": "uuid",
+              "maxLength": 45
             }
           }
         ],
@@ -1068,7 +1096,8 @@
             "required": true,
             "schema": {
               "type": "string",
-              "format": "uuid"
+              "format": "uuid",
+              "maxLength": 45
             }
           },
           {
@@ -1245,7 +1274,8 @@
             "required": true,
             "schema": {
               "type": "string",
-              "format": "uuid"
+              "format": "uuid",
+              "maxLength": 45
             }
           }
         ],
@@ -1332,7 +1362,8 @@
             "required": true,
             "schema": {
               "type": "string",
-              "format": "uuid"
+              "format": "uuid",
+              "maxLength": 45
             }
           },
           {
@@ -2208,7 +2239,8 @@
             "required": true,
             "schema": {
               "type": "string",
-              "format": "uuid"
+              "format": "uuid",
+              "maxLength": 45
             }
           }
         ],
@@ -2299,7 +2331,8 @@
             "required": true,
             "schema": {
               "type": "string",
-              "format": "uuid"
+              "format": "uuid",
+              "maxLength": 45
             }
           }
         ],
@@ -2383,7 +2416,8 @@
             "required": true,
             "schema": {
               "type": "string",
-              "format": "uuid"
+              "format": "uuid",
+              "maxLength": 45
             }
           }
         ],
@@ -2467,7 +2501,8 @@
             "required": true,
             "schema": {
               "type": "string",
-              "format": "uuid"
+              "format": "uuid",
+              "maxLength": 45
             }
           }
         ],
@@ -2591,7 +2626,8 @@
             "required": true,
             "schema": {
               "type": "string",
-              "format": "uuid"
+              "format": "uuid",
+              "maxLength": 45
             }
           }
         ],
@@ -2715,7 +2751,8 @@
             "required": true,
             "schema": {
               "type": "string",
-              "format": "uuid"
+              "format": "uuid",
+              "maxLength": 45
             }
           }
         ],
@@ -2839,7 +2876,8 @@
             "required": true,
             "schema": {
               "type": "string",
-              "format": "uuid"
+              "format": "uuid",
+              "maxLength": 45
             }
           }
         ],
@@ -2963,7 +3001,8 @@
             "required": true,
             "schema": {
               "type": "string",
-              "format": "uuid"
+              "format": "uuid",
+              "maxLength": 45
             }
           }
         ],
@@ -3437,7 +3476,8 @@
             "required": true,
             "schema": {
               "type": "string",
-              "format": "uuid"
+              "format": "uuid",
+              "maxLength": 45
             }
           }
         ],
@@ -3994,7 +4034,8 @@
             "required": true,
             "schema": {
               "type": "string",
-              "format": "uuid"
+              "format": "uuid",
+              "maxLength": 45
             }
           },
           {
@@ -4100,7 +4141,8 @@
             "required": true,
             "schema": {
               "type": "string",
-              "format": "uuid"
+              "format": "uuid",
+              "maxLength": 45
             }
           }
         ],
@@ -4192,7 +4234,8 @@
             "required": true,
             "schema": {
               "type": "string",
-              "format": "uuid"
+              "format": "uuid",
+              "maxLength": 45
             }
           }
         ],
@@ -4333,7 +4376,8 @@
             "required": true,
             "schema": {
               "type": "string",
-              "format": "uuid"
+              "format": "uuid",
+              "maxLength": 45
             }
           }
         ],
@@ -4447,7 +4491,8 @@
             "required": true,
             "schema": {
               "type": "string",
-              "format": "uuid"
+              "format": "uuid",
+              "maxLength": 45
             }
           },
           {
@@ -4457,7 +4502,8 @@
             "required": true,
             "schema": {
               "type": "string",
-              "format": "uuid"
+              "format": "uuid",
+              "maxLength": 45
             }
           }
         ],
@@ -4780,7 +4826,8 @@
             "required": true,
             "schema": {
               "type": "string",
-              "format": "uuid"
+              "format": "uuid",
+              "maxLength": 45
             }
           }
         ],
@@ -5043,7 +5090,8 @@
             "required": true,
             "schema": {
               "type": "string",
-              "format": "uuid"
+              "format": "uuid",
+              "maxLength": 45
             }
           }
         ],
@@ -5175,7 +5223,8 @@
             "required": true,
             "schema": {
               "type": "string",
-              "format": "uuid"
+              "format": "uuid",
+              "maxLength": 45
             }
           }
         ],
@@ -5306,7 +5355,8 @@
             "required": true,
             "schema": {
               "type": "string",
-              "format": "uuid"
+              "format": "uuid",
+              "maxLength": 45
             }
           }
         ],
@@ -5437,7 +5487,8 @@
             "required": true,
             "schema": {
               "type": "string",
-              "format": "uuid"
+              "format": "uuid",
+              "maxLength": 45
             }
           }
         ],
@@ -5561,7 +5612,8 @@
             "required": true,
             "schema": {
               "type": "string",
-              "format": "uuid"
+              "format": "uuid",
+              "maxLength": 45
             }
           }
         ],
@@ -5692,7 +5744,8 @@
             "required": true,
             "schema": {
               "type": "string",
-              "format": "uuid"
+              "format": "uuid",
+              "maxLength": 45
             }
           }
         ],
@@ -5773,7 +5826,8 @@
             "required": true,
             "schema": {
               "type": "string",
-              "format": "uuid"
+              "format": "uuid",
+              "maxLength": 45
             }
           }
         ],
@@ -5865,7 +5919,8 @@
             "description": "OIDC anti-forgery state echoed back by the `IdP`; must match the\nvalue `/auth/oidc/login` stored in the session.",
             "required": true,
             "schema": {
-              "type": "string"
+              "type": "string",
+              "maxLength": 22
             }
           }
         ],
@@ -6824,7 +6879,8 @@
             "required": true,
             "schema": {
               "type": "string",
-              "format": "uuid"
+              "format": "uuid",
+              "maxLength": 45
             }
           }
         ],
@@ -6889,7 +6945,8 @@
             "required": true,
             "schema": {
               "type": "string",
-              "format": "uuid"
+              "format": "uuid",
+              "maxLength": 45
             }
           }
         ],
@@ -6954,7 +7011,8 @@
             "required": true,
             "schema": {
               "type": "string",
-              "format": "uuid"
+              "format": "uuid",
+              "maxLength": 45
             }
           }
         ],
@@ -7144,7 +7202,8 @@
             "required": true,
             "schema": {
               "type": "string",
-              "format": "uuid"
+              "format": "uuid",
+              "maxLength": 45
             }
           },
           {
@@ -7453,7 +7512,8 @@
             "required": true,
             "schema": {
               "type": "string",
-              "format": "uuid"
+              "format": "uuid",
+              "maxLength": 45
             }
           },
           {
@@ -7531,7 +7591,8 @@
             "required": true,
             "schema": {
               "type": "string",
-              "format": "uuid"
+              "format": "uuid",
+              "maxLength": 45
             }
           }
         ],
@@ -7600,7 +7661,8 @@
             "required": true,
             "schema": {
               "type": "string",
-              "format": "uuid"
+              "format": "uuid",
+              "maxLength": 45
             }
           },
           {
@@ -7688,7 +7750,8 @@
             "required": true,
             "schema": {
               "type": "string",
-              "format": "uuid"
+              "format": "uuid",
+              "maxLength": 45
             }
           },
           {
@@ -7698,7 +7761,8 @@
             "required": true,
             "schema": {
               "type": "string",
-              "format": "uuid"
+              "format": "uuid",
+              "maxLength": 45
             }
           },
           {
@@ -7786,7 +7850,8 @@
             "required": true,
             "schema": {
               "type": "string",
-              "format": "uuid"
+              "format": "uuid",
+              "maxLength": 45
             }
           },
           {
@@ -7874,7 +7939,8 @@
             "required": true,
             "schema": {
               "type": "string",
-              "format": "uuid"
+              "format": "uuid",
+              "maxLength": 45
             }
           }
         ],
@@ -7943,7 +8009,8 @@
             "required": true,
             "schema": {
               "type": "string",
-              "format": "uuid"
+              "format": "uuid",
+              "maxLength": 45
             }
           },
           {
@@ -8021,7 +8088,8 @@
             "required": true,
             "schema": {
               "type": "string",
-              "format": "uuid"
+              "format": "uuid",
+              "maxLength": 45
             }
           },
           {
@@ -8109,7 +8177,8 @@
             "required": true,
             "schema": {
               "type": "string",
-              "format": "uuid"
+              "format": "uuid",
+              "maxLength": 45
             }
           },
           {
@@ -8119,7 +8188,8 @@
             "required": true,
             "schema": {
               "type": "string",
-              "format": "uuid"
+              "format": "uuid",
+              "maxLength": 45
             }
           },
           {
@@ -8232,7 +8302,8 @@
           "manifestation_id": {
             "type": "string",
             "format": "uuid",
-            "description": "Manifestation to add; must be visible to the caller."
+            "description": "Manifestation to add; must be visible to the caller.",
+            "maxLength": 45
           }
         }
       },
@@ -9681,7 +9752,13 @@
           "entity_type": {
             "type": "string",
             "description": "Entity the lock applies to: `work` or `manifestation`.",
-            "example": "manifestation"
+            "enum": [
+              "work",
+              "manifestation"
+            ],
+            "examples": [
+              "manifestation"
+            ]
           },
           "field_name": {
             "type": "string",
@@ -10321,7 +10398,8 @@
         "properties": {
           "field_name": {
             "type": "string",
-            "description": "Canonical field to revert (e.g. `title`)."
+            "description": "Canonical field to revert (e.g. `title`).",
+            "maxLength": 38
           },
           "version_id": {
             "type": [
@@ -10329,7 +10407,8 @@
               "null"
             ],
             "format": "uuid",
-            "description": "Version to restore; `null` clears the canonical pointer AND the\ncanonical column."
+            "description": "Version to restore; `null` clears the canonical pointer AND the\ncanonical column.",
+            "maxLength": 45
           }
         }
       },
@@ -11187,7 +11266,8 @@
               ]
             },
             "propertyNames": {
-              "type": "string"
+              "type": "string",
+              "maxLength": 12
             },
             "maxProperties": 64
           },
@@ -11263,7 +11343,8 @@
               ]
             },
             "propertyNames": {
-              "type": "string"
+              "type": "string",
+              "maxLength": 12
             },
             "maxProperties": 64
           }
@@ -11310,16 +11391,19 @@
               "null"
             ],
             "items": {
-              "type": "string"
+              "type": "string",
+              "maxLength": 64
             },
-            "description": "Column keys to hide. Absent = unchanged; `null` resets to the default."
+            "description": "Column keys to hide. Absent = unchanged; `null` resets to the default.",
+            "maxItems": 64
           },
           "sort_stack": {
             "type": [
               "string",
               "null"
             ],
-            "description": "Default sort in the `?sort=` wire grammar. Absent = unchanged; `null`\nresets to the default."
+            "description": "Default sort in the `?sort=` wire grammar. Absent = unchanged; `null`\nresets to the default.",
+            "maxLength": 26
           },
           "view": {
             "oneOf": [
@@ -11393,6 +11477,7 @@
               "$ref": "#/components/schemas/ManifestationFormat"
             },
             "description": "Formats accepted for ingestion; must contain at least one format.",
+            "maxItems": 1,
             "minItems": 1
           },
           "cleanup_duplicates": {
@@ -11639,7 +11724,8 @@
           "version_id": {
             "type": "string",
             "format": "uuid",
-            "description": "Metadata version row to act on."
+            "description": "Metadata version row to act on.",
+            "maxLength": 45
           }
         }
       },

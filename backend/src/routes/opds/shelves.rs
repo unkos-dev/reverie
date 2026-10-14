@@ -74,7 +74,7 @@ async fn assert_shelf_owned(
     description = "Returns an OPDS navigation feed linking a shelf's New, Authors and Series subcatalogues. Requires HTTP Basic authentication.",
     tag = "opds",
     security(("opds_basic" = [])),
-    params(("shelf_id" = Uuid, Path, description = "Shelf id")),
+    params(("shelf_id" = Uuid, Path, max_length = 45, description = "Shelf id")),
     responses(
         (status = 200, description = "OPDS navigation feed linking the shelf's New / Authors / Series subcatalogs", content_type = "application/atom+xml;profile=opds-catalog;kind=navigation", body = String),
         (status = 401, description = "Basic authentication required (WWW-Authenticate: Basic)", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
@@ -108,7 +108,7 @@ async fn shelf_root(
     description = "Returns an OPDS acquisition feed of the shelf's most recently added books, newest first, cursor-paginated via `cursor`. Requires HTTP Basic authentication.",
     tag = "opds",
     security(("opds_basic" = [])),
-    params(("shelf_id" = Uuid, Path, description = "Shelf id"), PageParams),
+    params(("shelf_id" = Uuid, Path, max_length = 45, description = "Shelf id"), PageParams),
     responses(
         (status = 200, description = "OPDS acquisition feed of the shelf's newest visible books; rel=\"next\" link carries the cursor", content_type = "application/atom+xml;profile=opds-catalog;kind=acquisition", body = String),
         (status = 400, description = "Malformed query or path parameter", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
@@ -154,7 +154,7 @@ async fn shelf_new(
     description = "Returns an OPDS navigation feed of authors with at least one book on the shelf, cursor-paginated via `cursor`. Requires HTTP Basic authentication.",
     tag = "opds",
     security(("opds_basic" = [])),
-    params(("shelf_id" = Uuid, Path, description = "Shelf id"), PageParams),
+    params(("shelf_id" = Uuid, Path, max_length = 45, description = "Shelf id"), PageParams),
     responses(
         (status = 200, description = "OPDS navigation feed of authors with books on the shelf", content_type = "application/atom+xml;profile=opds-catalog;kind=navigation", body = String),
         (status = 400, description = "Malformed query or path parameter", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
@@ -201,8 +201,8 @@ async fn shelf_authors(
     tag = "opds",
     security(("opds_basic" = [])),
     params(
-        ("shelf_id" = Uuid, Path, description = "Shelf id"),
-        ("author_id" = Uuid, Path, description = "Author id"),
+        ("shelf_id" = Uuid, Path, max_length = 45, description = "Shelf id"),
+        ("author_id" = Uuid, Path, max_length = 45, description = "Author id"),
         PageParams
     ),
     responses(
@@ -251,7 +251,7 @@ async fn shelf_author_books(
     description = "Returns an OPDS navigation feed of series with at least one book on the shelf, cursor-paginated via `cursor`. Requires HTTP Basic authentication.",
     tag = "opds",
     security(("opds_basic" = [])),
-    params(("shelf_id" = Uuid, Path, description = "Shelf id"), PageParams),
+    params(("shelf_id" = Uuid, Path, max_length = 45, description = "Shelf id"), PageParams),
     responses(
         (status = 200, description = "OPDS navigation feed of series with books on the shelf", content_type = "application/atom+xml;profile=opds-catalog;kind=navigation", body = String),
         (status = 400, description = "Malformed query or path parameter", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
@@ -298,8 +298,8 @@ async fn shelf_series(
     tag = "opds",
     security(("opds_basic" = [])),
     params(
-        ("shelf_id" = Uuid, Path, description = "Shelf id"),
-        ("series_id" = Uuid, Path, description = "Series id"),
+        ("shelf_id" = Uuid, Path, max_length = 45, description = "Shelf id"),
+        ("series_id" = Uuid, Path, max_length = 45, description = "Series id"),
         PageParams
     ),
     responses(
@@ -347,7 +347,7 @@ async fn shelf_series_books(
     description = "Returns an OPDS acquisition feed of full-text search results scoped to the shelf, using the `q` query parameter; an empty or whitespace-only `q` yields an empty feed. Requires HTTP Basic authentication.",
     tag = "opds",
     security(("opds_basic" = [])),
-    params(("shelf_id" = Uuid, Path, description = "Shelf id"), SearchParams),
+    params(("shelf_id" = Uuid, Path, max_length = 45, description = "Shelf id"), SearchParams),
     responses(
         (status = 200, description = "OPDS acquisition feed of search results scoped to the shelf; empty/whitespace query yields an empty feed", content_type = "application/atom+xml;profile=opds-catalog;kind=acquisition", body = String),
         (status = 400, description = "Malformed query or path parameter", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),

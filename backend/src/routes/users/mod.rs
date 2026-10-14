@@ -188,7 +188,7 @@ struct UpdateRoleRequest {
     description = "Sets the target user's role and invalidates their active sessions. Admin only. Returns 422 if the change would leave zero administrators or conflicts with the target's child status.",
     tag = "users",
     security(("session_cookie" = ["admin"]), ("device_token_bearer" = ["admin"]), ("opds_basic" = ["admin"])),
-    params(("id" = Uuid, Path, description = "Target user id")),
+    params(("id" = Uuid, Path, max_length = 45, description = "Target user id")),
     request_body = UpdateRoleRequest,
     responses(
         (status = 200, description = "Updated user. The target's active sessions are invalidated. Admin only.", body = UserResponse),
@@ -312,7 +312,7 @@ struct UpdateChildStatusRequest {
     description = "Toggles whether child content-visibility rules apply to the target user and invalidates their active sessions. Enabling child status also sets the role to `child`; disabling it reverts `child` to `adult` and leaves other roles unchanged. Admin only. Returns 422 if marking the last administrator as a child would leave zero administrators.",
     tag = "users",
     security(("session_cookie" = ["admin"]), ("device_token_bearer" = ["admin"]), ("opds_basic" = ["admin"])),
-    params(("id" = Uuid, Path, description = "Target user id")),
+    params(("id" = Uuid, Path, max_length = 45, description = "Target user id")),
     request_body = UpdateChildStatusRequest,
     responses(
         (status = 200, description = "Updated user. Enabling child status also sets role to `child`; disabling reverts `child` to `adult` (other roles unchanged). The target's active sessions are invalidated. Admin only.", body = UserResponse),
@@ -518,7 +518,7 @@ struct AccountStatusRequest {
     description = "Soft-disables or re-enables the target account. Disabling invalidates the target's active sessions; an administrator cannot disable their own account. Admin only; the caller must not be a child. Returns 422 if disabling would leave zero enabled administrators.",
     tag = "users",
     security(("session_cookie" = ["admin"]), ("device_token_bearer" = ["admin"]), ("opds_basic" = ["admin"])),
-    params(("id" = Uuid, Path, description = "Target user id")),
+    params(("id" = Uuid, Path, max_length = 45, description = "Target user id")),
     request_body = AccountStatusRequest,
     responses(
         (status = 200, description = "Updated user. Disabling invalidates the target's sessions. Admin only.", body = UserResponse),
@@ -645,7 +645,7 @@ struct AdminPasswordResetRequest {
     description = "Sets a new password for the target account, for the administrator to relay out of band, and invalidates the target's active sessions. Admin only; the caller must not be a child.",
     tag = "users",
     security(("session_cookie" = ["admin"]), ("device_token_bearer" = ["admin"]), ("opds_basic" = ["admin"])),
-    params(("id" = Uuid, Path, description = "Target user id")),
+    params(("id" = Uuid, Path, max_length = 45, description = "Target user id")),
     request_body = AdminPasswordResetRequest,
     responses(
         (status = 200, description = "Password reset; the target's sessions are invalidated. Admin only."),
@@ -925,7 +925,7 @@ fn validate_patch_email(raw: &str, admin_id: Uuid, target_user_id: Uuid) -> Resu
     description = "Updates the target user's `display_name` and `email` using JSON Merge Patch: an absent field is unchanged, and an explicit `null` clears `email` but is rejected for `display_name`. Neither field invalidates the target's sessions. Admin only. Returns 422 for an empty `display_name` or an `email` already in use.",
     tag = "users",
     security(("session_cookie" = ["admin"]), ("device_token_bearer" = ["admin"]), ("opds_basic" = ["admin"])),
-    params(("id" = Uuid, Path, description = "Target user id")),
+    params(("id" = Uuid, Path, max_length = 45, description = "Target user id")),
     request_body(content = UpdateUserRequest, description = "RFC 7396 JSON Merge Patch: absent fields are unchanged; explicit `null` clears `email` and is rejected for `display_name`"),
     responses(
         (status = 200, description = "Updated user. Does not invalidate the target's sessions (neither field gates access). Admin only.", body = UserResponse),

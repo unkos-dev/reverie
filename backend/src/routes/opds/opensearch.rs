@@ -87,7 +87,7 @@ async fn library_opensearch(
     description = "Returns an OpenSearch descriptor whose search template is scoped to the shelf. Requires HTTP Basic authentication.",
     tag = "opds",
     security(("opds_basic" = [])),
-    params(("shelf_id" = Uuid, Path, description = "Shelf id")),
+    params(("shelf_id" = Uuid, Path, max_length = 45, description = "Shelf id")),
     responses(
         (status = 200, description = "OpenSearch descriptor with the shelf-scoped search URL template", content_type = "application/opensearchdescription+xml", body = String),
         (status = 401, description = "Basic authentication required (WWW-Authenticate: Basic)", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),

@@ -246,7 +246,7 @@ async fn list_tokens(
     summary = "Revoke a device token",
     description = "Revokes one of the caller's device tokens by id. Returns 404 if the token does not exist, belongs to another user, or is already revoked (ownership is not leaked).",
     tag = "tokens",
-    params(("id" = Uuid, Path, description = "Token row id")),
+    params(("id" = Uuid, Path, max_length = 45, description = "Token row id")),
     security(("session_cookie" = ["write"]), ("device_token_bearer" = ["write"]), ("opds_basic" = ["write"])),
     responses(
         (status = 204, description = "Token revoked"),
