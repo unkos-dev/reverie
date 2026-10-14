@@ -5094,6 +5094,18 @@ mod tests {
             owner.pending = Some(pending);
             owner.finalise().await?;
         }
+        let mut connection = owner
+            .lock
+            .take()
+            .ok_or_else(|| anyhow::anyhow!("ingestion ownership missing after scan"))?;
+        let released = sqlx::query_scalar!(
+            "SELECT pg_advisory_unlock($1) AS \"released!\"",
+            SCAN_ADVISORY_LOCK_ID
+        )
+        .fetch_one(&mut *connection)
+        .await?;
+        anyhow::ensure!(released, "ingestion ownership was not held after scan");
+        connection.close().await?;
         Ok(result)
     }
 
@@ -5190,10 +5202,12 @@ mod tests {
     async fn capability_ingestion_owner_empty_dir_returns_zero(pool: PgPool) {
         let pool = ingestion_pool_for(&pool).await;
         let (_ingestion, _library, config) = scan_env();
-        let result = drive_owner(&config, &pool).await.unwrap();
-        assert_eq!(result.processed, 0);
-        assert_eq!(result.failed, 0);
-        assert_eq!(result.skipped, 0);
+        for _ in 0..16 {
+            let result = drive_owner(&config, &pool).await.unwrap();
+            assert_eq!(result.processed, 0);
+            assert_eq!(result.failed, 0);
+            assert_eq!(result.skipped, 0);
+        }
     }
 
     #[sqlx::test(migrations = "./migrations")]
