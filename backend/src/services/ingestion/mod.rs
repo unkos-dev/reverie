@@ -18,6 +18,3 @@ mod orchestrator;
 pub use orchestrator::{
     CoordinatorCommands, CoordinatorHandle, DiscoveryResult, coordinator_channel, run_watcher,
 };
-
-#[cfg(test)]
-pub(crate) use orchestrator::run_test_watcher;

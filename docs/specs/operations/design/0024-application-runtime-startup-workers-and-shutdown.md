@@ -16,17 +16,17 @@ governed-by:
 
 This Design covers the process lifecycle of the `reverie-api` binary: how the command line selects between the
 long-lived server and its one-shot administrative subcommands, the ordered sequence `run` executes before it accepts a
-request, its supervised service workers and filesystem watcher, the drain that shuts them down, the liveness and
-readiness probes, and the runtime stage of the container image that packages all of it.
+request, its supervised service workers and coordinator-owned filesystem watcher, the drain that shuts them down, the
+liveness and readiness probes, and the runtime stage of the container image that packages all of it.
 
 ## Purpose and boundaries
 
 This subject owns: CLI subcommand dispatch (`Command`, `parse_command`); the ordered, fallible setup sequence inside
 `run` (configuration load, CSP header finalisation, tracing, database pools, the schema apply-or-verify step, admin
 storage-root acquisition, admin bootstrap, OIDC client construction, settings load, login limiter construction,
-`AppState` assembly, router build, listener bind); how the five service workers and filesystem watcher are registered;
-the supervised drain that awaits them on shutdown; the `/health` and `/health/ready` probes; and the `runtime` stage of
-`Dockerfile` (its `ENTRYPOINT`, `HEALTHCHECK`, `USER` and `EXPOSE`).
+`AppState` assembly, router build, listener bind); how the five service workers are registered and the coordinator owns
+its filesystem watcher; the supervised drain that awaits them on shutdown; the `/health` and `/health/ready` probes; and
+the `runtime` stage of `Dockerfile` (its `ENTRYPOINT`, `HEALTHCHECK`, `USER` and `EXPOSE`).
 
 It does not own: what each background worker does once running (the ingestion pipeline, the enrichment queue, the
 writeback pipeline, the settings live-reload mechanism and the session sweep are each their own subject); the meaning or
@@ -74,9 +74,9 @@ directly rather than assembling its own `AppState` and calling `build_router`.
   `build_router_with_session_store` composes them, which decides what a rejection at one layer carries from the layers
   outside it.
 - `backend/src/lib.rs::worker_supervisor` configures task-supervisor's restart window, backoff, dead-task threshold and
-  stop timeout. `spawn_workers` registers the five service workers and the filesystem watcher. `Worker` adapts
-  successful returns outside cancellation into failures; `supervise_until_shutdown` maps a terminal supervisor error to
-  shutdown cancellation and an error returned by `run`.
+  stop timeout. `spawn_workers` registers the five service workers. `Worker` adapts successful returns outside
+  cancellation into failures; `supervise_until_shutdown` maps a terminal supervisor error to shutdown cancellation and
+  an error returned by `run`.
 - `backend/src/lib.rs::apply_or_verify_schema` is the schema-step flag selector: it branches on `config.auto_migrate`
   between an in-process migration run (`db::run_migrations`) and a read-only verification (`db::verify_schema_current`).
   It is extracted from `run` specifically so both branches are pinned by tests.
@@ -94,13 +94,15 @@ directly rather than assembling its own `AppState` and calling `build_router`.
 - The five background workers, each entered from its own module and given only what it needs:
   - `services::settings::listen_loop` (settings LISTEN/NOTIFY reload, refreshing `AppState.settings`).
   - `services::ingestion::run_watcher` (one owner for capability discovery, readiness, attempts, retries and cleanup,
-    receiving shared `LibraryFiles`, the live settings cache, command receiver and filesystem event receiver).
+    receiving shared `LibraryFiles`, the live settings cache and command receiver; it owns its watcher and event
+    channel).
   - `services::enrichment::queue::spawn_queue` (the enrichment job queue).
   - `services::session_sweep::run_sweep` (the hourly expired-session reaper, driving `PostgresStore`'s `ExpiredDeletion`
     trait).
   - `services::writeback::queue::spawn_worker` (the writeback job queue, given the dedicated system-context pool
     described in Data and state and shared `LibraryFiles`; also owns the bounded relocation-intent sweep).
-- `services::ingestion::watcher::watch` is a sixth supervised task, forwarding filesystem events to the coordinator.
+- `services::ingestion::watcher::register` establishes a watch synchronously after the coordinator folder check. The
+  coordinator owns and polls its returned future using the coordinator run token.
 - `Dockerfile`'s `runtime` stage (the final `FROM debian:trixie-slim ... AS runtime` block) copies the release binary
   and the built frontend, creates a fixed non-root user, sets `REVERIE_FRONTEND_DIST_PATH`, and declares the
   `ENTRYPOINT` and `HEALTHCHECK` this subject's binary and readiness probe satisfy.
@@ -117,14 +119,15 @@ returns, and `supervise_until_shutdown` when the supervisor exits. Cancellation 
 single decision to stop the process. task-supervisor alone creates and cancels the distinct token for each worker run.
 No worker schedules its own lifecycle restart.
 
-`AppState.ingestion` holds the command sender created at startup. Its receiver and the filesystem event receiver are
-held in shared `tokio::sync::Mutex` values retained by the supervisor's coordinator factory. Each run holds the receiver
-guards for its lifetime. Dropping a run releases the guards without closing the channels; queued commands survive
-backoff, while a command already removed for processing may report interrupted discovery if that run fails. Request
-handlers keep the same sender. The coordinator is the sole writer of its scheduling state; the watcher is the sole
-filesystem event producer. Watcher, startup and deadline signals coalesce inside that owner. Delete and rename
-notifications bypass create/modify batching; capability rechecks establish absence. Shutdown cancellation reaches the
-active attempt's child token. A kernel-blocked read can outlast the supervisor's stop timeout.
+`AppState.ingestion` holds the command sender created at startup. Its receiver is held in a shared `tokio::sync::Mutex`
+retained by the supervisor's coordinator factory. Each run holds the receiver guard for its lifetime. Dropping a run
+releases the guard without closing the channel; queued commands survive backoff, while a command already removed for
+processing may report interrupted discovery if that run fails. Request handlers keep the same sender. The coordinator is
+the sole writer of its scheduling and watcher state. Its watcher future and event channel are local to that run, and the
+watcher receives the same cancellation token. Dropping the coordinator drops the watcher. Watcher, startup and deadline
+signals coalesce inside that owner. Delete and rename notifications bypass create/modify batching; capability rechecks
+establish absence. Shutdown cancellation reaches the active attempt's child token. A kernel-blocked read can outlast the
+supervisor's stop timeout.
 
 The owner reconciles acknowledged publication evidence before reclaiming interrupted attempts under its advisory lock.
 Unresolved local ownership suspends only the affected input. Streaming accepts idle cancellation after 120 seconds;
@@ -163,12 +166,14 @@ observation. Watchdog ticks and completion precede queued watcher traffic.
   one of its fields: it is retained by the writeback task factory and cloned for each run. No request handler receives
   it, because no request handler receives anything not reachable through `AppState`.
 - **The supervisor handle** is local to `run`. task-supervisor owns run handles, restart history, timers and drain
-  deadlines. Four restarts are allowed per task in a ten-minute sliding window; the fifth failure marks that task dead.
-  The dead-task threshold is zero, so any dead task stops the supervisor. Backoff starts at one second, doubles up to
-  thirty seconds and uses the crate's default ten percent random delay reduction. Stop timeout is thirty seconds per
-  run, concurrently.
+  deadlines. Fifteen restarts are allowed per task in a thirty-minute sliding window; the sixteenth failure marks that
+  task dead. The dead-task threshold is zero, so any dead task stops the supervisor. Backoff starts at one second,
+  doubles up to sixty seconds and uses the crate's default ten percent random delay reduction. Instant continuous
+  failure exhausts the limit in about nine to ten minutes; thirty-second failed attempts exhaust it in about seventeen
+  to eighteen minutes. Stop timeout is thirty seconds per run, concurrently.
 - **Per-worker enabled flags.** `config.enrichment.enabled` and `config.writeback.enabled` are read at the start of each
-  run. Disabled workers wait for cancellation rather than returning early. All six tasks are registered unconditionally.
+  run. Disabled workers wait for cancellation rather than returning early. All five tasks are registered
+  unconditionally.
 
 ## Runtime behaviour
 
@@ -209,7 +214,7 @@ observation. Watchdog ticks and completion precede queued watcher traffic.
 11. `db::init_writeback_pool` opens the writeback pool, and the TCP listener is bound. One more fallible call follows
     immediately: `listener.local_addr()` is read back to log the bound address. Nothing has been spawned yet at this
     point, so an early return from any of these steps cannot leak a running task.
-12. A process `CancellationToken` is created and `spawn_workers` starts one supervisor with six tasks. Worker startup
+12. A process `CancellationToken` is created and `spawn_workers` starts one supervisor with five tasks. Worker startup
     order is unspecified. Each run receives a fresh cancellation token and owned clones of its dependencies.
 13. HTTP serving and `supervise_until_shutdown` run concurrently. The graceful-shutdown future responds to either an
     operating-system signal or process-token cancellation.
@@ -234,8 +239,8 @@ metadata supplies Content-Length.
 1. `shutdown_signal` cancels the process token. Axum stops accepting connections and finishes in-flight requests.
 2. `supervise_until_shutdown` calls the supervisor's `shutdown`; the crate cancels every run and drains them
    concurrently. Writeback and enrichment stop claiming, await tracked jobs and perform shutdown recovery. Session sweep
-   and the settings listener return from their cancellation branches. The filesystem watcher flushes pending events
-   where it can, bounded by the same stop timeout.
+   and the settings listener return from their cancellation branches. The coordinator drops its watcher when the run
+   ends.
 3. A run still pending after thirty seconds is dropped by the crate. Writeback blocking phases retain their semaphore
    permit across async cancellation; unfinished claims remain for startup recovery. This timeout does not guarantee
    completion of a blocking operating-system call.
@@ -253,9 +258,13 @@ container restart policy.
 
 The coordinator's advisory-lock connection closes asynchronously when a run drops. A new run may temporarily fail its
 ownership probe; its existing dependency probe retry clears that pause after the old connection closes. Command senders
-and queued commands remain valid during the restart. Each filesystem watcher run owns its notify watcher and uses its
-own run token. Enrichment drains admitted jobs before returning a claim error, so restart recovery cannot reset their
-rows while they are still running.
+and queued commands remain valid during the restart. The coordinator starts its watcher after the folder check passes
+and before discovery. A watcher failure repeats the same folder check. A failed check pauses as
+`ingestion_folder_unavailable` through the existing dependency probe schedule; a successful recheck registers a new
+watch before discovery. A watcher failure with healthy folders returns an error to supervision. A restarted coordinator
+registers its watch before startup discovery. Both paths discover files that arrived while no watch was registered.
+Enrichment drains admitted jobs before returning a claim error, so restart recovery cannot reset their rows while they
+are still running.
 
 **CLI dispatch**, for example an operator or a one-shot container step invoking `reverie migrate`: `parse_command`
 matches the single token `"migrate"` to `Command::Migrate`; `main.rs`'s exhaustive match calls `run_migrate`, which

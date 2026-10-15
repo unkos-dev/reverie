@@ -37,11 +37,19 @@ exponential backoff, panic handling, dead-task threshold and cooperative stop ti
 The crate owns those mechanisms; Reverie owns worker construction, persistent command receivers, unexpected-success
 classification and process-error propagation.
 
-One supervisor manages the five service workers and the filesystem watcher. Each task allows four restarts within ten
-minutes: its fifth failure in that window marks it dead. Backoff starts at one second, doubles to a thirty-second cap,
-and uses the crate's default ten percent random delay reduction. A dead-task threshold of zero escalates any dead
-worker. Cancellation allows thirty seconds for each run to drain concurrently. Individual job retries and ingestion
-dependency probes remain with their existing scheduling owners.
+One supervisor manages the five service workers. Each task allows fifteen restarts within a thirty-minute sliding
+window; its sixteenth failure in that window marks it dead. Backoff starts at one second, doubles to a sixty-second cap
+and uses the crate's default ten percent random delay reduction. The fifteen delays total 603 seconds before that
+reduction. Instant continuous failure therefore exhausts the limit after about nine to ten minutes. Thirty-second failed
+attempts add sixteen times thirty seconds, giving about seventeen to eighteen minutes. Both cases remain inside the
+accounting window. A dead-task threshold of zero escalates any dead worker. Cancellation allows thirty seconds for each
+run to drain concurrently. Individual job retries and ingestion dependency probes remain with their existing scheduling
+owners.
+
+The coordinator owns its filesystem watcher on the same run token. It registers the watch after its folder check passes
+and before discovery. Watcher failure repeats that folder check: a failed check uses the existing dependency pause and
+probe schedule, while a successful check returns the unexplained watcher failure to supervision. Recovery registers the
+watch before discovery so files arriving during downtime are found.
 
 ### Consequences
 

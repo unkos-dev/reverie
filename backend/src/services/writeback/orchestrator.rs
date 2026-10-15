@@ -1342,7 +1342,7 @@ mod tests {
         let (handle, commands) = crate::services::ingestion::coordinator_channel();
         let settings = crate::test_support::test_settings();
         settings.write().await.ingestion.cleanup_imported = false;
-        let worker = tokio::spawn(crate::services::ingestion::run_test_watcher(
+        let worker = tokio::spawn(crate::services::ingestion::run_watcher(
             config.clone(),
             ing.clone(),
             cancel.clone(),

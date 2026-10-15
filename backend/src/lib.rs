@@ -427,9 +427,9 @@ pub async fn run() -> anyhow::Result<()> {
 
 fn worker_supervisor() -> task_supervisor::SupervisorBuilder {
     task_supervisor::SupervisorBuilder::new()
-        .with_restart_limit(4, std::time::Duration::from_secs(600))
+        .with_restart_limit(15, std::time::Duration::from_mins(30))
         .with_base_restart_delay(std::time::Duration::from_secs(1))
-        .with_max_restart_delay(std::time::Duration::from_secs(30))
+        .with_max_restart_delay(std::time::Duration::from_secs(60))
         .with_dead_tasks_threshold(0.0)
         .with_stop_timeout(std::time::Duration::from_secs(30))
 }
@@ -456,15 +456,12 @@ fn spawn_workers(
     writeback_pool: sqlx::PgPool,
     commands: services::ingestion::CoordinatorCommands,
 ) -> task_supervisor::SupervisorHandle {
-    let (events_tx, events_rx) = tokio::sync::mpsc::channel(16);
-    let events_rx = std::sync::Arc::new(tokio::sync::Mutex::new(events_rx));
     let settings_state = state.clone();
     let ingestion_state = state.clone();
     let enrichment_state = state.clone();
     let sweep_store = PostgresStore::new(state.pool.clone());
     let writeback_config = state.config.clone();
     let writeback_files = state.library_files.clone();
-    let ingestion_path = std::path::PathBuf::from(&state.config.ingestion_path);
     worker_supervisor()
         .with_task(
             "settings-listener",
@@ -487,7 +484,6 @@ fn spawn_workers(
             Worker(move |cancel| {
                 let state = ingestion_state.clone();
                 let commands = commands.clone();
-                let events = events_rx.clone();
                 async move {
                     services::ingestion::run_watcher(
                         state.config,
@@ -496,20 +492,9 @@ fn spawn_workers(
                         state.library_files,
                         state.settings,
                         commands,
-                        events,
                     )
                     .await
                 }
-            }),
-        )
-        .with_task(
-            "filesystem-watcher",
-            Worker(move |cancel| {
-                services::ingestion::watcher::watch(
-                    ingestion_path.clone(),
-                    events_tx.clone(),
-                    cancel,
-                )
             }),
         )
         .with_task(
@@ -1045,7 +1030,6 @@ mod tests {
         let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
         let supervisor = worker_supervisor()
             .with_restart_jitter(0.0)
-            .with_restart_limit(10, Duration::from_secs(600))
             .with_task(
                 "worker",
                 Worker(move |_| {
@@ -1058,7 +1042,7 @@ mod tests {
             )
             .spawn();
         let mut previous = rx.recv().await.unwrap();
-        for seconds in [1, 2, 4, 8, 16, 30, 30] {
+        for seconds in [1, 2, 4, 8, 16, 32, 60, 60] {
             let next = rx.recv().await.unwrap();
             assert_eq!(next.duration_since(previous), Duration::from_secs(seconds));
             previous = next;
@@ -1081,7 +1065,7 @@ mod tests {
                         let run = runs.fetch_add(1, Ordering::SeqCst);
                         tx.send(tokio::time::Instant::now()).unwrap();
                         if run == 4 {
-                            tokio::time::sleep(Duration::from_secs(600)).await;
+                            tokio::time::sleep(Duration::from_mins(30)).await;
                         }
                         anyhow::bail!("worker failed")
                     }
@@ -1089,7 +1073,7 @@ mod tests {
             )
             .spawn();
         let start = rx.recv().await.unwrap();
-        for seconds in [1, 3, 7, 15, 616] {
+        for seconds in [1, 3, 7, 15, 1816] {
             assert_eq!(
                 rx.recv().await.unwrap().duration_since(start),
                 Duration::from_secs(seconds)
@@ -1137,6 +1121,74 @@ mod tests {
     }
 
     #[tokio::test(start_paused = true)]
+    async fn supervision_instant_failure_escalates_between_eight_and_eleven_minutes() {
+        let supervisor = worker_supervisor()
+            .with_task(
+                "failing",
+                Worker(|_| async { anyhow::bail!("persistent failure") }),
+            )
+            .spawn();
+        let start = tokio::time::Instant::now();
+        assert!(
+            tokio::time::timeout(Duration::from_mins(8), supervisor.wait())
+                .await
+                .is_err()
+        );
+        let outcome = tokio::time::timeout(Duration::from_mins(3), supervisor.wait())
+            .await
+            .expect("instant failure must exhaust the restart limit by eleven minutes");
+        assert!(matches!(
+            outcome,
+            Err(task_supervisor::SupervisorError::TooManyDeadTasks {
+                dead: 1,
+                total: 1,
+                ..
+            })
+        ));
+        assert!(start.elapsed() >= Duration::from_mins(8));
+        assert!(start.elapsed() <= Duration::from_mins(11));
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn supervision_thirty_second_failures_escalate_at_about_eighteen_minutes() {
+        let runs = Arc::new(AtomicUsize::new(0));
+        let observed = runs.clone();
+        let supervisor = worker_supervisor()
+            .with_task(
+                "failing",
+                Worker(move |_| {
+                    let runs = runs.clone();
+                    async move {
+                        runs.fetch_add(1, Ordering::SeqCst);
+                        tokio::time::sleep(Duration::from_secs(30)).await;
+                        anyhow::bail!("connection attempt timed out")
+                    }
+                }),
+            )
+            .spawn();
+        let start = tokio::time::Instant::now();
+        assert!(
+            tokio::time::timeout(Duration::from_mins(17), supervisor.wait())
+                .await
+                .is_err()
+        );
+        let outcome = tokio::time::timeout(Duration::from_secs(65), supervisor.wait())
+            .await
+            .expect("slow failure must exhaust the restart limit at about eighteen minutes");
+        assert!(matches!(
+            outcome,
+            Err(task_supervisor::SupervisorError::TooManyDeadTasks {
+                dead: 1,
+                total: 1,
+                ..
+            })
+        ));
+        assert_eq!(observed.load(Ordering::SeqCst), 16);
+        assert!(start.elapsed() >= Duration::from_mins(17));
+        assert!(start.elapsed() <= Duration::from_secs(1085));
+    }
+
+    #[tokio::test(start_paused = true)]
     async fn supervision_one_exhausted_worker_cancels_and_fails_process_outcome() {
         let runs = Arc::new(AtomicUsize::new(0));
         let observed = runs.clone();
@@ -1165,7 +1217,7 @@ mod tests {
             .spawn();
         let cancel = CancellationToken::new();
         let outcome = supervise_until_shutdown(supervisor, cancel.clone()).await;
-        assert_eq!(runs.load(Ordering::SeqCst), 5);
+        assert_eq!(runs.load(Ordering::SeqCst), 16);
         assert!(cancel.is_cancelled());
         observed_drain.notified().await;
         let error = outcome.unwrap_err();
