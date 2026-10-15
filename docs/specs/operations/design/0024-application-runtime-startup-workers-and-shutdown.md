@@ -351,8 +351,9 @@ logged, never the password.
 
 Container deployments configure a restart policy so a non-zero worker-supervision exit restarts the instance. Compose
 uses `restart: unless-stopped`; the repository's staging topology supplies that policy for the application service.
-Deployments without a restart policy leave the instance stopped after escalation. Container stop grace includes the
-thirty-second worker drain and any remaining HTTP request drain.
+Deployments without a restart policy leave the instance stopped after escalation. The staging application service uses
+`stop_grace_period: 35s`, allowing the thirty-second worker drain plus five seconds of headroom. HTTP requests drain
+concurrently with workers; requests still running when the container grace period expires can be terminated by SIGKILL.
 
 An operator who deploys the published image runs the process as the fixed, non-root `reverie` user (numeric id 10001,
 pinned rather than allocated by `useradd -r` so it does not shift between base-image rebuilds); the `ENTRYPOINT` invokes
