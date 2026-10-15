@@ -81,12 +81,17 @@ where
         "enrichment queue started"
     );
 
-    loop {
+    let mut jobs = tokio::task::JoinSet::new();
+    let outcome: anyhow::Result<()> = 'queue: loop {
         tokio::select! {
             () = cancel.cancelled() => {
                 info!("enrichment queue shutting down");
-                revert_in_progress(&pool).await?;
-                return Ok(());
+                break Ok(());
+            }
+            result = jobs.join_next(), if !jobs.is_empty() => {
+                if let Some(Err(error)) = result {
+                    warn!(%error, "enrichment job task failed");
+                }
             }
             _ = interval.tick() => {
                 // Drain as many pending rows as semaphore permits allow.
@@ -94,7 +99,13 @@ where
                     let Ok(permit) = semaphore.clone().try_acquire_owned() else {
                         break; // fully busy; next tick
                     };
-                    let claim = claim_next(&pool).await?;
+                    if cancel.is_cancelled() {
+                        break;
+                    }
+                    let claim = match claim_next(&pool).await {
+                        Ok(claim) => claim,
+                        Err(error) => break 'queue Err(error.into()),
+                    };
                     let Some((id, attempt_count)) = claim else {
                         drop(permit);
                         break;
@@ -102,7 +113,7 @@ where
                     let pool = pool.clone();
                     let cfg = config.clone();
                     let run = run.clone();
-                    tokio::spawn(async move {
+                    jobs.spawn(async move {
                         let _p = permit;
                         let result = AssertUnwindSafe(async {
                             run(pool.clone(), cfg.clone(), id).await
@@ -120,7 +131,15 @@ where
                 }
             }
         }
+    };
+    while let Some(result) = jobs.join_next().await {
+        if let Err(error) = result {
+            warn!(%error, "enrichment job task failed during drain");
+        }
     }
+    outcome?;
+    revert_in_progress(&pool).await?;
+    Ok(())
 }
 
 fn panic_message(payload: &(dyn std::any::Any + Send)) -> String {
@@ -794,6 +813,88 @@ mod tests {
         );
         cancel.cancel();
         worker.await.unwrap().unwrap();
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn queue_drains_admitted_job_before_shutdown_recovery(pool: PgPool) {
+        queue_drain_case(pool, false).await;
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn queue_drains_admitted_job_before_propagating_claim_failure(pool: PgPool) {
+        queue_drain_case(pool, true).await;
+    }
+
+    async fn queue_drain_case(pool: PgPool, fail_claim: bool) {
+        let pool = ingestion_pool_for(&pool).await;
+        let (_, id, _) = insert_queue_fixture(&pool, EnrichmentStatus::Pending, 0, None).await;
+        let (mut config, _files) = test_config_with_max_attempts(3);
+        config.enrichment.concurrency = 2;
+        config.enrichment.poll_idle_secs = 1;
+        let cancel = CancellationToken::new();
+        let (started, mut starts) = tokio::sync::mpsc::unbounded_channel();
+        let release = Arc::new(tokio::sync::Notify::new());
+        let resume = release.clone();
+        let completed = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let observed = completed.clone();
+        let mut worker = tokio::spawn(queue_with_runner(
+            pool.clone(),
+            config,
+            cancel.clone(),
+            move |_, _, claimed| {
+                let started = started.clone();
+                let release = release.clone();
+                let completed = completed.clone();
+                async move {
+                    assert_eq!(claimed, id);
+                    started.send(()).unwrap();
+                    release.notified().await;
+                    completed.store(true, std::sync::atomic::Ordering::SeqCst);
+                    Ok(RunOutcome {
+                        manifestation_id: id,
+                        applied: 0,
+                        staged: 0,
+                        skipped_locked: 0,
+                        source_failures: Vec::new(),
+                        duplicate_suspected: false,
+                    })
+                }
+            },
+        ));
+        tokio::time::timeout(Duration::from_secs(5), starts.recv())
+            .await
+            .unwrap()
+            .unwrap();
+        if fail_claim {
+            pool.close().await;
+        } else {
+            cancel.cancel();
+        }
+        assert!(
+            tokio::time::timeout(Duration::from_millis(1100), &mut worker)
+                .await
+                .is_err()
+        );
+        assert!(!observed.load(std::sync::atomic::Ordering::SeqCst));
+        if !fail_claim {
+            assert_eq!(
+                queue_row_state(&pool, id).await.status,
+                EnrichmentStatus::InProgress
+            );
+        }
+        resume.notify_one();
+        let result = tokio::time::timeout(Duration::from_secs(5), worker)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(result.is_err(), fail_claim);
+        assert!(observed.load(std::sync::atomic::Ordering::SeqCst));
+        if !fail_claim {
+            assert_eq!(
+                queue_row_state(&pool, id).await.status,
+                EnrichmentStatus::Complete
+            );
+        }
     }
 
     #[sqlx::test(migrations = "./migrations")]

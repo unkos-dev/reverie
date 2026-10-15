@@ -9,13 +9,14 @@ governed-by:
   - "REV-ADR-0021"
   - "REV-ADR-0053"
   - "REV-ADR-0051"
+  - "REV-ADR-0057"
 ---
 
 # Application runtime: startup, workers, and shutdown
 
 This Design covers the process lifecycle of the `reverie-api` binary: how the command line selects between the
 long-lived server and its one-shot administrative subcommands, the ordered sequence `run` executes before it accepts a
-request, the five background workers it spawns and the shared-deadline drain that shuts them down, the liveness and
+request, its supervised service workers and filesystem watcher, the drain that shuts them down, the liveness and
 readiness probes, and the runtime stage of the container image that packages all of it.
 
 ## Purpose and boundaries
@@ -23,8 +24,8 @@ readiness probes, and the runtime stage of the container image that packages all
 This subject owns: CLI subcommand dispatch (`Command`, `parse_command`); the ordered, fallible setup sequence inside
 `run` (configuration load, CSP header finalisation, tracing, database pools, the schema apply-or-verify step, admin
 storage-root acquisition, admin bootstrap, OIDC client construction, settings load, login limiter construction,
-`AppState` assembly, router build, listener bind); when and in what order the five background workers are spawned; the
-shared-deadline drain that awaits them on shutdown; the `/health` and `/health/ready` probes; and the `runtime` stage of
+`AppState` assembly, router build, listener bind); how the five service workers and filesystem watcher are registered;
+the supervised drain that awaits them on shutdown; the `/health` and `/health/ready` probes; and the `runtime` stage of
 `Dockerfile` (its `ENTRYPOINT`, `HEALTHCHECK`, `USER` and `EXPOSE`).
 
 It does not own: what each background worker does once running (the ingestion pipeline, the enrichment queue, the
@@ -39,14 +40,14 @@ only dispatches to (`backend/src/models/user.rs`, `backend/src/auth/recovery.rs`
 `backend/src/models/login_throttle.rs`). It does not own the builder or frontend stages of `Dockerfile`, only the
 `runtime` stage that consumes their output. It does not own cross-instance coordination, because there is none to own:
 `run` performs no leader election, node discovery or peer handshake, and every instance of the process spawns the same
-five workers and serves the same routes.
+service workers and filesystem watcher, and serves the same routes.
 
 Depends on: `config::Config` for every setting `run` reads; `db::init_pool`, `db::init_writeback_pool`,
 `db::run_migrations` and `db::verify_schema_current` for every database connection it opens;
 `auth::oidc::init_oidc_client` for the optional OIDC client it constructs; `security::csp::build_api_csp`,
 `security::csp::build_html_csp` and `security::dist_validation::validate_frontend_dist` for the CSP headers it finalises
 before building the router; `services::settings::seed_ingestion` for the initial settings snapshot; `build_router` for
-the Axum router it serves; and the five worker entry points named in Structure below.
+the Axum router it serves; and the worker entry points named in Structure below.
 
 Depended on by: `main.rs`, whose `#[tokio::main]` `main` is the sole caller of `parse_command` and the command
 entrypoints; the container image's `ENTRYPOINT`, which invokes the compiled binary with no arguments (the `Serve` path)
@@ -65,15 +66,17 @@ directly rather than assembling its own `AppState` and calling `build_router`.
   `#[non_exhaustive]`, so `main.rs`'s match is exhaustive at compile time; `parse_command` itself rejects an unknown
   token or unexpected trailing arguments rather than falling through to `Serve`.
 - `backend/src/lib.rs::run` is the server's entry point. It performs the ordered setup sequence described in Runtime
-  behaviour, spawns the five background workers, serves HTTP until shutdown, then drains the workers before returning.
+  behaviour, starts the worker supervisor and serves HTTP alongside it, awaiting both before returning.
 - `backend/src/lib.rs::build_router` and `::build_router_with_session_store` assemble the Axum router `run` serves: the
   reserved-prefix routes, the OPDS mount when enabled, the SPA fallback when a frontend dist path is configured, and the
   middleware layers (CSP, CSRF, the security-headers wrapper, the `problem_instance_layer`, the session layer, tracing).
   Each layer's own behaviour belongs to its own subject; this Design only fixes the order in which
   `build_router_with_session_store` composes them, which decides what a rejection at one layer carries from the layers
   outside it.
-- `backend/src/lib.rs::drain_workers` is the shutdown-side counterpart to spawning: it awaits a `Vec` of named
-  `JoinHandle<()>`s against one shared deadline and aborts (with a bounded grace check) any that overruns it.
+- `backend/src/lib.rs::worker_supervisor` configures task-supervisor's restart window, backoff, dead-task threshold and
+  stop timeout. `spawn_workers` registers the five service workers and the filesystem watcher. `Worker` adapts
+  successful returns outside cancellation into failures; `supervise_until_shutdown` maps a terminal supervisor error to
+  shutdown cancellation and an error returned by `run`.
 - `backend/src/lib.rs::apply_or_verify_schema` is the schema-step flag selector: it branches on `config.auto_migrate`
   between an in-process migration run (`db::run_migrations`) and a read-only verification (`db::verify_schema_current`).
   It is extracted from `run` specifically so both branches are pinned by tests.
@@ -89,14 +92,15 @@ directly rather than assembling its own `AppState` and calling `build_router`.
   `/api/v1` and carry an explicit empty `security(())` OpenAPI annotation, opting out of the document-level
   session-cookie default.
 - The five background workers, each entered from its own module and given only what it needs:
-  - `services::settings::spawn_listener` (settings LISTEN/NOTIFY reload, refreshing `AppState.settings`).
+  - `services::settings::listen_loop` (settings LISTEN/NOTIFY reload, refreshing `AppState.settings`).
   - `services::ingestion::run_watcher` (one owner for capability discovery, readiness, attempts, retries and cleanup,
-    receiving shared `LibraryFiles`, the live settings cache and its command receiver).
+    receiving shared `LibraryFiles`, the live settings cache, command receiver and filesystem event receiver).
   - `services::enrichment::queue::spawn_queue` (the enrichment job queue).
   - `services::session_sweep::run_sweep` (the hourly expired-session reaper, driving `PostgresStore`'s `ExpiredDeletion`
     trait).
   - `services::writeback::queue::spawn_worker` (the writeback job queue, given the dedicated system-context pool
     described in Data and state and shared `LibraryFiles`; also owns the bounded relocation-intent sweep).
+- `services::ingestion::watcher::watch` is a sixth supervised task, forwarding filesystem events to the coordinator.
 - `Dockerfile`'s `runtime` stage (the final `FROM debian:trixie-slim ... AS runtime` block) copies the release binary
   and the built frontend, creates a fixed non-root user, sets `REVERIE_FRONTEND_DIST_PATH`, and declares the
   `ENTRYPOINT` and `HEALTHCHECK` this subject's binary and readiness probe satisfy.
@@ -108,18 +112,19 @@ writer: startup calls `LibraryFiles::open` before constructing AppState. Library
 immutable for the lifetime of all AppState clones. Requests neither acquire nor replace roots. Other dependencies are
 written once at construction.
 
-The token is a local binding in `run`, cloned once per worker and once more into `shutdown_signal`. Two call sites write
-its cancelled flag: `shutdown_signal` (on `ctrl_c()` or SIGTERM) and `run` itself, unconditionally, immediately after
-`axum::serve` returns. Both call `.cancel()` on a clone that shares the same underlying token, and
-`CancellationToken::cancel` is idempotent: whichever call site runs first actually flips the flag, and the other is a
-no-op. No worker, and no other part of this subject, calls `.cancel()`; every worker only ever reads the token (via
-`cancel.cancelled()` or an equivalent `tokio::select!` arm inside its own loop) to learn when to stop.
+The process token has three cancellation writers: `shutdown_signal` on SIGINT or SIGTERM, `run` after HTTP serving
+returns, and `supervise_until_shutdown` when the supervisor exits. Cancellation is idempotent; these writers share the
+single decision to stop the process. task-supervisor alone creates and cancels the distinct token for each worker run.
+No worker schedules its own lifecycle restart.
 
-`AppState.ingestion` holds the shared command handle created at startup. Scan handlers submit discovery to the existing
-ingestion worker and receive classification counts after discovery. Watcher, startup and deadline signals coalesce
-inside that owner. Delete and rename notifications bypass create/modify batching; capability rechecks establish absence.
-Shutdown cancellation propagates to the active attempt's child token, without a terminal outcome. The worker retains a
-running blocking closure until return; a kernel-blocked read can outlast the existing shared drain budget.
+`AppState.ingestion` holds the command sender created at startup. Its receiver and the filesystem event receiver are
+held in shared `tokio::sync::Mutex` values retained by the supervisor's coordinator factory. Each run holds the receiver
+guards for its lifetime. Dropping a run releases the guards without closing the channels; queued commands survive
+backoff, while a command already removed for processing may report interrupted discovery if that run fails. Request
+handlers keep the same sender. The coordinator is the sole writer of its scheduling state; the watcher is the sole
+filesystem event producer. Watcher, startup and deadline signals coalesce inside that owner. Delete and rename
+notifications bypass create/modify batching; capability rechecks establish absence. Shutdown cancellation reaches the
+active attempt's child token. A kernel-blocked read can outlast the supervisor's stop timeout.
 
 The owner reconciles acknowledged publication evidence before reclaiming interrupted attempts under its advisory lock.
 Unresolved local ownership suspends only the affected input. Streaming accepts idle cancellation after 120 seconds;
@@ -155,18 +160,15 @@ observation. Watchdog ticks and completion precede queued watcher traffic.
   `PUT /api/v1/settings` route handler also writes it directly, as an immediate local-cache update guarded by
   `apply_if_newer`'s revision check — so neither writer belongs to this subject, but there is more than one.
 - **The writeback pool** (`backend/src/db.rs::init_writeback_pool`) is built after `AppState` and is deliberately not
-  one of its fields: it is handed directly to the writeback worker's `tokio::spawn` closure and nowhere else. No request
-  handler receives it, because no request handler receives anything not reachable through `AppState`.
-- **The five worker `JoinHandle<()>`s** are local bindings in `run`, moved into one `Vec` and consumed by
-  `drain_workers` after `axum::serve` returns; nothing else observes them.
-- **`WORKER_DRAIN_TIMEOUT`** (30 seconds) and **`ABORT_GRACE`** (1 second) are compile-time constants in
-  `backend/src/lib.rs`; changing either needs a code change, not a configuration change.
-- **Per-worker enabled flags.** `config.enrichment.enabled` and `config.writeback.enabled` are read once, inside each
-  worker's own entry function, not by `run`: `run` spawns all five workers unconditionally regardless of these flags.
-  When a flag is `false`, that worker's function logs once and then only awaits `cancel.cancelled()`, returning as soon
-  as the shared token fires; its `JoinHandle` is otherwise indistinguishable, at drain time, from one that ran its full
-  loop. The ingestion watcher (`services::ingestion::run_watcher`) has no such flag in its config section, so it always
-  runs for the life of the process.
+  one of its fields: it is retained by the writeback task factory and cloned for each run. No request handler receives
+  it, because no request handler receives anything not reachable through `AppState`.
+- **The supervisor handle** is local to `run`. task-supervisor owns run handles, restart history, timers and drain
+  deadlines. Four restarts are allowed per task in a ten-minute sliding window; the fifth failure marks that task dead.
+  The dead-task threshold is zero, so any dead task stops the supervisor. Backoff starts at one second, doubles up to
+  thirty seconds and uses the crate's default ten percent random delay reduction. Stop timeout is thirty seconds per
+  run, concurrently.
+- **Per-worker enabled flags.** `config.enrichment.enabled` and `config.writeback.enabled` are read at the start of each
+  run. Disabled workers wait for cancellation rather than returning early. All six tasks are registered unconditionally.
 
 ## Runtime behaviour
 
@@ -207,18 +209,18 @@ observation. Watchdog ticks and completion precede queued watcher traffic.
 11. `db::init_writeback_pool` opens the writeback pool, and the TCP listener is bound. One more fallible call follows
     immediately: `listener.local_addr()` is read back to log the bound address. Nothing has been spawned yet at this
     point, so an early return from any of these steps cannot leak a running task.
-12. A `CancellationToken` is created, and the five workers are spawned in this order: the settings listener, the
-    ingestion watcher, the enrichment queue, the session sweep, then the writeback worker. Each receives its own clone
-    of the token and (where relevant) its own clone of the pools and configuration it needs.
-13. `axum::serve` begins accepting connections, wrapped in `with_graceful_shutdown(shutdown_signal(...))`.
+12. A process `CancellationToken` is created and `spawn_workers` starts one supervisor with six tasks. Worker startup
+    order is unspecified. Each run receives a fresh cancellation token and owned clones of its dependencies.
+13. HTTP serving and `supervise_until_shutdown` run concurrently. The graceful-shutdown future responds to either an
+    operating-system signal or process-token cancellation.
 
 The enabled writeback worker resets orphaned claims before claiming, then sweeps at most 100 eligible relocation
 intents. Transient reset, startup-sweep, periodic-sweep and claim errors are logged inside that worker and retried on
 its existing timer. It retains tracked jobs and permits through these failures. The indexed sweep repeats every five
 minutes. Open intents use five-minute claim spacing; ordinary jobs awaiting recovery preserve their edit budgets until
 destination finalisation starts an edit. Relocation carriers reconcile only; metadata and cover jobs reconcile, reload
-their snapshots and continue. Disabling writeback skips resets, claims and sweeps. The shared shutdown budget and
-tracked-job drain remain unchanged.
+their snapshots and continue. Disabling writeback skips resets, claims and sweeps. Its tracked-job drain completes
+before shutdown recovery unless the supervisor stop timeout expires.
 
 **An authorised OPDS download:** the handler first accepts its database/RLS lookup, then calls
 `LibraryFiles::open_download` with the recorded library identity and checked relative path. Unknown identities never
@@ -229,32 +231,31 @@ metadata supplies Content-Length.
 
 **A graceful shutdown**, triggered by SIGTERM or Ctrl+C while serving:
 
-1. `shutdown_signal`'s `tokio::select!` resolves on whichever of `ctrl_c()` or the registered SIGTERM handler fires
-   first, logs once, and calls `cancel_token.cancel()`.
-2. Every worker's own loop observes the same token becoming cancelled and begins its own exit path (for example, the
-   writeback worker stops claiming and drains its tracked jobs before reverting orphaned claims).
-3. Axum's graceful-shutdown future resolving makes `axum::serve` stop accepting new connections, finish in-flight ones,
-   and return; `run` binds this as `serve_result`.
-4. `run` calls `cancel_token.cancel()` again unconditionally. Because step 1 already cancelled the same underlying
-   token, this is a no-op on the clean-shutdown path; it exists for the unclean path below.
-5. `drain_workers` computes one deadline (`now + WORKER_DRAIN_TIMEOUT`) and awaits the five `JoinHandle`s in the order
-   they were spawned, each against that same deadline via `tokio::time::timeout_at`. A handle that resolves before the
-   deadline logs `"background worker drained"`; one that resolves with a `JoinError` (a panic) logs the error and does
-   not stop the loop from draining the remaining workers. A handle still pending at the deadline is aborted, logged, and
-   given the separate, short `ABORT_GRACE` window to confirm the abort actually took effect before `drain_workers` moves
-   on. Because the deadline is one fixed instant rather than a per-worker budget, a worker that overruns it exhausts the
-   time remaining for every worker still queued behind it: once the deadline has passed, each subsequent `timeout_at`
-   call returns immediately as elapsed. Writeback's blocking phases retain their semaphore permit across async
-   cancellation. If the shared deadline aborts its worker before jobs finish, unfinished claims stay `in_progress` for
-   startup recovery. The deadline does not promise completion of every blocking writer.
-6. `run` returns `serve_result` to `main`, which propagates a non-zero exit only when it carries an error.
+1. `shutdown_signal` cancels the process token. Axum stops accepting connections and finishes in-flight requests.
+2. `supervise_until_shutdown` calls the supervisor's `shutdown`; the crate cancels every run and drains them
+   concurrently. Writeback and enrichment stop claiming, await tracked jobs and perform shutdown recovery. Session sweep
+   and the settings listener return from their cancellation branches. The filesystem watcher flushes pending events
+   where it can, bounded by the same stop timeout.
+3. A run still pending after thirty seconds is dropped by the crate. Writeback blocking phases retain their semaphore
+   permit across async cancellation; unfinished claims remain for startup recovery. This timeout does not guarantee
+   completion of a blocking operating-system call.
+4. `run` awaits both HTTP and supervisor outcomes. A supervisor error takes precedence; otherwise it returns the HTTP
+   result. `main` propagates errors to a non-zero process exit.
 
-**An unclean shutdown**, where `axum::serve` itself returns an `Err` (for example, an accept-loop failure) without a
-signal ever having arrived: `shutdown_signal`'s future never resolves, so step 1 above never runs and the token is never
-cancelled on that path. `run`'s own unconditional `cancel_token.cancel()` (step 4 above) is what cancels it in this
-case, and `drain_workers` still runs before `run` returns the `Err` — the every-fallible-step-before-any-spawn ordering
-at startup has a shutdown-side counterpart: a serve failure still drains every worker rather than returning immediately
-and leaving them for the Tokio runtime to tear down.
+**An HTTP serving error** cancels the process token and follows the same supervisor shutdown and drain path before
+returning the error. A supervisor terminal error also cancels the process token, causing HTTP graceful shutdown.
+
+**Worker recovery:** task-supervisor catches run errors and panics and schedules restarts. `Worker` also rejects an
+`Ok(())` returned before its run token was cancelled. Restart history belongs to each task independently: five different
+workers failing once each do not exhaust a shared budget. Once any task exhausts its own limit, the supervisor drains
+all remaining runs and returns `TooManyDeadTasks`; the process exits non-zero. The deployment runtime supplies the
+container restart policy.
+
+The coordinator's advisory-lock connection closes asynchronously when a run drops. A new run may temporarily fail its
+ownership probe; its existing dependency probe retry clears that pause after the old connection closes. Command senders
+and queued commands remain valid during the restart. Each filesystem watcher run owns its notify watcher and uses its
+own run token. Enrichment drains admitted jobs before returning a claim error, so restart recovery cannot reset their
+rows while they are still running.
 
 **CLI dispatch**, for example an operator or a one-shot container step invoking `reverie migrate`: `parse_command`
 matches the single token `"migrate"` to `Command::Migrate`; `main.rs`'s exhaustive match calls `run_migrate`, which
@@ -290,17 +291,14 @@ is never reached.
   live (serving requests, including this very probe) while its database connection is down. This is the distinction the
   Dockerfile's `HEALTHCHECK` relies on: it probes readiness, not liveness, so the container is only reported healthy
   once the database is actually reachable.
-- **A worker's own function returning an `Err` while running.** The ingestion watcher, enrichment queue and writeback
-  worker are each spawned inside a closure of the shape
-  `if let Err(e) = <worker fn>(...).await { tracing::error!(...) }`; the closure itself always returns `()`, so the
-  resulting `JoinHandle<()>` always resolves `Ok(())` regardless of whether the worker's own function failed internally.
-  Writeback handles transient reset, sweep and claim errors within its loop, so these errors do not end its function. At
-  drain time this means a worker that exited early because of an internal error is logged once, at the point of failure,
-  and is otherwise indistinguishable from a worker that ran cleanly for the life of the process: nothing in this subject
-  restarts it, and nothing re-surfaces the failure once the process has moved past that point in its logs.
-- **A worker overrunning the shared drain deadline.** Covered in Runtime behaviour: it is aborted, logged, and given a
-  short bounded window to confirm the abort took effect; if it is still running after that window, a final error is
-  logged and the worker is left for the Tokio runtime to tear down when the process itself exits.
+- **Worker error, panic or unexpected success.** The supervisor restarts that task with backoff. The settings listener
+  returns connection failures to the supervisor. Session sweep logs database failures and retries at its next scheduled
+  sweep; writeback retains its reset, sweep and claim retry timers. Enrichment claim failures drain admitted jobs before
+  propagating to supervision. Per-job retry schedules and ingestion dependency probes remain worker-owned.
+- **An exhausted worker or failed supervisor.** The supervisor drains remaining runs, then process cancellation stops
+  HTTP and `run` returns an error. A prolonged database outage can therefore restart the whole instance.
+- **A worker overrunning its stop timeout.** The crate drops its future after thirty seconds. Blocking work may continue
+  until its operating-system call returns; startup recovery handles unfinished durable claims.
 
 ## Security and operations
 
@@ -339,6 +337,11 @@ whatever the RLS policies themselves would otherwise allow.
 The bootstrap seed password (`REVERIE_BOOTSTRAP_PASSWORD`) is read directly from the environment in
 `seed_admin_if_configured` rather than retained on the long-lived `Config`, and only the resulting account's email is
 logged, never the password.
+
+Container deployments configure a restart policy so a non-zero worker-supervision exit restarts the instance. Compose
+uses `restart: unless-stopped`; the repository's staging topology supplies that policy for the application service.
+Deployments without a restart policy leave the instance stopped after escalation. Container stop grace includes the
+thirty-second worker drain and any remaining HTTP request drain.
 
 An operator who deploys the published image runs the process as the fixed, non-root `reverie` user (numeric id 10001,
 pinned rather than allocated by `useradd -r` so it does not shift between base-image rebuilds); the `ENTRYPOINT` invokes

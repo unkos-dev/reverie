@@ -39,14 +39,21 @@ pub struct DiscoveryResult {
     pub monitor: &'static str,
 }
 
-pub type CoordinatorCommands =
-    mpsc::Receiver<tokio::sync::oneshot::Sender<anyhow::Result<DiscoveryResult>>>;
+/// Receiver retained across supervised coordinator runs.
+pub type CoordinatorCommands = std::sync::Arc<
+    tokio::sync::Mutex<
+        mpsc::Receiver<tokio::sync::oneshot::Sender<anyhow::Result<DiscoveryResult>>>,
+    >,
+>;
 
 /// Create the shared handle and its single-owner receiver.
 #[must_use]
 pub fn coordinator_channel() -> (CoordinatorHandle, CoordinatorCommands) {
     let (sender, receiver) = mpsc::channel(16);
-    (CoordinatorHandle { sender }, receiver)
+    (
+        CoordinatorHandle { sender },
+        std::sync::Arc::new(tokio::sync::Mutex::new(receiver)),
+    )
 }
 
 impl CoordinatorHandle {
@@ -1128,17 +1135,12 @@ pub async fn run_watcher(
     cancel: CancellationToken,
     files: LibraryFiles,
     settings: std::sync::Arc<tokio::sync::RwLock<crate::models::settings::Settings>>,
-    mut commands: CoordinatorCommands,
+    commands: CoordinatorCommands,
+    events: std::sync::Arc<tokio::sync::Mutex<mpsc::Receiver<Vec<PathBuf>>>>,
 ) -> Result<(), anyhow::Error> {
     use futures::StreamExt;
-    let (tx, mut rx) = mpsc::channel::<Vec<PathBuf>>(16);
-    let watcher_cancel = cancel.clone();
-    let ingestion_path = PathBuf::from(&config.ingestion_path);
-    tokio::spawn(async move {
-        if let Err(error) = super::watcher::watch(ingestion_path, tx, watcher_cancel).await {
-            tracing::error!(%error, "filesystem watcher failed");
-        }
-    });
+    let mut commands = commands.lock().await;
+    let mut rx = events.lock().await;
     let mut owner = Coordinator {
         config,
         pool,
@@ -1215,7 +1217,41 @@ pub async fn run_watcher(
             }
         }
     }
+    drop(commands);
+    drop(rx);
     Ok(())
+}
+
+#[cfg(test)]
+pub async fn run_test_watcher(
+    config: Config,
+    pool: PgPool,
+    cancel: CancellationToken,
+    files: LibraryFiles,
+    settings: std::sync::Arc<tokio::sync::RwLock<crate::models::settings::Settings>>,
+    commands: CoordinatorCommands,
+) -> anyhow::Result<()> {
+    let (tx, rx) = mpsc::channel(16);
+    let stop_watcher = cancel.child_token();
+    let guard = stop_watcher.clone().drop_guard();
+    let watcher = tokio::spawn(super::watcher::watch(
+        PathBuf::from(&config.ingestion_path),
+        tx,
+        stop_watcher,
+    ));
+    let result = run_watcher(
+        config,
+        pool,
+        cancel,
+        files,
+        settings,
+        commands,
+        std::sync::Arc::new(tokio::sync::Mutex::new(rx)),
+    )
+    .await;
+    drop(guard);
+    watcher.await??;
+    result
 }
 
 /// Session ownership for ingestion discovery, attempts and recovery.
@@ -2795,6 +2831,118 @@ mod tests {
     }
 
     #[sqlx::test(migrations = "./migrations")]
+    async fn coordinator_restart_preserves_sender_and_queued_commands(pool: PgPool) {
+        use std::sync::{
+            Arc,
+            atomic::{AtomicUsize, Ordering},
+        };
+        let ing = ingestion_pool_for(&pool).await;
+        let (_source, _library, config) = scan_env();
+        let library_id = crate::models::storage_library::default_library_id(&ing)
+            .await
+            .unwrap();
+        let files = LibraryFiles::open(
+            [(library_id, config.library_path.clone())],
+            &config.ingestion_path,
+        )
+        .unwrap();
+        let (handle, commands) = coordinator_channel();
+        let (events_tx, events_rx) = mpsc::channel(16);
+        let events = Arc::new(tokio::sync::Mutex::new(events_rx));
+        let runs = Arc::new(AtomicUsize::new(0));
+        let (started, mut ready) = mpsc::unbounded_channel();
+        let crash = Arc::new(tokio::sync::Notify::new());
+        let trigger = crash.clone();
+        let supervisor = crate::worker_supervisor()
+            .with_restart_jitter(0.0)
+            .with_task(
+                "coordinator",
+                crate::Worker(move |cancel| {
+                    let commands = commands.clone();
+                    let events = events.clone();
+                    let config = config.clone();
+                    let pool = ing.clone();
+                    let files = files.clone();
+                    let runs = runs.clone();
+                    let started = started.clone();
+                    let crash = crash.clone();
+                    async move {
+                        if runs.fetch_add(1, Ordering::SeqCst) == 0 {
+                            let _receiver = commands.lock().await;
+                            started.send(()).unwrap();
+                            crash.notified().await;
+                            panic!("coordinator failed while holding command receiver");
+                        }
+                        run_watcher(
+                            config,
+                            pool,
+                            cancel,
+                            files,
+                            crate::test_support::test_settings(),
+                            commands,
+                            events,
+                        )
+                        .await
+                    }
+                }),
+            )
+            .spawn();
+        ready.recv().await.unwrap();
+        let queued = tokio::spawn({
+            let handle = handle.clone();
+            async move { handle.scan().await }
+        });
+        tokio::task::yield_now().await;
+        trigger.notify_one();
+        let discovery = tokio::time::timeout(std::time::Duration::from_secs(5), queued)
+            .await
+            .unwrap()
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            discovery.queued + discovery.deferred + discovery.suppressed,
+            0
+        );
+        handle.scan().await.unwrap();
+        supervisor.shutdown().await.unwrap();
+        drop(events_tx);
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn coordinator_restart_reacquires_dropped_ownership(pool: PgPool) {
+        let ing = ingestion_pool_for(&pool).await;
+        let (_source, _library, config) = scan_env();
+        let library_id = crate::models::storage_library::default_library_id(&ing)
+            .await
+            .unwrap();
+        let files = LibraryFiles::open(
+            [(library_id, config.library_path.clone())],
+            &config.ingestion_path,
+        )
+        .unwrap();
+        let mut previous = coordinator(ing.clone(), config.clone(), files.clone());
+        previous.probe().await.unwrap();
+        let mut next = coordinator(ing, config, files);
+        let unavailable = next.probe().await.unwrap_err();
+        next.pause(&unavailable);
+        drop(previous);
+        tokio::time::timeout(std::time::Duration::from_secs(5), async {
+            loop {
+                next.pause.as_mut().unwrap().next = tokio::time::Instant::now();
+                assert!(next.reprobe().await.unwrap().is_none());
+                if next.pause.is_none() {
+                    break;
+                }
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .unwrap();
+        assert!(next.pause.is_none());
+        assert!(next.lock.is_some());
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
     async fn capability_ingestion_discovery_watcher_flood_services_completion_and_shutdown(
         pool: PgPool,
     ) {
@@ -2814,7 +2962,7 @@ mod tests {
         let (handle, commands) = coordinator_channel();
         let settings = crate::test_support::test_settings();
         settings.write().await.ingestion.cleanup_imported = false;
-        let worker = tokio::spawn(run_watcher(
+        let worker = tokio::spawn(run_test_watcher(
             config,
             ing.clone(),
             cancel.clone(),
@@ -4045,7 +4193,7 @@ mod tests {
         let settings = std::sync::Arc::new(tokio::sync::RwLock::new(seeded));
         let cancel = CancellationToken::new();
         let (handle, commands) = coordinator_channel();
-        let worker = tokio::spawn(run_watcher(
+        let worker = tokio::spawn(run_test_watcher(
             config,
             ing.clone(),
             cancel.clone(),

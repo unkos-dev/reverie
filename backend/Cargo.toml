@@ -77,6 +77,7 @@ sqlx = { version = "0.9.0", features = [
   "migrate",
 ] }
 thiserror = "2.0.18"
+task-supervisor = "0.5.2"
 # Boundary-only. First-party code uses chrono; `time` is declared because three
 # third-party signatures take its types directly (tower-sessions `Expiry` and
 # `Record`, and the cookie builder's `max_age`). clippy's `disallowed-types`

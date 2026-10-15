@@ -414,10 +414,10 @@ mod tests {
         let (_id, auth) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
         let mut state = test_support::test_state();
         state.pool = app_pool;
-        let (handle, mut commands) = crate::services::ingestion::coordinator_channel();
+        let (handle, commands) = crate::services::ingestion::coordinator_channel();
         state.ingestion = handle;
         let owner = tokio::spawn(async move {
-            let reply = commands.recv().await.unwrap();
+            let reply = commands.lock().await.recv().await.unwrap();
             reply
                 .send(Ok(crate::services::ingestion::DiscoveryResult {
                     queued: 1,
@@ -451,7 +451,7 @@ mod tests {
             test_support::db::create_adult_and_basic_auth(&app_pool, "scan-adult").await;
         let mut state = test_support::test_state();
         state.pool = app_pool;
-        let (handle, mut commands) = crate::services::ingestion::coordinator_channel();
+        let (handle, commands) = crate::services::ingestion::coordinator_channel();
         state.ingestion = handle;
         let server = axum_test::TestServer::new(crate::build_router_with_session_store(
             state,
@@ -462,6 +462,6 @@ mod tests {
             .add_header(axum::http::header::AUTHORIZATION, auth)
             .await;
         assert_eq!(response.status_code(), StatusCode::FORBIDDEN);
-        assert!(commands.try_recv().is_err());
+        assert!(commands.lock().await.try_recv().is_err());
     }
 }

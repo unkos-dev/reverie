@@ -417,6 +417,13 @@
       "title": "API authorisation: scope, role and ownership axes over Reverie-issued credentials"
     },
     {
+      "id": "REV-ADR-0057",
+      "kind": "adr",
+      "path": "docs/adr/0057-supervise-background-workers-with-task-supervisor.md",
+      "status": "proposed",
+      "title": "Supervise background workers with task-supervisor"
+    },
+    {
       "governed-by": [
         "REV-ADR-0041",
         "REV-ADR-0047"
@@ -767,7 +774,8 @@
       "governed-by": [
         "REV-ADR-0021",
         "REV-ADR-0053",
-        "REV-ADR-0051"
+        "REV-ADR-0051",
+        "REV-ADR-0057"
       ],
       "id": "REV-DESIGN-0024",
       "kind": "design",
