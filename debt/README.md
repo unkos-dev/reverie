@@ -144,9 +144,6 @@ by definition active debt, the roadmap reads the directory as-is: no status filt
   Cargo only via `snyk sbom test`, which creates no monitored target and emits no SARIF, so the advisory baseline covers
   npm, sources, and the image but not crates; cargo-deny scans Cargo.lock directly in the meantime; lifts when
   `snyk test`/`snyk monitor` support Cargo natively
-- [cssMinify forced to esbuild while lightningcss corrupts light-dark()](2026-07-05-cssminify-esbuild-lightdark.md):
-  adopted from PR review; rolldown-vite's default minifier miscompiles light-dark() and every grid color token uses it;
-  lifts when the pinned vite-plus ships the lightningcss fix and the default minifier passes the built-CSS check
 - [dependency-review allow-ghsas suppresses vite-alias false positives](2026-06-30-vite-plus-alias-dependency-review.md):
   adopted from PR #558; vp's `vite` npm alias makes the fork match real-vite advisories, so the gate suppresses 14
   GHSAs; lifts when vp drops the alias or dependency-review resolves npm aliases
