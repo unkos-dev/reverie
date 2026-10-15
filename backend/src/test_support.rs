@@ -180,6 +180,7 @@ pub fn test_settings() -> std::sync::Arc<tokio::sync::RwLock<crate::models::sett
         opds_enabled: true,
         opds_page_size: 50,
         ingestion: crate::models::settings::IngestionSettings {
+            ingestion_enabled: true,
             accepted_formats: vec!["epub".into()],
             cleanup_imported: true,
             cleanup_duplicates: false,

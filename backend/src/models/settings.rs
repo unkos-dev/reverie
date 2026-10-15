@@ -11,6 +11,8 @@ use crate::models::manifestation_format::ManifestationFormat;
 /// Live acquisition and source-cleanup policy.
 #[derive(Debug, Clone, Serialize, sqlx::FromRow, utoipa::ToSchema)]
 pub struct IngestionSettings {
+    /// Whether new ingestion attempts may be admitted.
+    pub ingestion_enabled: bool,
     /// Formats accepted for ingestion, at least one; currently only EPUB is supported.
     #[schema(value_type = Vec<ManifestationFormat>, min_items = 1)]
     pub accepted_formats: Vec<String>,
@@ -100,6 +102,8 @@ pub struct Settings {
 #[derive(Debug, Deserialize, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct UpdateSettings {
+    /// Whether new ingestion attempts may be admitted.
+    pub ingestion_enabled: Option<bool>,
     /// Whether the enrichment pipeline is active.
     pub enrichment_enabled: Option<bool>,
     /// Maximum concurrent enrichment workers (1–10).
@@ -176,7 +180,8 @@ impl UpdateSettings {
     /// Returns true if the update touches no fields (empty body).
     #[must_use]
     pub const fn is_empty(&self) -> bool {
-        self.enrichment_enabled.is_none()
+        self.ingestion_enabled.is_none()
+            && self.enrichment_enabled.is_none()
             && self.enrichment_concurrency.is_none()
             && self.enrichment_poll_idle_secs.is_none()
             && self.enrichment_fetch_budget_secs.is_none()

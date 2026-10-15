@@ -780,8 +780,10 @@ impl Coordinator {
         &mut self,
         cancel: &CancellationToken,
     ) -> anyhow::Result<Option<Active>> {
+        let enabled = self.settings.read().await.ingestion.ingestion_enabled;
         if self.pending.is_none()
             && self.pause.is_none()
+            && enabled
             && let Some(id) = self.ready.pop_front()
             && let Some(input) = self.inputs.get(&id).cloned()
             && let Some(library_id) = self.library_id
@@ -2832,6 +2834,75 @@ fn draft_metadata(
 )]
 mod tests {
     use super::*;
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn ingestion_admission_preserves_ready_work_and_finishes_admitted_work(pool: PgPool) {
+        use crate::models::ingestion_input;
+        let ing = ingestion_pool_for(&pool).await;
+        let (source, _library, config) = scan_env();
+        let library_id = crate::models::storage_library::default_library_id(&ing)
+            .await
+            .unwrap();
+        let files = LibraryFiles::open(
+            [(library_id, config.library_path.clone())],
+            &config.ingestion_path,
+        )
+        .unwrap();
+        std::fs::write(source.path().join("book.epub"), make_minimal_epub()).unwrap();
+        let mut owner = coordinator(ing.clone(), config, files);
+        owner.settings.write().await.ingestion.ingestion_enabled = false;
+        owner.probe().await.unwrap();
+        assert_eq!(owner.discover(false).await.unwrap().deferred, 1);
+        let input = ingestion_input::current_page(&ing, None)
+            .await
+            .unwrap()
+            .remove(0);
+        let id = input.id;
+        let key = owner.keys.remove(&id).unwrap();
+        owner.deadlines.remove(&key);
+        owner.ready.push_back(id);
+        owner.ready_set.insert(id);
+        let deadlines = owner.deadlines.len();
+        let cancel = CancellationToken::new();
+        assert!(owner.start_attempt(&cancel).await.unwrap().is_none());
+        assert_eq!(owner.ready.iter().copied().collect::<Vec<_>>(), [id]);
+        assert!(owner.ready_set.contains(&id));
+        assert_eq!(owner.deadlines.len(), deadlines);
+        assert!(
+            sqlx::query_scalar!(
+                "SELECT outcome::text FROM ingestion_jobs WHERE input_id = $1",
+                id
+            )
+            .fetch_optional(&ing)
+            .await
+            .unwrap()
+            .is_none()
+        );
+        assert_eq!(
+            ingestion_input::transient_count(&ing, &input)
+                .await
+                .unwrap(),
+            0
+        );
+        owner.settings.write().await.ingestion.ingestion_enabled = true;
+        let mut active = owner.start_attempt(&cancel).await.unwrap().unwrap();
+        assert!(owner.ready.is_empty());
+        owner.settings.write().await.ingestion.ingestion_enabled = false;
+        let completed = (&mut active.future).await;
+        owner.complete_attempt(completed, false).await.unwrap();
+        assert!(owner.pending.is_none());
+        assert_eq!(
+            sqlx::query_scalar!(
+                "SELECT outcome::text FROM ingestion_jobs WHERE input_id = $1",
+                id
+            )
+            .fetch_one(&ing)
+            .await
+            .unwrap(),
+            Some("imported".into())
+        );
+        assert!(!source.path().join("book.epub").exists());
+    }
 
     #[sqlx::test(migrations = "./migrations")]
     async fn capability_ingestion_review_fresh_shared_recommit_keeps_pause_until_healthy_probe(
@@ -4970,6 +5041,32 @@ mod tests {
             needs_change: false,
             exhausted: false,
         }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn ingestion_admission_enable_preserves_dependency_pause_and_retry_deadline() {
+        let state = crate::test_support::test_state();
+        let mut owner = coordinator(state.pool, state.config, state.library_files);
+        let input = pending_input();
+        let mut retry = no_retry(input.id);
+        retry.count = 1;
+        retry.failed_at = Some(chrono::Utc::now());
+        let id = input.id;
+        owner.schedule(input, &retry);
+        owner.pause(&"database unavailable");
+        let next_probe = owner.pause.as_ref().unwrap().next;
+        let deadline = owner.deadlines.deadline(owner.keys.get(&id).unwrap());
+        owner.settings.write().await.ingestion.ingestion_enabled = false;
+        let cancel = CancellationToken::new();
+        assert!(owner.start_attempt(&cancel).await.unwrap().is_none());
+        owner.settings.write().await.ingestion.ingestion_enabled = true;
+        assert!(owner.start_attempt(&cancel).await.unwrap().is_none());
+        assert_eq!(owner.pause.as_ref().unwrap().next, next_probe);
+        assert_eq!(owner.deadlines.len(), 1);
+        assert_eq!(
+            owner.deadlines.deadline(owner.keys.get(&id).unwrap()),
+            deadline
+        );
     }
 
     #[tokio::test(start_paused = true)]

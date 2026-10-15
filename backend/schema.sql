@@ -1165,6 +1165,7 @@ CREATE TABLE public.settings (
     cleanup_imported boolean DEFAULT true NOT NULL,
     cleanup_duplicates boolean DEFAULT false NOT NULL,
     ingestion_seeded boolean DEFAULT false NOT NULL,
+    ingestion_enabled boolean DEFAULT true NOT NULL,
     CONSTRAINT settings_accepted_formats_check CHECK ((accepted_formats <@ ARRAY['epub'::text])),
     CONSTRAINT settings_accepted_formats_nonempty CHECK ((accepted_formats <> '{}'::text[])),
     CONSTRAINT settings_cover_download_timeout_secs_check CHECK ((cover_download_timeout_secs >= 1)),

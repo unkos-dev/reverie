@@ -9474,6 +9474,7 @@
         "type": "object",
         "description": "Live acquisition and source-cleanup policy.",
         "required": [
+          "ingestion_enabled",
           "accepted_formats",
           "cleanup_imported",
           "cleanup_duplicates"
@@ -9494,6 +9495,10 @@
           "cleanup_imported": {
             "type": "boolean",
             "description": "Remove an imported source after its outcome is committed."
+          },
+          "ingestion_enabled": {
+            "type": "boolean",
+            "description": "Whether new ingestion attempts may be admitted."
           }
         }
       },
@@ -11471,6 +11476,13 @@
             ],
             "format": "int32",
             "description": "Seconds the enrichment poller sleeps when the queue is empty."
+          },
+          "ingestion_enabled": {
+            "type": [
+              "boolean",
+              "null"
+            ],
+            "description": "Whether new ingestion attempts may be admitted."
           },
           "opds_enabled": {
             "type": [

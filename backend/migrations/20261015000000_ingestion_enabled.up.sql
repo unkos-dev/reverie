@@ -1,0 +1,1 @@
+ALTER TABLE settings ADD COLUMN ingestion_enabled BOOLEAN NOT NULL DEFAULT TRUE;

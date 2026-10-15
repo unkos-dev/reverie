@@ -37,6 +37,7 @@ async fn read<'a>(
             writeback_max_attempts,
             opds_enabled,
             opds_page_size,
+            ingestion_enabled,
             accepted_formats,
             cleanup_imported,
             cleanup_duplicates,
@@ -64,6 +65,7 @@ async fn read<'a>(
         opds_enabled: row.opds_enabled,
         opds_page_size: row.opds_page_size,
         ingestion: IngestionSettings {
+            ingestion_enabled: row.ingestion_enabled,
             accepted_formats: row.accepted_formats,
             cleanup_imported: row.cleanup_imported,
             cleanup_duplicates: row.cleanup_duplicates,
@@ -207,6 +209,11 @@ pub async fn save<'a>(
     let mut qb: QueryBuilder<Postgres> = QueryBuilder::new("UPDATE settings SET ");
     let mut separated = qb.separated(", ");
 
+    if let Some(v) = req.ingestion_enabled {
+        separated.push("ingestion_enabled = ");
+        separated.push_bind_unseparated(v);
+    }
+
     if let Some(v) = req.enrichment_enabled {
         separated.push("enrichment_enabled = ");
         separated.push_bind_unseparated(v);
@@ -297,7 +304,7 @@ pub async fn save<'a>(
     separated.push("revision = revision + 1");
     separated.push("updated_at = now()");
 
-    qb.push(" WHERE id = true RETURNING enrichment_enabled, enrichment_concurrency, enrichment_poll_idle_secs, enrichment_fetch_budget_secs, cover_max_bytes, cover_download_timeout_secs, cover_min_long_edge_px, cover_redirect_limit, writeback_enabled, writeback_concurrency, writeback_poll_idle_secs, writeback_max_attempts, opds_enabled, opds_page_size, accepted_formats, cleanup_imported, cleanup_duplicates, provider_visibility, revision, updated_at");
+    qb.push(" WHERE id = true RETURNING enrichment_enabled, enrichment_concurrency, enrichment_poll_idle_secs, enrichment_fetch_budget_secs, cover_max_bytes, cover_download_timeout_secs, cover_min_long_edge_px, cover_redirect_limit, writeback_enabled, writeback_concurrency, writeback_poll_idle_secs, writeback_max_attempts, opds_enabled, opds_page_size, ingestion_enabled, accepted_formats, cleanup_imported, cleanup_duplicates, provider_visibility, revision, updated_at");
 
     qb.build_query_as::<Settings>().fetch_one(executor).await
 }
@@ -373,6 +380,7 @@ mod tests {
 
     fn empty_update() -> UpdateSettings {
         UpdateSettings {
+            ingestion_enabled: None,
             enrichment_enabled: None,
             enrichment_concurrency: None,
             enrichment_poll_idle_secs: None,
@@ -392,6 +400,38 @@ mod tests {
             cleanup_duplicates: None,
             provider_visibility: None,
         }
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn ingestion_admission_defaults_enabled_and_survives_seed_and_reload(pool: PgPool) {
+        assert!(load(&pool).await.unwrap().ingestion.ingestion_enabled);
+        let mut request = empty_update();
+        request.ingestion_enabled = Some(false);
+        assert!(!request.is_empty());
+        let saved = save(&pool, &request).await.unwrap();
+        assert!(!saved.ingestion.ingestion_enabled);
+        let config = crate::config::Config {
+            cleanup_imported: false,
+            cleanup_duplicates: true,
+            ..Default::default()
+        };
+        let seeded = seed_ingestion(&pool, &config).await.unwrap();
+        assert_eq!(seeded.revision, saved.revision + 1);
+        assert!(!seeded.ingestion.ingestion_enabled);
+        assert!(!seeded.ingestion.cleanup_imported);
+        assert!(seeded.ingestion.cleanup_duplicates);
+        let restarted = seed_ingestion(&pool, &crate::config::Config::default())
+            .await
+            .unwrap();
+        assert!(!restarted.ingestion.ingestion_enabled);
+        assert_eq!(restarted.revision, seeded.revision);
+        let mut resident = saved;
+        assert!(apply_if_newer(&mut resident, restarted));
+        request.ingestion_enabled = Some(true);
+        let enabled = save(&pool, &request).await.unwrap();
+        assert!(apply_if_newer(&mut resident, enabled));
+        assert!(resident.ingestion.ingestion_enabled);
+        assert!(load(&pool).await.unwrap().ingestion.ingestion_enabled);
     }
 
     #[sqlx::test(migrations = "./migrations")]
@@ -490,11 +530,15 @@ mod tests {
     ) {
         let migrator = sqlx::migrate!("./migrations");
         migrator.undo(&pool, 20_261_004_010_000).await.unwrap();
-        let mut request = empty_update();
-        request.opds_page_size = Some(77);
-        let saved = save(&pool, &request).await.unwrap();
+        let revision = sqlx::query_scalar!(
+            "UPDATE settings SET opds_page_size = 77, revision = revision + 1, updated_at = now()
+             WHERE id = true RETURNING revision"
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
         migrator.run(&pool).await.unwrap();
-        assert!(saved.revision > 0);
+        assert!(revision > 0);
         assert!(
             !sqlx::query_scalar!("SELECT ingestion_seeded FROM settings WHERE id = true")
                 .fetch_one(&pool)
@@ -507,7 +551,7 @@ mod tests {
             ..Default::default()
         };
         let seeded = seed_ingestion(&pool, &config).await.unwrap();
-        assert_eq!(seeded.revision, saved.revision + 1);
+        assert_eq!(seeded.revision, revision + 1);
         assert_eq!(seeded.ingestion.accepted_formats, ["epub"]);
         assert!(!seeded.ingestion.cleanup_imported);
         assert!(seeded.ingestion.cleanup_duplicates);
@@ -523,9 +567,16 @@ mod tests {
         ] {
             migrator.undo(&pool, 20_261_011_000_000).await.unwrap();
             let needs_repair = formats.is_empty();
-            let mut request = empty_update();
-            request.accepted_formats = Some(formats);
-            let before = save(&pool, &request).await.unwrap();
+            let formats = formats.iter().map(ToString::to_string).collect::<Vec<_>>();
+            let before = sqlx::query!(
+                "UPDATE settings SET accepted_formats = $1, ingestion_seeded = true,
+                 revision = revision + 1, updated_at = now() WHERE id = true
+                 RETURNING revision, updated_at",
+                &formats
+            )
+            .fetch_one(&pool)
+            .await
+            .unwrap();
             migrator.run(&pool).await.unwrap();
             let after = load(&pool).await.unwrap();
             assert_eq!(after.ingestion.accepted_formats, ["epub"]);
