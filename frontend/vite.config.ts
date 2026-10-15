@@ -25,13 +25,6 @@ export default defineConfig({
       "@": path.resolve(__dirname, "src"),
     },
   },
-  build: {
-    // react-data-grid's color tokens are all light-dark() functions; the
-    // rolldown-vite default CSS minifier (lightningcss) miscompiles
-    // light-dark() (parcel-bundler/lightningcss#873), silently corrupting the
-    // grid's dark palette in production builds. esbuild minifies it correctly.
-    cssMinify: "esbuild",
-  },
   server: {
     headers: {
       "Content-Security-Policy": DEV_CSP,
