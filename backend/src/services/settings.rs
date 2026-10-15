@@ -302,36 +302,11 @@ pub async fn save<'a>(
     qb.build_query_as::<Settings>().fetch_one(executor).await
 }
 
-/// Spawn the LISTEN/NOTIFY + fallback poll background task.
+/// Run one settings LISTEN/NOTIFY connection with a fallback poll.
 ///
-/// Listens on the `settings_changed` channel. On notification (or every
-/// 60 seconds as fallback), re-loads settings from DB and updates the
-/// shared `RwLock`.
-///
-/// Automatically reconnects on connection failure with a 5-second backoff.
-/// Runs until the `CancellationToken` is cancelled (graceful shutdown).
-pub async fn spawn_listener(
-    pool: PgPool,
-    settings: Arc<RwLock<Settings>>,
-    last_reload: Arc<RwLock<Option<DateTime<Utc>>>>,
-    cancel: tokio_util::sync::CancellationToken,
-) {
-    loop {
-        if cancel.is_cancelled() {
-            return;
-        }
-        if let Err(e) = listen_loop(&pool, &settings, &last_reload, &cancel).await {
-            tracing::warn!(error = %e, "settings listener disconnected, reconnecting in 5s");
-            tokio::select! {
-                biased;
-                () = cancel.cancelled() => return,
-                () = tokio::time::sleep(std::time::Duration::from_secs(5)) => {}
-            }
-        }
-    }
-}
-
-async fn listen_loop(
+/// # Errors
+/// Returns connection and notification errors to the worker supervisor.
+pub async fn listen_loop(
     pool: &PgPool,
     settings: &Arc<RwLock<Settings>>,
     last_reload: &Arc<RwLock<Option<DateTime<Utc>>>>,

@@ -224,7 +224,8 @@ fn resolve_log_filter(configured_level: &str) -> (EnvFilter, Option<String>) {
 /// - any of the primary, ingestion, or writeback DB pools cannot connect;
 /// - OIDC discovery against the configured issuer fails;
 /// - the TCP listener cannot bind to the configured port;
-/// - `axum::serve` returns an error during the serving loop.
+/// - `axum::serve` returns an error during the serving loop;
+/// - a background worker exhausts its restart limit or the supervisor fails.
 #[expect(
     clippy::too_many_lines,
     reason = "This body was verbatim moved from the pre-split `main.rs` and lightly extended (3 lines for try_init error propagation + the `# Errors` docstring section). a typed `StartupError` will reshape startup error handling and is the natural place to extract phase helpers (`setup_tracing`, `init_csp_headers`, `spawn_workers`)."
@@ -397,168 +398,147 @@ pub async fn run() -> anyhow::Result<()> {
 
     tracing::info!("listening on {}", listener.local_addr()?);
 
-    // Spawn ingestion watcher with a cancellation token for graceful shutdown
     let cancel_token = tokio_util::sync::CancellationToken::new();
-
-    // Settings LISTEN/NOTIFY listener (refreshes Arc<RwLock<Settings>>)
-    let settings_token = cancel_token.clone();
-    let settings_pool = state.pool.clone();
-    let settings_handle = state.settings.clone();
-    let settings_reload = state.last_settings_reload.clone();
-    let settings_worker = tokio::spawn(async move {
-        services::settings::spawn_listener(
-            settings_pool,
-            settings_handle,
-            settings_reload,
-            settings_token,
+    let supervisor = spawn_workers(&state, writeback_pool, ingestion_commands);
+    let shutdown_token = cancel_token.clone();
+    let serve = async {
+        let result = axum::serve(
+            listener,
+            app.into_make_service_with_connect_info::<std::net::SocketAddr>(),
         )
-        .await;
-    });
-    let watcher_token = cancel_token.clone();
-    let watcher_config = config.clone();
-    let watcher_pool = state.ingestion_pool.clone();
-    let watcher_files = state.library_files.clone();
-    let watcher_settings = state.settings.clone();
-    let watcher_worker = tokio::spawn(async move {
-        if let Err(e) = services::ingestion::run_watcher(
-            watcher_config,
-            watcher_pool,
-            watcher_token,
-            watcher_files,
-            watcher_settings,
-            ingestion_commands,
-        )
+        .with_graceful_shutdown(async move {
+            tokio::select! {
+                () = shutdown_signal(shutdown_token.clone()) => {},
+                () = shutdown_token.cancelled() => {},
+            }
+        })
         .await
-        {
-            tracing::error!(error = %e, "ingestion watcher exited with error");
-        }
-    });
-
-    let enrich_token = cancel_token.clone();
-    let enrich_config = config.clone();
-    let enrich_pool = state.ingestion_pool.clone();
-    let enrich_worker = tokio::spawn(async move {
-        if let Err(e) =
-            services::enrichment::spawn_queue(enrich_pool, enrich_config, enrich_token).await
-        {
-            tracing::error!(error = %e, "enrichment queue exited with error");
-        }
-    });
-
-    // Session expired-row sweep. Drives the PostgresStore's ExpiredDeletion
-    // trait hourly so `tower_sessions.session` stays bounded; shares the
-    // cancellation token so SIGTERM drains it like the other workers.
-    let sweep_token = cancel_token.clone();
-    let sweep_store = PostgresStore::new(state.pool.clone());
-    let sweep_worker = tokio::spawn(services::session_sweep::run_sweep(sweep_store, sweep_token));
-
-    // Writeback worker runs on the dedicated system-context pool built
-    // above, before any spawn.
-    let writeback_token = cancel_token.clone();
-    let writeback_config = config.clone();
-    let writeback_files = state.library_files.clone();
-    let writeback_worker = tokio::spawn(async move {
-        if let Err(e) = services::writeback::spawn_worker(
-            writeback_pool,
-            writeback_config,
-            writeback_token,
-            writeback_files,
-        )
-        .await
-        {
-            tracing::error!(error = %e, "writeback worker exited with error");
-        }
-    });
-
-    // Defer the `?` on the serve result until after the drain: on a serve
-    // error the graceful-shutdown future never fires, so the token must be
-    // cancelled here (idempotent on the clean path, where shutdown_signal
-    // already cancelled it) and the workers drained before run() returns —
-    // otherwise the error path leaks live tasks for the runtime to abort
-    // mid-IO, the exact unclean exit graceful shutdown closes.
-    // `into_make_service_with_connect_info` exposes the TCP peer as
-    // `ConnectInfo<SocketAddr>` so the login rate limiter can key on the client
-    // IP. The auth handlers extract it as `Option<ConnectInfo<..>>` and fall
-    // back to the per-account backoff when absent (the test harness supplies no
-    // peer).
-    let serve_result = axum::serve(
-        listener,
-        app.into_make_service_with_connect_info::<std::net::SocketAddr>(),
-    )
-    .with_graceful_shutdown(shutdown_signal(cancel_token.clone()))
-    .await
-    .map_err(|e| anyhow::anyhow!("server error: {e}"));
-
-    cancel_token.cancel();
-    drain_workers(
-        vec![
-            ("settings-listener", settings_worker),
-            ("ingestion-watcher", watcher_worker),
-            ("enrichment-queue", enrich_worker),
-            ("session-sweep", sweep_worker),
-            ("writeback-worker", writeback_worker),
-        ],
-        WORKER_DRAIN_TIMEOUT,
-    )
-    .await;
-
+        .context("HTTP server failed");
+        cancel_token.cancel();
+        result
+    };
+    let (serve_result, worker_result) = tokio::join!(
+        serve,
+        supervise_until_shutdown(supervisor, cancel_token.clone()),
+    );
+    worker_result?;
     serve_result
 }
 
-/// Total wall-clock budget for draining all background workers after the
-/// HTTP server stops. Shared across workers (one deadline, not per-worker)
-/// so shutdown latency stays bounded regardless of worker count; well under
-/// systemd's default 90s stop budget.
-const WORKER_DRAIN_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
+fn worker_supervisor() -> task_supervisor::SupervisorBuilder {
+    task_supervisor::SupervisorBuilder::new()
+        .with_restart_limit(15, std::time::Duration::from_mins(30))
+        .with_base_restart_delay(std::time::Duration::from_secs(1))
+        .with_max_restart_delay(std::time::Duration::from_secs(60))
+        .with_dead_tasks_threshold(0.0)
+        .with_stop_timeout(std::time::Duration::from_secs(30))
+}
 
-/// Await every spawned worker after the server stops, bounded by one shared
-/// `budget` deadline. A worker that does not exit in time is aborted (a
-/// dropped `JoinHandle` would merely detach it, leaving the runtime to
-/// abort it at an arbitrary point); a worker that panicked surfaces here as
-/// a `JoinError` and is logged at `error` level.
-async fn drain_workers(
-    workers: Vec<(&'static str, tokio::task::JoinHandle<()>)>,
-    budget: std::time::Duration,
-) {
-    let deadline = tokio::time::Instant::now() + budget;
-    for (name, mut handle) in workers {
-        // `&mut handle` keeps ownership so the timeout arm can abort();
-        // tokio::time::timeout would consume (and on expiry detach) it.
-        match tokio::time::timeout_at(deadline, &mut handle).await {
-            Ok(Ok(())) => tracing::info!(worker = name, "background worker drained"),
-            Ok(Err(join_err)) => {
-                tracing::error!(worker = name, error = %join_err, "background task join failed");
-            }
-            Err(_elapsed) => {
-                handle.abort();
-                tracing::error!(
-                    worker = name,
-                    "background worker did not exit within the drain budget; aborted"
-                );
-                // Confirm the cancellation actually lands before returning —
-                // abort() only takes effect at the task's next await point,
-                // and returning earlier would hand the still-unwinding task
-                // back to the runtime drop. Bounded by a short fixed grace:
-                // a task stuck in a blocking section never reaches an await
-                // point, and shutdown must not hang on it.
-                if tokio::time::timeout(ABORT_GRACE, &mut handle)
-                    .await
-                    .is_err()
-                {
-                    tracing::error!(
-                        worker = name,
-                        "aborted worker still running after grace period; leaving to runtime teardown"
-                    );
-                }
-            }
+#[derive(Clone)]
+struct Worker<F>(F);
+
+impl<F, Fut> task_supervisor::SupervisedTask for Worker<F>
+where
+    F: Fn(tokio_util::sync::CancellationToken) -> Fut + Clone + Send + 'static,
+    Fut: std::future::Future<Output = anyhow::Result<()>> + Send,
+{
+    async fn run(self, cancel: tokio_util::sync::CancellationToken) -> task_supervisor::TaskResult {
+        let result = (self.0)(cancel.clone()).await;
+        if result.is_ok() && !cancel.is_cancelled() {
+            return Err("background worker returned before cancellation".into());
         }
+        result.map_err(Into::into)
     }
 }
 
-/// Post-`abort()` wait for the cancellation to take effect (see
-/// [`drain_workers`]). Short and fixed: it only covers the gap between
-/// `abort()` and the task's next await point.
-const ABORT_GRACE: std::time::Duration = std::time::Duration::from_secs(1);
+fn spawn_workers(
+    state: &AppState,
+    writeback_pool: sqlx::PgPool,
+    commands: services::ingestion::CoordinatorCommands,
+) -> task_supervisor::SupervisorHandle {
+    let settings_state = state.clone();
+    let ingestion_state = state.clone();
+    let enrichment_state = state.clone();
+    let sweep_store = PostgresStore::new(state.pool.clone());
+    let writeback_config = state.config.clone();
+    let writeback_files = state.library_files.clone();
+    worker_supervisor()
+        .with_task(
+            "settings-listener",
+            Worker(move |cancel| {
+                let state = settings_state.clone();
+                async move {
+                    services::settings::listen_loop(
+                        &state.pool,
+                        &state.settings,
+                        &state.last_settings_reload,
+                        &cancel,
+                    )
+                    .await
+                    .context("settings listener failed")
+                }
+            }),
+        )
+        .with_task(
+            "ingestion-coordinator",
+            Worker(move |cancel| {
+                let state = ingestion_state.clone();
+                let commands = commands.clone();
+                async move {
+                    services::ingestion::run_watcher(
+                        state.config,
+                        state.ingestion_pool,
+                        cancel,
+                        state.library_files,
+                        state.settings,
+                        commands,
+                    )
+                    .await
+                }
+            }),
+        )
+        .with_task(
+            "enrichment-queue",
+            Worker(move |cancel| {
+                let state = enrichment_state.clone();
+                services::enrichment::spawn_queue(state.ingestion_pool, state.config, cancel)
+            }),
+        )
+        .with_task(
+            "session-sweep",
+            Worker(move |cancel| {
+                let store = sweep_store.clone();
+                async move {
+                    services::session_sweep::run_sweep(store, cancel).await;
+                    Ok(())
+                }
+            }),
+        )
+        .with_task(
+            "writeback-worker",
+            Worker(move |cancel| {
+                services::writeback::spawn_worker(
+                    writeback_pool.clone(),
+                    writeback_config.clone(),
+                    cancel,
+                    writeback_files.clone(),
+                )
+            }),
+        )
+        .spawn()
+}
+
+async fn supervise_until_shutdown(
+    supervisor: task_supervisor::SupervisorHandle,
+    cancel: tokio_util::sync::CancellationToken,
+) -> anyhow::Result<()> {
+    let result = tokio::select! {
+        () = cancel.cancelled() => supervisor.shutdown().await,
+        result = supervisor.wait() => result,
+    };
+    cancel.cancel();
+    result.context("background worker supervision failed")
+}
 
 /// Startup schema step: apply pending migrations in-process when
 /// `config.auto_migrate` is set, otherwise verify the schema is current via
@@ -983,71 +963,314 @@ async fn shutdown_signal(cancel_token: tokio_util::sync::CancellationToken) {
 #[cfg(test)]
 mod tests {
     use super::{
-        Command, apply_or_verify_schema, drain_workers, parse_command, resolve_log_filter,
-        resolve_migration_dsn,
+        Command, apply_or_verify_schema, parse_command, resolve_log_filter, resolve_migration_dsn,
     };
     use crate::test_support;
 
-    #[tokio::test]
-    async fn drain_workers_awaits_clean_exit() {
-        let (tx, rx) = tokio::sync::oneshot::channel::<()>();
-        let worker = tokio::spawn(async move {
-            rx.await.expect("release signal");
-        });
-        tx.send(()).unwrap();
-        // Returns once the worker has actually unwound — well inside budget.
-        drain_workers(vec![("clean", worker)], std::time::Duration::from_secs(5)).await;
+    use super::{Worker, supervise_until_shutdown, worker_supervisor};
+    use std::sync::{
+        Arc,
+        atomic::{AtomicUsize, Ordering},
+    };
+    use std::time::Duration;
+    use task_supervisor::TaskStatus;
+    use tokio_util::sync::CancellationToken;
+
+    #[derive(Clone, Copy)]
+    enum WorkerExit {
+        Error,
+        Panic,
+        Success,
     }
 
-    #[tokio::test]
-    async fn drain_workers_aborts_stuck_worker_at_deadline() {
-        let stuck = tokio::spawn(std::future::pending::<()>());
-        let started = std::time::Instant::now();
-        drain_workers(
-            vec![("stuck", stuck)],
-            std::time::Duration::from_millis(100),
-        )
-        .await;
+    #[tokio::test(start_paused = true)]
+    async fn supervision_restarts_error_panic_and_unexpected_success() {
+        for failure in [WorkerExit::Error, WorkerExit::Panic, WorkerExit::Success] {
+            let runs = Arc::new(AtomicUsize::new(0));
+            let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+            let supervisor = worker_supervisor()
+                .with_restart_jitter(0.0)
+                .with_task(
+                    "worker",
+                    Worker(move |cancel: CancellationToken| {
+                        let runs = runs.clone();
+                        let tx = tx.clone();
+                        async move {
+                            let run = runs.fetch_add(1, Ordering::SeqCst);
+                            tx.send(run).unwrap();
+                            if run == 0 {
+                                match failure {
+                                    WorkerExit::Error => anyhow::bail!("worker failed"),
+                                    WorkerExit::Panic => panic!("worker panicked"),
+                                    WorkerExit::Success => return Ok(()),
+                                }
+                            }
+                            cancel.cancelled().await;
+                            Ok(())
+                        }
+                    }),
+                )
+                .spawn();
+            assert_eq!(rx.recv().await, Some(0));
+            assert_eq!(
+                supervisor.task_status("worker").await.unwrap(),
+                TaskStatus::Restarting
+            );
+            tokio::time::advance(Duration::from_millis(999)).await;
+            assert!(rx.try_recv().is_err());
+            tokio::time::advance(Duration::from_millis(1)).await;
+            assert_eq!(rx.recv().await, Some(1));
+            supervisor.shutdown().await.unwrap();
+            assert!(rx.try_recv().is_err());
+        }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn supervision_backoff_doubles_and_caps() {
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        let supervisor = worker_supervisor()
+            .with_restart_jitter(0.0)
+            .with_task(
+                "worker",
+                Worker(move |_| {
+                    let tx = tx.clone();
+                    async move {
+                        tx.send(tokio::time::Instant::now()).unwrap();
+                        anyhow::bail!("worker failed")
+                    }
+                }),
+            )
+            .spawn();
+        let mut previous = rx.recv().await.unwrap();
+        for seconds in [1, 2, 4, 8, 16, 32, 60, 60] {
+            let next = rx.recv().await.unwrap();
+            assert_eq!(next.duration_since(previous), Duration::from_secs(seconds));
+            previous = next;
+        }
+        supervisor.shutdown().await.unwrap();
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn supervision_restart_window_expires_old_failures() {
+        let runs = Arc::new(AtomicUsize::new(0));
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        let supervisor = worker_supervisor()
+            .with_restart_jitter(0.0)
+            .with_task(
+                "worker",
+                Worker(move |_| {
+                    let runs = runs.clone();
+                    let tx = tx.clone();
+                    async move {
+                        let run = runs.fetch_add(1, Ordering::SeqCst);
+                        tx.send(tokio::time::Instant::now()).unwrap();
+                        if run == 4 {
+                            tokio::time::sleep(Duration::from_mins(30)).await;
+                        }
+                        anyhow::bail!("worker failed")
+                    }
+                }),
+            )
+            .spawn();
+        let start = rx.recv().await.unwrap();
+        for seconds in [1, 3, 7, 15, 1816] {
+            assert_eq!(
+                rx.recv().await.unwrap().duration_since(start),
+                Duration::from_secs(seconds)
+            );
+        }
+        supervisor.shutdown().await.unwrap();
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn supervision_five_workers_can_each_fail_once() {
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        let mut builder = worker_supervisor().with_restart_jitter(0.0);
+        for name in ["settings", "ingestion", "enrichment", "sweep", "writeback"] {
+            let runs = Arc::new(AtomicUsize::new(0));
+            let tx = tx.clone();
+            builder = builder.with_task(
+                name,
+                Worker(move |cancel: CancellationToken| {
+                    let runs = runs.clone();
+                    let tx = tx.clone();
+                    async move {
+                        if runs.fetch_add(1, Ordering::SeqCst) == 0 {
+                            anyhow::bail!("first run failed")
+                        }
+                        tx.send(()).unwrap();
+                        cancel.cancelled().await;
+                        Ok(())
+                    }
+                }),
+            );
+        }
+        let supervisor = builder.spawn();
+        for _ in 0..5 {
+            rx.recv().await.unwrap();
+        }
         assert!(
-            started.elapsed() >= std::time::Duration::from_millis(100),
-            "drain must actually wait out the budget before giving up: {:?}",
-            started.elapsed()
+            supervisor
+                .task_statuses()
+                .await
+                .unwrap()
+                .values()
+                .all(|status| *status == TaskStatus::Running)
         );
+        supervisor.shutdown().await.unwrap();
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn supervision_instant_failure_escalates_between_eight_and_eleven_minutes() {
+        let supervisor = worker_supervisor()
+            .with_task(
+                "failing",
+                Worker(|_| async { anyhow::bail!("persistent failure") }),
+            )
+            .spawn();
+        let start = tokio::time::Instant::now();
         assert!(
-            started.elapsed() < std::time::Duration::from_secs(5),
-            "drain must give up at the deadline, not hang on a stuck worker"
+            tokio::time::timeout(Duration::from_mins(8), supervisor.wait())
+                .await
+                .is_err()
+        );
+        let outcome = tokio::time::timeout(Duration::from_mins(3), supervisor.wait())
+            .await
+            .expect("instant failure must exhaust the restart limit by eleven minutes");
+        assert!(matches!(
+            outcome,
+            Err(task_supervisor::SupervisorError::TooManyDeadTasks {
+                dead: 1,
+                total: 1,
+                ..
+            })
+        ));
+        assert!(start.elapsed() >= Duration::from_mins(8));
+        assert!(start.elapsed() <= Duration::from_mins(11));
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn supervision_thirty_second_failures_escalate_at_about_eighteen_minutes() {
+        let runs = Arc::new(AtomicUsize::new(0));
+        let observed = runs.clone();
+        let supervisor = worker_supervisor()
+            .with_task(
+                "failing",
+                Worker(move |_| {
+                    let runs = runs.clone();
+                    async move {
+                        runs.fetch_add(1, Ordering::SeqCst);
+                        tokio::time::sleep(Duration::from_secs(30)).await;
+                        anyhow::bail!("connection attempt timed out")
+                    }
+                }),
+            )
+            .spawn();
+        let start = tokio::time::Instant::now();
+        assert!(
+            tokio::time::timeout(Duration::from_mins(17), supervisor.wait())
+                .await
+                .is_err()
+        );
+        let outcome = tokio::time::timeout(Duration::from_secs(65), supervisor.wait())
+            .await
+            .expect("slow failure must exhaust the restart limit at about eighteen minutes");
+        assert!(matches!(
+            outcome,
+            Err(task_supervisor::SupervisorError::TooManyDeadTasks {
+                dead: 1,
+                total: 1,
+                ..
+            })
+        ));
+        assert_eq!(observed.load(Ordering::SeqCst), 16);
+        assert!(start.elapsed() >= Duration::from_mins(17));
+        assert!(start.elapsed() <= Duration::from_secs(1085));
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn supervision_one_exhausted_worker_cancels_and_fails_process_outcome() {
+        let runs = Arc::new(AtomicUsize::new(0));
+        let observed = runs.clone();
+        let drained = Arc::new(tokio::sync::Notify::new());
+        let observed_drain = drained.clone();
+        let supervisor = worker_supervisor()
+            .with_restart_jitter(0.0)
+            .with_task(
+                "failing",
+                Worker(move |_| {
+                    observed.fetch_add(1, Ordering::SeqCst);
+                    async { anyhow::bail!("persistent failure") }
+                }),
+            )
+            .with_task(
+                "healthy",
+                Worker(move |cancel: CancellationToken| {
+                    let drained = drained.clone();
+                    async move {
+                        cancel.cancelled().await;
+                        drained.notify_one();
+                        Ok(())
+                    }
+                }),
+            )
+            .spawn();
+        let cancel = CancellationToken::new();
+        let outcome = supervise_until_shutdown(supervisor, cancel.clone()).await;
+        assert_eq!(runs.load(Ordering::SeqCst), 16);
+        assert!(cancel.is_cancelled());
+        observed_drain.notified().await;
+        let error = outcome.unwrap_err();
+        assert!(matches!(
+            error.downcast_ref::<task_supervisor::SupervisorError>(),
+            Some(task_supervisor::SupervisorError::TooManyDeadTasks {
+                dead: 1,
+                total: 2,
+                ..
+            })
+        ));
+        assert_eq!(
+            std::process::Termination::report(Err::<(), _>(error)),
+            std::process::ExitCode::FAILURE
         );
     }
 
-    #[tokio::test]
-    async fn drain_workers_survives_panicked_worker() {
-        let panicker = tokio::spawn(async {
-            panic!("worker panic must surface as a logged JoinError, not propagate");
-        });
-        let after = tokio::spawn(async {});
-        // Must not propagate the panic, and must still drain later workers.
-        drain_workers(
-            vec![("panicker", panicker), ("after", after)],
-            std::time::Duration::from_secs(5),
-        )
-        .await;
-    }
-
-    #[tokio::test]
-    async fn drain_workers_shares_one_deadline_across_workers() {
-        let stuck_a = tokio::spawn(std::future::pending::<()>());
-        let stuck_b = tokio::spawn(std::future::pending::<()>());
-        let started = std::time::Instant::now();
-        drain_workers(
-            vec![("stuck-a", stuck_a), ("stuck-b", stuck_b)],
-            std::time::Duration::from_millis(200),
-        )
-        .await;
-        assert!(
-            started.elapsed() < std::time::Duration::from_secs(2),
-            "budget is one shared deadline, not per-worker: {:?}",
-            started.elapsed()
-        );
+    #[tokio::test(start_paused = true)]
+    async fn supervision_drains_on_shutdown_and_bounds_stuck_runs_together() {
+        let completed = Arc::new(AtomicUsize::new(0));
+        let drained = completed.clone();
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        let supervisor = worker_supervisor()
+            .with_task(
+                "draining",
+                Worker(move |cancel: CancellationToken| {
+                    let completed = completed.clone();
+                    let tx = tx.clone();
+                    async move {
+                        tx.send(()).unwrap();
+                        cancel.cancelled().await;
+                        tokio::time::sleep(Duration::from_secs(2)).await;
+                        completed.fetch_add(1, Ordering::SeqCst);
+                        Ok(())
+                    }
+                }),
+            )
+            .with_task(
+                "stuck-a",
+                Worker(|_| std::future::pending::<anyhow::Result<()>>()),
+            )
+            .with_task(
+                "stuck-b",
+                Worker(|_| std::future::pending::<anyhow::Result<()>>()),
+            )
+            .spawn();
+        rx.recv().await.unwrap();
+        let start = tokio::time::Instant::now();
+        let cancel = CancellationToken::new();
+        cancel.cancel();
+        supervise_until_shutdown(supervisor, cancel).await.unwrap();
+        assert_eq!(drained.load(Ordering::SeqCst), 1);
+        assert_eq!(start.elapsed(), Duration::from_secs(30));
     }
 
     #[test]

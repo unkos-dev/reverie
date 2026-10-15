@@ -186,6 +186,7 @@ services:
     # extends this service with a `networks:` entry. Keeping this file minimal
     # means it works with any reverse proxy.
     restart: unless-stopped
+    stop_grace_period: 35s
 
 volumes:
   pg-data:

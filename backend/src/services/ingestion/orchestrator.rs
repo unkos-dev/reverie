@@ -39,14 +39,21 @@ pub struct DiscoveryResult {
     pub monitor: &'static str,
 }
 
-pub type CoordinatorCommands =
-    mpsc::Receiver<tokio::sync::oneshot::Sender<anyhow::Result<DiscoveryResult>>>;
+/// Receiver retained across supervised coordinator runs.
+pub type CoordinatorCommands = std::sync::Arc<
+    tokio::sync::Mutex<
+        mpsc::Receiver<tokio::sync::oneshot::Sender<anyhow::Result<DiscoveryResult>>>,
+    >,
+>;
 
 /// Create the shared handle and its single-owner receiver.
 #[must_use]
 pub fn coordinator_channel() -> (CoordinatorHandle, CoordinatorCommands) {
     let (sender, receiver) = mpsc::channel(16);
-    (CoordinatorHandle { sender }, receiver)
+    (
+        CoordinatorHandle { sender },
+        std::sync::Arc::new(tokio::sync::Mutex::new(receiver)),
+    )
 }
 
 impl CoordinatorHandle {
@@ -161,6 +168,17 @@ impl Active {
         }
     }
 
+    async fn drain(mut self) {
+        self.progress.cancel.cancel();
+        let mut tick = tokio::time::interval(std::time::Duration::from_secs(1));
+        loop {
+            tokio::select! {
+                _ = &mut self.future => break,
+                _ = tick.tick() => self.tick(),
+            }
+        }
+    }
+
     fn tick(&mut self) {
         let now = tokio::time::Instant::now();
         let count = self.progress.count();
@@ -184,6 +202,12 @@ impl Active {
             self.next_warning += STALL;
         }
     }
+}
+
+struct FilesystemWatch {
+    run: Option<futures::future::BoxFuture<'static, anyhow::Result<()>>>,
+    events: mpsc::Sender<Vec<PathBuf>>,
+    cancel: CancellationToken,
 }
 
 struct Coordinator {
@@ -211,6 +235,7 @@ struct Coordinator {
     discovered: bool,
     accepted: Option<Vec<String>>,
     unresolved: std::collections::HashSet<Uuid>,
+    watcher: Option<FilesystemWatch>,
 }
 
 impl Coordinator {
@@ -221,7 +246,11 @@ impl Coordinator {
         }
     }
 
-    async fn complete_attempt(&mut self, result: PendingResult, recommit: bool) {
+    async fn complete_attempt(
+        &mut self,
+        result: PendingResult,
+        recommit: bool,
+    ) -> anyhow::Result<()> {
         if matches!(
             &result.result,
             ProcessResult::Operational(
@@ -235,8 +264,15 @@ impl Coordinator {
         match self.finalise().await {
             Ok(FinalisationHealth::NoFreshFailure) if recommit => match self.probe().await {
                 Ok(()) if self.pending.is_none() => {
-                    self.pause = None;
-                    tracing::info!("ingestion coordinator resumed");
+                    if self.start_watcher().await? {
+                        self.pause = None;
+                        tracing::info!("ingestion coordinator resumed");
+                        if !self.discovered
+                            && let Err(error) = self.discover(false).await
+                        {
+                            self.pause(&error);
+                        }
+                    }
                 }
                 Ok(()) => {}
                 Err(error) => self.pause(&error),
@@ -245,6 +281,7 @@ impl Coordinator {
             Ok(FinalisationHealth::NoFreshFailure) => {}
             Err(error) => self.pause(&error),
         }
+        Ok(())
     }
 
     async fn probe(&mut self) -> anyhow::Result<()> {
@@ -270,17 +307,76 @@ impl Coordinator {
             self.library_id =
                 Some(crate::models::storage_library::default_library_id(&self.pool).await?);
         }
-        let library_id = self
-            .library_id
-            .ok_or_else(|| anyhow::anyhow!("library authority unavailable"))?;
-        let files = self.files.clone();
-        tokio::task::spawn_blocking(move || probe_roots(&files, library_id)).await??;
+        Self::check_folders(self.files.clone(), self.library_id).await?;
         if !self.recovered {
             self.recover_publications(None).await?;
             crate::models::ingestion_input::reclaim(&self.pool).await?;
             self.recovered = true;
         }
         Ok(())
+    }
+
+    async fn check_folders(
+        files: LibraryFiles,
+        library_id: Option<LibraryId>,
+    ) -> anyhow::Result<()> {
+        let library_id =
+            library_id.ok_or_else(|| anyhow::anyhow!("library authority unavailable"))?;
+        tokio::task::spawn_blocking(move || probe_roots(&files, library_id)).await??;
+        Ok(())
+    }
+
+    async fn start_watcher(&mut self) -> anyhow::Result<bool> {
+        let Some(watcher) = &mut self.watcher else {
+            return Ok(true);
+        };
+        if watcher.run.is_some() {
+            return Ok(true);
+        }
+        match super::watcher::register(
+            self.config.ingestion_path.as_path(),
+            watcher.events.clone(),
+            watcher.cancel.clone(),
+        ) {
+            Ok(run) => {
+                watcher.run = Some(Box::pin(run));
+                self.discovered = false;
+                Ok(true)
+            }
+            Err(error) => {
+                self.watcher_failed(error, &mut None).await?;
+                Ok(false)
+            }
+        }
+    }
+
+    async fn watcher_failed(
+        &mut self,
+        error: anyhow::Error,
+        active: &mut Option<Active>,
+    ) -> anyhow::Result<()> {
+        if let Some(watcher) = &mut self.watcher {
+            watcher.run = None;
+        }
+        self.discovered = false;
+        match Self::check_folders(self.files.clone(), self.library_id).await {
+            Ok(()) => {
+                if let Some(active) = active.take() {
+                    active.drain().await;
+                }
+                Err(error.context("filesystem watcher failed while folder check passed"))
+            }
+            Err(folder_error) => {
+                if let Some(pause) = &mut self.pause {
+                    pause.failed();
+                } else {
+                    self.pause(&format_args!(
+                        "ingestion_folder_unavailable: {folder_error}"
+                    ));
+                }
+                Ok(())
+            }
+        }
     }
 
     async fn recover_publications(
@@ -818,6 +914,9 @@ impl Coordinator {
         {
             match self.probe().await {
                 Ok(()) => {
+                    if !self.start_watcher().await? {
+                        return Ok(None);
+                    }
                     if let Some(pending) = &mut self.pending {
                         pending.health = FinalisationHealth::NoFreshFailure;
                     }
@@ -870,16 +969,15 @@ impl Coordinator {
         Ok(None)
     }
 
-    async fn commit_pending(&self, pending: &mut PendingResult) -> anyhow::Result<()> {
+    async fn commit_pending(
+        pool: &PgPool,
+        files: &LibraryFiles,
+        pending: &mut PendingResult,
+    ) -> anyhow::Result<()> {
         use crate::models::ingestion_input::{self, AttemptOutcome, InputStatus};
         if let ProcessResult::Accepted(accepted) = &mut pending.result {
-            let completed = finish_accepted(
-                accepted,
-                &self.pool,
-                &self.files,
-                Some((&pending.input, pending.job)),
-            )
-            .await?;
+            let completed =
+                finish_accepted(accepted, pool, files, Some((&pending.input, pending.job))).await?;
             pending.health = accepted.health;
             pending.result = completed;
         }
@@ -919,7 +1017,7 @@ impl Coordinator {
             ),
             ProcessResult::Accepted(_) => anyhow::bail!("accepted result awaiting commit"),
         };
-        let mut tx = self.pool.begin().await?;
+        let mut tx = pool.begin().await?;
         ingestion_input::finish(
             &mut tx,
             &pending.input,
@@ -944,10 +1042,12 @@ impl Coordinator {
         let Some(mut pending) = self.pending.take() else {
             return Ok(FinalisationHealth::NoFreshFailure);
         };
-        let result = self.commit_pending(&mut pending).await;
+        let result = Self::commit_pending(&self.pool, &self.files, &mut pending).await;
         match result {
             Ok(()) => {
-                if let Err(error) = self.cleanup(&mut pending).await {
+                if let Err(error) =
+                    Self::cleanup(&self.pool, &self.files, &self.settings, &mut pending).await
+                {
                     let library_id = self
                         .library_id
                         .ok_or_else(|| anyhow::anyhow!("library authority unavailable"))?;
@@ -986,19 +1086,24 @@ impl Coordinator {
         }
     }
 
-    async fn cleanup(&self, pending: &mut PendingResult) -> anyhow::Result<()> {
+    async fn cleanup(
+        pool: &PgPool,
+        files: &LibraryFiles,
+        settings: &tokio::sync::RwLock<crate::models::settings::Settings>,
+        pending: &mut PendingResult,
+    ) -> anyhow::Result<()> {
         use crate::models::ingestion_input::{self, InputPath, InputStatus};
-        let Some(current) = ingestion_input::current(&self.pool, pending.input.id).await? else {
+        let Some(current) = ingestion_input::current(pool, pending.input.id).await? else {
             return Ok(());
         };
         if current.generation != pending.input.generation {
             return Ok(());
         }
         if pending.source_deleted {
-            ingestion_input::remove(&self.pool, &current, "automatic_cleanup").await?;
+            ingestion_input::remove(pool, &current, "automatic_cleanup").await?;
             return Ok(());
         }
-        let settings = self.settings.read().await;
+        let settings = settings.read().await;
         let enabled = match current.status {
             InputStatus::Imported => settings.ingestion.cleanup_imported,
             InputStatus::Duplicate => settings.ingestion.cleanup_duplicates,
@@ -1008,7 +1113,7 @@ impl Coordinator {
         if !enabled {
             return Ok(());
         }
-        let files = self.files.clone();
+        let files = files.clone();
         let path = InputPath::from_bytes(current.source_path.clone())?;
         let fingerprint = current.fingerprint.0.clone();
         pending.source_deleted = tokio::task::spawn_blocking(move || {
@@ -1016,7 +1121,7 @@ impl Coordinator {
         })
         .await??;
         if pending.source_deleted {
-            ingestion_input::remove(&self.pool, &current, "automatic_cleanup").await?;
+            ingestion_input::remove(pool, &current, "automatic_cleanup").await?;
         }
         Ok(())
     }
@@ -1121,24 +1226,19 @@ fn discover_files(
 /// Run discovery, readiness, attempts and recovery under one scheduling owner.
 ///
 /// # Errors
-/// Returns an error when a required input location cannot be represented.
+/// Returns an error when a required input location cannot be represented or a watcher
+/// failure is unexplained by the folder check.
 pub async fn run_watcher(
     config: Config,
     pool: PgPool,
     cancel: CancellationToken,
     files: LibraryFiles,
     settings: std::sync::Arc<tokio::sync::RwLock<crate::models::settings::Settings>>,
-    mut commands: CoordinatorCommands,
+    commands: CoordinatorCommands,
 ) -> Result<(), anyhow::Error> {
     use futures::StreamExt;
-    let (tx, mut rx) = mpsc::channel::<Vec<PathBuf>>(16);
-    let watcher_cancel = cancel.clone();
-    let ingestion_path = PathBuf::from(&config.ingestion_path);
-    tokio::spawn(async move {
-        if let Err(error) = super::watcher::watch(ingestion_path, tx, watcher_cancel).await {
-            tracing::error!(%error, "filesystem watcher failed");
-        }
-    });
+    let mut commands = commands.lock().await;
+    let (tx, mut rx) = mpsc::channel(16);
     let mut owner = Coordinator {
         config,
         pool,
@@ -1158,12 +1258,21 @@ pub async fn run_watcher(
         discovered: false,
         accepted: None,
         unresolved: std::collections::HashSet::default(),
+        watcher: Some(FilesystemWatch {
+            run: None,
+            events: tx,
+            cancel: cancel.clone(),
+        }),
     };
-    if let Err(error) = owner.probe().await {
-        owner.pause(&error);
-    }
-    if let Err(error) = owner.discover(false).await {
-        owner.pause(&error);
+    match owner.probe().await {
+        Err(error) => owner.pause(&error),
+        Ok(()) => {
+            if owner.start_watcher().await?
+                && let Err(error) = owner.discover(false).await
+            {
+                owner.pause(&error);
+            }
+        }
     }
     let mut active: Option<Active> = None;
     let mut tick = tokio::time::interval(std::time::Duration::from_secs(1));
@@ -1174,20 +1283,14 @@ pub async fn run_watcher(
         tokio::select! {
             biased;
             () = cancel.cancelled() => {
-                if let Some(mut active) = active.take() {
-                    loop {
-                        tokio::select! {
-                            _ = &mut active.future => break,
-                            _ = tick.tick() => active.tick(),
-                        }
-                    }
+                if let Some(active) = active.take() {
+                    active.drain().await;
                 }
                 break;
             }
             result = async { match &mut active { Some(active) => (&mut active.future).await, None => std::future::pending().await } } => {
-                let recommit = active.as_ref().is_some_and(|active| active.recommit);
-                active = None;
-                owner.complete_attempt(result, recommit).await;
+                let recommit = active.take().is_some_and(|active| active.recommit);
+                owner.complete_attempt(result, recommit).await?;
             }
             _ = tick.tick() => {
                 if let Some(active) = &mut active { active.tick(); }
@@ -1197,6 +1300,15 @@ pub async fn run_watcher(
                 if active.is_none() {
                     active = owner.reprobe().await?;
                 }
+            }
+            result = async {
+                match owner.watcher.as_mut().and_then(|watcher| watcher.run.as_mut()) {
+                    Some(run) => run.await,
+                    None => std::future::pending().await,
+                }
+            } => {
+                let error = result.err().unwrap_or_else(|| anyhow::anyhow!("filesystem watcher returned before cancellation"));
+                owner.watcher_failed(error, &mut active).await?;
             }
             expired = owner.deadlines.next(), if !owner.deadlines.is_empty() => {
                 if let Some(expired) = expired {
@@ -1215,6 +1327,7 @@ pub async fn run_watcher(
             }
         }
     }
+    drop(commands);
     Ok(())
 }
 
@@ -2772,7 +2885,7 @@ mod tests {
         let completed = (&mut active.future).await;
         std::fs::set_permissions(library.path(), std::fs::Permissions::from_mode(0o700)).unwrap();
         assert_eq!(completed.health, FinalisationHealth::SharedFailure);
-        owner.complete_attempt(completed, true).await;
+        owner.complete_attempt(completed, true).await.unwrap();
         assert!(owner.pending.is_none());
         assert!(owner.pause.is_some());
         assert!(
@@ -2792,6 +2905,326 @@ mod tests {
                 .unwrap(),
             0
         );
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn coordinator_watcher_folder_recovery_registers_before_catch_up(pool: PgPool) {
+        use crate::models::ingestion_input;
+        use std::os::unix::fs::PermissionsExt;
+        let ing = ingestion_pool_for(&pool).await;
+        let (source, _library, config) = scan_env();
+        let library_id = crate::models::storage_library::default_library_id(&ing)
+            .await
+            .unwrap();
+        let files = LibraryFiles::open(
+            [(library_id, config.library_path.clone())],
+            &config.ingestion_path,
+        )
+        .unwrap();
+        let mut owner = coordinator(ing.clone(), config, files);
+        let cancel = CancellationToken::new();
+        let (tx, mut rx) = mpsc::channel(16);
+        owner.watcher = Some(FilesystemWatch {
+            run: None,
+            events: tx,
+            cancel: cancel.clone(),
+        });
+        std::fs::set_permissions(source.path(), std::fs::Permissions::from_mode(0o0)).unwrap();
+        assert!(owner.probe().await.is_err());
+        assert!(owner.watcher.as_ref().unwrap().run.is_none());
+        std::fs::set_permissions(source.path(), std::fs::Permissions::from_mode(0o700)).unwrap();
+        owner.probe().await.unwrap();
+        assert!(owner.start_watcher().await.unwrap());
+        owner.discover(false).await.unwrap();
+        std::fs::set_permissions(source.path(), std::fs::Permissions::from_mode(0o0)).unwrap();
+        owner
+            .watcher_failed(anyhow::anyhow!("watch failed"), &mut None)
+            .await
+            .unwrap();
+        assert!(owner.pause.is_some());
+        assert!(owner.watcher.as_ref().unwrap().run.is_none());
+        assert!(!owner.discovered);
+        std::fs::set_permissions(source.path(), std::fs::Permissions::from_mode(0o700)).unwrap();
+        std::fs::write(source.path().join("gap.epub"), b"arrived without a watch").unwrap();
+        owner.discover(true).await.unwrap();
+        assert!(owner.discovered);
+        std::fs::write(source.path().join("later.epub"), b"arrived after scan").unwrap();
+        owner.pause.as_mut().unwrap().next = tokio::time::Instant::now();
+        assert!(owner.reprobe().await.unwrap().is_none());
+        assert!(owner.pause.is_none());
+        assert!(owner.watcher.as_ref().unwrap().run.is_some());
+        let inputs = ingestion_input::current_page(&ing, None).await.unwrap();
+        assert_eq!(inputs.len(), 2);
+        assert!(inputs.iter().any(|input| input.source_path == b"gap.epub"));
+        assert!(
+            inputs
+                .iter()
+                .any(|input| input.source_path == b"later.epub")
+        );
+        let after_registration = source.path().join("registered.epub");
+        std::fs::write(&after_registration, b"watch already registered").unwrap();
+        let run = owner.watcher.as_mut().unwrap().run.as_mut().unwrap();
+        tokio::select! {
+            result = run.as_mut() => panic!("watch stopped: {result:?}"),
+            batch = rx.recv() => assert!(batch.unwrap().contains(&after_registration)),
+            () = tokio::time::sleep(std::time::Duration::from_secs(5)) => panic!("no watch event"),
+        }
+        cancel.cancel();
+        tokio::time::timeout(std::time::Duration::from_secs(1), run)
+            .await
+            .unwrap()
+            .unwrap();
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn coordinator_watcher_healthy_folders_return_unexplained_failure(pool: PgPool) {
+        let ing = ingestion_pool_for(&pool).await;
+        let (_source, _library, config) = scan_env();
+        let library_id = crate::models::storage_library::default_library_id(&ing)
+            .await
+            .unwrap();
+        let files = LibraryFiles::open(
+            [(library_id, config.library_path.clone())],
+            &config.ingestion_path,
+        )
+        .unwrap();
+        let mut owner = coordinator(ing, config, files);
+        let (tx, _rx) = mpsc::channel(16);
+        owner.watcher = Some(FilesystemWatch {
+            run: None,
+            events: tx,
+            cancel: CancellationToken::new(),
+        });
+        owner.probe().await.unwrap();
+        assert!(owner.start_watcher().await.unwrap());
+        let error = owner
+            .watcher_failed(anyhow::anyhow!("watch resources exhausted"), &mut None)
+            .await
+            .unwrap_err();
+        assert!(format!("{error:#}").contains("watch resources exhausted"));
+        assert!(owner.pause.is_none());
+        assert!(owner.watcher.as_ref().unwrap().run.is_none());
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn coordinator_watcher_failure_drains_blocking_attempt_before_reclaim(pool: PgPool) {
+        use crate::models::ingestion_input::{self, InputStatus};
+        let ing = ingestion_pool_for(&pool).await;
+        let (source, _library, config) = scan_env();
+        let library_id = crate::models::storage_library::default_library_id(&ing)
+            .await
+            .unwrap();
+        let files = LibraryFiles::open(
+            [(library_id, config.library_path.clone())],
+            &config.ingestion_path,
+        )
+        .unwrap();
+        std::fs::write(source.path().join("book.epub"), make_minimal_epub()).unwrap();
+        let mut owner = coordinator(ing.clone(), config.clone(), files.clone());
+        owner.probe().await.unwrap();
+        owner.discover(false).await.unwrap();
+        let input = ingestion_input::current_page(&ing, None)
+            .await
+            .unwrap()
+            .remove(0);
+        let job = ingestion_input::begin_attempt(&ing, &input, Uuid::new_v4())
+            .await
+            .unwrap();
+        let cancel = CancellationToken::new();
+        let mut active = owner
+            .active_attempt(input.clone(), job, library_id, &cancel)
+            .unwrap();
+        let progress = active.progress.clone();
+        let blocked_progress = progress.clone();
+        let (started, reached) = tokio::sync::oneshot::channel();
+        let (release, released) = std::sync::mpsc::sync_channel(1);
+        let blocking = tokio::task::spawn_blocking(move || {
+            blocked_progress.enter(copier::Phase::Validation).unwrap();
+            started.send(()).unwrap();
+            released
+                .recv_timeout(std::time::Duration::from_secs(10))
+                .unwrap();
+        });
+        let attempt = active.future;
+        active.future = Box::pin(async move {
+            blocking.await.unwrap();
+            attempt.await
+        });
+        reached.await.unwrap();
+        let failure = tokio::spawn(async move {
+            let mut active = Some(active);
+            let error = owner
+                .watcher_failed(anyhow::anyhow!("watch failed"), &mut active)
+                .await
+                .unwrap_err();
+            assert!(active.is_none());
+            drop(owner);
+            error
+        });
+        tokio::time::timeout(
+            std::time::Duration::from_secs(1),
+            progress.cancel.cancelled(),
+        )
+        .await
+        .expect("watcher failure must cancel the active attempt");
+        assert!(!cancel.is_cancelled());
+        assert!(!failure.is_finished());
+        let mut next = coordinator(ing.clone(), config, files);
+        let error = next.probe().await.unwrap_err();
+        assert!(error.to_string().contains("ownership unavailable"));
+        assert_eq!(
+            ingestion_input::current(&ing, input.id)
+                .await
+                .unwrap()
+                .unwrap()
+                .status,
+            InputStatus::Processing
+        );
+        assert!(
+            ingestion_input::begin_attempt(&ing, &input, Uuid::new_v4())
+                .await
+                .is_err()
+        );
+        release.send(()).unwrap();
+        let error = tokio::time::timeout(std::time::Duration::from_secs(5), failure)
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(format!("{error:#}").contains("watch failed"));
+        assert!(!cancel.is_cancelled());
+        tokio::time::timeout(std::time::Duration::from_secs(5), async {
+            while next.probe().await.is_err() {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .unwrap();
+        let reclaimed = ingestion_input::current(&ing, input.id)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(reclaimed.status, InputStatus::Pending);
+        assert_eq!(
+            sqlx::query_scalar!(
+                "SELECT outcome::text FROM ingestion_jobs WHERE id = $1",
+                job
+            )
+            .fetch_one(&ing)
+            .await
+            .unwrap(),
+            Some("interrupted".into())
+        );
+        ingestion_input::begin_attempt(&ing, &reclaimed, Uuid::new_v4())
+            .await
+            .unwrap();
+        assert!(source.path().join("book.epub").exists());
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn coordinator_restart_preserves_sender_and_queued_commands(pool: PgPool) {
+        use std::sync::{
+            Arc,
+            atomic::{AtomicUsize, Ordering},
+        };
+        let ing = ingestion_pool_for(&pool).await;
+        let (_source, _library, config) = scan_env();
+        let library_id = crate::models::storage_library::default_library_id(&ing)
+            .await
+            .unwrap();
+        let files = LibraryFiles::open(
+            [(library_id, config.library_path.clone())],
+            &config.ingestion_path,
+        )
+        .unwrap();
+        let (handle, commands) = coordinator_channel();
+        let runs = Arc::new(AtomicUsize::new(0));
+        let (started, mut ready) = mpsc::unbounded_channel();
+        let crash = Arc::new(tokio::sync::Notify::new());
+        let trigger = crash.clone();
+        let supervisor = crate::worker_supervisor()
+            .with_restart_jitter(0.0)
+            .with_task(
+                "coordinator",
+                crate::Worker(move |cancel| {
+                    let commands = commands.clone();
+                    let config = config.clone();
+                    let pool = ing.clone();
+                    let files = files.clone();
+                    let runs = runs.clone();
+                    let started = started.clone();
+                    let crash = crash.clone();
+                    async move {
+                        if runs.fetch_add(1, Ordering::SeqCst) == 0 {
+                            let _receiver = commands.lock().await;
+                            started.send(()).unwrap();
+                            crash.notified().await;
+                            panic!("coordinator failed while holding command receiver");
+                        }
+                        run_watcher(
+                            config,
+                            pool,
+                            cancel,
+                            files,
+                            crate::test_support::test_settings(),
+                            commands,
+                        )
+                        .await
+                    }
+                }),
+            )
+            .spawn();
+        ready.recv().await.unwrap();
+        let queued = tokio::spawn({
+            let handle = handle.clone();
+            async move { handle.scan().await }
+        });
+        tokio::task::yield_now().await;
+        trigger.notify_one();
+        let discovery = tokio::time::timeout(std::time::Duration::from_secs(5), queued)
+            .await
+            .unwrap()
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            discovery.queued + discovery.deferred + discovery.suppressed,
+            0
+        );
+        handle.scan().await.unwrap();
+        supervisor.shutdown().await.unwrap();
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn coordinator_restart_reacquires_dropped_ownership(pool: PgPool) {
+        let ing = ingestion_pool_for(&pool).await;
+        let (_source, _library, config) = scan_env();
+        let library_id = crate::models::storage_library::default_library_id(&ing)
+            .await
+            .unwrap();
+        let files = LibraryFiles::open(
+            [(library_id, config.library_path.clone())],
+            &config.ingestion_path,
+        )
+        .unwrap();
+        let mut previous = coordinator(ing.clone(), config.clone(), files.clone());
+        previous.probe().await.unwrap();
+        let mut next = coordinator(ing, config, files);
+        let unavailable = next.probe().await.unwrap_err();
+        next.pause(&unavailable);
+        drop(previous);
+        tokio::time::timeout(std::time::Duration::from_secs(5), async {
+            loop {
+                next.pause.as_mut().unwrap().next = tokio::time::Instant::now();
+                assert!(next.reprobe().await.unwrap().is_none());
+                if next.pause.is_none() {
+                    break;
+                }
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .unwrap();
+        assert!(next.pause.is_none());
+        assert!(next.lock.is_some());
     }
 
     #[sqlx::test(migrations = "./migrations")]
@@ -4502,6 +4935,7 @@ mod tests {
             discovered: false,
             accepted: None,
             unresolved: std::collections::HashSet::default(),
+            watcher: None,
         }
     }
 
