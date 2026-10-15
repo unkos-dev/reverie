@@ -168,6 +168,17 @@ impl Active {
         }
     }
 
+    async fn drain(mut self) {
+        self.progress.cancel.cancel();
+        let mut tick = tokio::time::interval(std::time::Duration::from_secs(1));
+        loop {
+            tokio::select! {
+                _ = &mut self.future => break,
+                _ = tick.tick() => self.tick(),
+            }
+        }
+    }
+
     fn tick(&mut self) {
         let now = tokio::time::Instant::now();
         let count = self.progress.count();
@@ -333,19 +344,28 @@ impl Coordinator {
                 Ok(true)
             }
             Err(error) => {
-                self.watcher_failed(error).await?;
+                self.watcher_failed(error, &mut None).await?;
                 Ok(false)
             }
         }
     }
 
-    async fn watcher_failed(&mut self, error: anyhow::Error) -> anyhow::Result<()> {
+    async fn watcher_failed(
+        &mut self,
+        error: anyhow::Error,
+        active: &mut Option<Active>,
+    ) -> anyhow::Result<()> {
         if let Some(watcher) = &mut self.watcher {
             watcher.run = None;
         }
         self.discovered = false;
         match Self::check_folders(self.files.clone(), self.library_id).await {
-            Ok(()) => Err(error.context("filesystem watcher failed while folder check passed")),
+            Ok(()) => {
+                if let Some(active) = active.take() {
+                    active.drain().await;
+                }
+                Err(error.context("filesystem watcher failed while folder check passed"))
+            }
             Err(folder_error) => {
                 if let Some(pause) = &mut self.pause {
                     pause.failed();
@@ -1263,13 +1283,8 @@ pub async fn run_watcher(
         tokio::select! {
             biased;
             () = cancel.cancelled() => {
-                if let Some(mut active) = active.take() {
-                    loop {
-                        tokio::select! {
-                            _ = &mut active.future => break,
-                            _ = tick.tick() => active.tick(),
-                        }
-                    }
+                if let Some(active) = active.take() {
+                    active.drain().await;
                 }
                 break;
             }
@@ -1293,7 +1308,7 @@ pub async fn run_watcher(
                 }
             } => {
                 let error = result.err().unwrap_or_else(|| anyhow::anyhow!("filesystem watcher returned before cancellation"));
-                owner.watcher_failed(error).await?;
+                owner.watcher_failed(error, &mut active).await?;
             }
             expired = owner.deadlines.next(), if !owner.deadlines.is_empty() => {
                 if let Some(expired) = expired {
@@ -2923,7 +2938,7 @@ mod tests {
         owner.discover(false).await.unwrap();
         std::fs::set_permissions(source.path(), std::fs::Permissions::from_mode(0o0)).unwrap();
         owner
-            .watcher_failed(anyhow::anyhow!("watch failed"))
+            .watcher_failed(anyhow::anyhow!("watch failed"), &mut None)
             .await
             .unwrap();
         assert!(owner.pause.is_some());
@@ -2983,12 +2998,126 @@ mod tests {
         owner.probe().await.unwrap();
         assert!(owner.start_watcher().await.unwrap());
         let error = owner
-            .watcher_failed(anyhow::anyhow!("watch resources exhausted"))
+            .watcher_failed(anyhow::anyhow!("watch resources exhausted"), &mut None)
             .await
             .unwrap_err();
         assert!(format!("{error:#}").contains("watch resources exhausted"));
         assert!(owner.pause.is_none());
         assert!(owner.watcher.as_ref().unwrap().run.is_none());
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn coordinator_watcher_failure_drains_blocking_attempt_before_reclaim(pool: PgPool) {
+        use crate::models::ingestion_input::{self, InputStatus};
+        let ing = ingestion_pool_for(&pool).await;
+        let (source, _library, config) = scan_env();
+        let library_id = crate::models::storage_library::default_library_id(&ing)
+            .await
+            .unwrap();
+        let files = LibraryFiles::open(
+            [(library_id, config.library_path.clone())],
+            &config.ingestion_path,
+        )
+        .unwrap();
+        std::fs::write(source.path().join("book.epub"), make_minimal_epub()).unwrap();
+        let mut owner = coordinator(ing.clone(), config.clone(), files.clone());
+        owner.probe().await.unwrap();
+        owner.discover(false).await.unwrap();
+        let input = ingestion_input::current_page(&ing, None)
+            .await
+            .unwrap()
+            .remove(0);
+        let job = ingestion_input::begin_attempt(&ing, &input, Uuid::new_v4())
+            .await
+            .unwrap();
+        let cancel = CancellationToken::new();
+        let mut active = owner
+            .active_attempt(input.clone(), job, library_id, &cancel)
+            .unwrap();
+        let progress = active.progress.clone();
+        let blocked_progress = progress.clone();
+        let (started, reached) = tokio::sync::oneshot::channel();
+        let (release, released) = std::sync::mpsc::sync_channel(1);
+        let blocking = tokio::task::spawn_blocking(move || {
+            blocked_progress.enter(copier::Phase::Validation).unwrap();
+            started.send(()).unwrap();
+            released
+                .recv_timeout(std::time::Duration::from_secs(10))
+                .unwrap();
+        });
+        let attempt = active.future;
+        active.future = Box::pin(async move {
+            blocking.await.unwrap();
+            attempt.await
+        });
+        reached.await.unwrap();
+        let failure = tokio::spawn(async move {
+            let mut active = Some(active);
+            let error = owner
+                .watcher_failed(anyhow::anyhow!("watch failed"), &mut active)
+                .await
+                .unwrap_err();
+            assert!(active.is_none());
+            drop(owner);
+            error
+        });
+        tokio::time::timeout(
+            std::time::Duration::from_secs(1),
+            progress.cancel.cancelled(),
+        )
+        .await
+        .expect("watcher failure must cancel the active attempt");
+        assert!(!cancel.is_cancelled());
+        assert!(!failure.is_finished());
+        let mut next = coordinator(ing.clone(), config, files);
+        let error = next.probe().await.unwrap_err();
+        assert!(error.to_string().contains("ownership unavailable"));
+        assert_eq!(
+            ingestion_input::current(&ing, input.id)
+                .await
+                .unwrap()
+                .unwrap()
+                .status,
+            InputStatus::Processing
+        );
+        assert!(
+            ingestion_input::begin_attempt(&ing, &input, Uuid::new_v4())
+                .await
+                .is_err()
+        );
+        release.send(()).unwrap();
+        let error = tokio::time::timeout(std::time::Duration::from_secs(5), failure)
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(format!("{error:#}").contains("watch failed"));
+        assert!(!cancel.is_cancelled());
+        tokio::time::timeout(std::time::Duration::from_secs(5), async {
+            while next.probe().await.is_err() {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .unwrap();
+        let reclaimed = ingestion_input::current(&ing, input.id)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(reclaimed.status, InputStatus::Pending);
+        assert_eq!(
+            sqlx::query_scalar!(
+                "SELECT outcome::text FROM ingestion_jobs WHERE id = $1",
+                job
+            )
+            .fetch_one(&ing)
+            .await
+            .unwrap(),
+            Some("interrupted".into())
+        );
+        ingestion_input::begin_attempt(&ing, &reclaimed, Uuid::new_v4())
+            .await
+            .unwrap();
+        assert!(source.path().join("book.epub").exists());
     }
 
     #[sqlx::test(migrations = "./migrations")]

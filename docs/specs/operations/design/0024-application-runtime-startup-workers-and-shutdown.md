@@ -261,10 +261,12 @@ ownership probe; its existing dependency probe retry clears that pause after the
 and queued commands remain valid during the restart. The coordinator starts its watcher after the folder check passes
 and before discovery. A watcher failure repeats the same folder check. A failed check pauses as
 `ingestion_folder_unavailable` through the existing dependency probe schedule; a successful recheck registers a new
-watch before discovery. A watcher failure with healthy folders returns an error to supervision. A restarted coordinator
-registers its watch before startup discovery. Both paths discover files that arrived while no watch was registered.
-Enrichment drains admitted jobs before returning a claim error, so restart recovery cannot reset their rows while they
-are still running.
+watch before discovery. A watcher failure with healthy folders cancels the active attempt's child token and awaits the
+attempt with watchdog ticks before returning the error to supervision. The coordinator retains its advisory lock during
+this drain and does not cancel its run token. Process shutdown still uses the supervisor's stop timeout. A restarted
+coordinator registers its watch before startup discovery. Both paths discover files that arrived while no watch was
+registered. Enrichment drains admitted jobs before returning a claim error, so restart recovery cannot reset their rows
+while they are still running.
 
 **CLI dispatch**, for example an operator or a one-shot container step invoking `reverie migrate`: `parse_command`
 matches the single token `"migrate"` to `Command::Migrate`; `main.rs`'s exhaustive match calls `run_migrate`, which
