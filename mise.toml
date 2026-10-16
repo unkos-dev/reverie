@@ -52,7 +52,7 @@ locked = false
 # SQL linter for backend/migrations, run by `just infra::sqruff`. No mise
 # registry shorthand exists, so it takes the explicit GitHub backend form.
 [tools."github:quarylabs/sqruff"]
-version = "0.40.0"
+version = "v0.41.0"
 filter_bins = "sqruff"
 
 # YAML linter; reads .yamllint.yaml. Run by `just infra::ryl`.

@@ -72,14 +72,14 @@ url_api = "https://api.github.com/repos/owenlamont/ryl/releases/assets/611310977
 provenance = "github-attestations"
 
 [[tools."github:quarylabs/sqruff"]]
-version = "0.40.0"
+version = "0.41.0"
 backend = "github:quarylabs/sqruff"
-specifiers = ["0.40.0"]
+specifiers = ["v0.41.0"]
 
 [tools."github:quarylabs/sqruff"."platforms.linux-x64"]
-checksum = "sha256:8a377bdfdfaf46483c33cce46d3b4eb46bcec4b9557f6d0106adc85cc926660e"
-url = "https://github.com/quarylabs/sqruff/releases/download/v0.40.0/sqruff-linux-x86_64-musl.tar.gz"
-url_api = "https://api.github.com/repos/quarylabs/sqruff/releases/assets/514421145"
+checksum = "sha256:bec91903368ec57668c70c87cf9e382b227b3978001339ae8597d0a93328672e"
+url = "https://github.com/quarylabs/sqruff/releases/download/v0.41.0/sqruff-linux-x86_64-musl.tar.gz"
+url_api = "https://api.github.com/repos/quarylabs/sqruff/releases/assets/615996401"
 provenance = "github-attestations"
 
 [[tools."github:sourcefrog/cargo-mutants"]]
