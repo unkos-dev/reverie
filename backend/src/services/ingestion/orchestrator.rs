@@ -1,7 +1,7 @@
 use std::path::{Path, PathBuf};
 
 use sqlx::PgPool;
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, watch};
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
@@ -21,6 +21,76 @@ use crate::services::writeback::path_rename;
 #[derive(Clone)]
 pub struct CoordinatorHandle {
     sender: mpsc::Sender<tokio::sync::oneshot::Sender<anyhow::Result<DiscoveryResult>>>,
+    dependency: watch::Receiver<Option<DependencyObservation>>,
+    supervisor: std::sync::Arc<std::sync::OnceLock<task_supervisor::SupervisorHandle>>,
+}
+
+/// Closed dependency classes safe to expose to administrators.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Serialize, utoipa::ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum DependencyReason {
+    /// The ingestion database cannot service requests.
+    DatabaseUnavailable,
+    /// The opened ingestion folder cannot be read.
+    IngestionFolderUnavailable,
+    /// The opened library folder cannot be used.
+    LibraryFolderUnavailable,
+    /// A library write has no space available.
+    LibraryFull,
+    /// Another coordinator holds ingestion ownership.
+    AnotherInstance,
+    /// No typed cause identifies a more specific class.
+    Unspecified,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct DependencyObservation {
+    pub(crate) reason: DependencyReason,
+    pub(crate) since: chrono::DateTime<chrono::Utc>,
+}
+
+#[derive(Debug, thiserror::Error)]
+#[error("ingestion ownership unavailable")]
+struct OwnershipUnavailable;
+
+#[derive(Debug, thiserror::Error)]
+#[error("root probe failed: {source}")]
+struct RootProbeError {
+    reason: DependencyReason,
+    #[source]
+    source: std::io::Error,
+}
+
+impl DependencyReason {
+    fn of(error: &anyhow::Error) -> Self {
+        for cause in error.chain() {
+            if let Some(error) = cause.downcast_ref::<RootProbeError>() {
+                return error.reason;
+            }
+            if cause.is::<OwnershipUnavailable>() {
+                return Self::AnotherInstance;
+            }
+            if let Some(error) = cause.downcast_ref::<sqlx::Error>() {
+                let unavailable = match error {
+                    sqlx::Error::Io(_)
+                    | sqlx::Error::Tls(_)
+                    | sqlx::Error::PoolTimedOut
+                    | sqlx::Error::PoolClosed
+                    | sqlx::Error::WorkerCrashed => true,
+                    sqlx::Error::Database(error) => error.code().is_some_and(|code| {
+                        code.starts_with("08")
+                            || code.starts_with("53")
+                            || matches!(code.as_ref(), "57P01" | "57P02" | "57P03")
+                    }),
+                    _ => false,
+                };
+                if unavailable {
+                    return Self::DatabaseUnavailable;
+                }
+            }
+        }
+        Self::Unspecified
+    }
 }
 
 /// Classification counts from discovery, before ingestion completes.
@@ -40,23 +110,62 @@ pub struct DiscoveryResult {
 }
 
 /// Receiver retained across supervised coordinator runs.
-pub type CoordinatorCommands = std::sync::Arc<
-    tokio::sync::Mutex<
-        mpsc::Receiver<tokio::sync::oneshot::Sender<anyhow::Result<DiscoveryResult>>>,
+#[derive(Clone)]
+pub struct CoordinatorCommands {
+    receiver: std::sync::Arc<
+        tokio::sync::Mutex<
+            mpsc::Receiver<tokio::sync::oneshot::Sender<anyhow::Result<DiscoveryResult>>>,
+        >,
     >,
->;
+    dependency: watch::Sender<Option<DependencyObservation>>,
+}
+
+impl CoordinatorCommands {
+    pub(crate) async fn lock(
+        &self,
+    ) -> tokio::sync::MutexGuard<
+        '_,
+        mpsc::Receiver<tokio::sync::oneshot::Sender<anyhow::Result<DiscoveryResult>>>,
+    > {
+        self.receiver.lock().await
+    }
+}
 
 /// Create the shared handle and its single-owner receiver.
 #[must_use]
 pub fn coordinator_channel() -> (CoordinatorHandle, CoordinatorCommands) {
     let (sender, receiver) = mpsc::channel(16);
+    let (dependency, observation) = watch::channel(None);
     (
-        CoordinatorHandle { sender },
-        std::sync::Arc::new(tokio::sync::Mutex::new(receiver)),
+        CoordinatorHandle {
+            sender,
+            dependency: observation,
+            supervisor: std::sync::Arc::new(std::sync::OnceLock::new()),
+        },
+        CoordinatorCommands {
+            receiver: std::sync::Arc::new(tokio::sync::Mutex::new(receiver)),
+            dependency,
+        },
     )
 }
 
 impl CoordinatorHandle {
+    pub(crate) fn set_supervisor(&self, supervisor: task_supervisor::SupervisorHandle) {
+        self.supervisor.get_or_init(|| supervisor);
+    }
+
+    pub(crate) async fn restarting(&self) -> anyhow::Result<bool> {
+        match self.supervisor.get() {
+            Some(supervisor) => Ok(supervisor.task_status("ingestion-coordinator").await?
+                == task_supervisor::TaskStatus::Restarting),
+            None => Ok(false),
+        }
+    }
+
+    pub(crate) fn dependency(&self) -> Option<DependencyObservation> {
+        *self.dependency.borrow()
+    }
+
     /// Discover current inputs without bypassing readiness.
     ///
     /// # Errors
@@ -228,6 +337,7 @@ struct Coordinator {
         ),
     >,
     pause: Option<Pause>,
+    dependency: watch::Sender<Option<DependencyObservation>>,
     pending: Option<PendingResult>,
     lock: Option<sqlx::pool::PoolConnection<sqlx::Postgres>>,
     library_id: Option<LibraryId>,
@@ -239,11 +349,33 @@ struct Coordinator {
 }
 
 impl Coordinator {
-    fn pause(&mut self, error: &dyn std::fmt::Display) {
+    fn pause(&mut self, error: &anyhow::Error) {
+        let reason = DependencyReason::of(error);
+        self.dependency.send_if_modified(|observation| {
+            if observation
+                .as_ref()
+                .is_some_and(|previous| previous.reason == reason)
+            {
+                return false;
+            }
+            *observation = Some(DependencyObservation {
+                reason,
+                since: observation
+                    .as_ref()
+                    .map_or_else(chrono::Utc::now, |previous| previous.since),
+            });
+            true
+        });
         if self.pause.is_none() {
             tracing::warn!(%error, "ingestion coordinator paused");
             self.pause = Some(Pause::new());
         }
+    }
+
+    fn resume(&mut self) {
+        self.pause = None;
+        self.dependency.send_replace(None);
+        tracing::info!("ingestion coordinator resumed");
     }
 
     async fn complete_attempt(
@@ -258,15 +390,14 @@ impl Coordinator {
                 _
             )
         ) {
-            self.pause(&"shared dependency failure");
+            self.pause(&anyhow::anyhow!("shared dependency failure"));
         }
         self.pending = Some(result);
         match self.finalise().await {
             Ok(FinalisationHealth::NoFreshFailure) if recommit => match self.probe().await {
                 Ok(()) if self.pending.is_none() => {
                     if self.start_watcher().await? {
-                        self.pause = None;
-                        tracing::info!("ingestion coordinator resumed");
+                        self.resume();
                         if !self.discovered
                             && let Err(error) = self.discover(false).await
                         {
@@ -277,7 +408,9 @@ impl Coordinator {
                 Ok(()) => {}
                 Err(error) => self.pause(&error),
             },
-            Ok(FinalisationHealth::SharedFailure) => self.pause(&"fresh shared dependency failure"),
+            Ok(FinalisationHealth::SharedFailure) => {
+                self.pause(&anyhow::anyhow!("fresh shared dependency failure"));
+            }
             Ok(FinalisationHealth::NoFreshFailure) => {}
             Err(error) => self.pause(&error),
         }
@@ -300,7 +433,9 @@ impl Coordinator {
             )
             .fetch_one(&mut *connection)
             .await?;
-            anyhow::ensure!(held, "ingestion ownership unavailable");
+            if !held {
+                return Err(OwnershipUnavailable.into());
+            }
             self.lock = Some(connection);
         }
         if self.library_id.is_none() {
@@ -369,11 +504,8 @@ impl Coordinator {
             Err(folder_error) => {
                 if let Some(pause) = &mut self.pause {
                     pause.failed();
-                } else {
-                    self.pause(&format_args!(
-                        "ingestion_folder_unavailable: {folder_error}"
-                    ));
                 }
+                self.pause(&folder_error);
                 Ok(())
             }
         }
@@ -780,8 +912,10 @@ impl Coordinator {
         &mut self,
         cancel: &CancellationToken,
     ) -> anyhow::Result<Option<Active>> {
+        let enabled = self.settings.read().await.ingestion.ingestion_enabled;
         if self.pending.is_none()
             && self.pause.is_none()
+            && enabled
             && let Some(id) = self.ready.pop_front()
             && let Some(input) = self.inputs.get(&id).cloned()
             && let Some(library_id) = self.library_id
@@ -812,7 +946,7 @@ impl Coordinator {
                 Err(error) => {
                     self.ready.push_front(id);
                     self.ready_set.insert(id);
-                    self.pause(&error);
+                    self.pause(&error.into());
                 }
             }
         }
@@ -945,10 +1079,10 @@ impl Coordinator {
                         if let Some(pause) = &mut self.pause {
                             pause.failed();
                         }
+                        self.pause(error);
                         tracing::debug!(%error, "ingestion result recommit deferred");
                     } else if matches!(finalised, Ok(FinalisationHealth::NoFreshFailure)) {
-                        self.pause = None;
-                        tracing::info!("ingestion coordinator resumed");
+                        self.resume();
                         if let Err(error) =
                             self.discover_selected(false, None, !self.discovered).await
                         {
@@ -962,6 +1096,7 @@ impl Coordinator {
                     if let Some(pause) = &mut self.pause {
                         pause.failed();
                     }
+                    self.pause(&error);
                     tracing::debug!(%error, "ingestion dependency probe failed");
                 }
             }
@@ -1127,15 +1262,32 @@ impl Coordinator {
     }
 }
 
-fn probe_roots(files: &LibraryFiles, library_id: LibraryId) -> std::io::Result<()> {
+fn probe_roots(files: &LibraryFiles, library_id: LibraryId) -> Result<(), RootProbeError> {
     use std::io::Write;
-    files.ingestion().dir_metadata()?;
-    let _ = files.ingestion().entries()?.next().transpose()?;
-    let root = files.library(library_id).map_err(std::io::Error::other)?;
-    root.dir_metadata()?;
-    let mut probe = cap_tempfile::TempFile::new(root)?;
-    probe.write_all(&[0])?;
-    probe.as_file().sync_all()
+    let ingestion = || -> std::io::Result<()> {
+        files.ingestion().dir_metadata()?;
+        let _ = files.ingestion().entries()?.next().transpose()?;
+        Ok(())
+    };
+    ingestion().map_err(|source| RootProbeError {
+        reason: DependencyReason::IngestionFolderUnavailable,
+        source,
+    })?;
+    let library = || -> std::io::Result<()> {
+        let root = files.library(library_id).map_err(std::io::Error::other)?;
+        root.dir_metadata()?;
+        let mut probe = cap_tempfile::TempFile::new(root)?;
+        probe.write_all(&[0])?;
+        probe.as_file().sync_all()
+    };
+    library().map_err(|source| RootProbeError {
+        reason: if source.raw_os_error() == Some(rustix::io::Errno::NOSPC.raw_os_error()) {
+            DependencyReason::LibraryFull
+        } else {
+            DependencyReason::LibraryFolderUnavailable
+        },
+        source,
+    })
 }
 
 fn discover_files(
@@ -1237,7 +1389,8 @@ pub async fn run_watcher(
     commands: CoordinatorCommands,
 ) -> Result<(), anyhow::Error> {
     use futures::StreamExt;
-    let mut commands = commands.lock().await;
+    commands.dependency.send_replace(None);
+    let mut receiver = commands.lock().await;
     let (tx, mut rx) = mpsc::channel(16);
     let mut owner = Coordinator {
         config,
@@ -1251,6 +1404,7 @@ pub async fn run_watcher(
         ready_set: std::collections::HashSet::default(),
         observed: std::collections::HashMap::default(),
         pause: None,
+        dependency: commands.dependency.clone(),
         pending: None,
         lock: None,
         library_id: None,
@@ -1317,7 +1471,7 @@ pub async fn run_watcher(
                     if owner.inputs.contains_key(&id) && owner.ready_set.insert(id) { owner.ready.push_back(id); }
                 }
             }
-            Some(reply) = commands.recv() => {
+            Some(reply) = receiver.recv() => {
                 let result = owner.discover(true).await;
                 if let Err(error) = &result { owner.pause(error); }
                 drop(reply.send(result));
@@ -1327,7 +1481,7 @@ pub async fn run_watcher(
             }
         }
     }
-    drop(commands);
+    drop(receiver);
     Ok(())
 }
 
@@ -1604,7 +1758,7 @@ async fn finalisation_class(
         match tokio::task::spawn_blocking(move || probe_roots(&phase_files, library_id)).await {
             Ok(Ok(())) => true,
             Ok(Err(error)) => {
-                tracing::warn!(kind = ?error.kind(), "ingestion root probe failed");
+                tracing::warn!(kind = ?error.source.kind(), "ingestion root probe failed");
                 false
             }
             Err(error) => {
@@ -2833,6 +2987,376 @@ fn draft_metadata(
 mod tests {
     use super::*;
 
+    #[test]
+    fn ingestion_status_classifies_only_typed_dependency_causes() {
+        for error in [
+            sqlx::Error::PoolTimedOut,
+            sqlx::Error::PoolClosed,
+            sqlx::Error::WorkerCrashed,
+            sqlx::Error::Io(std::io::ErrorKind::ConnectionReset.into()),
+        ] {
+            assert_eq!(
+                DependencyReason::of(&anyhow::Error::new(error).context("database operation")),
+                DependencyReason::DatabaseUnavailable
+            );
+        }
+        assert_eq!(
+            DependencyReason::of(&OwnershipUnavailable.into()),
+            DependencyReason::AnotherInstance
+        );
+        for reason in [
+            DependencyReason::IngestionFolderUnavailable,
+            DependencyReason::LibraryFolderUnavailable,
+            DependencyReason::LibraryFull,
+        ] {
+            let error = RootProbeError {
+                reason,
+                source: std::io::ErrorKind::PermissionDenied.into(),
+            };
+            assert_eq!(
+                DependencyReason::of(&anyhow::Error::new(error).context("folder check")),
+                reason
+            );
+        }
+        for error in [
+            anyhow::anyhow!("database unavailable: /private/test-path"),
+            sqlx::Error::RowNotFound.into(),
+            sqlx::Error::Protocol("invalid query".into()).into(),
+            std::io::Error::from_raw_os_error(rustix::io::Errno::NOSPC.raw_os_error()).into(),
+        ] {
+            assert_eq!(DependencyReason::of(&error), DependencyReason::Unspecified);
+        }
+    }
+
+    #[tokio::test]
+    async fn ingestion_status_keeps_timestamp_through_refinement_and_clears_on_recovery() {
+        let state = crate::test_support::test_state();
+        let mut owner = coordinator(state.ingestion_pool, state.config, state.library_files);
+        let (handle, commands) = coordinator_channel();
+        owner.dependency = commands.dependency;
+        let mut observation = handle.dependency.clone();
+        owner.pause(&anyhow::anyhow!("unclassified dependency"));
+        observation.changed().await.unwrap();
+        let first = handle.dependency().unwrap();
+        let deadline = owner.pause.as_ref().unwrap().next;
+        owner.pause(&anyhow::anyhow!("another unclassified failure"));
+        assert!(!observation.has_changed().unwrap());
+        owner.pause(&sqlx::Error::PoolClosed.into());
+        observation.changed().await.unwrap();
+        assert_eq!(handle.dependency().unwrap().since, first.since);
+        assert_eq!(
+            handle.dependency().unwrap().reason,
+            DependencyReason::DatabaseUnavailable
+        );
+        assert_eq!(owner.pause.as_ref().unwrap().next, deadline);
+        owner.pause.as_mut().unwrap().failed();
+        assert!(!observation.has_changed().unwrap());
+        owner.resume();
+        observation.changed().await.unwrap();
+        assert!(handle.dependency().is_none());
+        owner.pause(&OwnershipUnavailable.into());
+        assert_eq!(
+            handle.dependency().unwrap().reason,
+            DependencyReason::AnotherInstance
+        );
+        assert!(handle.dependency().unwrap().since >= first.since);
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn ingestion_status_returns_independent_redacted_blockers_during_blocked_probe(
+        pool: PgPool,
+    ) {
+        use crate::test_support;
+        let app = test_support::db::app_pool_for(&pool).await;
+        let (_id, auth) = test_support::db::create_admin_and_basic_auth(&app).await;
+        let ing = ingestion_pool_for(&pool).await;
+        let (_source, _library, config) = scan_env();
+        let library_id = crate::models::storage_library::default_library_id(&ing)
+            .await
+            .unwrap();
+        let files = LibraryFiles::open(
+            [(library_id, config.library_path.clone())],
+            &config.ingestion_path,
+        )
+        .unwrap();
+        let mut owner = coordinator(ing.clone(), config, files);
+        let (handle, commands) = coordinator_channel();
+        owner.dependency = commands.dependency;
+        owner.pause(&anyhow::anyhow!(
+            "sensitive fixture /private/ingestion credential-marker"
+        ));
+        let mut state = test_support::test_state();
+        state.pool = app;
+        state.ingestion = handle.clone();
+        state.settings = owner.settings.clone();
+        let settings = state.settings.clone();
+        settings.write().await.ingestion.ingestion_enabled = false;
+        let server = axum_test::TestServer::new(crate::build_router_with_session_store(
+            state,
+            tower_sessions::MemoryStore::default(),
+        ));
+        let mut held = Vec::new();
+        for _ in 0..ing.options().get_max_connections() {
+            held.push(ing.acquire().await.unwrap());
+        }
+        let mut probe = Box::pin(owner.probe());
+        assert!(futures::poll!(&mut probe).is_pending());
+        let response = tokio::time::timeout(
+            std::time::Duration::from_secs(1),
+            server
+                .get("/api/v1/ingestion/status")
+                .add_header(axum::http::header::AUTHORIZATION, auth.clone()),
+        )
+        .await
+        .unwrap();
+        response.assert_status_ok();
+        let body: serde_json::Value = response.json();
+        let since = body["blockers"][1]["since"].clone();
+        assert_eq!(
+            body,
+            serde_json::json!({"blockers": [
+                {"kind": "paused_by_admin"}, {"kind": "dependency", "reason": "unspecified", "since": since}
+            ]})
+        );
+        assert!(!response.text().contains("credential-marker"));
+        assert!(!response.text().contains("/private"));
+        drop(probe);
+        drop(held);
+        owner.pause(&OwnershipUnavailable.into());
+        settings.write().await.ingestion.ingestion_enabled = true;
+        let response = server
+            .get("/api/v1/ingestion/status")
+            .add_header(axum::http::header::AUTHORIZATION, auth.clone())
+            .await;
+        assert_eq!(
+            response.json::<serde_json::Value>(),
+            serde_json::json!({"blockers": [
+                {"kind": "dependency", "reason": "another_instance", "since": since}
+            ]})
+        );
+        owner.probe().await.unwrap();
+        owner.resume();
+        let response = server
+            .get("/api/v1/ingestion/status")
+            .add_header(axum::http::header::AUTHORIZATION, auth)
+            .await;
+        assert_eq!(
+            response.json::<serde_json::Value>(),
+            serde_json::json!({"blockers": []})
+        );
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn ingestion_admission_save_can_finish_while_an_admitted_attempt_waits_for_database(
+        pool: PgPool,
+    ) {
+        use crate::models::ingestion_input;
+        let ing = ingestion_pool_for(&pool).await;
+        let (source, _library, config) = scan_env();
+        let library_id = crate::models::storage_library::default_library_id(&ing)
+            .await
+            .unwrap();
+        let files = LibraryFiles::open(
+            [(library_id, config.library_path.clone())],
+            &config.ingestion_path,
+        )
+        .unwrap();
+        std::fs::write(source.path().join("book.epub"), make_minimal_epub()).unwrap();
+        let mut owner = coordinator(ing.clone(), config, files);
+        owner.probe().await.unwrap();
+        owner.discover(false).await.unwrap();
+        let input = ingestion_input::current_page(&ing, None)
+            .await
+            .unwrap()
+            .remove(0);
+        let key = owner.keys.remove(&input.id).unwrap();
+        owner.deadlines.remove(&key);
+        owner.ready.push_back(input.id);
+        owner.ready_set.insert(input.id);
+        let settings = owner.settings.clone();
+        let mut held = Vec::new();
+        for _ in 1..ing.options().get_max_connections() {
+            held.push(ing.acquire().await.unwrap());
+        }
+        let cancel = CancellationToken::new();
+        let mut admission = Box::pin(owner.start_attempt(&cancel));
+        assert!(futures::poll!(&mut admission).is_pending());
+        let update = serde_json::from_value(serde_json::json!({
+            "ingestion_enabled": false, "cleanup_imported": false
+        }))
+        .unwrap();
+        let saved = crate::services::settings::save(&pool, &update)
+            .await
+            .unwrap();
+        tokio::time::timeout(std::time::Duration::from_secs(1), async {
+            crate::services::settings::apply_if_newer(&mut *settings.write().await, saved);
+        })
+        .await
+        .unwrap();
+        drop(held);
+        let mut active = admission.await.unwrap().unwrap();
+        assert!(!settings.read().await.ingestion.ingestion_enabled);
+        let completed = (&mut active.future).await;
+        owner.complete_attempt(completed, false).await.unwrap();
+        assert_eq!(
+            ingestion_input::current(&ing, input.id)
+                .await
+                .unwrap()
+                .unwrap()
+                .status,
+            ingestion_input::InputStatus::Imported
+        );
+        assert!(owner.start_attempt(&cancel).await.unwrap().is_none());
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn ingestion_admission_disabled_worker_starts_discovers_and_resumes_live(pool: PgPool) {
+        use crate::models::ingestion_input::{self, InputStatus};
+        let ing = ingestion_pool_for(&pool).await;
+        let (source, _library, config) = scan_env();
+        let library_id = crate::models::storage_library::default_library_id(&ing)
+            .await
+            .unwrap();
+        let files = LibraryFiles::open(
+            [(library_id, config.library_path.clone())],
+            &config.ingestion_path,
+        )
+        .unwrap();
+        std::fs::write(source.path().join("book.epub"), make_minimal_epub()).unwrap();
+        let update = serde_json::from_value(serde_json::json!({
+            "ingestion_enabled": false, "cleanup_imported": false
+        }))
+        .unwrap();
+        let saved = crate::services::settings::save(&pool, &update)
+            .await
+            .unwrap();
+        let settings = std::sync::Arc::new(tokio::sync::RwLock::new(saved));
+        let (handle, commands) = coordinator_channel();
+        let cancel = CancellationToken::new();
+        let worker = tokio::spawn(run_watcher(
+            config,
+            ing.clone(),
+            cancel.clone(),
+            files,
+            settings.clone(),
+            commands,
+        ));
+        handle.scan().await.unwrap();
+        let input = ingestion_input::current_page(&ing, None)
+            .await
+            .unwrap()
+            .remove(0);
+        tokio::time::sleep(READINESS + std::time::Duration::from_secs(2)).await;
+        handle.scan().await.unwrap();
+        assert_eq!(
+            ingestion_input::current(&ing, input.id)
+                .await
+                .unwrap()
+                .unwrap()
+                .status,
+            InputStatus::Pending
+        );
+        assert_eq!(
+            ingestion_input::transient_count(&ing, &input)
+                .await
+                .unwrap(),
+            0
+        );
+        let update =
+            serde_json::from_value(serde_json::json!({"ingestion_enabled": true})).unwrap();
+        let saved = crate::services::settings::save(&pool, &update)
+            .await
+            .unwrap();
+        crate::services::settings::apply_if_newer(&mut *settings.write().await, saved);
+        tokio::time::timeout(std::time::Duration::from_secs(10), async {
+            loop {
+                if ingestion_input::current(&ing, input.id)
+                    .await
+                    .unwrap()
+                    .unwrap()
+                    .status
+                    == InputStatus::Imported
+                {
+                    break;
+                }
+                tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+            }
+        })
+        .await
+        .unwrap();
+        cancel.cancel();
+        worker.await.unwrap().unwrap();
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn ingestion_admission_preserves_ready_work_and_finishes_admitted_work(pool: PgPool) {
+        use crate::models::ingestion_input;
+        let ing = ingestion_pool_for(&pool).await;
+        let (source, _library, config) = scan_env();
+        let library_id = crate::models::storage_library::default_library_id(&ing)
+            .await
+            .unwrap();
+        let files = LibraryFiles::open(
+            [(library_id, config.library_path.clone())],
+            &config.ingestion_path,
+        )
+        .unwrap();
+        std::fs::write(source.path().join("book.epub"), make_minimal_epub()).unwrap();
+        let mut owner = coordinator(ing.clone(), config, files);
+        owner.settings.write().await.ingestion.ingestion_enabled = false;
+        owner.probe().await.unwrap();
+        assert_eq!(owner.discover(false).await.unwrap().deferred, 1);
+        let input = ingestion_input::current_page(&ing, None)
+            .await
+            .unwrap()
+            .remove(0);
+        let id = input.id;
+        let key = owner.keys.remove(&id).unwrap();
+        owner.deadlines.remove(&key);
+        owner.ready.push_back(id);
+        owner.ready_set.insert(id);
+        let deadlines = owner.deadlines.len();
+        let cancel = CancellationToken::new();
+        assert!(owner.start_attempt(&cancel).await.unwrap().is_none());
+        assert_eq!(owner.ready.iter().copied().collect::<Vec<_>>(), [id]);
+        assert!(owner.ready_set.contains(&id));
+        assert_eq!(owner.deadlines.len(), deadlines);
+        assert!(
+            sqlx::query_scalar!(
+                "SELECT outcome::text FROM ingestion_jobs WHERE input_id = $1",
+                id
+            )
+            .fetch_optional(&ing)
+            .await
+            .unwrap()
+            .is_none()
+        );
+        assert_eq!(
+            ingestion_input::transient_count(&ing, &input)
+                .await
+                .unwrap(),
+            0
+        );
+        owner.settings.write().await.ingestion.ingestion_enabled = true;
+        let mut active = owner.start_attempt(&cancel).await.unwrap().unwrap();
+        assert!(owner.ready.is_empty());
+        owner.settings.write().await.ingestion.ingestion_enabled = false;
+        let completed = (&mut active.future).await;
+        owner.complete_attempt(completed, false).await.unwrap();
+        assert!(owner.pending.is_none());
+        assert_eq!(
+            sqlx::query_scalar!(
+                "SELECT outcome::text FROM ingestion_jobs WHERE input_id = $1",
+                id
+            )
+            .fetch_one(&ing)
+            .await
+            .unwrap(),
+            Some("imported".into())
+        );
+        assert!(!source.path().join("book.epub").exists());
+    }
+
     #[sqlx::test(migrations = "./migrations")]
     async fn capability_ingestion_review_fresh_shared_recommit_keeps_pause_until_healthy_probe(
         pool: PgPool,
@@ -2878,7 +3402,8 @@ mod tests {
             source_deleted: false,
             health: FinalisationHealth::NoFreshFailure,
         });
-        owner.pause(&"previous dependency outage");
+        owner.settings.write().await.ingestion.ingestion_enabled = false;
+        owner.pause(&anyhow::anyhow!("previous dependency outage"));
         owner.pause.as_mut().unwrap().next = tokio::time::Instant::now();
         let mut active = owner.reprobe().await.unwrap().unwrap();
         std::fs::set_permissions(library.path(), std::fs::Permissions::from_mode(0o0)).unwrap();
@@ -2942,6 +3467,10 @@ mod tests {
             .await
             .unwrap();
         assert!(owner.pause.is_some());
+        assert_eq!(
+            owner.dependency.borrow().unwrap().reason,
+            DependencyReason::IngestionFolderUnavailable
+        );
         assert!(owner.watcher.as_ref().unwrap().run.is_none());
         assert!(!owner.discovered);
         std::fs::set_permissions(source.path(), std::fs::Permissions::from_mode(0o700)).unwrap();
@@ -2952,6 +3481,7 @@ mod tests {
         owner.pause.as_mut().unwrap().next = tokio::time::Instant::now();
         assert!(owner.reprobe().await.unwrap().is_none());
         assert!(owner.pause.is_none());
+        assert!(owner.dependency.borrow().is_none());
         assert!(owner.watcher.as_ref().unwrap().run.is_some());
         let inputs = ingestion_input::current_page(&ing, None).await.unwrap();
         assert_eq!(inputs.len(), 2);
@@ -3137,6 +3667,22 @@ mod tests {
         )
         .unwrap();
         let (handle, commands) = coordinator_channel();
+        let prior = DependencyObservation {
+            reason: DependencyReason::DatabaseUnavailable,
+            since: chrono::Utc::now(),
+        };
+        let app = crate::test_support::db::app_pool_for(&pool).await;
+        let (_id, auth) = crate::test_support::db::create_admin_and_basic_auth(&app).await;
+        let mut state = crate::test_support::test_state();
+        state.pool = app;
+        state.ingestion = handle.clone();
+        state.settings.write().await.ingestion.ingestion_enabled = false;
+        let server = axum_test::TestServer::new(crate::build_router_with_session_store(
+            state,
+            tower_sessions::MemoryStore::default(),
+        ));
+        let blocked_pool = ing.clone();
+        let mut observation = handle.dependency.clone();
         let runs = Arc::new(AtomicUsize::new(0));
         let (started, mut ready) = mpsc::unbounded_channel();
         let crash = Arc::new(tokio::sync::Notify::new());
@@ -3144,7 +3690,7 @@ mod tests {
         let supervisor = crate::worker_supervisor()
             .with_restart_jitter(0.0)
             .with_task(
-                "coordinator",
+                "ingestion-coordinator",
                 crate::Worker(move |cancel| {
                     let commands = commands.clone();
                     let config = config.clone();
@@ -3155,6 +3701,7 @@ mod tests {
                     let crash = crash.clone();
                     async move {
                         if runs.fetch_add(1, Ordering::SeqCst) == 0 {
+                            commands.dependency.send_replace(Some(prior));
                             let _receiver = commands.lock().await;
                             started.send(()).unwrap();
                             crash.notified().await;
@@ -3173,13 +3720,58 @@ mod tests {
                 }),
             )
             .spawn();
+        handle.set_supervisor(supervisor.clone());
         ready.recv().await.unwrap();
+        assert_eq!(handle.dependency(), Some(prior));
+        assert!(!handle.restarting().await.unwrap());
         let queued = tokio::spawn({
             let handle = handle.clone();
             async move { handle.scan().await }
         });
         tokio::task::yield_now().await;
+        let mut held = Vec::new();
+        for _ in 0..blocked_pool.options().get_max_connections() {
+            held.push(blocked_pool.acquire().await.unwrap());
+        }
+        observation.borrow_and_update();
         trigger.notify_one();
+        tokio::time::timeout(std::time::Duration::from_secs(1), async {
+            while !handle.restarting().await.unwrap() {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .unwrap();
+        assert_eq!(handle.dependency(), Some(prior));
+        let response = server
+            .get("/api/v1/ingestion/status")
+            .add_header(axum::http::header::AUTHORIZATION, auth.clone())
+            .await;
+        response.assert_status_ok();
+        assert_eq!(
+            response.json::<serde_json::Value>(),
+            serde_json::json!({"blockers": [
+                {"kind": "paused_by_admin"},
+                {"kind": "dependency", "reason": "database_unavailable", "since": prior.since},
+                {"kind": "restarting"}
+            ]})
+        );
+        tokio::time::timeout(std::time::Duration::from_secs(3), observation.changed())
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(handle.dependency().is_none());
+        let response = server
+            .get("/api/v1/ingestion/status")
+            .add_header(axum::http::header::AUTHORIZATION, auth)
+            .await;
+        assert_eq!(
+            response.json::<serde_json::Value>(),
+            serde_json::json!({"blockers": [
+                {"kind": "paused_by_admin"}
+            ]})
+        );
+        drop(held);
         let discovery = tokio::time::timeout(std::time::Duration::from_secs(5), queued)
             .await
             .unwrap()
@@ -3190,6 +3782,8 @@ mod tests {
             0
         );
         handle.scan().await.unwrap();
+        assert!(!handle.restarting().await.unwrap());
+        assert!(handle.dependency().is_none());
         supervisor.shutdown().await.unwrap();
     }
 
@@ -4251,8 +4845,25 @@ mod tests {
         drop(owner);
         let resumed = ingestion_pool_for(&pool).await;
         let mut restarted = coordinator(resumed.clone(), config, files);
+        restarted.settings.write().await.ingestion.ingestion_enabled = false;
         restarted.probe().await.unwrap();
         restarted.discover(false).await.unwrap();
+        assert!(
+            restarted
+                .start_attempt(&CancellationToken::new())
+                .await
+                .unwrap()
+                .is_none()
+        );
+        assert!(
+            !restarted
+                .files
+                .library(library_id)
+                .unwrap()
+                .try_exists(location.path.as_path())
+                .unwrap()
+        );
+        restarted.settings.write().await.ingestion.ingestion_enabled = true;
         let reclaimed = ingestion_input::current(&resumed, input.id)
             .await
             .unwrap()
@@ -4362,7 +4973,7 @@ mod tests {
             source_deleted: false,
             health: FinalisationHealth::NoFreshFailure,
         });
-        owner.pause(&"outcome commit unavailable");
+        owner.pause(&anyhow::anyhow!("outcome commit unavailable"));
         owner.pause.as_mut().unwrap().next = tokio::time::Instant::now();
         let mut active = owner.reprobe().await.unwrap().unwrap();
         assert!(active.recommit);
@@ -4928,6 +5539,7 @@ mod tests {
             ready_set: std::collections::HashSet::default(),
             observed: std::collections::HashMap::default(),
             pause: None,
+            dependency: watch::channel(None).0,
             pending: None,
             lock: None,
             library_id: None,
@@ -4970,6 +5582,32 @@ mod tests {
             needs_change: false,
             exhausted: false,
         }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn ingestion_admission_enable_preserves_dependency_pause_and_retry_deadline() {
+        let state = crate::test_support::test_state();
+        let mut owner = coordinator(state.pool, state.config, state.library_files);
+        let input = pending_input();
+        let mut retry = no_retry(input.id);
+        retry.count = 1;
+        retry.failed_at = Some(chrono::Utc::now());
+        let id = input.id;
+        owner.schedule(input, &retry);
+        owner.pause(&anyhow::anyhow!("database unavailable"));
+        let next_probe = owner.pause.as_ref().unwrap().next;
+        let deadline = owner.deadlines.deadline(owner.keys.get(&id).unwrap());
+        owner.settings.write().await.ingestion.ingestion_enabled = false;
+        let cancel = CancellationToken::new();
+        assert!(owner.start_attempt(&cancel).await.unwrap().is_none());
+        owner.settings.write().await.ingestion.ingestion_enabled = true;
+        assert!(owner.start_attempt(&cancel).await.unwrap().is_none());
+        assert_eq!(owner.pause.as_ref().unwrap().next, next_probe);
+        assert_eq!(owner.deadlines.len(), 1);
+        assert_eq!(
+            owner.deadlines.deadline(owner.keys.get(&id).unwrap()),
+            deadline
+        );
     }
 
     #[tokio::test(start_paused = true)]
@@ -5242,9 +5880,9 @@ mod tests {
     async fn capability_ingestion_coordinator_shared_probe_schedule_and_single_pause() {
         let state = crate::test_support::test_state();
         let mut owner = coordinator(state.pool, state.config, state.library_files);
-        owner.pause(&"database unavailable");
+        owner.pause(&anyhow::anyhow!("database unavailable"));
         let first = owner.pause.as_ref().unwrap().next;
-        owner.pause(&"root unavailable");
+        owner.pause(&anyhow::anyhow!("root unavailable"));
         assert_eq!(owner.pause.as_ref().unwrap().next, first);
         for seconds in [30, 60, 120, 300, 300] {
             let pause = owner.pause.as_mut().unwrap();

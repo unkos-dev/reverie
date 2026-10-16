@@ -76,7 +76,8 @@ directly rather than assembling its own `AppState` and calling `build_router`.
 - `backend/src/lib.rs::worker_supervisor` configures task-supervisor's restart window, backoff, dead-task threshold and
   stop timeout. `spawn_workers` registers the five service workers. `Worker` adapts successful returns outside
   cancellation into failures; `supervise_until_shutdown` maps a terminal supervisor error to shutdown cancellation and
-  an error returned by `run`.
+  an error returned by `run`. The ingestion handle shares the supervisor handle with the status route so lifecycle reads
+  use the supervisor's task status.
 - `backend/src/lib.rs::apply_or_verify_schema` is the schema-step flag selector: it branches on `config.auto_migrate`
   between an in-process migration run (`db::run_migrations`) and a read-only verification (`db::verify_schema_current`).
   It is extracted from `run` specifically so both branches are pinned by tests.
@@ -128,6 +129,14 @@ watcher receives the same cancellation token. Dropping the coordinator drops the
 signals coalesce inside that owner. Delete and rename notifications bypass create/modify batching; capability rechecks
 establish absence. Shutdown cancellation reaches the active attempt's child token. A kernel-blocked read can outlast the
 supervisor's stop timeout.
+
+The coordinator alone publishes dependency observations through a `watch` channel retained with the command receiver. It
+records the first failure's timestamp, preserves it across repeated failures and reason refinement, and clears the
+observation after successful recovery. Run termination leaves the last observation intact during backoff. Replacement
+run startup resets it before probing. The status handler composes that observation with the saved `ingestion_enabled`
+value in the live settings cache and the supervisor's `Restarting` task status. It never acquires the command receiver
+or waits for the coordinator's database or filesystem work. The settings service owns the boolean; the coordinator owns
+the observation; task-supervisor owns lifecycle status.
 
 The owner reconciles acknowledged publication evidence before reclaiming interrupted attempts under its advisory lock.
 Unresolved local ownership suspends only the affected input. Streaming accepts idle cancellation after 120 seconds;
@@ -209,13 +218,15 @@ observation. Watchdog ticks and completion precede queued watcher traffic.
    request paths.
 9. `db::init_pool` opens the ingestion pool; `services::settings::seed_ingestion` conditionally seeds ingestion fields
    through the primary pool and reads the winning settings row in one transaction; the login rate limiter is built from
-   `config.login_rate_per_min`.
+   `config.login_rate_per_min`. The persisted `ingestion_enabled` field is loaded with that snapshot but is independent
+   of the configuration seed. Its database default is true and it has no environment or `Config` field.
 10. `AppState` is assembled with the opened `LibraryFiles`, and `build_router` is called on a clone of it.
 11. `db::init_writeback_pool` opens the writeback pool, and the TCP listener is bound. One more fallible call follows
     immediately: `listener.local_addr()` is read back to log the bound address. Nothing has been spawned yet at this
     point, so an early return from any of these steps cannot leak a running task.
 12. A process `CancellationToken` is created and `spawn_workers` starts one supervisor with five tasks. Worker startup
-    order is unspecified. Each run receives a fresh cancellation token and owned clones of its dependencies.
+    order is unspecified. Each run receives a fresh cancellation token and owned clones of its dependencies. The shared
+    ingestion handle receives the supervisor handle before HTTP serving starts.
 13. HTTP serving and `supervise_until_shutdown` run concurrently. The graceful-shutdown future responds to either an
     operating-system signal or process-token cancellation.
 

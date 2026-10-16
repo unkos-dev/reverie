@@ -37,6 +37,14 @@ shared path exclusion; final registration reserves the manifestation's path clai
 after discovery, with queued, deferred and suppressed counts and `/api/v1/dashboard/activity` as the monitor. The
 response describes discovery, without promising a separately attributable batch or completed imports.
 
+`GET /api/v1/ingestion/status` requires both admin scope and administrator role. Its `blockers` list contains tagged
+objects with `kind`: `paused_by_admin` has no timestamp; `dependency` carries a closed `reason` and UTC `since`;
+`restarting` reflects the supervisor's coordinator restart backoff. All applicable blockers appear independently. An
+empty list means no known blocker, including before the first probe completes, and makes no claim about active imports.
+The handler reads the current settings cache and dependency observation and asks the supervisor for lifecycle status. It
+sends no coordinator command and performs no ingestion database or filesystem work. Authentication retains its
+application database dependency.
+
 `GET /api/v1/ingestion/inputs` lists the inputs that need attention and `GET /api/v1/ingestion/inputs/counts` counts
 them, both under the same admin scope and role. Each input appears once, under a primary reason class: the most severe
 recorded rejection class (`unsafe_contents`, `damaged`, `invalid_structure`, `over_limits`, `unspecified`),
@@ -86,12 +94,35 @@ validation (422) and configuration parsing each refuse an empty set. Imported cl
 cleanup to disabled. Other extensions, including sidecars, are independent not-accepted inputs. Rejection and
 non-acceptance have no deletion option. Changes to accepted formats are observed from the existing live settings cache.
 Before serving or worker startup, the settings service conditionally seeds these three fields from validated
-configuration. The internal `ingestion_seeded` marker prevents restart overwrite; supplying any ingestion setting marks
-the row as saved, including default values. Other settings saves leave an unseeded row eligible at any revision. The
-marker defaults to false regardless of existing revision. The seed advances revision and returns the winning row from
-one transaction; failure stops startup.
+configuration. The internal `ingestion_seeded` marker prevents restart overwrite; supplying formats or either cleanup
+setting marks the row as saved, including default values. Other settings saves leave an unseeded row eligible at any
+revision. The marker defaults to false regardless of existing revision. The seed advances revision and returns the
+winning row from one transaction; failure stops startup.
+
+`ingestion_enabled` is a live, persisted boolean with a database default of true. It has no environment or `Config`
+field and does not participate in `ingestion_seeded`. Saving only this setting leaves the three seeded fields eligible
+for their existing configuration seed. It uses the settings API's row lock, ETag precondition and monotonic cache.
+
+The coordinator is the sole writer of a dependency observation published through a Tokio `watch` channel. The handle
+retains its receiver across runs. The observation holds only `DependencyReason` and `since`, with no raw error or path.
+Reasons are `database_unavailable`, `ingestion_folder_unavailable`, `library_folder_unavailable`, `library_full`,
+`another_instance` and `unspecified`. Database failures use SQLx variants and outage SQLSTATE classes; folder probes
+retain their ingestion or library stage, library ENOSPC identifies full storage, and advisory-lock refusal has a typed
+cause. A shared failure that retains only stored text publishes `unspecified` until a typed probe refines it.
 
 ## Runtime behaviour
+
+`Coordinator::start_attempt` reads `ingestion_enabled` from the live cache before removing a ready entry or beginning a
+database attempt. A successful enabled check admits that attempt; the settings lock is released before I/O. An attempt
+admitted before a concurrent disable may begin after the save. Disabling preserves ready entries, deadlines, input
+state, retry budgets and pending results. Discovery, scans, readiness, finalisation, publication recovery and dependency
+probes continue. Enabling does not clear a dependency pause or reset its probe backoff. The switch is not a filesystem
+maintenance lock.
+
+The first observed dependency failure records `since`. Repeated failures, retry backoff and reason refinement preserve
+that timestamp and do not change admission policy. Successful recovery clears the observation. A failed run leaves its
+last observation available during supervisor backoff; the replacement run resets it before its startup probe. Startup
+has no checking state. Status reads can return while the owner is blocked in probing, discovery or recovery.
 
 Discovery enumerates through ingestion capabilities and ignores names beginning with a dot and exactly `Thumbs.db`.
 Directories and source parents are opened without following symlinks. Startup and admin scans enumerate the full tree;

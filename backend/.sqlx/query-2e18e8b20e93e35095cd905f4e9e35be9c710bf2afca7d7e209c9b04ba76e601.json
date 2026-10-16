@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT\n            enrichment_enabled,\n            enrichment_concurrency,\n            enrichment_poll_idle_secs,\n            enrichment_fetch_budget_secs,\n            cover_max_bytes,\n            cover_download_timeout_secs,\n            cover_min_long_edge_px,\n            cover_redirect_limit,\n            writeback_enabled,\n            writeback_concurrency,\n            writeback_poll_idle_secs,\n            writeback_max_attempts,\n            opds_enabled,\n            opds_page_size,\n            accepted_formats,\n            cleanup_imported,\n            cleanup_duplicates,\n            provider_visibility,\n            revision,\n            updated_at\n        FROM settings\n        WHERE id = true",
+  "query": "SELECT\n            enrichment_enabled,\n            enrichment_concurrency,\n            enrichment_poll_idle_secs,\n            enrichment_fetch_budget_secs,\n            cover_max_bytes,\n            cover_download_timeout_secs,\n            cover_min_long_edge_px,\n            cover_redirect_limit,\n            writeback_enabled,\n            writeback_concurrency,\n            writeback_poll_idle_secs,\n            writeback_max_attempts,\n            opds_enabled,\n            opds_page_size,\n            ingestion_enabled,\n            accepted_formats,\n            cleanup_imported,\n            cleanup_duplicates,\n            provider_visibility,\n            revision,\n            updated_at\n        FROM settings\n        WHERE id = true",
   "describe": {
     "columns": [
       {
@@ -159,6 +159,17 @@
       },
       {
         "ordinal": 14,
+        "name": "ingestion_enabled",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "settings",
+            "name": "ingestion_enabled"
+          }
+        }
+      },
+      {
+        "ordinal": 15,
         "name": "accepted_formats",
         "type_info": "TextArray",
         "origin": {
@@ -169,7 +180,7 @@
         }
       },
       {
-        "ordinal": 15,
+        "ordinal": 16,
         "name": "cleanup_imported",
         "type_info": "Bool",
         "origin": {
@@ -180,7 +191,7 @@
         }
       },
       {
-        "ordinal": 16,
+        "ordinal": 17,
         "name": "cleanup_duplicates",
         "type_info": "Bool",
         "origin": {
@@ -191,7 +202,7 @@
         }
       },
       {
-        "ordinal": 17,
+        "ordinal": 18,
         "name": "provider_visibility",
         "type_info": "Jsonb",
         "origin": {
@@ -202,7 +213,7 @@
         }
       },
       {
-        "ordinal": 18,
+        "ordinal": 19,
         "name": "revision",
         "type_info": "Int8",
         "origin": {
@@ -213,7 +224,7 @@
         }
       },
       {
-        "ordinal": 19,
+        "ordinal": 20,
         "name": "updated_at",
         "type_info": "Timestamptz",
         "origin": {
@@ -247,8 +258,9 @@
       false,
       false,
       false,
+      false,
       false
     ]
   },
-  "hash": "9d66957f0f7b19e374bec28dcb42a63f9065e5d0a41fda878a96bbe344477134"
+  "hash": "2e18e8b20e93e35095cd905f4e9e35be9c710bf2afca7d7e209c9b04ba76e601"
 }

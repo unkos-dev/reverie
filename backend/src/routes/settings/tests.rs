@@ -84,12 +84,79 @@ async fn get_settings_as_admin_returns_200(pool: PgPool) {
     assert!(body["enrichment_enabled"].is_boolean());
     assert!(body["enrichment_concurrency"].is_number());
     assert!(body["accepted_formats"].is_array());
+    assert_eq!(body["ingestion_enabled"], true);
     assert!(body["restart_required_fields"].is_array());
     test_support::assert_rfc3339(&body, "updated_at");
     assert!(
         body.get("last_successful_reload_at").is_none(),
         "reload health is not part of the settings representation"
     );
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn ingestion_admission_save_is_live_and_obeys_settings_preconditions(pool: PgPool) {
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let (_, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+    let mut state = test_support::test_state();
+    state.pool = app_pool.clone();
+    state.ingestion_pool = ingestion_pool.clone();
+    let settings = state.settings.clone();
+    let server = axum_test::TestServer::new(crate::build_router(state));
+    let original_etag = current_etag(&server, &basic).await;
+    let disabled = serde_json::json!({"ingestion_enabled": false});
+    let missing = server
+        .put("/api/v1/settings")
+        .add_header(axum::http::header::AUTHORIZATION, basic.clone())
+        .json(&disabled)
+        .await;
+    assert_eq!(missing.status_code(), StatusCode::PRECONDITION_REQUIRED);
+    assert_eq!(get_body(&server, &basic).await["ingestion_enabled"], true);
+    let saved = put_settings_with_etag(&server, &basic, &original_etag, &disabled).await;
+    assert_eq!(saved.status_code(), StatusCode::OK);
+    assert_eq!(saved.json::<serde_json::Value>()["restart_required"], false);
+    assert!(!settings.read().await.ingestion.ingestion_enabled);
+    assert_ne!(current_etag(&server, &basic).await, original_etag);
+    assert_eq!(get_body(&server, &basic).await["ingestion_enabled"], false);
+    let stale = put_settings_with_etag(
+        &server,
+        &basic,
+        &original_etag,
+        &serde_json::json!({"ingestion_enabled": true}),
+    )
+    .await;
+    assert_eq!(stale.status_code(), StatusCode::PRECONDITION_FAILED);
+    assert_eq!(get_body(&server, &basic).await["ingestion_enabled"], false);
+    let unrelated = put_settings(&server, &basic, &serde_json::json!({"opds_page_size": 77})).await;
+    assert_eq!(unrelated.status_code(), StatusCode::OK);
+    assert_eq!(get_body(&server, &basic).await["ingestion_enabled"], false);
+    let enabled = put_settings(
+        &server,
+        &basic,
+        &serde_json::json!({"ingestion_enabled": true}),
+    )
+    .await;
+    assert_eq!(enabled.status_code(), StatusCode::OK);
+    assert!(settings.read().await.ingestion.ingestion_enabled);
+    assert_eq!(get_body(&server, &basic).await["ingestion_enabled"], true);
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn ingestion_admission_refuses_non_boolean_values(pool: PgPool) {
+    let app_pool = test_support::db::app_pool_for(&pool).await;
+    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let (_, basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
+    let server = server(&app_pool, &ingestion_pool);
+    for value in [serde_json::json!("false"), serde_json::json!(0)] {
+        let response = put_settings(
+            &server,
+            &basic,
+            &serde_json::json!({"ingestion_enabled": value}),
+        )
+        .await;
+        assert_eq!(response.status_code(), StatusCode::UNPROCESSABLE_ENTITY);
+    }
+    assert_eq!(get_body(&server, &basic).await["ingestion_enabled"], true);
 }
 
 #[sqlx::test(migrations = "./migrations")]
