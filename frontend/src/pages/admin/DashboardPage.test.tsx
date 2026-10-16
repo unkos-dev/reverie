@@ -121,6 +121,13 @@ describe("DashboardPage", () => {
     expect(screen.getByText("1,204")).toBeInTheDocument();
   });
 
+  test("names every metadata coverage progress bar", async () => {
+    renderDashboard(ADMIN_ME, statsFixture(), activityFixture());
+    for (const name of ["Description", "Language", "ISBN-13", "Cover"]) {
+      expect(await screen.findByRole("progressbar", { name })).toBeInTheDocument();
+    }
+  });
+
   test("redirects non-admin to /library", async () => {
     renderDashboard(ADULT_ME, null, null);
     expect(await screen.findByTestId("library-page")).toBeInTheDocument();

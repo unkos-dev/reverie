@@ -1,4 +1,4 @@
-import { type ReactElement } from "react";
+import { type ReactElement, type ReactNode } from "react";
 
 import { listInputs } from "@/api/ingestion";
 import type { InputItem, InputReason } from "@/api/ingestion";
@@ -14,6 +14,8 @@ import { alsoLine, INPUT_REASON_COPY, inputGroupTitle } from "./reason-copy";
 import { usePagedGroup } from "./use-paged-group";
 
 type InputGroupProps = {
+  headerControl?: ReactNode;
+  feedback?: ReactNode;
   reason: InputReason;
   count: number;
   defaultOpen: boolean;
@@ -75,6 +77,8 @@ function InputGroupBody({
 }
 
 function InputGroup({
+  headerControl,
+  feedback,
   reason,
   count,
   defaultOpen,
@@ -83,6 +87,8 @@ function InputGroup({
   const copy = INPUT_REASON_COPY[reason];
   return (
     <GroupShell
+      headerControl={headerControl}
+      feedback={feedback}
       title={inputGroupTitle(reason)}
       action={copy.action}
       tag={copy.tag}

@@ -1,0 +1,25 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT COUNT(*) AS \"count!\" FROM manifestations m\n           CROSS JOIN LATERAL (\n               SELECT m.enrichment_failures -> 0 ->> 'source' AS source,\n                      CASE WHEN m.enrichment_failures -> 0 ->> 'class' = ANY($3::text[])\n                           THEN m.enrichment_failures -> 0 ->> 'class' ELSE 'unspecified' END AS class\n           ) p\n           WHERE m.enrichment_status IN ('failed', 'skipped') AND m.enrichment_error IS NOT NULL\n             AND p.source IS NOT DISTINCT FROM $1::text AND p.class = $2",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "count!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text",
+        "TextArray"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "3a88c8f6ce2f000a981c84a22607e86d94134f1d587d2ce848500ad498bc358c"
+}

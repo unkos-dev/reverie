@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE manifestations SET enrichment_error = 'failure', enrichment_failures = '[{\"source\":\"openlibrary\",\"class\":\"rate_limited\"}]' WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "28e4192052074545e16042a4743ddd39e4eb4112e4386c5be48227fdba2facf2"
+}

@@ -18,9 +18,11 @@ import type { UseQueryResult } from "@tanstack/react-query";
 import { ApiError } from "@/api";
 import { getDashboardActivity } from "@/api/dashboard";
 import type { BatchRow, DashboardActivity } from "@/api/dashboard";
-import { getIngestionStatus, getInputCounts, scanIngestion } from "@/api/ingestion";
-import type { DiscoveryResult, IngestionStatus, InputCounts } from "@/api/ingestion";
+import { getIngestionStatus, getInputCounts, scanIngestion, retryInputs } from "@/api/ingestion";
+import type { DiscoveryResult, IngestionStatus, InputCounts, RetryReason } from "@/api/ingestion";
 import { queryKeys } from "@/lib/query/keys";
+
+import type { BulkRetryState } from "./GroupShell";
 
 const POLL_INTERVAL_MS = 3000;
 const STATUS_POLL_INTERVAL_MS = 30_000;
@@ -39,6 +41,8 @@ type IngestionNotice =
   | { kind: "finished" };
 
 type IngestionMonitor = {
+  retries: Partial<Record<RetryReason, BulkRetryState>>;
+  retryGroup: (reason: RetryReason, count: number) => void;
   status: UseQueryResult<IngestionStatus>;
   /** Interval every polled query on the page uses; `false` while idle. */
   pollInterval: number | false;
@@ -80,6 +84,9 @@ function useIngestionMonitor(options: {
   const { enabled, activityLimit } = options;
   const queryClient = useQueryClient();
 
+  const [retries, setRetries] = useState<Partial<Record<RetryReason, BulkRetryState>>>({});
+  const retryPending = useRef(new Set<RetryReason>());
+  const retryForbidden = useRef(new Set<RetryReason>());
   const [graceActive, setGraceActive] = useState(false);
   const [graceRuns, setGraceRuns] = useState(0);
   const [notice, setNotice] = useState<IngestionNotice | null>(null);
@@ -189,7 +196,48 @@ function useIngestionMonitor(options: {
     },
   });
 
+  const retryMutation = useMutation({
+    mutationFn: ({ reason }: { reason: RetryReason; count: number }) => retryInputs(reason),
+    retry: false,
+    onSuccess: (result, { reason }) => {
+      retryPending.current.delete(reason);
+      const countsVersion =
+        queryClient.getQueryState(queryKeys.ingestion.counts())?.dataUpdatedAt ?? 0;
+      setRetries((current) => ({
+        ...current,
+        [reason]: { kind: "success", ...result, countsVersion },
+      }));
+      if (result.queued > 0) {
+        setGraceActive(true);
+        setGraceRuns((n) => n + 1);
+      }
+      void queryClient.invalidateQueries({
+        queryKey: queryKeys.ingestion.counts(),
+        refetchType: "none",
+      });
+      void queryClient.invalidateQueries({
+        queryKey: queryKeys.ingestion.groupsFirst,
+        refetchType: "none",
+      });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.dashboard.activity(activityLimit) });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.dashboard.stats() });
+    },
+    onError: (error, { reason }) => {
+      retryPending.current.delete(reason);
+      const cause = failureCause(error);
+      if (cause === "forbidden") retryForbidden.current.add(reason);
+      setRetries((current) => ({ ...current, [reason]: { kind: "failure", cause } }));
+    },
+  });
+
   return {
+    retries,
+    retryGroup: (reason, count) => {
+      if (retryPending.current.has(reason) || retryForbidden.current.has(reason)) return;
+      retryPending.current.add(reason);
+      setRetries((current) => ({ ...current, [reason]: { kind: "pending", count } }));
+      retryMutation.mutate({ reason, count });
+    },
     status,
     pollInterval,
     counts,

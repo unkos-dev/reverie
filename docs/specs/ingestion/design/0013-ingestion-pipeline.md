@@ -21,9 +21,10 @@ exclusion. Input-management and retention interfaces are outside this pipeline.
 
 ## Structure
 
-`CoordinatorHandle` in `AppState` sends discovery commands to `run_watcher`. Startup, watcher notifications, manual
-scans and deadlines feed the same owner. The owner maintains current input snapshots, a `DelayQueue`, its keys, a ready
-queue with a membership set and one active future. Blocking closures return results and never schedule work themselves.
+`CoordinatorHandle` in `AppState` sends typed Scan and Retry commands to `run_watcher`. Startup, watcher notifications,
+manual scans and deadlines feed the same owner. The owner maintains current input snapshots, a `DelayQueue`, its keys, a
+ready queue with a membership set and one active future. Blocking closures return results and never schedule work
+themselves.
 
 The copier walks source parents without following symlinks, opens a regular source and streams it into independently
 owned staging beneath the library root. EPUB validation operates on that candidate. Publication moves it directly on the
@@ -36,6 +37,18 @@ shared path exclusion; final registration reserves the manifestation's path clai
 `POST /api/v1/ingestion/scan` requires the existing admin scope, role and browser CSRF boundary. It returns HTTP 202
 after discovery, with queued, deferred and suppressed counts and `/api/v1/dashboard/activity` as the monitor. The
 response describes discovery, without promising a separately attributable batch or completed imports.
+
+`POST /api/v1/ingestion/inputs/retries` requires admin scope, administrator role and browser CSRF protection. Its body
+selects `needs_change` or `retries_exhausted`. The scheduling owner locks at most 500 current inputs in ID order through
+`ingestion_input_classes`, resets their retry markers in one transaction and schedules only those snapshots.
+Fingerprints, generation, observation time, attempt history and publication evidence are preserved. Readiness,
+unresolved-publication exclusion and administrator/dependency admission still apply. HTTP 202 reports `queued` durable
+resets and `remaining` class members, including zero counts. Queued work may still be waiting.
+
+Retry command admission and reply share a five-second budget. A timeout or interrupted reply produces the generic
+internal error response. Accepted commands finish under the owner even after the caller stops waiting; a failed response
+does not establish that nothing changed. Scan retains its discovery response and wait behaviour. Both command types use
+the same bounded receiver, retained across supervised coordinator runs.
 
 `GET /api/v1/ingestion/status` requires both admin scope and administrator role. Its `blockers` list contains tagged
 objects with `kind`: `paused_by_admin` has no timestamp; `dependency` carries a closed `reason` and UTC `since`;

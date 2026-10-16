@@ -1227,6 +1227,29 @@ mod tests {
     }
 
     #[sqlx::test(migrations = "./migrations")]
+    async fn bulk_enrichment_retry_real_queue_honours_preserved_deadline(pool: PgPool) {
+        let app = crate::test_support::db::app_pool_for(&pool).await;
+        let ing = ingestion_pool_for(&pool).await;
+        let (_, auth) = crate::test_support::db::create_admin_and_basic_auth(&app).await;
+        let (_, id, _) = insert_queue_fixture(&ing, EnrichmentStatus::Failed, 3, Some(1)).await;
+        sqlx::query!("UPDATE manifestations SET enrichment_error = 'failure', enrichment_failures = '[{\"source\":\"openlibrary\",\"class\":\"rate_limited\"}]' WHERE id = $1", id)
+            .execute(&ing).await.unwrap();
+        set_retry_not_before(&ing, id, 3600).await;
+        let deadline = queue_row_state(&ing, id).await.retry_not_before;
+        let server = crate::test_support::db::server_with_real_pools(&app, &ing);
+        let response = server
+            .post("/api/v1/dashboard/enrichment-failures/retries")
+            .add_header(axum::http::header::AUTHORIZATION, auth)
+            .json(&serde_json::json!({"source":"openlibrary","class":"rate_limited"}))
+            .await;
+        assert_eq!(response.status_code(), axum::http::StatusCode::ACCEPTED);
+        assert_eq!(queue_row_state(&ing, id).await.retry_not_before, deadline);
+        assert!(claim_next(&ing).await.unwrap().is_none());
+        set_retry_not_before(&ing, id, -1).await;
+        assert_eq!(claim_next(&ing).await.unwrap(), Some((id, 1)));
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
     async fn claim_skips_a_row_until_its_retry_not_before_passes(pool: PgPool) {
         let pool = ingestion_pool_for(&pool).await;
         let (_work_id, m_id, _) =

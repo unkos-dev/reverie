@@ -32,3 +32,38 @@ pub mod sources;
 pub mod value_hash;
 
 pub use queue::spawn_queue;
+
+pub(crate) enum RetryTiming {
+    PreserveProviderDelay,
+    ClearProviderDelay,
+}
+
+pub(crate) async fn reset_retries(
+    connection: &mut sqlx::PgConnection,
+    ids: &[uuid::Uuid],
+    timing: RetryTiming,
+) -> sqlx::Result<u64> {
+    let clear_delay = matches!(timing, RetryTiming::ClearProviderDelay);
+    let rows = sqlx::query!(
+        "UPDATE manifestations
+         SET enrichment_rerun_requested = (enrichment_status = 'in_progress'),
+             enrichment_status = CASE WHEN enrichment_status = 'in_progress'
+                                      THEN enrichment_status ELSE 'pending'::enrichment_status END,
+             enrichment_attempt_count = CASE WHEN enrichment_status = 'in_progress'
+                                             THEN enrichment_attempt_count ELSE 0 END,
+             enrichment_attempted_at = CASE WHEN enrichment_status = 'in_progress'
+                                            THEN enrichment_attempted_at ELSE NULL END,
+             enrichment_retry_not_before = CASE WHEN enrichment_status = 'in_progress' OR NOT $2
+                                                THEN enrichment_retry_not_before ELSE NULL END,
+             enrichment_error = CASE WHEN enrichment_status = 'in_progress'
+                                     THEN enrichment_error ELSE NULL END,
+             enrichment_failures = CASE WHEN enrichment_status = 'in_progress'
+                                        THEN enrichment_failures ELSE '[]'::jsonb END
+         WHERE id = ANY($1)",
+        ids,
+        clear_delay,
+    )
+    .execute(connection)
+    .await?;
+    Ok(rows.rows_affected())
+}

@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE manifestations\n         SET enrichment_rerun_requested = (enrichment_status = 'in_progress'),\n             enrichment_status = CASE WHEN enrichment_status = 'in_progress'\n                                      THEN enrichment_status ELSE 'pending'::enrichment_status END,\n             enrichment_attempt_count = CASE WHEN enrichment_status = 'in_progress'\n                                             THEN enrichment_attempt_count ELSE 0 END,\n             enrichment_attempted_at = CASE WHEN enrichment_status = 'in_progress'\n                                            THEN enrichment_attempted_at ELSE NULL END,\n             enrichment_retry_not_before = CASE WHEN enrichment_status = 'in_progress' OR NOT $2\n                                                THEN enrichment_retry_not_before ELSE NULL END,\n             enrichment_error = CASE WHEN enrichment_status = 'in_progress'\n                                     THEN enrichment_error ELSE NULL END,\n             enrichment_failures = CASE WHEN enrichment_status = 'in_progress'\n                                        THEN enrichment_failures ELSE '[]'::jsonb END\n         WHERE id = ANY($1)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "UuidArray",
+        "Bool"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "bd7897a63ec8c58b34c312f8d06dc968099fcc1bc914545dcb2e8ae3a9386e3b"
+}

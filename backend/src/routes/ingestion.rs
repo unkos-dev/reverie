@@ -47,6 +47,7 @@ const INPUTS_CURSOR_TAG: &str = "ii";
 pub fn router() -> OpenApiRouter<AppState> {
     OpenApiRouter::new()
         .routes(routes!(scan))
+        .routes(routes!(retry_inputs))
         .routes(routes!(ingestion_status))
         .routes(routes!(list_inputs))
         .routes(routes!(input_counts))
@@ -142,6 +143,39 @@ async fn scan(
     current_user.require_admin()?;
 
     let result = state.ingestion.scan().await.map_err(AppError::Internal)?;
+    Ok((axum::http::StatusCode::ACCEPTED, Json(result)))
+}
+
+#[derive(Deserialize, utoipa::ToSchema)]
+struct RetryInputsRequest {
+    reason: crate::models::ingestion_input::RetryReason,
+}
+
+/// Queue retries for an eligible input class.
+/// THREAT: Only administrators with admin scope may reset ingestion attempts.
+#[utoipa::path(
+    post, path = "/api/v1/ingestion/inputs/retries", tag = "ingestion",
+    request_body = RetryInputsRequest,
+    security(("session_cookie" = ["admin"]), ("device_token_bearer" = ["admin"]), ("opds_basic" = ["admin"])),
+    responses(
+        (status = 202, description = "Retries queued", body = services::BulkRetryResult),
+        (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
+        (status = 403, description = "Administrator role and admin scope required", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
+        (status = 500, description = "Retry outcome could not be confirmed", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
+    )
+)]
+async fn retry_inputs(
+    current_user: CurrentUser,
+    State(state): State<AppState>,
+    crate::extract::ApiJson(body): crate::extract::ApiJson<RetryInputsRequest>,
+) -> Result<impl IntoResponse, AppError> {
+    current_user.require_scope(Scope::Admin)?;
+    current_user.require_admin()?;
+    let result = state
+        .ingestion
+        .retry(body.reason)
+        .await
+        .map_err(AppError::Internal)?;
     Ok((axum::http::StatusCode::ACCEPTED, Json(result)))
 }
 
@@ -505,7 +539,11 @@ mod tests {
         let (handle, commands) = crate::services::ingestion::coordinator_channel();
         state.ingestion = handle;
         let owner = tokio::spawn(async move {
-            let reply = commands.lock().await.recv().await.unwrap();
+            let crate::services::ingestion::Command::Scan(reply) =
+                commands.lock().await.recv().await.unwrap()
+            else {
+                panic!("expected scan")
+            };
             reply
                 .send(Ok(crate::services::ingestion::DiscoveryResult {
                     queued: 1,

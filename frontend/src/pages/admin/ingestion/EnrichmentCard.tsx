@@ -2,7 +2,7 @@ import { type ReactElement, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Info } from "lucide-react";
 
-import { getEnrichmentFailureCounts } from "@/api/enrichment-failures";
+import { getEnrichmentFailureCounts, type FailureCounts } from "@/api/enrichment-failures";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -42,7 +42,18 @@ function EnrichmentCard(): ReactElement {
     queryFn: ({ signal }) => getEnrichmentFailureCounts(signal),
   });
   const [openOnLoad, setOpenOnLoad] = useState<string | null | undefined>(undefined);
+  const [retained, setRetained] = useState<FailureCounts["by_failure"]>([]);
   const groups = (counts.data?.by_failure ?? []).filter((g) => g.count > 0);
+  const currentReasonCount = groups.length;
+  for (const group of retained) {
+    if (
+      !groups.some(
+        (current) =>
+          groupKey(current.source, current.class) === groupKey(group.source, group.class),
+      )
+    )
+      groups.push({ ...group, count: 0 });
+  }
   if (openOnLoad === undefined && counts.data !== undefined) {
     const first = groups.at(0);
     setOpenOnLoad(first === undefined ? null : groupKey(first.source, first.class));
@@ -112,7 +123,7 @@ function EnrichmentCard(): ReactElement {
   return (
     <Card role="region" aria-labelledby="enrichment-problems" className="gap-0 py-0">
       <CardHead
-        total={`${pluralise(counts.data.total, "book")}, ${pluralise(groups.length, "reason")}`}
+        total={`${pluralise(counts.data.total, "book")}, ${pluralise(currentReasonCount, "reason")}`}
       >
         <p className="text-fg-muted mt-0.5 mb-0 max-w-[76ch] pb-0 text-[13px]">
           Books where the metadata sources could not be reached or returned nothing usable, grouped
@@ -128,6 +139,14 @@ function EnrichmentCard(): ReactElement {
             failureClass={group.class}
             count={group.count}
             defaultOpen={key === openOnLoad}
+            countsVersion={counts.dataUpdatedAt}
+            onRetain={() => {
+              setRetained((current) =>
+                current.some((item) => groupKey(item.source, item.class) === key)
+                  ? current
+                  : [...current, group],
+              );
+            }}
           />
         );
       })}

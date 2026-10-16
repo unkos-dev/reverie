@@ -13,8 +13,15 @@ import {
   getEnrichmentFailureCounts,
   listEnrichmentFailures,
   triggerEnrichment,
+  retryEnrichmentFailures,
 } from "@/api/enrichment-failures";
-import { getIngestionStatus, getInputCounts, listInputs, scanIngestion } from "@/api/ingestion";
+import {
+  getIngestionStatus,
+  getInputCounts,
+  listInputs,
+  scanIngestion,
+  retryInputs,
+} from "@/api/ingestion";
 import {
   ADMIN_ME,
   ADULT_ME,
@@ -45,12 +52,14 @@ vi.mock("@/api/ingestion", async (importOriginal) => ({
   getIngestionStatus: vi.fn(),
   getInputCounts: vi.fn(),
   scanIngestion: vi.fn(),
+  retryInputs: vi.fn(),
 }));
 vi.mock("@/api/enrichment-failures", async (importOriginal) => ({
   ...(await importOriginal<typeof EnrichmentApi>()),
   listEnrichmentFailures: vi.fn(),
   getEnrichmentFailureCounts: vi.fn(),
   triggerEnrichment: vi.fn(),
+  retryEnrichmentFailures: vi.fn(),
 }));
 
 const DAMAGED_PAGE = {
@@ -1355,5 +1364,222 @@ describe("polling", () => {
     expect(vi.mocked(listInputs).mock.calls.filter(([p]) => p.cursor !== undefined)).toHaveLength(
       laterBefore,
     );
+  });
+});
+
+describe("bulk retry group controls", () => {
+  test("bulk retry only exposes eligible input actions as siblings and sends one pending command", async () => {
+    vi.mocked(retryInputs).mockReturnValue(new Promise(() => {}));
+    renderPage();
+    const card = await screen.findByRole("region", { name: /Needs attention/ });
+    const buttons = await within(card).findAllByRole("button", { name: /Retry/ });
+    expect(buttons.map((button) => button.textContent)).toEqual(["Retry all 2", "Retry 1 file"]);
+    const action = buttons[0];
+    expect(action).toBeDefined();
+    expect(action.parentElement?.querySelector("button[aria-expanded]")).toBeInTheDocument();
+    action.focus();
+    fireEvent.click(action);
+    fireEvent.click(action);
+    await waitFor(() => {
+      expect(retryInputs).toHaveBeenCalledExactlyOnceWith("needs_change");
+    });
+    expect(await within(card).findByRole("button", { name: "Queuing 2" })).toHaveAttribute(
+      "aria-disabled",
+      "true",
+    );
+    expect(action).toHaveFocus();
+    expect(listInputs).not.toHaveBeenCalledWith(
+      expect.objectContaining({ reason: "needs_change" }),
+      expect.anything(),
+    );
+  });
+
+  test("bulk retry retains independent receipts after counts fall to zero and a scan completes", async () => {
+    vi.mocked(retryInputs).mockImplementation((reason) =>
+      Promise.resolve({ queued: reason === "needs_change" ? 2 : 1, remaining: 0 }),
+    );
+    vi.mocked(getIngestionStatus).mockResolvedValue({ blockers: [{ kind: "paused_by_admin" }] });
+    const client = renderPage();
+    const action = await within(screen.getByRole("region", { name: /Needs attention/ })).findByRole(
+      "button",
+      { name: "Retry all 2" },
+    );
+    action.focus();
+    fireEvent.click(action);
+    await screen.findByText(/Queued 2\. Ingestion is paused/);
+    fireEvent.click(screen.getByRole("button", { name: "Retry 1 file" }));
+    await screen.findByText(/Queued 1\. Ingestion is paused/);
+    act(() => {
+      client.setQueryData(
+        queryKeys.ingestion.counts(),
+        countsFixture({ by_reason: [], attention_total: 0 }),
+      );
+    });
+    expect(screen.getByText(/Queued 2\. Ingestion is paused/)).toBeInTheDocument();
+    expect(screen.getByText(/Queued 1\. Ingestion is paused/)).toBeInTheDocument();
+    expect(action).toHaveFocus();
+    expect(action).toHaveAttribute("aria-disabled", "true");
+    vi.mocked(scanIngestion).mockResolvedValue({
+      queued: 0,
+      deferred: 0,
+      suppressed: 0,
+      monitor: "/api/v1/dashboard/activity",
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Scan ingestion folder" }));
+    await waitFor(() => {
+      expect(scanIngestion).toHaveBeenCalledOnce();
+    });
+    expect(screen.getByText(/Queued 2\. Ingestion is paused/)).toBeInTheDocument();
+    act(() => {
+      client.setQueryData(queryKeys.ingestion.counts(), countsFixture());
+    });
+    expect(
+      await within(screen.getByRole("region", { name: /Needs attention/ })).findByRole("button", {
+        name: "Retry all 2",
+      }),
+    ).toBeEnabled();
+  });
+
+  test("bulk retry partial batches use returned membership, then retain empty feedback", async () => {
+    vi.mocked(retryInputs)
+      .mockResolvedValueOnce({ queued: 500, remaining: 1 })
+      .mockResolvedValueOnce({ queued: 1, remaining: 0 });
+    vi.mocked(getInputCounts).mockResolvedValue(
+      countsFixture({ by_reason: [{ reason: "needs_change", count: 501 }], attention_total: 501 }),
+    );
+    renderPage();
+    fireEvent.click(await screen.findByRole("button", { name: "Retry all 501" }));
+    expect(await screen.findByText("Queued 500, 1 remaining")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Retry the rest 1" }));
+    expect(await screen.findByText("Queued 1")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Queued" })).toHaveAttribute("aria-disabled", "true");
+    expect(retryInputs).toHaveBeenCalledTimes(2);
+  });
+
+  test.each([401, 403, 500])(
+    "bulk retry reports %i truthfully without automatic replay",
+    async (status) => {
+      vi.mocked(retryInputs).mockRejectedValue(new ApiError(status, null, "failed", ""));
+      renderPage();
+      fireEvent.click(
+        await within(screen.getByRole("region", { name: /Needs attention/ })).findByRole("button", {
+          name: "Retry all 2",
+        }),
+      );
+      const text =
+        status === 401
+          ? "Your session has ended. Sign in again to retry files."
+          : status === 403
+            ? "This account cannot retry files. Sign in as an administrator."
+            : "Could not confirm whether these files were queued. Refresh the group before trying again.";
+      expect(await screen.findByText(text)).toHaveAttribute("role", "alert");
+      const retry = within(screen.getByRole("region", { name: /Needs attention/ })).getByRole(
+        "button",
+        { name: "Try again" },
+      );
+      if (status === 403) {
+        fireEvent.click(retry);
+        expect(retry).toHaveAttribute("aria-disabled", "true");
+      }
+      expect(retryInputs).toHaveBeenCalledOnce();
+      expect(screen.queryByText(/Nothing was changed/)).not.toBeInTheDocument();
+    },
+  );
+
+  test("bulk retry books keeps collapsed feedback through an empty refresh and rearms on fresh failure", async () => {
+    vi.mocked(retryEnrichmentFailures).mockResolvedValue({ queued: 3, remaining: 0 });
+    const client = renderPage();
+    const card = await screen.findByRole("region", { name: /Enrichment problems/ });
+    const [action] = await within(card).findAllByRole("button", { name: /Retry all/ });
+    const count = Number(action.textContent.replace("Retry all ", ""));
+    fireEvent.click(action);
+    expect(await within(card).findByText("Queued 3")).toBeInTheDocument();
+    act(() => {
+      client.setQueryData(queryKeys.enrichmentFailures.counts(), { total: 0, by_failure: [] });
+    });
+    expect(within(card).getByText("Queued 3")).toBeInTheDocument();
+    expect(action).toHaveAttribute("aria-disabled", "true");
+    act(() => {
+      client.setQueryData(queryKeys.enrichmentFailures.counts(), failureCountsFixture());
+    });
+    expect(
+      await within(card).findByRole("button", { name: `Retry all ${String(count)}` }),
+    ).toBeInTheDocument();
+    expect(retryEnrichmentFailures).toHaveBeenCalledOnce();
+  });
+});
+
+describe("bulk retry retained states", () => {
+  test.each([401, 403, 500])("bulk retry books reports %i without replay", async (status) => {
+    vi.mocked(retryEnrichmentFailures).mockRejectedValue(new ApiError(status, null, "failed", ""));
+    renderPage();
+    const card = screen.getByRole("region", { name: /Enrichment problems/ });
+    const [action] = await within(card).findAllByRole("button", { name: "Retry 1 book" });
+    fireEvent.click(action);
+    const text =
+      status === 401
+        ? "Your session has ended. Sign in again to retry books."
+        : status === 403
+          ? "This account cannot retry books. Sign in as an administrator."
+          : "Could not confirm whether these books were queued. Refresh the group before trying again.";
+    expect(await within(card).findByText(text)).toHaveAttribute("role", "alert");
+    expect(retryEnrichmentFailures).toHaveBeenCalledOnce();
+    if (status === 403) {
+      const button = within(card).getAllByRole("button", { name: "Try again" })[0];
+      expect(button).toHaveAttribute("aria-disabled", "true");
+      fireEvent.click(button);
+      expect(retryEnrichmentFailures).toHaveBeenCalledOnce();
+    }
+  });
+
+  test("bulk retry empty response stays visible while collapsed and does not fetch group rows", async () => {
+    vi.mocked(retryInputs).mockResolvedValue({ queued: 0, remaining: 0 });
+    renderPage();
+    const card = screen.getByRole("region", { name: /Needs attention/ });
+    fireEvent.click(await within(card).findByRole("button", { name: "Retry all 2" }));
+    expect(
+      await within(card).findByText("Nothing to retry. This group changed after the page loaded."),
+    ).toBeInTheDocument();
+    expect(within(card).getByRole("button", { name: "Queued" })).toHaveAttribute(
+      "aria-disabled",
+      "true",
+    );
+    expect(listInputs).not.toHaveBeenCalledWith(
+      expect.objectContaining({ reason: "needs_change" }),
+      expect.anything(),
+    );
+  });
+
+  test("bulk retry receipt survives normal polling to an empty card and grace expires", async () => {
+    vi.useFakeTimers({
+      toFake: ["setTimeout", "clearTimeout", "setInterval", "clearInterval", "Date"],
+    });
+    vi.mocked(retryInputs).mockResolvedValue({ queued: 2, remaining: 0 });
+    renderPage();
+    await flush();
+    const card = screen.getByRole("region", { name: /Needs attention/ });
+    const action = within(card).getByRole("button", { name: "Retry all 2" });
+    action.focus();
+    fireEvent.click(action);
+    await flush();
+    const before = vi.mocked(getInputCounts).mock.calls.length;
+    vi.mocked(getInputCounts).mockResolvedValue(
+      countsFixture({ by_reason: [], attention_total: 0 }),
+    );
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(POLL_INTERVAL_MS + 20);
+    });
+    expect(getInputCounts).toHaveBeenCalledTimes(before + 1);
+    expect(within(card).getByText("Queued 2")).toBeInTheDocument();
+    expect(action).toHaveFocus();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(GRACE_WINDOW_MS + 20);
+    });
+    const stopped = vi.mocked(getInputCounts).mock.calls.length;
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(POLL_INTERVAL_MS * 2);
+    });
+    expect(getInputCounts).toHaveBeenCalledTimes(stopped);
+    expect(within(card).getByText("Queued 2")).toBeInTheDocument();
   });
 });

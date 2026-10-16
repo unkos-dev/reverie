@@ -410,6 +410,49 @@ pub async fn current(pool: &PgPool, id: Uuid) -> sqlx::Result<Option<Input>> {
     ).fetch_optional(pool).await
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum RetryReason {
+    NeedsChange,
+    RetriesExhausted,
+}
+
+impl RetryReason {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::NeedsChange => "needs_change",
+            Self::RetriesExhausted => "retries_exhausted",
+        }
+    }
+}
+
+pub async fn reset_class(pool: &PgPool, reason: RetryReason) -> sqlx::Result<(Vec<Input>, i64)> {
+    let mut tx = pool.begin().await?;
+    let inputs = sqlx::query_as!(Input,
+        r#"WITH selected AS (
+             SELECT i.id, i.generation FROM ingestion_inputs i
+             JOIN ingestion_input_classes c ON c.id = i.id
+             WHERE c.reason_class = $1 ORDER BY i.id LIMIT $2
+             FOR UPDATE OF i SKIP LOCKED
+           )
+           UPDATE ingestion_inputs i SET status = 'pending', reason = NULL, completed_at = NULL,
+             retry_reset_at = clock_timestamp(), retries_exhausted_at = NULL
+           FROM selected s WHERE i.id = s.id AND i.generation = s.generation
+           RETURNING i.id, i.source_path,
+             i.fingerprint AS "fingerprint: sqlx::types::Json<Fingerprint>", i.generation,
+             i.status AS "status: InputStatus", i.reason, i.work_id, i.retry_reset_at, i.observed_at"#,
+        reason.as_str(), crate::services::BULK_RETRY_LIMIT,
+    ).fetch_all(&mut *tx).await?;
+    let remaining = sqlx::query_scalar!(
+        r#"SELECT COUNT(*) AS "count!" FROM ingestion_input_classes WHERE reason_class = $1"#,
+        reason.as_str(),
+    )
+    .fetch_one(&mut *tx)
+    .await?;
+    tx.commit().await?;
+    Ok((inputs, remaining))
+}
+
 pub async fn reset_retries(pool: &PgPool) -> sqlx::Result<()> {
     sqlx::query!(
         "UPDATE ingestion_inputs SET status = 'pending', reason = NULL, completed_at = NULL,

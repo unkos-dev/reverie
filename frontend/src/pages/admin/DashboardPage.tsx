@@ -134,6 +134,13 @@ function DashboardPage(): ReactElement {
       </div>
 
       <NeedsAttentionCard
+        retries={monitor.retries}
+        onRetryGroup={monitor.retryGroup}
+        countsVersion={monitor.counts.dataUpdatedAt}
+        paused={
+          monitor.status.data?.blockers.some((blocker) => blocker.kind === "paused_by_admin") ??
+          false
+        }
         counts={monitor.counts.data}
         isPending={monitor.counts.isPending}
         onRetry={() => {
@@ -270,7 +277,7 @@ function StatsView({ stats }: Readonly<{ stats: DashboardStats }>): ReactElement
                     <span className="text-fg-muted">{row.label}</span>
                     <span className="font-medium text-fg">{percent}%</span>
                   </div>
-                  <Progress value={percent} />
+                  <Progress aria-label={row.label} value={percent} />
                 </div>
               );
             })}

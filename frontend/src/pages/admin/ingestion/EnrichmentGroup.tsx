@@ -1,9 +1,14 @@
-import { type ReactElement, useEffect, useRef } from "react";
+import { type ReactElement, useEffect, useRef, useState } from "react";
 import { Link } from "react-router";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Loader2 } from "lucide-react";
 
-import { listEnrichmentFailures, triggerEnrichment } from "@/api/enrichment-failures";
+import { ApiError } from "@/api";
+import {
+  listEnrichmentFailures,
+  triggerEnrichment,
+  retryEnrichmentFailures,
+} from "@/api/enrichment-failures";
 import type { FailureClass, FailureItem } from "@/api/enrichment-failures";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableRow } from "@/components/ui/table";
@@ -12,7 +17,7 @@ import { queryKeys } from "@/lib/query/keys";
 import { pluralise } from "./format";
 import { GroupFooter } from "./GroupFooter";
 import { GroupFailed, GroupLoading } from "./GroupState";
-import { GroupShell } from "./GroupShell";
+import { GroupShell, BulkRetryButton, BulkRetryFeedback, type BulkRetryState } from "./GroupShell";
 import { alsoLine, FAILURE_CLASS_COPY, failureAlsoLabel, failureGroupTitle } from "./reason-copy";
 import { usePagedGroup } from "./use-paged-group";
 
@@ -21,6 +26,8 @@ type EnrichmentGroupProps = {
   failureClass: FailureClass;
   count: number;
   defaultOpen: boolean;
+  countsVersion: number;
+  onRetain: () => void;
 };
 
 function statusText(item: FailureItem): string {
@@ -121,7 +128,7 @@ function EnrichmentGroupBody({
   source,
   failureClass,
   count,
-}: Readonly<Omit<EnrichmentGroupProps, "defaultOpen">>): ReactElement {
+}: Readonly<Pick<EnrichmentGroupProps, "source" | "failureClass" | "count">>): ReactElement {
   const group = usePagedGroup<FailureItem>({
     firstKey: queryKeys.enrichmentFailures.groupFirst(source, failureClass),
     afterKey: (cursor) => queryKeys.enrichmentFailures.groupAfter(source, failureClass, cursor),
@@ -160,9 +167,57 @@ function EnrichmentGroup({
   failureClass,
   count,
   defaultOpen,
+  countsVersion,
+  onRetain,
 }: Readonly<EnrichmentGroupProps>): ReactElement {
+  const client = useQueryClient();
+  const [state, setState] = useState<BulkRetryState>();
+  const pending = useRef(false);
+  const forbidden = useRef(false);
+  const mutation = useMutation({
+    mutationFn: () => retryEnrichmentFailures(source, failureClass),
+    retry: false,
+    onSuccess: (result) => {
+      pending.current = false;
+      const version =
+        client.getQueryState(queryKeys.enrichmentFailures.counts())?.dataUpdatedAt ?? 0;
+      setState({ kind: "success", ...result, countsVersion: version });
+      void client.invalidateQueries({
+        queryKey: queryKeys.enrichmentFailures.all,
+        refetchType: "none",
+      });
+      void client.invalidateQueries({ queryKey: queryKeys.dashboard.stats() });
+    },
+    onError: (error) => {
+      pending.current = false;
+      const cause =
+        error instanceof ApiError && error.status === 403
+          ? "forbidden"
+          : error instanceof ApiError && error.status === 401
+            ? "session"
+            : "failed";
+      if (cause === "forbidden") forbidden.current = true;
+      setState({ kind: "failure", cause });
+    },
+  });
   return (
     <GroupShell
+      headerControl={
+        <BulkRetryButton
+          state={state}
+          count={count}
+          countsVersion={countsVersion}
+          noun="book"
+          onRetry={() => {
+            if (pending.current || forbidden.current) return;
+            pending.current = true;
+            onRetain();
+            setState({ kind: "pending", count });
+            mutation.mutate();
+          }}
+        />
+      }
+      feedback={<BulkRetryFeedback state={state} noun="books" />}
       title={failureGroupTitle({ source, class: failureClass })}
       action={FAILURE_CLASS_COPY[failureClass].detail}
       countLabel={pluralise(count, "book")}

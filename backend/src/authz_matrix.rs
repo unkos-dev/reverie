@@ -189,6 +189,12 @@ fn substitute_path_params(path: &str) -> String {
 /// lands on the scope assertion instead of the gate's 403.
 fn body_for(method: &str, path: &str) -> Option<Value> {
     match (method, path) {
+        ("POST", "/api/v1/ingestion/inputs/retries") => {
+            Some(serde_json::json!({"reason": "needs_change"}))
+        }
+        ("POST", "/api/v1/dashboard/enrichment-failures/retries") => {
+            Some(serde_json::json!({"source": "none", "class": "unspecified"}))
+        }
         ("POST", "/api/v1/tokens") => Some(serde_json::json!({"name": "Matrix Test"})),
         ("POST", "/api/v1/shelves") => Some(serde_json::json!({"name": "Matrix Shelf"})),
         ("PATCH", "/api/v1/shelves/{id}") => Some(serde_json::json!({"name": "Renamed"})),

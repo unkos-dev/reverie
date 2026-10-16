@@ -78,12 +78,12 @@ and the backend test suite, which runs the matrix as an ordinary `#[sqlx::test]`
   checks each requested scope in `CreateTokenRequest.scopes` against `current_user.may_grant_scope(scope)` and rejects
   the whole request with `Forbidden`, logged, at the first one that exceeds the ceiling. `CreateTokenRequest` accepts
   exactly `name`, `scopes` and `expires_in_days`; nothing else on the `device_tokens` row can be set at mint.
-- Twelve handlers make up the admin surface, and each calls both `current_user.require_scope(Scope::Admin)` and
-  `current_user.require_admin()` before doing anything else: in `routes::users`, `list_users`, `update_role`,
-  `update_child_status`, `create_user`, `update_account_status`, `admin_reset_password` and `update_user`; in
-  `routes::settings`, `get_settings` and `put_settings`; in `routes::dashboard`, `stats` and `activity`; and
-  `routes::ingestion::scan`. The two calls read different `CurrentUser` fields (`scopes` and `role`) and fail
-  independently; Runtime behaviour shows why both are needed.
+- Admin handlers call both `current_user.require_scope(Scope::Admin)` and `current_user.require_admin()` before
+  accessing protected state or submitting coordinator work. These include user management, settings, dashboard
+  statistics/activity, enrichment-failure group reads and retries, and ingestion scan/status/input reads and retries.
+  The bulk operations are `POST /api/v1/dashboard/enrichment-failures/retries` and
+  `POST /api/v1/ingestion/inputs/retries`. The two checks read different `CurrentUser` fields (`scopes` and `role`) and
+  fail independently; Runtime behaviour shows why both are needed.
 - **Ownership map.** `backend/src/routes/shelves/mod.rs` documents its own boundary: `shelves` and `shelf_items` have no
   row-level-security policy, so every mutating handler in that module enforces ownership with an explicit
   `WHERE id = $1 AND user_id = $2` predicate, and the item-mutation handlers take a `FOR UPDATE` lock under the same

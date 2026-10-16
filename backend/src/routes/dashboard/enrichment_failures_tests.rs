@@ -657,3 +657,294 @@ async fn enrichment_failure_reads_require_authentication_and_the_admin_role(pool
         }
     }
 }
+
+#[sqlx::test(migrations = "./migrations")]
+async fn bulk_enrichment_retry_empty_and_primary_membership(pool: PgPool) {
+    let env = env(&pool).await;
+    let request = json!({"source": "openlibrary", "class": "timeout"});
+    let empty = env
+        .server
+        .post(&format!("{LIST}/retries"))
+        .add_header(AUTHORIZATION, env.auth.clone())
+        .json(&request)
+        .await;
+    assert_eq!(empty.status_code(), StatusCode::ACCEPTED);
+    assert_eq!(empty.json::<Value>(), json!({"queued": 0, "remaining": 0}));
+    for status in [EnrichmentStatus::Failed, EnrichmentStatus::Skipped] {
+        seed(
+            &env,
+            "selected",
+            status,
+            Some("failure"),
+            json!([entry("openlibrary", "timeout")]),
+        )
+        .await;
+    }
+    for (source, class) in [("hardcover", "timeout"), ("openlibrary", "rate_limited")] {
+        failing(
+            &env,
+            "other primary",
+            json!([entry(source, class), entry("openlibrary", "timeout")]),
+        )
+        .await;
+    }
+    for status in [
+        EnrichmentStatus::Pending,
+        EnrichmentStatus::InProgress,
+        EnrichmentStatus::Complete,
+    ] {
+        seed(
+            &env,
+            "not failed",
+            status,
+            Some("failure"),
+            json!([entry("openlibrary", "timeout")]),
+        )
+        .await;
+    }
+    seed(
+        &env,
+        "no error",
+        EnrichmentStatus::Skipped,
+        None,
+        json!([entry("openlibrary", "timeout")]),
+    )
+    .await;
+    let response = env
+        .server
+        .post(&format!("{LIST}/retries"))
+        .add_header(AUTHORIZATION, env.auth.clone())
+        .json(&request)
+        .await;
+    assert_eq!(response.status_code(), StatusCode::ACCEPTED);
+    assert_eq!(
+        response.json::<Value>(),
+        json!({"queued": 2, "remaining": 0})
+    );
+    assert_eq!(
+        items(&list(&env, "?source=openlibrary&class=timeout").await),
+        &Vec::<Value>::new()
+    );
+    assert_eq!(get(&env, COUNTS).await.json::<Value>()["total"], 2);
+    let again = env
+        .server
+        .post(&format!("{LIST}/retries"))
+        .add_header(AUTHORIZATION, env.auth.clone())
+        .json(&request)
+        .await;
+    assert_eq!(again.json::<Value>(), json!({"queued": 0, "remaining": 0}));
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn bulk_enrichment_retry_cap_concurrency_and_unsourced(pool: PgPool) {
+    let env = env(&pool).await;
+    for index in 0..501 {
+        failing(
+            &env,
+            &format!("batch {index}"),
+            json!([{"source": null, "class": "legacy"}]),
+        )
+        .await;
+    }
+    let request = json!({"source": "none", "class": "unspecified"});
+    let first = env
+        .server
+        .post(&format!("{LIST}/retries"))
+        .add_header(AUTHORIZATION, env.auth.clone())
+        .json(&request)
+        .await;
+    assert_eq!(first.status_code(), StatusCode::ACCEPTED);
+    assert_eq!(
+        first.json::<Value>(),
+        json!({"queued": 500, "remaining": 1})
+    );
+    let a = env
+        .server
+        .post(&format!("{LIST}/retries"))
+        .add_header(AUTHORIZATION, env.auth.clone())
+        .json(&request);
+    let b = env
+        .server
+        .post(&format!("{LIST}/retries"))
+        .add_header(AUTHORIZATION, env.auth.clone())
+        .json(&request);
+    let (a, b) = tokio::join!(a, b);
+    assert_eq!(a.status_code(), StatusCode::ACCEPTED);
+    assert_eq!(b.status_code(), StatusCode::ACCEPTED);
+    assert_eq!(
+        a.json::<Value>()["queued"].as_i64().unwrap()
+            + b.json::<Value>()["queued"].as_i64().unwrap(),
+        1
+    );
+    assert_eq!(get(&env, COUNTS).await.json::<Value>()["total"], 0);
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn bulk_enrichment_retry_refuses_roles_and_invalid_bodies(pool: PgPool) {
+    let app = test_support::db::app_pool_for(&pool).await;
+    let env = env(&pool).await;
+    let (_, adult) = test_support::db::create_adult_and_basic_auth(&app, "bulk-adult").await;
+    let (_, child) = test_support::db::create_child_user_and_basic_auth(&app, "bulk-child").await;
+    let request = json!({"source": "openlibrary", "class": "timeout"});
+    failing(&env, "untouched", json!([entry("openlibrary", "timeout")])).await;
+    assert_eq!(
+        env.server
+            .post(&format!("{LIST}/retries"))
+            .json(&request)
+            .await
+            .status_code(),
+        StatusCode::UNAUTHORIZED
+    );
+    for auth in [adult, child] {
+        assert_eq!(
+            env.server
+                .post(&format!("{LIST}/retries"))
+                .add_header(AUTHORIZATION, auth)
+                .json(&request)
+                .await
+                .status_code(),
+            StatusCode::FORBIDDEN
+        );
+    }
+    for body in [
+        json!({"source": "Bad source", "class": "timeout"}),
+        json!({"source": "openlibrary", "class": "unknown"}),
+        json!({"source": "openlibrary"}),
+    ] {
+        assert_eq!(
+            env.server
+                .post(&format!("{LIST}/retries"))
+                .add_header(AUTHORIZATION, env.auth.clone())
+                .json(&body)
+                .await
+                .status_code(),
+            StatusCode::UNPROCESSABLE_ENTITY
+        );
+    }
+    assert_eq!(get(&env, COUNTS).await.json::<Value>()["total"], 1);
+}
+
+async fn bulk_snapshot(env: &Env, id: Uuid) -> Value {
+    sqlx::query_scalar!(
+        r#"SELECT to_jsonb(m) AS "state!" FROM manifestations m WHERE id = $1"#,
+        id
+    )
+    .fetch_one(&env.ing)
+    .await
+    .unwrap()
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn bulk_enrichment_retry_preserves_provider_timing_and_reset_columns(pool: PgPool) {
+    let env = env(&pool).await;
+    for class in crate::models::enrichment_failure::FailureClass::ALL {
+        let mut fixtures = Vec::new();
+        for (index, delay) in [None, Some(-60_i64), Some(3600_i64)]
+            .into_iter()
+            .enumerate()
+        {
+            let id = seed(
+                &env,
+                "deadline",
+                if index == 2 {
+                    EnrichmentStatus::Skipped
+                } else {
+                    EnrichmentStatus::Failed
+                },
+                Some("failure"),
+                json!([entry("openlibrary", class.as_str())]),
+            )
+            .await;
+            sqlx::query!("UPDATE manifestations SET enrichment_retry_not_before = now() + ($2::bigint * INTERVAL '1 second') WHERE id = $1", id, delay)
+                .execute(&env.ing).await.unwrap();
+            fixtures.push((id, bulk_snapshot(&env, id).await));
+        }
+        let response = env
+            .server
+            .post(&format!("{LIST}/retries"))
+            .add_header(AUTHORIZATION, env.auth.clone())
+            .json(&json!({"source":"openlibrary","class":class.as_str()}))
+            .await;
+        assert_eq!(response.status_code(), StatusCode::ACCEPTED);
+        assert_eq!(response.json::<Value>(), json!({"queued":3,"remaining":0}));
+        for (id, mut expected) in fixtures {
+            expected["enrichment_status"] = json!("pending");
+            expected["enrichment_attempt_count"] = json!(0);
+            expected["enrichment_attempted_at"] = Value::Null;
+            expected["enrichment_error"] = Value::Null;
+            expected["enrichment_failures"] = json!([]);
+            expected["enrichment_rerun_requested"] = json!(false);
+            let actual = bulk_snapshot(&env, id).await;
+            assert!(
+                actual["updated_at"].as_str().unwrap() >= expected["updated_at"].as_str().unwrap()
+            );
+            expected["updated_at"] = actual["updated_at"].clone();
+            assert_eq!(actual, expected);
+        }
+    }
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn bulk_enrichment_retry_skips_locked_and_active_rows(pool: PgPool) {
+    let env = env(&pool).await;
+    let id = failing(&env, "locked", json!([entry("openlibrary", "timeout")])).await;
+    let active = seed(
+        &env,
+        "active",
+        EnrichmentStatus::InProgress,
+        Some("old failure"),
+        json!([entry("openlibrary", "timeout")]),
+    )
+    .await;
+    let before = bulk_snapshot(&env, active).await;
+    let mut tx = env.ing.begin().await.unwrap();
+    sqlx::query!("SELECT id FROM manifestations WHERE id = $1 FOR UPDATE", id)
+        .fetch_one(&mut *tx)
+        .await
+        .unwrap();
+    let response = env
+        .server
+        .post(&format!("{LIST}/retries"))
+        .add_header(AUTHORIZATION, env.auth.clone())
+        .json(&json!({"source":"openlibrary","class":"timeout"}))
+        .await;
+    assert_eq!(response.status_code(), StatusCode::ACCEPTED);
+    assert_eq!(response.json::<Value>(), json!({"queued":0,"remaining":1}));
+    assert_eq!(bulk_snapshot(&env, active).await, before);
+    tx.rollback().await.unwrap();
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn bulk_enrichment_retry_checks_scope_and_current_role(pool: PgPool) {
+    use crate::auth::{scope::Scope, token};
+    let env = env(&pool).await;
+    let app = test_support::db::app_pool_for(&pool).await;
+    let (id, _) = test_support::db::create_admin_and_basic_auth(&app).await;
+    let row = failing(&env, "untouched", json!([entry("openlibrary", "timeout")])).await;
+    let before = bulk_snapshot(&env, row).await;
+    for scopes in [vec![Scope::Write], vec![Scope::Admin]] {
+        let (plain, hash) = token::generate_device_token();
+        let device =
+            crate::models::device_token::create_with_limit(&app, id, "bulk", &hash, &scopes, None)
+                .await
+                .unwrap();
+        if scopes == vec![Scope::Admin] {
+            sqlx::query!(
+                "UPDATE users SET role = 'adult'::user_role WHERE id = $1",
+                id
+            )
+            .execute(&pool)
+            .await
+            .unwrap();
+        }
+        let bearer = format!("Bearer {}{}.{}", token::TOKEN_PREFIX, device.id, plain);
+        let response = env
+            .server
+            .post(&format!("{LIST}/retries"))
+            .add_header(AUTHORIZATION, bearer)
+            .json(&json!({"source":"openlibrary", "class":"timeout"}))
+            .await;
+        assert_eq!(response.status_code(), StatusCode::FORBIDDEN);
+    }
+    assert_eq!(bulk_snapshot(&env, row).await, before);
+}

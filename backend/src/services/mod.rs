@@ -23,3 +23,13 @@ pub mod session_sweep;
 /// Persisted settings load, save, validation, and LISTEN/NOTIFY reload.
 pub mod settings;
 pub mod writeback;
+
+pub(crate) const BULK_RETRY_LIMIT: i64 = 500;
+
+#[derive(Debug, serde::Serialize, utoipa::ToSchema)]
+pub(crate) struct BulkRetryResult {
+    #[schema(minimum = 0, maximum = 500)]
+    pub queued: i64,
+    #[schema(minimum = 0)]
+    pub remaining: i64,
+}
