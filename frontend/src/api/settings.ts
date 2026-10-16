@@ -18,6 +18,7 @@ const int32 = z.number().int().min(-2147483648).max(2147483647);
 const int64 = z.number().int().refine(Number.isSafeInteger, "exceeds the exact integer range");
 
 const SettingsValuesSchema = z.object({
+  ingestion_enabled: z.boolean(),
   accepted_formats: z.array(z.enum(MANIFESTATION_FORMATS)).min(1),
   cleanup_imported: z.boolean(),
   cleanup_duplicates: z.boolean(),

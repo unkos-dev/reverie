@@ -29,6 +29,7 @@ function authMe(role: AuthMe["role"]): AuthMe {
 }
 
 const SETTINGS_BODY = {
+  ingestion_enabled: true,
   accepted_formats: ["epub"],
   cleanup_imported: false,
   cleanup_duplicates: false,

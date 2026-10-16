@@ -1,6 +1,6 @@
 import { describe, expect, test, vi } from "vite-plus/test";
 
-import { getInputCounts, listInputs, scanIngestion } from "./ingestion";
+import { getIngestionStatus, getInputCounts, listInputs, scanIngestion } from "./ingestion";
 
 vi.mock("./fetch", () => ({ apiFetch: vi.fn() }));
 // eslint-disable-next-line import/first -- imported after the mock is registered
@@ -18,6 +18,32 @@ const ITEM = {
 };
 
 describe("ingestion API client", () => {
+  test("status parses simultaneous blockers and passes cancellation through", async () => {
+    const status = {
+      blockers: [
+        { kind: "paused_by_admin" },
+        { kind: "dependency", reason: "library_full", since: "2026-10-16T03:00:00Z" },
+        { kind: "restarting" },
+      ],
+    };
+    vi.mocked(apiFetch).mockResolvedValue(status);
+    const signal = new AbortController().signal;
+    await expect(getIngestionStatus(signal)).resolves.toEqual(status);
+    expect(vi.mocked(apiFetch).mock.calls.at(-1)).toEqual(["/api/v1/ingestion/status", { signal }]);
+    vi.mocked(apiFetch).mockResolvedValue({ blockers: [] });
+    await expect(getIngestionStatus()).resolves.toEqual({ blockers: [] });
+  });
+
+  test.each([
+    { kind: "unknown" },
+    { kind: "dependency", reason: "unknown", since: "2026-10-16T03:00:00Z" },
+    { kind: "dependency", reason: "library_full", since: "2026-10-16T03:00:00+00:00" },
+    { kind: "dependency", reason: "library_full" },
+  ])("status rejects an invalid blocker %j", async (blocker) => {
+    vi.mocked(apiFetch).mockResolvedValue({ blockers: [blocker] });
+    await expect(getIngestionStatus()).rejects.toThrow();
+  });
+
   test("listInputs sends the reason, the page size and the cursor", async () => {
     vi.mocked(apiFetch).mockResolvedValue({ items: [ITEM], next_cursor: "abc" });
     const page = await listInputs({ reason: "damaged", cursor: "c1" });

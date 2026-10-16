@@ -15,6 +15,7 @@ import {
 } from "@/lib/query/client";
 
 import { adminSettingsRoute } from "@/routes/production";
+import { queryKeys } from "@/lib/query/keys";
 
 import { SettingsPage } from "./SettingsPage";
 
@@ -37,6 +38,7 @@ function urlOf(input: RequestInfo | URL): URL {
 }
 
 const BASE_VALUES: Values = {
+  ingestion_enabled: true,
   accepted_formats: ["epub"],
   cleanup_imported: true,
   cleanup_duplicates: false,
@@ -630,6 +632,67 @@ describe("editing", () => {
     await screen.findByRole("form", { name: "Covers settings" });
     expect(router.state.location.pathname).toBe("/admin/settings/covers");
     expect(screen.getByText("No unsaved changes.")).toBeInTheDocument();
+  });
+});
+
+describe("import admission", () => {
+  test("is the first switch, keeps edits local, discards and saves through the existing form", async () => {
+    const user = userEvent.setup();
+    const { client } = await loaded("acquisition");
+    const status = { blockers: [] };
+    client.setQueryData(queryKeys.ingestion.status(), status);
+    expect(screen.getAllByRole("switch")[0]).toHaveAccessibleName("Import files");
+    const control = screen.getByRole("switch", { name: "Import files" });
+    expect(control).toBeChecked();
+    expect(control).toHaveAccessibleDescription(/The setting takes effect when you save/);
+    await user.click(control);
+    expect(server.puts).toHaveLength(0);
+    expect(screen.getByRole("link", { name: /Acquisition/ })).toHaveTextContent("Imports on.");
+    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+    expect(screen.getByRole("switch", { name: /successful import/ })).toBeEnabled();
+    await user.click(screen.getByRole("button", { name: "Discard changes" }));
+    expect(control).toBeChecked();
+    await user.click(control);
+    await user.click(save());
+    await screen.findByText("Settings saved");
+    expect(server.puts).toEqual([{ patch: { ingestion_enabled: false }, ifMatch: '"rev-1"' }]);
+    expect(screen.getByRole("link", { name: /Acquisition/ })).toHaveTextContent("Imports off.");
+    expect(client.getQueryState(queryKeys.ingestion.status())?.isInvalidated).toBe(true);
+    expect(client.getQueryData(queryKeys.ingestion.status())).toEqual(status);
+  });
+
+  test("a failed save retains the unsaved switch and does not invalidate status", async () => {
+    const user = userEvent.setup();
+    server.putMode = "network";
+    const { client } = await loaded("acquisition");
+    client.setQueryData(queryKeys.ingestion.status(), { blockers: [] });
+    await user.click(screen.getByRole("switch", { name: "Import files" }));
+    await user.click(save());
+    await waitFor(() => {
+      expect(server.puts).toHaveLength(1);
+    });
+    await waitFor(() => {
+      expect(save()).not.toHaveTextContent("Saving");
+    });
+    expect(screen.getByRole("switch", { name: "Import files" })).not.toBeChecked();
+    expect(screen.getByRole("link", { name: /Acquisition/ })).toHaveTextContent("Imports on.");
+    expect(client.getQueryState(queryKeys.ingestion.status())?.isInvalidated).toBe(false);
+  });
+
+  test("a stale save recognises an already saved disable and invalidates status", async () => {
+    const user = userEvent.setup();
+    const { client } = await loaded("acquisition");
+    client.setQueryData(queryKeys.ingestion.status(), { blockers: [] });
+    server.stale.set(1, () => {
+      server.values.ingestion_enabled = false;
+      server.revision += 1;
+    });
+    await user.click(screen.getByRole("switch", { name: "Import files" }));
+    await user.click(save());
+    await screen.findByText("Settings saved");
+    expect(screen.getByRole("switch", { name: "Import files" })).not.toBeChecked();
+    expect(server.puts).toHaveLength(1);
+    expect(client.getQueryState(queryKeys.ingestion.status())?.isInvalidated).toBe(true);
   });
 });
 

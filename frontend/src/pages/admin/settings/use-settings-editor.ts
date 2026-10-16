@@ -238,6 +238,9 @@ export function useSettingsEditor(area: AreaId, snapshot: SettingsSnapshot): Set
       return;
     }
     const snapshot = outcome.kind === "saved" ? outcome.written : outcome.fresh;
+    if (patch.ingestion_enabled !== undefined) {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.ingestion.status() });
+    }
     queryClient.setQueryData(queryKeys.settings.snapshot(), snapshot);
     setDraft(EMPTY_DRAFT);
     setElsewhere(annotate(outcome.changed, outcome.base, patch));

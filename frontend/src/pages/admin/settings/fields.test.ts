@@ -19,6 +19,7 @@ import {
 } from "./fields";
 
 const VALUES: SettingsValues = {
+  ingestion_enabled: true,
   accepted_formats: ["epub"],
   cleanup_imported: false,
   cleanup_duplicates: false,
@@ -60,6 +61,7 @@ describe("catalogue", () => {
 
   test("areas hold the fields the spec assigns them", () => {
     expect(fieldsForArea("acquisition").map((f) => f.key)).toEqual([
+      "ingestion_enabled",
       "accepted_formats",
       "cleanup_imported",
       "cleanup_duplicates",
@@ -160,18 +162,21 @@ describe("parseMib", () => {
 
 describe("areaSummary", () => {
   test("acquisition reflects the two source-file switches", () => {
-    expect(areaSummary("acquisition", VALUES)).toBe("EPUB. Source files kept");
+    expect(areaSummary("acquisition", { ...VALUES, ingestion_enabled: false })).toBe(
+      "Imports off. EPUB. Source files kept",
+    );
+    expect(areaSummary("acquisition", VALUES)).toBe("Imports on. EPUB. Source files kept");
     expect(areaSummary("acquisition", { ...VALUES, cleanup_imported: true })).toBe(
-      "EPUB. Source files removed after import",
+      "Imports on. EPUB. Source files removed after import",
     );
     expect(areaSummary("acquisition", { ...VALUES, cleanup_duplicates: true })).toBe(
-      "EPUB. Source files removed",
+      "Imports on. EPUB. Source files removed",
     );
     expect(
       areaSummary("acquisition", { ...VALUES, cleanup_imported: true, cleanup_duplicates: true }),
-    ).toBe("EPUB. Source files removed");
+    ).toBe("Imports on. EPUB. Source files removed");
     expect(areaSummary("acquisition", { ...VALUES, accepted_formats: [] })).toBe(
-      "No formats. Source files kept",
+      "Imports on. No formats. Source files kept",
     );
   });
 

@@ -7,9 +7,9 @@ page's empty state hands administrators on to this page, and its copy is specifi
 This document is the specification a rendered page is compared against. Copy in double quotes is exact. Where a value is
 shown as `{n}` or similar, the screen fills it in.
 
-Three parts are approved but not yet implemented: the paused-pipeline notice, "Retry all" in group headers and the
-Duplicates card. They are collected under "Target design, not yet built", along with two smaller differences. Everything
-outside that section specifies the page as it is to behave, except where a line points to that section.
+Two parts are approved but not yet implemented: "Retry all" in group headers and the Duplicates card. They are collected
+under "Target design, not yet built", along with two smaller differences. Everything outside that section specifies the
+page as it is to behave, except where a line points to that section.
 
 ## Purpose
 
@@ -40,8 +40,7 @@ From top to bottom:
 5. **Existing metric cards,** unchanged: the Books, Works, Storage and Degraded totals, Validation, Enrichment, Metadata
    coverage, Storage by format, and Recent ingestion batches. They keep their own number and date formatting.
 
-The Duplicates card and the paused-pipeline notice, when built, take the positions given under "Target design, not yet
-built".
+The Duplicates card, when built, takes the position given under "Target design, not yet built".
 
 Counts on this page use the viewer's locale digit grouping. Times are shown in the viewer's locale.
 
@@ -52,6 +51,48 @@ Counts on this page use the viewer's locale digit grouping. Times are shown in t
 - While a request is pending the button reads "Scanning", shows a spinner and is marked `aria-disabled` so it can still
   take keyboard focus. A second press sends nothing.
 - The button stays enabled after a successful scan. It is disabled for the rest of the page session after a 403.
+
+## Imports paused notice
+
+A neutral boxed notice sits above the scan status region when the status read reports any blocker. Its title is "Imports
+are paused". The notice has no danger colour and no mutation control. It renders every applicable condition,
+administrator first, dependency second and restarting third.
+
+- **Administrator:** "New imports have been paused by an administrator." Then bold "What to check." and "Turn on Import
+  files in Acquisition settings when you are ready to resume." The link "Open Acquisition settings" goes to
+  `/admin/settings/acquisition`.
+- **Dependency:** the reason and check from the table below, with bold "What to check." before the check. Beneath them,
+  "Dependency problem since {time}." The time uses the viewer's locale and a `time` element holding the UTC instant.
+- **Restarting:** "The ingestion worker is restarting." Then bold "What to check." and "Wait for Reverie to restart the
+  worker. If it keeps restarting, check the server log."
+
+Every combination ends with the same text: "Queued files are kept. Work already started can finish, and scans and
+recovery continue. New imports resume when Import files is on, dependencies are available and the worker is running."
+
+| Reason | Sentence | What to check |
+| ------ | -------- | ------------- |
+| Database unavailable | "Reverie cannot reach the database that ingestion uses." | "Check that the database is running and that the ingestion database account can sign in." |
+| Ingestion folder unavailable | "Reverie cannot read the ingestion folder." | "Check that the folder exists, is mounted, and can be read by the account Reverie runs as." |
+| Library folder unavailable | "Reverie cannot write to the library folder." | "Check that the library folder is mounted and can be written by the account Reverie runs as." |
+| Library full | "The library folder has no free space left." | "Free some space on the library's disk." |
+| Another instance | "Another Reverie server is already running ingestion for this library." | "Make sure only one Reverie server uses this database." |
+| Not specified | "Reverie hit a problem it cannot describe here." | "Check the server log for the cause." |
+
+An empty blockers list means no known blocker, not that an import is running or startup probing has finished. It shows
+no notice. The initial loading state also shows no notice and adds no checking state or layout space. The polite live
+region stays mounted for changes.
+
+A failed refresh replaces any cached blocker notice with the read-failure treatment; stale data is not shown as current.
+
+- **Read failed:** a quiet, unboxed line, "Could not check whether ingestion is running." / "Files may still be
+  importing.", with an outline "Try again" that refetches status.
+- **Forbidden (403):** the alert "This account cannot see ingestion status" / "Sign in as an administrator."
+- **Session ended (401):** the alert "Your session has ended" / "Sign in again to see ingestion status." The shared
+  authentication boundary retains its sign-in handling.
+
+The latest-activity line is hidden while any blocker is known or the status read has failed. Activity, counts and
+expanded groups keep their existing polling so admitted work finishing remains observable. Scan now and its hint retain
+their normal behaviour in every status; scan feedback reports discovery only and never derives wording from blockers.
 
 ## Scan feedback
 
@@ -68,21 +109,21 @@ colour. Failures are boxed and are alerts.
 The scan answers with three counts: queued, waiting (deferred) and unchanged (suppressed). Zero counts keep their
 figures where the title carries them.
 
-- Any count above zero for queued: "Scan started. {q} queued, {d} waiting, {s} unchanged." / "Queued files are being
-  imported now. Waiting files are either still being written or waiting for a retry time, and are picked up
-  automatically. Unchanged files were left as they are."
+- Any count above zero for queued: "Scan started. {q} queued, {d} waiting, {s} unchanged." / "The scan queued new or
+  changed files. Waiting files are either still being written or waiting for a retry time. Unchanged files were left as
+  they are."
 - All three zero: "Nothing to import" / "The folder has no new or changed files."
 - Queued and waiting zero, unchanged above zero: "Nothing new to import" / "{s} files were left as they are, because
   nothing about them has changed." For one file: "1 file was left as it is, because nothing about it has changed."
-- Queued zero, waiting above zero: "Nothing is ready yet" / "{d} files are waiting and will be picked up automatically.
-  You do not need to scan again." For one file: "1 file is waiting and will be picked up automatically. You do not need
-  to scan again."
+- Queued zero, waiting above zero: "Nothing is ready yet" / "{d} files are waiting for readiness or a retry time. You do
+  not need to scan again." For one file: "1 file is waiting for readiness or a retry time. You do not need to scan
+  again."
 
 No count on this page is labelled as the result of a particular scan. Batch figures always say "the latest batch".
 
 ### Latest activity
 
-- Trigger: the latest batch has not ended, and no scan request is pending.
+- Trigger: the latest batch has not ended, no scan request is pending, and status has no known blocker or read failure.
 - A line under the status: "Latest activity. {t} files in the latest batch: {i} imported, {f} did not import, {p} in
   progress. Updating every few seconds." A "{k} skipped" part appears after "did not import" only when {k} is above
   zero. {t} reads "1 file" for one.
@@ -261,6 +302,9 @@ The row also carries two times, described under "Smaller differences from the pa
 
 One part of the page owns all polling, and no other component starts a timer.
 
+- Ingestion status refreshes on every mount and window focus, after a successful settings save containing
+  `ingestion_enabled`, and every 30 seconds while the page is visible. This poll continues through every blocker and
+  read-failure state. The settings save invalidates status without writing an optimistic blocker snapshot.
 - Counts, the latest activity and the first page of every expanded group refresh every 3 seconds while the latest batch
   has not ended, and for 2 minutes after a scan that queued or deferred any file. Then polling stops.
 - Collapsed groups make no requests. Later pages, once opened, are never polled.
@@ -310,49 +354,6 @@ When a part is built, it moves into the sections above.
 - **Enrichment times.** Each enrichment row shows the time of the book's most recent attempt. When a source has asked
   Reverie to wait, it also shows the earliest retry time, only when that field is present. The labels are not yet
   settled. The built page shows neither.
-
-### Paused-pipeline notice
-
-The notice appears only when ingestion is paused or has stopped. A healthy page, and a page still checking, look exactly
-as described above.
-
-- **Placement.** A boxed notice above the status region, in the normal flow, with no danger colour.
-- **Paused.** Title "Ingestion is paused". Beneath it, the reason sentence from the table below, then a bold "What to
-  check." and its check text, then "Paused since {time}. Reverie checks again every few minutes and carries on by itself
-  once the problem is fixed. Files already in the queue are kept."
-- **Stopped.** Title "Ingestion has stopped". Beneath it "The ingestion worker is no longer running, so no files will be
-  imported." then "What to check." and "Restart Reverie. If it stops again, check the server log."
-
-### Paused reasons
-
-A paused notice carries exactly one reason:
-
-| Reason | Sentence | What to check |
-| ------ | -------- | ------------- |
-| Database unavailable | "Reverie cannot reach the database that ingestion uses." | "Check that the database is running and that the ingestion database account can sign in." |
-| Ingestion folder unavailable | "Reverie cannot read the ingestion folder." | "Check that the folder exists, is mounted, and can be read by the account Reverie runs as." |
-| Library folder unavailable | "Reverie cannot write to the library folder." | "Check that the library folder is mounted and can be written by the account Reverie runs as." |
-| Library full | "The library folder has no free space left." | "Free some space on the library's disk." |
-| Another instance | "Another Reverie server is already running ingestion for this library." | "Make sure only one Reverie server uses this database." |
-| Not specified | "Reverie hit a problem it cannot describe here." | "Check the server log for the cause." |
-| Paused by an administrator | Copy not yet settled. | Copy not yet settled. |
-
-The closing sentences of the paused notice ("Reverie checks again every few minutes ...") also depend on the reason. The
-wording for "Paused by an administrator" is settled together with its sentence and check.
-
-### Other paused-notice states
-
-- **Read failed.** One quiet line, not boxed: "Could not check whether ingestion is running." / "Files may still be
-  importing." with an outline "Try again".
-- **Forbidden (403).** An alert: "This account cannot see ingestion status" / "Sign in as an administrator."
-- **Session ended (401).** "Your session has ended" / "Sign in again to see ingestion status."
-- **While paused or stopped:**
-  - The scan hint reads "Imports wait while ingestion is paused."
-  - An accepted scan keeps its title and its detail reads "Ingestion is paused, so nothing is being imported yet. Queued
-    and waiting files start by themselves once it resumes. Unchanged files were left as they are."
-  - The latest-activity line is hidden, so a stale "running" batch cannot contradict the notice.
-- **Refresh.** The status is read when the page opens and on window focus, and every 30 seconds while the page is
-  visible.
 
 ### Retry all
 
@@ -433,12 +434,13 @@ Items about the target design apply once those parts are built.
 6. Paths are relative and shown with a muted directory. A file name that is not valid UTF-8 renders with its escapes.
 7. Enrichment groups are headed by source and class, each book appears once, and "Try again" moves through "Queuing" to
    "Queued" without the row disappearing.
-8. Refresh follows the rules above: every 3 seconds while a batch runs, 2 minutes after a scan that queued or deferred
-   files, then stopping, with one owner of the timer.
+8. Status refreshes every 30 seconds while visible and on mount, focus and saves containing the import setting. Activity
+   and input polling follows the existing 3-second cadence and 2-minute scan grace window, including through blockers.
 9. Every loading, empty and failed state shows the copy given for it, with focus behaving as described.
 10. The empty library shows the variant for its viewer and condition, in the stated precedence, and never shows an
     administrator a folder path. A non-administrator sees nothing about administration.
 11. A keyboard-only pass reaches the scan button, every group header, "Show more", "Try again" and the links. No control
     is a clickable non-button, and one focus ring shows throughout.
-12. Once built: the paused notice, "Retry all" and the Duplicates card each match their sections above, and a healthy
-    page looks the same as before the notice existed.
+12. Every blocker combination shows its independent rows. Recovery clears the notice, a failed refresh hides stale
+    blockers, and Scan stays enabled. A page without known blockers has no notice or extra layout space.
+13. Once built: "Retry all" and the Duplicates card each match their sections above.

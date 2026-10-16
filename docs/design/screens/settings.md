@@ -69,9 +69,9 @@ one-line summary of its saved values. The current area has `aria-current="page"`
 
 | Area | Summary |
 | ---- | ------- |
-| Acquisition | "{FORMATS}. Source files kept" when neither removal switch is on, for example "EPUB. Source files kept". |
-| Acquisition | "{FORMATS}. Source files removed after import" when only the import switch is on. |
-| Acquisition | "{FORMATS}. Source files removed" otherwise. |
+| Acquisition | "Imports on." or "Imports off.", then "{FORMATS}. Source files kept" when neither removal switch is on. |
+| Acquisition | The imports prefix, then "{FORMATS}. Source files removed after import" when only the import switch is on. |
+| Acquisition | The imports prefix, then "{FORMATS}. Source files removed" otherwise. |
 | Enrichment | "On. {n} lookups at a time" ("1 lookup at a time"), or "Off". |
 | Covers | "Up to {n} MiB", with {n} rounded to two decimal places and trailing zeros dropped. |
 | Writeback | "On. {n} files at a time" ("1 file at a time"), or "Off". |
@@ -92,6 +92,11 @@ Each area has a description under its heading.
 
 "What Reverie accepts from the ingestion folder, and what it does with the source files afterwards."
 
+- **Import files.** The first field, a switch. Help: "When off, Reverie stops starting new imports. Work already started
+  can finish, and scans and recovery continue. The setting takes effect when you save." It uses the area's draft,
+  Discard changes and Save changes flow, with no confirmation or restart. The format and cleanup controls stay usable
+  while it is off. A successful save containing `ingestion_enabled` invalidates ingestion status without writing a
+  blocker snapshot or reading settings again beneath an edited draft.
 - **Accepted formats.** While EPUB is the only supported format, this row is the read-only line "Reverie imports EPUB
   files." It has no checkbox, no help text and no part in a save. Once more formats are supported, the row becomes a
   checkbox list labelled "Accepted formats", one checkbox per format, and a save sends the whole list. The last enabled
@@ -391,6 +396,9 @@ Each state gives its trigger and its exact copy.
 - Copy uses Australian English, with no exclamation marks.
 
 ## Acceptance checklist
+
+The first Acquisition field is Import files. Its draft does not change the saved summary or ingestion status; saving
+updates the summary and invalidates status. Failed and stale saves retain the existing reconciliation behaviour.
 
 A rendered page is accepted when every item holds, in the dark theme and the light theme, at 1920 by 1080 or larger.
 

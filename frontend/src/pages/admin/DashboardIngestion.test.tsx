@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider, focusManager } from "@tanstack/react-query";
-import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { RouterProvider, createMemoryRouter } from "react-router";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vite-plus/test";
@@ -14,7 +14,7 @@ import {
   listEnrichmentFailures,
   triggerEnrichment,
 } from "@/api/enrichment-failures";
-import { getInputCounts, listInputs, scanIngestion } from "@/api/ingestion";
+import { getIngestionStatus, getInputCounts, listInputs, scanIngestion } from "@/api/ingestion";
 import {
   ADMIN_ME,
   ADULT_ME,
@@ -29,7 +29,11 @@ import type { AuthMe } from "@/hooks/useAuthMe";
 import { queryKeys } from "@/lib/query/keys";
 
 import { DashboardPage } from "./DashboardPage";
-import { GRACE_WINDOW_MS, POLL_INTERVAL_MS } from "./ingestion/use-ingestion-monitor";
+import {
+  GRACE_WINDOW_MS,
+  POLL_INTERVAL_MS,
+  STATUS_POLL_INTERVAL_MS,
+} from "./ingestion/use-ingestion-monitor";
 
 vi.mock("@/api/dashboard", () => ({
   getDashboardStats: vi.fn(),
@@ -38,6 +42,7 @@ vi.mock("@/api/dashboard", () => ({
 vi.mock("@/api/ingestion", async (importOriginal) => ({
   ...(await importOriginal<typeof IngestionApi>()),
   listInputs: vi.fn(),
+  getIngestionStatus: vi.fn(),
   getInputCounts: vi.fn(),
   scanIngestion: vi.fn(),
 }));
@@ -59,8 +64,10 @@ const DAMAGED_PAGE = {
   next_cursor: null,
 };
 
-function renderPage(me: AuthMe = ADMIN_ME): QueryClient {
-  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+function renderPage(
+  me: AuthMe = ADMIN_ME,
+  client = new QueryClient({ defaultOptions: { queries: { retry: false } } }),
+): QueryClient {
   client.setQueryData(queryKeys.auth.me(), me);
   const router = createMemoryRouter(
     [
@@ -81,6 +88,7 @@ function renderPage(me: AuthMe = ADMIN_ME): QueryClient {
 }
 
 function mockHappyPath(): void {
+  vi.mocked(getIngestionStatus).mockResolvedValue({ blockers: [] });
   vi.mocked(getDashboardStats).mockResolvedValue(statsFixture());
   vi.mocked(getDashboardActivity).mockResolvedValue(batch());
   vi.mocked(getInputCounts).mockResolvedValue(countsFixture());
@@ -104,6 +112,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  focusManager.setFocused(undefined);
   vi.useRealTimers();
 });
 
@@ -148,7 +157,7 @@ describe("scan control and notices", () => {
     expect(
       await screen.findByText("Scan started. 12 queued, 0 waiting, 5 unchanged."),
     ).toBeInTheDocument();
-    expect(screen.getByText(/Queued files are being imported now\./)).toBeInTheDocument();
+    expect(screen.getByText(/The scan queued new or changed files\./)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Scan ingestion folder" })).toBeEnabled();
   });
 
@@ -166,12 +175,12 @@ describe("scan control and notices", () => {
     [
       { queued: 0, deferred: 1, suppressed: 5 },
       "Nothing is ready yet",
-      "1 file is waiting and will be picked up automatically. You do not need to scan again.",
+      "1 file is waiting for readiness or a retry time. You do not need to scan again.",
     ],
     [
       { queued: 0, deferred: 3, suppressed: 0 },
       "Nothing is ready yet",
-      "3 files are waiting and will be picked up automatically. You do not need to scan again.",
+      "3 files are waiting for readiness or a retry time. You do not need to scan again.",
     ],
   ])("scan result %j shows %s", async (counts, title, detail) => {
     vi.mocked(scanIngestion).mockResolvedValue({ ...counts, monitor: "/m" });
@@ -260,6 +269,191 @@ describe("scan control and notices", () => {
     await userEvent.click(screen.getByRole("button", { name: "Scan ingestion folder" }));
     await screen.findByText(/Scan started/);
     expect(screen.queryByText("Files were sent for another try")).not.toBeInTheDocument();
+  });
+});
+
+describe("ingestion blockers", () => {
+  test.each([0, 1, 2, 3, 4, 5, 6, 7])(
+    "shows independent conditions for combination %i without disabling scans",
+    async (combination) => {
+      const blockers: IngestionApi.IngestionStatus["blockers"] = [];
+      if (combination & 1) blockers.push({ kind: "paused_by_admin" });
+      if (combination & 2)
+        blockers.push({
+          kind: "dependency",
+          reason: "library_full",
+          since: "2026-10-16T03:00:00Z",
+        });
+      if (combination & 4) blockers.push({ kind: "restarting" });
+      vi.mocked(getIngestionStatus).mockResolvedValue({ blockers });
+      renderPage();
+      await screen.findByText("7 files, 5 reasons");
+      expect(screen.queryByRole("heading", { name: "Imports are paused" }) !== null).toBe(
+        combination !== 0,
+      );
+      expect(screen.queryByText("New imports have been paused by an administrator.") !== null).toBe(
+        Boolean(combination & 1),
+      );
+      expect(screen.queryByText("The library folder has no free space left.") !== null).toBe(
+        Boolean(combination & 2),
+      );
+      expect(screen.queryByText("The ingestion worker is restarting.") !== null).toBe(
+        Boolean(combination & 4),
+      );
+      expect(screen.getByRole("button", { name: "Scan ingestion folder" })).toBeEnabled();
+      if (combination & 1)
+        expect(screen.getByRole("link", { name: "Open Acquisition settings" })).toHaveAttribute(
+          "href",
+          "/admin/settings/acquisition",
+        );
+      if (combination & 2)
+        expect(screen.getByText(/Dependency problem since/).querySelector("time")).toHaveAttribute(
+          "datetime",
+          "2026-10-16T03:00:00Z",
+        );
+      if (combination !== 0) {
+        const notice = screen.getByRole("region", { name: "Imports are paused" });
+        expect(notice.closest('[aria-live="polite"]')).not.toBeNull();
+        expect(notice).toHaveTextContent(
+          "Queued files are kept. Work already started can finish, and scans and recovery continue. New imports resume when Import files is on, dependencies are available and the worker is running.",
+        );
+        if (combination === 7) {
+          const copy = notice.textContent;
+          expect(copy.indexOf("administrator.")).toBeLessThan(copy.indexOf("no free space"));
+          expect(copy.indexOf("no free space")).toBeLessThan(copy.indexOf("worker is restarting"));
+        }
+      }
+    },
+  );
+
+  test.each([
+    [
+      "database_unavailable",
+      "Reverie cannot reach the database that ingestion uses.",
+      "Check that the database is running and that the ingestion database account can sign in.",
+    ],
+    [
+      "ingestion_folder_unavailable",
+      "Reverie cannot read the ingestion folder.",
+      "Check that the folder exists, is mounted, and can be read by the account Reverie runs as.",
+    ],
+    [
+      "library_folder_unavailable",
+      "Reverie cannot write to the library folder.",
+      "Check that the library folder is mounted and can be written by the account Reverie runs as.",
+    ],
+    [
+      "library_full",
+      "The library folder has no free space left.",
+      "Free some space on the library's disk.",
+    ],
+    [
+      "another_instance",
+      "Another Reverie server is already running ingestion for this library.",
+      "Make sure only one Reverie server uses this database.",
+    ],
+    [
+      "unspecified",
+      "Reverie hit a problem it cannot describe here.",
+      "Check the server log for the cause.",
+    ],
+  ] satisfies [IngestionApi.DependencyReason, string, string][])(
+    "keeps the approved guidance for %s",
+    async (reason, sentence, check) => {
+      vi.mocked(getIngestionStatus).mockResolvedValue({
+        blockers: [{ kind: "dependency", reason, since: "2026-10-16T03:00:00Z" }],
+      });
+      renderPage();
+      expect(await screen.findByText(sentence)).toBeInTheDocument();
+      expect(screen.getByText(check, { exact: false })).toBeInTheDocument();
+    },
+  );
+
+  test("keeps scan feedback independent when a restart follows an accepted scan", async () => {
+    vi.mocked(scanIngestion).mockResolvedValue({
+      queued: 2,
+      deferred: 1,
+      suppressed: 0,
+      monitor: "/m",
+    });
+    const client = renderPage();
+    await userEvent.click(await screen.findByRole("button", { name: "Scan ingestion folder" }));
+    const title = "Scan started. 2 queued, 1 waiting, 0 unchanged.";
+    await screen.findByText(title);
+    act(() => {
+      client.setQueryData(queryKeys.ingestion.status(), {
+        blockers: [{ kind: "paused_by_admin" }, { kind: "restarting" }],
+      });
+    });
+    expect(screen.getByText(title)).toBeInTheDocument();
+    expect(await screen.findByText("The ingestion worker is restarting.")).toBeInTheDocument();
+    expect(screen.getByText(/The scan queued new or changed files/)).toBeInTheDocument();
+    expect(screen.queryByText(/being imported now/)).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Scan ingestion folder" })).toBeEnabled();
+    await userEvent.click(screen.getByRole("button", { name: "Scan ingestion folder" }));
+    await waitFor(() => {
+      expect(scanIngestion).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  test("suppresses the running line during a pause and restores it after recovery", async () => {
+    vi.mocked(getDashboardActivity).mockResolvedValue(batch({ ended_at: null, in_progress: 4 }));
+    vi.mocked(getIngestionStatus).mockResolvedValue({ blockers: [{ kind: "restarting" }] });
+    const client = renderPage();
+    await screen.findByText("The ingestion worker is restarting.");
+    expect(screen.queryByText(/Latest activity\./)).not.toBeInTheDocument();
+    vi.mocked(getIngestionStatus).mockResolvedValue({ blockers: [] });
+    await act(async () => {
+      await client.invalidateQueries({ queryKey: queryKeys.ingestion.status() });
+    });
+    expect(await screen.findByText(/Latest activity\./)).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Imports are paused" })).not.toBeInTheDocument();
+  });
+
+  test("a failed refresh replaces stale blockers with the quiet failure and retry recovers", async () => {
+    vi.mocked(getIngestionStatus).mockResolvedValue({ blockers: [{ kind: "paused_by_admin" }] });
+    const client = renderPage();
+    await screen.findByText("New imports have been paused by an administrator.");
+    vi.mocked(getIngestionStatus).mockRejectedValue(new TypeError("network unavailable"));
+    await act(async () => {
+      await client.invalidateQueries({ queryKey: queryKeys.ingestion.status() });
+    });
+    expect(
+      await screen.findByText("Could not check whether ingestion is running."),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Files may still be importing.")).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Imports are paused" })).not.toBeInTheDocument();
+    vi.mocked(getIngestionStatus).mockResolvedValue({ blockers: [] });
+    await userEvent.click(
+      within(screen.getByRole("status", { name: "Ingestion status" })).getByRole("button", {
+        name: "Try again",
+      }),
+    );
+    await waitFor(() => {
+      expect(screen.queryByText("Files may still be importing.")).not.toBeInTheDocument();
+    });
+  });
+
+  test.each([
+    [401, "Your session has ended", "Sign in again to see ingestion status."],
+    [403, "This account cannot see ingestion status", "Sign in as an administrator."],
+  ])("status %i uses the permission treatment", async (code, title, detail) => {
+    vi.mocked(getIngestionStatus).mockRejectedValue(
+      new ApiError(code, null, "denied", "/private/path"),
+    );
+    renderPage();
+    expect(await screen.findByRole("alert")).toHaveTextContent(title);
+    expect(screen.getByText(detail)).toBeInTheDocument();
+    expect(screen.queryByText("/private/path")).not.toBeInTheDocument();
+  });
+
+  test("shows no notice while the initial probe observation is loading", async () => {
+    vi.mocked(getIngestionStatus).mockReturnValue(new Promise(() => {}));
+    renderPage();
+    await screen.findByText("7 files, 5 reasons");
+    expect(screen.queryByRole("heading", { name: "Imports are paused" })).not.toBeInTheDocument();
+    expect(screen.queryByText(/checking ingestion dependencies/i)).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Scan ingestion folder" })).toBeEnabled();
   });
 });
 
@@ -654,6 +848,7 @@ describe("Needs attention", () => {
     renderPage(ADULT_ME);
     expect(await screen.findByTestId("library-page")).toBeInTheDocument();
     expect(getInputCounts).not.toHaveBeenCalled();
+    expect(getIngestionStatus).not.toHaveBeenCalled();
     expect(getEnrichmentFailureCounts).not.toHaveBeenCalled();
   });
 });
@@ -856,6 +1051,66 @@ describe("polling", () => {
     vi.useFakeTimers({
       toFake: ["setTimeout", "clearTimeout", "setInterval", "clearInterval", "Date"],
     });
+  });
+
+  test("a paused notice does not stop polling admitted work or expanded groups", async () => {
+    vi.mocked(getIngestionStatus).mockResolvedValue({ blockers: [{ kind: "paused_by_admin" }] });
+    vi.mocked(getDashboardActivity).mockResolvedValue(batch({ ended_at: null, in_progress: 4 }));
+    renderPage();
+    await flush();
+    expect(screen.queryByText(/Latest activity\./)).not.toBeInTheDocument();
+    const before = {
+      counts: vi.mocked(getInputCounts).mock.calls.length,
+      activity: vi.mocked(getDashboardActivity).mock.calls.length,
+      inputs: vi.mocked(listInputs).mock.calls.length,
+    };
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(POLL_INTERVAL_MS * 2);
+    });
+    expect(vi.mocked(getInputCounts).mock.calls.length - before.counts).toBe(2);
+    expect(vi.mocked(getDashboardActivity).mock.calls.length - before.activity).toBe(2);
+    expect(vi.mocked(listInputs).mock.calls.length - before.inputs).toBe(2);
+  });
+
+  test("status polls once every 30 seconds through pause and restart, suspends hidden reads and refetches on focus", async () => {
+    vi.mocked(getIngestionStatus).mockResolvedValue({
+      blockers: [{ kind: "paused_by_admin" }, { kind: "restarting" }],
+    });
+    renderPage();
+    await flush();
+    expect(getIngestionStatus).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(STATUS_POLL_INTERVAL_MS - 40);
+    });
+    expect(getIngestionStatus).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(40);
+    });
+    expect(getIngestionStatus).toHaveBeenCalledTimes(2);
+    act(() => {
+      focusManager.setFocused(false);
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(STATUS_POLL_INTERVAL_MS * 2);
+    });
+    expect(getIngestionStatus).toHaveBeenCalledTimes(2);
+    act(() => {
+      focusManager.setFocused(true);
+    });
+    await flush();
+    expect(getIngestionStatus).toHaveBeenCalledTimes(3);
+  });
+
+  test("status always refetches on mount even when a cached observation is fresh", async () => {
+    const client = renderPage();
+    await flush();
+    cleanup();
+    client.setQueryDefaults(queryKeys.ingestion.status(), { staleTime: Infinity });
+    client.setQueryData(queryKeys.ingestion.status(), { blockers: [{ kind: "restarting" }] });
+    renderPage(ADMIN_ME, client);
+    await flush();
+    expect(client.getQueryData(queryKeys.ingestion.status())).toEqual({ blockers: [] });
+    expect(getIngestionStatus).toHaveBeenCalledTimes(2);
   });
 
   test("polls counts, activity and expanded groups every tick while a batch is running, one request each", async () => {
