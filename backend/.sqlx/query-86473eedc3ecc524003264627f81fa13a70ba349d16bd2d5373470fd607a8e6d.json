@@ -1,0 +1,31 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT m.id AS \"id!\" FROM manifestations m\n           CROSS JOIN LATERAL (\n               SELECT m.enrichment_failures -> 0 ->> 'source' AS source,\n                      CASE WHEN m.enrichment_failures -> 0 ->> 'class' = ANY($3::text[])\n                           THEN m.enrichment_failures -> 0 ->> 'class' ELSE 'unspecified' END AS class\n           ) p\n           WHERE m.enrichment_status IN ('failed', 'skipped') AND m.enrichment_error IS NOT NULL\n             AND p.source IS NOT DISTINCT FROM $1::text AND p.class = $2\n           ORDER BY m.id LIMIT $4 FOR UPDATE OF m SKIP LOCKED",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id!",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "manifestations",
+            "name": "id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text",
+        "TextArray",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "86473eedc3ecc524003264627f81fa13a70ba349d16bd2d5373470fd607a8e6d"
+}

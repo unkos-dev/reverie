@@ -122,3 +122,19 @@ export {
   getEnrichmentFailureCounts,
   triggerEnrichment,
 };
+
+const BulkRetryResultSchema = z.object({
+  queued: z.number().int().min(0).max(500),
+  remaining: z.number().int().nonnegative(),
+});
+
+export async function retryEnrichmentFailures(
+  source: string | null,
+  failureClass: FailureClass,
+): Promise<{ queued: number; remaining: number }> {
+  const raw = await apiFetch("/api/v1/dashboard/enrichment-failures/retries", {
+    method: "POST",
+    body: JSON.stringify({ source: source ?? "none", class: failureClass }),
+  });
+  return BulkRetryResultSchema.parse(raw);
+}

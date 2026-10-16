@@ -78,12 +78,12 @@ and the backend test suite, which runs the matrix as an ordinary `#[sqlx::test]`
   checks each requested scope in `CreateTokenRequest.scopes` against `current_user.may_grant_scope(scope)` and rejects
   the whole request with `Forbidden`, logged, at the first one that exceeds the ceiling. `CreateTokenRequest` accepts
   exactly `name`, `scopes` and `expires_in_days`; nothing else on the `device_tokens` row can be set at mint.
-- Twelve handlers make up the admin surface, and each calls both `current_user.require_scope(Scope::Admin)` and
-  `current_user.require_admin()` before doing anything else: in `routes::users`, `list_users`, `update_role`,
-  `update_child_status`, `create_user`, `update_account_status`, `admin_reset_password` and `update_user`; in
-  `routes::settings`, `get_settings` and `put_settings`; in `routes::dashboard`, `stats` and `activity`; and
-  `routes::ingestion::scan`. The two calls read different `CurrentUser` fields (`scopes` and `role`) and fail
-  independently; Runtime behaviour shows why both are needed.
+- Admin handlers call both `current_user.require_scope(Scope::Admin)` and `current_user.require_admin()` before
+  accessing protected state or submitting coordinator work. These include user management, settings, dashboard
+  statistics/activity, enrichment-failure group reads and retries, and ingestion scan/status/input reads and retries.
+  The bulk operations are `POST /api/v1/dashboard/enrichment-failures/retries` and
+  `POST /api/v1/ingestion/inputs/retries`. The two checks read different `CurrentUser` fields (`scopes` and `role`) and
+  fail independently; Runtime behaviour shows why both are needed.
 - **Ownership map.** `backend/src/routes/shelves/mod.rs` documents its own boundary: `shelves` and `shelf_items` have no
   row-level-security policy, so every mutating handler in that module enforces ownership with an explicit
   `WHERE id = $1 AND user_id = $2` predicate, and the item-mutation handlers take a `FOR UPDATE` lock under the same
@@ -190,12 +190,12 @@ level below is refused, while the two positive controls, one holding the declare
 not. The grid samples the hierarchy at those two points rather than at every scope above the requirement.
 
 The scope and role axes are separate controls. A device token's scopes are fixed at mint and never re-derived from the
-owner's current role, so a demoted administrator's token can still pass `require_scope(Scope::Admin)`; each of the
-twelve admin handlers pairs that call with `require_admin()`, which reads the caller's current role on every request, so
-the demotion is enforced there. The matrix's admin test (`write_token_blocked_from_every_admin_op`) catches a missing or
-weakened scope gate, but nothing in the matrix tests the role gate the same way: a handler that kept
-`require_scope(Scope::Admin)` and dropped `require_admin()` would still pass. The admin surface is a fixed set of twelve
-reviewed call sites, and review is what guards that pairing.
+owner's current role, so a demoted administrator's token can still pass `require_scope(Scope::Admin)`; each admin
+handler pairs that call with `require_admin()`, which reads the caller's current role on every request, so the demotion
+is enforced there. The matrix's admin test (`write_token_blocked_from_every_admin_op`) catches a missing or weakened
+scope gate, but nothing in the matrix tests the role gate the same way: a handler that kept
+`require_scope(Scope::Admin)` and dropped `require_admin()` would still pass. The admin handlers described in Structure
+pair both checks, and review guards that pairing.
 
 A non-admin can never mint an admin-scoped token (`Scope::grantable_by`, enforced in `create_token` and tested by
 `routes::tokens::tests::create_token_rejects_admin_scope_ceiling`), so the scope ceiling and the role ceiling agree at

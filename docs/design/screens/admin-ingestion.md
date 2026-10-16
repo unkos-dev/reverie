@@ -7,9 +7,8 @@ page's empty state hands administrators on to this page, and its copy is specifi
 This document is the specification a rendered page is compared against. Copy in double quotes is exact. Where a value is
 shown as `{n}` or similar, the screen fills it in.
 
-Two parts are approved but not yet implemented: "Retry all" in group headers and the Duplicates card. They are collected
-under "Target design, not yet built", along with two smaller differences. Everything outside that section specifies the
-page as it is to behave, except where a line points to that section.
+The Duplicates card and two smaller differences remain under "Target design, not yet built". Everything outside that
+section specifies the page as it is to behave, except where a line points to that section.
 
 ## Purpose
 
@@ -342,20 +341,7 @@ once, and refreshes them on window focus only, because this page's poll owner is
 
   Then an outline link "Open Ingestion" to `/admin/dashboard`. The copy never shows a folder path.
 
-## Target design, not yet built
-
-This section is the approved design for what comes next. It is marked apart so a render is not failed for lacking it.
-When a part is built, it moves into the sections above.
-
-### Smaller differences from the page as built
-
-- **"Also" separator for files.** Secondary reasons on a file row are joined with "; ", as enrichment rows already are.
-  The built page joins file labels with ", ", which differs only for a file with three or more reasons.
-- **Enrichment times.** Each enrichment row shows the time of the book's most recent attempt. When a source has asked
-  Reverie to wait, it also shows the earliest retry time, only when that field is present. The labels are not yet
-  settled. The built page shows neither.
-
-### Retry all
+## Retry all
 
 - **Placement.** Each eligible group header carries an outline "Retry all" button beside the file or book count. It is a
   separate control next to the expand-and-collapse button, not inside it, and it is visible when the group is collapsed.
@@ -372,14 +358,35 @@ When a part is built, it moves into the sections above.
   - "Queued {n}, {m} remaining" when a limit on one press left some behind. The button then reads "Retry the rest {m}".
   - While ingestion is paused, file feedback adds "Ingestion is paused, so they will run once it resumes. They return
     here if they fail again."
+- **Loaded pages.** A successful group retry discards that group's loaded continuation pages and cursors. Page one stays
+  mounted and follows its normal refresh policy. A later Show more fetches its page again, even if the cursor is reused.
+  Failed retries preserve loaded pages. The header, retry control and receipt stay mounted.
 - **Nothing to retry.** "Nothing to retry. This group changed after the page loaded."
-- **Failure.** The alert "Could not queue these files. Nothing was changed." ("these books" for books). The header
-  button reads "Try again".
+- **Failure.** The header button reads "Try again". The alert for files is:
+
+  "Could not confirm whether these files were queued. Refresh the group before trying again."
+
+  For books:
+
+  "Could not confirm whether these books were queued. Refresh the group before trying again."
 - **Forbidden (403).** "This account cannot retry files. Sign in as an administrator." The button is disabled for the
   rest of the page session.
 - **Session ended (401).** "Your session has ended. Sign in again to retry files."
 - The group and its count are not refreshed at the moment of the press, so the feedback stays visible. They update on
   the next refresh.
+
+## Target design, not yet built
+
+This section is the approved design for what comes next. It is marked apart so a render is not failed for lacking it.
+When a part is built, it moves into the sections above.
+
+### Smaller differences from the page as built
+
+- **"Also" separator for files.** Secondary reasons on a file row are joined with "; ", as enrichment rows already are.
+  The built page joins file labels with ", ", which differs only for a file with three or more reasons.
+- **Enrichment times.** Each enrichment row shows the time of the book's most recent attempt. When a source has asked
+  Reverie to wait, it also shows the earliest retry time, only when that field is present. The labels are not yet
+  settled. The built page shows neither.
 
 ### Duplicates card
 
@@ -443,4 +450,5 @@ Items about the target design apply once those parts are built.
     is a clickable non-button, and one focus ring shows throughout.
 12. Every blocker combination shows its independent rows. Recovery clears the notice, a failed refresh hides stale
     blockers, and Scan stays enabled. A page without known blockers has no notice or extra layout space.
-13. Once built: "Retry all" and the Duplicates card each match their sections above.
+13. "Retry all" matches its section above, including retained feedback and truthful uncertain-outcome errors.
+14. Once built: the Duplicates card matches its section above.

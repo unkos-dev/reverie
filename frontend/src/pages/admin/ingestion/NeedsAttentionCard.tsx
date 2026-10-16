@@ -2,15 +2,20 @@ import { type ReactElement, useState } from "react";
 import { Info } from "lucide-react";
 
 import { INPUT_REASONS } from "@/api/ingestion";
-import type { InputCounts, InputReason } from "@/api/ingestion";
+import type { InputCounts, InputReason, RetryReason } from "@/api/ingestion";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 
 import { pluralise } from "./format";
+import { BulkRetryButton, BulkRetryFeedback, type BulkRetryState } from "./GroupShell";
 import { InputGroup } from "./InputGroup";
 
 type NeedsAttentionCardProps = {
+  retries: Partial<Record<RetryReason, BulkRetryState>>;
+  onRetryGroup: (reason: RetryReason, count: number) => void;
+  countsVersion: number;
+  paused: boolean;
   counts: InputCounts | undefined;
   isPending: boolean;
   onRetry: () => void;
@@ -40,14 +45,21 @@ function CardHead({
   );
 }
 
-function groupsFrom(counts: InputCounts): Group[] {
+function groupsFrom(counts: InputCounts, retries: NeedsAttentionCardProps["retries"]): Group[] {
   return INPUT_REASONS.flatMap((reason) => {
     const count = counts.by_reason.find((c) => c.reason === reason)?.count ?? 0;
-    return count > 0 ? [{ reason, count }] : [];
+    const retained =
+      (reason === "needs_change" || reason === "retries_exhausted") &&
+      retries[reason] !== undefined;
+    return count > 0 || retained ? [{ reason, count }] : [];
   });
 }
 
 function NeedsAttentionCard({
+  retries,
+  onRetryGroup,
+  countsVersion,
+  paused,
   counts,
   isPending,
   onRetry,
@@ -55,7 +67,10 @@ function NeedsAttentionCard({
   afterScan,
 }: Readonly<NeedsAttentionCardProps>): ReactElement {
   const [openOnLoad, setOpenOnLoad] = useState<InputReason | null | undefined>(undefined);
-  const groups = counts === undefined ? [] : groupsFrom(counts);
+  const groups = counts === undefined ? [] : groupsFrom(counts, retries);
+  const currentReasonCount = groups.filter(
+    (g) => g.reason !== "format_not_accepted" && g.count > 0,
+  ).length;
   const attention = groups.filter((g) => g.reason !== "format_not_accepted");
   if (openOnLoad === undefined && counts !== undefined)
     setOpenOnLoad(attention.at(0)?.reason ?? null);
@@ -99,6 +114,30 @@ function NeedsAttentionCard({
     <InputGroup
       key={group.reason}
       reason={group.reason}
+      retryState={
+        group.reason === "needs_change" || group.reason === "retries_exhausted"
+          ? retries[group.reason]
+          : undefined
+      }
+      headerControl={
+        group.reason === "needs_change" || group.reason === "retries_exhausted" ? (
+          <BulkRetryButton
+            state={retries[group.reason]}
+            count={group.count}
+            countsVersion={countsVersion}
+            noun="file"
+            onRetry={(remaining) => {
+              if (group.reason === "needs_change" || group.reason === "retries_exhausted")
+                onRetryGroup(group.reason, remaining);
+            }}
+          />
+        ) : undefined
+      }
+      feedback={
+        group.reason === "needs_change" || group.reason === "retries_exhausted" ? (
+          <BulkRetryFeedback state={retries[group.reason]} noun="files" paused={paused} />
+        ) : undefined
+      }
       count={group.count}
       defaultOpen={group.reason === openOnLoad}
       pollInterval={pollInterval}
@@ -127,7 +166,7 @@ function NeedsAttentionCard({
   return (
     <Card role="region" aria-labelledby="needs-attention" className="gap-0 py-0">
       <CardHead
-        total={`${pluralise(counts.attention_total, "file")}, ${pluralise(attention.length, "reason")}`}
+        total={`${pluralise(counts.attention_total, "file")}, ${pluralise(currentReasonCount, "reason")}`}
       >
         <p className="text-fg-muted mt-0.5 max-w-[76ch] text-[13px]">
           Files Reverie could not import, grouped by why. Each original stays in the ingestion

@@ -88,30 +88,15 @@ async fn trigger(
         .await
         .map_err(|e| AppError::Internal(e.into()))?;
 
-    let rows = sqlx::query!(
-        "UPDATE manifestations \
-         SET enrichment_rerun_requested = (enrichment_status = 'in_progress'), \
-             enrichment_status = CASE WHEN enrichment_status = 'in_progress' \
-                                      THEN enrichment_status \
-                                      ELSE 'pending'::enrichment_status END, \
-             enrichment_attempt_count = CASE WHEN enrichment_status = 'in_progress' \
-                                             THEN enrichment_attempt_count ELSE 0 END, \
-             enrichment_attempted_at = CASE WHEN enrichment_status = 'in_progress' \
-                                            THEN enrichment_attempted_at ELSE NULL END, \
-             enrichment_retry_not_before = CASE WHEN enrichment_status = 'in_progress' \
-                                                THEN enrichment_retry_not_before ELSE NULL END, \
-             enrichment_error = CASE WHEN enrichment_status = 'in_progress' \
-                                     THEN enrichment_error ELSE NULL END, \
-             enrichment_failures = CASE WHEN enrichment_status = 'in_progress' \
-                                        THEN enrichment_failures ELSE '[]'::jsonb END \
-         WHERE id = $1",
-        id,
+    let rows = services::enrichment::reset_retries(
+        &mut tx,
+        &[id],
+        services::enrichment::RetryTiming::ClearProviderDelay,
     )
-    .execute(&mut *tx)
     .await
     .map_err(|e| AppError::Internal(e.into()))?;
 
-    if rows.rows_affected() == 0 {
+    if rows == 0 {
         return Err(AppError::NotFound);
     }
 

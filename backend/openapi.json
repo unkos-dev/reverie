@@ -1780,6 +1780,125 @@
         ]
       }
     },
+    "/api/v1/dashboard/enrichment-failures/retries": {
+      "post": {
+        "tags": [
+          "dashboard"
+        ],
+        "summary": "Retry an enrichment failure group",
+        "description": "Queues at most 500 books under one primary source and failure class. Preserves provider retry deadlines. Admin scope and role required.",
+        "operationId": "retry_failures",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RetryFailuresRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "description": "Actual queued and remaining counts, including an empty group",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BulkRetryResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request body is not valid JSON",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Administrator scope and role required",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "The request body is too large",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "The request body is not sent as application/json",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The request body is missing a required field or has a field of the wrong type",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The retry outcome could not be confirmed",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session_cookie": [
+              "admin"
+            ]
+          },
+          {
+            "device_token_bearer": [
+              "admin"
+            ]
+          },
+          {
+            "opds_basic": [
+              "admin"
+            ]
+          }
+        ]
+      }
+    },
     "/api/v1/dashboard/stats": {
       "get": {
         "tags": [
@@ -2136,6 +2255,124 @@
           },
           "403": {
             "description": "Caller is not an admin",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session_cookie": [
+              "admin"
+            ]
+          },
+          {
+            "device_token_bearer": [
+              "admin"
+            ]
+          },
+          {
+            "opds_basic": [
+              "admin"
+            ]
+          }
+        ]
+      }
+    },
+    "/api/v1/ingestion/inputs/retries": {
+      "post": {
+        "tags": [
+          "ingestion"
+        ],
+        "summary": "Queue retries for an eligible input class.\nTHREAT: Only administrators with admin scope may reset ingestion attempts.",
+        "operationId": "retry_inputs",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RetryInputsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "description": "Retries queued",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BulkRetryResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request body is not valid JSON",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Administrator role and admin scope required",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "The request body is too large",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "The request body is not sent as application/json",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The request body is missing a required field or has a field of the wrong type",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Retry outcome could not be confirmed",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -8979,6 +9216,26 @@
           }
         }
       },
+      "BulkRetryResult": {
+        "type": "object",
+        "required": [
+          "queued",
+          "remaining"
+        ],
+        "properties": {
+          "queued": {
+            "type": "integer",
+            "format": "int64",
+            "maximum": 500,
+            "minimum": 0
+          },
+          "remaining": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          }
+        }
+      },
       "ChangePasswordRequest": {
         "type": "object",
         "description": "Body for `POST /api/v1/account/password`.",
@@ -10535,6 +10792,42 @@
             "description": "The recovery PIN from the host file."
           }
         }
+      },
+      "RetryFailuresRequest": {
+        "type": "object",
+        "required": [
+          "source",
+          "class"
+        ],
+        "properties": {
+          "class": {
+            "$ref": "#/components/schemas/FailureClass"
+          },
+          "source": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 1,
+            "pattern": "^[a-z0-9_]+$"
+          }
+        }
+      },
+      "RetryInputsRequest": {
+        "type": "object",
+        "required": [
+          "reason"
+        ],
+        "properties": {
+          "reason": {
+            "$ref": "#/components/schemas/RetryReason"
+          }
+        }
+      },
+      "RetryReason": {
+        "type": "string",
+        "enum": [
+          "needs_change",
+          "retries_exhausted"
+        ]
       },
       "RevertPayload": {
         "type": "object",

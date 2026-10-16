@@ -1,3 +1,4 @@
+import { retryEnrichmentFailures } from "./enrichment-failures";
 import { describe, expect, test, vi } from "vite-plus/test";
 
 import {
@@ -95,5 +96,32 @@ describe("enrichment failures API client", () => {
       "/api/v1/manifestations/019a0000-0000-7000-8000-0000000000a1/enrichment/trigger",
       { method: "POST" },
     ]);
+  });
+});
+
+describe("bulk retry client", () => {
+  test.each([
+    { queued: 0, remaining: 0 },
+    { queued: 500, remaining: 1 },
+    { queued: 2, remaining: 0 },
+  ])("bulk retry parses %j and sends the approved body", async (result) => {
+    vi.mocked(apiFetch).mockResolvedValue(result);
+    await expect(retryEnrichmentFailures(null, "unspecified")).resolves.toEqual(result);
+    expect(vi.mocked(apiFetch).mock.calls.at(-1)).toEqual([
+      "/api/v1/dashboard/enrichment-failures/retries",
+      { method: "POST", body: JSON.stringify({ source: "none", class: "unspecified" }) },
+    ]);
+  });
+  test.each([
+    { queued: -1, remaining: 0 },
+    { queued: 501, remaining: 0 },
+    { queued: 0.5, remaining: 0 },
+    { queued: 0, remaining: -1 },
+    { queued: 0, remaining: 1.5 },
+    { queued: 0 },
+    { remaining: 0 },
+  ])("bulk retry rejects malformed counts %j", async (result) => {
+    vi.mocked(apiFetch).mockResolvedValue(result);
+    await expect(retryEnrichmentFailures(null, "unspecified")).rejects.toThrow();
   });
 });

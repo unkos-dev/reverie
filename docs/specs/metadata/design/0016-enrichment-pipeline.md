@@ -75,9 +75,10 @@ metadata counts.
 
 - `manifestations.enrichment_status`, `_attempt_count`, `_attempted_at`, `_retry_not_before`, `_error`, `_failures`,
   `_rerun_requested`: written by `queue.rs`'s `claim_next`/`mark_complete`/`mark_failed`/`revert_in_progress` (the
-  queue's own lifecycle), plus two external re-queue writers sharing the identical CASE-guarded `UPDATE` shape:
-  `routes/enrichment.rs::trigger` and `routes/metadata.rs::apply_identifier_patches` (a manual identifier edit
-  implicitly re-queues enrichment).
+  queue's own lifecycle), plus external re-queue writers: `routes/enrichment.rs::trigger` and
+  `routes/dashboard/enrichment_failures.rs::retry_failures` share the connection-bound `enrichment::reset_retries`
+  helper with explicit provider-timing policy. `routes/metadata.rs::apply_identifier_patches` retains its own
+  CASE-guarded reset (a manual identifier edit implicitly re-queues enrichment).
 - `metadata_versions` rows have three writer classes. This subject's own automated observations: written by
   `orchestrator::upsert_journal_row` (insert, or an `observation_count` bump on conflict) and by
   `apply_canonical_batch`'s own `confidence_score` update. A second writer with no overlap in code path: ingestion-time
@@ -289,6 +290,14 @@ compatibility path.
    `enrichment_retry_not_before`, leaving `enrichment_attempted_at` at the claim time; otherwise (anything applied or
    staged, or a terminal per-source failure alongside a live outcome) it is marked `Complete`.
 
+**A group retry** (`POST /api/v1/dashboard/enrichment-failures/retries`) accepts `{source, class}`, with `none`
+selecting a null source. It requires admin scope and administrator role, with browser CSRF protection. In the caller's
+row-level-security transaction it locks at most 500 failed or skipped rows with an error, in ID order, skipping locked
+rows. Primary source/class selection and unknown-class normalisation match the group reads. The shared reset clears idle
+attempt state and failures while preserving `enrichment_retry_not_before` for every class. The real claim queue
+continues to honour that provider deadline. Active claims are excluded. HTTP 202 reports actual `queued` resets and
+`remaining` matching members after commit, including an empty group. A response failure can follow a committed reset.
+
 **A manual trigger** (`POST .../enrichment/trigger`) on an idle row resets it straight to `pending` with a cleared
 attempt count, retry deferral and error; on an `in_progress` row it leaves the claim untouched and sets
 `enrichment_rerun_requested`, so a second worker can never pick up a row the first is still processing. The same
@@ -313,8 +322,8 @@ a projection, not a preview of a specific journal row a subsequent real run woul
   run that errors as a whole, including a panic, records the single class `internal`, with no source. A row holding
   `enrichment_error` without classes reads as `unspecified`, with no source; a stored class this build does not know
   reads as `unspecified` and keeps its source. The classes are meaningful only while `enrichment_error` is set, and
-  every write that clears `enrichment_error` clears them in the same statement: a retry through `trigger`, an identifier
-  edit, a rerun request consumed at the end of a run, and a successful run.
+  every write that clears `enrichment_error` clears them in the same statement: a retry through `trigger` or the group
+  endpoint, an identifier edit, a rerun request consumed at the end of a run, and a successful run.
 - `enrichment_retry_not_before` is set only by a rate-limited failure that leaves the row `Failed`. A failure without a
   `Retry-After`, an exhausted row, a successful run, a rerun request consumed at the end of a run, `trigger` and an
   identifier edit on an idle row each leave it null.
@@ -322,7 +331,7 @@ a projection, not a preview of a specific journal row a subsequent real run woul
   `SourceError::Other`. Cache payloads and dry-run failure summaries retain the error cause without its query
   credential; timeout errors remain `SourceError::Timeout`.
 - After `max_attempts` failed attempts a row moves to `Skipped` and the claim query never selects it again; nothing
-  short of `trigger` or a manual identifier edit returns it to circulation.
+  short of `trigger`, a group retry or a manual identifier edit returns it to circulation.
 - A hard kill mid-run leaves the claimed row `in_progress` until the next startup with enrichment enabled: `spawn_queue`
   reverts every `in_progress` row to `pending` before its first poll, so a fresh worker can reclaim it. `trigger` cannot
   release it while the process is live: its `UPDATE` only sets `enrichment_rerun_requested` when the row already reads
@@ -359,6 +368,11 @@ a projection, not a preview of a specific journal row a subsequent real run woul
   change instead.
 
 ## Security and operations
+
+Immediately after a group retry commits, the handler emits a structured `bulk_retry` event with `outcome=committed`, the
+requesting user UUID, a server-generated request UUID, source/class and queued/remaining counts. Client IP resolution
+uses the configured trusted-header boundary. User-agent text has control characters removed and is capped at 256
+characters. Credentials, session identifiers, book titles and stored failure text are excluded.
 
 Two handlers cross from the caller's row-level-security context into the ingestion role's unconditional one, matching
 the pattern the row-level-security Design records: `dry_run` checks visibility on `state.pool` under `acquire_with_rls`

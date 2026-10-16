@@ -28,6 +28,7 @@ pub(super) fn router() -> OpenApiRouter<AppState> {
     OpenApiRouter::new()
         .routes(routes!(list_failures))
         .routes(routes!(failure_counts))
+        .routes(routes!(retry_failures))
 }
 
 /// The `source` filter: a metadata source key as it appears in the
@@ -395,4 +396,98 @@ async fn failure_counts(
     let total = by_failure.iter().map(|group| group.count).sum();
 
     Ok(Json(FailureCountsResponse { by_failure, total }))
+}
+
+#[derive(Deserialize, utoipa::ToSchema)]
+struct RetryFailuresRequest {
+    #[schema(value_type = String, min_length = 1, max_length = 64, pattern = "^[a-z0-9_]+$")]
+    source: SourceFilter,
+    class: FailureClass,
+}
+
+/// THREAT: Group writes require administrator scope and role and retain the caller's RLS transaction.
+#[utoipa::path(
+    post,
+    path = "/api/v1/dashboard/enrichment-failures/retries",
+    summary = "Retry an enrichment failure group",
+    description = "Queues at most 500 books under one primary source and failure class. Preserves provider retry deadlines. Admin scope and role required.",
+    tag = "dashboard",
+    request_body = RetryFailuresRequest,
+    security(("session_cookie" = ["admin"]), ("device_token_bearer" = ["admin"]), ("opds_basic" = ["admin"])),
+    responses(
+        (status = 202, description = "Actual queued and remaining counts, including an empty group", body = crate::services::BulkRetryResult),
+        (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
+        (status = 403, description = "Administrator scope and role required", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
+        (status = 500, description = "The retry outcome could not be confirmed", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
+    )
+)]
+async fn retry_failures(
+    current_user: CurrentUser,
+    State(state): State<AppState>,
+    crate::auth::rate_limit::PeerAddr(peer): crate::auth::rate_limit::PeerAddr,
+    headers: axum::http::HeaderMap,
+    crate::extract::ApiJson(request): crate::extract::ApiJson<RetryFailuresRequest>,
+) -> Result<impl IntoResponse, AppError> {
+    current_user.require_scope(Scope::Admin)?;
+    current_user.require_admin()?;
+    let audit = crate::services::BulkRetryAudit::new(
+        current_user.user_id,
+        &headers,
+        peer.map(|addr| addr.ip()),
+        state.config.trusted_client_ip_header.as_deref(),
+    );
+    let source = match &request.source {
+        SourceFilter::Key(key) => Some(key.as_str()),
+        SourceFilter::Unsourced => None,
+    };
+    let mut tx = db::acquire_with_rls(&state.pool, current_user.user_id)
+        .await
+        .map_err(|e| AppError::Internal(e.into()))?;
+    let ids = sqlx::query_scalar!(
+        r#"SELECT m.id AS "id!" FROM manifestations m
+           CROSS JOIN LATERAL (
+               SELECT m.enrichment_failures -> 0 ->> 'source' AS source,
+                      CASE WHEN m.enrichment_failures -> 0 ->> 'class' = ANY($3::text[])
+                           THEN m.enrichment_failures -> 0 ->> 'class' ELSE 'unspecified' END AS class
+           ) p
+           WHERE m.enrichment_status IN ('failed', 'skipped') AND m.enrichment_error IS NOT NULL
+             AND p.source IS NOT DISTINCT FROM $1::text AND p.class = $2
+           ORDER BY m.id LIMIT $4 FOR UPDATE OF m SKIP LOCKED"#,
+        source, request.class.as_str(), &known_classes(), crate::services::BULK_RETRY_LIMIT,
+    ).fetch_all(&mut *tx).await.map_err(|e| AppError::Internal(e.into()))?;
+    let queued = crate::services::enrichment::reset_retries(
+        &mut tx,
+        &ids,
+        crate::services::enrichment::RetryTiming::PreserveProviderDelay,
+    )
+    .await
+    .map_err(|e| AppError::Internal(e.into()))?;
+    let remaining = sqlx::query_scalar!(
+        r#"SELECT COUNT(*) AS "count!" FROM manifestations m
+           CROSS JOIN LATERAL (
+               SELECT m.enrichment_failures -> 0 ->> 'source' AS source,
+                      CASE WHEN m.enrichment_failures -> 0 ->> 'class' = ANY($3::text[])
+                           THEN m.enrichment_failures -> 0 ->> 'class' ELSE 'unspecified' END AS class
+           ) p
+           WHERE m.enrichment_status IN ('failed', 'skipped') AND m.enrichment_error IS NOT NULL
+             AND p.source IS NOT DISTINCT FROM $1::text AND p.class = $2"#,
+        source, request.class.as_str(), &known_classes(),
+    ).fetch_one(&mut *tx).await.map_err(|e| AppError::Internal(e.into()))?;
+    tx.commit()
+        .await
+        .map_err(|e| AppError::Internal(e.into()))?;
+    audit.committed(
+        "enrichment_failures",
+        request.class.as_str(),
+        source,
+        queued,
+        remaining,
+    );
+    Ok((
+        axum::http::StatusCode::ACCEPTED,
+        Json(crate::services::BulkRetryResult {
+            queued: i64::try_from(queued).map_err(|e| AppError::Internal(e.into()))?,
+            remaining,
+        }),
+    ))
 }

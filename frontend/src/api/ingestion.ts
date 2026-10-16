@@ -161,3 +161,19 @@ async function scanIngestion(): Promise<DiscoveryResult> {
 }
 
 export { INPUT_REASONS, INPUTS_PAGE_SIZE, listInputs, getInputCounts, scanIngestion };
+
+const BulkRetryResultSchema = z.object({
+  queued: z.number().int().min(0).max(500),
+  remaining: z.number().int().nonnegative(),
+});
+export type RetryReason = "needs_change" | "retries_exhausted";
+
+export async function retryInputs(
+  reason: RetryReason,
+): Promise<{ queued: number; remaining: number }> {
+  const raw = await apiFetch("/api/v1/ingestion/inputs/retries", {
+    method: "POST",
+    body: JSON.stringify({ reason }),
+  });
+  return BulkRetryResultSchema.parse(raw);
+}

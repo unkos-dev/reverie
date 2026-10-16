@@ -809,3 +809,278 @@ async fn the_view_needs_the_recorded_exhaustion_and_a_transient_latest_outcome(p
         vec![("flaky.epub".into(), "needs_change".into())]
     );
 }
+
+#[sqlx::test(migrations = "./migrations")]
+async fn bulk_input_retry_resets_only_selected_current_class(pool: PgPool) {
+    use ingestion_input::RetryReason;
+    let env = env(&pool).await;
+    let selected = observe(&env, b"selected.epub", 100).await;
+    needs_change(&env, &selected).await;
+    let transient_input = observe(&env, b"transient.epub", 101).await;
+    transient(&env, &transient_input).await;
+    let rejected_input = rejected(&env, "rejected.epub", 102, &[RejectionReason::Damaged]).await;
+    let pending = observe(&env, b"pending.epub", 103).await;
+    let processing = observe(&env, b"processing.epub", 104).await;
+    ingestion_input::begin_attempt(&env.ing, &processing, Uuid::new_v4())
+        .await
+        .unwrap();
+    let ignored = observe(&env, b"ignored.txt", 105).await;
+    ingestion_input::set_unaccepted_many(&env.ing, &[ignored.id], &[ignored.generation])
+        .await
+        .unwrap();
+    let removed = observe(&env, b"removed.epub", 106).await;
+    needs_change(&env, &removed).await;
+    ingestion_input::remove(&env.ing, &removed, "external_disappearance")
+        .await
+        .unwrap();
+    let exhausted = observe(&env, b"exhausted.epub", 107).await;
+    for _ in 0..TRANSIENT_ATTEMPT_LIMIT {
+        transient(&env, &exhausted).await;
+    }
+    let untouched = [
+        transient_input.id,
+        rejected_input.id,
+        pending.id,
+        processing.id,
+        ignored.id,
+        removed.id,
+        exhausted.id,
+    ];
+    let before = input_snapshots(&env.ing, &untouched).await;
+    let (reset, remaining) = ingestion_input::reset_class(&env.ing, RetryReason::NeedsChange)
+        .await
+        .unwrap();
+    assert_eq!(remaining, 0);
+    assert_eq!(input_snapshots(&env.ing, &untouched).await, before);
+    assert_eq!(reset.len(), 1);
+    let actual = &reset[0];
+    assert_eq!(actual.id, selected.id);
+    assert_eq!(actual.generation, selected.generation);
+    assert_eq!(actual.fingerprint, selected.fingerprint);
+    assert_eq!(actual.observed_at, selected.observed_at);
+    assert_eq!(actual.status, InputStatus::Pending);
+    assert!(actual.reason.is_none());
+    assert!(actual.retry_reset_at > selected.retry_reset_at);
+    let retries = ingestion_input::retry_states(&env.ing, &[selected.id])
+        .await
+        .unwrap();
+    assert_eq!(retries[0].count, 0);
+    assert!(!retries[0].needs_change);
+    assert_eq!(
+        ingestion_input::current(&env.ing, transient_input.id)
+            .await
+            .unwrap()
+            .unwrap()
+            .status,
+        InputStatus::OperationalFailure
+    );
+    assert_eq!(
+        ingestion_input::current(&env.ing, rejected_input.id)
+            .await
+            .unwrap()
+            .unwrap()
+            .status,
+        InputStatus::Rejected
+    );
+    assert!(
+        ingestion_input::reset_class(&env.ing, RetryReason::NeedsChange)
+            .await
+            .unwrap()
+            .0
+            .is_empty()
+    );
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn bulk_input_retry_caps_batches_and_preserves_attempt_history(pool: PgPool) {
+    use ingestion_input::RetryReason;
+    let env = env(&pool).await;
+    for index in 0..501 {
+        let input = observe(&env, format!("{index}.epub").as_bytes(), index + 1000).await;
+        needs_change(&env, &input).await;
+    }
+    let (first, remaining) = ingestion_input::reset_class(&env.ing, RetryReason::NeedsChange)
+        .await
+        .unwrap();
+    assert_eq!((first.len(), remaining), (500, 1));
+    let (last, remaining) = ingestion_input::reset_class(&env.ing, RetryReason::NeedsChange)
+        .await
+        .unwrap();
+    assert_eq!((last.len(), remaining), (1, 0));
+    assert!(first.iter().all(|input| input.id != last[0].id));
+    let jobs = sqlx::query_scalar!("SELECT COUNT(*) AS \"count!\" FROM ingestion_jobs")
+        .fetch_one(&env.ing)
+        .await
+        .unwrap();
+    assert_eq!(jobs, 501);
+    assert!(
+        ingestion_input::reset_class(&env.ing, RetryReason::NeedsChange)
+            .await
+            .unwrap()
+            .0
+            .is_empty()
+    );
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn bulk_input_retry_http_exhausted_and_empty(pool: PgPool) {
+    use crate::services::ingestion::{Command, coordinator_channel};
+    let env = env(&pool).await;
+    let input = observe(&env, b"exhausted.epub", 100).await;
+    for _ in 0..TRANSIENT_ATTEMPT_LIMIT {
+        transient(&env, &input).await;
+    }
+    let app = test_support::db::app_pool_for(&pool).await;
+    let mut state = test_support::test_state();
+    state.pool = app;
+    let (handle, commands) = coordinator_channel();
+    state.ingestion = handle;
+    let ing = env.ing.clone();
+    let owner = tokio::spawn(async move {
+        for expected in [1, 0] {
+            let Command::Retry { reason, reply, .. } = commands.lock().await.recv().await.unwrap()
+            else {
+                panic!("expected retry")
+            };
+            let (inputs, remaining) = ingestion_input::reset_class(&ing, reason).await.unwrap();
+            assert_eq!(inputs.len(), expected);
+            reply
+                .send(Ok(crate::services::BulkRetryResult {
+                    queued: i64::try_from(inputs.len()).unwrap(),
+                    remaining,
+                }))
+                .unwrap();
+        }
+    });
+    let server = axum_test::TestServer::new(crate::build_router_with_session_store(
+        state,
+        tower_sessions::MemoryStore::default(),
+    ));
+    for queued in [1, 0] {
+        let response = server
+            .post("/api/v1/ingestion/inputs/retries")
+            .add_header(AUTHORIZATION, env.auth.clone())
+            .json(&serde_json::json!({"reason":"retries_exhausted"}))
+            .await;
+        assert_eq!(response.status_code(), StatusCode::ACCEPTED);
+        assert_eq!(
+            response.json::<Value>(),
+            serde_json::json!({"queued":queued,"remaining":0})
+        );
+    }
+    owner.await.unwrap();
+    let retry = ingestion_input::retry_states(&env.ing, &[input.id])
+        .await
+        .unwrap();
+    assert!(!retry[0].exhausted);
+    assert_eq!(retry[0].count, 0);
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn bulk_input_retry_refuses_invalid_auth_and_decode_without_command(pool: PgPool) {
+    use crate::auth::{scope::Scope, token};
+    let app = test_support::db::app_pool_for(&pool).await;
+    let (id, auth) = test_support::db::create_admin_and_basic_auth(&app).await;
+    let adult = test_support::db::create_adult_and_basic_auth(&app, "bulk-adult")
+        .await
+        .1;
+    let child = test_support::db::create_child_user_and_basic_auth(&app, "bulk-child")
+        .await
+        .1;
+    let mut state = test_support::test_state();
+    state.pool = app.clone();
+    let (handle, commands) = crate::services::ingestion::coordinator_channel();
+    state.ingestion = handle;
+    let server = axum_test::TestServer::new(crate::build_router_with_session_store(
+        state,
+        tower_sessions::MemoryStore::default(),
+    ));
+    let body = serde_json::json!({"reason":"needs_change"});
+    server
+        .post("/api/v1/ingestion/inputs/retries")
+        .json(&body)
+        .await
+        .assert_status_unauthorized();
+    for auth in [adult, child] {
+        server
+            .post("/api/v1/ingestion/inputs/retries")
+            .add_header(AUTHORIZATION, auth)
+            .json(&body)
+            .await
+            .assert_status_forbidden();
+    }
+    for reason in ["damaged", "format_not_accepted", "unspecified", "unknown"] {
+        server
+            .post("/api/v1/ingestion/inputs/retries")
+            .add_header(AUTHORIZATION, auth.clone())
+            .json(&serde_json::json!({"reason":reason}))
+            .await
+            .assert_status_unprocessable_entity();
+    }
+    for scopes in [vec![Scope::Write], vec![Scope::Admin]] {
+        let (plain, hash) = token::generate_device_token();
+        let device =
+            crate::models::device_token::create_with_limit(&app, id, "bulk", &hash, &scopes, None)
+                .await
+                .unwrap();
+        if scopes == vec![Scope::Admin] {
+            sqlx::query!(
+                "UPDATE users SET role = 'adult'::user_role WHERE id = $1",
+                id
+            )
+            .execute(&pool)
+            .await
+            .unwrap();
+        }
+        server
+            .post("/api/v1/ingestion/inputs/retries")
+            .add_header(
+                AUTHORIZATION,
+                format!("Bearer {}{}.{}", token::TOKEN_PREFIX, device.id, plain),
+            )
+            .json(&body)
+            .await
+            .assert_status_forbidden();
+    }
+    assert!(commands.lock().await.try_recv().is_err());
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn bulk_input_retry_concurrent_batches_are_disjoint(pool: PgPool) {
+    use ingestion_input::RetryReason;
+    let env = env(&pool).await;
+    for index in 0..10 {
+        let input = observe(
+            &env,
+            format!("concurrent-{index}.epub").as_bytes(),
+            index + 1000,
+        )
+        .await;
+        needs_change(&env, &input).await;
+    }
+    let (first, second) = tokio::join!(
+        ingestion_input::reset_class(&env.ing, RetryReason::NeedsChange),
+        ingestion_input::reset_class(&env.ing, RetryReason::NeedsChange),
+    );
+    let (first, _) = first.unwrap();
+    let (second, _) = second.unwrap();
+    assert_eq!(first.len() + second.len(), 10);
+    assert!(first.iter().all(|a| second.iter().all(|b| a.id != b.id)));
+    assert!(
+        ingestion_input::reset_class(&env.ing, RetryReason::NeedsChange)
+            .await
+            .unwrap()
+            .0
+            .is_empty()
+    );
+}
+
+async fn input_snapshots(pool: &PgPool, ids: &[Uuid]) -> Vec<Value> {
+    sqlx::query_scalar!(
+        r#"SELECT to_jsonb(i) AS "state!" FROM ingestion_inputs i WHERE id = ANY($1) ORDER BY id"#,
+        ids
+    )
+    .fetch_all(pool)
+    .await
+    .unwrap()
+}
