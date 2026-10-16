@@ -33,7 +33,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { EnrichmentCard } from "./ingestion/EnrichmentCard";
 import { NeedsAttentionCard } from "./ingestion/NeedsAttentionCard";
 import { ScanControl } from "./ingestion/ScanControl";
-import { ScanNotice } from "./ingestion/ScanNotice";
+import { PipelineNotice, ScanNotice } from "./ingestion/ScanNotice";
 import { useIngestionMonitor } from "./ingestion/use-ingestion-monitor";
 
 /** Recent-batch page size requested from `/api/v1/dashboard/activity`. */
@@ -120,14 +120,18 @@ function DashboardPage(): ReactElement {
         />
       </div>
 
-      <ScanNotice
-        notice={monitor.notice}
-        failure={monitor.scanFailure}
-        scanPending={monitor.scanPending}
-        running={monitor.running}
-        latestBatch={monitor.latestBatch}
-        onRetry={monitor.scan}
-      />
+      <div className="space-y-6">
+        <PipelineNotice status={monitor.status} />
+        <ScanNotice
+          notice={monitor.notice}
+          failure={monitor.scanFailure}
+          scanPending={monitor.scanPending}
+          running={monitor.running}
+          latestBatch={monitor.latestBatch}
+          onRetry={monitor.scan}
+          blocked={monitor.status.isError || (monitor.status.data?.blockers.length ?? 0) > 0}
+        />
+      </div>
 
       <NeedsAttentionCard
         counts={monitor.counts.data}

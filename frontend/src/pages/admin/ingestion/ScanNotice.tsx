@@ -1,13 +1,18 @@
 import { type ReactElement, type ReactNode } from "react";
 import { AlertTriangle, Check, Clock, Info, Lock, RefreshCw } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
+import { Link } from "react-router";
+import type { UseQueryResult } from "@tanstack/react-query";
 
+import { ApiError } from "@/api";
 import type { BatchRow } from "@/api/dashboard";
-import type { DiscoveryResult } from "@/api/ingestion";
+import type { DiscoveryResult, IngestionStatus } from "@/api/ingestion";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { formatDateTime } from "@/lib/format/datetime";
 
 import { formatCount, pluralise } from "./format";
+import { DEPENDENCY_COPY } from "./reason-copy";
 import type { IngestionNotice, ScanFailure } from "./use-ingestion-monitor";
 
 type NoticeLineProps = {
@@ -78,15 +83,15 @@ function AcceptedNotice({ result }: Readonly<{ result: DiscoveryResult }>): Reac
   if (queued === 0) {
     const detail =
       deferred === 1
-        ? "1 file is waiting and will be picked up automatically. You do not need to scan again."
-        : `${formatCount(deferred)} files are waiting and will be picked up automatically. You do not need to scan again.`;
+        ? "1 file is waiting for readiness or a retry time. You do not need to scan again."
+        : `${formatCount(deferred)} files are waiting for readiness or a retry time. You do not need to scan again.`;
     return <NoticeLine icon={Clock} title="Nothing is ready yet" detail={detail} />;
   }
   return (
     <NoticeLine
       icon={Info}
       title={`Scan started. ${formatCount(queued)} queued, ${formatCount(deferred)} waiting, ${formatCount(suppressed)} unchanged.`}
-      detail="Queued files are being imported now. Waiting files are either still being written or waiting for a retry time, and are picked up automatically. Unchanged files were left as they are."
+      detail="The scan queued new or changed files. Waiting files are either still being written or waiting for a retry time. Unchanged files were left as they are."
     />
   );
 }
@@ -128,6 +133,7 @@ type ScanNoticeProps = {
   running: boolean;
   latestBatch: BatchRow | undefined;
   onRetry: () => void;
+  blocked: boolean;
 };
 
 /**
@@ -141,9 +147,10 @@ function ScanNotice({
   running,
   latestBatch,
   onRetry,
+  blocked,
 }: Readonly<ScanNoticeProps>): ReactElement {
   const failure = !scanPending && scanFailure !== null ? FAILURE_COPY[scanFailure] : null;
-  const showActivity = running && latestBatch !== undefined && !scanPending;
+  const showActivity = running && latestBatch !== undefined && !scanPending && !blocked;
   let body: ReactNode = null;
   if (scanPending) {
     body = (
@@ -202,4 +209,122 @@ function ScanNotice({
   );
 }
 
-export { ScanNotice };
+function PipelineNotice({
+  status,
+}: Readonly<{ status: UseQueryResult<IngestionStatus> }>): ReactElement {
+  let body: ReactNode = null;
+  let failure: ReactNode = null;
+  if (status.isError) {
+    const code = status.error instanceof ApiError ? status.error.status : null;
+    if (code === 401 || code === 403) {
+      failure = (
+        <div role="alert">
+          <NoticeLine
+            boxed
+            icon={Lock}
+            title={
+              code === 401 ? "Your session has ended" : "This account cannot see ingestion status"
+            }
+            detail={
+              code === 401
+                ? "Sign in again to see ingestion status."
+                : "Sign in as an administrator."
+            }
+          />
+        </div>
+      );
+    } else {
+      body = (
+        <NoticeLine
+          icon={Info}
+          title="Could not check whether ingestion is running."
+          detail="Files may still be importing."
+          extra={
+            <span className="mt-2">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  void status.refetch();
+                }}
+              >
+                Try again
+              </Button>
+            </span>
+          }
+        />
+      );
+    }
+  } else if (status.data !== undefined && status.data.blockers.length > 0) {
+    const administrator = status.data.blockers.some(
+      (blocker) => blocker.kind === "paused_by_admin",
+    );
+    const dependency = status.data.blockers.find((blocker) => blocker.kind === "dependency");
+    const restarting = status.data.blockers.some((blocker) => blocker.kind === "restarting");
+    const dependencyCopy = dependency === undefined ? null : DEPENDENCY_COPY[dependency.reason];
+    body = (
+      <section
+        aria-labelledby="ingestion-blockers-title"
+        className="border-border-strong rounded-xl border px-4 py-3 text-sm"
+      >
+        <h2 id="ingestion-blockers-title" className="font-bold">
+          Imports are paused
+        </h2>
+        <div className="mt-3 space-y-3 text-fg-muted">
+          {administrator ? (
+            <div>
+              <p>New imports have been paused by an administrator.</p>
+              <p>
+                <strong className="font-bold text-fg">What to check.</strong> Turn on Import files
+                in Acquisition settings when you are ready to resume.
+              </p>
+              <Link
+                className="font-medium text-fg underline underline-offset-4"
+                to="/admin/settings/acquisition"
+              >
+                Open Acquisition settings
+              </Link>
+            </div>
+          ) : null}
+          {dependency !== undefined && dependencyCopy !== null ? (
+            <div>
+              <p>{dependencyCopy.reason}</p>
+              <p>
+                <strong className="font-bold text-fg">What to check.</strong> {dependencyCopy.check}
+              </p>
+              <p>
+                Dependency problem since{" "}
+                <time dateTime={dependency.since}>{formatDateTime(dependency.since)}</time>.
+              </p>
+            </div>
+          ) : null}
+          {restarting ? (
+            <div>
+              <p>The ingestion worker is restarting.</p>
+              <p>
+                <strong className="font-bold text-fg">What to check.</strong> Wait for Reverie to
+                restart the worker. If it keeps restarting, check the server log.
+              </p>
+            </div>
+          ) : null}
+          <p>
+            Queued files are kept. Work already started can finish, and scans and recovery continue.
+            New imports resume when Import files is on, dependencies are available and the worker is
+            running.
+          </p>
+        </div>
+      </section>
+    );
+  }
+  return (
+    <div className={body === null && failure === null ? "sr-only" : "space-y-2"}>
+      <div role="status" aria-label="Ingestion status" aria-live="polite">
+        {body}
+      </div>
+      {failure}
+    </div>
+  );
+}
+
+export { PipelineNotice, ScanNotice };

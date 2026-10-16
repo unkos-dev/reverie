@@ -3,6 +3,7 @@ import { render, screen } from "@testing-library/react";
 import { describe, expect, test, vi } from "vite-plus/test";
 import { RouterProvider, createMemoryRouter, type RouteObject } from "react-router";
 import type { ReactElement } from "react";
+import type * as IngestionApi from "@/api/ingestion";
 
 import { queryKeys } from "@/lib/query/keys";
 import type { DashboardStats, DashboardActivity } from "@/api/dashboard";
@@ -18,6 +19,11 @@ import { DashboardPage } from "./DashboardPage";
 vi.mock("@/api/dashboard", () => ({
   getDashboardStats: vi.fn().mockRejectedValue(new Error("unmocked stats call")),
   getDashboardActivity: vi.fn().mockRejectedValue(new Error("unmocked activity call")),
+}));
+
+vi.mock("@/api/ingestion", async (importOriginal) => ({
+  ...(await importOriginal<typeof IngestionApi>()),
+  getIngestionStatus: vi.fn().mockResolvedValue({ blockers: [] }),
 }));
 
 const ADMIN_ME = {

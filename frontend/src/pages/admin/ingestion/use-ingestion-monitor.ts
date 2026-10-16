@@ -18,11 +18,12 @@ import type { UseQueryResult } from "@tanstack/react-query";
 import { ApiError } from "@/api";
 import { getDashboardActivity } from "@/api/dashboard";
 import type { BatchRow, DashboardActivity } from "@/api/dashboard";
-import { getInputCounts, scanIngestion } from "@/api/ingestion";
-import type { DiscoveryResult, InputCounts } from "@/api/ingestion";
+import { getIngestionStatus, getInputCounts, scanIngestion } from "@/api/ingestion";
+import type { DiscoveryResult, IngestionStatus, InputCounts } from "@/api/ingestion";
 import { queryKeys } from "@/lib/query/keys";
 
 const POLL_INTERVAL_MS = 3000;
+const STATUS_POLL_INTERVAL_MS = 30_000;
 const GRACE_WINDOW_MS = 2 * 60 * 1000;
 
 type ScanFailure = "failed" | "forbidden" | "session";
@@ -38,6 +39,7 @@ type IngestionNotice =
   | { kind: "finished" };
 
 type IngestionMonitor = {
+  status: UseQueryResult<IngestionStatus>;
   /** Interval every polled query on the page uses; `false` while idle. */
   pollInterval: number | false;
   counts: UseQueryResult<InputCounts>;
@@ -86,6 +88,15 @@ function useIngestionMonitor(options: {
   const [wasRunning, setWasRunning] = useState(false);
   const countsBeforeScan = useRef(0);
   const batchBeforeScan = useRef<string | null | undefined>(undefined);
+
+  const status = useQuery({
+    queryKey: queryKeys.ingestion.status(),
+    queryFn: ({ signal }) => getIngestionStatus(signal),
+    enabled,
+    refetchInterval: STATUS_POLL_INTERVAL_MS,
+    refetchOnMount: "always",
+    refetchOnWindowFocus: "always",
+  });
 
   const activity = useQuery({
     queryKey: queryKeys.dashboard.activity(activityLimit),
@@ -179,6 +190,7 @@ function useIngestionMonitor(options: {
   });
 
   return {
+    status,
     pollInterval,
     counts,
     activity,
@@ -195,5 +207,5 @@ function useIngestionMonitor(options: {
   };
 }
 
-export { useIngestionMonitor, POLL_INTERVAL_MS, GRACE_WINDOW_MS };
+export { useIngestionMonitor, POLL_INTERVAL_MS, STATUS_POLL_INTERVAL_MS, GRACE_WINDOW_MS };
 export type { IngestionMonitor, IngestionNotice, ScanFailure };

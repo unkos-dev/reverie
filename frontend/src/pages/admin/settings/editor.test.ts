@@ -33,6 +33,7 @@ vi.mock("./fields", async (importOriginal) => ({
 const EPUB_OFF: Draft = { ...EMPTY_DRAFT, formats: { epub: false } };
 
 const BASE: SettingsValues = {
+  ingestion_enabled: true,
   accepted_formats: ["epub"],
   cleanup_imported: true,
   cleanup_duplicates: false,

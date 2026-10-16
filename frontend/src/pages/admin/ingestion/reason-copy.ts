@@ -1,5 +1,35 @@
 import type { FailureClass } from "@/api/enrichment-failures";
-import type { InputReason } from "@/api/ingestion";
+import type { DependencyReason, InputReason } from "@/api/ingestion";
+
+export const DEPENDENCY_COPY: Record<DependencyReason, { reason: string; check: string }> = {
+  database_unavailable: {
+    reason: "Reverie cannot reach the database that ingestion uses.",
+    check:
+      "Check that the database is running and that the ingestion database account can sign in.",
+  },
+  ingestion_folder_unavailable: {
+    reason: "Reverie cannot read the ingestion folder.",
+    check:
+      "Check that the folder exists, is mounted, and can be read by the account Reverie runs as.",
+  },
+  library_folder_unavailable: {
+    reason: "Reverie cannot write to the library folder.",
+    check:
+      "Check that the library folder is mounted and can be written by the account Reverie runs as.",
+  },
+  library_full: {
+    reason: "The library folder has no free space left.",
+    check: "Free some space on the library's disk.",
+  },
+  another_instance: {
+    reason: "Another Reverie server is already running ingestion for this library.",
+    check: "Make sure only one Reverie server uses this database.",
+  },
+  unspecified: {
+    reason: "Reverie hit a problem it cannot describe here.",
+    check: "Check the server log for the cause.",
+  },
+};
 
 type InputStatusTag = "Rejected" | "Needs a change" | "Ignored";
 

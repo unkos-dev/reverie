@@ -5,6 +5,7 @@ import { ApiError, isIfMatchMismatch } from "./errors";
 import { getReloadStatus, getSettings, updateSettings } from "./settings";
 
 const VALUES = {
+  ingestion_enabled: true,
   accepted_formats: ["epub"],
   cleanup_imported: false,
   cleanup_duplicates: false,
@@ -48,6 +49,20 @@ afterEach(() => {
 });
 
 describe("getSettings", () => {
+  test("retains a disabled ingestion setting", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      json({ ...GET_BODY, ingestion_enabled: false }),
+    );
+    expect((await getSettings()).values.ingestion_enabled).toBe(false);
+  });
+
+  test("rejects an ingestion setting with the wrong type", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      json({ ...GET_BODY, ingestion_enabled: "false" }),
+    );
+    await expect(getSettings()).rejects.toThrow();
+  });
+
   test("splits the flattened body into values and row metadata", async () => {
     vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
       json({ ...GET_BODY, restart_required_fields: ["cover_max_bytes"] }),

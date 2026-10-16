@@ -170,6 +170,7 @@ export const queryKeys = {
     activity: (limit: number) => ["dashboard", "activity", limit] as const,
   },
   ingestion: {
+    status: () => ["ingestion", "status"] as const,
     /** Root namespace; invalidate to refetch every ingestion-* slot. */
     all: ["ingestion"] as const,
     /** `GET /api/v1/ingestion/inputs/counts`, one read for every group header. */

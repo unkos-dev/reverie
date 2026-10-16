@@ -55,6 +55,7 @@ export const FORMATS_KEY = "accepted_formats" satisfies SettingsKey;
 export const SUPPORTED_FORMATS: readonly ManifestationFormat[] = ["epub"];
 
 export const BOOLEAN_KEYS = [
+  "ingestion_enabled",
   "cleanup_imported",
   "cleanup_duplicates",
   "enrichment_enabled",
@@ -110,6 +111,14 @@ export type Field = SwitchField | FormatsField | IntField | MibField;
 const WHOLE_1_OR_MORE = "Enter a whole number of 1 or more.";
 
 export const FIELDS: readonly Field[] = [
+  {
+    key: "ingestion_enabled",
+    area: "acquisition",
+    control: "switch",
+    destructive: false,
+    label: "Import files",
+    help: "When off, Reverie stops starting new imports. Work already started can finish, and scans and recovery continue. The setting takes effect when you save.",
+  },
   {
     key: "accepted_formats",
     area: "acquisition",
@@ -423,16 +432,17 @@ function offOn(enabled: boolean, text: string): string {
 export function areaSummary(area: AreaId, values: SettingsValues): string {
   switch (area) {
     case "acquisition": {
+      const imports = values.ingestion_enabled ? "Imports on." : "Imports off.";
       const formats =
         values.accepted_formats.length > 0
           ? values.accepted_formats.map((f) => f.toUpperCase()).join(", ")
           : "No formats";
       if (!values.cleanup_imported && !values.cleanup_duplicates)
-        return `${formats}. Source files kept`;
+        return `${imports} ${formats}. Source files kept`;
       if (values.cleanup_imported && !values.cleanup_duplicates) {
-        return `${formats}. Source files removed after import`;
+        return `${imports} ${formats}. Source files removed after import`;
       }
-      return `${formats}. Source files removed`;
+      return `${imports} ${formats}. Source files removed`;
     }
     case "enrichment":
       return offOn(

@@ -9,6 +9,38 @@ import { z } from "zod";
 
 import { apiFetch } from "./fetch";
 
+const DependencyReasonSchema = z.enum([
+  "database_unavailable",
+  "ingestion_folder_unavailable",
+  "library_folder_unavailable",
+  "library_full",
+  "another_instance",
+  "unspecified",
+]);
+export type DependencyReason = z.infer<typeof DependencyReasonSchema>;
+
+const IngestionStatusSchema = z.object({
+  blockers: z
+    .array(
+      z.discriminatedUnion("kind", [
+        z.object({ kind: z.literal("paused_by_admin") }),
+        z.object({
+          kind: z.literal("dependency"),
+          reason: DependencyReasonSchema,
+          since: z.iso.datetime(),
+        }),
+        z.object({ kind: z.literal("restarting") }),
+      ]),
+    )
+    .max(3),
+});
+export type IngestionStatus = z.infer<typeof IngestionStatusSchema>;
+
+export async function getIngestionStatus(signal?: AbortSignal): Promise<IngestionStatus> {
+  const raw = await apiFetch("/api/v1/ingestion/status", signal ? { signal } : {});
+  return IngestionStatusSchema.parse(raw);
+}
+
 /**
  * Closed reason classes, most severe first. The order is the precedence the
  * server uses to pick a file's primary reason, so it doubles as the display
