@@ -579,6 +579,96 @@ mod tests {
     }
 
     #[test]
+    fn repack_preserves_unix_ownership_extra_field() {
+        let payload = [1, 4, 0xe8, 3, 0, 0, 4, 0xe9, 3, 0, 0];
+        for compression in [
+            zip::CompressionMethod::Stored,
+            zip::CompressionMethod::Deflated,
+        ] {
+            let (dir, path) = file_fixture(&[("chapter.xhtml", b"<html/>")], false, false);
+            let file = std::fs::OpenOptions::new()
+                .read(true)
+                .write(true)
+                .open(&path)
+                .unwrap();
+            let mut writer = ZipWriter::new_append(file).unwrap();
+            let mut options =
+                FileOptions::<ExtendedFileOptions>::default().compression_method(compression);
+            options.add_extra_field(0x1234, payload, false).unwrap();
+            writer.start_file("ownership.txt", options).unwrap();
+            let content = b"untouched entry with Unix ownership metadata";
+            writer.write_all(content).unwrap();
+            writer.finish().unwrap();
+
+            let mut bytes = std::fs::read(&path).unwrap();
+            let mut marker = vec![0x34, 0x12, 11, 0];
+            marker.extend_from_slice(&payload);
+            let offsets: Vec<_> = bytes
+                .windows(marker.len())
+                .enumerate()
+                .filter_map(|(offset, value)| (value == marker).then_some(offset))
+                .collect();
+            assert_eq!(offsets.len(), 2);
+            for offset in offsets {
+                bytes[offset..offset + 2].copy_from_slice(&0x7875u16.to_le_bytes());
+            }
+            std::fs::write(&path, &bytes).unwrap();
+            let (handle, report) = inspect(File::open(&path).unwrap()).unwrap();
+            assert_eq!(report.outcome, ValidationOutcome::Clean);
+            assert!(report.issues.is_empty());
+            let opf = zip_layer::read_entry(&handle, "OEBPS/content.opf").unwrap();
+            let replacement = String::from_utf8(opf).unwrap().replace("Old", "New");
+            let mut candidate = tempfile::NamedTempFile::new_in(dir.path()).unwrap();
+            repack::with_modifications(
+                &handle,
+                candidate.as_file_mut(),
+                Some("OEBPS/content.opf"),
+                Some(replacement.as_bytes()),
+                &std::collections::HashMap::new(),
+                &[],
+                &repair::RepairPlan::default(),
+            )
+            .unwrap();
+            let (output, report) = inspect(candidate.reopen().unwrap()).unwrap();
+            assert_eq!(report.outcome, ValidationOutcome::Clean);
+            assert!(report.issues.is_empty());
+            assert_eq!(
+                zip_layer::read_entry(&output, "OEBPS/content.opf").unwrap(),
+                replacement.as_bytes()
+            );
+            assert_eq!(
+                zip_layer::read_entry(&output, "ownership.txt").unwrap(),
+                content
+            );
+            let mut source = ZipArchive::new(File::open(&path).unwrap()).unwrap();
+            let mut result = ZipArchive::new(candidate.reopen().unwrap()).unwrap();
+            let mut expected_extra = vec![0x75, 0x78, 11, 0];
+            expected_extra.extend_from_slice(&payload);
+            for archive in [&mut source, &mut result] {
+                let entry = archive.by_name("ownership.txt").unwrap();
+                assert_eq!(entry.compression(), compression);
+                assert_eq!(entry.extra_data().unwrap(), expected_extra);
+            }
+            let mut source_raw = Vec::new();
+            let source_index = source.index_for_name("ownership.txt").unwrap();
+            source
+                .by_index_raw(source_index)
+                .unwrap()
+                .read_to_end(&mut source_raw)
+                .unwrap();
+            let mut result_raw = Vec::new();
+            let result_index = result.index_for_name("ownership.txt").unwrap();
+            result
+                .by_index_raw(result_index)
+                .unwrap()
+                .read_to_end(&mut result_raw)
+                .unwrap();
+            assert_eq!(source_raw, result_raw);
+            assert_eq!(std::fs::read(&path).unwrap(), bytes);
+        }
+    }
+
+    #[test]
     fn file_backed_epub_admitted_index_and_refused_archive() {
         let (_dir, path) = file_fixture(&[("chapter.xhtml", b"<html/>")], false, false);
         let (handle, report) = inspect(File::open(&path).unwrap()).unwrap();
