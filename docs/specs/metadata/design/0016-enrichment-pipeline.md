@@ -369,6 +369,11 @@ a projection, not a preview of a specific journal row a subsequent real run woul
 
 ## Security and operations
 
+Immediately after a group retry commits, the handler emits a structured `bulk_retry` event with `outcome=committed`, the
+requesting user UUID, a server-generated request UUID, source/class and queued/remaining counts. Client IP resolution
+uses the configured trusted-header boundary. User-agent text has control characters removed and is capped at 256
+characters. Credentials, session identifiers, book titles and stored failure text are excluded.
+
 Two handlers cross from the caller's row-level-security context into the ingestion role's unconditional one, matching
 the pattern the row-level-security Design records: `dry_run` checks visibility on `state.pool` under `acquire_with_rls`
 first, then drops that transaction and reads through `state.ingestion_pool` for the actual fan-out; the queue's own

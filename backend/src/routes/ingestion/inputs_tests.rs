@@ -938,7 +938,7 @@ async fn bulk_input_retry_http_exhausted_and_empty(pool: PgPool) {
     let ing = env.ing.clone();
     let owner = tokio::spawn(async move {
         for expected in [1, 0] {
-            let Command::Retry { reason, reply } = commands.lock().await.recv().await.unwrap()
+            let Command::Retry { reason, reply, .. } = commands.lock().await.recv().await.unwrap()
             else {
                 panic!("expected retry")
             };

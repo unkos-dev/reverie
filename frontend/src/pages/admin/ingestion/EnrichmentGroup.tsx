@@ -190,12 +190,11 @@ function EnrichmentGroup({
     },
     onError: (error) => {
       pending.current = false;
-      const cause =
-        error instanceof ApiError && error.status === 403
-          ? "forbidden"
-          : error instanceof ApiError && error.status === 401
-            ? "session"
-            : "failed";
+      let cause: Extract<BulkRetryState, { kind: "failure" }>["cause"] = "failed";
+      if (error instanceof ApiError) {
+        if (error.status === 403) cause = "forbidden";
+        else if (error.status === 401) cause = "session";
+      }
       if (cause === "forbidden") forbidden.current = true;
       setState({ kind: "failure", cause });
     },
@@ -208,11 +207,11 @@ function EnrichmentGroup({
           count={count}
           countsVersion={countsVersion}
           noun="book"
-          onRetry={() => {
+          onRetry={(remaining) => {
             if (pending.current || forbidden.current) return;
             pending.current = true;
             onRetain();
-            setState({ kind: "pending", count });
+            setState({ kind: "pending", count: remaining });
             mutation.mutate();
           }}
         />

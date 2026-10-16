@@ -424,10 +424,18 @@ struct RetryFailuresRequest {
 async fn retry_failures(
     current_user: CurrentUser,
     State(state): State<AppState>,
+    crate::auth::rate_limit::PeerAddr(peer): crate::auth::rate_limit::PeerAddr,
+    headers: axum::http::HeaderMap,
     crate::extract::ApiJson(request): crate::extract::ApiJson<RetryFailuresRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     current_user.require_scope(Scope::Admin)?;
     current_user.require_admin()?;
+    let audit = crate::services::BulkRetryAudit::new(
+        current_user.user_id,
+        &headers,
+        peer.map(|addr| addr.ip()),
+        state.config.trusted_client_ip_header.as_deref(),
+    );
     let source = match &request.source {
         SourceFilter::Key(key) => Some(key.as_str()),
         SourceFilter::Unsourced => None,
@@ -468,6 +476,13 @@ async fn retry_failures(
     tx.commit()
         .await
         .map_err(|e| AppError::Internal(e.into()))?;
+    audit.committed(
+        "enrichment_failures",
+        request.class.as_str(),
+        source,
+        queued,
+        remaining,
+    );
     Ok((
         axum::http::StatusCode::ACCEPTED,
         Json(crate::services::BulkRetryResult {

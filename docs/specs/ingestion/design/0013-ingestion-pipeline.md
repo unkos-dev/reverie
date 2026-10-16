@@ -239,6 +239,13 @@ Library and ingestion capabilities are acquired before serving; no quarantine au
 refuses symlink parents and non-regular files. Independent staging prevents repair from mutating a source shared through
 a hardlink. Shared path exclusion protects publication, registration and cleanup across ingestion and writeback.
 
+Bulk retry commands carry the requesting user UUID, a server-generated request UUID and sanitised client metadata.
+Immediately after the reset transaction commits, the owner emits a structured `bulk_retry` event with
+`outcome=committed`, target, reason class and queued/remaining counts. This event survives a caller timeout or a later
+scheduling failure. Client IP resolution uses the configured trusted-header boundary; user-agent text has control
+characters removed and is capped at 256 characters. Credentials, session identifiers, input paths and failure text are
+excluded.
+
 The coordinator logs pause, resume, failures and stalled attempts. The activity endpoint exposes attempt history. The
 inputs list names retained originals by ingestion-relative path to administrators only, and exposes failure reasons as
 closed classes. Operators manage retained originals on disk and request another scan after correction. An outage can

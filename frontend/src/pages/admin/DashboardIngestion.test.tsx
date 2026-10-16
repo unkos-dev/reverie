@@ -1440,6 +1440,66 @@ describe("bulk retry group controls", () => {
     ).toBeEnabled();
   });
 
+  test("bulk retry retains canonical group order after refreshing to ignored files", async () => {
+    vi.mocked(retryInputs).mockResolvedValue({ queued: 2, remaining: 0 });
+    const client = renderPage();
+    const card = screen.getByRole("region", { name: /Needs attention/ });
+    const action = await within(card).findByRole("button", { name: "Retry all 2" });
+    action.focus();
+    fireEvent.click(action);
+    await within(card).findByText("Queued 2");
+    act(() => {
+      client.setQueryData(
+        queryKeys.ingestion.counts(),
+        countsFixture({
+          by_reason: [{ reason: "format_not_accepted", count: 1 }],
+          attention_total: 0,
+        }),
+      );
+    });
+    await waitFor(() => {
+      const toggles = within(card)
+        .getAllByRole("button")
+        .filter((button) => button.hasAttribute("aria-expanded"));
+      expect(toggles).toHaveLength(2);
+      expect(toggles[0]).toHaveTextContent("Needs a change");
+      expect(toggles[1]).toHaveTextContent("Ignored");
+    });
+    expect(action).toHaveFocus();
+  });
+
+  test.each(["files", "books"])(
+    "bulk retry %s queues the returned remainder before counts refresh",
+    async (noun) => {
+      vi.mocked(retryInputs)
+        .mockResolvedValueOnce({ queued: 500, remaining: 1 })
+        .mockReturnValueOnce(new Promise(() => {}));
+      vi.mocked(retryEnrichmentFailures)
+        .mockResolvedValueOnce({ queued: 500, remaining: 1 })
+        .mockReturnValueOnce(new Promise(() => {}));
+      vi.mocked(getInputCounts).mockResolvedValue(
+        countsFixture({
+          by_reason: [{ reason: "needs_change", count: 501 }],
+          attention_total: 501,
+        }),
+      );
+      vi.mocked(getEnrichmentFailureCounts).mockResolvedValue({
+        total: 501,
+        by_failure: [{ source: "openlibrary", class: "timeout", count: 501 }],
+      });
+      renderPage();
+      const card = screen.getByRole("region", {
+        name: noun === "files" ? /Needs attention/ : /Enrichment problems/,
+      });
+      fireEvent.click(await within(card).findByRole("button", { name: "Retry all 501" }));
+      fireEvent.click(await within(card).findByRole("button", { name: "Retry the rest 1" }));
+      expect(await within(card).findByRole("button", { name: "Queuing 1" })).toHaveAttribute(
+        "aria-disabled",
+        "true",
+      );
+    },
+  );
+
   test("bulk retry partial batches use returned membership, then retain empty feedback", async () => {
     vi.mocked(retryInputs)
       .mockResolvedValueOnce({ queued: 500, remaining: 1 })

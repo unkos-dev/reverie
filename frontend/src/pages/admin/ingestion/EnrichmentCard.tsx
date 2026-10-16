@@ -43,6 +43,14 @@ function EnrichmentCard(): ReactElement {
   });
   const [openOnLoad, setOpenOnLoad] = useState<string | null | undefined>(undefined);
   const [retained, setRetained] = useState<FailureCounts["by_failure"]>([]);
+  const retainGroup = (group: FailureCounts["by_failure"][number]): void => {
+    const key = groupKey(group.source, group.class);
+    setRetained((current) =>
+      current.some((item) => groupKey(item.source, item.class) === key)
+        ? current
+        : [...current, group],
+    );
+  };
   const groups = (counts.data?.by_failure ?? []).filter((g) => g.count > 0);
   const currentReasonCount = groups.length;
   for (const group of retained) {
@@ -141,11 +149,7 @@ function EnrichmentCard(): ReactElement {
             defaultOpen={key === openOnLoad}
             countsVersion={counts.dataUpdatedAt}
             onRetain={() => {
-              setRetained((current) =>
-                current.some((item) => groupKey(item.source, item.class) === key)
-                  ? current
-                  : [...current, group],
-              );
+              retainGroup(group);
             }}
           />
         );

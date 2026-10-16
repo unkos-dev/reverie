@@ -1,6 +1,7 @@
 use axum::http::{StatusCode, header::AUTHORIZATION};
 use serde_json::{Value, json};
 use sqlx::PgPool;
+use tracing::instrument::WithSubscriber;
 use uuid::Uuid;
 
 use crate::error::problems;
@@ -14,14 +15,20 @@ struct Env {
     ing: PgPool,
     server: axum_test::TestServer,
     auth: String,
+    user_id: Uuid,
 }
 
 async fn env(pool: &PgPool) -> Env {
     let app = test_support::db::app_pool_for(pool).await;
     let ing = test_support::db::ingestion_pool_for(pool).await;
-    let (_, auth) = test_support::db::create_admin_and_basic_auth(&app).await;
+    let (user_id, auth) = test_support::db::create_admin_and_basic_auth(&app).await;
     let server = test_support::db::server_with_real_pools(&app, &ing);
-    Env { ing, server, auth }
+    Env {
+        ing,
+        server,
+        auth,
+        user_id,
+    }
 }
 
 async fn seed(
@@ -662,12 +669,24 @@ async fn enrichment_failure_reads_require_authentication_and_the_admin_role(pool
 async fn bulk_enrichment_retry_empty_and_primary_membership(pool: PgPool) {
     let env = env(&pool).await;
     let request = json!({"source": "openlibrary", "class": "timeout"});
-    let empty = env
-        .server
-        .post(&format!("{LIST}/retries"))
-        .add_header(AUTHORIZATION, env.auth.clone())
-        .json(&request)
-        .await;
+    let logs = test_support::CapturedLogs::default();
+    let empty = async {
+        env.server
+            .post(&format!("{LIST}/retries"))
+            .add_header(AUTHORIZATION, env.auth.clone())
+            .json(&request)
+            .await
+    }
+    .with_subscriber(logs.subscriber())
+    .await;
+    let audit = logs.text();
+    assert!(audit.contains("target=\"enrichment_failures\""));
+    assert!(audit.contains("group=\"timeout\""));
+    assert!(audit.contains("source=\"openlibrary\""));
+    assert!(audit.contains("queued=0 remaining=0"));
+    assert!(audit.contains(&format!("user_id={}", env.user_id)));
+    assert!(audit.contains("request_id="));
+    assert!(!audit.contains(&env.auth));
     assert_eq!(empty.status_code(), StatusCode::ACCEPTED);
     assert_eq!(empty.json::<Value>(), json!({"queued": 0, "remaining": 0}));
     for status in [EnrichmentStatus::Failed, EnrichmentStatus::Skipped] {
@@ -710,12 +729,16 @@ async fn bulk_enrichment_retry_empty_and_primary_membership(pool: PgPool) {
         json!([entry("openlibrary", "timeout")]),
     )
     .await;
-    let response = env
-        .server
-        .post(&format!("{LIST}/retries"))
-        .add_header(AUTHORIZATION, env.auth.clone())
-        .json(&request)
-        .await;
+    let response = async {
+        env.server
+            .post(&format!("{LIST}/retries"))
+            .add_header(AUTHORIZATION, env.auth.clone())
+            .json(&request)
+            .await
+    }
+    .with_subscriber(logs.subscriber())
+    .await;
+    assert!(logs.text().contains("queued=2 remaining=0"));
     assert_eq!(response.status_code(), StatusCode::ACCEPTED);
     assert_eq!(
         response.json::<Value>(),

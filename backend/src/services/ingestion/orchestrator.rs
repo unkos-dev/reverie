@@ -12,12 +12,12 @@ use crate::models::manifestation_format::ManifestationFormat;
 use crate::models::storage_library::LibraryId;
 use crate::models::validation_status::ValidationStatus;
 use crate::models::{library_path_claim, work};
-use crate::services::BulkRetryResult;
 use crate::services::epub::ValidationOutcome;
 use crate::services::files::{LibraryFiles, LibraryLocation, RelativeFilePath};
 use crate::services::ingestion::{cleanup, copier, path_template};
 use crate::services::metadata;
 use crate::services::writeback::path_rename;
+use crate::services::{BulkRetryAudit, BulkRetryResult};
 
 /// Shared command handle for the sole ingestion scheduling owner.
 #[derive(Clone)]
@@ -116,6 +116,7 @@ pub enum Command {
     Scan(tokio::sync::oneshot::Sender<anyhow::Result<DiscoveryResult>>),
     Retry {
         reason: RetryReason,
+        audit: BulkRetryAudit,
         reply: tokio::sync::oneshot::Sender<anyhow::Result<BulkRetryResult>>,
     },
 }
@@ -183,11 +184,19 @@ impl CoordinatorHandle {
             .map_err(|_| anyhow::anyhow!("ingestion discovery interrupted"))?
     }
 
-    pub(crate) async fn retry(&self, reason: RetryReason) -> anyhow::Result<BulkRetryResult> {
+    pub(crate) async fn retry(
+        &self,
+        reason: RetryReason,
+        audit: BulkRetryAudit,
+    ) -> anyhow::Result<BulkRetryResult> {
         tokio::time::timeout(std::time::Duration::from_secs(5), async {
             let (reply, receiver) = tokio::sync::oneshot::channel();
             self.sender
-                .send(Command::Retry { reason, reply })
+                .send(Command::Retry {
+                    reason,
+                    audit,
+                    reply,
+                })
                 .await
                 .map_err(|_| anyhow::anyhow!("ingestion coordinator unavailable"))?;
             receiver
@@ -676,8 +685,12 @@ impl Coordinator {
                 }
                 drop(reply.send(result));
             }
-            Command::Retry { reason, reply } => {
-                let result = self.retry_inputs(reason).await;
+            Command::Retry {
+                reason,
+                audit,
+                reply,
+            } => {
+                let result = self.retry_inputs(reason, &audit).await;
                 if let Err(error) = &result {
                     self.pause(error);
                 }
@@ -688,9 +701,20 @@ impl Coordinator {
         }
     }
 
-    async fn retry_inputs(&mut self, reason: RetryReason) -> anyhow::Result<BulkRetryResult> {
+    async fn retry_inputs(
+        &mut self,
+        reason: RetryReason,
+        audit: &BulkRetryAudit,
+    ) -> anyhow::Result<BulkRetryResult> {
         use crate::models::ingestion_input;
         let (inputs, remaining) = ingestion_input::reset_class(&self.pool, reason).await?;
+        audit.committed(
+            "ingestion_inputs",
+            reason.as_str(),
+            None,
+            inputs.len() as u64,
+            remaining,
+        );
         let queued = i64::try_from(inputs.len())?;
         let ids: Vec<_> = inputs.iter().map(|input| input.id).collect();
         let retries = ingestion_input::retry_states(&self.pool, &ids).await?;
@@ -3038,6 +3062,7 @@ fn draft_metadata(
 )]
 mod tests {
     use super::*;
+    use tracing::instrument::WithSubscriber;
 
     #[test]
     fn ingestion_status_classifies_only_typed_dependency_causes() {
@@ -5603,6 +5628,10 @@ mod tests {
         }
     }
 
+    fn retry_audit() -> BulkRetryAudit {
+        BulkRetryAudit::new(Uuid::new_v4(), &axum::http::HeaderMap::new(), None, None)
+    }
+
     #[tokio::test(start_paused = true)]
     async fn bulk_input_retry_timeout_covers_admission_and_reply() {
         let (handle, commands) = coordinator_channel();
@@ -5610,7 +5639,7 @@ mod tests {
             let (reply, _) = tokio::sync::oneshot::channel();
             handle.sender.send(Command::Scan(reply)).await.unwrap();
         }
-        let retry = handle.retry(RetryReason::NeedsChange);
+        let retry = handle.retry(RetryReason::NeedsChange, retry_audit());
         tokio::pin!(retry);
         assert!(futures::poll!(&mut retry).is_pending());
         tokio::time::advance(std::time::Duration::from_secs(3)).await;
@@ -5620,7 +5649,7 @@ mod tests {
         for _ in 0..15 {
             receiver.recv().await.unwrap();
         }
-        let Command::Retry { reply, reason } = receiver.recv().await.unwrap() else {
+        let Command::Retry { reply, reason, .. } = receiver.recv().await.unwrap() else {
             panic!("expected retry")
         };
         drop(receiver);
@@ -5640,14 +5669,19 @@ mod tests {
     #[tokio::test(start_paused = true)]
     async fn bulk_input_retry_closed_and_interrupted_commands_fail() {
         let (handle, commands) = coordinator_channel();
-        let retry = handle.retry(RetryReason::RetriesExhausted);
+        let retry = handle.retry(RetryReason::RetriesExhausted, retry_audit());
         tokio::pin!(retry);
         assert!(futures::poll!(&mut retry).is_pending());
         let command = commands.lock().await.recv().await.unwrap();
         drop(command);
         assert!(retry.await.is_err());
         drop(commands);
-        assert!(handle.retry(RetryReason::NeedsChange).await.is_err());
+        assert!(
+            handle
+                .retry(RetryReason::NeedsChange, retry_audit())
+                .await
+                .is_err()
+        );
     }
 
     #[tokio::test(start_paused = true)]
@@ -5657,7 +5691,12 @@ mod tests {
             let (reply, _) = tokio::sync::oneshot::channel();
             handle.sender.send(Command::Scan(reply)).await.unwrap();
         }
-        assert!(handle.retry(RetryReason::NeedsChange).await.is_err());
+        assert!(
+            handle
+                .retry(RetryReason::NeedsChange, retry_audit())
+                .await
+                .is_err()
+        );
         let mut receiver = commands.lock().await;
         for _ in 0..16 {
             assert!(matches!(receiver.recv().await, Some(Command::Scan(_))));
@@ -5710,23 +5749,49 @@ mod tests {
         });
         let (handle, commands) = coordinator_channel();
         tokio::time::pause();
-        let retry = handle.retry(RetryReason::NeedsChange);
+        let user_id = Uuid::new_v4();
+        let audit = BulkRetryAudit::new(user_id, &axum::http::HeaderMap::new(), None, None);
+        let retry = handle.retry(RetryReason::NeedsChange, audit);
         tokio::pin!(retry);
         assert!(futures::poll!(&mut retry).is_pending());
-        let Command::Retry { reason, reply } = commands.lock().await.recv().await.unwrap() else {
+        let Command::Retry {
+            reason,
+            audit,
+            reply,
+        } = commands.lock().await.recv().await.unwrap()
+        else {
             panic!("expected retry")
         };
         tokio::time::advance(std::time::Duration::from_secs(5)).await;
         assert!(retry.await.is_err());
         tokio::time::resume();
-        let result = owner.retry_inputs(reason).await.unwrap();
-        assert_eq!((result.queued, result.remaining), (1, 0));
-        drop(reply.send(Ok(result)));
+        let logs = crate::test_support::CapturedLogs::default();
+        owner
+            .command(Command::Retry {
+                reason,
+                audit,
+                reply,
+            })
+            .with_subscriber(logs.subscriber())
+            .await;
+        let text = logs.text();
+        assert!(text.contains(&format!("user_id={user_id}")));
+        assert!(text.contains("target=\"ingestion_inputs\""));
+        assert!(text.contains("group=\"needs_change\""));
+        assert!(text.contains("queued=1 remaining=0"));
+        assert!(text.contains("request_id="));
         assert!(owner.keys.contains_key(&input.id));
         assert!(!owner.ready_set.contains(&input.id));
         assert!(owner.pause.is_some());
         assert_eq!(owner.inputs[&input.id].observed_at, input.observed_at);
-        assert_eq!(owner.retry_inputs(reason).await.unwrap().queued, 0);
+        assert_eq!(
+            owner
+                .retry_inputs(reason, &retry_audit())
+                .await
+                .unwrap()
+                .queued,
+            0
+        );
         owner.unresolved.insert(input.id);
         let reset = owner.inputs[&input.id].clone();
         owner.schedule(reset, &no_retry(input.id));

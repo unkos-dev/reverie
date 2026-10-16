@@ -45,10 +45,13 @@ function CardHead({
   );
 }
 
-function groupsFrom(counts: InputCounts): Group[] {
+function groupsFrom(counts: InputCounts, retries: NeedsAttentionCardProps["retries"]): Group[] {
   return INPUT_REASONS.flatMap((reason) => {
     const count = counts.by_reason.find((c) => c.reason === reason)?.count ?? 0;
-    return count > 0 ? [{ reason, count }] : [];
+    const retained =
+      (reason === "needs_change" || reason === "retries_exhausted") &&
+      retries[reason] !== undefined;
+    return count > 0 || retained ? [{ reason, count }] : [];
   });
 }
 
@@ -64,12 +67,10 @@ function NeedsAttentionCard({
   afterScan,
 }: Readonly<NeedsAttentionCardProps>): ReactElement {
   const [openOnLoad, setOpenOnLoad] = useState<InputReason | null | undefined>(undefined);
-  const groups = counts === undefined ? [] : groupsFrom(counts);
-  const currentReasonCount = groups.filter((g) => g.reason !== "format_not_accepted").length;
-  for (const reason of ["needs_change", "retries_exhausted"] as const) {
-    if (retries[reason] !== undefined && !groups.some((group) => group.reason === reason))
-      groups.push({ reason, count: 0 });
-  }
+  const groups = counts === undefined ? [] : groupsFrom(counts, retries);
+  const currentReasonCount = groups.filter(
+    (g) => g.reason !== "format_not_accepted" && g.count > 0,
+  ).length;
   const attention = groups.filter((g) => g.reason !== "format_not_accepted");
   if (openOnLoad === undefined && counts !== undefined)
     setOpenOnLoad(attention.at(0)?.reason ?? null);
@@ -120,9 +121,9 @@ function NeedsAttentionCard({
             count={group.count}
             countsVersion={countsVersion}
             noun="file"
-            onRetry={() => {
+            onRetry={(remaining) => {
               if (group.reason === "needs_change" || group.reason === "retries_exhausted")
-                onRetryGroup(group.reason, group.count);
+                onRetryGroup(group.reason, remaining);
             }}
           />
         ) : undefined

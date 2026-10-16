@@ -102,7 +102,7 @@ export function BulkRetryButton({
   count: number;
   countsVersion: number;
   noun: "file" | "book";
-  onRetry: () => void;
+  onRetry: (count: number) => void;
 }>): ReactElement {
   const fresh = state?.kind === "success" && countsVersion > state.countsVersion;
   const remaining = state?.kind === "success" && !fresh ? state.remaining : count;
@@ -125,7 +125,7 @@ export function BulkRetryButton({
       aria-disabled={disabled}
       className="my-2 ml-12 sm:ml-0"
       onClick={() => {
-        if (!disabled) onRetry();
+        if (!disabled) onRetry(remaining);
       }}
     >
       {label}

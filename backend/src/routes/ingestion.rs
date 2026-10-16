@@ -167,13 +167,23 @@ struct RetryInputsRequest {
 async fn retry_inputs(
     current_user: CurrentUser,
     State(state): State<AppState>,
+    crate::auth::rate_limit::PeerAddr(peer): crate::auth::rate_limit::PeerAddr,
+    headers: axum::http::HeaderMap,
     crate::extract::ApiJson(body): crate::extract::ApiJson<RetryInputsRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     current_user.require_scope(Scope::Admin)?;
     current_user.require_admin()?;
     let result = state
         .ingestion
-        .retry(body.reason)
+        .retry(
+            body.reason,
+            crate::services::BulkRetryAudit::new(
+                current_user.user_id,
+                &headers,
+                peer.map(|addr| addr.ip()),
+                state.config.trusted_client_ip_header.as_deref(),
+            ),
+        )
         .await
         .map_err(AppError::Internal)?;
     Ok((axum::http::StatusCode::ACCEPTED, Json(result)))

@@ -190,12 +190,12 @@ level below is refused, while the two positive controls, one holding the declare
 not. The grid samples the hierarchy at those two points rather than at every scope above the requirement.
 
 The scope and role axes are separate controls. A device token's scopes are fixed at mint and never re-derived from the
-owner's current role, so a demoted administrator's token can still pass `require_scope(Scope::Admin)`; each of the
-twelve admin handlers pairs that call with `require_admin()`, which reads the caller's current role on every request, so
-the demotion is enforced there. The matrix's admin test (`write_token_blocked_from_every_admin_op`) catches a missing or
-weakened scope gate, but nothing in the matrix tests the role gate the same way: a handler that kept
-`require_scope(Scope::Admin)` and dropped `require_admin()` would still pass. The admin surface is a fixed set of twelve
-reviewed call sites, and review is what guards that pairing.
+owner's current role, so a demoted administrator's token can still pass `require_scope(Scope::Admin)`; each admin
+handler pairs that call with `require_admin()`, which reads the caller's current role on every request, so the demotion
+is enforced there. The matrix's admin test (`write_token_blocked_from_every_admin_op`) catches a missing or weakened
+scope gate, but nothing in the matrix tests the role gate the same way: a handler that kept
+`require_scope(Scope::Admin)` and dropped `require_admin()` would still pass. The admin handlers described in Structure
+pair both checks, and review guards that pairing.
 
 A non-admin can never mint an admin-scoped token (`Scope::grantable_by`, enforced in `create_token` and tested by
 `routes::tokens::tests::create_token_rejects_admin_scope_ceiling`), so the scope ceiling and the role ceiling agree at
