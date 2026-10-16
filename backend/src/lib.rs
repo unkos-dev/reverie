@@ -462,36 +462,31 @@ fn spawn_workers(
     let sweep_store = PostgresStore::new(state.pool.clone());
     let writeback_config = state.config.clone();
     let writeback_files = state.library_files.clone();
-    worker_supervisor()
+    let supervisor = worker_supervisor()
         .with_task(
             "settings-listener",
             Worker(move |cancel| {
-                let state = settings_state.clone();
+                let pool = settings_state.pool.clone();
+                let settings = settings_state.settings.clone();
+                let last_reload = settings_state.last_settings_reload.clone();
                 async move {
-                    services::settings::listen_loop(
-                        &state.pool,
-                        &state.settings,
-                        &state.last_settings_reload,
-                        &cancel,
-                    )
-                    .await
-                    .context("settings listener failed")
+                    services::settings::listen_loop(&pool, &settings, &last_reload, &cancel)
+                        .await
+                        .context("settings listener failed")
                 }
             }),
         )
         .with_task(
             "ingestion-coordinator",
             Worker(move |cancel| {
-                let state = ingestion_state.clone();
+                let config = ingestion_state.config.clone();
+                let pool = ingestion_state.ingestion_pool.clone();
+                let files = ingestion_state.library_files.clone();
+                let settings = ingestion_state.settings.clone();
                 let commands = commands.clone();
                 async move {
                     services::ingestion::run_watcher(
-                        state.config,
-                        state.ingestion_pool,
-                        cancel,
-                        state.library_files,
-                        state.settings,
-                        commands,
+                        config, pool, cancel, files, settings, commands,
                     )
                     .await
                 }
@@ -500,8 +495,11 @@ fn spawn_workers(
         .with_task(
             "enrichment-queue",
             Worker(move |cancel| {
-                let state = enrichment_state.clone();
-                services::enrichment::spawn_queue(state.ingestion_pool, state.config, cancel)
+                services::enrichment::spawn_queue(
+                    enrichment_state.ingestion_pool.clone(),
+                    enrichment_state.config.clone(),
+                    cancel,
+                )
             }),
         )
         .with_task(
@@ -525,7 +523,9 @@ fn spawn_workers(
                 )
             }),
         )
-        .spawn()
+        .spawn();
+    state.ingestion.set_supervisor(supervisor.clone());
+    supervisor
 }
 
 async fn supervise_until_shutdown(

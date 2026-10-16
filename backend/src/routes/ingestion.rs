@@ -1,4 +1,4 @@
-//! Admin ingestion routes: the scan trigger and the inputs-needing-attention reads.
+//! Admin ingestion routes: scans, blockers and inputs needing attention.
 //!
 //! THREAT: Information disclosure / privilege escalation: every handler
 //! enforces the admin scope and role before any database access, so a
@@ -36,7 +36,7 @@ const DEFAULT_INPUTS_LIMIT: i64 = 25;
 const MAX_INPUTS_LIMIT: i64 = 100;
 const INPUTS_CURSOR_TAG: &str = "ii";
 
-/// Build the ingestion router: the scan trigger and the inputs lists.
+/// Build the ingestion router: scans, blockers and retained inputs.
 ///
 /// # Invariants
 /// - Admin-only: every handler enforces `CurrentUser::require_admin` before
@@ -47,8 +47,70 @@ const INPUTS_CURSOR_TAG: &str = "ii";
 pub fn router() -> OpenApiRouter<AppState> {
     OpenApiRouter::new()
         .routes(routes!(scan))
+        .routes(routes!(ingestion_status))
         .routes(routes!(list_inputs))
         .routes(routes!(input_counts))
+}
+
+/// Known independent conditions preventing new ingestion attempts.
+#[derive(Debug, Serialize, utoipa::ToSchema)]
+struct IngestionStatusResponse {
+    #[schema(max_items = 3)]
+    blockers: Vec<IngestionBlocker>,
+}
+
+#[derive(Debug, Serialize, utoipa::ToSchema)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+enum IngestionBlocker {
+    PausedByAdmin,
+    Dependency {
+        reason: services::ingestion::DependencyReason,
+        since: DateTime<Utc>,
+    },
+    Restarting,
+}
+
+/// Read policy and observed blockers without waiting for coordinator work.
+#[utoipa::path(
+    get,
+    path = "/api/v1/ingestion/status",
+    summary = "Read ingestion blockers",
+    description = "Returns independent administrator, dependency and coordinator-restart blockers. An empty list means no known blocker; it does not establish that probing has completed or an import is running. Admin scope and administrator role required.",
+    tag = "ingestion",
+    security(("session_cookie" = ["admin"]), ("device_token_bearer" = ["admin"]), ("opds_basic" = ["admin"])),
+    responses(
+        (status = 200, description = "Known ingestion blockers", body = IngestionStatusResponse),
+        (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
+        (status = 403, description = "Administrator role and admin scope required", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
+    )
+)]
+async fn ingestion_status(
+    current_user: CurrentUser,
+    State(state): State<AppState>,
+) -> Result<Json<IngestionStatusResponse>, AppError> {
+    current_user.require_scope(Scope::Admin)?;
+    current_user.require_admin()?;
+    let restarting = state
+        .ingestion
+        .restarting()
+        .await
+        .map_err(AppError::Internal)?;
+    let dependency = state.ingestion.dependency();
+    let enabled = state.settings.read().await.ingestion.ingestion_enabled;
+    let mut blockers = Vec::with_capacity(3);
+    if !enabled {
+        blockers.push(IngestionBlocker::PausedByAdmin);
+    }
+    if let Some(dependency) = dependency {
+        blockers.push(IngestionBlocker::Dependency {
+            reason: dependency.reason,
+            since: dependency.since,
+        });
+    }
+    if restarting {
+        blockers.push(IngestionBlocker::Restarting);
+    }
+    Ok(Json(IngestionStatusResponse { blockers }))
 }
 
 type ScanResponse = services::ingestion::DiscoveryResult;
@@ -404,6 +466,32 @@ mod tests {
         let server = test_support::test_server();
         let response = server.post("/api/v1/ingestion/scan").await;
         assert_eq!(response.status_code(), StatusCode::UNAUTHORIZED);
+    }
+
+    #[tokio::test]
+    async fn status_returns_401_without_auth() {
+        let server = test_support::test_server();
+        server
+            .get("/api/v1/ingestion/status")
+            .await
+            .assert_status_unauthorized();
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn ingestion_status_requires_administrator_role(pool: sqlx::PgPool) {
+        let app = test_support::db::app_pool_for(&pool).await;
+        let (_id, auth) = test_support::db::create_adult_and_basic_auth(&app, "status-adult").await;
+        let mut state = test_support::test_state();
+        state.pool = app;
+        let server = axum_test::TestServer::new(crate::build_router_with_session_store(
+            state,
+            tower_sessions::MemoryStore::default(),
+        ));
+        server
+            .get("/api/v1/ingestion/status")
+            .add_header(axum::http::header::AUTHORIZATION, auth)
+            .await
+            .assert_status_forbidden();
     }
 
     #[sqlx::test(migrations = "./migrations")]

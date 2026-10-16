@@ -16,5 +16,6 @@ pub mod watcher;
 mod orchestrator;
 
 pub use orchestrator::{
-    CoordinatorCommands, CoordinatorHandle, DiscoveryResult, coordinator_channel, run_watcher,
+    CoordinatorCommands, CoordinatorHandle, DependencyReason, DiscoveryResult, coordinator_channel,
+    run_watcher,
 };

@@ -208,6 +208,18 @@ concurrent save may start after that save. Turning ingestion on permits admissio
 not reset dependency backoff. This switch does not make filesystem maintenance safe. It has no environment variable or
 configuration seed.
 
+`GET /api/v1/ingestion/status` requires both admin scope and administrator role. It returns a `blockers` list whose
+entries use `kind`: `paused_by_admin`, `dependency` with `reason` and `since`, and `restarting` while the supervisor
+waits to restart the coordinator. Conditions can appear together. An empty list means no known blocker; the queue may be
+idle or the startup probe may still be pending.
+
+Dependency reasons are `database_unavailable`, `ingestion_folder_unavailable`, `library_folder_unavailable`,
+`library_full`, `another_instance` and `unspecified`. They come from typed failures and never contain raw errors or
+paths. `since` is the UTC start of the continuous observed dependency pause. Repeated failures and reason changes
+preserve it; successful recovery clears it. The last observation survives restart backoff and resets when the next
+coordinator run starts. The status handler reads the observation and live settings without waiting for discovery, probes
+or recovery. Authentication still depends on the application database.
+
 A local cleanup error preserves the completed import or duplicate and its work link; other inputs continue. Successful
 deletion whose state update fails retains a live receipt for recommit. Absence without that receipt records
 `unattributed_disappearance`, including after restart, because absence alone cannot identify the actor.

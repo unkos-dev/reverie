@@ -2192,6 +2192,65 @@
         ]
       }
     },
+    "/api/v1/ingestion/status": {
+      "get": {
+        "tags": [
+          "ingestion"
+        ],
+        "summary": "Read ingestion blockers",
+        "description": "Returns independent administrator, dependency and coordinator-restart blockers. An empty list means no known blocker; it does not establish that probing has completed or an import is running. Admin scope and administrator role required.",
+        "operationId": "ingestion_status",
+        "responses": {
+          "200": {
+            "description": "Known ingestion blockers",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IngestionStatusResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Administrator role and admin scope required",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session_cookie": [
+              "admin"
+            ]
+          },
+          {
+            "device_token_bearer": [
+              "admin"
+            ]
+          },
+          {
+            "opds_basic": [
+              "admin"
+            ]
+          }
+        ]
+      }
+    },
     "/api/v1/manifestations/{id}/enrichment/dry-run": {
       "post": {
         "tags": [
@@ -9057,6 +9116,18 @@
           }
         }
       },
+      "DependencyReason": {
+        "type": "string",
+        "description": "Closed dependency classes safe to expose to administrators.",
+        "enum": [
+          "database_unavailable",
+          "ingestion_folder_unavailable",
+          "library_folder_unavailable",
+          "library_full",
+          "another_instance",
+          "unspecified"
+        ]
+      },
       "DiscoveryResult": {
         "type": "object",
         "description": "Classification counts from discovery, before ingestion completes.",
@@ -9470,6 +9541,61 @@
           "manifestation"
         ]
       },
+      "IngestionBlocker": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "paused_by_admin"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "reason",
+              "since",
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "dependency"
+                ]
+              },
+              "reason": {
+                "$ref": "#/components/schemas/DependencyReason"
+              },
+              "since": {
+                "type": "string",
+                "format": "date-time"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "restarting"
+                ]
+              }
+            }
+          }
+        ]
+      },
       "IngestionSettings": {
         "type": "object",
         "description": "Live acquisition and source-cleanup policy.",
@@ -9512,6 +9638,22 @@
           "failed",
           "skipped"
         ]
+      },
+      "IngestionStatusResponse": {
+        "type": "object",
+        "description": "Known independent conditions preventing new ingestion attempts.",
+        "required": [
+          "blockers"
+        ],
+        "properties": {
+          "blockers": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/IngestionBlocker"
+            },
+            "maxItems": 3
+          }
+        }
       },
       "InputCountsResponse": {
         "type": "object",
@@ -11860,7 +12002,7 @@
     },
     {
       "name": "ingestion",
-      "description": "Admin-only library-scan trigger."
+      "description": "Admin-only ingestion discovery, blockers and retained inputs."
     },
     {
       "name": "auth",

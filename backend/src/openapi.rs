@@ -152,7 +152,7 @@ impl Modify for SecurityAddon {
         (name = "metadata", description = "Metadata review queue: accept / reject / revert / lock and manual edits."),
         (name = "reading", description = "Per-user reading state: status, rating, notes, and reading dates."),
         (name = "enrichment", description = "Enrichment pipeline controls and queue status."),
-        (name = "ingestion", description = "Admin-only library-scan trigger."),
+        (name = "ingestion", description = "Admin-only ingestion discovery, blockers and retained inputs."),
         (name = "auth", description = "OIDC login flow, session introspection, and theme preference."),
         (name = "opds", description = "OPDS 1.2 catalog (Atom XML) for e-reader clients, HTTP Basic auth. \
                                        Documented unconditionally; the routes are absent at runtime when the \
