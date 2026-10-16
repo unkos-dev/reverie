@@ -36,7 +36,11 @@ pub struct CoverPlan {
     /// when the new cover's format differs from the existing entry or no
     /// cover was present. Translated to `ZIP`-absolute paths by the
     /// orchestrator before repack.
-    pub additions: Vec<(String, Vec<u8>, FileOptions<'static, ExtendedFileOptions>)>,
+    pub additions: Vec<(
+        String,
+        Vec<u8>,
+        FileOptions<'static, 'static, ExtendedFileOptions>,
+    )>,
     /// Rewritten `OPF` bytes when the manifest must change (new cover href
     /// or new `MIME` type); `None` when an in-place binary replacement
     /// requires no structural `OPF` change.
@@ -89,8 +93,11 @@ pub fn plan_embed(opf_bytes: &[u8], new_cover_bytes: &[u8]) -> Result<CoverPlan,
 
     let scan = scan_opf(opf_bytes);
     let mut binary_replacements = HashMap::new();
-    let mut additions: Vec<(String, Vec<u8>, FileOptions<'static, ExtendedFileOptions>)> =
-        Vec::new();
+    let mut additions: Vec<(
+        String,
+        Vec<u8>,
+        FileOptions<'static, 'static, ExtendedFileOptions>,
+    )> = Vec::new();
     let mut opf_replacement: Option<Vec<u8>> = None;
 
     if let Some(existing_href) = scan.cover_href.clone() {

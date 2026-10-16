@@ -144,7 +144,7 @@ pub fn with_modifications<S: BuildHasher>(
     writer.write_all(MIMETYPE_CONTENT)?;
     for i in 0..archive.len() {
         let file = archive.by_index(i)?;
-        let name = file.name().to_owned();
+        let name = file.name()?.into_owned();
         if name == MIMETYPE_ENTRY {
             continue;
         }
@@ -322,7 +322,7 @@ mod tests {
         let out_bytes = std::fs::read(temp.path()).unwrap();
         let mut ar = ZipArchive::new(Cursor::new(&out_bytes[..])).unwrap();
         let first = ar.by_index(0).unwrap();
-        assert_eq!(first.name(), MIMETYPE_ENTRY);
+        assert_eq!(first.name().unwrap(), MIMETYPE_ENTRY);
         assert_eq!(first.compression(), zip::CompressionMethod::Stored);
     }
 
@@ -340,6 +340,11 @@ mod tests {
                 zip::CompressionMethod::Deflated,
             ),
             (
+                "OEBPS/café.xhtml",
+                b"<html/>",
+                zip::CompressionMethod::Deflated,
+            ),
+            (
                 "images/cover.jpg",
                 &[0xff; 64],
                 zip::CompressionMethod::Stored,
@@ -351,16 +356,16 @@ mod tests {
         let mut ar = ZipArchive::new(Cursor::new(&out_bytes[..])).unwrap();
         for i in 0..ar.len() {
             let f = ar.by_index(i).unwrap();
-            let expected = match f.name() {
+            let name = f.name().unwrap();
+            let expected = match name.as_ref() {
                 MIMETYPE_ENTRY | "images/cover.jpg" => zip::CompressionMethod::Stored,
-                "OEBPS/content.opf" => zip::CompressionMethod::Deflated,
+                "OEBPS/content.opf" | "OEBPS/café.xhtml" => zip::CompressionMethod::Deflated,
                 other => panic!("unexpected entry {other}"),
             };
             assert_eq!(
                 f.compression(),
                 expected,
-                "entry {} compression mismatch",
-                f.name()
+                "entry {name} compression mismatch"
             );
         }
     }
@@ -634,13 +639,13 @@ mod tests {
                 MIMETYPE_CONTENT,
                 zip::CompressionMethod::Stored,
             ),
-            ("OEBPS/empty.txt", b"", zip::CompressionMethod::Stored),
+            ("OEBPS/空.txt", b"", zip::CompressionMethod::Stored),
         ]);
         let (dir, path) = write_to_temp(&bytes);
         let temp = with_modifications(&path, dir.path(), None, None, &HashMap::new(), &[]).unwrap();
         let out_bytes = std::fs::read(temp.path()).unwrap();
         let mut ar = ZipArchive::new(Cursor::new(out_bytes.as_slice())).unwrap();
-        let mut f = ar.by_name("OEBPS/empty.txt").unwrap();
+        let mut f = ar.by_name("OEBPS/空.txt").unwrap();
         assert_eq!(f.compression(), zip::CompressionMethod::Stored);
         assert_eq!(f.size(), 0);
         let mut buf = Vec::new();
