@@ -358,6 +358,9 @@ once, and refreshes them on window focus only, because this page's poll owner is
   - "Queued {n}, {m} remaining" when a limit on one press left some behind. The button then reads "Retry the rest {m}".
   - While ingestion is paused, file feedback adds "Ingestion is paused, so they will run once it resumes. They return
     here if they fail again."
+- **Loaded pages.** A successful group retry discards that group's loaded continuation pages and cursors. Page one stays
+  mounted and follows its normal refresh policy. A later Show more fetches its page again, even if the cursor is reused.
+  Failed retries preserve loaded pages. The header, retry control and receipt stay mounted.
 - **Nothing to retry.** "Nothing to retry. This group changed after the page loaded."
 - **Failure.** The header button reads "Try again". The alert for files is:
 

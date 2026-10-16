@@ -125,11 +125,15 @@ function FailureRow({ item }: Readonly<{ item: FailureItem }>): ReactElement {
 }
 
 function EnrichmentGroupBody({
+  resetOn,
   source,
   failureClass,
   count,
-}: Readonly<Pick<EnrichmentGroupProps, "source" | "failureClass" | "count">>): ReactElement {
+}: Readonly<
+  Pick<EnrichmentGroupProps, "source" | "failureClass" | "count"> & { resetOn?: object }
+>): ReactElement {
   const group = usePagedGroup<FailureItem>({
+    resetOn,
     firstKey: queryKeys.enrichmentFailures.groupFirst(source, failureClass),
     afterKey: (cursor) => queryKeys.enrichmentFailures.groupAfter(source, failureClass, cursor),
     fetchPage: (cursor, signal) =>
@@ -177,7 +181,12 @@ function EnrichmentGroup({
   const mutation = useMutation({
     mutationFn: () => retryEnrichmentFailures(source, failureClass),
     retry: false,
-    onSuccess: (result) => {
+    onSuccess: async (result) => {
+      const continuation = {
+        queryKey: queryKeys.enrichmentFailures.groupAfterPrefix(source, failureClass),
+      };
+      await client.cancelQueries(continuation);
+      client.removeQueries(continuation);
       pending.current = false;
       const version =
         client.getQueryState(queryKeys.enrichmentFailures.counts())?.dataUpdatedAt ?? 0;
@@ -222,7 +231,12 @@ function EnrichmentGroup({
       countLabel={pluralise(count, "book")}
       defaultOpen={defaultOpen}
     >
-      <EnrichmentGroupBody source={source} failureClass={failureClass} count={count} />
+      <EnrichmentGroupBody
+        resetOn={state?.kind === "success" ? state : undefined}
+        source={source}
+        failureClass={failureClass}
+        count={count}
+      />
     </GroupShell>
   );
 }

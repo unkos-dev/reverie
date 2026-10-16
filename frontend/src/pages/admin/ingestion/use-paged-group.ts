@@ -12,6 +12,8 @@ import { useQueries, useQuery } from "@tanstack/react-query";
 type Page<TItem> = { items: TItem[]; next_cursor?: string | null };
 
 type PagedGroupOptions<TItem> = {
+  /** A stable successful-retry receipt; ordinary first-page refreshes preserve pagination. */
+  resetOn?: object;
   firstKey: readonly unknown[];
   afterKey: (cursor: string) => readonly unknown[];
   fetchPage: (cursor: string | undefined, signal: AbortSignal) => Promise<Page<TItem>>;
@@ -36,7 +38,13 @@ type PagedGroup<TItem> = {
 
 function usePagedGroup<TItem>(options: PagedGroupOptions<TItem>): PagedGroup<TItem> {
   const { firstKey, afterKey, fetchPage, getId, refetchInterval, refetchOnWindowFocus } = options;
-  const [cursors, setCursors] = useState<string[]>([]);
+  const [pagination, setPagination] = useState<{ receipt: object | undefined; cursors: string[] }>({
+    receipt: options.resetOn,
+    cursors: [],
+  });
+  const reset = options.resetOn !== undefined && options.resetOn !== pagination.receipt;
+  const cursors = reset ? [] : pagination.cursors;
+  if (reset) setPagination({ receipt: options.resetOn, cursors: [] });
 
   const first = useQuery({
     queryKey: firstKey,
@@ -76,7 +84,7 @@ function usePagedGroup<TItem>(options: PagedGroupOptions<TItem>): PagedGroup<TIt
 
   function showMore(): void {
     if (tailCursor === null || !lastSettled) return;
-    setCursors((prev) => [...prev, tailCursor]);
+    setPagination((current) => ({ ...current, cursors: [...current.cursors, tailCursor] }));
   }
 
   function retry(): void {

@@ -179,6 +179,7 @@ export const queryKeys = {
     groupsFirst: ["ingestion", "inputs"] as const,
     /** One group's first page (`reason=<class>`, no cursor). */
     groupFirst: (reason: InputReason) => ["ingestion", "inputs", reason] as const,
+    groupAfterPrefix: (reason: InputReason) => ["ingestion", "after", reason] as const,
     /** One later page of a group, keyed by the cursor that opens it. */
     groupAfter: (reason: InputReason, cursor: string) =>
       ["ingestion", "after", reason, cursor] as const,
@@ -193,6 +194,8 @@ export const queryKeys = {
     /** One group's first page; a null source is a group that belongs to no source. */
     groupFirst: (source: string | null, failureClass: FailureClass) =>
       ["enrichment-failures", "list", source ?? "", failureClass] as const,
+    groupAfterPrefix: (source: string | null, failureClass: FailureClass) =>
+      ["enrichment-failures", "after", source ?? "", failureClass] as const,
     /** One later page of a group, keyed by the cursor that opens it. */
     groupAfter: (source: string | null, failureClass: FailureClass, cursor: string) =>
       ["enrichment-failures", "after", source ?? "", failureClass, cursor] as const,

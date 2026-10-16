@@ -114,6 +114,11 @@ function NeedsAttentionCard({
     <InputGroup
       key={group.reason}
       reason={group.reason}
+      retryState={
+        group.reason === "needs_change" || group.reason === "retries_exhausted"
+          ? retries[group.reason]
+          : undefined
+      }
       headerControl={
         group.reason === "needs_change" || group.reason === "retries_exhausted" ? (
           <BulkRetryButton

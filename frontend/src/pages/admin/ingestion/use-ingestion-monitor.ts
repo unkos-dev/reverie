@@ -199,7 +199,10 @@ function useIngestionMonitor(options: {
   const retryMutation = useMutation({
     mutationFn: ({ reason }: { reason: RetryReason; count: number }) => retryInputs(reason),
     retry: false,
-    onSuccess: (result, { reason }) => {
+    onSuccess: async (result, { reason }) => {
+      const continuation = { queryKey: queryKeys.ingestion.groupAfterPrefix(reason) };
+      await queryClient.cancelQueries(continuation);
+      queryClient.removeQueries(continuation);
       retryPending.current.delete(reason);
       const countsVersion =
         queryClient.getQueryState(queryKeys.ingestion.counts())?.dataUpdatedAt ?? 0;

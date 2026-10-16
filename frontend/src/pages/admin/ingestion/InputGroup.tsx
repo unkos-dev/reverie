@@ -9,11 +9,12 @@ import { queryKeys } from "@/lib/query/keys";
 import { pluralise, splitPath } from "./format";
 import { GroupFooter } from "./GroupFooter";
 import { GroupFailed, GroupLoading } from "./GroupState";
-import { GroupShell } from "./GroupShell";
+import { GroupShell, type BulkRetryState } from "./GroupShell";
 import { alsoLine, INPUT_REASON_COPY, inputGroupTitle } from "./reason-copy";
 import { usePagedGroup } from "./use-paged-group";
 
 type InputGroupProps = {
+  retryState?: BulkRetryState;
   headerControl?: ReactNode;
   feedback?: ReactNode;
   reason: InputReason;
@@ -44,11 +45,13 @@ function InputRow({ item }: Readonly<{ item: InputItem }>): ReactElement {
 }
 
 function InputGroupBody({
+  retryState,
   reason,
   count,
   pollInterval,
 }: Readonly<Omit<InputGroupProps, "defaultOpen">>): ReactElement {
   const group = usePagedGroup<InputItem>({
+    resetOn: retryState?.kind === "success" ? retryState : undefined,
     firstKey: queryKeys.ingestion.groupFirst(reason),
     afterKey: (cursor) => queryKeys.ingestion.groupAfter(reason, cursor),
     fetchPage: (cursor, signal) =>
@@ -77,6 +80,7 @@ function InputGroupBody({
 }
 
 function InputGroup({
+  retryState,
   headerControl,
   feedback,
   reason,
@@ -96,7 +100,12 @@ function InputGroup({
       muted={reason === "format_not_accepted"}
       defaultOpen={defaultOpen}
     >
-      <InputGroupBody reason={reason} count={count} pollInterval={pollInterval} />
+      <InputGroupBody
+        retryState={retryState}
+        reason={reason}
+        count={count}
+        pollInterval={pollInterval}
+      />
     </GroupShell>
   );
 }
