@@ -284,7 +284,7 @@ mod tests {
         let cursor = std::io::Cursor::new(repacked);
         let mut archive = ZipArchive::new(cursor).unwrap();
         let first = archive.by_index(0).unwrap();
-        assert_eq!(first.name(), MIMETYPE_ENTRY);
+        assert_eq!(first.name().unwrap(), MIMETYPE_ENTRY);
         assert_eq!(first.compression(), zip::CompressionMethod::Stored);
     }
 

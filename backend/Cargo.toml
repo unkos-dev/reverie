@@ -114,7 +114,7 @@ uuid = { version = "1.23.4", features = ["v4", "serde"] }
 # encryption, so default features would pull in compression methods and
 # crypto code no valid archive uses. `time` stays because ZipWriter's default
 # write timestamp needs it. See docs/adr/0049-read-epub-archives-with-rawzip.md.
-zip = { version = "9.0.0", default-features = false, features = ["deflate-flate2-zlib-rs", "time"] }
+zip = { version = "9.0.3", default-features = false, features = ["deflate-flate2-zlib-rs", "time"] }
 # Server-side password-strength estimator (NIST SP 800-63B strength floor,
 # docs/adr/0034-password-policy-zxcvbn-floor-plus-a-fail-open-hibp-check.md). Pure Rust, no network.
 zxcvbn = "3"

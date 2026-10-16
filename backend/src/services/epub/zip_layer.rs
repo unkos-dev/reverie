@@ -1488,7 +1488,7 @@ mod tests {
         let mut w = zip::ZipWriter::new(buf);
         let mut mimetype_opts: zip::write::FileOptions<zip::write::ExtendedFileOptions> =
             zip::write::FileOptions::default().compression_method(zip::CompressionMethod::Stored);
-        mimetype_opts.add_extra_data(0x1234, b"x", false).unwrap();
+        mimetype_opts.add_extra_field(0x1234, b"x", false).unwrap();
         w.start_file(MIMETYPE_ENTRY, mimetype_opts).unwrap();
         w.write_all(MIMETYPE_CONTENT).unwrap();
         let bytes = w.finish().unwrap().into_inner();

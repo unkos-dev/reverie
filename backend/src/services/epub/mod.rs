@@ -954,7 +954,7 @@ mod tests {
         let mut archive = ZipArchive::new(std::io::Cursor::new(repacked)).unwrap();
         {
             let mut first = archive.by_index(0).unwrap();
-            assert_eq!(first.name(), repack::MIMETYPE_ENTRY);
+            assert_eq!(first.name().unwrap(), repack::MIMETYPE_ENTRY);
             assert_eq!(first.compression(), zip::CompressionMethod::Stored);
             let mut content = Vec::new();
             first.read_to_end(&mut content).unwrap();
