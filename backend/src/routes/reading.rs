@@ -130,7 +130,7 @@ impl ReadingStateRow {
     description = "Returns the caller's reading state for one book; all-null fields mean the book is unread.",
     tag = "reading",
     security(("session_cookie" = ["read"]), ("device_token_bearer" = ["read"]), ("opds_basic" = ["read"])),
-    params(("id" = Uuid, Path, description = "Manifestation id")),
+    params(("id" = Uuid, Path, max_length = 45, description = "Manifestation id")),
     responses(
         (status = 200, description = "Caller's reading state; all-null fields mean unread (no row yet)", body = ReadingState,
          headers(("ETag" = String, description = "Strong entity-tag hashing every PATCH-modifiable field; echo as If-Match on a protected write"))),
@@ -283,7 +283,7 @@ fn apply_patch(existing: ReadingStateRow, req: &UpdateReadingRequest) -> Reading
     tag = "reading",
     security(("session_cookie" = ["write"]), ("device_token_bearer" = ["write"]), ("opds_basic" = ["write"])),
     params(
-        ("id" = Uuid, Path, description = "Manifestation id"),
+        ("id" = Uuid, Path, max_length = 45, description = "Manifestation id"),
         ("If-Match" = String, Header, description = "Exactly one quoted strong entity-tag, as returned in a prior GET or PATCH response's ETag header. Opaque content follows the full RFC 9110 8.8.3 grammar, obs-text included. The * wildcard, entity-tag lists, weak tags, and repeated instances of this field are refused with 400. Required: absent means 428; unequal means 412")
     ),
     request_body(content = UpdateReadingRequest, description = "RFC 7396 JSON Merge Patch: absent fields are unchanged, `null` clears"),

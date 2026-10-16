@@ -137,7 +137,7 @@ pub struct UpdateSettings {
     pub opds_page_size: Option<i32>,
 
     /// Formats accepted for ingestion; must contain at least one format.
-    #[schema(min_items = 1)]
+    #[schema(min_items = 1, max_items = 1)]
     pub accepted_formats: Option<Vec<ManifestationFormat>>,
     /// Remove imported source files.
     pub cleanup_imported: Option<bool>,

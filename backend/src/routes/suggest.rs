@@ -122,6 +122,7 @@ struct AuthorsByIdParams {
     /// (empty is 422) and capped at [`MAX_RESOLVE_IDS`]; unknown or
     /// out-of-scope ids are silently omitted rather than 404'd.
     #[serde(default)]
+    #[param(max_items = 60, max_length = 45)]
     id: Vec<Uuid>,
 }
 

@@ -95,7 +95,7 @@ struct MetadataRow {
     description = "Returns the metadata review queue for one manifestation, newest first; the list is empty when the manifestation is missing or hidden from the caller. Available to adult accounts only.",
     tag = "metadata",
     security(("session_cookie" = ["read"]), ("device_token_bearer" = ["read"]), ("opds_basic" = ["read"])),
-    params(("id" = Uuid, Path, description = "Manifestation id")),
+    params(("id" = Uuid, Path, max_length = 45, description = "Manifestation id")),
     responses(
         (status = 200, description = "Metadata version rows for the manifestation, newest first (empty when the manifestation is missing or RLS-hidden)", body = [MetadataRow]),
         (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
@@ -128,7 +128,7 @@ async fn get_manifestation_metadata(
     description = "Returns the metadata review queue across every manifestation of a work, newest first; the list is empty when the work is missing or hidden from the caller. Available to adult accounts only.",
     tag = "metadata",
     security(("session_cookie" = ["read"]), ("device_token_bearer" = ["read"]), ("opds_basic" = ["read"])),
-    params(("id" = Uuid, Path, description = "Work id")),
+    params(("id" = Uuid, Path, max_length = 45, description = "Work id")),
     responses(
         (status = 200, description = "Metadata version rows across the work's manifestations, newest first (empty when the work is missing or RLS-hidden)", body = [MetadataRow]),
         (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
@@ -218,6 +218,7 @@ async fn load_versions(
 #[derive(Debug, Deserialize, utoipa::ToSchema)]
 struct VersionPayload {
     /// Metadata version row to act on.
+    #[schema(max_length = 45)]
     version_id: Uuid,
 }
 
@@ -225,9 +226,11 @@ struct VersionPayload {
 #[derive(Debug, Deserialize, utoipa::ToSchema)]
 struct RevertPayload {
     /// Canonical field to revert (e.g. `title`).
+    #[schema(max_length = 38)]
     field_name: String,
     /// Version to restore; `null` clears the canonical pointer AND the
     /// canonical column.
+    #[schema(max_length = 45)]
     version_id: Option<Uuid>,
 }
 
@@ -237,8 +240,19 @@ struct LockPayload {
     /// Field to lock or unlock (e.g. `title`).
     field_name: String,
     /// Entity the lock applies to: `work` or `manifestation`.
-    #[schema(example = "manifestation")]
+    #[schema(schema_with = lock_entity_type_schema)]
     entity_type: String,
+}
+
+fn lock_entity_type_schema() -> utoipa::openapi::schema::Object {
+    utoipa::openapi::schema::ObjectBuilder::new()
+        .schema_type(utoipa::openapi::schema::Type::String)
+        .description(Some(
+            "Entity the lock applies to: `work` or `manifestation`.",
+        ))
+        .enum_values(Some(["work", "manifestation"]))
+        .examples(["manifestation"])
+        .build()
 }
 
 /// `POST /api/v1/manifestations/{id}/metadata/accept` — promote a pending
@@ -257,7 +271,7 @@ struct LockPayload {
     description = "Promotes a pending metadata version to canonical for a manifestation. Acceptance leaves review status pending; repeated acceptance is allowed and enqueues another writeback job for file-backed fields. Accepting an ISBN change may trigger a re-match against other works. Available to adult accounts only. Returns 404 when the version is missing, belongs to another manifestation, or is already rejected; returns 422 if the stored value fails field parsing.",
     tag = "metadata",
     security(("session_cookie" = ["write"]), ("device_token_bearer" = ["write"]), ("opds_basic" = ["write"])),
-    params(("id" = Uuid, Path, description = "Manifestation id")),
+    params(("id" = Uuid, Path, max_length = 45, description = "Manifestation id")),
     request_body = VersionPayload,
     responses(
         (status = 200, description = "Version promoted to canonical; accepted ISBN changes may re-match the work"),
@@ -363,7 +377,7 @@ async fn lock_version_review(
     description = "Marks a pending metadata version as rejected. Available to adult accounts only.",
     tag = "metadata",
     security(("session_cookie" = ["write"]), ("device_token_bearer" = ["write"]), ("opds_basic" = ["write"])),
-    params(("id" = Uuid, Path, description = "Manifestation id")),
+    params(("id" = Uuid, Path, max_length = 45, description = "Manifestation id")),
     request_body = VersionPayload,
     responses(
         (status = 200, description = "Version marked rejected"),
@@ -426,7 +440,7 @@ async fn reject_manifestation(
     description = "Restores a prior metadata version as canonical for a field, or clears the field entirely when no version is given. Available to adult accounts only. Returns 422 if the field cannot be cleared or the stored value fails parsing.",
     tag = "metadata",
     security(("session_cookie" = ["write"]), ("device_token_bearer" = ["write"]), ("opds_basic" = ["write"])),
-    params(("id" = Uuid, Path, description = "Manifestation id")),
+    params(("id" = Uuid, Path, max_length = 45, description = "Manifestation id")),
     request_body = RevertPayload,
     responses(
         (status = 200, description = "Field reverted to the given version, or cleared when version_id is null"),
@@ -524,7 +538,7 @@ async fn revert_manifestation(
     description = "Locks a metadata field against future automated enrichment writes; locking an already-locked field is a no-op. Available to adult accounts only.",
     tag = "metadata",
     security(("session_cookie" = ["write"]), ("device_token_bearer" = ["write"]), ("opds_basic" = ["write"])),
-    params(("id" = Uuid, Path, description = "Manifestation id")),
+    params(("id" = Uuid, Path, max_length = 45, description = "Manifestation id")),
     request_body = LockPayload,
     responses(
         (status = 201, description = "Lock recorded (idempotent)"),
@@ -579,7 +593,7 @@ async fn lock_field(
     description = "Removes a lock on a metadata field, allowing future automated enrichment writes to resume. Available to adult accounts only.",
     tag = "metadata",
     security(("session_cookie" = ["write"]), ("device_token_bearer" = ["write"]), ("opds_basic" = ["write"])),
-    params(("id" = Uuid, Path, description = "Manifestation id")),
+    params(("id" = Uuid, Path, max_length = 45, description = "Manifestation id")),
     request_body = LockPayload,
     responses(
         (status = 200, description = "Lock removed"),
@@ -1794,37 +1808,37 @@ fn string_property_names() -> utoipa::openapi::schema::Object {
 }
 
 fn update_metadata_work_identifiers_schema() -> utoipa::openapi::schema::Object {
-    use utoipa::openapi::schema::{ObjectBuilder, SchemaType, Type};
-    ObjectBuilder::new()
-        .schema_type(SchemaType::from_iter([Type::Object, Type::Null]))
-        .description(Some(
-            "Work-level external identifiers keyed by scheme (e.g.\n\
+    update_metadata_identifiers_schema(
+        "Work-level external identifiers keyed by scheme (e.g.\n\
              `{\"openlibrary\": \"OL45804W\"}`). Each entry independently sets its\n\
              scheme's single slot; a `null` entry clears it. Absent (or `null`)\n\
              leaves all work-level identifiers unchanged. Handled separately from\n\
              the scalar fields — not part of [`Self::populated`].",
-        ))
-        .additional_properties(Some(utoipa::openapi::Schema::Object(
-            nullable_string_value_schema(),
-        )))
-        .property_names(Some(string_property_names()))
-        .max_properties(Some(MAX_IDENTIFIERS_PER_LEVEL))
-        .build()
+    )
 }
 
 fn update_metadata_manifestation_identifiers_schema() -> utoipa::openapi::schema::Object {
+    update_metadata_identifiers_schema(
+        "Manifestation-level external identifiers keyed by scheme (e.g.\n\
+             `{\"googlebooks\": \"zyTZAAAAYAAJ\"}`). Same per-entry set/clear semantics\n\
+             as `work_identifiers`.",
+    )
+}
+
+fn update_metadata_identifiers_schema(description: &str) -> utoipa::openapi::schema::Object {
     use utoipa::openapi::schema::{ObjectBuilder, SchemaType, Type};
     ObjectBuilder::new()
         .schema_type(SchemaType::from_iter([Type::Object, Type::Null]))
-        .description(Some(
-            "Manifestation-level external identifiers keyed by scheme (e.g.\n\
-             `{\"googlebooks\": \"zyTZAAAAYAAJ\"}`). Same per-entry set/clear semantics\n\
-             as `work_identifiers`.",
-        ))
+        .description(Some(description))
         .additional_properties(Some(utoipa::openapi::Schema::Object(
             nullable_string_value_schema(),
         )))
-        .property_names(Some(string_property_names()))
+        .property_names(Some(
+            ObjectBuilder::new()
+                .schema_type(Type::String)
+                .max_length(Some(12))
+                .build(),
+        ))
         .max_properties(Some(MAX_IDENTIFIERS_PER_LEVEL))
         .build()
 }
@@ -2114,7 +2128,7 @@ async fn load_book_metadata(
     description = "Returns the editable metadata span for one manifestation, matching what the corresponding PATCH accepts. Available to adult accounts only.",
     tag = "metadata",
     security(("session_cookie" = ["read"]), ("device_token_bearer" = ["read"]), ("opds_basic" = ["read"])),
-    params(("id" = Uuid, Path, description = "Manifestation id")),
+    params(("id" = Uuid, Path, max_length = 45, description = "Manifestation id")),
     responses(
         (status = 200, description = "The editable metadata span, matching what PATCH accepts", body = BookMetadata,
          headers(("ETag" = String, description = "Strong entity-tag hashing this response body. Echo as If-Match on PATCH /api/v1/books/{id}/metadata"))),
@@ -2267,7 +2281,7 @@ async fn load_manifestation_identifiers(
     tag = "metadata",
     security(("session_cookie" = ["write"]), ("device_token_bearer" = ["write"]), ("opds_basic" = ["write"])),
     params(
-        ("id" = Uuid, Path, description = "Manifestation id"),
+        ("id" = Uuid, Path, max_length = 45, description = "Manifestation id"),
         ("If-Match" = String, Header, description = "Exactly one quoted strong entity-tag, as returned in a prior GET or PATCH response's ETag header. Opaque content follows the full RFC 9110 8.8.3 grammar, obs-text included. The * wildcard, entity-tag lists, weak tags, and repeated instances of this field are refused with 400. Required: absent means 428; unequal means 412")
     ),
     request_body(content = UpdateMetadataFields, description = "RFC 7396 JSON Merge Patch: absent fields are unchanged, `null` clears (except `title`)"),

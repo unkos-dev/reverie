@@ -130,7 +130,7 @@ async fn get_preferences(
 struct UpdatePreferencesRequest {
     /// Column keys to hide. Absent = unchanged; `null` resets to the default.
     #[serde(default, with = "::serde_with::rust::double_option")]
-    #[schema(value_type = Option<Vec<String>>)]
+    #[schema(value_type = Option<Vec<String>>, max_items = 64, max_length = 64)]
     hidden_columns: Option<Option<Vec<String>>>,
     /// Row density. Absent = unchanged; `null` resets to the default.
     #[serde(default, with = "::serde_with::rust::double_option")]
@@ -143,7 +143,7 @@ struct UpdatePreferencesRequest {
     /// Default sort in the `?sort=` wire grammar. Absent = unchanged; `null`
     /// resets to the default.
     #[serde(default, with = "::serde_with::rust::double_option")]
-    #[schema(value_type = Option<String>)]
+    #[schema(value_type = Option<String>, max_length = 26)]
     sort_stack: Option<Option<String>>,
 }
 

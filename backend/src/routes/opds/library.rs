@@ -210,7 +210,7 @@ async fn library_authors(
     description = "Returns an OPDS acquisition feed of one author's visible books, cursor-paginated via `cursor` (empty if the author is unknown). Requires HTTP Basic authentication.",
     tag = "opds",
     security(("opds_basic" = [])),
-    params(("id" = Uuid, Path, description = "Author id"), PageParams),
+    params(("id" = Uuid, Path, max_length = 45, description = "Author id"), PageParams),
     responses(
         (status = 200, description = "OPDS acquisition feed of the author's visible books (empty for unknown authors)", content_type = "application/atom+xml;profile=opds-catalog;kind=acquisition", body = String),
         (status = 400, description = "Malformed query or path parameter", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
@@ -291,7 +291,7 @@ async fn library_series(
     description = "Returns an OPDS acquisition feed of one series' visible books, in series order (empty if the series is unknown). Requires HTTP Basic authentication.",
     tag = "opds",
     security(("opds_basic" = [])),
-    params(("id" = Uuid, Path, description = "Series id"), PageParams),
+    params(("id" = Uuid, Path, max_length = 45, description = "Series id"), PageParams),
     responses(
         (status = 200, description = "OPDS acquisition feed of the series' visible books (empty for unknown series)", content_type = "application/atom+xml;profile=opds-catalog;kind=acquisition", body = String),
         (status = 400, description = "Malformed query or path parameter", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),

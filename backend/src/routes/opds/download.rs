@@ -52,7 +52,7 @@ pub fn router() -> OpenApiRouter<AppState> {
     description = "Streams one opened EPUB file for a manifestation, with Content-Length from that handle and a `Content-Disposition: attachment` header carrying a title-derived filename. Requires HTTP Basic authentication. Relative and absolute links resolving inside the library are supported. Established escapes return 403, missing files return 404, and other filesystem failures return a generic 500.",
     tag = "opds",
     security(("opds_basic" = [])),
-    params(("id" = Uuid, Path, description = "Manifestation id")),
+    params(("id" = Uuid, Path, max_length = 45, description = "Manifestation id")),
     responses(
         (status = 200, description = "EPUB byte stream; Content-Disposition: attachment with a title-derived filename", content_type = "application/epub+zip"),
         (status = 401, description = "Basic authentication required (WWW-Authenticate: Basic)", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),

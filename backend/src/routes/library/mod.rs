@@ -136,48 +136,62 @@ struct ListParams {
     /// field, a repeated column, or more than three levels is a 422.
     /// Omitted, this is `-created_at` (today's "recent" order).
     #[serde(default)]
-    #[param(example = "-created_at,title")]
+    #[param(example = "-created_at,title", max_length = 26)]
     sort: Option<String>,
     /// All-of author filter: every listed author id must be linked to
     /// the work in the `author` role. A single `?author=<uuid>` is the
     /// one-element case.
     #[serde(default)]
+    #[param(max_items = 20, max_length = 45)]
     author: Vec<Uuid>,
     /// Any-of author filter: at least one listed author id is linked.
     #[serde(default)]
+    #[param(max_items = 20, max_length = 45)]
     author_any: Vec<Uuid>,
     /// None-of author filter: no listed author id is linked.
     #[serde(default)]
+    #[param(max_items = 20, max_length = 45)]
     author_none: Vec<Uuid>,
     #[serde(default)]
+    #[param(max_length = 45)]
     series: Option<Uuid>,
     #[serde(default)]
+    #[param(max_length = 45)]
     shelf: Option<Uuid>,
     #[serde(default)]
+    #[param(max_items = 20)]
     tag: Vec<String>,
     /// All-of genre filter: every listed genre name must be attached.
     #[serde(default)]
+    #[param(max_items = 20)]
     genre: Vec<String>,
     /// Any-of genre filter: at least one listed genre name is attached.
     #[serde(default)]
+    #[param(max_items = 20)]
     genre_any: Vec<String>,
     /// None-of genre filter: no listed genre name is attached.
     #[serde(default)]
+    #[param(max_items = 20)]
     genre_none: Vec<String>,
     /// All-of mood filter: every listed mood name must be attached.
     #[serde(default)]
+    #[param(max_items = 20)]
     mood: Vec<String>,
     /// Any-of mood filter: at least one listed mood name is attached.
     #[serde(default)]
+    #[param(max_items = 20)]
     mood_any: Vec<String>,
     /// None-of mood filter: no listed mood name is attached.
     #[serde(default)]
+    #[param(max_items = 20)]
     mood_none: Vec<String>,
     /// Any-of tag filter: at least one listed tag name is attached.
     #[serde(default)]
+    #[param(max_items = 20)]
     tag_any: Vec<String>,
     /// None-of tag filter: no listed tag name is attached.
     #[serde(default)]
+    #[param(max_items = 20)]
     tag_none: Vec<String>,
     /// Case-insensitive, accent-insensitive substring match on the work
     /// title.
@@ -228,9 +242,11 @@ struct ListParams {
     /// name or the `unread` pseudo-value (no status set); a row qualifies
     /// when it matches at least one.
     #[serde(default)]
+    #[param(max_items = 20, max_length = 12)]
     status_any: Vec<String>,
     /// None-of reading-status filter: excludes rows matching any value.
     #[serde(default)]
+    #[param(max_items = 20, max_length = 12)]
     status_none: Vec<String>,
     /// Lower bound (inclusive) on the caller's rating (1 to 5).
     #[serde(default)]
@@ -1047,7 +1063,7 @@ fn merge_external_ids(
     summary = "Get a book's detail",
     description = "Returns detail for one manifestation, including work-level prose and a metadata-version summary. A manifestation hidden from the caller is reported as 404 rather than leaking its existence. A child account receives an empty pending-version list and a pending count of zero.",
     tag = "library",
-    params(("id" = Uuid, Path, description = "Manifestation id")),
+    params(("id" = Uuid, Path, max_length = 45, description = "Manifestation id")),
     security(("session_cookie" = ["read"]), ("device_token_bearer" = ["read"]), ("opds_basic" = ["read"])),
     responses(
         (status = 200, description = "Book detail", body = BookDetail),
@@ -1558,7 +1574,7 @@ fn accepted_pointer_count(row: &DetailRow) -> u32 {
     summary = "Get a work's detail",
     description = "Returns work-level prose plus every manifestation of that work visible to the caller. Fails with 404 when the work is missing or every manifestation is hidden from the caller.",
     tag = "library",
-    params(("id" = Uuid, Path, description = "Work id")),
+    params(("id" = Uuid, Path, max_length = 45, description = "Work id")),
     security(("session_cookie" = ["read"]), ("device_token_bearer" = ["read"]), ("opds_basic" = ["read"])),
     responses(
         (status = 200, description = "Work detail with visible manifestations", body = WorkDetail),
