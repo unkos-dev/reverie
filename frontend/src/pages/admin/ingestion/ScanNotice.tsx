@@ -6,7 +6,7 @@ import type { UseQueryResult } from "@tanstack/react-query";
 
 import { ApiError } from "@/api";
 import type { BatchRow } from "@/api/dashboard";
-import type { DiscoveryResult, IngestionStatus } from "@/api/ingestion";
+import type { DependencyReason, DiscoveryResult, IngestionStatus } from "@/api/ingestion";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { formatDateTime } from "@/lib/format/datetime";
@@ -209,6 +209,87 @@ function ScanNotice({
   );
 }
 
+function PipelinePermissionNotice({ code }: Readonly<{ code: 401 | 403 }>): ReactElement {
+  return (
+    <NoticeLine
+      boxed
+      icon={Lock}
+      title={code === 401 ? "Your session has ended" : "This account cannot see ingestion status"}
+      detail={
+        code === 401 ? "Sign in again to see ingestion status." : "Sign in as an administrator."
+      }
+    />
+  );
+}
+
+function DependencyNotice({
+  reason,
+  since,
+}: Readonly<{ reason: DependencyReason; since: string }>): ReactElement {
+  const copy = DEPENDENCY_COPY[reason];
+  return (
+    <div>
+      <p>{copy.reason}</p>
+      <p>
+        <strong className="font-bold text-fg">What to check.</strong> {copy.check}
+      </p>
+      <p>
+        Dependency problem since <time dateTime={since}>{formatDateTime(since)}</time>.
+      </p>
+    </div>
+  );
+}
+
+function PipelineBlockers({ blockers }: Readonly<IngestionStatus>): ReactElement {
+  const administrator = blockers.some((blocker) => blocker.kind === "paused_by_admin");
+  const dependency = blockers.find((blocker) => blocker.kind === "dependency");
+  const restarting = blockers.some((blocker) => blocker.kind === "restarting");
+  return (
+    <section
+      aria-labelledby="ingestion-blockers-title"
+      className="border-border-strong rounded-xl border px-4 py-3 text-sm"
+    >
+      <h2 id="ingestion-blockers-title" className="font-bold">
+        Imports are paused
+      </h2>
+      <div className="mt-3 space-y-3 text-fg-muted">
+        {administrator ? (
+          <div>
+            <p>New imports have been paused by an administrator.</p>
+            <p>
+              <strong className="font-bold text-fg">What to check.</strong> Turn on Import files in
+              Acquisition settings when you are ready to resume.
+            </p>
+            <Link
+              className="font-medium text-fg underline underline-offset-4"
+              to="/admin/settings/acquisition"
+            >
+              Open Acquisition settings
+            </Link>
+          </div>
+        ) : null}
+        {dependency !== undefined ? (
+          <DependencyNotice reason={dependency.reason} since={dependency.since} />
+        ) : null}
+        {restarting ? (
+          <div>
+            <p>The ingestion worker is restarting.</p>
+            <p>
+              <strong className="font-bold text-fg">What to check.</strong> Wait for Reverie to
+              restart the worker. If it keeps restarting, check the server log.
+            </p>
+          </div>
+        ) : null}
+        <p>
+          Queued files are kept. Work already started can finish, and scans and recovery continue.
+          New imports resume when Import files is on, dependencies are available and the worker is
+          running.
+        </p>
+      </div>
+    </section>
+  );
+}
+
 function PipelineNotice({
   status,
 }: Readonly<{ status: UseQueryResult<IngestionStatus> }>): ReactElement {
@@ -219,18 +300,7 @@ function PipelineNotice({
     if (code === 401 || code === 403) {
       failure = (
         <div role="alert">
-          <NoticeLine
-            boxed
-            icon={Lock}
-            title={
-              code === 401 ? "Your session has ended" : "This account cannot see ingestion status"
-            }
-            detail={
-              code === 401
-                ? "Sign in again to see ingestion status."
-                : "Sign in as an administrator."
-            }
-          />
+          <PipelinePermissionNotice code={code} />
         </div>
       );
     } else {
@@ -257,65 +327,7 @@ function PipelineNotice({
       );
     }
   } else if (status.data !== undefined && status.data.blockers.length > 0) {
-    const administrator = status.data.blockers.some(
-      (blocker) => blocker.kind === "paused_by_admin",
-    );
-    const dependency = status.data.blockers.find((blocker) => blocker.kind === "dependency");
-    const restarting = status.data.blockers.some((blocker) => blocker.kind === "restarting");
-    const dependencyCopy = dependency === undefined ? null : DEPENDENCY_COPY[dependency.reason];
-    body = (
-      <section
-        aria-labelledby="ingestion-blockers-title"
-        className="border-border-strong rounded-xl border px-4 py-3 text-sm"
-      >
-        <h2 id="ingestion-blockers-title" className="font-bold">
-          Imports are paused
-        </h2>
-        <div className="mt-3 space-y-3 text-fg-muted">
-          {administrator ? (
-            <div>
-              <p>New imports have been paused by an administrator.</p>
-              <p>
-                <strong className="font-bold text-fg">What to check.</strong> Turn on Import files
-                in Acquisition settings when you are ready to resume.
-              </p>
-              <Link
-                className="font-medium text-fg underline underline-offset-4"
-                to="/admin/settings/acquisition"
-              >
-                Open Acquisition settings
-              </Link>
-            </div>
-          ) : null}
-          {dependency !== undefined && dependencyCopy !== null ? (
-            <div>
-              <p>{dependencyCopy.reason}</p>
-              <p>
-                <strong className="font-bold text-fg">What to check.</strong> {dependencyCopy.check}
-              </p>
-              <p>
-                Dependency problem since{" "}
-                <time dateTime={dependency.since}>{formatDateTime(dependency.since)}</time>.
-              </p>
-            </div>
-          ) : null}
-          {restarting ? (
-            <div>
-              <p>The ingestion worker is restarting.</p>
-              <p>
-                <strong className="font-bold text-fg">What to check.</strong> Wait for Reverie to
-                restart the worker. If it keeps restarting, check the server log.
-              </p>
-            </div>
-          ) : null}
-          <p>
-            Queued files are kept. Work already started can finish, and scans and recovery continue.
-            New imports resume when Import files is on, dependencies are available and the worker is
-            running.
-          </p>
-        </div>
-      </section>
-    );
+    body = <PipelineBlockers blockers={status.data.blockers} />;
   }
   return (
     <div className={body === null && failure === null ? "sr-only" : "space-y-2"}>
