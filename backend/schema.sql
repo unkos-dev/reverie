@@ -2033,10 +2033,24 @@ CREATE INDEX idx_ingestion_inputs_current ON public.ingestion_inputs USING btree
 
 
 --
+-- Name: idx_ingestion_inputs_matched_manifestation; Type: INDEX; Schema: public; Owner: reverie_migrator
+--
+
+CREATE INDEX idx_ingestion_inputs_matched_manifestation ON public.ingestion_inputs USING btree (matched_manifestation_id) WHERE (matched_manifestation_id IS NOT NULL);
+
+
+--
 -- Name: idx_ingestion_inputs_present_path; Type: INDEX; Schema: public; Owner: reverie_migrator
 --
 
 CREATE UNIQUE INDEX idx_ingestion_inputs_present_path ON public.ingestion_inputs USING btree (source_path) WHERE (status <> 'removed'::public.ingestion_input_status);
+
+
+--
+-- Name: idx_ingestion_inputs_work; Type: INDEX; Schema: public; Owner: reverie_migrator
+--
+
+CREATE INDEX idx_ingestion_inputs_work ON public.ingestion_inputs USING btree (work_id) WHERE (work_id IS NOT NULL);
 
 
 --
