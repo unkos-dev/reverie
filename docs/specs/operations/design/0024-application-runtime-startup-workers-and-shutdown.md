@@ -23,10 +23,11 @@ liveness and readiness probes, and the runtime stage of the container image that
 
 This subject owns: CLI subcommand dispatch (`Command`, `parse_command`); the ordered, fallible setup sequence inside
 `run` (configuration load, CSP header finalisation, tracing, database pools, the schema apply-or-verify step, admin
-storage-root acquisition, admin bootstrap, OIDC client construction, settings load, login limiter construction,
-`AppState` assembly, router build, listener bind); how the five service workers are registered and the coordinator owns
-its filesystem watcher; the supervised drain that awaits them on shutdown; the `/health` and `/health/ready` probes; and
-the `runtime` stage of `Dockerfile` (its `ENTRYPOINT`, `HEALTHCHECK`, `USER` and `EXPOSE`).
+storage-root acquisition, admin bootstrap, OIDC runtime construction, settings load, login limiter construction,
+`AppState` assembly, router build, listener bind); how the five unconditional service workers and optional OIDC
+discovery worker are registered and the coordinator owns its filesystem watcher; the supervised drain that awaits them
+on shutdown; the `/health` and `/health/ready` probes; and the `runtime` stage of `Dockerfile` (its `ENTRYPOINT`,
+`HEALTHCHECK`, `USER` and `EXPOSE`).
 
 It does not own: what each background worker does once running (the ingestion pipeline, the enrichment queue, the
 writeback pipeline, the settings live-reload mechanism and the session sweep are each their own subject); the meaning or
@@ -44,10 +45,10 @@ service workers and filesystem watcher, and serves the same routes.
 
 Depends on: `config::Config` for every setting `run` reads; `db::init_pool`, `db::init_writeback_pool`,
 `db::run_migrations` and `db::verify_schema_current` for every database connection it opens;
-`auth::oidc::init_oidc_client` for the optional OIDC client it constructs; `security::csp::build_api_csp`,
-`security::csp::build_html_csp` and `security::dist_validation::validate_frontend_dist` for the CSP headers it finalises
-before building the router; `services::settings::seed_ingestion` for the initial settings snapshot; `build_router` for
-the Axum router it serves; and the worker entry points named in Structure below.
+`auth::oidc::OidcRuntime::configured` for synchronous optional OIDC runtime construction;
+`security::csp::build_api_csp`, `security::csp::build_html_csp` and `security::dist_validation::validate_frontend_dist`
+for the CSP headers it finalises before building the router; `services::settings::seed_ingestion` for the initial
+settings snapshot; `build_router` for the Axum router it serves; and the worker entry points named in Structure below.
 
 Depended on by: `main.rs`, whose `#[tokio::main]` `main` is the sole caller of `parse_command` and the command
 entrypoints; the container image's `ENTRYPOINT`, which invokes the compiled binary with no arguments (the `Serve` path)
@@ -74,10 +75,11 @@ directly rather than assembling its own `AppState` and calling `build_router`.
   `build_router_with_session_store` composes them, which decides what a rejection at one layer carries from the layers
   outside it.
 - `backend/src/lib.rs::worker_supervisor` configures task-supervisor's restart window, backoff, dead-task threshold and
-  stop timeout. `spawn_workers` registers the five service workers. `Worker` adapts successful returns outside
-  cancellation into failures; `supervise_until_shutdown` maps a terminal supervisor error to shutdown cancellation and
-  an error returned by `run`. The ingestion handle shares the supervisor handle with the status route so lifecycle reads
-  use the supervisor's task status.
+  stop timeout. `spawn_workers` registers five unconditional workers and uses `with_oidc_discovery` to add the
+  configured OIDC worker. `Worker` adapts successful returns outside cancellation into failures;
+  `supervise_until_shutdown` maps a terminal supervisor error to shutdown cancellation and an error returned by `run`.
+  The ingestion handle shares the supervisor handle with the status route so lifecycle reads use the supervisor's task
+  status.
 - `backend/src/lib.rs::apply_or_verify_schema` is the schema-step flag selector: it branches on `config.auto_migrate`
   between an in-process migration run (`db::run_migrations`) and a read-only verification (`db::verify_schema_current`).
   It is extracted from `run` specifically so both branches are pinned by tests.
@@ -92,7 +94,7 @@ directly rather than assembling its own `AppState` and calling `build_router`.
   pings the application pool with `SELECT 1`, returning `200 ok` or a `503` Problem Details body). Both are outside
   `/api/v1` and carry an explicit empty `security(())` OpenAPI annotation, opting out of the document-level
   session-cookie default.
-- The five background workers, each entered from its own module and given only what it needs:
+- The five unconditional background workers, each entered from its own module and given only what it needs:
   - `services::settings::listen_loop` (settings LISTEN/NOTIFY reload, refreshing `AppState.settings`).
   - `services::ingestion::run_watcher` (one owner for capability discovery, readiness, attempts, retries and cleanup,
     receiving shared `LibraryFiles`, the live settings cache and command receiver; it owns its watcher and event
@@ -103,6 +105,9 @@ directly rather than assembling its own `AppState` and calling `build_router`.
     expired `oidc_sign_in_attempts` in batches of 1,000. Live attempts remain; failures warn and retry next tick.
   - `services::writeback::queue::spawn_worker` (the writeback job queue, given the dedicated system-context pool
     described in Data and state and shared `LibraryFiles`; also owns the bounded relocation-intent sweep).
+- The optional `oidc-discovery` worker calls `auth::oidc::OidcRuntime::run_discovery` with the shared runtime and its
+  run token. It retries expected provider failures internally, publishes the first discovered snapshot and then waits
+  for cancellation. Without OIDC configuration, this worker is absent.
 - `services::ingestion::watcher::register` establishes a watch synchronously after the coordinator folder check. The
   coordinator owns and polls its returned future using the coordinator run token.
 - `Dockerfile`'s `runtime` stage (the final `FROM debian:trixie-slim ... AS runtime` block) copies the release binary
@@ -167,11 +172,12 @@ observation. Watchdog ticks and completion precede queued watcher traffic.
 - **`AppState`** (`backend/src/state.rs`) is built exactly once in `run`, after every fallible setup step has succeeded,
   and is `Clone` for cheap distribution to handlers and workers: `pool` and `ingestion_pool` are `Arc`-backed `PgPool`s;
   `config` is owned, cloned data; `library_files` is a cheap shared `LibraryFiles` handle; `oidc` is an
-  `Option<Arc<_>>`, `None` on an instance that has not configured OIDC; `login_limiter` is an `Arc<LoginLimiter>`;
-  `last_settings_reload` is an `Arc<RwLock<..>>` handle written only by the settings worker, not by this subject;
-  `settings` is likewise an `Arc<RwLock<..>>` handle, but it has a second writer outside this subject — the
-  `PUT /api/v1/settings` route handler also writes it directly, as an immediate local-cache update guarded by
-  `apply_if_newer`'s revision check — so neither writer belongs to this subject, but there is more than one.
+  `Option<Arc<_>>`, `None` on an instance that has not configured OIDC; a configured runtime initially has no snapshot;
+  `login_limiter` is an `Arc<LoginLimiter>`; `last_settings_reload` is an `Arc<RwLock<..>>` handle written only by the
+  settings worker, not by this subject; `settings` is likewise an `Arc<RwLock<..>>` handle, but it has a second writer
+  outside this subject — the `PUT /api/v1/settings` route handler also writes it directly, as an immediate local-cache
+  update guarded by `apply_if_newer`'s revision check — so neither writer belongs to this subject, but there is more
+  than one.
 - **The writeback pool** (`backend/src/db.rs::init_writeback_pool`) is built after `AppState` and is deliberately not
   one of its fields: it is retained by the writeback task factory and cloned for each run. No request handler receives
   it, because no request handler receives anything not reachable through `AppState`.
@@ -182,8 +188,8 @@ observation. Watchdog ticks and completion precede queued watcher traffic.
   failure exhausts the limit in about nine to ten minutes; thirty-second failed attempts exhaust it in about seventeen
   to eighteen minutes. Stop timeout is thirty seconds per run, concurrently.
 - **Per-worker enabled flags.** `config.enrichment.enabled` and `config.writeback.enabled` are read at the start of each
-  run. Disabled workers wait for cancellation rather than returning early. All five tasks are registered
-  unconditionally.
+  run. Disabled workers wait for cancellation rather than returning early. These five tasks are registered
+  unconditionally; `oidc-discovery` is registered only when OIDC is configured.
 
 ## Runtime behaviour
 
@@ -213,8 +219,9 @@ observation. Watchdog ticks and completion precede queued watcher traffic.
    timeout; an unavailable breach service logs a warning and permits a sufficiently strong password. Policy rejection
    stops startup without creating the administrator.
 8. One bounded HTTPS OIDC transport is built when `config.oidc_configured()` is true; local-only mode builds none. The
-   interactive runtime pairs the discovered client with that transport; otherwise `AppState.oidc` stays `None`.
-   Configured OIDC without a transport fails startup.
+   runtime validates the configured issuer and callback URI synchronously and initially has no provider snapshot;
+   otherwise `AppState.oidc` stays `None`. Invalid configured URLs, non-HTTPS issuers, client-construction errors and
+   configured OIDC without a transport fail startup. No discovery or JWKS request precedes listener binding.
    [OIDC outbound transport](../../accounts/design/0025-oidc-outbound-transport.md) describes the client policy and
    request paths.
 9. `db::init_pool` opens the ingestion pool; `services::settings::seed_ingestion` conditionally seeds ingestion fields
@@ -225,11 +232,26 @@ observation. Watchdog ticks and completion precede queued watcher traffic.
 11. `db::init_writeback_pool` opens the writeback pool, and the TCP listener is bound. One more fallible call follows
     immediately: `listener.local_addr()` is read back to log the bound address. Nothing has been spawned yet at this
     point, so an early return from any of these steps cannot leak a running task.
-12. A process `CancellationToken` is created and `spawn_workers` starts one supervisor with five tasks. Worker startup
-    order is unspecified. Each run receives a fresh cancellation token and owned clones of its dependencies. The shared
-    ingestion handle receives the supervisor handle before HTTP serving starts.
+12. A process `CancellationToken` is created and `spawn_workers` starts one supervisor with five unconditional tasks
+    and, when configured, `oidc-discovery`. Worker startup order is unspecified. Each run receives a fresh cancellation
+    token and owned clones of its dependencies. The shared ingestion handle receives the supervisor handle before HTTP
+    serving starts.
 13. HTTP serving and `supervise_until_shutdown` run concurrently. The graceful-shutdown future responds to either an
     operating-system signal or process-token cancellation.
+
+The OIDC worker attempts discovery immediately. Expected discovery, JWKS and discovered-endpoint failures log at error
+level; an attempt suppressed by the key-fetch floor logs at warning level. Retry waits are 1, 2, 4, 8, 16, 32, then 60
+seconds repeatedly, without random variation. These waits use Tokio time and share the supervisor's one-to-sixty-second
+base and cap, while the supervisor retains its own random delay reduction. Provider failures do not consume the
+supervisor's restart budget. Local routes and readiness remain independent of discovery.
+
+After the first successful publication, the worker makes no further discovery requests and waits for cancellation.
+Signing-key refresh belongs to the OIDC runtime: its 30-second floor counts from each key-fetch attempt's start,
+successful or failed. An initial JWKS attempt also observes this floor; metadata retries retain the discovery cadence.
+[OIDC outbound transport](../../accounts/design/0025-oidc-outbound-transport.md) owns snapshot writers and fetch
+sharing. On cancellation the worker stops admitting refreshes, awaits any bounded discovery operation and drains the
+active refresh. Discovery has at most two sequential ten-second HTTP requests; refresh has one. The existing
+thirty-second supervisor drain remains in force.
 
 The enabled writeback worker resets orphaned claims before claiming, then sweeps at most 100 eligible relocation
 intents. Transient reset, startup-sweep, periodic-sweep and claim errors are logged inside that worker and retried on
@@ -292,12 +314,12 @@ is never reached.
 - **Any startup step failing before the first spawn.** Every fallible step returns an `Err` that `main.rs` surfaces as a
   non-zero process exit: configuration load, an API or HTML CSP string that fails to parse as a valid header value,
   frontend-dist validation, tracing-subscriber installation, any of the three pool opens (application, ingestion,
-  writeback), the schema apply-or-verify step, the administrator bootstrap from the environment seed, OIDC discovery,
-  the initial settings load, the login limiter's rate conversion, the TCP listener bind, or reading the bound address
-  back from the listener. Because none of these runs after the first `tokio::spawn`, none of them can leave a worker
-  running with nothing left to drain it. `axum::serve` also returns its error to `main.rs`, but it runs after the
-  workers are spawned; that path is the unclean shutdown in Runtime behaviour, where the workers are drained before
-  `run` returns.
+  writeback), the schema apply-or-verify step, the administrator bootstrap from the environment seed, OIDC configuration
+  and client construction, the initial settings load, the login limiter's rate conversion, the TCP listener bind, or
+  reading the bound address back from the listener. Because none of these runs after the first `tokio::spawn`, none of
+  them can leave a worker running with nothing left to drain it. `axum::serve` also returns its error to `main.rs`, but
+  it runs after the workers are spawned; that path is the unclean shutdown in Runtime behaviour, where the workers are
+  drained before `run` returns.
 - **Storage-root acquisition failing.** Startup stops before seeds, workers or requests. Configuration errors name the
   root variable; acquisition errors identify the required directory. No request retries acquisition.
 - **Download access failing.** Established escapes map to 403, missing files to 404, and unknown library identities,
