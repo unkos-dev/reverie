@@ -223,6 +223,10 @@ requires the capability field in its Zod schema rather than assuming it when abs
    overwrite, so a concurrent creator can never clobber a session that already exists under that id.
 5. The response carries a `Set-Cookie` for `id` with the attributes fixed in `build_router_with_session_store`.
 
+Arbitration covers only requests that load the session before a winner rotates it; a request carrying an already retired
+id loads without a session and is treated as a request without a cookie, still needs its own valid credentials to sign
+in, and is refused by the OIDC callback.
+
 **Every subsequent request on that session**, whether it touches session data or not:
 
 1. The session-cookie leg of `CurrentUser` (owned by the Design "Request authentication") loads the session via

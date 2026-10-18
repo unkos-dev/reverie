@@ -82,6 +82,9 @@ Session Management Cheat Sheet. Generic refusals follow the OWASP Authentication
 - Negative: a crash after claiming state consumes the attempt. A database claim and provider exchange cannot commit
   atomically, so recovery requires another explicit sign-in.
 - Negative: a failed post-win flush can leave an anonymous session losing until its idle expiry.
+- Negative: arbitration covers only requests that load the session before a winner rotates it. A request carrying an id
+  already retired by that rotation loads without a session and is treated as a request without a cookie. It still needs
+  its own valid credentials to sign in, and the OIDC callback refuses it.
 
 ## More information
 
