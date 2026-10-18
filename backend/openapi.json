@@ -6197,7 +6197,7 @@
           "auth"
         ],
         "summary": "Complete OIDC login",
-        "description": "Completes the OIDC authorization-code flow, establishes a session, and redirects to the app. No authentication is required to call it. Returns 401 if the anti-forgery state, PKCE verifier or nonce is missing or the state does not match, the account is disabled, or the email belongs to a different account. Returns 500 if the token exchange fails or the ID token is missing or fails validation.",
+        "description": "Completes the OIDC authorization-code flow, establishes a session, and redirects to the app. No authentication is required to call it. Signed-in browsers redirect to / without a provider request. Returns 401 if the attempt is absent, expired, consumed or mismatched, arbitration is lost, the account is disabled, or the email belongs to a different account. Returns 500 if the token exchange fails or the ID token is missing or fails validation.",
         "operationId": "callback",
         "parameters": [
           {
@@ -6212,7 +6212,7 @@
           {
             "name": "state",
             "in": "query",
-            "description": "OIDC anti-forgery state echoed back by the `IdP`; must match the\nvalue `/auth/oidc/login` stored in the session.",
+            "description": "OIDC anti-forgery state echoed back by the `IdP`; must match the\nvalue `/auth/oidc/login` bound to the session.",
             "required": true,
             "schema": {
               "type": "string",
@@ -6221,6 +6221,9 @@
           }
         ],
         "responses": {
+          "303": {
+            "description": "Already signed in; redirect to / without a provider exchange"
+          },
           "307": {
             "description": "Login complete; session established, theme cookie seeded, redirect to /"
           },
@@ -6235,7 +6238,7 @@
             }
           },
           "401": {
-            "description": "Anti-forgery state, PKCE verifier or nonce missing, state mismatched, account disabled, or email belongs to a different account",
+            "description": "Attempt absent, expired, consumed or mismatched, arbitration lost, account disabled, or email belongs to a different account",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -6382,6 +6385,16 @@
           },
           "404": {
             "description": "Local authentication is disabled on this instance",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Already signed in or sign-in no longer active",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -6741,11 +6754,14 @@
           "auth"
         ],
         "summary": "Start OIDC login",
-        "description": "Redirects to the configured OIDC provider to begin the authorization-code flow. No authentication is required to call it. Returns 404 if OIDC is not configured on this instance.",
+        "description": "Redirects to the configured OIDC provider to begin the authorization-code flow. No authentication is required to call it. Signed-in browsers redirect to /. A source limit redirects to /login?outcome=throttled and an inactive cohort to /login?outcome=expired. Returns 404 if OIDC is not configured on this instance.",
         "operationId": "oidc_login",
         "responses": {
+          "303": {
+            "description": "Already signed in: redirect to /; source limit: /login?outcome=throttled; inactive cohort: /login?outcome=expired"
+          },
           "307": {
-            "description": "Redirect to the OIDC issuer's authorization endpoint; PKCE verifier, anti-forgery state, and nonce are stored in the (anonymous) session"
+            "description": "Redirect to the OIDC issuer's authorization endpoint; attempt material is persisted against the anonymous session"
           },
           "404": {
             "description": "OIDC is not configured on this instance",

@@ -69,19 +69,23 @@ cached values to seed before its own request resolves.
 | `user_id` / `session_version` claims | Same row, in `data` | `auth::session::login`; write-only here |
 | `csrf_token` claim | Same row, in `data` | The Design "CSRF protection" (read back only, in `me`) |
 | Session cookie (`id`) | Browser cookie jar | `SessionManagerLayer`, built once |
+| `sign_in_started` marker | Session `data` | OIDC start |
+| Cohort and `won_at` | `sign_in_cohorts` | `models::sign_in`; session deletion cascade |
+| Pending OIDC attempt | `oidc_sign_in_attempts` | `models::sign_in`; cohort deletion cascade |
 | 401-funnel handler + guard | `client.ts` module state | `setUnauthenticatedHandler` / `invokeUnauthenticatedHandler` |
 | `reverie_last_user` (active-user hint) | `localStorage`, one key | `rememberActiveUser` / `forgetActiveUser` |
 
-`user_id` and `session_version` are read back only by `CurrentUser`, owned by the Design "Request authentication", which
-this Design's boundary hands that resolution to.
+`auth::session::signed_in_user` reads `user_id` and `session_version` for `CurrentUser` and the three sign-in entry
+points. It flushes a disabled, deleted or stale identity, logging a failed flush at warning level. It returns
+`SignedIn(User)`, `Disabled` or `NotSignedIn`. `CurrentUser` refuses `Disabled` without credential fallthrough, while
+the sign-in handlers treat it as signed out. The Design "Request authentication" owns the validity rule.
 
 Call sites that dispatch to those owners:
 
-- The session row and its claims: written only at the two `auth::session::login` call sites, in
-  `backend/src/routes/auth.rs` (the OIDC callback and `local_login`), and cleared only at the one
-  `auth::session::logout` call site (the `logout` handler, same file); every other request that carries a session
-  re-saves the same row unchanged through `with_always_save(true)`, which recomputes `expiry_date` without touching
-  `data`.
+- Identity claims are written by the two `auth::session::login` call sites, in the OIDC callback and `local_login`. OIDC
+  start writes the anonymous marker. Logout, `signed_in_user` and post-win failure handling clear the claims and delete
+  the row through the session API. The worker deletes expired rows. Other requests re-save through
+  `with_always_save(true)`, renewing `expiry_date` without changing `data`.
 - `unauthenticatedHandler`: replaced once, by the mount effect in `AuthenticatedBoundary`
   (`frontend/src/components/AuthenticatedBoundary.tsx`), and reset to a no-op on unmount. `redirecting` is reset by the
   same call (`setUnauthenticatedHandler`) and flipped exactly once per lapse by `invokeUnauthenticatedHandler`.
@@ -94,9 +98,17 @@ Call sites that dispatch to those owners:
 - `forgetActiveUser`: two call sites, `invokeUnauthenticatedHandler` (the 401/lapsed-session path) and the sign-out
   handler inside `UserChip` in `frontend/src/components/shell/UserMenu.tsx` (explicit sign-out).
 
-No item above has more than one writer. The `data` map inside a session row has two further keys this subject does not
-own (`csrf_token`, and the transient `pkce_verifier`, `oidc_csrf_state` and `nonce` keys the OIDC flow writes and clears
-around `/auth/callback`); this subject's write authority over `data` is limited to `user_id` and `session_version`.
+The session store owns row persistence and deletion. The sign-in model owns cohort and attempt mutations for both
+providers: `join_pending` and `start_oidc_attempt` create cohorts, `start_oidc_attempt` replaces the pending attempt,
+`claim_oidc_attempt` consumes it, and `claim_win` conditionally sets `won_at`. Both local sign-in and the OIDC callback
+call `claim_win`; its one conditional database update is the shared ownership rule. A loser cannot provision identity or
+log in. The asynchronous session worker calls `delete_expired_attempts` in batches, and foreign-key cascades remove
+cohorts and attempts when rotation, logout, invalid-identity flushing or expiry sweeping deletes a session row.
+
+OIDC start writes `sign_in_started = true` and explicitly saves before creating its attempt. This keeps the anonymous
+session non-empty and gives the cohort a persisted parent. The CSRF subject owns `csrf_token`; OIDC secrets live in the
+attempt table. After a win, a handler error before `session::login` succeeds also calls `session.flush()`. These calls
+all use the same session-store deletion owner.
 
 ### Component relationships
 
@@ -196,13 +208,13 @@ requires the capability field in its Zod schema rather than assuming it when abs
 
 ## Runtime behaviour
 
-**Establishing a session at sign-in**, for either of the two call sites (`local_login` or the OIDC callback in
-`backend/src/routes/auth.rs`), once the credential has already been verified:
+**Establishing a session at sign-in**, after any live anonymous cohort has been won, for either of the two call sites
+(`local_login` or the OIDC callback in `backend/src/routes/auth.rs`), once the credential has already been verified:
 
 1. The handler calls `auth::session::login(&session, &user)`.
 2. `login` calls `session.cycle_id()`. If the request arrived with an existing (pre-auth) session id, this replaces it
-   before any identity claim is attached, a pre-authentication attacker who planted a known session id on the victim's
-   browser cannot have that id become authenticated.
+   before any identity claim is attached. Deleting the old row cascades `sign_in_cohorts` and its attempt, so a slower
+   contender's conditional winner update matches nothing. A pre-authentication id never becomes authenticated.
 3. `login` inserts `SESSION_KEY_USER_ID` and `SESSION_KEY_SESSION_VERSION` into the session's in-memory claims map.
 4. At response time, `SessionManagerLayer`'s `with_always_save(true)` triggers a store write for the now-populated
    session. Because the id was just cycled, this is a fresh id from the store's point of view: `PostgresStore::create`
@@ -210,6 +222,10 @@ requires the capability field in its Zod schema rather than assuming it when abs
    collision with a live row, `create` draws a new `Id` and retries the same insert rather than falling back to an
    overwrite, so a concurrent creator can never clobber a session that already exists under that id.
 5. The response carries a `Set-Cookie` for `id` with the attributes fixed in `build_router_with_session_store`.
+
+Arbitration covers only requests that load the session before a winner rotates it; a request carrying an already retired
+id loads without a session and is treated as a request without a cookie, still needs its own valid credentials to sign
+in, and is refused by the OIDC callback.
 
 **Every subsequent request on that session**, whether it touches session data or not:
 
@@ -244,19 +260,24 @@ are siblings of it, so no handler is wired there and a 401 from a sign-in attemp
 
 **The hourly sweep**, driven from `run` alongside the other background workers: `run_sweep` ticks on a fixed one-hour
 interval (the first tick is skipped so startup does not burst) and calls `sweep_once`, which runs
-`ExpiredDeletion::delete_expired` once. Its `tokio::select!` checks the `CancellationToken` branch `biased`, ahead of
-the timer branch, so a shutdown in progress returns promptly rather than waiting out a mid-sweep interval.
+`ExpiredDeletion::delete_expired` once. It then deletes expired OIDC attempts in batches of 1,000 until a batch removes
+fewer than 1,000. Session deletion cascades cohort rows; live attempts remain. Its `tokio::select!` checks the
+`CancellationToken` branch `biased`, ahead of the timer branch, so a shutdown in progress returns promptly rather than
+waiting out a mid-sweep interval.
 
 ## Failure and recovery
 
 - **A session id collision at creation.** Handled inline in the runtime walkthrough above: `create` regenerates and
   retries rather than surfacing an error to the caller. A real collision is cryptographically improbable (128-bit ids),
   so the loop is a correctness guarantee, not a path expected to iterate in practice.
-- **A stale or invalid identity claim.** When a session's `SESSION_KEY_SESSION_VERSION` no longer matches the live
-  `users.session_version` (a force-logout, e.g. after a role change), or the claimed user row no longer exists, or the
-  account is `disabled_at`-gated, `CurrentUser` (owned by the Design "Request authentication") rejects the request and
-  calls `session.flush()` before falling through to the Basic/Bearer credential paths, this subject supplies the `flush`
-  mechanism the rejection uses, but not the check that decides to call it.
+- **A stale or invalid identity claim.** `signed_in_user` flushes disabled, deleted and stale-version sessions.
+  `CurrentUser` rejects a disabled account with 401; a deleted or stale identity permits Basic/Bearer fallthrough.
+  Sign-in handlers treat both cases as anonymous. In OIDC start, if an incoming id disappears during that read,
+  `cycle_id()` rotates the cached record before the marker is inserted and saved. `flush()` retains that cached record
+  id, so rotation prevents its deleted id from being recreated. Rotation errors propagate as internal errors.
+- **An error after winning.** Before `session::login` succeeds, the handler flushes the session and returns the original
+  error. A successful flush removes the cookie and cascades the cohort. A failed flush is logged at warning level; the
+  cohort stays won and cannot authorise another sign-in before session expiry.
 - **A failed session-store save.** `SessionManagerLayer` is registered after (and so wraps outside) the
   `security_headers` layer in `build_router_with_session_store`. When a request carries a non-empty session, the
   response is not already a server error, and the store write triggered by `with_always_save(true)` fails, the session
@@ -267,8 +288,8 @@ the timer branch, so a shutdown in progress returns promptly rather than waiting
   inside it, this store included.
 - **A missed or failed sweep tick.** `sweep_once` returns its error and `run_sweep` logs it at `warn` and carries on;
   the next tick retries. This is availability hardening only: `PostgresStore::load`'s `expiry_date > now()` filter is
-  what actually keeps an expired session from authenticating, so an accumulating backlog of rows awaiting the sweep
-  degrades table size, never access control.
+  what keeps an expired session from authenticating. Attempt claims independently require `expires_at > now()`. A failed
+  attempt batch is also logged at warning level and retried on the next tick; backlog affects table size.
 - **The `/auth/setup/status` lookup failing during redirect resolution.** `resolveLoginRedirect`
   (`AuthenticatedBoundary.tsx`) wraps the cached query in a `try`/`catch` and falls back to `/login` on any failure, so
   a lapsed session's redirect never strands the caller on a broken provider-detection request; it degrades to the

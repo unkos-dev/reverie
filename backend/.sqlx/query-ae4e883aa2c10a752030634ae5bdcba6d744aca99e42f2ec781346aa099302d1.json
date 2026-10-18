@@ -1,0 +1,12 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM tower_sessions.session WHERE id = 'one'",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": []
+  },
+  "hash": "ae4e883aa2c10a752030634ae5bdcba6d744aca99e42f2ec781346aa099302d1"
+}

@@ -424,6 +424,13 @@
       "title": "Supervise background workers with task-supervisor"
     },
     {
+      "id": "REV-ADR-0058",
+      "kind": "adr",
+      "path": "docs/adr/0058-one-shot-sign-in-attempts-with-a-single-winner.md",
+      "status": "proposed",
+      "title": "One-shot sign-in attempts with a single winner"
+    },
+    {
       "governed-by": [
         "REV-ADR-0041",
         "REV-ADR-0047"

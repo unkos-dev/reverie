@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE sign_in_cohorts SET won_at = now() WHERE session_id = $1 AND won_at IS NULL",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "add40bdc6667b8b9cec574735d3cc3cf5ee3149c4049fd5544ff40dab27fe202"
+}

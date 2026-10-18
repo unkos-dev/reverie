@@ -190,6 +190,9 @@ pub enum AppError {
     /// [`problems::EMAIL_CONFLICT`]. HTTP 409 Conflict.
     #[error("email already in use")]
     EmailConflict,
+    /// Sign-in cannot replace an authenticated session or a cohort winner. HTTP 409.
+    #[error("sign-in no longer active")]
+    SignInInactive,
     /// Method not supported on an otherwise-matched route. RFC 9457
     /// `type` [`problems::METHOD_NOT_ALLOWED`]. HTTP 405. Must not set
     /// its own `Allow` header — axum appends the registered methods
@@ -328,6 +331,12 @@ impl IntoResponse for AppError {
                 problems::SETUP_ALREADY_COMPLETE,
                 "Conflict",
                 "An administrator already exists; first-run setup is closed.".to_owned(),
+            ),
+            Self::SignInInactive => (
+                StatusCode::CONFLICT,
+                problems::SIGN_IN_INACTIVE,
+                "Conflict",
+                "This sign-in is no longer active. Reload the page and sign in again.".to_owned(),
             ),
             Self::EmailConflict => (
                 StatusCode::CONFLICT,

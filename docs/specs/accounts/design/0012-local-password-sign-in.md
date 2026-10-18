@@ -113,13 +113,12 @@ decision on the local-password side.
   of the upsert, before it is incremented); the first failure therefore waits `min(cap, base)` and each further failure
   doubles the base, saturating at the cap.
 - `backend/src/routes/auth.rs` holds `local_login` and `register`, and the shared `enforce_source_rate_limit` helper
-  that `register`, `setup`, `forgot_password` and `reset_password` all call before any policy or hashing work.
-  `local_login` does not call that helper: it inlines an equivalent `client_ip` resolution and `login_limiter.check_key`
-  call directly, immediately after the `local_auth_enabled` gate. In every handler that carries a disabled-feature `404`
-  gate (`local_login`, `register`, `forgot_password`, `reset_password`) that gate runs before the per-source limiter
-  check; `setup` carries no such gate at all, so its limiter check is the first thing that runs. In every case the
-  limiter check is skipped, not merely passed, when `client_ip` resolves to `None` (no TCP peer supplied and no
-  configured or matching trusted forwarded-for header): the `check_key` call is never made.
+  that `local_login`, OIDC start, `register`, `setup`, `forgot_password` and `reset_password` call before provider,
+  policy or hashing work. `local_login` calls it immediately after the `local_auth_enabled` gate. In every handler that
+  carries a disabled-feature `404` gate (`local_login`, `register`, `forgot_password`, `reset_password`) that gate runs
+  before the per-source limiter check; `setup` carries no such gate at all, so its limiter check is the first thing that
+  runs. In every case the limiter check is skipped, not merely passed, when `client_ip` resolves to `None` (no TCP peer
+  supplied and no configured or matching trusted forwarded-for header): the `check_key` call is never made.
 - `frontend/src/routes/auth-login.tsx` is an uncontrolled `FormData` form that reads `GET /auth/setup/status` to decide
   whether to render the local form, an OIDC action, or both, and calls `loginLocal` on submit.
   `frontend/src/routes/auth-register.tsx` is the equivalent form for `register`, client-validated through
@@ -131,8 +130,9 @@ decision on the local-password side.
 
 - `POST /auth/local/login` (`LocalLoginRequest { email, password }`) returns `204` on success and sets the session
   cookie and (via `jar`) the theme cookie; `404` when `local_auth_enabled` is `false`; `422` with a generic message for
-  any failed credential; `429` when a rate limit is active. It is unauthenticated (`security(())` in its OpenAPI
-  annotation). Neither `429` source (the per-source limiter or the per-account backoff) sets a `Retry-After` header.
+  any failed credential; `409 sign-in-inactive` for an authenticated session or a losing cohort; `429` when a rate limit
+  is active. It is unauthenticated (`security(())` in its OpenAPI annotation). Neither `429` source (the per-source
+  limiter or the per-account backoff) sets a `Retry-After` header.
 - `POST /auth/register` (`RegisterRequest { email, display_name, password }`) returns `201` with no session on success;
   `404` when `self_registration_enabled` or `local_auth_enabled` is `false`; `409` on a duplicate email; `422` on a
   malformed email or a policy rejection; `429` on the per-source limit. `RegisterRequest` declares no role field, and
@@ -194,13 +194,29 @@ Request-body schemas validate presence and format; the server always enforces st
 current-password verification accept existing credentials independently of new-password policy, including passwords
 shorter than 15.
 
+A local attempt with a live anonymous session joins `sign_in_cohorts` before account lookup and password verification.
+An attempt without a cookie creates no cohort or session merely to fail. The sign-in model owns this table for both
+local and OIDC callers; only its conditional `claim_win` update can authorise sign-in. Rotation deletes the session's
+old cohort through its foreign key.
+
 ## Runtime behaviour
 
-**A login attempt for a known email with the wrong password:**
+**Admission and arbitration.** After the local-auth and per-source checks, `signed_in_user` refuses an already signed-in
+browser with `409 sign-in-inactive`. Stale, deleted and disabled sessions are flushed and treated as anonymous. A live
+anonymous session joins its cohort: an already-won cohort returns the same 409 without changing the session. A pending
+cohort's id is retained until verification. The existing CSRF gate still requires the session token on a mutation
+carrying `user_id`.
 
-1. `local_login` checks `state.config.local_auth_enabled`, then resolves the rate-limit key via `client_ip` and calls
-   `state.login_limiter.check_key` inline (skipped entirely when `client_ip` resolves to `None`); over quota returns
-   `AppError::RateLimited` before any database work.
+After valid local credentials, `claim_win` runs for that retained id. A loser returns 409 before resetting the throttle
+or changing the session. A winner resets the throttle and calls `session::login`; any error in those operations first
+flushes the session and then returns the original error. A failed flush is logged at warning level. A request without a
+live cohort proceeds directly to reset and login after verification.
+
+**A login attempt for a known email with the wrong password, after admission:**
+
+1. `local_login` checks `state.config.local_auth_enabled`, then calls `enforce_source_rate_limit`. The helper resolves
+   the rate-limit key via `client_ip` and calls `state.login_limiter.check_key` (skipped entirely when `client_ip`
+   resolves to `None`); over quota returns `AppError::RateLimited` before any database work.
 2. `user::find_by_email` resolves the account. Because it is `Some`, `local_credentials::find_by_user_id` runs a second
    query to fetch the stored PHC string.
 3. `password::verify_password` runs the real Argon2id verification against that PHC string and returns an error;
@@ -226,9 +242,9 @@ shorter than 15.
 **A correct password submitted during an active per-account backoff window:**
 
 1. Steps 1 to 3 above run, and `verify_password` succeeds. `local_login` checks `login_throttle::backoff_until` only
-   inside the failed-attempt branch, so a verified login never reaches it: the `session_user` match succeeds,
-   `login_throttle::reset` deletes the row, and `session::login` establishes the session in the same request that clears
-   the backoff.
+   inside the failed-attempt branch, so a verified login never reaches it: the `session_user` match succeeds, the cohort
+   is claimed when present, `login_throttle::reset` deletes the row, and `session::login` establishes the session in the
+   same request that clears the backoff.
 2. A wrong attempt arriving during that same window instead returns `429` from the `backoff_until` check itself, before
    `record_failure` runs, so it is not recorded and the window does not extend. The window changes the outcome of a
    wrong guess only, never a correct one; the per-source limiter is what bounds how many attempts, correct or wrong, can
@@ -254,6 +270,10 @@ order rather than by the test itself, which observes only the returned variant.
 - **`local_auth_enabled` is `false`.** `local_login` and `register` both return `AppError::NotFound` (`404`) before any
   other work (`register` is additionally gated on `self_registration_enabled`); the client's setup-status query is what
   normally keeps the local form from rendering at all. `setup` carries no such gate.
+- **An inactive sign-in.** `409 sign-in-inactive` has title "Conflict" and detail "This sign-in is no longer active.
+  Reload the page and sign in again." It covers an already signed-in browser and lost arbitration, including an
+  already-won anonymous cohort. Switching accounts requires sign-out. When flushing succeeds after a post-win failure,
+  the next attempt starts fresh. A failed flush leaves the cohort won until the session expires.
 - **Rate limiting.** Two independent mechanisms can each produce `AppError::RateLimited` (`429`), and neither response
   carries a `Retry-After` header: the per-source `governor` limiter, checked first (ahead of the disabled-feature gate
   only on `setup`) whenever a client IP resolves; and the per-account backoff, checked only inside `local_login`'s
@@ -291,7 +311,8 @@ both return the identical generic `422` body; a soft-disabled account presenting
 same branch rather than surfacing a distinct disabled-account error; and the per-account throttle, when it escalates at
 all, escalates identically for either case, keyed on the submitted email regardless of whether it resolves to an
 account. `local_login_unknown_email_matches_wrong_password` asserts the status and body are byte-identical between the
-two.
+two. `local_login_with_session_keeps_failure_parity` checks the same status and body parity with a live anonymous
+cohort.
 
 `local_login` verifies the password before consulting the per-account backoff window, and consults the window only on
 the failed branch: a correct password succeeds during an active window and clears it, and a wrong attempt during the

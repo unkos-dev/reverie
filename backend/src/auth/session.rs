@@ -58,3 +58,58 @@ pub async fn login(session: &Session, user: &User) -> Result<(), tower_sessions:
 pub async fn logout(session: &Session) -> Result<(), tower_sessions::session::Error> {
     session.flush().await
 }
+
+/// Rehydrated identity state, preserving the disabled-account refusal for protected routes.
+pub enum SessionUser {
+    /// Live identity with a matching session version.
+    SignedIn(User),
+    /// Disabled identity whose session has been flushed.
+    Disabled,
+    /// No identity, or a deleted or stale identity whose session has been flushed.
+    NotSignedIn,
+}
+
+/// Resolve a session identity and flush identities that are no longer valid.
+///
+/// # Errors
+/// Returns storage or database errors while reading the identity.
+pub async fn signed_in_user(
+    session: &Session,
+    pool: &sqlx::PgPool,
+) -> Result<SessionUser, crate::error::AppError> {
+    use crate::error::AppError;
+    use crate::models::user;
+    let Some(user_id) = session
+        .get::<uuid::Uuid>(SESSION_KEY_USER_ID)
+        .await
+        .map_err(|e| AppError::Internal(e.into()))?
+    else {
+        return Ok(SessionUser::NotSignedIn);
+    };
+    let user = user::find_by_id(pool, user_id)
+        .await
+        .map_err(|e| AppError::Internal(e.into()))?;
+    // THREAT: disabled accounts cannot re-enter through a live session.
+    if let Some(u) = &user
+        && u.disabled_at.is_some()
+    {
+        if let Err(e) = session.flush().await {
+            tracing::warn!(error = %e, "session flush failed (disabled account)");
+        }
+        return Ok(SessionUser::Disabled);
+    }
+    // THREAT: a stale session version cannot survive a forced logout.
+    let stored_version = session
+        .get::<i32>(SESSION_KEY_SESSION_VERSION)
+        .await
+        .map_err(|e| AppError::Internal(e.into()))?;
+    if let Some(user) = user
+        && stored_version == Some(user.session_version)
+    {
+        return Ok(SessionUser::SignedIn(user));
+    }
+    if let Err(e) = session.flush().await {
+        tracing::warn!(error = %e, "session flush failed (force-logout / deleted user)");
+    }
+    Ok(SessionUser::NotSignedIn)
+}

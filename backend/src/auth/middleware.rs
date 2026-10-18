@@ -32,7 +32,6 @@ use tower_sessions::Session;
 use uuid::Uuid;
 
 use crate::auth::scope::Scope;
-use crate::auth::session::{SESSION_KEY_SESSION_VERSION, SESSION_KEY_USER_ID};
 use crate::auth::token;
 use crate::error::AppError;
 use crate::models::role::Role;
@@ -335,59 +334,18 @@ impl FromRequestParts<AppState> for CurrentUser {
         // `SessionManagerLayer`; on a request with no session cookie it is
         // empty and `get(user_id)` is `None`, so we fall through cleanly
         // (no DB hit, no 500) to the Basic-auth path below.
-        if let Ok(session) = Session::from_request_parts(parts, state).await
-            && let Some(user_id) = session
-                .get::<Uuid>(SESSION_KEY_USER_ID)
-                .await
-                .map_err(|e| AppError::Internal(e.into()))?
-        {
-            // The session claims an identity. It is valid only if the user row
-            // still exists AND the stored `session_version` matches the live
-            // one; any other outcome (user deleted, or version bumped) means the
-            // session must be torn down server-side.
-            let user = user::find_by_id(&state.pool, user_id)
-                .await
-                .map_err(|e| AppError::Internal(e.into()))?;
-            // THREAT (account lockout): a soft-disabled account is rejected on
-            // session rehydration independent of `session_version`. Disabling
-            // also bumps the version (so the check below would catch it too),
-            // but this explicit gate is defence-in-depth: a disabled user is
-            // never re-admitted from a live cookie. Tear the session down so it
-            // cannot keep re-loading until idle expiry.
-            if let Some(u) = &user
-                && u.disabled_at.is_some()
-            {
-                if let Err(e) = session.flush().await {
-                    tracing::warn!(error = %e, "session flush failed (disabled account)");
+        if let Ok(session) = Session::from_request_parts(parts, state).await {
+            match crate::auth::session::signed_in_user(&session, &state.pool).await? {
+                crate::auth::session::SessionUser::SignedIn(user) => {
+                    return Ok(Self {
+                        user_id: user.id,
+                        role: user.role,
+                        is_child: user.is_child,
+                        scopes: Scope::for_role(user.role).to_vec(),
+                    });
                 }
-                return Err(AppError::Unauthorized);
-            }
-            // THREAT (force-logout): the session stores the `session_version`
-            // captured at login; if `users.session_version` has since been
-            // bumped (role change, security event) the stored copy is stale and
-            // the session is rejected. Plain `==` is safe here — session
-            // contents are server-side state, not attacker-controlled (the
-            // cookie carries only the random session id).
-            let stored_version = session
-                .get::<i32>(SESSION_KEY_SESSION_VERSION)
-                .await
-                .map_err(|e| AppError::Internal(e.into()))?;
-            if let Some(user) = user
-                && stored_version == Some(user.session_version)
-            {
-                return Ok(Self {
-                    user_id: user.id,
-                    role: user.role,
-                    is_child: user.is_child,
-                    scopes: Scope::for_role(user.role).to_vec(),
-                });
-            }
-            // Invalid session — user deleted, or `session_version` stale. Wipe
-            // the row server-side so an orphaned/stale session can't keep
-            // re-loading on every request until 24h idle expiry, then fall
-            // through. No silent discard: log on failure.
-            if let Err(e) = session.flush().await {
-                tracing::warn!(error = %e, "session flush failed (force-logout / deleted user)");
+                crate::auth::session::SessionUser::Disabled => return Err(AppError::Unauthorized),
+                crate::auth::session::SessionUser::NotSignedIn => {}
             }
         }
 

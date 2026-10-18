@@ -24,7 +24,7 @@ use crate::auth::theme_cookie::set_theme_cookie;
 use crate::error::AppError;
 use crate::extract::ApiJson;
 use crate::models::theme_preference::ThemePreference;
-use crate::models::user;
+use crate::models::{sign_in, user};
 use crate::state::AppState;
 
 /// Build the `/auth/*` router (login / callback / logout / me / theme).
@@ -56,7 +56,7 @@ pub struct CallbackParams {
     /// Authorization code minted by the `IdP`.
     code: String,
     /// OIDC anti-forgery state echoed back by the `IdP`; must match the
-    /// value `/auth/oidc/login` stored in the session.
+    /// value `/auth/oidc/login` bound to the session.
     #[param(max_length = 22)]
     state: String,
 }
@@ -71,27 +71,67 @@ pub struct CallbackParams {
 ///
 /// # Errors
 /// - [`AppError::NotFound`] when OIDC is not configured.
-/// - [`AppError::Internal`] when session storage fails.
+/// Signed-in browsers go to `/`; throttled or inactive starts go to a fixed login outcome.
+/// - [`AppError::Internal`] when session or attempt storage fails.
 #[utoipa::path(
     get,
     path = "/auth/oidc/login",
     summary = "Start OIDC login",
-    description = "Redirects to the configured OIDC provider to begin the authorization-code flow. No authentication is required to call it. Returns 404 if OIDC is not configured on this instance.",
+    description = "Redirects to the configured OIDC provider to begin the authorization-code flow. No authentication is required to call it. Signed-in browsers redirect to /. A source limit redirects to /login?outcome=throttled and an inactive cohort to /login?outcome=expired. Returns 404 if OIDC is not configured on this instance.",
     tag = "auth",
     security(()),
     responses(
-        (status = 307, description = "Redirect to the OIDC issuer's authorization endpoint; PKCE verifier, anti-forgery state, and nonce are stored in the (anonymous) session"),
+        (status = 303, description = "Already signed in: redirect to /; source limit: /login?outcome=throttled; inactive cohort: /login?outcome=expired"),
+        (status = 307, description = "Redirect to the OIDC issuer's authorization endpoint; attempt material is persisted against the anonymous session"),
         (status = 404, description = "OIDC is not configured on this instance", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
     )
 )]
 async fn oidc_login(
     State(state): State<AppState>,
     session: Session,
+    headers: HeaderMap,
+    peer: crate::auth::rate_limit::PeerAddr,
 ) -> Result<impl IntoResponse, AppError> {
     // OIDC is optional. When unconfigured this handler is
     // unreachable in practice (the SPA hides the OIDC action), but guard so a
     // direct hit 404s cleanly rather than acting on an absent client.
     let oidc_client = state.oidc.as_ref().ok_or(AppError::NotFound)?.client();
+
+    let had_session_id = session.id().is_some();
+    if matches!(
+        crate::auth::session::signed_in_user(&session, &state.pool).await?,
+        crate::auth::session::SessionUser::SignedIn(_)
+    ) {
+        return Ok(Redirect::to("/"));
+    }
+    if enforce_source_rate_limit(&state, &headers, &peer).is_err() {
+        return Ok(Redirect::to("/login?outcome=throttled"));
+    }
+    if let Some(id) = session.id()
+        && sign_in::join_pending(&state.pool, &id.to_string())
+            .await
+            .map_err(|e| AppError::Internal(e.into()))?
+            == sign_in::CohortState::Won
+    {
+        return Ok(Redirect::to("/login?outcome=expired"));
+    }
+    if had_session_id && session.id().is_none() {
+        session
+            .cycle_id()
+            .await
+            .map_err(|e| AppError::Internal(e.into()))?;
+    }
+    session
+        .insert("sign_in_started", true)
+        .await
+        .map_err(|e| AppError::Internal(e.into()))?;
+    session
+        .save()
+        .await
+        .map_err(|e| AppError::Internal(e.into()))?;
+    let id = session
+        .id()
+        .ok_or_else(|| AppError::Internal(anyhow::anyhow!("saved session has no id")))?;
 
     let (pkce_challenge, pkce_verifier) = PkceCodeChallenge::new_random_sha256();
 
@@ -106,35 +146,26 @@ async fn oidc_login(
         .set_pkce_challenge(pkce_challenge)
         .url();
 
-    // Store OIDC flow state in the underlying session. The OIDC
-    // transient anti-forgery state lives under `oidc_csrf_state` — a
-    // dedicated key so it can never shadow or be confused with the
-    // long-lived app-level `csrf_token` (the synchronizer token)
-    // that `/auth/callback` writes after a successful login. See
-    // docs/adr/0011-json-api-conventions-for-the-browser-facing-rest-surface.md.
-    session
-        .insert("pkce_verifier", pkce_verifier.secret().clone())
-        .await
-        .map_err(|e| AppError::Internal(e.into()))?;
-    session
-        .insert("oidc_csrf_state", csrf_token.secret().clone())
-        .await
-        .map_err(|e| AppError::Internal(e.into()))?;
-    session
-        .insert("nonce", nonce.secret().clone())
-        .await
-        .map_err(|e| AppError::Internal(e.into()))?;
+    sign_in::start_oidc_attempt(
+        &state.pool,
+        &id.to_string(),
+        csrf_token.secret(),
+        pkce_verifier.secret(),
+        nonce.secret(),
+    )
+    .await
+    .map_err(|e| AppError::Internal(e.into()))?;
 
     Ok(Redirect::temporary(auth_url.as_str()))
 }
 
 /// `GET /auth/callback` — OIDC redirect target: validate state, exchange
 /// the code, establish the session, and issue the CSRF synchronizer token.
+/// Signed-in browsers go to `/` without an exchange; attempts are consumed before provider I/O.
 ///
 /// # Errors
-/// - [`AppError::Unauthorized`] when the stored anti-forgery state, PKCE
-///   verifier or nonce is missing, the echoed state differs, the account is
-///   disabled, or a first sign-in's email belongs to a different account.
+/// - [`AppError::Unauthorized`] when the attempt is absent, expired, consumed or mismatched,
+///   arbitration is lost, the account is disabled, or a first sign-in's email belongs to another account.
 /// - [`AppError::Internal`] when the token exchange fails, the response carries
 ///   no ID token, the ID token fails validation, or a database or session
 ///   storage operation fails.
@@ -142,14 +173,15 @@ async fn oidc_login(
     get,
     path = "/auth/callback",
     summary = "Complete OIDC login",
-    description = "Completes the OIDC authorization-code flow, establishes a session, and redirects to the app. No authentication is required to call it. Returns 401 if the anti-forgery state, PKCE verifier or nonce is missing or the state does not match, the account is disabled, or the email belongs to a different account. Returns 500 if the token exchange fails or the ID token is missing or fails validation.",
+    description = "Completes the OIDC authorization-code flow, establishes a session, and redirects to the app. No authentication is required to call it. Signed-in browsers redirect to / without a provider request. Returns 401 if the attempt is absent, expired, consumed or mismatched, arbitration is lost, the account is disabled, or the email belongs to a different account. Returns 500 if the token exchange fails or the ID token is missing or fails validation.",
     tag = "auth",
     security(()),
     params(CallbackParams),
     responses(
+        (status = 303, description = "Already signed in; redirect to / without a provider exchange"),
         (status = 307, description = "Login complete; session established, theme cookie seeded, redirect to /"),
         (status = 400, description = "Malformed query parameter", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
-        (status = 401, description = "Anti-forgery state, PKCE verifier or nonce missing, state mismatched, account disabled, or email belongs to a different account", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
+        (status = 401, description = "Attempt absent, expired, consumed or mismatched, arbitration lost, account disabled, or email belongs to a different account", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 500, description = "Token exchange failed, ID token missing or failed validation, or a database or session storage error; details are hidden", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
     )
 )]
@@ -163,28 +195,14 @@ async fn callback(
     // OIDC optional: a callback without a configured client 404s.
     let oidc = state.oidc.as_ref().ok_or(AppError::NotFound)?;
     let oidc_client = oidc.client();
-    // Validate OIDC anti-forgery state (the `state` query param echoed
-    // back by the IdP must match the value `/auth/oidc/login` stored under
-    // `oidc_csrf_state`). This is the OIDC transient — distinct from
-    // the long-lived `csrf_token` that the synchronizer-token defense
-    // writes after `auth::session::login()` below.
-    let stored_csrf: String = session
-        .get("oidc_csrf_state")
-        .await
-        .map_err(|e| AppError::Internal(e.into()))?
-        .ok_or(AppError::Unauthorized)?;
-    if stored_csrf != params.state {
-        return Err(AppError::Unauthorized);
+    if matches!(
+        crate::auth::session::signed_in_user(&session, &state.pool).await?,
+        crate::auth::session::SessionUser::SignedIn(_)
+    ) {
+        return Ok((jar, Redirect::to("/")));
     }
-
-    // Retrieve stored PKCE verifier and nonce
-    let stored_verifier: String = session
-        .get("pkce_verifier")
-        .await
-        .map_err(|e| AppError::Internal(e.into()))?
-        .ok_or(AppError::Unauthorized)?;
-    let stored_nonce: String = session
-        .get("nonce")
+    let id = session.id().ok_or(AppError::Unauthorized)?.to_string();
+    let attempt = sign_in::claim_oidc_attempt(&state.pool, &id, &params.state)
         .await
         .map_err(|e| AppError::Internal(e.into()))?
         .ok_or(AppError::Unauthorized)?;
@@ -193,7 +211,7 @@ async fn callback(
     let token_response = oidc_client
         .exchange_code(AuthorizationCode::new(params.code))
         .map_err(|e| AppError::Internal(anyhow::anyhow!("exchange_code config error: {e}")))?
-        .set_pkce_verifier(PkceCodeVerifier::new(stored_verifier))
+        .set_pkce_verifier(PkceCodeVerifier::new(attempt.pkce_verifier))
         .request_async(&http_client)
         .await
         .map_err(|e| AppError::Internal(anyhow::anyhow!("token exchange failed: {e}")))?;
@@ -203,69 +221,76 @@ async fn callback(
         .id_token()
         .ok_or_else(|| AppError::Internal(anyhow::anyhow!("missing ID token")))?;
     let claims = id_token
-        .claims(&oidc_client.id_token_verifier(), &Nonce::new(stored_nonce))
+        .claims(&oidc_client.id_token_verifier(), &Nonce::new(attempt.nonce))
         .map_err(|e| AppError::Internal(anyhow::anyhow!("ID token validation failed: {e}")))?;
 
-    let subject = claims.subject().as_str();
-    // Verified `iss` from the ID-token claims namespaces the subject. For a
-    // single configured issuer this matches config; using the verified claim is
-    // the spec-correct source and keeps the schema multi-issuer-correct.
-    let issuer = claims.issuer().as_str();
-    let display_name = claims
-        .name()
-        .and_then(|n: &openidconnect::LocalizedClaim<openidconnect::EndUserName>| n.get(None))
-        .map_or(subject, |n: &openidconnect::EndUserName| n.as_str());
-    let email = claims
-        .email()
-        .map(|e: &openidconnect::EndUserEmail| e.as_str());
-
-    // Provision/resolve the user through user_identities keyed on
-    // (issuer, subject). No auto-promotion: the first administrator is granted
-    // only via bootstrap. The OIDC claims are signature-verified above.
-    let user = match user::upsert_from_oidc(&state.pool, issuer, subject, display_name, email).await
+    if !sign_in::claim_win(&state.pool, &id)
+        .await
+        .map_err(|e| AppError::Internal(e.into()))?
     {
-        Ok(user) => user,
-        // THREAT (account takeover): a first sign-in whose email belongs to a
-        // different account is refused with the same outcome as a disabled
-        // account, so the response does not reveal that the email exists.
-        Err(user::OidcProvisionError::EmailCollision) => {
-            tracing::warn!(outcome = "email_collision", "OIDC sign-in refused");
-            return Err(AppError::Unauthorized);
-        }
-        Err(e) => {
-            return Err(AppError::Internal(anyhow::anyhow!(
-                "user upsert failed: {e}"
-            )));
-        }
-    };
-
-    // THREAT (account lockout): a soft-disabled account cannot complete OIDC
-    // login. `upsert_from_oidc` leaves a disabled account unwritten; reject it
-    // here before establishing any session. A first-time OIDC user is freshly
-    // provisioned (never disabled); this catches an existing account disabled
-    // after its initial link.
-    if user.disabled_at.is_some() {
         return Err(AppError::Unauthorized);
     }
+    let login_result = async {
+        let subject = claims.subject().as_str();
+        // Verified `iss` from the ID-token claims namespaces the subject. For a
+        // single configured issuer this matches config; using the verified claim is
+        // the spec-correct source and keeps the schema multi-issuer-correct.
+        let issuer = claims.issuer().as_str();
+        let display_name = claims
+            .name()
+            .and_then(|n: &openidconnect::LocalizedClaim<openidconnect::EndUserName>| n.get(None))
+            .map_or(subject, |n: &openidconnect::EndUserName| n.as_str());
+        let email = claims
+            .email()
+            .map(|e: &openidconnect::EndUserEmail| e.as_str());
 
-    // Log the user in — cycles session ID (fixation prevention) and persists
-    // user_id + session_version for per-request rehydration.
-    crate::auth::session::login(&session, &user)
-        .await
-        .map_err(|e| AppError::Internal(anyhow::anyhow!("login failed: {e}")))?;
+        // Provision/resolve the user through user_identities keyed on
+        // (issuer, subject). No auto-promotion: the first administrator is granted
+        // only via bootstrap. The OIDC claims are signature-verified above.
+        let user =
+            match user::upsert_from_oidc(&state.pool, issuer, subject, display_name, email).await {
+                Ok(user) => user,
+                // THREAT (account takeover): a first sign-in whose email belongs to a
+                // different account is refused with the same outcome as a disabled
+                // account, so the response does not reveal that the email exists.
+                Err(user::OidcProvisionError::EmailCollision) => {
+                    tracing::warn!(outcome = "email_collision", "OIDC sign-in refused");
+                    return Err(AppError::Unauthorized);
+                }
+                Err(e) => {
+                    return Err(AppError::Internal(anyhow::anyhow!(
+                        "user upsert failed: {e}"
+                    )));
+                }
+            };
 
-    // Clean up single-use OIDC flow state from session. A failure here
-    // leaves residual OIDC material in the session store but must not abort
-    // the login redirect — the user is already authenticated. Log instead.
-    if let Err(e) = session.remove::<String>("pkce_verifier").await {
-        tracing::warn!(error = %e, "failed to remove pkce_verifier from session after OIDC callback");
+        // THREAT (account lockout): a soft-disabled account cannot complete OIDC
+        // login. `upsert_from_oidc` leaves a disabled account unwritten; reject it
+        // here before establishing any session. A first-time OIDC user is freshly
+        // provisioned (never disabled); this catches an existing account disabled
+        // after its initial link.
+        if user.disabled_at.is_some() {
+            return Err(AppError::Unauthorized);
+        }
+
+        // Log the user in — cycles session ID (fixation prevention) and persists
+        // user_id + session_version for per-request rehydration.
+        crate::auth::session::login(&session, &user)
+            .await
+            .map_err(|e| AppError::Internal(anyhow::anyhow!("login failed: {e}")))?;
+
+        Ok::<_, AppError>(user)
     }
-    if let Err(e) = session.remove::<String>("oidc_csrf_state").await {
-        tracing::warn!(error = %e, "failed to remove oidc_csrf_state from session after OIDC callback");
-    }
-    if let Err(e) = session.remove::<String>("nonce").await {
-        tracing::warn!(error = %e, "failed to remove nonce from session after OIDC callback");
-    }
+    .await;
+    let user = match login_result {
+        Ok(user) => user,
+        Err(error) => {
+            if let Err(e) = session.flush().await {
+                tracing::warn!(error = %e, "session flush failed after winning OIDC sign-in");
+            }
+            return Err(error);
+        }
+    };
 
     // OWASP CSRF synchronizer token. This mints and exposes the token;
     // a separate validating middleware enforces it on mutating requests
@@ -279,12 +304,6 @@ async fn callback(
     // (read via `/auth/me`, sent back as `X-CSRF-Token` on mutating verbs)
     // is the primary defense; SameSite + CSP API layer are defense-in-depth.
     //
-    // Stored under session key `csrf_token`. Disjoint from the OIDC
-    // anti-forgery state (`oidc_csrf_state`, removed above) so a
-    // logged-in user re-hitting `/auth/oidc/login` cannot overwrite this
-    // value with a transient OIDC parameter and confuse a future
-    // reader. Re-running `/auth/callback` deliberately rotates this
-    // token (each login overwrites the prior session's value).
     // Failure here aborts the login because an unguarded session
     // would leave the browser unable to mutate state once the
     // validating CSRF middleware is in place.
@@ -325,6 +344,7 @@ struct LocalLoginRequest {
 /// - [`AppError::RateLimited`] (429) when the per-source limit is exceeded, or a
 ///   failed attempt arrives during an active per-account backoff.
 /// - [`AppError::Validation`] (422) on bad credentials (generic; no enumeration).
+/// - [`AppError::SignInInactive`] (409) when signed in or arbitration is lost.
 /// - [`AppError::Internal`] on session-store or database failure.
 #[utoipa::path(
     post,
@@ -335,6 +355,7 @@ struct LocalLoginRequest {
     security(()),
     request_body = LocalLoginRequest,
     responses(
+        (status = 409, description = "Already signed in or sign-in no longer active", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 204, description = "Login succeeded; session established (id rotated, CSRF token minted, theme cookie seeded)"),
         (status = 404, description = "Local authentication is disabled on this instance", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 422, description = "Invalid credentials (generic; identical for unknown email and wrong password)", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
@@ -353,18 +374,27 @@ async fn local_login(
         return Err(AppError::NotFound);
     }
 
-    // Per-source hard block (governor). Tolerates a missing peer (the test
-    // harness supplies none); the per-account backoff is the IP-independent
-    // backstop.
-    let peer = peer.0.map(|addr| addr.ip());
-    if let Some(ip) = crate::auth::rate_limit::client_ip(
-        &headers,
-        peer,
-        state.config.trusted_client_ip_header.as_deref(),
-    ) && state.login_limiter.check_key(&ip).is_err()
-    {
-        return Err(AppError::RateLimited);
+    enforce_source_rate_limit(&state, &headers, &peer)?;
+
+    if matches!(
+        crate::auth::session::signed_in_user(&session, &state.pool).await?,
+        crate::auth::session::SessionUser::SignedIn(_)
+    ) {
+        return Err(AppError::SignInInactive);
     }
+    let cohort_id = if let Some(id) = session.id() {
+        let id = id.to_string();
+        if sign_in::join_pending(&state.pool, &id)
+            .await
+            .map_err(|e| AppError::Internal(e.into()))?
+            == sign_in::CohortState::Won
+        {
+            return Err(AppError::SignInInactive);
+        }
+        Some(id)
+    } else {
+        None
+    };
 
     // Resolve the account, then verify. On an unknown email or an account with
     // no local credential, spend equivalent Argon2 work against a dummy hash so
@@ -403,16 +433,35 @@ async fn local_login(
         _ => None,
     };
     if let Some(user) = session_user {
-        crate::models::login_throttle::reset(&state.pool, &body.email)
-            .await
-            .map_err(|e| AppError::Internal(e.into()))?;
+        if let Some(id) = &cohort_id
+            && !sign_in::claim_win(&state.pool, id)
+                .await
+                .map_err(|e| AppError::Internal(e.into()))?
+        {
+            return Err(AppError::SignInInactive);
+        }
+        let login_result = async {
+            crate::models::login_throttle::reset(&state.pool, &body.email)
+                .await
+                .map_err(|e| AppError::Internal(e.into()))?;
 
-        // Session contract: rotate id + persist identity, mint the
-        // CSRF synchronizer token, seed the theme cookie. Identical to the OIDC
-        // callback, returning 204 rather than a redirect.
-        crate::auth::session::login(&session, &user)
-            .await
-            .map_err(|e| AppError::Internal(anyhow::anyhow!("login failed: {e}")))?;
+            // Session contract: rotate id + persist identity, mint the
+            // CSRF synchronizer token, seed the theme cookie. Identical to the OIDC
+            // callback, returning 204 rather than a redirect.
+            crate::auth::session::login(&session, &user)
+                .await
+                .map_err(|e| AppError::Internal(anyhow::anyhow!("login failed: {e}")))?;
+            Ok::<_, AppError>(())
+        }
+        .await;
+        if let Err(error) = login_result {
+            if cohort_id.is_some()
+                && let Err(e) = session.flush().await
+            {
+                tracing::warn!(error = %e, "session flush failed after winning local sign-in");
+            }
+            return Err(error);
+        }
         let mut csrf_bytes = [0u8; 32];
         rand::fill(&mut csrf_bytes);
         let csrf_token = Base64UrlUnpadded::encode_string(&csrf_bytes);
@@ -1117,11 +1166,14 @@ mod tests {
     use axum::http::StatusCode;
 
     use crate::models::theme_preference::ThemePreference;
+    use crate::models::{sign_in, user};
     use crate::test_support;
 
-    #[tokio::test]
-    async fn login_redirects_to_oidc_provider() {
-        let server = test_support::test_server();
+    #[sqlx::test(migrations = "./migrations")]
+    async fn login_redirects_to_oidc_provider(pool: sqlx::PgPool) {
+        let app_pool = test_support::db::app_pool_for(&pool).await;
+        let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+        let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
         let response = server.get("/auth/oidc/login").await;
         // Should redirect to the fake OIDC provider's auth URL
         assert_eq!(response.status_code(), StatusCode::TEMPORARY_REDIRECT);
@@ -1188,9 +1240,11 @@ mod tests {
             .to_owned()
     }
 
-    #[tokio::test]
-    async fn session_cookie_carries_httponly_lax_and_no_secure_by_default() {
-        let server = test_support::test_server();
+    #[sqlx::test(migrations = "./migrations")]
+    async fn session_cookie_carries_httponly_lax_and_no_secure_by_default(pool: sqlx::PgPool) {
+        let app_pool = test_support::db::app_pool_for(&pool).await;
+        let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+        let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
         let cookie = session_set_cookie(&server.get("/auth/oidc/login").await);
         assert!(
             cookie.contains("HttpOnly"),
@@ -1206,13 +1260,13 @@ mod tests {
         );
     }
 
-    #[tokio::test]
-    async fn session_cookie_secure_tracks_behind_https() {
-        let mut state = test_support::test_state();
-        state.config.security.behind_https = true;
-        let app =
-            crate::build_router_with_session_store(state, tower_sessions::MemoryStore::default());
-        let server = axum_test::TestServer::new(app);
+    #[sqlx::test(migrations = "./migrations")]
+    async fn session_cookie_secure_tracks_behind_https(pool: sqlx::PgPool) {
+        let app_pool = test_support::db::app_pool_for(&pool).await;
+        let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+        let mut config = test_support::test_config();
+        config.security.behind_https = true;
+        let server = test_support::db::server_with_config(&app_pool, &ingestion_pool, config);
         let cookie = session_set_cookie(&server.get("/auth/oidc/login").await);
         assert!(
             cookie.contains("Secure"),
@@ -1400,19 +1454,11 @@ mod tests {
         );
     }
 
-    /// End-to-end happy path through `/auth/oidc/login` → `/auth/callback`. Exercises:
-    /// PKCE/CSRF/nonce session round-trip, mock token exchange against a
-    /// signed ID token whose nonce matches what `/auth/oidc/login` stored,
-    /// identity provisioning without auto-promotion (first user stays a
-    /// non-administrator), session login (cookie cycled), and the FOUC theme
-    /// cookie seeded from the freshly-loaded user record.
     #[sqlx::test(migrations = "./migrations")]
     async fn callback_succeeds_first_user_not_promoted(pool: sqlx::PgPool) {
         use crate::models::role::Role;
         use crate::state::AppState;
         use crate::test_support::oidc_mock::MockOidcProvider;
-        use tower_sessions::session::Id as SessionId;
-        use tower_sessions::{MemoryStore, SessionStore};
 
         let app_pool = test_support::db::app_pool_for(&pool).await;
         let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
@@ -1424,8 +1470,8 @@ mod tests {
             mock.runtime("http://localhost:3000/auth/callback"),
         ));
 
-        // Shared session store so the test can read what /auth/oidc/login wrote.
-        let store = MemoryStore::default();
+        // Shared persisted session store exercises rotation and cascading deletes.
+        let store = crate::auth::store::PostgresStore::new(app_pool.clone());
         let (config, library_files) = crate::test_support::test_storage_config(
             None,
             crate::models::storage_library::LibraryId::from_uuid(uuid::Uuid::new_v4()),
@@ -1451,25 +1497,10 @@ mod tests {
         assert_eq!(login_resp.status_code(), StatusCode::TEMPORARY_REDIRECT);
 
         // Step 2: extract the session ID from the issued cookie and load
-        // the stored OIDC flow state out of the shared MemoryStore.
+        // the authorization request parameters from the redirect.
         let session_cookie_value = login_resp.cookie("id").value().to_string();
-        let session_id: SessionId = session_cookie_value.parse().expect("parse session id");
-        let record = store
-            .load(&session_id)
-            .await
-            .expect("load session record")
-            .expect("session record present");
-        let csrf: String = serde_json::from_value(
-            record
-                .data
-                .get("oidc_csrf_state")
-                .expect("oidc_csrf_state in session")
-                .clone(),
-        )
-        .expect("oidc_csrf_state is string");
-        let nonce: String =
-            serde_json::from_value(record.data.get("nonce").expect("nonce in session").clone())
-                .expect("nonce is string");
+        let csrf: String = authorization_parameter(&login_resp, "state");
+        let nonce: String = authorization_parameter(&login_resp, "nonce");
 
         // Step 3: install /token responder that returns an ID token
         // signed with the mock's key and bearing the matching nonce.
@@ -1602,10 +1633,499 @@ mod tests {
         );
     }
 
+    fn authorization_parameter(response: &axum_test::TestResponse, name: &str) -> String {
+        url::Url::parse(response.header("location").to_str().expect("location"))
+            .expect("authorization URL")
+            .query_pairs()
+            .find(|(key, _)| key == name)
+            .expect("authorization parameter")
+            .1
+            .into_owned()
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn local_login_loses_to_a_recent_winner(pool: sqlx::PgPool) {
+        use tower_sessions::SessionStore;
+        let fixture = CallbackFixture::start(&pool).await;
+        test_support::db::create_adult_with_password(
+            &fixture.app_pool,
+            "Local",
+            "local@example.com",
+            "a perfectly good password",
+        )
+        .await;
+        assert!(
+            sign_in::claim_win(&fixture.app_pool, &fixture.session_id.to_string())
+                .await
+                .unwrap()
+        );
+        let before = fixture
+            .store
+            .load(&fixture.session_id)
+            .await
+            .unwrap()
+            .unwrap()
+            .data;
+        let response = fixture.server.post("/auth/local/login").json(&serde_json::json!({"email":"local@example.com", "password":"a perfectly good password"})).await;
+        let problem = test_support::assert_problem(
+            &response,
+            crate::error::problems::SIGN_IN_INACTIVE,
+            StatusCode::CONFLICT,
+        );
+        assert_eq!(problem["title"], "Conflict");
+        assert_eq!(
+            problem["detail"],
+            "This sign-in is no longer active. Reload the page and sign in again."
+        );
+        let after = fixture
+            .store
+            .load(&fixture.session_id)
+            .await
+            .unwrap()
+            .unwrap()
+            .data;
+        assert_eq!(after, before);
+        assert!(!after.contains_key("user_id"));
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn local_login_loses_to_a_concurrent_winner(pool: sqlx::PgPool) {
+        use tower_sessions::SessionStore;
+        let fixture = CallbackFixture::start(&pool).await;
+        test_support::db::create_adult_with_password(
+            &fixture.app_pool,
+            "Local",
+            "local@example.com",
+            "a perfectly good password",
+        )
+        .await;
+        let mut tx = pool.begin().await.unwrap();
+        sqlx::query!(
+            "UPDATE sign_in_cohorts SET won_at = now() WHERE session_id = $1 AND won_at IS NULL",
+            fixture.session_id.to_string()
+        )
+        .execute(&mut *tx)
+        .await
+        .unwrap();
+        let server = std::sync::Arc::new(fixture.server);
+        let request_server = server.clone();
+        let request = tokio::spawn(async move {
+            request_server.post("/auth/local/login").json(&serde_json::json!({"email":"local@example.com", "password":"a perfectly good password"})).await
+        });
+        test_support::wait_for_blocked_query(&pool, "%sign_in_cohorts%", 1).await;
+        tx.commit().await.unwrap();
+        let response = request.await.unwrap();
+        test_support::assert_problem(
+            &response,
+            crate::error::problems::SIGN_IN_INACTIVE,
+            StatusCode::CONFLICT,
+        );
+        assert!(
+            !fixture
+                .store
+                .load(&fixture.session_id)
+                .await
+                .unwrap()
+                .unwrap()
+                .data
+                .contains_key("user_id")
+        );
+        assert_eq!(
+            server.get("/auth/me").await.status_code(),
+            StatusCode::UNAUTHORIZED
+        );
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn local_login_when_signed_in_is_refused(pool: sqlx::PgPool) {
+        use tower_sessions::SessionStore;
+        let fixture = CallbackFixture::start(&pool).await;
+        let (_, id) = sign_in_fixture_locally(&fixture).await;
+        let before = fixture.store.load(&id).await.unwrap().unwrap().data;
+        let response = fixture.server.post("/auth/local/login").add_header("x-csrf-token", before["csrf_token"].as_str().unwrap()).json(&serde_json::json!({"email":"local@example.com", "password":"a perfectly good password"})).await;
+        test_support::assert_problem(
+            &response,
+            crate::error::problems::SIGN_IN_INACTIVE,
+            StatusCode::CONFLICT,
+        );
+        assert_eq!(fixture.store.load(&id).await.unwrap().unwrap().data, before);
+        assert_eq!(response.cookie("id").value(), id.to_string());
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn local_login_without_session_creates_no_cohort(pool: sqlx::PgPool) {
+        let app_pool = test_support::db::app_pool_for(&pool).await;
+        let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+        let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+        let response = server
+            .post("/auth/local/login")
+            .json(&serde_json::json!({"email":"unknown@example.com", "password":"wrong"}))
+            .await;
+        assert_eq!(response.status_code(), StatusCode::UNPROCESSABLE_ENTITY);
+        assert_eq!(
+            sqlx::query_scalar!("SELECT count(*) FROM sign_in_cohorts")
+                .fetch_one(&pool)
+                .await
+                .unwrap(),
+            Some(0)
+        );
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn local_login_with_session_keeps_failure_parity(pool: sqlx::PgPool) {
+        let fixture = CallbackFixture::start(&pool).await;
+        test_support::db::create_adult_with_password(
+            &fixture.app_pool,
+            "Local",
+            "local@example.com",
+            "a perfectly good password",
+        )
+        .await;
+        let unknown = fixture
+            .server
+            .post("/auth/local/login")
+            .json(&serde_json::json!({"email":"unknown@example.com", "password":"wrong"}))
+            .await;
+        let wrong = fixture
+            .server
+            .post("/auth/local/login")
+            .json(&serde_json::json!({"email":"local@example.com", "password":"wrong"}))
+            .await;
+        assert_eq!(unknown.status_code(), StatusCode::UNPROCESSABLE_ENTITY);
+        assert_eq!(unknown.status_code(), wrong.status_code());
+        assert_eq!(unknown.text(), wrong.text());
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn local_login_after_forced_logout_succeeds(pool: sqlx::PgPool) {
+        use tower_sessions::SessionStore;
+        let fixture = CallbackFixture::start(&pool).await;
+        let (_, old_id) = sign_in_fixture_locally(&fixture).await;
+        let me: serde_json::Value = fixture.server.get("/auth/me").await.json();
+        let changed = fixture.server.post("/api/v1/account/password")
+            .add_header("x-csrf-token", me["csrf_token"].as_str().unwrap())
+            .json(&serde_json::json!({"current_password":"a perfectly good password", "new_password":"correct-horse-battery-staple-7!"})).await;
+        assert_eq!(changed.status_code(), StatusCode::OK);
+        let response = fixture.server.post("/auth/local/login").add_header("x-csrf-token", me["csrf_token"].as_str().unwrap()).json(&serde_json::json!({"email":"local@example.com", "password":"correct-horse-battery-staple-7!"})).await;
+        assert_eq!(response.status_code(), StatusCode::NO_CONTENT);
+        assert!(fixture.store.load(&old_id).await.unwrap().is_none());
+        assert_eq!(
+            fixture.server.get("/auth/me").await.status_code(),
+            StatusCode::OK
+        );
+    }
+
+    async fn sign_in_fixture_locally(
+        fixture: &CallbackFixture,
+    ) -> (uuid::Uuid, tower_sessions::session::Id) {
+        let user_id = test_support::db::create_adult_with_password(
+            &fixture.app_pool,
+            "Local",
+            "local@example.com",
+            "a perfectly good password",
+        )
+        .await;
+        let response = fixture.server.post("/auth/local/login").json(&serde_json::json!({"email":"local@example.com", "password":"a perfectly good password"})).await;
+        assert_eq!(response.status_code(), StatusCode::NO_CONTENT);
+        (user_id, response.cookie("id").value().parse().unwrap())
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn oidc_start_persists_one_attempt_per_session(pool: sqlx::PgPool) {
+        let fixture = CallbackFixture::start(&pool).await;
+        let second = fixture.server.get("/auth/oidc/login").await;
+        assert_eq!(second.status_code(), StatusCode::TEMPORARY_REDIRECT);
+        let state = authorization_parameter(&second, "state");
+        assert_ne!(state, fixture.csrf);
+        assert_eq!(
+            sqlx::query_scalar!("SELECT count(*) FROM oidc_sign_in_attempts")
+                .fetch_one(&pool)
+                .await
+                .unwrap(),
+            Some(1)
+        );
+        let old = fixture
+            .server
+            .get("/auth/callback")
+            .add_query_param("code", "code")
+            .add_query_param("state", &fixture.csrf)
+            .await;
+        assert_eq!(old.status_code(), StatusCode::UNAUTHORIZED);
+        fixture.mock.assert_no_requests().await;
+        fixture
+            .mock
+            .mount_token_endpoint(
+                "second",
+                Some("second@example.com"),
+                Some("Second"),
+                &authorization_parameter(&second, "nonce"),
+            )
+            .await;
+        let response = fixture
+            .server
+            .get("/auth/callback")
+            .add_query_param("code", "code")
+            .add_query_param("state", &state)
+            .await;
+        assert_eq!(response.status_code(), StatusCode::TEMPORARY_REDIRECT);
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn oidc_start_over_source_limit_redirects_to_throttled_outcome(pool: sqlx::PgPool) {
+        let app_pool = test_support::db::app_pool_for(&pool).await;
+        let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+        let server = test_support::db::server_with_source_rate_limit(&app_pool, &ingestion_pool, 1);
+        let first = server
+            .get("/auth/oidc/login")
+            .add_header("x-forwarded-for", "198.51.100.24")
+            .await;
+        assert_eq!(first.status_code(), StatusCode::TEMPORARY_REDIRECT);
+        let second = server
+            .get("/auth/oidc/login")
+            .add_header("x-forwarded-for", "198.51.100.24")
+            .await;
+        assert_eq!(second.status_code(), StatusCode::SEE_OTHER);
+        assert_eq!(second.header("location"), "/login?outcome=throttled");
+        assert_eq!(
+            sqlx::query_scalar!("SELECT count(*) FROM oidc_sign_in_attempts")
+                .fetch_one(&pool)
+                .await
+                .unwrap(),
+            Some(1)
+        );
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn oidc_start_when_signed_in_redirects_home(pool: sqlx::PgPool) {
+        let fixture = CallbackFixture::start(&pool).await;
+        sign_in_fixture_locally(&fixture).await;
+        let response = fixture.server.get("/auth/oidc/login").await;
+        assert_eq!(response.status_code(), StatusCode::SEE_OTHER);
+        assert_eq!(response.header("location"), "/");
+        assert_eq!(
+            sqlx::query_scalar!("SELECT count(*) FROM oidc_sign_in_attempts")
+                .fetch_one(&pool)
+                .await
+                .unwrap(),
+            Some(0)
+        );
+        fixture.mock.assert_no_requests().await;
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn oidc_callback_replay_after_failure_is_refused(pool: sqlx::PgPool) {
+        use wiremock::matchers::{method, path};
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+        let token_server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/token"))
+            .respond_with(ResponseTemplate::new(500))
+            .up_to_n_times(1)
+            .expect(1)
+            .mount(&token_server)
+            .await;
+        let fixture = CallbackFixture::start_with_token_endpoint(
+            &pool,
+            Some(&format!("{}/token", token_server.uri())),
+        )
+        .await;
+        let first = fixture
+            .server
+            .get("/auth/callback")
+            .add_query_param("code", "code")
+            .add_query_param("state", &fixture.csrf)
+            .await;
+        assert_eq!(first.status_code(), StatusCode::INTERNAL_SERVER_ERROR);
+        let replay = fixture
+            .server
+            .get("/auth/callback")
+            .add_query_param("code", "code")
+            .add_query_param("state", &fixture.csrf)
+            .await;
+        assert_eq!(replay.status_code(), StatusCode::UNAUTHORIZED);
+        assert_eq!(token_server.received_requests().await.unwrap().len(), 1);
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn oidc_callback_when_signed_in_redirects_home_without_exchange(pool: sqlx::PgPool) {
+        let fixture = CallbackFixture::start(&pool).await;
+        sign_in_fixture_locally(&fixture).await;
+        let response = fixture
+            .server
+            .get("/auth/callback")
+            .add_query_param("code", "code")
+            .add_query_param("state", "irrelevant")
+            .await;
+        assert_eq!(response.status_code(), StatusCode::SEE_OTHER);
+        assert_eq!(response.header("location"), "/");
+        fixture.mock.assert_no_requests().await;
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn oidc_callback_losing_arbitration_never_signs_in(pool: sqlx::PgPool) {
+        use tower_sessions::SessionStore;
+        let fixture = CallbackFixture::start(&pool).await;
+        assert!(
+            sign_in::claim_win(&fixture.app_pool, &fixture.session_id.to_string())
+                .await
+                .unwrap()
+        );
+        fixture
+            .mock
+            .mount_token_endpoint(
+                "loser",
+                Some("loser@example.com"),
+                Some("Loser"),
+                &fixture.nonce,
+            )
+            .await;
+        let response = fixture
+            .server
+            .get("/auth/callback")
+            .add_query_param("code", "code")
+            .add_query_param("state", &fixture.csrf)
+            .await;
+        assert_eq!(response.status_code(), StatusCode::UNAUTHORIZED);
+        assert!(
+            !fixture
+                .store
+                .load(&fixture.session_id)
+                .await
+                .unwrap()
+                .unwrap()
+                .data
+                .contains_key("user_id")
+        );
+        assert_eq!(
+            sqlx::query_scalar!("SELECT count(*) FROM user_identities")
+                .fetch_one(&pool)
+                .await
+                .unwrap(),
+            Some(0)
+        );
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn oidc_start_with_stale_session_starts_fresh(pool: sqlx::PgPool) {
+        use tower_sessions::SessionStore;
+        let fixture = CallbackFixture::start(&pool).await;
+        let (user_id, old_id) = sign_in_fixture_locally(&fixture).await;
+        sqlx::query!(
+            "UPDATE users SET session_version = session_version + 1 WHERE id = $1",
+            user_id
+        )
+        .execute(&fixture.app_pool)
+        .await
+        .unwrap();
+        let response = fixture.server.get("/auth/oidc/login").await;
+        assert_eq!(response.status_code(), StatusCode::TEMPORARY_REDIRECT);
+        assert_ne!(response.cookie("id").value(), old_id.to_string());
+        assert!(fixture.store.load(&old_id).await.unwrap().is_none());
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn oidc_start_with_disabled_session_starts_fresh(pool: sqlx::PgPool) {
+        use tower_sessions::SessionStore;
+        let fixture = CallbackFixture::start(&pool).await;
+        let (user_id, old_id) = sign_in_fixture_locally(&fixture).await;
+        user::disable_account(&fixture.app_pool, user_id)
+            .await
+            .unwrap();
+        let response = fixture.server.get("/auth/oidc/login").await;
+        assert_eq!(response.status_code(), StatusCode::TEMPORARY_REDIRECT);
+        assert!(fixture.store.load(&old_id).await.unwrap().is_none());
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn oidc_start_loses_to_a_recent_winner(pool: sqlx::PgPool) {
+        use tower_sessions::SessionStore;
+        let fixture = CallbackFixture::start(&pool).await;
+        assert!(
+            sign_in::claim_win(&fixture.app_pool, &fixture.session_id.to_string())
+                .await
+                .unwrap()
+        );
+        assert!(
+            sign_in::claim_oidc_attempt(
+                &fixture.app_pool,
+                &fixture.session_id.to_string(),
+                &fixture.csrf
+            )
+            .await
+            .unwrap()
+            .is_some()
+        );
+        let before = fixture
+            .store
+            .load(&fixture.session_id)
+            .await
+            .unwrap()
+            .unwrap()
+            .data;
+        let response = fixture.server.get("/auth/oidc/login").await;
+        assert_eq!(response.status_code(), StatusCode::SEE_OTHER);
+        assert_eq!(response.header("location"), "/login?outcome=expired");
+        assert_eq!(
+            fixture
+                .store
+                .load(&fixture.session_id)
+                .await
+                .unwrap()
+                .unwrap()
+                .data,
+            before
+        );
+        assert_eq!(
+            sqlx::query_scalar!("SELECT count(*) FROM oidc_sign_in_attempts")
+                .fetch_one(&pool)
+                .await
+                .unwrap(),
+            Some(0)
+        );
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn oidc_callback_refusal_after_winning_clears_session(pool: sqlx::PgPool) {
+        use tower_sessions::SessionStore;
+        let fixture = CallbackFixture::start(&pool).await;
+        test_support::db::create_adult_with_password(
+            &fixture.app_pool,
+            "Existing",
+            "collision@example.com",
+            "a perfectly good password",
+        )
+        .await;
+        let response = fixture
+            .refused_callback("collision", "collision@example.com", "Collision")
+            .await;
+        assert!(
+            fixture
+                .store
+                .load(&fixture.session_id)
+                .await
+                .unwrap()
+                .is_none()
+        );
+        assert_eq!(
+            sqlx::query_scalar!("SELECT count(*) FROM sign_in_cohorts")
+                .fetch_one(&pool)
+                .await
+                .unwrap(),
+            Some(0)
+        );
+        let cookie = response.cookie("id");
+        assert_eq!(cookie.value(), "");
+        assert_eq!(cookie.max_age().unwrap().whole_seconds(), 0);
+        assert_eq!(
+            fixture.server.get("/auth/oidc/login").await.status_code(),
+            StatusCode::TEMPORARY_REDIRECT
+        );
+    }
+
     struct CallbackFixture {
         app_pool: sqlx::PgPool,
         mock: crate::test_support::oidc_mock::MockOidcProvider,
-        store: tower_sessions::MemoryStore,
+        store: crate::auth::store::PostgresStore,
         server: axum_test::TestServer,
         session_id: tower_sessions::session::Id,
         csrf: String,
@@ -1614,18 +2134,46 @@ mod tests {
 
     impl CallbackFixture {
         async fn start(pool: &sqlx::PgPool) -> Self {
+            Self::start_with_token_endpoint(pool, None).await
+        }
+
+        async fn start_with_token_endpoint(
+            pool: &sqlx::PgPool,
+            token_endpoint: Option<&str>,
+        ) -> Self {
             use crate::state::AppState;
             use crate::test_support::oidc_mock::MockOidcProvider;
             use tower_sessions::session::Id as SessionId;
-            use tower_sessions::{MemoryStore, SessionStore};
 
             let app_pool = test_support::db::app_pool_for(pool).await;
             let ingestion_pool = test_support::db::ingestion_pool_for(pool).await;
             let mock = MockOidcProvider::start("").await;
-            let oidc = Some(std::sync::Arc::new(
-                mock.runtime("http://localhost:3000/auth/callback"),
-            ));
-            let store = MemoryStore::default();
+            let runtime = if let Some(endpoint) = token_endpoint {
+                mock.mount_discovery_with_token_endpoint(endpoint).await;
+                let transport = crate::auth::oidc::OidcTransport::for_tests();
+                let metadata = openidconnect::core::CoreProviderMetadata::discover_async(
+                    openidconnect::IssuerUrl::new(mock.issuer().to_owned()).unwrap(),
+                    &transport.oauth_client(),
+                )
+                .await
+                .unwrap();
+                let client = openidconnect::core::CoreClient::from_provider_metadata(
+                    metadata,
+                    openidconnect::ClientId::new(String::new()),
+                    Some(openidconnect::ClientSecret::new("test-secret".to_owned())),
+                )
+                .set_redirect_uri(
+                    openidconnect::RedirectUrl::new(
+                        "http://localhost:3000/auth/callback".to_owned(),
+                    )
+                    .unwrap(),
+                );
+                crate::auth::oidc::OidcRuntime::new(client, transport)
+            } else {
+                mock.runtime("http://localhost:3000/auth/callback")
+            };
+            let oidc = Some(std::sync::Arc::new(runtime));
+            let store = crate::auth::store::PostgresStore::new(app_pool.clone());
             let (config, library_files) = crate::test_support::test_storage_config(
                 None,
                 crate::models::storage_library::LibraryId::from_uuid(uuid::Uuid::new_v4()),
@@ -1652,17 +2200,8 @@ mod tests {
                 .value()
                 .parse()
                 .expect("parse session id");
-            let record = store
-                .load(&session_id)
-                .await
-                .expect("load session record")
-                .expect("session record present");
-            let csrf: String =
-                serde_json::from_value(record.data.get("oidc_csrf_state").expect("state").clone())
-                    .expect("state is string");
-            let nonce: String =
-                serde_json::from_value(record.data.get("nonce").expect("nonce").clone())
-                    .expect("nonce is string");
+            let csrf: String = authorization_parameter(&login_resp, "state");
+            let nonce: String = authorization_parameter(&login_resp, "nonce");
             Self {
                 app_pool,
                 mock,
@@ -1696,21 +2235,13 @@ mod tests {
                 crate::error::problems::UNAUTHORIZED,
                 StatusCode::UNAUTHORIZED,
             );
-            let after_callback = self
-                .store
-                .load(&self.session_id)
-                .await
-                .expect("load session record")
-                .expect("session record present");
-            for key in [
-                crate::auth::session::SESSION_KEY_USER_ID,
-                crate::auth::session::SESSION_KEY_SESSION_VERSION,
-            ] {
-                assert!(
-                    !after_callback.data.contains_key(key),
-                    "a refused callback must not write {key} into the session"
-                );
-            }
+            assert!(
+                self.store
+                    .load(&self.session_id)
+                    .await
+                    .expect("load session")
+                    .is_none()
+            );
             assert_eq!(
                 self.server.get("/auth/me").await.status_code(),
                 StatusCode::UNAUTHORIZED,
@@ -1825,12 +2356,29 @@ mod tests {
         use crate::models::user;
 
         fn observable(response: &axum_test::TestResponse) -> serde_json::Value {
+            let removal = response.cookie("id");
+            assert_eq!(removal.value(), "");
+            assert_eq!(
+                removal.max_age().expect("removal max-age").whole_seconds(),
+                0
+            );
+            assert!(
+                removal
+                    .expires_datetime()
+                    .expect("removal expiry")
+                    .unix_timestamp()
+                    < chrono::Utc::now().timestamp()
+            );
             let mut headers = Vec::new();
             let mut cookies = Vec::new();
             for (name, value) in response.headers() {
                 let value = value.to_str().expect("ascii header").to_owned();
                 if name == axum::http::header::SET_COOKIE {
-                    let attributes: Vec<&str> = value.split(';').skip(1).map(str::trim).collect();
+                    let attributes: Vec<&str> = value
+                        .split(';')
+                        .map(str::trim)
+                        .filter(|attribute| !attribute.starts_with("Expires="))
+                        .collect();
                     cookies.push(attributes.join("; "));
                 } else {
                     headers.push(format!("{name}: {value}"));
@@ -1886,20 +2434,12 @@ mod tests {
         assert_eq!(observable(&collision_response), disabled_observed);
     }
 
-    /// A logged-in user re-hitting `/auth/oidc/login` (e.g. mistaken click,
-    /// stale tab) must NOT overwrite their long-lived synchronizer
-    /// token. The OIDC transient state lives under `oidc_csrf_state`
-    /// and the app token under `csrf_token` — disjoint keys. This
-    /// test pins that disjointness so a future refactor that collapses
-    /// the two keys breaks here rather than silently shipping a
-    /// confused-deputy where `/auth/me` returns the OIDC transient
-    /// value pretending to be the app token.
     #[sqlx::test(migrations = "./migrations")]
     async fn re_login_preserves_app_csrf_token(pool: sqlx::PgPool) {
         use crate::state::AppState;
         use crate::test_support::oidc_mock::MockOidcProvider;
+        use tower_sessions::SessionStore;
         use tower_sessions::session::Id as SessionId;
-        use tower_sessions::{MemoryStore, SessionStore};
 
         let app_pool = test_support::db::app_pool_for(&pool).await;
         let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
@@ -1908,7 +2448,7 @@ mod tests {
         let oidc = Some(std::sync::Arc::new(
             mock.runtime("http://localhost:3000/auth/callback"),
         ));
-        let store = MemoryStore::default();
+        let store = crate::auth::store::PostgresStore::new(app_pool.clone());
         let (config, library_files) = crate::test_support::test_storage_config(
             None,
             crate::models::storage_library::LibraryId::from_uuid(uuid::Uuid::new_v4()),
@@ -1938,22 +2478,13 @@ mod tests {
             .await
             .expect("load session record")
             .expect("session record present");
-        let oidc_state_1: String = serde_json::from_value(
-            record
-                .data
-                .get("oidc_csrf_state")
-                .expect("oidc_csrf_state present after /auth/oidc/login")
-                .clone(),
-        )
-        .expect("oidc_csrf_state is string");
+        let oidc_state_1: String = authorization_parameter(&login_resp, "state");
         assert!(
             !record.data.contains_key("csrf_token"),
             "/auth/oidc/login must NOT write the app-level csrf_token key; that \
              would clobber a returning user's existing app token",
         );
-        let nonce: String =
-            serde_json::from_value(record.data.get("nonce").expect("nonce in session").clone())
-                .expect("nonce is string");
+        let nonce: String = authorization_parameter(&login_resp, "nonce");
         mock.mount_token_endpoint(
             "test-subject-relogin",
             Some("alice@example.com"),
@@ -1982,37 +2513,19 @@ mod tests {
             .to_owned();
         assert_eq!(token_a.len(), 43, "token A must be 43-char base64url");
 
-        // Step 2: same authenticated cookie jar; drive /auth/oidc/login
-        // AGAIN (no callback). This writes a fresh OIDC transient
-        // under `oidc_csrf_state`. The app token under `csrf_token`
-        // MUST be preserved; otherwise the frontend reader
-        // would see /auth/me return the OIDC transient pretending
-        // to be the app token.
         let login_resp_2 = server.get("/auth/oidc/login").await;
-        assert_eq!(login_resp_2.status_code(), StatusCode::TEMPORARY_REDIRECT);
-        let session_cookie_2 = login_resp_2.cookie("id").value().to_string();
-        let session_id_2: SessionId = session_cookie_2.parse().expect("parse session id 2");
+        assert_eq!(login_resp_2.status_code(), StatusCode::SEE_OTHER);
+        assert_eq!(login_resp_2.header("location"), "/");
+        let session_id_2: SessionId = login_resp_2
+            .cookie("id")
+            .value()
+            .parse()
+            .expect("session id");
         let record_2 = store
             .load(&session_id_2)
             .await
-            .expect("load session record after second /auth/oidc/login")
-            .expect("session record present after second /auth/oidc/login");
-
-        // The new OIDC transient must be present and must differ from
-        // the first login's transient (otherwise CSRF state is being
-        // reused across login attempts — a separate security smell).
-        let oidc_state_2: String = serde_json::from_value(
-            record_2
-                .data
-                .get("oidc_csrf_state")
-                .expect("oidc_csrf_state present after re-login")
-                .clone(),
-        )
-        .expect("oidc_csrf_state 2 is string");
-        assert_ne!(
-            oidc_state_1, oidc_state_2,
-            "OIDC anti-forgery state must rotate per /auth/oidc/login call"
-        );
+            .expect("load")
+            .expect("record");
 
         // The app token under `csrf_token` must survive the re-login
         // intact. If this fires, /auth/oidc/login is shadowing the app
@@ -2054,8 +2567,8 @@ mod tests {
     async fn session_version_bump_forces_logout(pool: sqlx::PgPool) {
         use crate::state::AppState;
         use crate::test_support::oidc_mock::MockOidcProvider;
+        use tower_sessions::SessionStore;
         use tower_sessions::session::Id as SessionId;
-        use tower_sessions::{MemoryStore, SessionStore};
 
         let app_pool = test_support::db::app_pool_for(&pool).await;
         let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
@@ -2064,7 +2577,7 @@ mod tests {
         let oidc = Some(std::sync::Arc::new(
             mock.runtime("http://localhost:3000/auth/callback"),
         ));
-        let store = MemoryStore::default();
+        let store = crate::auth::store::PostgresStore::new(app_pool.clone());
         let (config, library_files) = crate::test_support::test_storage_config(
             None,
             crate::models::storage_library::LibraryId::from_uuid(uuid::Uuid::new_v4()),
@@ -2086,24 +2599,8 @@ mod tests {
 
         // Drive /auth/oidc/login → /auth/callback to establish an authenticated session.
         let login_resp = server.get("/auth/oidc/login").await;
-        let session_cookie_value = login_resp.cookie("id").value().to_string();
-        let session_id: SessionId = session_cookie_value.parse().expect("parse session id");
-        let record = store
-            .load(&session_id)
-            .await
-            .expect("load session record")
-            .expect("session record present");
-        let csrf: String = serde_json::from_value(
-            record
-                .data
-                .get("oidc_csrf_state")
-                .expect("oidc_csrf_state in session")
-                .clone(),
-        )
-        .expect("oidc_csrf_state is string");
-        let nonce: String =
-            serde_json::from_value(record.data.get("nonce").expect("nonce in session").clone())
-                .expect("nonce is string");
+        let csrf: String = authorization_parameter(&login_resp, "state");
+        let nonce: String = authorization_parameter(&login_resp, "nonce");
         mock.mount_token_endpoint(
             "force-logout-subject",
             Some("fl@example.com"),
@@ -2180,8 +2677,8 @@ mod tests {
     async fn deleted_user_session_is_flushed_on_next_request(pool: sqlx::PgPool) {
         use crate::state::AppState;
         use crate::test_support::oidc_mock::MockOidcProvider;
+        use tower_sessions::SessionStore;
         use tower_sessions::session::Id as SessionId;
-        use tower_sessions::{MemoryStore, SessionStore};
 
         let app_pool = test_support::db::app_pool_for(&pool).await;
         let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
@@ -2190,7 +2687,7 @@ mod tests {
         let oidc = Some(std::sync::Arc::new(
             mock.runtime("http://localhost:3000/auth/callback"),
         ));
-        let store = MemoryStore::default();
+        let store = crate::auth::store::PostgresStore::new(app_pool.clone());
         let (config, library_files) = crate::test_support::test_storage_config(
             None,
             crate::models::storage_library::LibraryId::from_uuid(uuid::Uuid::new_v4()),
@@ -2212,24 +2709,8 @@ mod tests {
 
         // Establish an authenticated session via /auth/oidc/login → /auth/callback.
         let login_resp = server.get("/auth/oidc/login").await;
-        let session_cookie_value = login_resp.cookie("id").value().to_string();
-        let session_id: SessionId = session_cookie_value.parse().expect("parse session id");
-        let record = store
-            .load(&session_id)
-            .await
-            .expect("load session record")
-            .expect("session record present");
-        let csrf: String = serde_json::from_value(
-            record
-                .data
-                .get("oidc_csrf_state")
-                .expect("oidc_csrf_state in session")
-                .clone(),
-        )
-        .expect("oidc_csrf_state is string");
-        let nonce: String =
-            serde_json::from_value(record.data.get("nonce").expect("nonce in session").clone())
-                .expect("nonce is string");
+        let csrf: String = authorization_parameter(&login_resp, "state");
+        let nonce: String = authorization_parameter(&login_resp, "nonce");
         mock.mount_token_endpoint(
             "deleted-user-subject",
             Some("del@example.com"),
@@ -2303,8 +2784,8 @@ mod tests {
     async fn authenticated_read_slides_inactivity_expiry(pool: sqlx::PgPool) {
         use crate::state::AppState;
         use crate::test_support::oidc_mock::MockOidcProvider;
+        use tower_sessions::SessionStore;
         use tower_sessions::session::Id as SessionId;
-        use tower_sessions::{MemoryStore, SessionStore};
 
         let app_pool = test_support::db::app_pool_for(&pool).await;
         let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
@@ -2313,7 +2794,7 @@ mod tests {
         let oidc = Some(std::sync::Arc::new(
             mock.runtime("http://localhost:3000/auth/callback"),
         ));
-        let store = MemoryStore::default();
+        let store = crate::auth::store::PostgresStore::new(app_pool.clone());
         let (config, library_files) = crate::test_support::test_storage_config(
             None,
             crate::models::storage_library::LibraryId::from_uuid(uuid::Uuid::new_v4()),
@@ -2334,24 +2815,8 @@ mod tests {
         server.save_cookies();
 
         let login_resp = server.get("/auth/oidc/login").await;
-        let session_cookie_value = login_resp.cookie("id").value().to_string();
-        let session_id: SessionId = session_cookie_value.parse().expect("parse session id");
-        let record = store
-            .load(&session_id)
-            .await
-            .expect("load session record")
-            .expect("session record present");
-        let csrf: String = serde_json::from_value(
-            record
-                .data
-                .get("oidc_csrf_state")
-                .expect("oidc_csrf_state in session")
-                .clone(),
-        )
-        .expect("oidc_csrf_state is string");
-        let nonce: String =
-            serde_json::from_value(record.data.get("nonce").expect("nonce in session").clone())
-                .expect("nonce is string");
+        let csrf: String = authorization_parameter(&login_resp, "state");
+        let nonce: String = authorization_parameter(&login_resp, "nonce");
         mock.mount_token_endpoint(
             "slide-subject",
             Some("slide@example.com"),
