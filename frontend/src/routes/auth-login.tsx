@@ -14,8 +14,9 @@
  * route change.
  */
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState, type ReactElement, type SyntheticEvent } from "react";
-import { Link, Navigate } from "react-router";
+import { useEffect, useRef, useState, type ReactElement, type SyntheticEvent } from "react";
+import { Link, Navigate, useLocation } from "react-router";
+import { z } from "zod";
 import { toast } from "sonner";
 
 import { ApiError } from "@/api";
@@ -28,8 +29,58 @@ import { queryKeys } from "@/lib/query/keys";
 
 import { AuthShell } from "./auth-shell";
 
+const outcomeSchema = z.enum(["denied", "expired", "unavailable", "keys", "account", "throttled"]);
+
+const outcomeCopy = {
+  denied: {
+    title: "Sign-in cancelled",
+    body: "Sign-in was cancelled at your provider. You can try again when you're ready.",
+  },
+  expired: { title: "Sign-in expired", body: "Start a new sign-in to continue." },
+  unavailable: {
+    title: "Sign-in unavailable",
+    body: "Could not complete sign-in. Try again later.",
+  },
+  keys: {
+    title: "Sign-in could not be verified",
+    body: "Try again later. If this keeps happening, contact your administrator.",
+  },
+  account: {
+    title: "Unable to sign in",
+    body: "Could not sign in with this account. Contact your administrator for help.",
+  },
+  throttled: { title: "Too many sign-in attempts", body: "Wait a moment, then try again." },
+};
+
+function OutcomeNotice(): ReactElement | null {
+  const location = useLocation();
+  const values = new URLSearchParams(location.search).getAll("outcome");
+  const parsed = outcomeSchema.safeParse(values.length === 1 ? values[0] : undefined);
+  const outcome = parsed.success ? parsed.data : null;
+  const titleRef = useRef<HTMLHeadingElement>(null);
+  useEffect(() => {
+    if (outcome !== null) {
+      titleRef.current?.focus();
+    }
+  }, [outcome]);
+  if (outcome === null) return null;
+  const copy = outcomeCopy[outcome];
+  return (
+    <section
+      aria-labelledby="sign-in-outcome-title"
+      className="border-border bg-surface text-fg mb-4 rounded-md border p-4"
+    >
+      <h2 id="sign-in-outcome-title" tabIndex={-1} ref={titleRef} className="font-semibold">
+        {copy.title}
+      </h2>
+      <p className="mt-2 text-sm">{copy.body}</p>
+    </section>
+  );
+}
+
 /** Route component for `/login`. */
 export function Component(): ReactElement {
+  const location = useLocation();
   const qc = useQueryClient();
   const {
     data: status,
@@ -62,6 +113,7 @@ export function Component(): ReactElement {
   if (isPending) {
     return (
       <AuthShell title="Sign in">
+        <OutcomeNotice key={location.key} />
         <p className="text-fg-muted text-sm">Loading…</p>
       </AuthShell>
     );
@@ -70,6 +122,7 @@ export function Component(): ReactElement {
   if (isError) {
     return (
       <AuthShell title="Sign in">
+        <OutcomeNotice key={location.key} />
         <p className="text-fg-muted text-sm" role="alert">
           We couldn&apos;t load the sign-in options. Try reloading the page.
         </p>
@@ -150,6 +203,7 @@ export function Component(): ReactElement {
         ) : undefined
       }
     >
+      <OutcomeNotice key={location.key} />
       <div className="flex flex-col gap-4">
         {localForm}
         {divider}

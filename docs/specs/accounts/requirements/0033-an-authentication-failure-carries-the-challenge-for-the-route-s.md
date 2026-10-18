@@ -11,10 +11,10 @@ governed-by:
 
 ## Statement
 
-An authentication failure MUST answer with HTTP status 401 and a `WWW-Authenticate` challenge matching the route's
-credential type: on an API route, `Bearer`, with `error="invalid_token"` added when a credential presented in the
-`Authorization` header was rejected; on an OPDS route, `Basic` with a realm. The response body MUST be identical whether
-no credential was presented or a credential was presented and rejected.
+On a protected API or OPDS route, an authentication failure MUST answer with HTTP status 401 and a `WWW-Authenticate`
+challenge matching the route's credential type: on an API route, `Bearer`, with `error="invalid_token"` added when a
+credential presented in the `Authorization` header was rejected; on an OPDS route, `Basic` with a realm. The response
+body MUST be identical whether no credential was presented or a credential was presented and rejected.
 
 ## Rationale
 

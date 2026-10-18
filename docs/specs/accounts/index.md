@@ -21,6 +21,7 @@
 - [REV-REQ-0067](requirements/0067-an-oidc-identity-resolves-to-an-account-on-issuer-and-subject-never-on-email.md): An OIDC identity resolves to an account on issuer and subject, never on email
 - [REV-REQ-0068](requirements/0068-a-first-oidc-sign-in-whose-email-another-account-holds-is-refused-and-writes-nothing.md): A first OIDC sign-in whose email another account holds is refused and writes nothing
 - [REV-REQ-0069](requirements/0069-a-returning-oidc-identity-keeps-its-stored-email.md): A returning OIDC identity keeps its stored email
+- [REV-REQ-0070](requirements/0070-an-unsuccessful-oidc-sign-in-resolves-to-a-fixed-local-outcome.md): An unsuccessful OIDC sign-in resolves to a fixed local outcome
 
 ## Designs
 
