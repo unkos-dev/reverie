@@ -62,14 +62,17 @@ application database dependency.
 them, both under the same admin scope and role. Each input appears once, under a primary reason class: the most severe
 recorded rejection class (`unsafe_contents`, `damaged`, `invalid_structure`, `over_limits`, `unspecified`),
 `needs_change` for an operational failure whose latest attempt outcome is needs-change, `retries_exhausted` for an
-operational failure whose latest outcome is transient and whose recorded retry budget is spent, and
-`format_not_accepted` for ignored files. An operational failure still waiting for an automatic retry is in none of these
-and is not listed. Secondary rejection classes are returned in `reasons`, primary first, and never counted. Without a
-`reason` filter the list holds every class except `format_not_accepted`; `reason` selects exactly the inputs whose
-primary class it names, so it also selects the input status. The list is ordered by id with a cursor bound to the
-filter, a limit clamped to 1 through 100 and a `Link` header; the counts read ignores cursor, limit and filter and
-reports `attention_total` as the sum without `format_not_accepted`. Items carry the ingestion-relative path, with
-non-UTF-8 bytes escaped, and the latest attempt outcome. Stored `reason` text never leaves the server.
+operational failure whose latest outcome is transient and whose recorded retry budget is spent, `format_not_accepted`
+for ignored files and `duplicate` for inputs skipped because their content matches a manifestation already in the
+library. An operational failure still waiting for an automatic retry is in none of these and is not listed. Secondary
+rejection classes are returned in `reasons`, primary first, and never counted. Without a `reason` filter the list holds
+every class except `format_not_accepted` and `duplicate`; `reason` selects exactly the inputs whose primary class it
+names, so it also selects the input status. The list is ordered by id with a cursor bound to the filter, a limit clamped
+to 1 through 100 and a `Link` header; the counts read ignores cursor, limit and filter and reports `attention_total` as
+the sum without `format_not_accepted` and `duplicate`. Items carry the ingestion-relative path, with non-UTF-8 bytes
+escaped, and the latest attempt outcome. A `duplicate` item also carries `matched`: the matched manifestation, its
+current work and the work's title, read in the caller's row-level-security transaction. `matched` is null for other
+classes and once the manifestation no longer exists. Stored `reason` text never leaves the server.
 
 `LibraryFiles` supplies immutable ingestion and library directory capabilities. The ingestion database pool reads
 current inputs and linked attempts and writes works, manifestations, metadata drafts and claims. Settings use the
@@ -83,13 +86,16 @@ application-role DSN is never substituted. One-shot administrative commands reta
 ## Data and state
 
 `ingestion_inputs` stores a byte-preserving ingestion-relative path, full source fingerprint, generation, current
-status, reason, rejection classes, optional work link, observation and retry-reset times, the time its retries were
-exhausted, completion time and removal cause. The rejection classes are a closed list written with a rejection, most
-severe first, from the irrecoverable validator issues or the validator error; a rejection recorded without them reads as
-`unspecified`. The `ingestion_input_classes` view maps status, latest attempt outcome on the current generation and the
-exhaustion time to the single class the inputs list and counts report, and holds only inputs that have one. A partial
-unique index permits one present input per path; a removed input keeps its identity and history while a later arrival
-gets a new record. Fingerprints include device, `inode`, size, modification time and change time.
+status, reason, rejection classes, optional work link, the manifestation a duplicate matched, observation and
+retry-reset times, the time its retries were exhausted, completion time and removal cause. The rejection classes are a
+closed list written with a rejection, most severe first, from the irrecoverable validator issues or the validator error;
+a rejection recorded without them reads as `unspecified`. The `ingestion_input_classes` view maps status, latest attempt
+outcome on the current generation and the exhaustion time to the single class the inputs list and counts report, and
+holds only inputs that have one. The view classifies a duplicate input as `duplicate`. A duplicate's terminal write
+records the matched manifestation; every other terminal write and a new generation clear it, and deleting the
+manifestation sets it to null. A partial unique index permits one present input per path; a removed input keeps its
+identity and history while a later arrival gets a new record. Fingerprints include device, `inode`, size, modification
+time and change time.
 
 New `ingestion_jobs` link the captured input and generation and carry a typed attempt outcome separately from the shared
 job status. Old unlinked history remains readable. Terminal attempt and corresponding input updates share one
@@ -151,14 +157,14 @@ during acquisition discard the candidate and schedule another check without wait
 rejected generations remain suppressed across restart.
 
 An attempt hashes and streams the same opened source object in 64 KiB chunks, verifies the captured fingerprint and
-streamed digest, and validates independent candidate bytes. Content duplication uses the immutable ingestion hash and
-links the existing work. A path collision chooses a suffix and never establishes content equality. Validation precedes
-final publication. The recorded final library identity and relative path, accepted hash and length describe the bytes
-actually published; the ingestion hash remains immutable. Unchanged validation reuses acquisition evidence; repair
-reuses its finalised hash and size. Uncertain repair, independent destination copies and recovery verify actual bytes.
-Cover warming opens that recorded location and passes the accepted handle, recorded library identity and shared
-`LibraryFiles` into the detached thumbnail task. Cache authority follows that identity. Final-name probes use the opened
-actual parent before evidence persistence.
+streamed digest, and validates independent candidate bytes. Content duplication uses the immutable ingestion hash, links
+the existing work and records the matching manifestation. A path collision chooses a suffix and never establishes
+content equality. Validation precedes final publication. The recorded final library identity and relative path, accepted
+hash and length describe the bytes actually published; the ingestion hash remains immutable. Unchanged validation reuses
+acquisition evidence; repair reuses its finalised hash and size. Uncertain repair, independent destination copies and
+recovery verify actual bytes. Cover warming opens that recorded location and passes the accepted handle, recorded
+library identity and shared `LibraryFiles` into the detached thumbnail task. Cache authority follows that identity.
+Final-name probes use the opened actual parent before evidence persistence.
 
 Cleanup reads the current settings snapshot and rechecks the current generation and source fingerprint. A successful
 source deletion records automatic cleanup and preserves attempt history. Local deletion failure preserves the completed

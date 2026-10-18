@@ -9,7 +9,9 @@
 //! archive-controlled names and internal error text) never leaves the
 //! server; the wire carries closed reason classes, and legacy rows without a
 //! structured class surface as `unspecified`. Every list is bounded by a
-//! clamped limit and a keyset cursor bound to its filter.
+//! clamped limit and a keyset cursor bound to its filter. The duplicate listing
+//! reads matched books inside the caller's row-level-security transaction,
+//! so manifestation visibility stays a database policy.
 
 use axum::Json;
 use axum::extract::{OriginalUri, State};
@@ -191,7 +193,7 @@ async fn retry_inputs(
 
 /// Closed class an input is listed under. Rejected inputs carry one of the
 /// first five, declared most severe first; the rest classify the other
-/// attention states. Raw stored failure text never maps to anything but
+/// listed states. Raw stored failure text never maps to anything but
 /// `unspecified`.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "snake_case")]
@@ -204,10 +206,11 @@ enum InputReason {
     NeedsChange,
     RetriesExhausted,
     FormatNotAccepted,
+    Duplicate,
 }
 
 impl InputReason {
-    const ALL: [Self; 8] = [
+    const ALL: [Self; 9] = [
         Self::UnsafeContents,
         Self::Damaged,
         Self::InvalidStructure,
@@ -216,6 +219,7 @@ impl InputReason {
         Self::NeedsChange,
         Self::RetriesExhausted,
         Self::FormatNotAccepted,
+        Self::Duplicate,
     ];
 
     const fn as_str(self) -> &'static str {
@@ -228,6 +232,7 @@ impl InputReason {
             Self::NeedsChange => "needs_change",
             Self::RetriesExhausted => "retries_exhausted",
             Self::FormatNotAccepted => "format_not_accepted",
+            Self::Duplicate => "duplicate",
         }
     }
 
@@ -244,12 +249,20 @@ impl InputReason {
 #[into_params(parameter_in = Query)]
 struct InputsParams {
     /// Lists only inputs whose primary reason is this class. Absent lists
-    /// every input needing attention, which excludes `format_not_accepted`.
+    /// every input needing attention, which excludes `format_not_accepted` and `duplicate`.
     reason: Option<InputReason>,
     /// Page size; clamped to 1..=100, default 25.
     limit: Option<i64>,
     /// Opaque cursor from a previous response's `next_cursor`.
     cursor: Option<String>,
+}
+
+/// The library book a duplicate input matched.
+#[derive(Serialize, utoipa::ToSchema)]
+struct MatchedBook {
+    manifestation_id: Uuid,
+    work_id: Uuid,
+    title: String,
 }
 
 /// One ingestion input that needs attention.
@@ -269,6 +282,8 @@ struct InputItem {
     reasons: Vec<InputReason>,
     observed_at: DateTime<Utc>,
     completed_at: Option<DateTime<Utc>>,
+    /// The book a `duplicate` input matched; null for every other class and once that book no longer exists.
+    matched: Option<MatchedBook>,
 }
 
 /// Response for `GET /api/v1/ingestion/inputs`.
@@ -289,10 +304,10 @@ struct ReasonCount {
 #[derive(Serialize, utoipa::ToSchema)]
 struct InputCountsResponse {
     /// Every class with at least one input, most severe first. Includes
-    /// `format_not_accepted`.
+    /// `format_not_accepted` and `duplicate`.
     by_reason: Vec<ReasonCount>,
     /// Inputs needing attention: the sum of `by_reason` without
-    /// `format_not_accepted`.
+    /// `format_not_accepted` and `duplicate`.
     attention_total: i64,
 }
 
@@ -313,7 +328,7 @@ struct InputCountsResponse {
     get,
     path = "/api/v1/ingestion/inputs",
     summary = "List ingestion inputs needing attention",
-    description = "Returns one page of ingestion inputs that were rejected, need a change or have used their retries, each under one primary reason class. With reason=format_not_accepted it lists ignored files instead. Admin only.",
+    description = "Returns one page of ingestion inputs that were rejected, need a change or have used their retries, each under one primary reason class. With reason=format_not_accepted it lists ignored files instead, and with reason=duplicate the files skipped as duplicates of a book already in the library. Admin only.",
     tag = "ingestion",
     params(InputsParams),
     security(("session_cookie" = ["admin"]), ("device_token_bearer" = ["admin"]), ("opds_basic" = ["admin"])),
@@ -349,25 +364,36 @@ async fn list_inputs(
         .map_err(|e| AppError::Validation(format!("invalid cursor: {e}")))?
         .map(|cursor| cursor.id);
 
+    let mut tx = crate::db::acquire_with_rls(&state.pool, current_user.user_id)
+        .await
+        .inspect_err(|e| tracing::error!(error = %e, "ingestion inputs: acquire_with_rls failed"))
+        .map_err(|e| AppError::Internal(e.into()))?;
     let rows = sqlx::query!(
         r#"SELECT c.id AS "id!", i.source_path,
                   c.status AS "status!: InputStatus",
                   c.outcome AS "outcome: AttemptOutcome",
                   c.reason_class AS "class!",
-                  i.rejection_reasons, i.observed_at, i.completed_at
+                  i.rejection_reasons, i.observed_at, i.completed_at,
+                  m.id AS "matched_id?", m.work_id AS "matched_work_id?", w.title AS "matched_title?"
            FROM ingestion_input_classes c
            JOIN ingestion_inputs i ON i.id = c.id
+           LEFT JOIN manifestations m ON m.id = i.matched_manifestation_id AND c.reason_class = 'duplicate'
+           LEFT JOIN works w ON w.id = m.work_id
            WHERE ($1::uuid IS NULL OR c.id > $1)
-             AND CASE WHEN $2::text IS NULL THEN c.reason_class <> 'format_not_accepted' ELSE c.reason_class = $2 END
+             AND CASE WHEN $2::text IS NULL THEN c.reason_class NOT IN ('format_not_accepted', 'duplicate') ELSE c.reason_class = $2 END
            ORDER BY c.id
            LIMIT $3"#,
         after,
         params.reason.map(InputReason::as_str),
         limit + 1,
     )
-    .fetch_all(&state.pool)
+    .fetch_all(&mut *tx)
     .await
     .map_err(|e| AppError::Internal(e.into()))?;
+
+    tx.commit()
+        .await
+        .map_err(|e| AppError::Internal(e.into()))?;
 
     let page_len = usize::try_from(limit).unwrap_or(usize::MAX);
     let has_more = rows.len() > page_len;
@@ -393,6 +419,14 @@ async fn list_inputs(
                 reasons,
                 observed_at: row.observed_at,
                 completed_at: row.completed_at,
+                matched: match (row.matched_id, row.matched_work_id, row.matched_title) {
+                    (Some(manifestation_id), Some(work_id), Some(title)) => Some(MatchedBook {
+                        manifestation_id,
+                        work_id,
+                        title,
+                    }),
+                    _ => None,
+                },
             })
         })
         .collect::<Result<Vec<_>, AppError>>()?;
@@ -443,7 +477,7 @@ pub(crate) fn next_link_headers(uri: &axum::http::Uri, next_cursor: Option<&str>
     get,
     path = "/api/v1/ingestion/inputs/counts",
     summary = "Count ingestion inputs by reason",
-    description = "Returns the number of inputs under each primary reason class, and the total needing attention (every class except format_not_accepted). Admin only.",
+    description = "Returns the number of inputs under each primary reason class, and the total needing attention (every class except format_not_accepted and duplicate). Admin only.",
     tag = "ingestion",
     security(("session_cookie" = ["admin"]), ("device_token_bearer" = ["admin"]), ("opds_basic" = ["admin"])),
     responses(
@@ -486,7 +520,12 @@ async fn input_counts(
         .collect();
     let attention_total = by_reason
         .iter()
-        .filter(|entry| entry.reason != InputReason::FormatNotAccepted)
+        .filter(|entry| {
+            !matches!(
+                entry.reason,
+                InputReason::FormatNotAccepted | InputReason::Duplicate
+            )
+        })
         .map(|entry| entry.count)
         .sum();
 

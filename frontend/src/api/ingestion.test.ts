@@ -141,3 +141,49 @@ describe("bulk retry client", () => {
     await expect(retryInputs("needs_change")).rejects.toThrow();
   });
 });
+
+test("listInputs parses a duplicate match and a null match", async () => {
+  const matched = {
+    manifestation_id: ITEM.id,
+    work_id: "019a0000-0000-7000-8000-000000000002",
+    title: "Matched book",
+  };
+  const item = {
+    ...ITEM,
+    status: "duplicate",
+    outcome: "duplicate",
+    primary_reason: "duplicate",
+    reasons: ["duplicate"],
+  };
+  vi.mocked(apiFetch).mockResolvedValue({
+    items: [
+      { ...item, matched },
+      { ...item, matched: null },
+    ],
+    next_cursor: null,
+  });
+  const page = await listInputs({ reason: "duplicate" });
+  expect(page.items.map((row) => row.matched)).toEqual([matched, null]);
+  expect(vi.mocked(apiFetch).mock.calls.at(-1)?.[0]).toBe(
+    "/api/v1/ingestion/inputs?reason=duplicate&limit=25",
+  );
+});
+
+test("listInputs rejects a duplicate match with a malformed id", async () => {
+  vi.mocked(apiFetch).mockResolvedValue({
+    items: [
+      {
+        ...ITEM,
+        primary_reason: "duplicate",
+        matched: { manifestation_id: "invalid", work_id: ITEM.id, title: "Matched book" },
+      },
+    ],
+  });
+  await expect(listInputs({ reason: "duplicate" })).rejects.toThrow();
+});
+
+test("getInputCounts accepts the duplicate class", async () => {
+  const counts = { by_reason: [{ reason: "duplicate", count: 2 }], attention_total: 0 };
+  vi.mocked(apiFetch).mockResolvedValue(counts);
+  await expect(getInputCounts()).resolves.toEqual(counts);
+});

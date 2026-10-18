@@ -2,7 +2,7 @@ import { type ReactElement, useState } from "react";
 import { Info } from "lucide-react";
 
 import { INPUT_REASONS } from "@/api/ingestion";
-import type { InputCounts, InputReason, RetryReason } from "@/api/ingestion";
+import type { InputCounts, AttentionReason, RetryReason } from "@/api/ingestion";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -23,7 +23,7 @@ type NeedsAttentionCardProps = {
   afterScan: boolean;
 };
 
-type Group = { reason: InputReason; count: number };
+type Group = { reason: AttentionReason; count: number };
 
 function CardHead({
   children,
@@ -66,7 +66,7 @@ function NeedsAttentionCard({
   pollInterval,
   afterScan,
 }: Readonly<NeedsAttentionCardProps>): ReactElement {
-  const [openOnLoad, setOpenOnLoad] = useState<InputReason | null | undefined>(undefined);
+  const [openOnLoad, setOpenOnLoad] = useState<AttentionReason | null | undefined>(undefined);
   const groups = counts === undefined ? [] : groupsFrom(counts, retries);
   const currentReasonCount = groups.filter(
     (g) => g.reason !== "format_not_accepted" && g.count > 0,

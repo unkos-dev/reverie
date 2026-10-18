@@ -65,6 +65,7 @@ async fn attempt(
         reason,
         rejection_reasons,
         None,
+        None,
     )
     .await
     .unwrap();
@@ -1083,4 +1084,199 @@ async fn input_snapshots(pool: &PgPool, ids: &[Uuid]) -> Vec<Value> {
     .fetch_all(pool)
     .await
     .unwrap()
+}
+
+async fn titled_book(env: &Env, marker: &str, title: &str) -> (Uuid, Uuid) {
+    let (work, manifestation) =
+        test_support::db::insert_work_and_manifestation(&env.ing, marker).await;
+    sqlx::query!("UPDATE works SET title = $2 WHERE id = $1", work, title)
+        .execute(&env.ing)
+        .await
+        .unwrap();
+    (work, manifestation)
+}
+
+async fn duplicate(env: &Env, path: &[u8], inode: u64, matched: Option<Uuid>) -> Input {
+    let input = observe(env, path, inode).await;
+    let job = ingestion_input::begin_attempt(&env.ing, &input, Uuid::new_v4())
+        .await
+        .unwrap();
+    let mut tx = env.ing.begin().await.unwrap();
+    ingestion_input::finish(
+        &mut tx,
+        &input,
+        job,
+        AttemptOutcome::Duplicate,
+        InputStatus::Duplicate,
+        None,
+        &[],
+        None,
+        matched,
+    )
+    .await
+    .unwrap();
+    tx.commit().await.unwrap();
+    input
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn duplicate_match_api_lists_skips_with_their_book_outside_the_attention_set(pool: PgPool) {
+    let env = env(&pool).await;
+    let (work, manifestation) = titled_book(&env, "matched", "Matched book").await;
+    rejected(&env, "broken.epub", 1, &[RejectionReason::Damaged]).await;
+    duplicate(&env, b"one.epub", 2, Some(manifestation)).await;
+    duplicate(&env, b"two.epub", 3, Some(manifestation)).await;
+    let attention = list(&env, "").await;
+    assert_eq!(paths(&attention), ["broken.epub"]);
+    assert!(attention["items"][0]["matched"].is_null());
+    let body = list(&env, "?reason=duplicate").await;
+    assert_eq!(item_count(&body), 2);
+    for item in body["items"].as_array().unwrap() {
+        assert_eq!(item["primary_reason"], "duplicate");
+        assert_eq!(item["reasons"], serde_json::json!(["duplicate"]));
+        assert_eq!(
+            item["matched"],
+            serde_json::json!({"manifestation_id": manifestation, "work_id": work, "title": "Matched book"})
+        );
+    }
+    let counts: Value = get(&env, "/api/v1/ingestion/inputs/counts").await.json();
+    assert_eq!(counts["attention_total"], 1);
+    assert!(
+        counts["by_reason"]
+            .as_array()
+            .unwrap()
+            .contains(&serde_json::json!({"reason":"duplicate", "count":2}))
+    );
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn duplicate_match_api_counts_equal_the_rows_across_two_pages(pool: PgPool) {
+    let env = env(&pool).await;
+    for inode in 1..=3 {
+        duplicate(&env, format!("copy-{inode}.epub").as_bytes(), inode, None).await;
+    }
+    let first = get(&env, "/api/v1/ingestion/inputs?reason=duplicate&limit=2").await;
+    assert_eq!(first.status_code(), StatusCode::OK);
+    assert!(first.headers().contains_key(axum::http::header::LINK));
+    let body: Value = first.json();
+    assert_eq!(item_count(&body), 2);
+    assert!(body["next_cursor"].is_string());
+    let items = walk(&env, "?reason=duplicate", 2).await;
+    assert_eq!(items.len(), 3);
+    let ids: std::collections::HashSet<_> = items
+        .iter()
+        .map(|item| item["id"].as_str().unwrap())
+        .collect();
+    assert_eq!(ids.len(), 3);
+    let counts: Value = get(&env, "/api/v1/ingestion/inputs/counts").await.json();
+    assert_eq!(
+        counts["by_reason"],
+        serde_json::json!([{"reason":"duplicate", "count":3}])
+    );
+    assert_eq!(counts["attention_total"], 0);
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn duplicate_match_api_reads_null_without_a_book_on_record(pool: PgPool) {
+    let env = env(&pool).await;
+    let (_, manifestation) = titled_book(&env, "deleted", "Deleted book").await;
+    duplicate(&env, b"unknown.epub", 1, None).await;
+    duplicate(&env, b"deleted.epub", 2, Some(manifestation)).await;
+    sqlx::query!("DELETE FROM manifestations WHERE id = $1", manifestation)
+        .execute(&env.ing)
+        .await
+        .unwrap();
+    let body = list(&env, "?reason=duplicate").await;
+    assert_eq!(item_count(&body), 2);
+    assert!(
+        body["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|item| item["matched"].is_null())
+    );
+    let counts: Value = get(&env, "/api/v1/ingestion/inputs/counts").await.json();
+    assert_eq!(
+        counts["by_reason"],
+        serde_json::json!([{"reason":"duplicate", "count":2}])
+    );
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn duplicate_match_api_removed_by_cleanup_is_not_listed_or_counted(pool: PgPool) {
+    let env = env(&pool).await;
+    let (_, manifestation) = titled_book(&env, "cleaned", "Cleaned duplicate").await;
+    let input = duplicate(&env, b"removed.epub", 1, Some(manifestation)).await;
+    ingestion_input::remove(&env.ing, &input, "automatic_cleanup")
+        .await
+        .unwrap();
+    assert_eq!(item_count(&list(&env, "?reason=duplicate").await), 0);
+    let counts: Value = get(&env, "/api/v1/ingestion/inputs/counts").await.json();
+    assert_eq!(counts["by_reason"], serde_json::json!([]));
+    assert_eq!(counts["attention_total"], 0);
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn duplicate_match_api_paths_are_relative_and_escaped(pool: PgPool) {
+    let env = env(&pool).await;
+    duplicate(&env, b"dupes/\xffcopy.epub", 1, None).await;
+    assert_eq!(
+        paths(&list(&env, "?reason=duplicate").await),
+        ["dupes/\\xffcopy.epub"]
+    );
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn duplicate_match_api_requires_authentication_and_the_admin_role(pool: PgPool) {
+    let app = test_support::db::app_pool_for(&pool).await;
+    let ing = test_support::db::ingestion_pool_for(&pool).await;
+    let (_, adult) = test_support::db::create_adult_and_basic_auth(&app, "duplicates-adult").await;
+    let (_, child) =
+        test_support::db::create_child_user_and_basic_auth(&app, "duplicates-child").await;
+    let server = test_support::db::server_with_real_pools(&app, &ing);
+    let url = "/api/v1/ingestion/inputs?reason=duplicate";
+    assert_eq!(
+        server.get(url).await.status_code(),
+        StatusCode::UNAUTHORIZED
+    );
+    for auth in [&adult, &child] {
+        let response = server
+            .get(url)
+            .add_header(AUTHORIZATION, auth.clone())
+            .await;
+        test_support::assert_problem(&response, problems::FORBIDDEN, StatusCode::FORBIDDEN);
+    }
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn duplicate_match_api_follows_the_current_work_after_a_merge(pool: PgPool) {
+    let env = env(&pool).await;
+    let (old_work, manifestation) = titled_book(&env, "before", "Before merge").await;
+    let (new_work, _) = titled_book(&env, "after", "After merge").await;
+    let input = duplicate(&env, b"merged.epub", 1, Some(manifestation)).await;
+    sqlx::query!(
+        "UPDATE ingestion_inputs SET work_id = $2 WHERE id = $1",
+        input.id,
+        old_work
+    )
+    .execute(&env.ing)
+    .await
+    .unwrap();
+    sqlx::query!(
+        "UPDATE manifestations SET work_id = $2 WHERE id = $1",
+        manifestation,
+        new_work
+    )
+    .execute(&env.ing)
+    .await
+    .unwrap();
+    sqlx::query!("DELETE FROM works WHERE id = $1", old_work)
+        .execute(&env.ing)
+        .await
+        .unwrap();
+    let body = list(&env, "?reason=duplicate").await;
+    assert_eq!(
+        body["items"][0]["matched"],
+        serde_json::json!({"manifestation_id": manifestation, "work_id": new_work, "title": "After merge"})
+    );
 }

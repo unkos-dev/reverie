@@ -361,7 +361,7 @@ pub async fn observe(
            DO UPDATE SET
              fingerprint = EXCLUDED.fingerprint,
              generation = ingestion_inputs.generation + 1,
-             status = 'pending', reason = NULL, work_id = NULL, completed_at = NULL,
+             status = 'pending', reason = NULL, work_id = NULL, matched_manifestation_id = NULL, completed_at = NULL,
              retry_reset_at = now(), retries_exhausted_at = NULL, observed_at = now()
            WHERE ingestion_inputs.fingerprint <> EXCLUDED.fingerprint
            RETURNING id, source_path, fingerprint AS "fingerprint: sqlx::types::Json<Fingerprint>",
@@ -519,7 +519,7 @@ pub async fn begin_attempt(pool: &PgPool, input: &Input, batch: Uuid) -> sqlx::R
 
 #[expect(
     clippy::too_many_arguments,
-    reason = "one terminal write threads the attempt, outcome, status, reason and classes"
+    reason = "one terminal write threads the attempt, outcome, status, reason, classes, work and match"
 )]
 pub async fn finish(
     tx: &mut Transaction<'_, Postgres>,
@@ -530,6 +530,7 @@ pub async fn finish(
     reason: Option<&str>,
     rejection_reasons: &[RejectionReason],
     work: Option<Uuid>,
+    matched: Option<Uuid>,
 ) -> sqlx::Result<()> {
     let history = sqlx::query!(
         "UPDATE ingestion_jobs SET outcome = $2, completed_at = now(), error_message = $3,
@@ -556,7 +557,7 @@ pub async fn finish(
         .map(|reason| reason.as_str().to_owned())
         .collect();
     sqlx::query!(
-        "UPDATE ingestion_inputs SET status = $3, reason = $4, work_id = $5, rejection_reasons = $6,
+        "UPDATE ingestion_inputs SET status = $3, reason = $4, work_id = $5, rejection_reasons = $6, matched_manifestation_id = $9,
          completed_at = CASE WHEN $3::ingestion_input_status = 'pending' THEN NULL ELSE now() END,
          retries_exhausted_at = CASE WHEN $7::ingestion_attempt_outcome = 'transient_input' AND (
            SELECT COUNT(*) FROM ingestion_jobs j WHERE j.input_id = ingestion_inputs.id
@@ -571,6 +572,7 @@ pub async fn finish(
         &rejection_reasons,
         outcome as AttemptOutcome,
         TRANSIENT_ATTEMPT_LIMIT,
+        matched,
     )
     .execute(&mut **tx)
     .await?;
@@ -875,7 +877,8 @@ mod tests {
                 InputStatus::OperationalFailure,
                 Some("unresolved"),
                 &[],
-                None
+                None,
+                None,
             )
             .await
             .is_err()
@@ -1024,6 +1027,150 @@ mod tests {
     }
 
     #[sqlx::test(migrations = "./migrations")]
+    async fn duplicate_match_write_by_finish_cleared_by_a_new_generation(pool: PgPool) {
+        let ing = crate::test_support::db::ingestion_pool_for(&pool).await;
+        let (work, manifestation) =
+            crate::test_support::db::insert_work_and_manifestation(&ing, "duplicate-match").await;
+        let input = observed(&ing, 10).await;
+        let job = begin_attempt(&ing, &input, Uuid::new_v4()).await.unwrap();
+        let mut tx = ing.begin().await.unwrap();
+        finish(
+            &mut tx,
+            &input,
+            job,
+            AttemptOutcome::Duplicate,
+            InputStatus::Duplicate,
+            None,
+            &[],
+            Some(work),
+            Some(manifestation),
+        )
+        .await
+        .unwrap();
+        tx.commit().await.unwrap();
+        assert_eq!(
+            sqlx::query_scalar!(
+                "SELECT matched_manifestation_id FROM ingestion_inputs WHERE id = $1",
+                input.id
+            )
+            .fetch_one(&ing)
+            .await
+            .unwrap(),
+            Some(manifestation)
+        );
+        let input = observed(&ing, 11).await;
+        assert_eq!(
+            sqlx::query_scalar!(
+                "SELECT matched_manifestation_id FROM ingestion_inputs WHERE id = $1",
+                input.id
+            )
+            .fetch_one(&ing)
+            .await
+            .unwrap(),
+            None
+        );
+        attempt_and_finish(
+            &ing,
+            &input,
+            AttemptOutcome::Rejected,
+            InputStatus::Rejected,
+        )
+        .await;
+        assert_eq!(
+            sqlx::query_scalar!(
+                "SELECT matched_manifestation_id FROM ingestion_inputs WHERE id = $1",
+                input.id
+            )
+            .fetch_one(&ing)
+            .await
+            .unwrap(),
+            None
+        );
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn duplicate_match_write_nulled_when_the_manifestation_is_deleted(pool: PgPool) {
+        let ing = crate::test_support::db::ingestion_pool_for(&pool).await;
+        let (work, manifestation) =
+            crate::test_support::db::insert_work_and_manifestation(&ing, "duplicate-match").await;
+        let input = observed(&ing, 10).await;
+        let job = begin_attempt(&ing, &input, Uuid::new_v4()).await.unwrap();
+        let mut tx = ing.begin().await.unwrap();
+        finish(
+            &mut tx,
+            &input,
+            job,
+            AttemptOutcome::Duplicate,
+            InputStatus::Duplicate,
+            None,
+            &[],
+            Some(work),
+            Some(manifestation),
+        )
+        .await
+        .unwrap();
+        tx.commit().await.unwrap();
+        sqlx::query!("DELETE FROM manifestations WHERE id = $1", manifestation)
+            .execute(&ing)
+            .await
+            .unwrap();
+        assert_eq!(
+            sqlx::query_scalar!(
+                "SELECT matched_manifestation_id FROM ingestion_inputs WHERE id = $1",
+                input.id
+            )
+            .fetch_one(&ing)
+            .await
+            .unwrap(),
+            None
+        );
+        assert_eq!(
+            current(&ing, input.id).await.unwrap().unwrap().status,
+            InputStatus::Duplicate
+        );
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn duplicate_match_write_migration_reverts_and_reapplies(pool: PgPool) {
+        let input = observed(&pool, 10).await;
+        attempt_and_finish(
+            &pool,
+            &input,
+            AttemptOutcome::Duplicate,
+            InputStatus::Duplicate,
+        )
+        .await;
+        let migrator = sqlx::migrate!("./migrations");
+        migrator.undo(&pool, 20_261_017_000_000).await.unwrap();
+        let exists = sqlx::query_scalar!(r#"SELECT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'ingestion_inputs' AND column_name = 'matched_manifestation_id') AS "exists!""#).fetch_one(&pool).await.unwrap();
+        assert!(!exists);
+        assert_eq!(
+            sqlx::query_scalar!(
+                "SELECT COUNT(*) FROM ingestion_input_classes WHERE id = $1",
+                input.id
+            )
+            .fetch_one(&pool)
+            .await
+            .unwrap(),
+            Some(0)
+        );
+        migrator.run(&pool).await.unwrap();
+        let exists = sqlx::query_scalar!(r#"SELECT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'ingestion_inputs' AND column_name = 'matched_manifestation_id') AS "exists!""#).fetch_one(&pool).await.unwrap();
+        assert!(exists);
+        assert_eq!(
+            sqlx::query_scalar!(
+                "SELECT reason_class FROM ingestion_input_classes WHERE id = $1",
+                input.id
+            )
+            .fetch_one(&pool)
+            .await
+            .unwrap()
+            .as_deref(),
+            Some("duplicate")
+        );
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
     async fn capability_ingestion_inputs_current_uniqueness_and_removed_replacement(pool: PgPool) {
         let original = observed(&pool, 10).await;
         assert!(
@@ -1066,6 +1213,7 @@ mod tests {
             Some("invalid EPUB"),
             &[],
             None,
+            None,
         )
         .await
         .unwrap();
@@ -1093,6 +1241,7 @@ mod tests {
             None,
             &[],
             None,
+            None,
         )
         .await
         .unwrap();
@@ -1119,7 +1268,8 @@ mod tests {
                 InputStatus::Rejected,
                 None,
                 &[],
-                None
+                None,
+                None,
             )
             .await
             .is_err()
@@ -1139,7 +1289,7 @@ mod tests {
     ) {
         let job = begin_attempt(pool, input, Uuid::new_v4()).await.unwrap();
         let mut tx = pool.begin().await.unwrap();
-        finish(&mut tx, input, job, outcome, status, None, &[], None)
+        finish(&mut tx, input, job, outcome, status, None, &[], None, None)
             .await
             .unwrap();
         tx.commit().await.unwrap();

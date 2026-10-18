@@ -1,0 +1,2 @@
+DROP INDEX public.idx_ingestion_inputs_work;
+DROP INDEX public.idx_ingestion_inputs_matched_manifestation;

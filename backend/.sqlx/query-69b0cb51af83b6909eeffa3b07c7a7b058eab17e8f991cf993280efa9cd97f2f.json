@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "UPDATE ingestion_inputs SET status = $3, reason = $4, work_id = $5, rejection_reasons = $6,\n         completed_at = CASE WHEN $3::ingestion_input_status = 'pending' THEN NULL ELSE now() END,\n         retries_exhausted_at = CASE WHEN $7::ingestion_attempt_outcome = 'transient_input' AND (\n           SELECT COUNT(*) FROM ingestion_jobs j WHERE j.input_id = ingestion_inputs.id\n             AND j.input_generation = ingestion_inputs.generation AND j.created_at >= ingestion_inputs.retry_reset_at\n             AND j.outcome = 'transient_input') >= $8 THEN now() END\n         WHERE id = $1 AND generation = $2 AND status <> 'removed'",
+  "query": "UPDATE ingestion_inputs SET status = $3, reason = $4, work_id = $5, rejection_reasons = $6, matched_manifestation_id = $9,\n         completed_at = CASE WHEN $3::ingestion_input_status = 'pending' THEN NULL ELSE now() END,\n         retries_exhausted_at = CASE WHEN $7::ingestion_attempt_outcome = 'transient_input' AND (\n           SELECT COUNT(*) FROM ingestion_jobs j WHERE j.input_id = ingestion_inputs.id\n             AND j.input_generation = ingestion_inputs.generation AND j.created_at >= ingestion_inputs.retry_reset_at\n             AND j.outcome = 'transient_input') >= $8 THEN now() END\n         WHERE id = $1 AND generation = $2 AND status <> 'removed'",
   "describe": {
     "columns": [],
     "parameters": {
@@ -44,10 +44,11 @@
             }
           }
         },
-        "Int8"
+        "Int8",
+        "Uuid"
       ]
     },
     "nullable": []
   },
-  "hash": "a8169009b28c99b155f652caec7bca160071afe71adb94538fa8a0d896fd729c"
+  "hash": "69b0cb51af83b6909eeffa3b07c7a7b058eab17e8f991cf993280efa9cd97f2f"
 }

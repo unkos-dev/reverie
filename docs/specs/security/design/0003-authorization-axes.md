@@ -95,9 +95,9 @@ and the backend test suite, which runs the matrix as an ordinary `#[sqlx::test]`
   policy: books and manifestations (`routes::library::mod`, `routes::library::search`, `routes::suggest`), reading state
   (`routes::reading`), metadata (`routes::metadata`), enrichment (`routes::enrichment`), account preferences
   (`routes::preferences::mod`), series (`routes::series::mod`) and the OPDS surface
-  (`routes::opds::{shelves, download, library, root, opensearch}`). `routes::dashboard::mod` also opens its transaction
-  through `acquire_with_rls`, but there the scoping enforces nothing: the handler is admin-gated and reads every user's
-  data.
+  (`routes::opds::{shelves, download, library, root, opensearch}`). `routes::dashboard::mod` and the inputs list in
+  `routes::ingestion` also open their transactions through `acquire_with_rls`, but there the scoping enforces nothing:
+  the handlers are admin-gated and read every user's data.
 
 ## Interfaces and dependencies
 

@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT c.id AS \"id!\", i.source_path,\n                  c.status AS \"status!: InputStatus\",\n                  c.outcome AS \"outcome: AttemptOutcome\",\n                  c.reason_class AS \"class!\",\n                  i.rejection_reasons, i.observed_at, i.completed_at\n           FROM ingestion_input_classes c\n           JOIN ingestion_inputs i ON i.id = c.id\n           WHERE ($1::uuid IS NULL OR c.id > $1)\n             AND CASE WHEN $2::text IS NULL THEN c.reason_class <> 'format_not_accepted' ELSE c.reason_class = $2 END\n           ORDER BY c.id\n           LIMIT $3",
+  "query": "SELECT c.id AS \"id!\", i.source_path,\n                  c.status AS \"status!: InputStatus\",\n                  c.outcome AS \"outcome: AttemptOutcome\",\n                  c.reason_class AS \"class!\",\n                  i.rejection_reasons, i.observed_at, i.completed_at,\n                  m.id AS \"matched_id?\", m.work_id AS \"matched_work_id?\", w.title AS \"matched_title?\"\n           FROM ingestion_input_classes c\n           JOIN ingestion_inputs i ON i.id = c.id\n           LEFT JOIN manifestations m ON m.id = i.matched_manifestation_id AND c.reason_class = 'duplicate'\n           LEFT JOIN works w ON w.id = m.work_id\n           WHERE ($1::uuid IS NULL OR c.id > $1)\n             AND CASE WHEN $2::text IS NULL THEN c.reason_class NOT IN ('format_not_accepted', 'duplicate') ELSE c.reason_class = $2 END\n           ORDER BY c.id\n           LIMIT $3",
   "describe": {
     "columns": [
       {
@@ -122,6 +122,39 @@
             "name": "completed_at"
           }
         }
+      },
+      {
+        "ordinal": 8,
+        "name": "matched_id?",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "manifestations",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 9,
+        "name": "matched_work_id?",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "manifestations",
+            "name": "work_id"
+          }
+        }
+      },
+      {
+        "ordinal": 10,
+        "name": "matched_title?",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "works",
+            "name": "title"
+          }
+        }
       }
     ],
     "parameters": {
@@ -139,8 +172,11 @@
       true,
       false,
       false,
-      true
+      true,
+      false,
+      false,
+      false
     ]
   },
-  "hash": "f7d592ccdc861393f6011c7fef6a9eb6c64e229eb8dd48ec2586fd0bcf237947"
+  "hash": "a81c53ca2e9c4f19152db27370985e52b3bf8f0793fb7d1ba1fc089ef7288f94"
 }

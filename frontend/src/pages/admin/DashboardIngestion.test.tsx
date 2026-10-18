@@ -81,6 +81,7 @@ function renderPage(
   const router = createMemoryRouter(
     [
       { path: "/admin/dashboard", element: <DashboardPage /> },
+      { path: "/b/:id", element: <div data-testid="book-page" /> },
       { path: "/library", element: <div data-testid="library-page" /> },
     ],
     { initialEntries: ["/admin/dashboard"] },
@@ -837,8 +838,9 @@ describe("Needs attention", () => {
   test("shows one error with a retry when the counts fail", async () => {
     vi.mocked(getInputCounts).mockRejectedValueOnce(new ApiError(500, null, "Internal", ""));
     renderPage();
-    expect(await screen.findByText("Could not load this list.")).toBeInTheDocument();
-    expect(screen.getByText("Your files are untouched. Try again.")).toBeInTheDocument();
+    const region = within(screen.getByRole("region", { name: /Needs attention/ }));
+    expect(await region.findByText("Could not load this list.")).toBeInTheDocument();
+    expect(region.getByText("Your files are untouched. Try again.")).toBeInTheDocument();
     await userEvent.click(
       within(screen.getByRole("region", { name: /Needs attention/ })).getByRole("button", {
         name: "Try again",
@@ -1821,5 +1823,298 @@ describe("bulk retry retained states", () => {
     });
     expect(getInputCounts).toHaveBeenCalledTimes(stopped);
     expect(within(card).getByText("Queued 2")).toBeInTheDocument();
+  });
+});
+
+describe("Duplicates card", () => {
+  const matched = {
+    manifestation_id: "019a0000-0000-7000-8000-000000000101",
+    work_id: "019a0000-0000-7000-8000-000000000102",
+    title: "The Salt Archive",
+  };
+  const duplicateItem = (
+    n: number,
+    overrides: Partial<IngestionApi.InputItem> = {},
+  ): IngestionApi.InputItem =>
+    inputItem(n, {
+      status: "duplicate",
+      outcome: "duplicate",
+      primary_reason: "duplicate",
+      reasons: ["duplicate"],
+      matched,
+      ...overrides,
+    });
+
+  function mockDuplicates(count = 2): void {
+    const counts = countsFixture();
+    vi.mocked(getInputCounts).mockResolvedValue({
+      ...counts,
+      by_reason: [...counts.by_reason, { reason: "duplicate", count }],
+    });
+    vi.mocked(listInputs).mockImplementation(({ reason }) =>
+      Promise.resolve(
+        reason === "duplicate"
+          ? { items: [duplicateItem(101), duplicateItem(102)], next_cursor: null }
+          : DAMAGED_PAGE,
+      ),
+    );
+  }
+
+  async function card(settled = true): Promise<HTMLElement> {
+    if (settled) {
+      await waitFor(() => {
+        expect(screen.getByRole("region", { name: /Skipped as duplicates/ })).not.toHaveAttribute(
+          "aria-busy",
+          "true",
+        );
+      });
+    }
+    return screen.getByRole("region", { name: /Skipped as duplicates/ });
+  }
+
+  test("sits between Needs attention and Enrichment problems with its count, intro and columns", async () => {
+    mockDuplicates();
+    renderPage();
+    const region = await card();
+    await within(region).findByRole("columnheader", { name: "Matches" });
+    const headings = screen.getAllByRole("heading", { level: 2 }).map((h) => h.textContent);
+    const attention = headings.findIndex((h) => h.startsWith("Needs attention"));
+    expect(headings[attention + 1]).toBe("Skipped as duplicates2 files");
+    expect(headings[attention + 2]).toMatch(/Enrichment problems/);
+    expect(within(region).getByText("2 files")).toBeInTheDocument();
+    expect(
+      within(region).getByText(
+        /Removing duplicate source files under Settings, Acquisition applies only to duplicates found from then on\./,
+      ),
+    ).toBeInTheDocument();
+    expect(
+      within(region)
+        .getAllByRole("columnheader")
+        .map((h) => h.textContent),
+    ).toEqual(["File", "Matches", "Last tried"]);
+    const attentionRegion = screen.getByRole("region", { name: /Needs attention/ });
+    expect(within(attentionRegion).getByText("7 files, 5 reasons")).toBeInTheDocument();
+    expect(within(attentionRegion).queryByText(/Skipped as duplicates/)).not.toBeInTheDocument();
+    expect(
+      within(attentionRegion)
+        .getAllByRole("button")
+        .filter((button) => button.hasAttribute("aria-expanded")),
+    ).toHaveLength(6);
+  });
+
+  test("lists each file once with its muted directory, matched title link and last tried time", async () => {
+    mockDuplicates();
+    vi.mocked(listInputs).mockImplementation(({ reason }) =>
+      Promise.resolve(
+        reason === "duplicate"
+          ? { items: [duplicateItem(101), duplicateItem(101)], next_cursor: null }
+          : DAMAGED_PAGE,
+      ),
+    );
+    renderPage();
+    const region = await card();
+    const link = await within(region).findByRole("link", { name: matched.title });
+    expect(link).toHaveAttribute("href", `/b/${matched.manifestation_id}`);
+    expect(within(region).getAllByRole("row")).toHaveLength(2);
+    expect(within(region).getByText("incoming/")).toHaveClass("text-fg-muted");
+    const cells = within(within(region).getAllByRole("row")[1] ?? region).getAllByRole("cell");
+    expect(cells[0]).toHaveTextContent("incoming/Book 101.epub");
+    expect(cells[2]?.textContent).not.toBe("");
+  });
+
+  test("a file whose book is gone reads No matching book on record", async () => {
+    mockDuplicates(1);
+    vi.mocked(listInputs).mockImplementation(({ reason }) =>
+      Promise.resolve(
+        reason === "duplicate"
+          ? { items: [duplicateItem(101, { matched: null })], next_cursor: null }
+          : DAMAGED_PAGE,
+      ),
+    );
+    renderPage();
+    const region = await card();
+    expect(await within(region).findByText("No matching book on record.")).toHaveClass(
+      "text-fg-muted",
+    );
+    expect(within(region).queryByRole("link")).not.toBeInTheDocument();
+    expect(within(region).getByText("1 file")).toBeInTheDocument();
+  });
+
+  test("the matched title links to the book page", async () => {
+    mockDuplicates(1);
+    renderPage();
+    const links = await within(await card()).findAllByRole("link", { name: matched.title });
+    await userEvent.click(links[0] ?? document.body);
+    expect(await screen.findByTestId("book-page")).toBeInTheDocument();
+  });
+
+  test("an empty card keeps its head and intro and requests no list", async () => {
+    renderPage();
+    const region = await card();
+    await within(region).findByText("No files were skipped as duplicates.");
+    expect(within(region).getByText("0 files")).toBeInTheDocument();
+    expect(
+      within(region).getByText(/Files that match a book already in the library/),
+    ).toBeInTheDocument();
+    expect(
+      within(region).getByText(
+        /If removal of duplicate source files is on under Settings, Acquisition/,
+      ),
+    ).toBeInTheDocument();
+    expect(vi.mocked(listInputs).mock.calls.some(([p]) => p.reason === "duplicate")).toBe(false);
+  });
+
+  test("shows a busy skeleton while counts or the first page load", async () => {
+    vi.mocked(getInputCounts).mockReturnValue(new Promise(() => {}));
+    renderPage();
+    let region = await card(false);
+    expect(region).toHaveAttribute("aria-busy", "true");
+    expect(within(region).getByRole("status")).toHaveTextContent("Loading skipped duplicates");
+    expect(within(region).queryByText(/Files that match/)).not.toBeInTheDocument();
+    cleanup();
+    mockDuplicates();
+    vi.mocked(listInputs).mockImplementation(({ reason }) =>
+      reason === "duplicate" ? new Promise(() => {}) : Promise.resolve(DAMAGED_PAGE),
+    );
+    renderPage();
+    region = await card(false);
+    await waitFor(() => {
+      expect(vi.mocked(listInputs).mock.calls.some(([p]) => p.reason === "duplicate")).toBe(true);
+    });
+    expect(region).toHaveAttribute("aria-busy", "true");
+    expect(within(region).getByRole("status")).toHaveTextContent("Loading skipped duplicates");
+    expect(within(region).queryByText("2 files")).not.toBeInTheDocument();
+  });
+
+  test("a failed first page shows the list error and Try again recovers", async () => {
+    mockDuplicates(1);
+    vi.mocked(listInputs).mockImplementation(({ reason }) =>
+      reason === "duplicate"
+        ? Promise.reject(new ApiError(500, null, "Internal", ""))
+        : Promise.resolve(DAMAGED_PAGE),
+    );
+    renderPage();
+    let region = await card();
+    await within(region).findByText("Could not load this list.");
+    expect(within(region).getByRole("alert")).toHaveTextContent(
+      "Your files are untouched. Try again.",
+    );
+    expect(within(region).queryByText("1 file")).not.toBeInTheDocument();
+    const countsBefore = vi.mocked(getInputCounts).mock.calls.length;
+    vi.mocked(listInputs).mockResolvedValue({ items: [duplicateItem(101)], next_cursor: null });
+    await userEvent.click(within(region).getByRole("button", { name: "Try again" }));
+    await screen.findByRole("link", { name: matched.title });
+    expect(getInputCounts).toHaveBeenCalledTimes(countsBefore);
+    cleanup();
+    vi.mocked(getInputCounts).mockRejectedValueOnce(new ApiError(500, null, "Internal", ""));
+    renderPage();
+    region = await card();
+    await within(region).findByText("Could not load this list.");
+    const failedCounts = vi.mocked(getInputCounts).mock.calls.length;
+    await userEvent.click(within(region).getByRole("button", { name: "Try again" }));
+    await screen.findByRole("link", { name: matched.title });
+    expect(getInputCounts).toHaveBeenCalledTimes(failedCounts + 1);
+  });
+
+  test("Show more requests the next page by its cursor and announces the loaded files", async () => {
+    mockDuplicates();
+    vi.mocked(listInputs).mockImplementation(({ reason, cursor }) =>
+      Promise.resolve(
+        reason === "duplicate"
+          ? {
+              items: [duplicateItem(cursor ? 102 : 101)],
+              next_cursor: cursor ? null : "next-duplicate",
+            }
+          : DAMAGED_PAGE,
+      ),
+    );
+    renderPage();
+    const region = await card();
+    const more = await within(region).findByRole("button", { name: "Show more" });
+    await userEvent.click(more);
+    expect(await within(region).findByText("Showing 2 of 2")).toHaveFocus();
+    expect(within(region).getByRole("status")).toHaveTextContent("Loaded 1 more file");
+    expect(
+      vi
+        .mocked(listInputs)
+        .mock.calls.some(([p]) => p.reason === "duplicate" && p.cursor === "next-duplicate"),
+    ).toBe(true);
+  });
+
+  test("a non-UTF-8 file name renders with its escapes", async () => {
+    mockDuplicates(1);
+    vi.mocked(listInputs).mockResolvedValue({
+      items: [duplicateItem(101, { path: "dupes/\\xffcopy.epub" })],
+      next_cursor: null,
+    });
+    renderPage();
+    expect(
+      await within(await card()).findByText("\\xffcopy.epub", { exact: false }),
+    ).toHaveTextContent("dupes/\\xffcopy.epub");
+  });
+
+  test("polls its first page with the counts while a batch runs and never polls later pages", async () => {
+    vi.useFakeTimers();
+    mockDuplicates();
+    vi.mocked(getDashboardActivity).mockResolvedValue(batch({ ended_at: null, in_progress: 4 }));
+    vi.mocked(listInputs).mockImplementation(({ reason, cursor }) =>
+      Promise.resolve(
+        reason === "duplicate"
+          ? {
+              items: [duplicateItem(cursor ? 102 : 101)],
+              next_cursor: cursor ? null : "next-duplicate",
+            }
+          : DAMAGED_PAGE,
+      ),
+    );
+    renderPage();
+    await flush();
+    await flush();
+    const region = screen.getByRole("region", { name: /Skipped as duplicates/ });
+    fireEvent.click(within(region).getByRole("button", { name: "Show more" }));
+    await flush();
+    const firstCalls = (): number =>
+      vi
+        .mocked(listInputs)
+        .mock.calls.filter(([p]) => p.reason === "duplicate" && p.cursor === undefined).length;
+    const laterCalls = (): number =>
+      vi
+        .mocked(listInputs)
+        .mock.calls.filter(([p]) => p.reason === "duplicate" && p.cursor !== undefined).length;
+    const before = {
+      first: firstCalls(),
+      later: laterCalls(),
+      counts: vi.mocked(getInputCounts).mock.calls.length,
+    };
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(POLL_INTERVAL_MS * 3);
+    });
+    expect(firstCalls() - before.first).toBe(3);
+    expect(vi.mocked(getInputCounts).mock.calls.length - before.counts).toBe(3);
+    expect(laterCalls()).toBe(before.later);
+    act(() => {
+      focusManager.setFocused(false);
+      focusManager.setFocused(true);
+    });
+    await flush();
+    expect(firstCalls() - before.first).toBe(4);
+    expect(laterCalls()).toBe(before.later);
+  });
+
+  test("offers no Retry all", async () => {
+    mockDuplicates();
+    renderPage();
+    const region = await card();
+    await within(region).findAllByRole("link");
+    expect(within(region).queryByRole("button", { name: /Retry all/ })).not.toBeInTheDocument();
+    expect(within(region).queryByRole("button", { expanded: false })).not.toBeInTheDocument();
+  });
+
+  test("the duplicates skeleton opts out of motion under reduced motion", async () => {
+    vi.mocked(getInputCounts).mockReturnValue(new Promise(() => {}));
+    renderPage();
+    const skeletons = (await card(false)).querySelectorAll("[data-slot=skeleton]");
+    expect(skeletons).toHaveLength(3);
+    for (const skeleton of skeletons) expect(skeleton).toHaveClass("motion-reduce:animate-none");
   });
 });

@@ -7,8 +7,8 @@ page's empty state hands administrators on to this page, and its copy is specifi
 This document is the specification a rendered page is compared against. Copy in double quotes is exact. Where a value is
 shown as `{n}` or similar, the screen fills it in.
 
-The Duplicates card and two smaller differences remain under "Target design, not yet built". Everything outside that
-section specifies the page as it is to behave, except where a line points to that section.
+Two smaller differences remain under "Target design, not yet built". Everything outside that section specifies the page
+as it is to behave, except where a line points to that section.
 
 ## Purpose
 
@@ -35,11 +35,10 @@ From top to bottom:
 2. **Status region.** One polite status region holding the scan feedback, the latest-activity line and the after-scan
    notice. It is always present and empty on a fresh load.
 3. **Needs attention card.** Files Reverie could not import, in groups.
-4. **Enrichment problems card.** Books whose metadata lookups are failing, in groups.
-5. **Existing metric cards,** unchanged: the Books, Works, Storage and Degraded totals, Validation, Enrichment, Metadata
+4. **Duplicates card.** Files skipped because they match a book already in the library.
+5. **Enrichment problems card.** Books whose metadata lookups are failing, in groups.
+6. **Existing metric cards,** unchanged: the Books, Works, Storage and Degraded totals, Validation, Enrichment, Metadata
    coverage, Storage by format, and Recent ingestion batches. They keep their own number and date formatting.
-
-The Duplicates card, when built, takes the position given under "Target design, not yet built".
 
 Counts on this page use the viewer's locale digit grouping. Times are shown in the viewer's locale.
 
@@ -231,6 +230,28 @@ collapsed. The page opens on real files. Later refreshes do not change what the 
 - **Ignored group.** Collapsed on load, muted, last, and outside the total. Expanding it requests the
   `format_not_accepted` class.
 
+## Duplicates card
+
+A card of its own, between Needs attention and Enrichment problems. A duplicate is a deliberate skip, not a failure, so
+it is not part of the Needs attention card or its total.
+
+- **Head.** The heading "Skipped as duplicates" and, in fixed-width type, "{n} files" ("1 file").
+- **Intro.** "Files that match a book already in the library, so Reverie did not import them again. Delete them if you
+  do not need them. Removing duplicate source files under Settings, Acquisition applies only to duplicates found from
+  then on."
+- **Table.** Columns "File", "Matches" and "Last tried". File is the relative path, with the directory muted. Matches is
+  the matching book's title, linking to the book's page. When the matching book no longer exists: "No matching book on
+  record." Last tried is the time, as elsewhere.
+- **Footer.** "Showing {n} of {total}", "Show more", "Loading more", behaving as for the other lists.
+- **Loading.** A busy skeleton with the status text "Loading skipped duplicates".
+- **Failed.** "Could not load this list." / "Your files are untouched. Try again." with "Try again".
+- **Empty.** The card stays, with "No files were skipped as duplicates." / "If removal of duplicate source files is on
+  under Settings, Acquisition, Reverie deletes a duplicate when it finds it, so it does not appear here."
+- The card is read-only and has no "Retry all".
+- **Head while loading or failed.** The heading alone, without the count or the intro.
+- **Failure source.** "Could not load this list." shows when the counts read or the first page has failed with nothing
+  loaded; "Try again" repeats the failed read.
+
 ## Enrichment problems card
 
 Books whose latest metadata lookup failed, grouped by source and reason. Each book is listed once, under its most recent
@@ -309,6 +330,8 @@ One part of the page owns all polling, and no other component starts a timer.
 - Collapsed groups make no requests. Later pages, once opened, are never polled.
 - Window focus refreshes the counts, the activity and the first page of each expanded group, whether or not polling is
   running.
+- The Duplicates card's first page refreshes with the counts while polling runs and on window focus, and is requested
+  only when the duplicate count is above zero. Its later pages are never polled.
 - The enrichment lists are not polled. They refresh on window focus.
 
 ## Empty library guidance
@@ -388,25 +411,6 @@ When a part is built, it moves into the sections above.
   Reverie to wait, it also shows the earliest retry time, only when that field is present. The labels are not yet
   settled. The built page shows neither.
 
-### Duplicates card
-
-A card of its own, between Needs attention and Enrichment problems. A duplicate is a deliberate skip, not a failure, so
-it is not part of the Needs attention card or its total.
-
-- **Head.** The heading "Skipped as duplicates" and, in fixed-width type, "{n} files" ("1 file").
-- **Intro.** "Files that match a book already in the library, so Reverie did not import them again. Delete them if you
-  do not need them. Removing duplicate source files under Settings, Acquisition applies only to duplicates found from
-  then on."
-- **Table.** Columns "File", "Matches" and "Last tried". File is the relative path, with the directory muted. Matches is
-  the matching book's title, linking to the book's page. When the matching book no longer exists: "No matching book on
-  record." Last tried is the time, as elsewhere.
-- **Footer.** "Showing {n} of {total}", "Show more", "Loading more", behaving as for the other lists.
-- **Loading.** A busy skeleton with the status text "Loading skipped duplicates".
-- **Failed.** "Could not load this list." / "Your files are untouched. Try again." with "Try again".
-- **Empty.** The card stays, with "No files were skipped as duplicates." / "If removal of duplicate source files is on
-  under Settings, Acquisition, Reverie deletes a duplicate when it finds it, so it does not appear here."
-- The card is read-only and has no "Retry all".
-
 ## Keyboard, focus and accessibility
 
 - Tab order: the scan button, then each group header in order, with the controls inside an open group after its header
@@ -451,4 +455,4 @@ Items about the target design apply once those parts are built.
 12. Every blocker combination shows its independent rows. Recovery clears the notice, a failed refresh hides stale
     blockers, and Scan stays enabled. A page without known blockers has no notice or extra layout space.
 13. "Retry all" matches its section above, including retained feedback and truthful uncertain-outcome errors.
-14. Once built: the Duplicates card matches its section above.
+14. The Duplicates card matches its section above.

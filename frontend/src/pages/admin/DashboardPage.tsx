@@ -31,6 +31,7 @@ import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Skeleton } from "@/components/ui/skeleton";
 import { EnrichmentCard } from "./ingestion/EnrichmentCard";
+import { DuplicatesCard } from "./ingestion/DuplicatesCard";
 import { NeedsAttentionCard } from "./ingestion/NeedsAttentionCard";
 import { ScanControl } from "./ingestion/ScanControl";
 import { PipelineNotice, ScanNotice } from "./ingestion/ScanNotice";
@@ -148,6 +149,15 @@ function DashboardPage(): ReactElement {
         }}
         pollInterval={monitor.pollInterval}
         afterScan={monitor.notice?.kind === "accepted" && monitor.notice.afterScan}
+      />
+
+      <DuplicatesCard
+        counts={monitor.counts.data}
+        countsPending={monitor.counts.isPending}
+        onRetryCounts={() => {
+          void monitor.counts.refetch();
+        }}
+        pollInterval={monitor.pollInterval}
       />
 
       <EnrichmentCard />

@@ -1194,20 +1194,25 @@ impl Coordinator {
             pending.health = accepted.health;
             pending.result = completed;
         }
-        let (outcome, status, reason, rejection_reasons, work) = match &pending.result {
+        let (outcome, status, reason, rejection_reasons, work, matched) = match &pending.result {
             ProcessResult::Complete => return Ok(()),
-            ProcessResult::Skipped(work) => (
+            ProcessResult::Skipped {
+                work,
+                manifestation,
+            } => (
                 AttemptOutcome::Duplicate,
                 InputStatus::Duplicate,
                 None,
                 &[][..],
                 Some(*work),
+                Some(*manifestation),
             ),
             ProcessResult::Failed(reason, rejection_reasons) => (
                 AttemptOutcome::Rejected,
                 InputStatus::Rejected,
                 Some(reason.as_str()),
                 rejection_reasons.as_slice(),
+                None,
                 None,
             ),
             ProcessResult::Operational(class, reason) => (
@@ -1220,12 +1225,14 @@ impl Coordinator {
                 Some(reason.as_str()),
                 &[][..],
                 None,
+                None,
             ),
             ProcessResult::Changed => (
                 AttemptOutcome::Changed,
                 InputStatus::Pending,
                 None,
                 &[][..],
+                None,
                 None,
             ),
             ProcessResult::Accepted(_) => anyhow::bail!("accepted result awaiting commit"),
@@ -1240,6 +1247,7 @@ impl Coordinator {
             reason,
             rejection_reasons,
             work,
+            matched,
         )
         .await?;
         tx.commit().await?;
@@ -1567,7 +1575,7 @@ const SCAN_ADVISORY_LOCK_ID: i64 = 0x5265_7665_0000_0004;
 enum ProcessResult {
     Complete,
     Accepted(Box<Accepted>),
-    Skipped(Uuid),
+    Skipped { work: Uuid, manifestation: Uuid },
     Failed(String, Vec<crate::models::ingestion_input::RejectionReason>),
     Operational(crate::models::ingestion_input::AttemptOutcome, String),
     Changed,
@@ -2083,14 +2091,14 @@ async fn process_file(
             );
         }
     };
-    let duplicate = sqlx::query_scalar!(
-        "SELECT work_id FROM manifestations WHERE ingestion_file_hash = $1 LIMIT 1",
+    let duplicate = sqlx::query!(
+        "SELECT id, work_id FROM manifestations WHERE ingestion_file_hash = $1 LIMIT 1",
         &candidate.ingestion_hash
     )
     .fetch_optional(pool)
     .await;
     match duplicate {
-        Ok(Some(work)) => {
+        Ok(Some(row)) => {
             if let Err(error) = candidate.close() {
                 return acquisition_failure(
                     copier::CopyError::DestinationIo(error),
@@ -2100,7 +2108,10 @@ async fn process_file(
                 )
                 .await;
             }
-            return ProcessResult::Skipped(work);
+            return ProcessResult::Skipped {
+                work: row.work_id,
+                manifestation: row.id,
+            };
         }
         Ok(None) => {}
         Err(error) => {
@@ -3015,6 +3026,7 @@ async fn commit_ingest_outcome(
             None,
             &[],
             Some(work_id),
+            None,
         )
         .await?;
     }
@@ -5107,6 +5119,7 @@ mod tests {
                 Some("PermissionDenied"),
                 &[],
                 None,
+                None,
             )
             .await
             .unwrap();
@@ -5403,6 +5416,64 @@ mod tests {
                 .unwrap()
                 .is_some()
         );
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn duplicate_match_write_on_detection_records_the_manifestation(pool: PgPool) {
+        use crate::models::ingestion_input::{self, InputStatus};
+        let pool = ingestion_pool_for(&pool).await;
+        let (source, _library, config) = scan_env();
+        let library_id = crate::models::storage_library::default_library_id(&pool)
+            .await
+            .unwrap();
+        let files = LibraryFiles::open(
+            [(library_id, config.library_path.clone())],
+            &config.ingestion_path,
+        )
+        .unwrap();
+        let bytes = make_minimal_epub();
+        std::fs::write(source.path().join("book.epub"), &bytes).unwrap();
+        let mut owner = coordinator(pool.clone(), config, files);
+        owner.discover(false).await.unwrap();
+        let input = ingestion_input::current_page(&pool, None)
+            .await
+            .unwrap()
+            .remove(0);
+        let imported_id = input.id;
+        attempt(&mut owner, input).await;
+        assert!(
+            ingestion_input::current(&pool, imported_id)
+                .await
+                .unwrap()
+                .is_none()
+        );
+        assert!(!source.path().join("book.epub").exists());
+        std::fs::write(source.path().join("duplicate.epub"), &bytes).unwrap();
+        owner.discover(false).await.unwrap();
+        let duplicate = ingestion_input::current_page(&pool, None)
+            .await
+            .unwrap()
+            .remove(0);
+        let duplicate_id = duplicate.id;
+        attempt(&mut owner, duplicate).await;
+        let duplicate = ingestion_input::current(&pool, duplicate_id)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(duplicate.status, InputStatus::Duplicate);
+        assert!(duplicate.work_id.is_some());
+        let manifestation = sqlx::query_scalar!("SELECT id FROM manifestations")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        let matched = sqlx::query_scalar!(
+            "SELECT matched_manifestation_id FROM ingestion_inputs WHERE id = $1",
+            duplicate_id
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(matched, Some(manifestation));
     }
 
     #[sqlx::test(migrations = "./migrations")]
@@ -5736,6 +5807,7 @@ mod tests {
             InputStatus::OperationalFailure,
             Some("permission denied"),
             &[],
+            None,
             None,
         )
         .await
@@ -6406,7 +6478,7 @@ mod tests {
             let pending = (&mut active.future).await;
             match &pending.result {
                 ProcessResult::Complete => result.processed += 1,
-                ProcessResult::Skipped(_) => result.skipped += 1,
+                ProcessResult::Skipped { .. } => result.skipped += 1,
                 ProcessResult::Failed(..) | ProcessResult::Operational(_, _) => result.failed += 1,
                 ProcessResult::Changed => {}
                 ProcessResult::Accepted(_) => anyhow::bail!("unresolved accepted result"),

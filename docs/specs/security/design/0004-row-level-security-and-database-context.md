@@ -97,9 +97,10 @@ application pools its own connections in-process, not behind a pooler that share
 `SELECT set_config('app.current_user_id', $1::text, true)` on it. The third argument, `true`, makes the setting local to
 the transaction: it ends at `COMMIT` or `ROLLBACK`, so the next borrower of the pooled connection does not inherit it.
 Every user-facing handler that touches a gated table is expected to open its transaction this way; no lint, test or CI
-check confirms that a new handler does. The routes that touch gated tables (`dashboard`, `enrichment`, `library/mod.rs`,
-`library/search.rs`, `metadata.rs`, the `opds` handlers, `preferences`, `reading`, `series`, `shelves` and `suggest`)
-each call `db::acquire_with_rls` with `CurrentUser::user_id` before their first query.
+check confirms that a new handler does. The routes that touch gated tables (`dashboard`, `enrichment`, the `ingestion`
+inputs list, `library/mod.rs`, `library/search.rs`, `metadata.rs`, the `opds` handlers, `preferences`, `reading`,
+`series`, `shelves` and `suggest`) each call `db::acquire_with_rls` with `CurrentUser::user_id` before their first
+query.
 
 ### Policy census
 

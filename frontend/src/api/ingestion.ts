@@ -42,9 +42,9 @@ export async function getIngestionStatus(signal?: AbortSignal): Promise<Ingestio
 }
 
 /**
- * Closed reason classes, most severe first. The order is the precedence the
- * server uses to pick a file's primary reason, so it doubles as the display
- * order of the groups.
+ * Reason classes on the Needs attention card, most severe first. The order is the precedence
+ * the server uses to pick a file's primary reason, so it doubles as the display order of the
+ * groups. `duplicate` has its own card.
  */
 const INPUT_REASONS = [
   "unsafe_contents",
@@ -57,9 +57,15 @@ const INPUT_REASONS = [
   "format_not_accepted",
 ] as const;
 
-const InputReasonSchema = z.enum(INPUT_REASONS);
+export type AttentionReason = (typeof INPUT_REASONS)[number];
+
+const InputReasonSchema = z.enum([...INPUT_REASONS, "duplicate"]);
 /** One closed reason class an input is listed or counted under. */
 export type InputReason = z.infer<typeof InputReasonSchema>;
+
+export function isAttentionReason(reason: InputReason): reason is AttentionReason {
+  return reason !== "duplicate";
+}
 
 const InputStatusSchema = z.enum([
   "pending",
@@ -83,6 +89,12 @@ const AttemptOutcomeSchema = z.enum([
   "interrupted",
 ]);
 
+const MatchedBookSchema = z.object({
+  manifestation_id: z.uuid(),
+  work_id: z.uuid(),
+  title: z.string(),
+});
+
 const InputItemSchema = z.object({
   id: z.uuid(),
   path: z.string(),
@@ -92,6 +104,7 @@ const InputItemSchema = z.object({
   reasons: z.array(InputReasonSchema),
   observed_at: z.iso.datetime(),
   completed_at: z.iso.datetime().nullish(),
+  matched: MatchedBookSchema.nullish(),
 });
 /** One input needing attention. Mirrors `InputItem` on the wire. */
 export type InputItem = z.infer<typeof InputItemSchema>;
