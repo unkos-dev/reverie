@@ -1118,6 +1118,140 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn oidc_key_startup_discovery_failures_use_fixed_categories() {
+        use wiremock::ResponseTemplate;
+        for (outcome, response) in [
+            (
+                "request_failed",
+                ResponseTemplate::new(200).set_delay(Duration::from_millis(100)),
+            ),
+            (
+                "response_rejected",
+                ResponseTemplate::new(500).set_body_string("provider-body-marker"),
+            ),
+            (
+                "parse_failed",
+                ResponseTemplate::new(200).set_body_raw("provider-body-marker", "application/json"),
+            ),
+        ] {
+            let logs = test_support::CapturedLogs::default();
+            let _subscriber = tracing::subscriber::set_default(logs.subscriber());
+            let mut mock = test_support::oidc_mock::MockOidcProvider::start("test").await;
+            mock.mount_discovery().await;
+            mock.set_jwks_response(response, 1).await;
+            let runtime = super::configure_oidc(
+                &mock.config("http://localhost/auth/callback"),
+                Some(crate::auth::oidc::OidcTransport::for_tests_with_timeouts(
+                    Duration::from_millis(50),
+                    Duration::from_millis(50),
+                )),
+            )
+            .unwrap();
+            let supervisor =
+                super::with_oidc_discovery(worker_supervisor(), runtime.as_ref()).spawn();
+            wait_for_oidc_event(&logs, "OIDC discovery failed", 1).await;
+            supervisor.shutdown().await.unwrap();
+            let text = logs.text();
+            let event = text
+                .lines()
+                .find(|line| line.contains("OIDC discovery failed"))
+                .unwrap();
+            assert!(event.contains("ERROR"));
+            assert!(
+                event.contains(&format!(r#"outcome="{outcome}""#)),
+                "{event}"
+            );
+            assert!(event.contains("epoch=0 keys=0"));
+            assert!(!event.contains("source="));
+            assert!(!text.contains("provider-body-marker"));
+            assert!(!text.contains(mock.issuer()));
+        }
+    }
+
+    #[tokio::test]
+    async fn oidc_key_startup_endpoint_rejections_report_static_source() {
+        for source in ["token_endpoint", "jwks_uri"] {
+            let logs = test_support::CapturedLogs::default();
+            let _subscriber = tracing::subscriber::set_default(logs.subscriber());
+            let mock = test_support::oidc_mock::MockOidcProvider::start("test").await;
+            let rejected =
+                "provider-marker://example.com/endpoint?secret=query-marker#fragment-marker";
+            if source == "token_endpoint" {
+                mock.mount_discovery_with_token_endpoint(rejected).await;
+            } else {
+                mock.mount_discovery_with_jwks_uri(&format!("{}/token", mock.issuer()), rejected)
+                    .await;
+            }
+            let runtime = super::configure_oidc(
+                &mock.config("http://localhost/auth/callback"),
+                Some(crate::auth::oidc::OidcTransport::for_tests()),
+            )
+            .unwrap();
+            let supervisor =
+                super::with_oidc_discovery(worker_supervisor(), runtime.as_ref()).spawn();
+            wait_for_oidc_event(&logs, "OIDC discovery failed", 1).await;
+            supervisor.shutdown().await.unwrap();
+            let text = logs.text();
+            let event = text
+                .lines()
+                .find(|line| line.contains("OIDC discovery failed"))
+                .unwrap();
+            assert!(event.contains("ERROR"));
+            assert!(event.contains(r#"outcome="endpoint_rejected""#), "{event}");
+            assert!(event.contains(&format!(r#"source="{source}""#)), "{event}");
+            assert!(event.contains("epoch=0 keys=0"));
+            for marker in [
+                "provider-marker",
+                "query-marker",
+                "fragment-marker",
+                "must use https",
+                mock.issuer(),
+            ] {
+                assert!(!text.contains(marker), "{text}");
+            }
+            assert!(runtime.as_ref().unwrap().snapshot().await.is_none());
+        }
+    }
+
+    #[tokio::test]
+    async fn oidc_key_startup_cooldown_is_warning() {
+        let logs = test_support::CapturedLogs::default();
+        let _subscriber = tracing::subscriber::set_default(logs.subscriber());
+        let mut mock = test_support::oidc_mock::MockOidcProvider::start("test").await;
+        mock.mount_discovery().await;
+        mock.set_jwks_response(wiremock::ResponseTemplate::new(500), 1)
+            .await;
+        let runtime = super::configure_oidc(
+            &mock.config("http://localhost/auth/callback"),
+            Some(crate::auth::oidc::OidcTransport::for_tests()),
+        )
+        .unwrap();
+        let supervisor = super::with_oidc_discovery(worker_supervisor(), runtime.as_ref()).spawn();
+        wait_for_oidc_event(&logs, "OIDC discovery failed", 1).await;
+        tokio::time::pause();
+        tokio::time::advance(Duration::from_secs(1)).await;
+        tokio::time::resume();
+        wait_for_oidc_event(&logs, "OIDC discovery failed", 2).await;
+        supervisor.shutdown().await.unwrap();
+        let text = logs.text();
+        let event = text
+            .lines()
+            .find(|line| line.contains(r#"outcome="cooldown""#))
+            .unwrap();
+        assert!(event.contains("WARN"), "{event}");
+        assert!(!event.contains("ERROR"));
+        assert!(event.contains("epoch=0 keys=0"));
+        assert!(!event.contains("source="));
+        assert_eq!(mock.request_count("/jwks").await, 1);
+        assert_eq!(
+            mock.request_count("/.well-known/openid-configuration")
+                .await,
+            2
+        );
+        assert!(runtime.as_ref().unwrap().snapshot().await.is_none());
+    }
+
+    #[tokio::test]
     async fn oidc_key_startup_ready_worker_waits_for_shutdown() {
         let logs = test_support::CapturedLogs::default();
         let _subscriber = tracing::subscriber::set_default(logs.subscriber());

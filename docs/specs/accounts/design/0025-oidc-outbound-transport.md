@@ -111,7 +111,10 @@ retains the same transport used at discovery; the callback's PKCE and ID-token v
 Client construction and invalid configured URLs prevent startup. Provider discovery, discovered endpoint rejection and
 the initial JWKS fetch do not stop local service: the discovery worker retries with capped exponential waits, as
 specified by the application runtime Design. The key-fetch floor can suppress a JWKS request during a discovery retry;
-that attempt leaves the snapshot absent.
+that attempt leaves the snapshot absent. Discovery failure events carry a fixed `outcome`: `request_failed`,
+`response_rejected`, `parse_failed` or `endpoint_rejected`; endpoint rejection also carries a static `source` naming the
+rejected configuration or metadata field. The endpoint-check message is never logged. A suppressed attempt carries
+`outcome="cooldown"` at warning level.
 
 A failed refresh retains the last good snapshot and returns an error to its current waiters. A later caller suppressed
 by the floor verifies against that snapshot; a later eligible attempt can fetch again. No failed result is cached for
@@ -134,7 +137,8 @@ validation override. Provider endpoints must be final URLs because redirects are
 Each completed refresh emits one structured event with `epoch`, parsed key count `keys`, and a fixed `outcome`. Failure
 events describe the retained set; discovery failures use epoch and count zero until a snapshot exists. Provider bodies,
 raw error chains, keys, tokens, codes, state, nonce, PKCE and client secrets are not logged by these operations.
-Discovery failures are error-level events; refresh failures are warnings.
+Discovery failures are error-level events, except suppressed attempts, which are warnings; refresh failures are
+warnings.
 
 OIDC provider responses have no response-size cap. The ten-second timeout bounds HTTP duration through response-body
 completion, not response bytes, parser allocations or memory use. This accepted limit and its compensating controls are

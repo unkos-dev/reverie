@@ -240,10 +240,10 @@ observation. Watchdog ticks and completion precede queued watcher traffic.
     operating-system signal or process-token cancellation.
 
 The OIDC worker attempts discovery immediately. Expected discovery, JWKS and discovered-endpoint failures log at error
-level and wait 1, 2, 4, 8, 16, 32, then 60 seconds repeatedly, without random variation. These waits use Tokio time and
-share the supervisor's one-to-sixty-second base and cap, while the supervisor retains its own random delay reduction.
-Provider failures do not consume the supervisor's restart budget. Local routes and readiness remain independent of
-discovery.
+level; an attempt suppressed by the key-fetch floor logs at warning level. Retry waits are 1, 2, 4, 8, 16, 32, then 60
+seconds repeatedly, without random variation. These waits use Tokio time and share the supervisor's one-to-sixty-second
+base and cap, while the supervisor retains its own random delay reduction. Provider failures do not consume the
+supervisor's restart budget. Local routes and readiness remain independent of discovery.
 
 After the first successful publication, the worker makes no further discovery requests and waits for cancellation.
 Signing-key refresh belongs to the OIDC runtime: its 30-second floor counts from each key-fetch attempt's start,

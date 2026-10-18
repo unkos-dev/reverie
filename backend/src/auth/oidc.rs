@@ -8,6 +8,7 @@
 //! THREAT: disabled redirects prevent an endpoint from forwarding credentials or key resolution.
 //! THREAT: timeouts bound stalled provider requests, including signing-key retrieval.
 //! THREAT: detached fetch ownership prevents request cancellation from stranding a shared refresh.
+//! THREAT: fixed discovery outcomes exclude provider-controlled errors and endpoint values from events.
 
 use secrecy::ExposeSecret;
 use std::sync::Arc;
@@ -237,6 +238,31 @@ enum DiscoveryRequestError {
     Http(#[from] openidconnect::HttpClientError<reqwest::Error>),
 }
 
+#[derive(Clone, Copy, Debug)]
+enum DiscoveryFailure {
+    Fetch(OidcRefreshError),
+    Endpoint(&'static str),
+    Cooldown,
+}
+
+impl DiscoveryFailure {
+    const fn outcome(self) -> &'static str {
+        match self {
+            Self::Fetch(error) => error.outcome(),
+            Self::Endpoint(_) => "endpoint_rejected",
+            Self::Cooldown => "cooldown",
+        }
+    }
+}
+
+#[derive(Debug, thiserror::Error)]
+#[error("{error}")]
+struct OidcDiscoveryError {
+    failure: DiscoveryFailure,
+    #[source]
+    error: anyhow::Error,
+}
+
 #[derive(Clone, Debug)]
 pub(crate) struct OidcConfiguration {
     issuer: IssuerUrl,
@@ -273,7 +299,7 @@ impl OidcConfiguration {
         &self,
         transport: &OidcTransport,
         coordinator: Option<Arc<Mutex<RefreshCoordinator>>>,
-    ) -> Result<CoreProviderMetadata> {
+    ) -> Result<CoreProviderMetadata, OidcDiscoveryError> {
         let discovery_client = DiscoveryHttpClient {
             http: transport.oauth_client(),
             coordinator,
@@ -281,30 +307,72 @@ impl OidcConfiguration {
         };
         let metadata = CoreProviderMetadata::discover_async(self.issuer.clone(), &discovery_client)
             .await
-            .map_err(|error| match error {
-                openidconnect::DiscoveryError::Request(DiscoveryRequestError::Http(error)) => {
-                    transport.discovery_error(openidconnect::DiscoveryError::Request(error))
+            .map_err(|error| {
+                let failure = match &error {
+                    openidconnect::DiscoveryError::Request(DiscoveryRequestError::Cooldown) => {
+                        DiscoveryFailure::Cooldown
+                    }
+                    openidconnect::DiscoveryError::Request(DiscoveryRequestError::Http(
+                        openidconnect::HttpClientError::Reqwest(error),
+                    )) if error.url().is_some_and(|url| {
+                        transport
+                            .check_endpoint(OidcEndpoint::Jwks, "discovery document jwks_uri", url)
+                            .is_err()
+                    }) =>
+                    {
+                        DiscoveryFailure::Endpoint("jwks_uri")
+                    }
+                    openidconnect::DiscoveryError::Request(_) => {
+                        DiscoveryFailure::Fetch(OidcRefreshError::Request)
+                    }
+                    openidconnect::DiscoveryError::Parse(_) => {
+                        DiscoveryFailure::Fetch(OidcRefreshError::Parse)
+                    }
+                    _ => DiscoveryFailure::Fetch(OidcRefreshError::Response),
+                };
+                let error = match error {
+                    openidconnect::DiscoveryError::Request(DiscoveryRequestError::Http(error)) => {
+                        transport.discovery_error(openidconnect::DiscoveryError::Request(error))
+                    }
+                    error => anyhow::Error::new(error),
+                };
+                OidcDiscoveryError {
+                    failure,
+                    error: error.context("OIDC discovery failed"),
                 }
-                error => anyhow::Error::new(error),
-            })
-            .context("OIDC discovery failed")?;
-        transport.check_endpoint(
-            OidcEndpoint::Authorization,
-            "discovery document authorization_endpoint",
-            metadata.authorization_endpoint().url(),
-        )?;
+            })?;
+        transport
+            .check_endpoint(
+                OidcEndpoint::Authorization,
+                "discovery document authorization_endpoint",
+                metadata.authorization_endpoint().url(),
+            )
+            .map_err(|error| OidcDiscoveryError {
+                failure: DiscoveryFailure::Endpoint("authorization_endpoint"),
+                error,
+            })?;
         if let Some(endpoint) = metadata.token_endpoint() {
-            transport.check_endpoint(
-                OidcEndpoint::Token,
-                "discovery document token_endpoint",
-                endpoint.url(),
-            )?;
+            transport
+                .check_endpoint(
+                    OidcEndpoint::Token,
+                    "discovery document token_endpoint",
+                    endpoint.url(),
+                )
+                .map_err(|error| OidcDiscoveryError {
+                    failure: DiscoveryFailure::Endpoint("token_endpoint"),
+                    error,
+                })?;
         }
-        transport.check_endpoint(
-            OidcEndpoint::Jwks,
-            "discovery document jwks_uri",
-            metadata.jwks_uri().url(),
-        )?;
+        transport
+            .check_endpoint(
+                OidcEndpoint::Jwks,
+                "discovery document jwks_uri",
+                metadata.jwks_uri().url(),
+            )
+            .map_err(|error| OidcDiscoveryError {
+                failure: DiscoveryFailure::Endpoint("jwks_uri"),
+                error,
+            })?;
         Ok(metadata)
     }
 }
@@ -483,12 +551,24 @@ impl OidcRuntime {
             match result {
                 Ok(()) => break,
                 Err(error) => {
-                    let outcome = if error.downcast_ref::<reqwest::Error>().is_some() {
-                        "request_failed"
-                    } else {
-                        "discovery_failed"
-                    };
-                    tracing::error!(epoch = 0, keys = 0, outcome, "OIDC discovery failed");
+                    let outcome = error.failure.outcome();
+                    match error.failure {
+                        DiscoveryFailure::Cooldown => {
+                            tracing::warn!(epoch = 0, keys = 0, outcome, "OIDC discovery failed");
+                        }
+                        DiscoveryFailure::Endpoint(source) => {
+                            tracing::error!(
+                                epoch = 0,
+                                keys = 0,
+                                outcome,
+                                source,
+                                "OIDC discovery failed"
+                            );
+                        }
+                        DiscoveryFailure::Fetch(_) => {
+                            tracing::error!(epoch = 0, keys = 0, outcome, "OIDC discovery failed");
+                        }
+                    }
                 }
             }
             tokio::select! {
@@ -514,7 +594,7 @@ impl OidcRuntime {
         Ok(())
     }
 
-    async fn discover_once(&self) -> Result<()> {
+    async fn discover_once(&self) -> Result<(), OidcDiscoveryError> {
         let metadata = self
             .configuration
             .discover(&self.transport, Some(Arc::clone(&self.refresh)))
