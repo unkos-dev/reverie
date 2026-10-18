@@ -225,7 +225,8 @@ pub struct Config {
     #[schemars(with = "String", default = "String::new")]
     pub oidc_client_secret: SecretString,
     /// OIDC redirect URI (`OIDC_REDIRECT_URI`). Required when OIDC is configured
-    /// (Gate 3); must match the value registered with the issuer.
+    /// (Gate 3); must match the value registered with the issuer. Its path must
+    /// be exactly `/auth/callback`; a trailing slash or another path refuses startup.
     pub oidc_redirect_uri: String,
     /// Whether local email+password authentication is enabled
     /// (`REVERIE_LOCAL_AUTH_ENABLED`, default `true`). Reverie is local-first out
@@ -430,6 +431,19 @@ impl Config {
                 if field(&cfg).trim().is_empty() {
                     return Err(ConfigError::MissingVar(var.into()));
                 }
+            }
+        }
+        if cfg.oidc_configured() {
+            let redirect =
+                url::Url::parse(&cfg.oidc_redirect_uri).map_err(|_| ConfigError::Invalid {
+                    var: "OIDC_REDIRECT_URI".into(),
+                    reason: "must be a URL with path exactly /auth/callback".into(),
+                })?;
+            if redirect.path() != "/auth/callback" {
+                return Err(ConfigError::Invalid {
+                    var: "OIDC_REDIRECT_URI".into(),
+                    reason: "path must be exactly /auth/callback".into(),
+                });
             }
         }
         if !cfg.local_auth_enabled && !cfg.oidc_configured() {
@@ -1575,6 +1589,31 @@ mod tests {
                 matches!(&err, ConfigError::MissingVar(v) if v == var),
                 "omitting {var} with OIDC configured should yield MissingVar({var}), got: {err:?}"
             );
+        }
+    }
+
+    #[test]
+    fn oidc_redirect_uri_requires_exact_callback_path() {
+        for uri in [
+            "https://example.com/auth/callback/",
+            "https://example.com/other",
+            "https://example.com/",
+            "not-a-url",
+        ] {
+            let vars = with_overrides(&[("OIDC_REDIRECT_URI", uri)]);
+            let error = cfg_from_owned(&vars).unwrap_err();
+            assert!(
+                matches!(&error, ConfigError::Invalid { var, .. } if var == "OIDC_REDIRECT_URI")
+            );
+            assert!(!error.to_string().contains(uri));
+        }
+        for uri in [
+            "https://example.com/auth/callback",
+            "http://localhost:3000/auth/callback",
+        ] {
+            let vars = with_overrides(&[("OIDC_REDIRECT_URI", uri)]);
+            let config = cfg_from_owned(&vars).expect("exact callback path accepted");
+            assert_eq!(config.oidc_redirect_uri, uri);
         }
     }
 

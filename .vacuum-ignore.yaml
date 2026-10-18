@@ -73,6 +73,8 @@ owasp-string-limit:
   - $.paths['/api/v1/shelves/{id}'].get.parameters[1].schema
   - $.paths['/api/v1/tags/suggest'].get.parameters[0].schema
   - $.paths['/auth/callback'].get.parameters[0].schema
+  - $.paths['/auth/callback'].get.parameters[2].schema
+  - $.paths['/auth/callback'].get.parameters[3].schema
   - $.paths['/opds/library/authors'].get.parameters[0].schema
   - $.paths['/opds/library/authors/{id}'].get.parameters[1].schema
   - $.paths['/opds/library/new'].get.parameters[0].schema

@@ -175,7 +175,17 @@ where
             error::instance::problem_instance_layer,
         ))
         .layer(session_layer)
-        .layer(tower_http::trace::TraceLayer::new_for_http())
+        .layer(tower_http::trace::TraceLayer::new_for_http().make_span_with(
+            |request: &axum::http::Request<axum::body::Body>| {
+                // THREAT: callback queries contain authorization secrets and private provider descriptions.
+                let uri = if request.uri().path() == "/auth/callback" {
+                    request.uri().path().to_owned()
+                } else {
+                    request.uri().to_string()
+                };
+                tracing::debug_span!("request", method = %request.method(), uri, version = ?request.version())
+            },
+        ))
         .with_state(state)
 }
 

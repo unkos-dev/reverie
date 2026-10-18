@@ -216,11 +216,12 @@ requires the capability field in its Zod schema rather than assuming it when abs
    before any identity claim is attached. Deleting the old row cascades `sign_in_cohorts` and its attempt, so a slower
    contender's conditional winner update matches nothing. A pre-authentication id never becomes authenticated.
 3. `login` inserts `SESSION_KEY_USER_ID` and `SESSION_KEY_SESSION_VERSION` into the session's in-memory claims map.
-4. At response time, `SessionManagerLayer`'s `with_always_save(true)` triggers a store write for the now-populated
-   session. Because the id was just cycled, this is a fresh id from the store's point of view: `PostgresStore::create`
-   runs its atomic `ON CONFLICT (id) DO NOTHING RETURNING id` insert; on the cryptographically improbable case of a
-   collision with a live row, `create` draws a new `Id` and retries the same insert rather than falling back to an
-   overwrite, so a concurrent creator can never clobber a session that already exists under that id.
+4. The OIDC callback inserts its CSRF token and explicitly saves before returning success. The local handler relies on
+   response-time persistence. `SessionManagerLayer`'s `with_always_save(true)` also triggers a store write for a
+   populated session. Because the id was just cycled, this is a fresh id from the store's point of view:
+   `PostgresStore::create` runs its atomic `ON CONFLICT (id) DO NOTHING RETURNING id` insert; on the cryptographically
+   improbable case of a collision with a live row, `create` draws a new `Id` and retries the same insert rather than
+   falling back to an overwrite, so a concurrent creator can never clobber a session that already exists under that id.
 5. The response carries a `Set-Cookie` for `id` with the attributes fixed in `build_router_with_session_store`.
 
 Arbitration covers only requests that load the session before a winner rotates it; a request carrying an already retired
@@ -275,9 +276,15 @@ waiting out a mid-sweep interval.
   Sign-in handlers treat both cases as anonymous. In OIDC start, if an incoming id disappears during that read,
   `cycle_id()` rotates the cached record before the marker is inserted and saved. `flush()` retains that cached record
   id, so rotation prevents its deleted id from being recreated. Rotation errors propagate as internal errors.
-- **An error after winning.** Before `session::login` succeeds, the handler flushes the session and returns the original
-  error. A successful flush removes the cookie and cascades the cohort. A failed flush is logged at warning level; the
-  cohort stays won and cannot authorise another sign-in before session expiry.
+- **An error after winning.** A callback failure through identity attachment, CSRF insertion or explicit persistence
+  attempts session flush before redirecting to the fixed login outcome. Local sign-in flushes a failure before
+  `session::login` succeeds. A successful flush removes the cookie and cascades the cohort. A failed flush logs a
+  warning; any surviving cohort stays won and cannot authorise another sign-in before session expiry. If old-session
+  deletion fails during rotation, `cycle_id` has already cleared its current id. The later flush cannot remove the
+  original row, even if it returns success. The rotation error is logged at warning level as failed old-session removal.
+  The anonymous session row and its won cohort remain until idle expiry or the sweep. The row carries no identity and
+  the cohort is terminal, so it cannot authenticate or win again. The callback redirects to `unavailable` with its
+  cookie cleared; no explicit original-session cleanup occurs.
 - **A failed session-store save.** `SessionManagerLayer` is registered after (and so wraps outside) the
   `security_headers` layer in `build_router_with_session_store`. When a request carries a non-empty session, the
   response is not already a server error, and the store write triggered by `with_always_save(true)` fails, the session

@@ -142,7 +142,7 @@
       "default": ""
     },
     "oidc_redirect_uri": {
-      "description": "OIDC redirect URI (`OIDC_REDIRECT_URI`). Required when OIDC is configured\n(Gate 3); must match the value registered with the issuer.",
+      "description": "OIDC redirect URI (`OIDC_REDIRECT_URI`). Required when OIDC is configured\n(Gate 3); must match the value registered with the issuer. Its path must\nbe exactly `/auth/callback`; a trailing slash or another path refuses startup.",
       "type": "string",
       "default": ""
     },

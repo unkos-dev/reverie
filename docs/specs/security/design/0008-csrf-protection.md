@@ -63,8 +63,9 @@ per-request handle onto the session store. Depended on by: every mutating reques
   and `SESSION_KEY_SESSION_VERSION` constants in `auth/session.rs`; the CSRF key has no such constant in common.
   `csrf.rs` declares its own private `CSRF_SESSION_KEY` for the enforcement read, and the two mint sites and the
   `GET /auth/me` session read in `routes/auth.rs` (the Design "Sessions") each use the literal `"csrf_token"`. Both mint
-  sites overwrite unconditionally: re-running either flow on an already-authenticated session (a repeat OIDC callback, a
-  re-submitted local login) replaces the prior value rather than leaving it in place.
+  sites mint only for a successful new sign-in. An already-authenticated OIDC callback redirects home and local login
+  refuses the request without minting another token. The callback includes CSRF insertion and explicit session save in
+  its winning completion scope; failure attempts session flush and redirects to `unavailable`.
 - `backend/src/security/csrf.rs::csrf_required` is an `axum::middleware::from_fn` layer taking the request's
   `tower_sessions::Session` directly, not a `CurrentUser`. It exempts a request in two independent ways before reading
   either the header or the stored token: a safe method (`GET`, `HEAD`, `OPTIONS`, `TRACE`) returns immediately, and a
@@ -178,9 +179,9 @@ an OIDC session begins:
 4. The route handler runs, and `api_csp_layer`, inside the CSRF layer, attaches the API Content Security Policy to
    whatever status the handler returns.
 
-**A stale cache after a second tab re-authenticates on the same browser.** Two tabs share one cookie jar. Tab A re-runs
-the OIDC callback (a re-authentication, not a fresh browser session), which mints a new token and overwrites the
-session's `csrf_token`; tab B's `cachedToken`, populated before that happened, still holds the old value:
+**A stale cache after a second tab signs out and signs in again.** Two tabs share one cookie jar. Tab A signs out, then
+completes a fresh sign-in with a new session and CSRF token. Tab B's `cachedToken`, populated before that happened,
+still holds the old value:
 
 1. Tab B issues a mutating request with its stale header. `csrf_required` finds a session user (the shared cookie still
    names one), a present header, and a present but now-different stored token; the constant-time comparison fails, and

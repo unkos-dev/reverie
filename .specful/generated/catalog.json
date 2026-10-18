@@ -812,7 +812,8 @@
         "REV-REQ-0037",
         "REV-REQ-0067",
         "REV-REQ-0068",
-        "REV-REQ-0069"
+        "REV-REQ-0069",
+        "REV-REQ-0070"
       ],
       "title": "OIDC sign-in"
     },
@@ -1385,6 +1386,12 @@
       "kind": "req",
       "path": "docs/specs/accounts/requirements/0069-a-returning-oidc-identity-keeps-its-stored-email.md",
       "title": "A returning OIDC identity keeps its stored email"
+    },
+    {
+      "id": "REV-REQ-0070",
+      "kind": "req",
+      "path": "docs/specs/accounts/requirements/0070-an-unsuccessful-oidc-sign-in-resolves-to-a-fixed-local-outcome.md",
+      "title": "An unsuccessful OIDC sign-in resolves to a fixed local outcome"
     }
   ]
 }

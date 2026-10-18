@@ -6197,14 +6197,14 @@
           "auth"
         ],
         "summary": "Complete OIDC login",
-        "description": "Completes the OIDC authorization-code flow, establishes a session, and redirects to the app. No authentication is required to call it. Signed-in browsers redirect to / without a provider request. Returns 401 if the attempt is absent, expired, consumed or mismatched, arbitration is lost, the account is disabled, or the email belongs to a different account. Returns 500 if discovery is pending, the token exchange fails, or the ID token is missing or fails validation.",
+        "description": "Consumes a browser-bound authorization response once. Success establishes a session and redirects to /. Signed-in browsers redirect to / before query validation. Callback failures redirect to /login?outcome=denied, expired, unavailable, keys or account. Provider descriptions are never shown or logged. Returns 404 when OIDC is not configured. A failure of the session middleware's subsequent save can still return an empty 500.",
         "operationId": "callback",
         "parameters": [
           {
             "name": "code",
             "in": "query",
-            "description": "Authorization code minted by the `IdP`.",
-            "required": true,
+            "description": "Authorization code, present only on a successful provider response.",
+            "required": false,
             "schema": {
               "type": "string"
             }
@@ -6212,33 +6212,41 @@
           {
             "name": "state",
             "in": "query",
-            "description": "OIDC anti-forgery state echoed back by the `IdP`; must match the\nvalue `/auth/oidc/login` bound to the session.",
-            "required": true,
+            "description": "Browser-bound state echoed by the provider.",
+            "required": false,
             "schema": {
               "type": "string",
               "maxLength": 22
+            }
+          },
+          {
+            "name": "error",
+            "in": "query",
+            "description": "Provider error code, mutually exclusive with the authorization code.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "error_description",
+            "in": "query",
+            "description": "Provider description, discarded without logging or display.",
+            "required": false,
+            "schema": {
+              "type": "string"
             }
           }
         ],
         "responses": {
           "303": {
-            "description": "Already signed in; redirect to / without a provider exchange"
+            "description": "Signed in: /; failure: fixed /login?outcome=denied, expired, unavailable, keys or account"
           },
           "307": {
             "description": "Login complete; session established, theme cookie seeded, redirect to /"
           },
-          "400": {
-            "description": "Malformed query parameter",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Attempt absent, expired, consumed or mismatched, arbitration lost, account disabled, or email belongs to a different account",
+          "404": {
+            "description": "OIDC is not configured",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -6248,14 +6256,7 @@
             }
           },
           "500": {
-            "description": "Discovery pending, token exchange failed, ID token missing or failed validation, or a database or session storage error; details are hidden",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
+            "description": "Session middleware subsequent save failed; empty response"
           }
         },
         "security": [
