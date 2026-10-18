@@ -62,6 +62,7 @@ function OutcomeNotice(): ReactElement | null {
     if (outcome !== null) {
       titleRef.current?.focus();
     }
+    return () => {};
   }, [outcome]);
   if (outcome === null) return null;
   const copy = outcomeCopy[outcome];

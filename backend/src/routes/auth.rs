@@ -96,6 +96,11 @@ enum SignInOutcome {
 }
 
 impl SignInOutcome {
+    fn unavailable(cause: &'static str) -> Self {
+        tracing::warn!(cause, "OIDC sign-in internal failure");
+        Self::Unavailable
+    }
+
     fn redirect(self) -> Redirect {
         let location = match self {
             Self::Denied => "/login?outcome=denied",
@@ -119,13 +124,15 @@ impl From<crate::auth::oidc::OidcVerificationError> for SignInOutcome {
         use crate::auth::oidc::{OidcRefreshError, OidcVerificationError};
         use openidconnect::{ClaimsVerificationError, SignatureVerificationError};
         match error {
-            OidcVerificationError::Refresh(OidcRefreshError::Unavailable) => Self::Unavailable,
+            OidcVerificationError::Refresh(OidcRefreshError::Unavailable) => {
+                Self::unavailable("oidc_runtime_unavailable")
+            }
             OidcVerificationError::Refresh(_)
             | OidcVerificationError::Claims(ClaimsVerificationError::SignatureVerification(
                 SignatureVerificationError::NoMatchingKey
                 | SignatureVerificationError::AmbiguousKeyId(_),
             )) => Self::Keys,
-            OidcVerificationError::Claims(_) => Self::Unavailable,
+            OidcVerificationError::Claims(_) => Self::unavailable("claims_verification_failed"),
         }
     }
 }
@@ -262,7 +269,7 @@ async fn callback(
         if matches!(
             crate::auth::session::signed_in_user(&session, &state.pool)
                 .await
-                .map_err(|_| SignInOutcome::Unavailable)?,
+                .map_err(|_| SignInOutcome::unavailable("signed_in_check_failed"))?,
             crate::auth::session::SessionUser::SignedIn(_)
         ) {
             return Ok(None);
@@ -272,7 +279,7 @@ async fn callback(
         let id = session.id().ok_or(SignInOutcome::Expired)?.to_string();
         let attempt = sign_in::claim_oidc_attempt(&state.pool, &id, &callback_state)
             .await
-            .map_err(|_| SignInOutcome::Unavailable)?
+            .map_err(|_| SignInOutcome::unavailable("attempt_claim_failed"))?
             .ok_or(SignInOutcome::Expired)?;
         let code = match response {
             AuthorizationResponse::Code(code) => code,
@@ -284,11 +291,14 @@ async fn callback(
                 });
             }
         };
-        let snapshot = oidc.snapshot().await.ok_or(SignInOutcome::Unavailable)?;
+        let snapshot = oidc
+            .snapshot()
+            .await
+            .ok_or_else(|| SignInOutcome::unavailable("discovery_pending"))?;
         let token_response = snapshot
             .client
             .exchange_code(AuthorizationCode::new(code))
-            .map_err(|_| SignInOutcome::Unavailable)?
+            .map_err(|_| SignInOutcome::unavailable("exchange_setup_failed"))?
             .set_pkce_verifier(PkceCodeVerifier::new(attempt.pkce_verifier))
             .request_async(&oidc.transport().oauth_client())
             .await
@@ -298,39 +308,23 @@ async fn callback(
                 {
                     SignInOutcome::Expired
                 }
-                _ => SignInOutcome::Unavailable,
+                _ => SignInOutcome::unavailable("token_request_failed"),
             })?;
         let id_token = token_response
             .id_token()
-            .ok_or(SignInOutcome::Unavailable)?;
+            .ok_or_else(|| SignInOutcome::unavailable("id_token_missing"))?;
         let claims = oidc
             .verify(id_token, &Nonce::new(attempt.nonce))
             .await
             .map_err(SignInOutcome::from)?;
         if !sign_in::claim_win(&state.pool, &id)
             .await
-            .map_err(|_| SignInOutcome::Unavailable)?
+            .map_err(|_| SignInOutcome::unavailable("win_claim_failed"))?
         {
             return Err(SignInOutcome::Expired);
         }
         let completion = async {
-            let subject = claims.subject().as_str();
-            let issuer = claims.issuer().as_str();
-            let display_name = claims
-                .name()
-                .and_then(|name| name.get(None))
-                .map_or(subject, |name| name.as_str());
-            let email = claims.email().map(|email| email.as_str());
-            // THREAT: issuer/subject resolution never links an account by an unverified provider email.
-            let user = user::upsert_from_oidc(&state.pool, issuer, subject, display_name, email)
-                .await
-                .map_err(|error| match error {
-                    user::OidcProvisionError::EmailCollision => SignInOutcome::Account,
-                    user::OidcProvisionError::Db(_) => SignInOutcome::Unavailable,
-                })?;
-            if user.disabled_at.is_some() {
-                return Err(SignInOutcome::Account);
-            }
+            let user = provision_oidc_user(&state.pool, claims).await?;
             complete_oidc_session(&session, &user).await?;
             Ok(user)
         }
@@ -354,6 +348,30 @@ async fn callback(
     }
 }
 
+async fn provision_oidc_user(
+    pool: &sqlx::PgPool,
+    claims: &openidconnect::core::CoreIdTokenClaims,
+) -> Result<user::User, SignInOutcome> {
+    let subject = claims.subject().as_str();
+    let issuer = claims.issuer().as_str();
+    let display_name = claims
+        .name()
+        .and_then(|name| name.get(None))
+        .map_or(subject, |name| name.as_str());
+    let email = claims.email().map(|email| email.as_str());
+    // THREAT: issuer/subject resolution never links an account by an unverified provider email.
+    let user = user::upsert_from_oidc(pool, issuer, subject, display_name, email)
+        .await
+        .map_err(|error| match error {
+            user::OidcProvisionError::EmailCollision => SignInOutcome::Account,
+            user::OidcProvisionError::Db(_) => SignInOutcome::unavailable("provisioning_failed"),
+        })?;
+    if user.disabled_at.is_some() {
+        return Err(SignInOutcome::Account);
+    }
+    Ok(user)
+}
+
 async fn complete_oidc_session(session: &Session, user: &user::User) -> Result<(), SignInOutcome> {
     crate::auth::session::login(session, user)
         .await
@@ -371,11 +389,11 @@ async fn complete_oidc_session(session: &Session, user: &user::User) -> Result<(
     session
         .insert("csrf_token", &csrf_token)
         .await
-        .map_err(|_| SignInOutcome::Unavailable)?;
+        .map_err(|_| SignInOutcome::unavailable("csrf_insert_failed"))?;
     session
         .save()
         .await
-        .map_err(|_| SignInOutcome::Unavailable)?;
+        .map_err(|_| SignInOutcome::unavailable("session_save_failed"))?;
     Ok(())
 }
 
@@ -1225,6 +1243,67 @@ mod tests {
     use crate::models::theme_preference::ThemePreference;
     use crate::models::{sign_in, user};
     use crate::test_support;
+
+    fn callback_log_subscriber(
+        logs: &test_support::CapturedLogs,
+    ) -> impl tracing::Subscriber + Send + Sync + use<> {
+        let writer = logs.clone();
+        tracing_subscriber::fmt()
+            .without_time()
+            .with_ansi(false)
+            .with_max_level(tracing::Level::DEBUG)
+            .with_writer(move || writer.clone())
+            .finish()
+    }
+
+    fn assert_private_cause(logs: &test_support::CapturedLogs, cause: &str, secrets: &[&str]) {
+        let captured = logs.text();
+        let field = format!("cause=\"{cause}\"");
+        let events: Vec<_> = captured
+            .lines()
+            .filter(|line| line.contains(&field))
+            .collect();
+        assert_eq!(events.len(), 1, "{captured}");
+        assert!(events[0].trim_start().starts_with("WARN"), "{captured}");
+        for secret in secrets {
+            assert!(!captured.contains(secret), "cause log leaked {secret}");
+        }
+    }
+
+    #[test]
+    fn oidc_outcome_internal_causes_are_static_and_private() {
+        for cause in [
+            "signed_in_check_failed",
+            "attempt_claim_failed",
+            "exchange_setup_failed",
+            "token_request_failed",
+            "win_claim_failed",
+            "csrf_insert_failed",
+            "session_save_failed",
+            "discovery_pending",
+            "id_token_missing",
+            "oidc_runtime_unavailable",
+            "claims_verification_failed",
+            "provisioning_failed",
+        ] {
+            let logs = test_support::CapturedLogs::default();
+            let outcome = tracing::subscriber::with_default(callback_log_subscriber(&logs), || {
+                super::SignInOutcome::unavailable(cause)
+            });
+            assert!(matches!(outcome, super::SignInOutcome::Unavailable));
+            assert_private_cause(
+                &logs,
+                cause,
+                &[
+                    "private-code",
+                    "private-state",
+                    "private-nonce",
+                    "private-provider-description",
+                    "private-token-body",
+                ],
+            );
+        }
+    }
 
     #[test]
     fn oidc_outcome_throttled_logs_at_debug_while_other_outcomes_warn() {
@@ -2671,7 +2750,7 @@ mod tests {
             let logs = test_support::CapturedLogs::default();
             let response = fixture
                 .key_callback()
-                .with_subscriber(logs.subscriber())
+                .with_subscriber(callback_log_subscriber(&logs))
                 .await;
             assert_outcome(
                 &response,
@@ -2681,6 +2760,25 @@ mod tests {
                     "/login?outcome=unavailable"
                 },
             );
+            if kind == "invalid_grant" {
+                assert!(!logs.text().contains("token_request_failed"));
+            } else {
+                assert_private_cause(
+                    &logs,
+                    if kind == "missing_id_token" {
+                        "id_token_missing"
+                    } else {
+                        "token_request_failed"
+                    },
+                    &[
+                        "private-provider-description",
+                        "private-token-body",
+                        "mock-code",
+                        &fixture.csrf,
+                        &fixture.nonce,
+                    ],
+                );
+            }
             let captured = logs.text();
             assert!(captured.contains("OIDC sign-in did not complete"));
             for secret in [
@@ -2839,8 +2937,23 @@ mod tests {
                 .add_query_param("code", "mock-code")
                 .add_query_param("state", &fixture.csrf);
             let response = async { request.await }
-                .with_subscriber(logs.subscriber())
+                .with_subscriber(callback_log_subscriber(&logs))
                 .await;
+            assert_private_cause(
+                &logs,
+                if operation == StoreOperation::Create {
+                    "session_save_failed"
+                } else {
+                    "old_session_removal_failed"
+                },
+                &[
+                    "mock-code",
+                    &fixture.csrf,
+                    &fixture.nonce,
+                    "private-provider-description",
+                    "private-token-body",
+                ],
+            );
             assert_outcome(&response, "/login?outcome=unavailable");
             assert_eq!(failures.load(std::sync::atomic::Ordering::SeqCst), 0);
             if operation == StoreOperation::Create {
@@ -2891,6 +3004,8 @@ mod tests {
 
     #[sqlx::test(migrations = "./migrations")]
     async fn oidc_outcome_session_load_failure_is_unavailable(pool: sqlx::PgPool) {
+        use tracing::instrument::WithSubscriber;
+        let logs = test_support::CapturedLogs::default();
         let fixture = CallbackFixture::start(&pool).await;
         let store = OutcomeStore {
             inner: fixture.store.clone(),
@@ -2908,8 +3023,22 @@ mod tests {
                 format!("id={}", fixture.session_id),
             )
             .add_query_param("code", "mock-code")
+            .add_query_param("error_description", "private-provider-description")
             .add_query_param("state", &fixture.csrf)
+            .into_future()
+            .with_subscriber(callback_log_subscriber(&logs))
             .await;
+        assert_private_cause(
+            &logs,
+            "signed_in_check_failed",
+            &[
+                "mock-code",
+                &fixture.csrf,
+                &fixture.nonce,
+                "private-provider-description",
+                "private-token-body",
+            ],
+        );
         assert_outcome(&response, "/login?outcome=unavailable");
         fixture.assert_no_key_identity("unused").await;
         fixture.mock.assert_no_requests().await;
@@ -3033,6 +3162,8 @@ mod tests {
 
     #[sqlx::test(migrations = "./migrations")]
     async fn oidc_outcome_attempt_storage_failure_is_unavailable(pool: sqlx::PgPool) {
+        use tracing::instrument::WithSubscriber;
+        let logs = test_support::CapturedLogs::default();
         let fixture = CallbackFixture::start(&pool).await;
         let mut state = fixture.state.clone();
         let closed = sqlx::PgPool::connect_lazy("postgres://localhost/unavailable").unwrap();
@@ -3049,8 +3180,22 @@ mod tests {
                 format!("id={}", fixture.session_id),
             )
             .add_query_param("code", "mock-code")
+            .add_query_param("error_description", "private-provider-description")
             .add_query_param("state", &fixture.csrf)
+            .into_future()
+            .with_subscriber(callback_log_subscriber(&logs))
             .await;
+        assert_private_cause(
+            &logs,
+            "attempt_claim_failed",
+            &[
+                "mock-code",
+                &fixture.csrf,
+                &fixture.nonce,
+                "private-provider-description",
+                "private-token-body",
+            ],
+        );
         assert_outcome(&response, "/login?outcome=unavailable");
         fixture.mock.assert_no_requests().await;
     }
@@ -3058,6 +3203,8 @@ mod tests {
     #[sqlx::test(migrations = "./migrations")]
     async fn oidc_outcome_provisioning_failure_flushes_winner(pool: sqlx::PgPool) {
         use tower_sessions::SessionStore;
+        use tracing::instrument::WithSubscriber;
+        let logs = test_support::CapturedLogs::default();
         let fixture = CallbackFixture::start(&pool).await;
         fixture
             .mock
@@ -3068,7 +3215,22 @@ mod tests {
                 &fixture.nonce,
             )
             .await;
-        assert_outcome(&fixture.key_callback().await, "/login?outcome=unavailable");
+        let response = fixture
+            .key_callback()
+            .with_subscriber(callback_log_subscriber(&logs))
+            .await;
+        assert_outcome(&response, "/login?outcome=unavailable");
+        assert_private_cause(
+            &logs,
+            "provisioning_failed",
+            &[
+                "mock-code",
+                &fixture.csrf,
+                &fixture.nonce,
+                "private-provider-description",
+                "private-token-body",
+            ],
+        );
         assert!(
             fixture
                 .store
@@ -3109,6 +3271,7 @@ mod tests {
             self.server
                 .get("/auth/callback")
                 .add_query_param("code", "mock-code")
+                .add_query_param("error_description", "private-provider-description")
                 .add_query_param("state", &self.csrf)
                 .await
         }

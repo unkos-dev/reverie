@@ -81,7 +81,8 @@ browser              Reverie                                provider
 The generated [OpenAPI document](../../../../backend/openapi.json) is the canonical request and response definition for
 both routes. OIDC is optional: with no `OIDC_ISSUER_URL`, `AppState.oidc` is `None` and both routes answer 404. When it
 is set, `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET` (or its file variant) and `OIDC_REDIRECT_URI` are required with it. The
-redirect URI registered at the provider is `/auth/callback` on the public origin.
+redirect URI registered at the provider is `/auth/callback` on the public origin. Configuration loading rejects a
+redirect URI whose path is not exactly `/auth/callback`, including a trailing slash, before provider discovery.
 
 The authorization request asks for the `email` and `profile` scopes on top of the library's default `openid`, with a
 random state, a random nonce and a SHA-256 PKCE challenge. The callback consumes the ID-token claims `iss`, `sub`,
@@ -237,9 +238,10 @@ no promotion: the first administrator exists only through bootstrap, and OIDC ne
 The callback consumes matching live state before any outbound request. PKCE binds the code to the browser's session, and
 the nonce binds the ID token to this flow. Only the cohort winner reaches account provisioning. The session id is
 rotated in `login` before any identity claim is attached. The email claim is validated by shape, and an invalid value is
-logged by length only, never verbatim. Refusals log only fixed outcome categories. The request trace records the
-callback path without its query, and neither callback parsing nor token-error handling formats provider descriptions or
-response bodies into logs.
+logged by length only, never verbatim. Refusals log fixed outcome categories. Internal callback failures also log one
+fixed static cause at warning level without formatting the underlying error; malformed-query rejection adds no cause
+event. The request trace records the callback path without its query, and neither callback parsing nor token-error
+handling formats provider descriptions or response bodies into logs.
 
 A self-hoster registers `/auth/callback` on the public origin at the provider and sets `OIDC_REDIRECT_URI` to match. The
 session cookie's `SameSite=Lax` policy is what lets the cross-site redirect back from the provider carry the session.
