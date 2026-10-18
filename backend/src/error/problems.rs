@@ -108,6 +108,9 @@ pub const SETUP_ALREADY_COMPLETE: &str = "setup-already-complete";
 /// ([`crate::error::AppError::EmailConflict`]). HTTP 409.
 pub const EMAIL_CONFLICT: &str = "email-conflict";
 
+/// Sign-in is inactive because the session is authenticated or its cohort has a winner. HTTP 409.
+pub const SIGN_IN_INACTIVE: &str = "sign-in-inactive";
+
 /// Method not supported on an otherwise-matched route
 /// ([`crate::error::AppError::MethodNotAllowed`]). HTTP 405; the `Allow`
 /// header (added by axum) lists the methods registered for the path.

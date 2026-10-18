@@ -1002,6 +1002,25 @@ CREATE TABLE public.moods (
 ALTER TABLE public.moods OWNER TO reverie_migrator;
 
 --
+-- Name: oidc_sign_in_attempts; Type: TABLE; Schema: public; Owner: reverie_migrator
+--
+
+CREATE TABLE public.oidc_sign_in_attempts (
+    session_id text NOT NULL,
+    state_digest bytea NOT NULL,
+    pkce_verifier text NOT NULL,
+    nonce text NOT NULL,
+    expires_at timestamp with time zone NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT oidc_sign_in_attempts_created_at_ts_decode_range CHECK (((created_at >= '0001-01-01 00:00:00+00'::timestamp with time zone) AND (created_at < '10000-01-01 00:00:00+00'::timestamp with time zone))),
+    CONSTRAINT oidc_sign_in_attempts_expires_at_ts_decode_range CHECK (((expires_at >= '0001-01-01 00:00:00+00'::timestamp with time zone) AND (expires_at < '10000-01-01 00:00:00+00'::timestamp with time zone))),
+    CONSTRAINT oidc_sign_in_attempts_state_digest_length CHECK ((octet_length(state_digest) = 32))
+);
+
+
+ALTER TABLE public.oidc_sign_in_attempts OWNER TO reverie_migrator;
+
+--
 -- Name: omnibus_contents; Type: TABLE; Schema: public; Owner: reverie_migrator
 --
 
@@ -1224,6 +1243,21 @@ ALTER TABLE public.shelves OWNER TO reverie_migrator;
 
 COMMENT ON TABLE public.shelves IS 'No RLS. Ownership enforced at application layer — all queries scope by user_id. See routes/shelves/ THREAT annotation.';
 
+
+--
+-- Name: sign_in_cohorts; Type: TABLE; Schema: public; Owner: reverie_migrator
+--
+
+CREATE TABLE public.sign_in_cohorts (
+    session_id text NOT NULL,
+    won_at timestamp with time zone,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT sign_in_cohorts_created_at_ts_decode_range CHECK (((created_at >= '0001-01-01 00:00:00+00'::timestamp with time zone) AND (created_at < '10000-01-01 00:00:00+00'::timestamp with time zone))),
+    CONSTRAINT sign_in_cohorts_won_at_ts_decode_range CHECK (((won_at >= '0001-01-01 00:00:00+00'::timestamp with time zone) AND (won_at < '10000-01-01 00:00:00+00'::timestamp with time zone)))
+);
+
+
+ALTER TABLE public.sign_in_cohorts OWNER TO reverie_migrator;
 
 --
 -- Name: tags; Type: TABLE; Schema: public; Owner: reverie_migrator
@@ -1733,6 +1767,14 @@ ALTER TABLE ONLY public.moods
 
 
 --
+-- Name: oidc_sign_in_attempts oidc_sign_in_attempts_pkey; Type: CONSTRAINT; Schema: public; Owner: reverie_migrator
+--
+
+ALTER TABLE ONLY public.oidc_sign_in_attempts
+    ADD CONSTRAINT oidc_sign_in_attempts_pkey PRIMARY KEY (session_id);
+
+
+--
 -- Name: omnibus_contents omnibus_contents_pkey; Type: CONSTRAINT; Schema: public; Owner: reverie_migrator
 --
 
@@ -1818,6 +1860,14 @@ ALTER TABLE ONLY public.shelf_items
 
 ALTER TABLE ONLY public.shelves
     ADD CONSTRAINT shelves_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: sign_in_cohorts sign_in_cohorts_pkey; Type: CONSTRAINT; Schema: public; Owner: reverie_migrator
+--
+
+ALTER TABLE ONLY public.sign_in_cohorts
+    ADD CONSTRAINT sign_in_cohorts_pkey PRIMARY KEY (session_id);
 
 
 --
@@ -2237,6 +2287,13 @@ CREATE INDEX idx_mv_manifestation_field ON public.metadata_versions USING btree 
 --
 
 CREATE INDEX idx_mv_pending_last_seen ON public.metadata_versions USING btree (manifestation_id, last_seen_at DESC) WHERE (status = 'pending'::public.metadata_review_status);
+
+
+--
+-- Name: idx_oidc_sign_in_attempts_expires_at; Type: INDEX; Schema: public; Owner: reverie_migrator
+--
+
+CREATE INDEX idx_oidc_sign_in_attempts_expires_at ON public.oidc_sign_in_attempts USING btree (expires_at);
 
 
 --
@@ -2931,6 +2988,14 @@ ALTER TABLE ONLY public.metadata_versions
 
 
 --
+-- Name: oidc_sign_in_attempts oidc_sign_in_attempts_session_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: reverie_migrator
+--
+
+ALTER TABLE ONLY public.oidc_sign_in_attempts
+    ADD CONSTRAINT oidc_sign_in_attempts_session_id_fkey FOREIGN KEY (session_id) REFERENCES public.sign_in_cohorts(session_id) ON DELETE CASCADE;
+
+
+--
 -- Name: omnibus_contents omnibus_contents_contained_work_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: reverie_migrator
 --
 
@@ -3040,6 +3105,14 @@ ALTER TABLE ONLY public.shelf_items
 
 ALTER TABLE ONLY public.shelves
     ADD CONSTRAINT shelves_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
+
+
+--
+-- Name: sign_in_cohorts sign_in_cohorts_session_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: reverie_migrator
+--
+
+ALTER TABLE ONLY public.sign_in_cohorts
+    ADD CONSTRAINT sign_in_cohorts_session_id_fkey FOREIGN KEY (session_id) REFERENCES tower_sessions.session(id) ON DELETE CASCADE;
 
 
 --
@@ -3815,6 +3888,13 @@ GRANT SELECT ON TABLE public.moods TO reverie_readonly;
 
 
 --
+-- Name: TABLE oidc_sign_in_attempts; Type: ACL; Schema: public; Owner: reverie_migrator
+--
+
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.oidc_sign_in_attempts TO reverie_app;
+
+
+--
 -- Name: TABLE omnibus_contents; Type: ACL; Schema: public; Owner: reverie_migrator
 --
 
@@ -3895,6 +3975,13 @@ GRANT SELECT ON TABLE public.shelf_items TO reverie_readonly;
 
 GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.shelves TO reverie_app;
 GRANT SELECT ON TABLE public.shelves TO reverie_readonly;
+
+
+--
+-- Name: TABLE sign_in_cohorts; Type: ACL; Schema: public; Owner: reverie_migrator
+--
+
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.sign_in_cohorts TO reverie_app;
 
 
 --

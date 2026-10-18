@@ -98,8 +98,9 @@ directly rather than assembling its own `AppState` and calling `build_router`.
     receiving shared `LibraryFiles`, the live settings cache and command receiver; it owns its watcher and event
     channel).
   - `services::enrichment::queue::spawn_queue` (the enrichment job queue).
-  - `services::session_sweep::run_sweep` (the hourly expired-session reaper, driving `PostgresStore`'s `ExpiredDeletion`
-    trait).
+  - `services::session_sweep::run_sweep` (the hourly session and OIDC-attempt reaper, given the application pool and
+    `PostgresStore`). It deletes expired sessions through `ExpiredDeletion`, cascading `sign_in_cohorts`, then drains
+    expired `oidc_sign_in_attempts` in batches of 1,000. Live attempts remain; failures warn and retry next tick.
   - `services::writeback::queue::spawn_worker` (the writeback job queue, given the dedicated system-context pool
     described in Data and state and shared `LibraryFiles`; also owns the bounded relocation-intent sweep).
 - `services::ingestion::watcher::register` establishes a watch synchronously after the coordinator folder check. The

@@ -24,10 +24,10 @@ end a sign-in without establishing a new authenticated session.
 This subject owns the two OIDC handlers `oidc_login` and `callback` in `backend/src/routes/auth.rs`, the account
 resolution and provisioning function `upsert_from_oidc` with its error type `OidcProvisionError` and the email guard
 `validated_oidc_email` in `backend/src/models/user.rs`, and the identity-link queries in
-`backend/src/models/user_identities.rs`. It owns the three transient session keys the flow writes and clears:
-`pkce_verifier`, `oidc_csrf_state` and `nonce`. On the client it owns only the "Sign in with OIDC" action in
-`frontend/src/routes/auth-login.tsx`. The action appears when `GET /auth/setup/status` reports `oidc_enabled` and
-navigates the browser to `/auth/oidc/login`.
+`backend/src/models/user_identities.rs`. It owns OIDC initiation and consumption through the shared sign-in model
+(`backend/src/models/sign_in.rs`), including the pending attempt's state digest, PKCE verifier, nonce and expiry. On the
+client it owns only the "Sign in with OIDC" action in `frontend/src/routes/auth-login.tsx`. The action appears when
+`GET /auth/setup/status` reports `oidc_enabled` and navigates the browser to `/auth/oidc/login`.
 
 It does not own the provider client, discovery, endpoint policy or the HTTP client that performs the token exchange, the
 Design "OIDC outbound transport" (REV-DESIGN-0025). It does not own the session a successful sign-in produces:
@@ -42,10 +42,11 @@ Depends on: the configured provider's authorization, token and signing-key endpo
 
 ## Structure
 
-- `oidc_login` builds the authorization request from the discovered client, stores the flow state in the session and
-  redirects the browser to the provider.
-- `callback` runs the validation chain, calls `upsert_from_oidc`, refuses a disabled account, then hands the resolved
-  user to `auth::session::login` and finishes with the CSRF token and the theme cookie.
+- `oidc_login` checks session identity, source admission and cohort state, saves the anonymous session, persists the
+  authorization attempt and redirects the browser to the provider.
+- `callback` consumes the attempt before provider exchange, verifies the token and claims the cohort's single win. Only
+  a winner calls `upsert_from_oidc`, refuses a disabled account and calls `auth::session::login`, then finishes with the
+  CSRF token and theme cookie.
 - `upsert_from_oidc` runs one transaction that serialises on the identity, resolves the link, and either refreshes a
   returning account's display name or creates an account and its link. `validated_oidc_email` shapes the email claim for
   the create branch only.
@@ -55,25 +56,25 @@ Depends on: the configured provider's authorization, token and signing-key endpo
 ```text
 browser              Reverie                                provider
    |  GET /auth/oidc/login  |                                    |
-   |----------------------->|  state, PKCE verifier, nonce -> session
+   |----------------------->|  save session; state digest, verifier, nonce -> attempt
    |<-- 307 authorization URL                                    |
    |------------------------------------------------------------>|  authenticate
    |<-- 307 /auth/callback?code&state ---------------------------|
    |  GET /auth/callback    |                                    |
-   |----------------------->|  validate state, exchange code     |
+   |----------------------->|  claim attempt, exchange code     |
    |                        |----------------------------------->|
    |                        |<-- tokens (ID token) --------------|
-   |                        |  verify ID token and nonce, resolve or provision,
+   |                        |  verify ID token and nonce, claim win, resolve or provision,
    |                        |  refuse disabled, login, CSRF token, theme cookie
    |<-- 307 /  (session cookie)                                  |
 ```
 
 ## Interfaces and dependencies
 
-| Interface                | Contract                                                                               |
-| ------------------------ | -------------------------------------------------------------------------------------- |
-| `GET /auth/oidc/login`   | Unauthenticated. 307 to the provider, or 404 when OIDC is not configured.              |
-| `GET /auth/callback`     | Unauthenticated. Query `code` and `state`, both required. 307 to `/` on success.       |
+| Interface | Contract |
+| --------- | -------- |
+| `GET /auth/oidc/login` | 307 to provider; 303 for signed-in, throttled or inactive starts; 404 when OIDC is not configured. |
+| `GET /auth/callback` | Query `code` and `state`; 307 on success, 303 when already signed in. |
 | `GET /auth/setup/status` | Reports `oidc_enabled`, true when `OIDC_ISSUER_URL` is non-blank; the client reads it. |
 
 The generated [OpenAPI document](../../../../backend/openapi.json) is the canonical request and response definition for
@@ -91,12 +92,21 @@ caller-supplied return target: success always redirects to `/`.
 
 ## Data and state
 
-The flow state lives in the browser's session, which may already be authenticated, under three keys: `oidc_csrf_state`
-(the state the provider echoes back), `pkce_verifier` and `nonce`. They are distinct from the long-lived `csrf_token`
-synchronizer key, so a transient value never overwrites it. A second `GET /auth/oidc/login` in the same session
-overwrites all three. After login, the callback attempts to remove them, logging removal failures and continuing.
-Failures before session rotation leave the stored flow state in place. Rotation deletes the old session row before the
-response middleware persists its replacement, so a later failure can leave the browser without that flow state.
+`sign_in_cohorts` has one row per anonymous session, keyed by `session_id` with a foreign key to
+`tower_sessions.session`. `won_at` is null while pending; the conditional `claim_win` update gives one caller the single
+authority to establish an account. Both local and OIDC sign-in use it. The cohort is never reopened.
+
+`oidc_sign_in_attempts` has at most one row per cohort, keyed by `session_id` and cascading from the cohort. It stores a
+32-byte SHA-256 state digest, the PKCE verifier and nonce as text, creation time and a fixed 15-minute expiry. A new
+start replaces the attempt. `claim_oidc_attempt` atomically deletes matching session-and-state material whose expiry is
+in the future, returning the verifier and nonce. The delete commits before provider I/O, including on an exchange that
+fails. Raw state is not stored.
+
+The model owns every cohort and attempt query. Start joins or creates the cohort and replaces the attempt; the callback
+consumes the attempt and conditionally claims the win. The session worker deletes expired attempts in batches of 1,000.
+Rotation, logout, invalid-session flushing and session expiry sweeping delete the parent session, cascading its cohort
+and attempt. OIDC start's only session-map write is `sign_in_started = true`, saved before attempt insertion so the
+foreign key has a parent and the middleware keeps the anonymous cookie. The marker has no decision-making role.
 
 An account is identified by `(issuer, subject)`, where the issuer is the verified `iss` claim and not the configured
 URL. `users.oidc_subject` is an unused nullable column that this subject never writes and never uses for identity. Email
@@ -114,24 +124,37 @@ disabled. The stored email is never rewritten, whatever the provider now release
 
 ## Runtime behaviour
 
-**Initiation.** `oidc_login` returns 404 when OIDC is not configured. Otherwise it generates the PKCE pair, state and
-nonce, writes the three session keys, and answers 307 to the provider's authorization URL.
+**Initiation.** `oidc_login` applies these steps in order:
 
-**Callback.** `callback` applies these steps in order and stops at the first that fails:
+1. Require configured OIDC, else 404.
+2. Call the shared `signed_in_user` rule. `SignedIn` redirects to `/` with 303. Stale, deleted and disabled identities
+   are flushed and continue anonymously.
+3. Apply the existing per-source limiter. An over-limit start redirects to `/login?outcome=throttled` with 303 and
+   writes no attempt.
+4. Join a live anonymous session's cohort. `Won` redirects to `/login?outcome=expired` with 303 without changing the
+   session or its attempt.
+5. If an incoming session id was cleared during rehydration, rotate the cached record id with `cycle_id()`. A failure
+   returns an internal error. Insert the marker and explicitly save the session.
+6. Generate the PKCE pair, state and nonce, persist the attempt, and redirect to the provider with 307.
 
-1. Parse `code` and `state` from the query. A missing or malformed parameter is a 400.
-2. Require a configured OIDC runtime, else 404.
-3. Require a stored `oidc_csrf_state` that equals the echoed `state`, then a stored `pkce_verifier` and `nonce`. Any
-   absence or mismatch is a 401, and nothing is sent to the provider.
-4. Exchange the code for tokens at the provider's token endpoint with the stored verifier, through the shared transport.
-5. Require an ID token and verify it against the discovered client: signature, issuer, audience, expiry and the stored
-   nonce.
-6. Call `upsert_from_oidc` with the verified `iss`, `sub`, display name and email claim.
-7. Refuse the account when `disabled_at` is set.
-8. Call `auth::session::login`, which rotates the session id before it attaches `user_id` and `session_version`.
-9. Remove the three transient keys, logging a warning for each removal that fails and continuing.
-10. Insert a 32-byte random `csrf_token` into the session, call `set_theme_cookie` with the account's preference, and
-    answer 307 to `/`.
+The source bucket is shared with local sign-in and the registration, setup and recovery paths that use the same limiter.
+The identity check precedes limiting and attempt lookup, so a signed-in browser starts no provider work.
+
+**Callback.** `callback` applies these steps in order and stops at the first failure:
+
+1. Parse `code` and `state`; missing or malformed parameters return 400. Require configured OIDC, else 404.
+2. Call `signed_in_user`; `SignedIn` redirects to `/` with 303 before attempt lookup or provider requests. Invalid
+   identities are flushed and treated as anonymous.
+3. Claim the attempt using the session id and state digest. No matching live attempt returns 401 without a provider
+   request. A second presentation cannot claim the consumed material.
+4. Exchange the code with the claimed PKCE verifier through the shared transport.
+5. Require an ID token and verify signature, issuer, audience, expiry and the claimed nonce against the discovered
+   client.
+6. Call `claim_win`. A false result returns 401 without account, identity or session mutations.
+7. Resolve or provision through `upsert_from_oidc`, refuse a disabled account and call `auth::session::login`. Every
+   error after winning and before that login succeeds first flushes the session, then returns the original error. A
+   failed flush is logged at warning level.
+8. Insert the random CSRF synchronizer token, seed the theme cookie and answer 307 to `/`.
 
 **Resolution inside `upsert_from_oidc`.** One transaction takes a per-identity advisory lock keyed on issuer and
 subject, so two concurrent first sign-ins for one identity serialise and the second resolves to the row the first
@@ -148,26 +171,29 @@ non-administrator account. Sign-in never attaches an identity to an existing acc
 
 ## Failure and recovery
 
-| Condition                                                             | Outcome | Written                         |
-| --------------------------------------------------------------------- | ------- | ------------------------------- |
-| OIDC not configured                                                   | 404     | Nothing                         |
-| `code` or `state` missing or malformed                                | 400     | Nothing                         |
-| Stored state, verifier or nonce absent; echoed state differs          | 401     | Nothing                         |
-| Token exchange fails, ID token absent, or ID token fails checks       | 500     | Nothing                         |
-| First sign-in email held by a different account                       | 401     | Nothing; warning logged         |
-| Account disabled                                                      | 401     | Nothing                         |
-| Database error during resolution or provisioning                      | 500     | Nothing; transaction rolls back |
-| Session rotation, `csrf_token` write or replacement persistence fails | 500     | Account write stays committed   |
+| Condition | Outcome | State effect |
+| --------- | ------- | ------------ |
+| OIDC not configured | 404 | No attempt mutation |
+| Malformed callback query | 400 | No attempt mutation |
+| Already signed in at start or callback | 303 to `/` | No provider request |
+| Start over source limit | 303 to `/login?outcome=throttled` | No attempt written |
+| Start finds a won anonymous cohort | 303 to `/login?outcome=expired` | Session and attempt unchanged |
+| Attempt absent, expired, used or mismatched | 401 | No provider request |
+| Token exchange or ID-token verification fails | 500 | Attempt consumed |
+| Valid callback loses arbitration | 401 | Attempt consumed; no account or identity written |
+| Email collision or disabled account after winning | 401 | No account write; session flushed |
+| Provisioning database error after winning | 500 | Account transaction rolls back; session flushed |
+| Rotation or identity attachment fails | 500 | Session flush attempted; account write remains committed |
+| CSRF write or replacement persistence fails after login | 500 | Account write remains committed |
 
-A provider that redirects back with an error and no `code` lands in the 400 row. The 401 refusals share one body, with a
-`WWW-Authenticate: Bearer` challenge, and reveal neither which check failed nor whether an email exists. A refused
-sign-in leaves the transient keys in the session; the user recovers by starting again at `/auth/oidc/login`, which
-replaces them. Nothing retries automatically.
+A provider error callback without `code` reaches the malformed-query 400. The 401 refusals share one body and a
+`WWW-Authenticate: Bearer` challenge, revealing neither the failed check nor whether an email exists.
 
-The account transaction commits before session rotation. If deleting the old session fails, its stored state may remain,
-including an existing authenticated session. If deletion succeeds but a later session write or replacement persistence
-fails, the old row is already gone. The 500 does not roll back the account or identity link. Restarting at
-`/auth/oidc/login` establishes fresh flow state, and the next callback resolves to the account and link already written.
+A consumed attempt requires a new explicit start. When flushing succeeds after a post-win failure, it removes the
+session row and cookie, cascading the cohort so the next start is fresh. A failed flush logs a warning and retains the
+original error; the residual cohort stays won until session expiry. An anonymous newcomer cannot rotate or reopen that
+cohort. A later failure after `session::login` succeeds does not roll back the committed account or identity link.
+Nothing retries the provider automatically.
 
 A returning identity whose provider email changed or became invalid still signs in, and the stored email is unchanged.
 Disabling an account refuses its next sign-in through the 401 above, and ends its live sessions through the gates of the
@@ -181,10 +207,11 @@ sign-in whose email belongs to another account is refused rather than linked, an
 disabled account so the response does not confirm that the address exists. There is no auto-linking and no promotion:
 the first administrator exists only through bootstrap, and OIDC never produces a child account.
 
-The callback checks the state before any outbound request, PKCE binds the code to this browser's session, and the nonce
-binds the ID token to this flow. The session id is rotated in `login` before any identity claim is attached. The email
-claim is validated by shape, and an invalid value is logged by length only, never verbatim. The collision refusal logs
-`outcome = "email_collision"` at warning level without the address; the disabled-account refusal logs nothing.
+The callback consumes matching live state before any outbound request. PKCE binds the code to the browser's session, and
+the nonce binds the ID token to this flow. Only the cohort winner reaches account provisioning. The session id is
+rotated in `login` before any identity claim is attached. The email claim is validated by shape, and an invalid value is
+logged by length only, never verbatim. The collision refusal logs `outcome = "email_collision"` at warning level without
+the address; the disabled-account refusal logs nothing.
 
 A self-hoster registers `/auth/callback` on the public origin at the provider and sets `OIDC_REDIRECT_URI` to match. The
 session cookie's `SameSite=Lax` policy is what lets the cross-site redirect back from the provider carry the session.

@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM oidc_sign_in_attempts WHERE session_id IN (SELECT session_id FROM oidc_sign_in_attempts WHERE expires_at <= now() ORDER BY expires_at LIMIT $1)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "935d861bb5a316fa2fe27112814ae8c5f7a0918b7f80cd973f2d38b543e27238"
+}

@@ -460,6 +460,7 @@ fn spawn_workers(
     let ingestion_state = state.clone();
     let enrichment_state = state.clone();
     let sweep_store = PostgresStore::new(state.pool.clone());
+    let sweep_pool = state.pool.clone();
     let writeback_config = state.config.clone();
     let writeback_files = state.library_files.clone();
     let supervisor = worker_supervisor()
@@ -506,8 +507,9 @@ fn spawn_workers(
             "session-sweep",
             Worker(move |cancel| {
                 let store = sweep_store.clone();
+                let pool = sweep_pool.clone();
                 async move {
-                    services::session_sweep::run_sweep(store, cancel).await;
+                    services::session_sweep::run_sweep(store, pool, cancel).await;
                     Ok(())
                 }
             }),

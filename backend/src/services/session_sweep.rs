@@ -1,9 +1,10 @@
-//! Periodic reaper for expired `tower_sessions` rows.
+//! Periodic reaper for expired sessions and OIDC sign-in attempts.
 //!
 //! THREAT: this sweep is availability hardening, not access control. Expired
 //! rows are never authenticated against — `PostgresStore::load` already
 //! filters `WHERE expiry_date > now()`, so a stale row can never resurrect a
-//! session. The sweep exists solely to bound `tower_sessions.session` growth;
+//! session. Attempt expiry is enforced independently by the atomic claim.
+//! The sweeps bound session and attempt table growth;
 //! a missed or failed sweep degrades to unbounded table size, never to
 //! session reuse.
 //!
@@ -17,10 +18,12 @@
 //! (ingestion, enrichment, writeback, settings listener) rather than the
 //! library's abort-based deletion task.
 
+use sqlx::PgPool;
 use tokio_util::sync::CancellationToken;
 use tower_sessions::session_store::{self, ExpiredDeletion};
 
 use crate::auth::store::PostgresStore;
+use crate::models::sign_in;
 
 /// Sweep cadence.
 ///
@@ -43,13 +46,13 @@ pub async fn sweep_once(store: &PostgresStore) -> Result<(), session_store::Erro
     store.delete_expired().await
 }
 
-/// Runs [`sweep_once`] every `SWEEP_INTERVAL` until `cancel` is triggered.
+/// Sweeps sessions and expired attempts every `SWEEP_INTERVAL` until cancellation.
 ///
 /// Sweep failures are logged at `warn` and swallowed: a transient database
 /// hiccup must not take the process down, and the next tick recovers. The
 /// first interval tick fires immediately and is skipped so startup is not
 /// bursty — the first real sweep lands one interval in.
-pub async fn run_sweep(store: PostgresStore, cancel: CancellationToken) {
+pub async fn run_sweep(store: PostgresStore, pool: PgPool, cancel: CancellationToken) {
     let mut interval = tokio::time::interval(SWEEP_INTERVAL);
     interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
     interval.tick().await;
@@ -58,12 +61,27 @@ pub async fn run_sweep(store: PostgresStore, cancel: CancellationToken) {
         tokio::select! {
             biased;
             () = cancel.cancelled() => return,
-            _ = interval.tick() => match sweep_once(&store).await {
-                Ok(()) => tracing::info!("session sweep completed"),
-                Err(e) => {
-                    tracing::warn!(error = %e, "session sweep failed; retrying next tick");
-                }
-            },
+            _ = interval.tick() => sweep_pass(&store, &pool).await,
+
+        }
+    }
+}
+
+async fn sweep_pass(store: &PostgresStore, pool: &PgPool) {
+    match sweep_once(store).await {
+        Ok(()) => tracing::info!("session sweep completed"),
+        Err(e) => {
+            tracing::warn!(error = %e, "session sweep failed; retrying next tick");
+        }
+    }
+    loop {
+        match sign_in::delete_expired_attempts(pool, 1000).await {
+            Ok(deleted) if deleted < 1000 => break,
+            Ok(_) => {}
+            Err(e) => {
+                tracing::warn!(error = %e, "sign-in attempt sweep failed; retrying next tick");
+                break;
+            }
         }
     }
 }
@@ -118,10 +136,39 @@ mod tests {
     }
 
     #[sqlx::test(migrations = "./migrations")]
+    async fn session_sweep_also_removes_expired_attempts(pool: PgPool) {
+        let now = Utc::now();
+        for id in ["expired", "live"] {
+            insert_session(&pool, id, now + TimeDelta::hours(1)).await;
+            sign_in::start_oidc_attempt(&pool, id, "state", "verifier", "nonce")
+                .await
+                .unwrap();
+        }
+        sqlx::query!("UPDATE oidc_sign_in_attempts SET expires_at = now() - interval '1 second' WHERE session_id = 'expired'")
+            .execute(&pool).await.unwrap();
+        let store = PostgresStore::new(pool.clone());
+        sweep_pass(&store, &pool).await;
+        assert_eq!(
+            sqlx::query_scalar!("SELECT count(*) FROM oidc_sign_in_attempts")
+                .fetch_one(&pool)
+                .await
+                .unwrap(),
+            Some(1)
+        );
+        assert!(
+            sign_in::claim_oidc_attempt(&pool, "live", "state")
+                .await
+                .unwrap()
+                .is_some()
+        );
+        assert_eq!(session_count(&pool).await, 2);
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
     async fn run_sweep_returns_promptly_on_cancel(pool: PgPool) {
-        let store = PostgresStore::new(pool);
+        let store = PostgresStore::new(pool.clone());
         let cancel = CancellationToken::new();
-        let handle = tokio::spawn(run_sweep(store, cancel.clone()));
+        let handle = tokio::spawn(run_sweep(store, pool, cancel.clone()));
 
         cancel.cancel();
 

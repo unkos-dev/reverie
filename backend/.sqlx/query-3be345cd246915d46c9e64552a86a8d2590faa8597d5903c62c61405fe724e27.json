@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO sign_in_cohorts (session_id) VALUES ($1) ON CONFLICT (session_id) DO NOTHING",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "3be345cd246915d46c9e64552a86a8d2590faa8597d5903c62c61405fe724e27"
+}
