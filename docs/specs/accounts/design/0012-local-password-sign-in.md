@@ -113,9 +113,8 @@ decision on the local-password side.
   of the upsert, before it is incremented); the first failure therefore waits `min(cap, base)` and each further failure
   doubles the base, saturating at the cap.
 - `backend/src/routes/auth.rs` holds `local_login` and `register`, and the shared `enforce_source_rate_limit` helper
-  that OIDC start, `register`, `setup`, `forgot_password` and `reset_password` call before provider, policy or hashing
-  work. `local_login` does not call that helper: it inlines an equivalent `client_ip` resolution and
-  `login_limiter.check_key` call directly, immediately after the `local_auth_enabled` gate. In every handler that
+  that `local_login`, OIDC start, `register`, `setup`, `forgot_password` and `reset_password` call before provider,
+  policy or hashing work. `local_login` calls it immediately after the `local_auth_enabled` gate. In every handler that
   carries a disabled-feature `404` gate (`local_login`, `register`, `forgot_password`, `reset_password`) that gate runs
   before the per-source limiter check; `setup` carries no such gate at all, so its limiter check is the first thing that
   runs. In every case the limiter check is skipped, not merely passed, when `client_ip` resolves to `None` (no TCP peer
@@ -215,9 +214,9 @@ live cohort proceeds directly to reset and login after verification.
 
 **A login attempt for a known email with the wrong password, after admission:**
 
-1. `local_login` checks `state.config.local_auth_enabled`, then resolves the rate-limit key via `client_ip` and calls
-   `state.login_limiter.check_key` inline (skipped entirely when `client_ip` resolves to `None`); over quota returns
-   `AppError::RateLimited` before any database work.
+1. `local_login` checks `state.config.local_auth_enabled`, then calls `enforce_source_rate_limit`. The helper resolves
+   the rate-limit key via `client_ip` and calls `state.login_limiter.check_key` (skipped entirely when `client_ip`
+   resolves to `None`); over quota returns `AppError::RateLimited` before any database work.
 2. `user::find_by_email` resolves the account. Because it is `Some`, `local_credentials::find_by_user_id` runs a second
    query to fetch the stored PHC string.
 3. `password::verify_password` runs the real Argon2id verification against that PHC string and returns an error;
