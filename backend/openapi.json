@@ -6197,7 +6197,7 @@
           "auth"
         ],
         "summary": "Complete OIDC login",
-        "description": "Completes the OIDC authorization-code flow, establishes a session, and redirects to the app. No authentication is required to call it. Signed-in browsers redirect to / without a provider request. Returns 401 if the attempt is absent, expired, consumed or mismatched, arbitration is lost, the account is disabled, or the email belongs to a different account. Returns 500 if the token exchange fails or the ID token is missing or fails validation.",
+        "description": "Completes the OIDC authorization-code flow, establishes a session, and redirects to the app. No authentication is required to call it. Signed-in browsers redirect to / without a provider request. Returns 401 if the attempt is absent, expired, consumed or mismatched, arbitration is lost, the account is disabled, or the email belongs to a different account. Returns 500 if discovery is pending, the token exchange fails, or the ID token is missing or fails validation.",
         "operationId": "callback",
         "parameters": [
           {
@@ -6248,7 +6248,7 @@
             }
           },
           "500": {
-            "description": "Token exchange failed, ID token missing or failed validation, or a database or session storage error; details are hidden",
+            "description": "Discovery pending, token exchange failed, ID token missing or failed validation, or a database or session storage error; details are hidden",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -6754,11 +6754,11 @@
           "auth"
         ],
         "summary": "Start OIDC login",
-        "description": "Redirects to the configured OIDC provider to begin the authorization-code flow. No authentication is required to call it. Signed-in browsers redirect to /. A source limit redirects to /login?outcome=throttled and an inactive cohort to /login?outcome=expired. Returns 404 if OIDC is not configured on this instance.",
+        "description": "Redirects to the configured OIDC provider to begin the authorization-code flow. No authentication is required to call it. Signed-in browsers redirect to /. A source limit redirects to /login?outcome=throttled and an inactive cohort to /login?outcome=expired. Pending discovery redirects to /login?outcome=unavailable. Returns 404 if OIDC is not configured on this instance.",
         "operationId": "oidc_login",
         "responses": {
           "303": {
-            "description": "Already signed in: redirect to /; source limit: /login?outcome=throttled; inactive cohort: /login?outcome=expired"
+            "description": "Already signed in: redirect to /; source limit: /login?outcome=throttled; inactive cohort: /login?outcome=expired; discovery pending: /login?outcome=unavailable"
           },
           "307": {
             "description": "Redirect to the OIDC issuer's authorization endpoint; attempt material is persisted against the anonymous session"

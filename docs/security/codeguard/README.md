@@ -304,3 +304,16 @@ scheduled npm audit, Snyk Open Source, or lockfile integrity hashes. npm also
 proceeds without confirmation in non-TTY environments. Reverie explicitly
 accepts these gaps and the residual risk that the mutable `latest` tag could
 resolve to a compromised publication before output review occurs.
+
+### 9. OIDC provider responses have no size cap
+
+**Override:** `codeguard-0-xml-and-serialization.md`, "Deserialization Safety", requires size limits before parsing.
+
+**Reverie's position:** OIDC provider responses have no response-size cap.
+
+**Rationale:** The configured provider is an operator trust input, and interactive OIDC accepts the resource risk of
+its responses.
+
+**Compensating controls:** HTTPS with platform trust, disabled redirects, five-second connect and ten-second total HTTP
+timeouts, and one shared in-flight key refresh. The timeout bounds HTTP duration through body completion, not bytes or
+parser allocations. A large provider response can consume excessive memory; that residual risk is accepted.

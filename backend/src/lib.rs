@@ -42,6 +42,7 @@ use anyhow::Context as _;
 use axum::Router;
 use secrecy::ExposeSecret;
 use tower_sessions::{Expiry, SessionManagerLayer};
+use tracing::instrument::WithSubscriber;
 use tracing_subscriber::EnvFilter;
 
 use crate::auth::store::PostgresStore;
@@ -326,21 +327,7 @@ pub async fn run() -> anyhow::Result<()> {
         None
     };
 
-    // OIDC is optional: discover the client only when configured.
-    // A local-only instance carries no OIDC runtime and the initiate/callback
-    // handlers 404. Gate 3 has already guaranteed at least one provider is usable.
-    let oidc = if config.oidc_configured() {
-        let transport = oidc_transport
-            .as_ref()
-            .context("OIDC is configured but no OIDC transport was built")?;
-        Some(std::sync::Arc::new(
-            auth::oidc::init_oidc_client(&config, transport)
-                .await
-                .context("failed to initialize OIDC client")?,
-        ))
-    } else {
-        None
-    };
+    let oidc = configure_oidc(&config, oidc_transport)?;
 
     let ingestion_pool = db::init_pool(
         config.ingestion_database_url.expose_secret(),
@@ -463,7 +450,7 @@ fn spawn_workers(
     let sweep_pool = state.pool.clone();
     let writeback_config = state.config.clone();
     let writeback_files = state.library_files.clone();
-    let supervisor = worker_supervisor()
+    let builder = worker_supervisor()
         .with_task(
             "settings-listener",
             Worker(move |cancel| {
@@ -524,10 +511,43 @@ fn spawn_workers(
                     writeback_files.clone(),
                 )
             }),
-        )
-        .spawn();
+        );
+    let supervisor = with_oidc_discovery(builder, state.oidc.as_ref()).spawn();
     state.ingestion.set_supervisor(supervisor.clone());
     supervisor
+}
+
+fn configure_oidc(
+    config: &Config,
+    transport: Option<auth::oidc::OidcTransport>,
+) -> anyhow::Result<Option<std::sync::Arc<auth::oidc::OidcRuntime>>> {
+    if !config.oidc_configured() {
+        return Ok(None);
+    }
+    let transport = transport.context("OIDC is configured but no OIDC transport was built")?;
+    Ok(Some(std::sync::Arc::new(
+        auth::oidc::OidcRuntime::configured(config, transport)?,
+    )))
+}
+
+fn with_oidc_discovery(
+    builder: task_supervisor::SupervisorBuilder,
+    oidc: Option<&std::sync::Arc<auth::oidc::OidcRuntime>>,
+) -> task_supervisor::SupervisorBuilder {
+    if let Some(oidc) = oidc {
+        let oidc = std::sync::Arc::clone(oidc);
+        let dispatch = tracing::dispatcher::get_default(Clone::clone);
+        builder.with_task(
+            "oidc-discovery",
+            Worker(move |cancel| {
+                std::sync::Arc::clone(&oidc)
+                    .run_discovery(cancel)
+                    .with_subscriber(dispatch.clone())
+            }),
+        )
+    } else {
+        builder
+    }
 }
 
 async fn supervise_until_shutdown(
@@ -977,6 +997,230 @@ mod tests {
     use std::time::Duration;
     use task_supervisor::TaskStatus;
     use tokio_util::sync::CancellationToken;
+
+    async fn wait_for_oidc_event(logs: &test_support::CapturedLogs, event: &str, count: usize) {
+        tokio::time::timeout(Duration::from_secs(5), async {
+            while logs.text().matches(event).count() < count {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .unwrap();
+    }
+
+    async fn oidc_startup_state(
+        pool: &sqlx::PgPool,
+        mock: Option<&test_support::oidc_mock::MockOidcProvider>,
+    ) -> (crate::state::AppState, axum_test::TestServer) {
+        let mut state = test_support::test_state();
+        state.pool = test_support::db::app_pool_for(pool).await;
+        state.ingestion_pool = test_support::db::ingestion_pool_for(pool).await;
+        if let Some(mock) = mock {
+            let oidc_config = mock.config("http://localhost:3000/auth/callback");
+            state.config.oidc_issuer_url = oidc_config.oidc_issuer_url;
+            state.config.oidc_client_id = oidc_config.oidc_client_id;
+            state.config.oidc_client_secret = oidc_config.oidc_client_secret;
+            state.config.oidc_redirect_uri = oidc_config.oidc_redirect_uri;
+        }
+        state.oidc = super::configure_oidc(
+            &state.config,
+            mock.map(|_| crate::auth::oidc::OidcTransport::for_tests()),
+        )
+        .unwrap();
+        let server = axum_test::TestServer::new(super::build_router(state.clone()));
+        (state, server)
+    }
+
+    async fn assert_local_oidc_independence(state: &crate::state::AppState) {
+        test_support::db::create_adult_with_password(
+            &state.pool,
+            "Local",
+            "local@example.com",
+            "correct horse battery staple",
+        )
+        .await;
+        let mut server = axum_test::TestServer::new(super::build_router(state.clone()));
+        server.save_cookies();
+        assert_eq!(server.post("/auth/local/login").json(&serde_json::json!({"email": "local@example.com", "password": "correct horse battery staple"})).await.status_code(), axum::http::StatusCode::NO_CONTENT);
+        let me = server.get("/auth/me").await;
+        assert_eq!(me.status_code(), axum::http::StatusCode::OK);
+        assert_eq!(me.json::<serde_json::Value>()["email"], "local@example.com");
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn oidc_key_startup_provider_outage_keeps_local_login_and_recovers(pool: sqlx::PgPool) {
+        let logs = test_support::CapturedLogs::default();
+        let _subscriber = tracing::subscriber::set_default(logs.subscriber());
+        let mock = test_support::oidc_mock::MockOidcProvider::start("test").await;
+        let (state, server) = oidc_startup_state(&pool, Some(&mock)).await;
+        mock.assert_no_requests().await;
+        let supervisor =
+            super::with_oidc_discovery(worker_supervisor(), state.oidc.as_ref()).spawn();
+        wait_for_oidc_event(&logs, "OIDC discovery failed", 1).await;
+        assert_local_oidc_independence(&state).await;
+        let pending = server.get("/auth/oidc/login").await;
+        assert_eq!(pending.status_code(), axum::http::StatusCode::SEE_OTHER);
+        assert_eq!(pending.header("location"), "/login?outcome=unavailable");
+        mock.mount_discovery().await;
+        tokio::time::pause();
+        tokio::time::advance(Duration::from_secs(1)).await;
+        tokio::time::resume();
+        wait_for_oidc_event(&logs, "OIDC discovery completed", 1).await;
+        assert_eq!(
+            server.get("/auth/oidc/login").await.status_code(),
+            axum::http::StatusCode::TEMPORARY_REDIRECT
+        );
+        assert!(state.oidc.as_ref().unwrap().snapshot().await.is_some());
+        supervisor.shutdown().await.unwrap();
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn oidc_key_startup_backoff_caps_without_supervisor_escalation(pool: sqlx::PgPool) {
+        let logs = test_support::CapturedLogs::default();
+        let _subscriber = tracing::subscriber::set_default(logs.subscriber());
+        let mock = test_support::oidc_mock::MockOidcProvider::start("test").await;
+        let (state, server) = oidc_startup_state(&pool, Some(&mock)).await;
+        let supervisor =
+            super::with_oidc_discovery(worker_supervisor(), state.oidc.as_ref()).spawn();
+        wait_for_oidc_event(&logs, "OIDC discovery failed", 1).await;
+        let mut count = 1;
+        for delay in [1, 2, 4, 8, 16, 32, 60]
+            .into_iter()
+            .chain(std::iter::repeat_n(60, 31))
+        {
+            tokio::time::pause();
+            tokio::time::advance(
+                Duration::from_secs(delay)
+                    .checked_sub(Duration::from_millis(1))
+                    .unwrap(),
+            )
+            .await;
+            tokio::task::yield_now().await;
+            assert_eq!(
+                mock.request_count("/.well-known/openid-configuration")
+                    .await,
+                count
+            );
+            tokio::time::advance(Duration::from_millis(1)).await;
+            tokio::time::resume();
+            count += 1;
+            wait_for_oidc_event(&logs, "OIDC discovery failed", count).await;
+        }
+        assert_eq!(
+            supervisor.task_status("oidc-discovery").await.unwrap(),
+            TaskStatus::Running
+        );
+        assert_eq!(
+            server.get("/auth/setup/status").await.status_code(),
+            axum::http::StatusCode::OK
+        );
+        supervisor.shutdown().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn oidc_key_startup_ready_worker_waits_for_shutdown() {
+        let logs = test_support::CapturedLogs::default();
+        let _subscriber = tracing::subscriber::set_default(logs.subscriber());
+        let mock = test_support::oidc_mock::MockOidcProvider::start("test").await;
+        mock.mount_discovery().await;
+        let runtime = super::configure_oidc(
+            &mock.config("http://localhost/auth/callback"),
+            Some(crate::auth::oidc::OidcTransport::for_tests()),
+        )
+        .unwrap();
+        let supervisor = super::with_oidc_discovery(worker_supervisor(), runtime.as_ref()).spawn();
+        wait_for_oidc_event(&logs, "OIDC discovery completed", 1).await;
+        tokio::time::pause();
+        tokio::time::advance(Duration::from_secs(120)).await;
+        tokio::time::resume();
+        assert_eq!(
+            mock.request_count("/.well-known/openid-configuration")
+                .await,
+            1
+        );
+        assert_eq!(mock.request_count("/jwks").await, 1);
+        assert_eq!(
+            supervisor.task_status("oidc-discovery").await.unwrap(),
+            TaskStatus::Running
+        );
+        supervisor.shutdown().await.unwrap();
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn oidc_key_startup_unconfigured_has_no_worker_or_traffic(pool: sqlx::PgPool) {
+        let mock = test_support::oidc_mock::MockOidcProvider::start("test").await;
+        let (state, server) = oidc_startup_state(&pool, None).await;
+        assert!(state.oidc.is_none());
+        assert!(!crate::auth::oidc::transport_required(&state.config));
+        let builder = worker_supervisor().with_task(
+            "local",
+            Worker(|cancel: CancellationToken| async move {
+                cancel.cancelled().await;
+                Ok(())
+            }),
+        );
+        let supervisor = super::with_oidc_discovery(builder, state.oidc.as_ref()).spawn();
+        assert_eq!(supervisor.task_statuses().await.unwrap().len(), 1);
+        assert_eq!(
+            server.get("/auth/oidc/login").await.status_code(),
+            axum::http::StatusCode::NOT_FOUND
+        );
+        assert_eq!(
+            server
+                .get("/auth/callback?code=test&state=test")
+                .await
+                .status_code(),
+            axum::http::StatusCode::NOT_FOUND
+        );
+        assert_local_oidc_independence(&state).await;
+        mock.assert_no_requests().await;
+        supervisor.shutdown().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn oidc_key_startup_cancellation_drains_fetch_and_sleep() {
+        let logs = test_support::CapturedLogs::default();
+        let _subscriber = tracing::subscriber::set_default(logs.subscriber());
+        let mut mock = test_support::oidc_mock::MockOidcProvider::start("test").await;
+        let config = mock.config("http://localhost/auth/callback");
+        let runtime =
+            super::configure_oidc(&config, Some(crate::auth::oidc::OidcTransport::for_tests()))
+                .unwrap();
+        let supervisor = super::with_oidc_discovery(worker_supervisor(), runtime.as_ref()).spawn();
+        wait_for_oidc_event(&logs, "OIDC discovery failed", 1).await;
+        supervisor.shutdown().await.unwrap();
+        let before = mock
+            .request_count("/.well-known/openid-configuration")
+            .await;
+        tokio::time::pause();
+        tokio::time::advance(Duration::from_secs(120)).await;
+        tokio::time::resume();
+        assert_eq!(
+            mock.request_count("/.well-known/openid-configuration")
+                .await,
+            before
+        );
+        mock.mount_discovery().await;
+        let release = mock.hold_jwks().await;
+        let runtime =
+            super::configure_oidc(&config, Some(crate::auth::oidc::OidcTransport::for_tests()))
+                .unwrap();
+        let supervisor = super::with_oidc_discovery(worker_supervisor(), runtime.as_ref()).spawn();
+        mock.wait_for_jwks().await;
+        let shutdown = tokio::spawn(async move { supervisor.shutdown().await });
+        tokio::task::yield_now().await;
+        assert!(!shutdown.is_finished());
+        release.send(()).unwrap();
+        tokio::time::timeout(Duration::from_secs(5), shutdown)
+            .await
+            .unwrap()
+            .unwrap()
+            .unwrap();
+        let runtime = runtime.unwrap();
+        assert!(runtime.snapshot().await.is_some());
+        runtime.age_for_tests(Duration::from_secs(601)).await;
+        assert!(runtime.verification_snapshot().await.is_err());
+    }
 
     #[derive(Clone, Copy)]
     enum WorkerExit {

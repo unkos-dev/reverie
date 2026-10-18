@@ -73,7 +73,7 @@ browser              Reverie                                provider
 
 | Interface | Contract |
 | --------- | -------- |
-| `GET /auth/oidc/login` | 307 to provider; 303 for signed-in, throttled or inactive starts; 404 when OIDC is not configured. |
+| `GET /auth/oidc/login` | 307 to provider; 303 for signed-in, throttled, unavailable or inactive starts; 404 when OIDC is not configured. |
 | `GET /auth/callback` | Query `code` and `state`; 307 on success, 303 when already signed in. |
 | `GET /auth/setup/status` | Reports `oidc_enabled`, true when `OIDC_ISSUER_URL` is non-blank; the client reads it. |
 
@@ -131,11 +131,13 @@ disabled. The stored email is never rewritten, whatever the provider now release
    are flushed and continue anonymously.
 3. Apply the existing per-source limiter. An over-limit start redirects to `/login?outcome=throttled` with 303 and
    writes no attempt.
-4. Join a live anonymous session's cohort. `Won` redirects to `/login?outcome=expired` with 303 without changing the
+4. Read the current provider snapshot. When discovery is pending, redirect to `/login?outcome=unavailable` with 303,
+   without provider I/O, saving a session or writing a cohort/attempt. A ready start uses that snapshot's client.
+5. Join a live anonymous session's cohort. `Won` redirects to `/login?outcome=expired` with 303 without changing the
    session or its attempt.
-5. If an incoming session id was cleared during rehydration, rotate the cached record id with `cycle_id()`. A failure
+6. If an incoming session id was cleared during rehydration, rotate the cached record id with `cycle_id()`. A failure
    returns an internal error. Insert the marker and explicitly save the session.
-6. Generate the PKCE pair, state and nonce, persist the attempt, and redirect to the provider with 307.
+7. Generate the PKCE pair, state and nonce, persist the attempt, and redirect to the provider with 307.
 
 The source bucket is shared with local sign-in and the registration, setup and recovery paths that use the same limiter.
 The identity check precedes limiting and attempt lookup, so a signed-in browser starts no provider work.
@@ -147,14 +149,23 @@ The identity check precedes limiting and attempt lookup, so a signed-in browser 
    identities are flushed and treated as anonymous.
 3. Claim the attempt using the session id and state digest. No matching live attempt returns 401 without a provider
    request. A second presentation cannot claim the consumed material.
-4. Exchange the code with the claimed PKCE verifier through the shared transport.
-5. Require an ID token and verify signature, issuer, audience, expiry and the claimed nonce against the discovered
-   client.
+4. Read the current snapshot; if discovery is pending, return generic 500 with the attempt consumed and no provider
+   request. Otherwise exchange the code once with the claimed PKCE verifier through the shared transport.
+5. Require an ID token. Recheck a snapshot older than ten minutes, then verify signature, issuer, audience, expiry and
+   the claimed nonce. Only `ClaimsVerificationError::SignatureVerification(SignatureVerificationError::NoMatchingKey)`
+   can request an unknown-key refresh. Retry verification once with the same token and nonce; never re-exchange the
+   code. A pre-verification age refresh cannot cause a second fetch for that callback.
 6. Call `claim_win`. A false result returns 401 without account, identity or session mutations.
 7. Resolve or provision through `upsert_from_oidc`, refuse a disabled account and call `auth::session::login`. Every
    error after winning and before that login succeeds first flushes the session, then returns the original error. A
    failed flush is logged at warning level.
 8. Insert the random CSRF synchronizer token, seed the theme cookie and answer 307 to `/`.
+
+The runtime shares an in-flight fetch before checking its 30-second floor. The floor counts from every key-fetch
+attempt's start, successful or failed. A suppressed caller verifies against the current snapshot, including after a
+previous failure. An actual failed refresh fails its waiting callback with 500 and retains the last good set; failed
+results are not reused by later callers. Ambiguous matches, bad signatures and other claim failures do not trigger an
+unknown-key refresh. [OIDC outbound transport](0025-oidc-outbound-transport.md) owns fetching and publication.
 
 **Resolution inside `upsert_from_oidc`.** One transaction takes a per-identity advisory lock keyed on issuer and
 subject, so two concurrent first sign-ins for one identity serialise and the second resolves to the row the first
@@ -176,6 +187,8 @@ non-administrator account. Sign-in never attaches an identity to an existing acc
 | OIDC not configured | 404 | No attempt mutation |
 | Malformed callback query | 400 | No attempt mutation |
 | Already signed in at start or callback | 303 to `/` | No provider request |
+| Start while discovery is pending | 303 to `/login?outcome=unavailable` | No session, cohort or attempt written |
+| Valid callback while discovery is pending | 500 | Attempt consumed; no provider request |
 | Start over source limit | 303 to `/login?outcome=throttled` | No attempt written |
 | Start finds a won anonymous cohort | 303 to `/login?outcome=expired` | Session and attempt unchanged |
 | Attempt absent, expired, used or mismatched | 401 | No provider request |
@@ -193,7 +206,8 @@ A consumed attempt requires a new explicit start. When flushing succeeds after a
 session row and cookie, cascading the cohort so the next start is fresh. A failed flush logs a warning and retains the
 original error; the residual cohort stays won until session expiry. An anonymous newcomer cannot rotate or reopen that
 cohort. A later failure after `session::login` succeeds does not roll back the committed account or identity link.
-Nothing retries the provider automatically.
+Discovery and signing-key retrieval can retry through the runtime. A consumed authorization response requires a new
+explicit start; the authorization-code exchange is not retried.
 
 A returning identity whose provider email changed or became invalid still signs in, and the stored email is unchanged.
 Disabling an account refuses its next sign-in through the 401 above, and ends its live sessions through the gates of the

@@ -71,17 +71,17 @@ pub struct CallbackParams {
 ///
 /// # Errors
 /// - [`AppError::NotFound`] when OIDC is not configured.
-/// Signed-in browsers go to `/`; throttled or inactive starts go to a fixed login outcome.
+/// Signed-in browsers go to `/`; throttled, unavailable or inactive starts go to a fixed login outcome.
 /// - [`AppError::Internal`] when session or attempt storage fails.
 #[utoipa::path(
     get,
     path = "/auth/oidc/login",
     summary = "Start OIDC login",
-    description = "Redirects to the configured OIDC provider to begin the authorization-code flow. No authentication is required to call it. Signed-in browsers redirect to /. A source limit redirects to /login?outcome=throttled and an inactive cohort to /login?outcome=expired. Returns 404 if OIDC is not configured on this instance.",
+    description = "Redirects to the configured OIDC provider to begin the authorization-code flow. No authentication is required to call it. Signed-in browsers redirect to /. A source limit redirects to /login?outcome=throttled and an inactive cohort to /login?outcome=expired. Pending discovery redirects to /login?outcome=unavailable. Returns 404 if OIDC is not configured on this instance.",
     tag = "auth",
     security(()),
     responses(
-        (status = 303, description = "Already signed in: redirect to /; source limit: /login?outcome=throttled; inactive cohort: /login?outcome=expired"),
+        (status = 303, description = "Already signed in: redirect to /; source limit: /login?outcome=throttled; inactive cohort: /login?outcome=expired; discovery pending: /login?outcome=unavailable"),
         (status = 307, description = "Redirect to the OIDC issuer's authorization endpoint; attempt material is persisted against the anonymous session"),
         (status = 404, description = "OIDC is not configured on this instance", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
     )
@@ -95,7 +95,7 @@ async fn oidc_login(
     // OIDC is optional. When unconfigured this handler is
     // unreachable in practice (the SPA hides the OIDC action), but guard so a
     // direct hit 404s cleanly rather than acting on an absent client.
-    let oidc_client = state.oidc.as_ref().ok_or(AppError::NotFound)?.client();
+    let oidc = state.oidc.as_ref().ok_or(AppError::NotFound)?;
 
     let had_session_id = session.id().is_some();
     if matches!(
@@ -107,6 +107,10 @@ async fn oidc_login(
     if enforce_source_rate_limit(&state, &headers, &peer).is_err() {
         return Ok(Redirect::to("/login?outcome=throttled"));
     }
+    let Some(snapshot) = oidc.snapshot().await else {
+        return Ok(Redirect::to("/login?outcome=unavailable"));
+    };
+    let oidc_client = &snapshot.client;
     if let Some(id) = session.id()
         && sign_in::join_pending(&state.pool, &id.to_string())
             .await
@@ -166,14 +170,14 @@ async fn oidc_login(
 /// # Errors
 /// - [`AppError::Unauthorized`] when the attempt is absent, expired, consumed or mismatched,
 ///   arbitration is lost, the account is disabled, or a first sign-in's email belongs to another account.
-/// - [`AppError::Internal`] when the token exchange fails, the response carries
+/// - [`AppError::Internal`] when discovery is pending, the token exchange fails, the response carries
 ///   no ID token, the ID token fails validation, or a database or session
 ///   storage operation fails.
 #[utoipa::path(
     get,
     path = "/auth/callback",
     summary = "Complete OIDC login",
-    description = "Completes the OIDC authorization-code flow, establishes a session, and redirects to the app. No authentication is required to call it. Signed-in browsers redirect to / without a provider request. Returns 401 if the attempt is absent, expired, consumed or mismatched, arbitration is lost, the account is disabled, or the email belongs to a different account. Returns 500 if the token exchange fails or the ID token is missing or fails validation.",
+    description = "Completes the OIDC authorization-code flow, establishes a session, and redirects to the app. No authentication is required to call it. Signed-in browsers redirect to / without a provider request. Returns 401 if the attempt is absent, expired, consumed or mismatched, arbitration is lost, the account is disabled, or the email belongs to a different account. Returns 500 if discovery is pending, the token exchange fails, or the ID token is missing or fails validation.",
     tag = "auth",
     security(()),
     params(CallbackParams),
@@ -182,7 +186,7 @@ async fn oidc_login(
         (status = 307, description = "Login complete; session established, theme cookie seeded, redirect to /"),
         (status = 400, description = "Malformed query parameter", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 401, description = "Attempt absent, expired, consumed or mismatched, arbitration lost, account disabled, or email belongs to a different account", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
-        (status = 500, description = "Token exchange failed, ID token missing or failed validation, or a database or session storage error; details are hidden", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
+        (status = 500, description = "Discovery pending, token exchange failed, ID token missing or failed validation, or a database or session storage error; details are hidden", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
     )
 )]
 async fn callback(
@@ -194,7 +198,6 @@ async fn callback(
     let Query(params) = params?;
     // OIDC optional: a callback without a configured client 404s.
     let oidc = state.oidc.as_ref().ok_or(AppError::NotFound)?;
-    let oidc_client = oidc.client();
     if matches!(
         crate::auth::session::signed_in_user(&session, &state.pool).await?,
         crate::auth::session::SessionUser::SignedIn(_)
@@ -207,6 +210,11 @@ async fn callback(
         .map_err(|e| AppError::Internal(e.into()))?
         .ok_or(AppError::Unauthorized)?;
 
+    let snapshot = oidc
+        .snapshot()
+        .await
+        .ok_or_else(|| AppError::Internal(anyhow::anyhow!("OIDC discovery is pending")))?;
+    let oidc_client = &snapshot.client;
     let http_client = oidc.transport().oauth_client();
     let token_response = oidc_client
         .exchange_code(AuthorizationCode::new(params.code))
@@ -220,9 +228,10 @@ async fn callback(
     let id_token = token_response
         .id_token()
         .ok_or_else(|| AppError::Internal(anyhow::anyhow!("missing ID token")))?;
-    let claims = id_token
-        .claims(&oidc_client.id_token_verifier(), &Nonce::new(attempt.nonce))
-        .map_err(|e| AppError::Internal(anyhow::anyhow!("ID token validation failed: {e}")))?;
+    let claims = oidc
+        .verify(id_token, &Nonce::new(attempt.nonce))
+        .await
+        .map_err(|error| AppError::Internal(error.into()))?;
 
     if !sign_in::claim_win(&state.pool, &id)
         .await
@@ -2122,7 +2131,311 @@ mod tests {
         );
     }
 
+    #[sqlx::test(migrations = "./migrations")]
+    async fn oidc_key_callback_rotated_key_succeeds_after_one_fetch(pool: sqlx::PgPool) {
+        let mut fixture = CallbackFixture::start(&pool).await;
+        fixture
+            .runtime()
+            .age_for_tests(std::time::Duration::from_secs(30))
+            .await;
+        fixture.mock.rotate().await;
+        fixture
+            .mock
+            .mount_token_endpoint("rotation-subject", None, Some("Rotated"), &fixture.nonce)
+            .await;
+        let response = fixture.key_callback().await;
+        assert_eq!(response.status_code(), StatusCode::TEMPORARY_REDIRECT);
+        assert_ne!(
+            response.cookie("id").value(),
+            fixture.session_id.to_string()
+        );
+        assert_eq!(response.cookie("reverie_theme").value(), "system");
+        assert_eq!(fixture.mock.request_count("/token").await, 1);
+        assert_eq!(fixture.mock.request_count("/jwks").await, 1);
+        assert_eq!(
+            fixture
+                .mock
+                .request_count("/.well-known/openid-configuration")
+                .await,
+            0
+        );
+        let identity = crate::models::user_identities::find_user_id_by_oidc(
+            &pool,
+            fixture.mock.issuer(),
+            "rotation-subject",
+        )
+        .await
+        .unwrap()
+        .unwrap();
+        let user = user::find_by_id(&pool, identity).await.unwrap().unwrap();
+        assert_eq!(user.role, crate::models::role::Role::Adult);
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn oidc_key_callback_unknown_key_inside_floor_fails_without_fetch(pool: sqlx::PgPool) {
+        let mut fixture = CallbackFixture::start(&pool).await;
+        fixture.mock.rotate().await;
+        fixture
+            .mock
+            .mount_token_endpoint("rotation-subject", None, None, &fixture.nonce)
+            .await;
+        assert_eq!(
+            fixture.key_callback().await.status_code(),
+            StatusCode::INTERNAL_SERVER_ERROR
+        );
+        fixture.assert_no_key_identity("rotation-subject").await;
+        assert_eq!(
+            fixture.key_callback().await.status_code(),
+            StatusCode::UNAUTHORIZED
+        );
+        assert_eq!(fixture.mock.request_count("/jwks").await, 0);
+        assert_eq!(fixture.mock.request_count("/token").await, 1);
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn oidc_key_callback_stale_snapshot_rechecks_before_verifying(pool: sqlx::PgPool) {
+        use wiremock::ResponseTemplate;
+        for outcome in ["known", "unknown", "failed"] {
+            let mut fixture = CallbackFixture::start(&pool).await;
+            let subject = format!("rotation-{outcome}");
+            fixture
+                .runtime()
+                .age_for_tests(std::time::Duration::from_secs(601))
+                .await;
+            if outcome == "unknown" {
+                let old_keys = fixture.mock.jwks();
+                fixture.mock.rotate().await;
+                fixture
+                    .mock
+                    .set_jwks_response(ResponseTemplate::new(200).set_body_json(old_keys), 1)
+                    .await;
+            } else if outcome == "failed" {
+                fixture
+                    .mock
+                    .set_jwks_response(ResponseTemplate::new(500), 1)
+                    .await;
+            }
+            fixture
+                .mock
+                .mount_token_endpoint(&subject, None, None, &fixture.nonce)
+                .await;
+            let expected = if outcome == "known" {
+                StatusCode::TEMPORARY_REDIRECT
+            } else {
+                StatusCode::INTERNAL_SERVER_ERROR
+            };
+            assert_eq!(fixture.key_callback().await.status_code(), expected);
+            if outcome != "known" {
+                fixture.assert_no_key_identity(&subject).await;
+            }
+            assert_eq!(fixture.mock.request_count("/jwks").await, 1);
+            assert_eq!(fixture.mock.request_count("/token").await, 1);
+        }
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn oidc_key_callback_other_validation_errors_do_not_refresh(pool: sqlx::PgPool) {
+        use openidconnect::core::CoreJsonWebKeySet;
+        for outcome in [
+            "ambiguous",
+            "signature",
+            "issuer",
+            "audience",
+            "expired",
+            "nonce",
+        ] {
+            let fixture = CallbackFixture::start(&pool).await;
+            let nonce = openidconnect::Nonce::new(fixture.nonce.clone());
+            let token = fixture
+                .mock
+                .token("rotation-subject", None, None, &fixture.nonce);
+            let claims = token
+                .claims(
+                    &fixture
+                        .mock
+                        .client("http://localhost/auth/callback")
+                        .id_token_verifier(),
+                    &nonce,
+                )
+                .unwrap()
+                .clone();
+            let token = match outcome {
+                "ambiguous" => {
+                    let key = fixture.mock.jwks().keys()[0].clone();
+                    fixture
+                        .runtime()
+                        .set_keys_for_tests(CoreJsonWebKeySet::new(vec![key.clone(), key]))
+                        .await;
+                    token
+                }
+                "signature" => {
+                    let other = crate::test_support::oidc_mock::MockOidcProvider::start("").await;
+                    other.token_with_claims(claims)
+                }
+                "issuer" => fixture.mock.token_with_claims(claims.set_issuer(
+                    openidconnect::IssuerUrl::new("https://wrong.example.com".into()).unwrap(),
+                )),
+                "audience" => fixture.mock.token_with_claims(
+                    claims.set_audiences(vec![openidconnect::Audience::new("wrong-client".into())]),
+                ),
+                "expired" => fixture.mock.token_with_claims(
+                    claims.set_expiration(chrono::Utc::now() - chrono::TimeDelta::seconds(1)),
+                ),
+                _ => fixture.mock.token_with_claims(
+                    claims.set_nonce(Some(openidconnect::Nonce::new("wrong-nonce".into()))),
+                ),
+            };
+            fixture.mock.mount_id_token(token).await;
+            assert_eq!(
+                fixture.key_callback().await.status_code(),
+                StatusCode::INTERNAL_SERVER_ERROR
+            );
+            fixture.assert_no_key_identity("rotation-subject").await;
+            assert_eq!(fixture.mock.request_count("/jwks").await, 0);
+            assert_eq!(fixture.mock.request_count("/token").await, 1);
+        }
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn oidc_key_callback_refresh_failure_keeps_one_shot_boundary(pool: sqlx::PgPool) {
+        use wiremock::ResponseTemplate;
+        let mut fixture = CallbackFixture::start(&pool).await;
+        fixture
+            .runtime()
+            .age_for_tests(std::time::Duration::from_secs(30))
+            .await;
+        fixture.mock.rotate().await;
+        fixture
+            .mock
+            .set_jwks_response(ResponseTemplate::new(500), 1)
+            .await;
+        fixture
+            .mock
+            .mount_token_endpoint("rotation-subject", None, None, &fixture.nonce)
+            .await;
+        assert_eq!(
+            fixture.key_callback().await.status_code(),
+            StatusCode::INTERNAL_SERVER_ERROR
+        );
+        fixture.assert_no_key_identity("rotation-subject").await;
+        assert_eq!(
+            fixture.key_callback().await.status_code(),
+            StatusCode::UNAUTHORIZED
+        );
+        assert_eq!(fixture.mock.request_count("/jwks").await, 1);
+        assert_eq!(fixture.mock.request_count("/token").await, 1);
+        fixture
+            .runtime()
+            .age_for_tests(std::time::Duration::from_secs(30))
+            .await;
+        fixture
+            .mock
+            .set_jwks_response(
+                ResponseTemplate::new(200).set_body_json(fixture.mock.jwks()),
+                1,
+            )
+            .await;
+        let start = fixture.server.get("/auth/oidc/login").await;
+        fixture.csrf = authorization_parameter(&start, "state");
+        fixture.nonce = authorization_parameter(&start, "nonce");
+        fixture
+            .mock
+            .mount_token_endpoint("rotation-subject", None, None, &fixture.nonce)
+            .await;
+        assert_eq!(
+            fixture.key_callback().await.status_code(),
+            StatusCode::TEMPORARY_REDIRECT
+        );
+        assert_eq!(fixture.mock.request_count("/jwks").await, 2);
+        assert_eq!(fixture.mock.request_count("/token").await, 2);
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn oidc_key_callback_pending_runtime_preserves_precedence(pool: sqlx::PgPool) {
+        let fixture = CallbackFixture::start(&pool).await;
+        fixture.runtime().clear_snapshot_for_tests().await;
+        assert_eq!(
+            fixture.server.get("/auth/callback").await.status_code(),
+            StatusCode::BAD_REQUEST
+        );
+        assert_eq!(
+            fixture
+                .server
+                .get("/auth/callback?code=test&state=wrong")
+                .await
+                .status_code(),
+            StatusCode::UNAUTHORIZED
+        );
+        assert_eq!(
+            fixture.key_callback().await.status_code(),
+            StatusCode::INTERNAL_SERVER_ERROR
+        );
+        fixture.assert_no_key_identity("rotation-subject").await;
+        sign_in_fixture_locally(&fixture).await;
+        let signed_in = fixture.key_callback().await;
+        assert_eq!(signed_in.status_code(), StatusCode::SEE_OTHER);
+        assert_eq!(signed_in.header("location"), "/");
+        fixture.mock.assert_no_requests().await;
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn oidc_key_callback_start_pending_writes_nothing(pool: sqlx::PgPool) {
+        let fixture = CallbackFixture::start(&pool).await;
+        fixture.runtime().clear_snapshot_for_tests().await;
+        let anonymous = axum_test::TestServer::new(crate::build_router(fixture.state.clone()));
+        let pending = anonymous.get("/auth/oidc/login").await;
+        assert_eq!(pending.status_code(), StatusCode::SEE_OTHER);
+        assert_eq!(pending.header("location"), "/login?outcome=unavailable");
+        assert!(!pending.cookies().iter().any(|cookie| cookie.name() == "id"));
+        assert_eq!(
+            sqlx::query_scalar!("SELECT count(*) FROM oidc_sign_in_attempts")
+                .fetch_one(&pool)
+                .await
+                .unwrap(),
+            Some(1)
+        );
+        assert_eq!(
+            sqlx::query_scalar!("SELECT count(*) FROM sign_in_cohorts")
+                .fetch_one(&pool)
+                .await
+                .unwrap(),
+            Some(1)
+        );
+        let mut limited_state = fixture.state.clone();
+        limited_state.config.trusted_client_ip_header = Some("x-forwarded-for".to_owned());
+        limited_state.login_limiter =
+            crate::auth::rate_limit::build_login_limiter(std::num::NonZeroU32::new(1).unwrap());
+        let limited = axum_test::TestServer::new(crate::build_router(limited_state));
+        assert_eq!(
+            limited
+                .get("/auth/oidc/login")
+                .add_header("x-forwarded-for", "198.51.100.24")
+                .await
+                .header("location"),
+            "/login?outcome=unavailable"
+        );
+        assert_eq!(
+            limited
+                .get("/auth/oidc/login")
+                .add_header("x-forwarded-for", "198.51.100.24")
+                .await
+                .header("location"),
+            "/login?outcome=throttled"
+        );
+        sign_in_fixture_locally(&fixture).await;
+        assert_eq!(
+            fixture
+                .server
+                .get("/auth/oidc/login")
+                .await
+                .header("location"),
+            "/"
+        );
+        fixture.mock.assert_no_requests().await;
+    }
+
     struct CallbackFixture {
+        state: crate::state::AppState,
         app_pool: sqlx::PgPool,
         mock: crate::test_support::oidc_mock::MockOidcProvider,
         store: crate::auth::store::PostgresStore,
@@ -2133,6 +2446,40 @@ mod tests {
     }
 
     impl CallbackFixture {
+        fn runtime(&self) -> &std::sync::Arc<crate::auth::oidc::OidcRuntime> {
+            self.state.oidc.as_ref().unwrap()
+        }
+
+        async fn key_callback(&self) -> axum_test::TestResponse {
+            self.server
+                .get("/auth/callback")
+                .add_query_param("code", "mock-code")
+                .add_query_param("state", &self.csrf)
+                .await
+        }
+
+        async fn assert_no_key_identity(&self, subject: &str) {
+            use tower_sessions::SessionStore;
+            assert!(
+                crate::models::user_identities::find_user_id_by_oidc(
+                    &self.app_pool,
+                    self.mock.issuer(),
+                    subject
+                )
+                .await
+                .unwrap()
+                .is_none()
+            );
+            assert!(matches!(
+                sign_in::join_pending(&self.app_pool, &self.session_id.to_string())
+                    .await
+                    .unwrap(),
+                sign_in::CohortState::Pending
+            ));
+            let session = self.store.load(&self.session_id).await.unwrap().unwrap();
+            assert!(!session.data.contains_key("user_id"));
+        }
+
         async fn start(pool: &sqlx::PgPool) -> Self {
             Self::start_with_token_endpoint(pool, None).await
         }
@@ -2157,18 +2504,11 @@ mod tests {
                 )
                 .await
                 .unwrap();
-                let client = openidconnect::core::CoreClient::from_provider_metadata(
+                crate::auth::oidc::OidcRuntime::new(
+                    mock.configuration("http://localhost:3000/auth/callback"),
                     metadata,
-                    openidconnect::ClientId::new(String::new()),
-                    Some(openidconnect::ClientSecret::new("test-secret".to_owned())),
+                    transport,
                 )
-                .set_redirect_uri(
-                    openidconnect::RedirectUrl::new(
-                        "http://localhost:3000/auth/callback".to_owned(),
-                    )
-                    .unwrap(),
-                );
-                crate::auth::oidc::OidcRuntime::new(client, transport)
             } else {
                 mock.runtime("http://localhost:3000/auth/callback")
             };
@@ -2189,7 +2529,7 @@ mod tests {
                 settings: test_support::test_settings(),
                 last_settings_reload: std::sync::Arc::new(tokio::sync::RwLock::new(None)),
             };
-            let app = crate::build_router_with_session_store(state, store.clone());
+            let app = crate::build_router_with_session_store(state.clone(), store.clone());
             let mut server = axum_test::TestServer::new(app);
             server.save_cookies();
 
@@ -2203,6 +2543,7 @@ mod tests {
             let csrf: String = authorization_parameter(&login_resp, "state");
             let nonce: String = authorization_parameter(&login_resp, "nonce");
             Self {
+                state,
                 app_pool,
                 mock,
                 store,
