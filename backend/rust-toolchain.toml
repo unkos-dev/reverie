@@ -19,4 +19,4 @@
 # in CI or in any recipe uses them: they serve an editor, so they belong on
 # the machine that runs one, via `rustup component add`.
 [toolchain]
-channel = "1.99.0"
+channel = "1.99.1"
