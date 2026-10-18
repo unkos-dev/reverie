@@ -1,10 +1,21 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT work_id FROM manifestations WHERE ingestion_file_hash = $1 LIMIT 1",
+  "query": "SELECT id, work_id FROM manifestations WHERE ingestion_file_hash = $1 LIMIT 1",
   "describe": {
     "columns": [
       {
         "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "manifestations",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
         "name": "work_id",
         "type_info": "Uuid",
         "origin": {
@@ -21,8 +32,9 @@
       ]
     },
     "nullable": [
+      false,
       false
     ]
   },
-  "hash": "b01e3df60b3d4734cbbe7715e7acec2933da7e3e6ed14222a71a96c0b9b3696d"
+  "hash": "40d44a3494daf53f76ae99dd45b59d70838f9eee9e0c5062b40e79dc7ee3cd47"
 }

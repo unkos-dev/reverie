@@ -2113,13 +2113,13 @@
           "ingestion"
         ],
         "summary": "List ingestion inputs needing attention",
-        "description": "Returns one page of ingestion inputs that were rejected, need a change or have used their retries, each under one primary reason class. With reason=format_not_accepted it lists ignored files instead. Admin only.",
+        "description": "Returns one page of ingestion inputs that were rejected, need a change or have used their retries, each under one primary reason class. With reason=format_not_accepted it lists ignored files instead, and with reason=duplicate the files skipped as duplicates of a book already in the library. Admin only.",
         "operationId": "list_inputs",
         "parameters": [
           {
             "name": "reason",
             "in": "query",
-            "description": "Lists only inputs whose primary reason is this class. Absent lists\nevery input needing attention, which excludes `format_not_accepted`.",
+            "description": "Lists only inputs whose primary reason is this class. Absent lists\nevery input needing attention, which excludes `format_not_accepted` and `duplicate`.",
             "required": false,
             "schema": {
               "$ref": "#/components/schemas/InputReason"
@@ -2230,7 +2230,7 @@
           "ingestion"
         ],
         "summary": "Count ingestion inputs by reason",
-        "description": "Returns the number of inputs under each primary reason class, and the total needing attention (every class except format_not_accepted). Admin only.",
+        "description": "Returns the number of inputs under each primary reason class, and the total needing attention (every class except format_not_accepted and duplicate). Admin only.",
         "operationId": "input_counts",
         "responses": {
           "200": {
@@ -10011,14 +10011,14 @@
           "attention_total": {
             "type": "integer",
             "format": "int64",
-            "description": "Inputs needing attention: the sum of `by_reason` without\n`format_not_accepted`."
+            "description": "Inputs needing attention: the sum of `by_reason` without\n`format_not_accepted` and `duplicate`."
           },
           "by_reason": {
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/ReasonCount"
             },
-            "description": "Every class with at least one input, most severe first. Includes\n`format_not_accepted`."
+            "description": "Every class with at least one input, most severe first. Includes\n`format_not_accepted` and `duplicate`."
           }
         }
       },
@@ -10044,6 +10044,17 @@
           "id": {
             "type": "string",
             "format": "uuid"
+          },
+          "matched": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/MatchedBook",
+                "description": "The book a `duplicate` input matched; null for every other class and once that book no longer exists."
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "observed_at": {
             "type": "string",
@@ -10082,7 +10093,7 @@
       },
       "InputReason": {
         "type": "string",
-        "description": "Closed class an input is listed under. Rejected inputs carry one of the\nfirst five, declared most severe first; the rest classify the other\nattention states. Raw stored failure text never maps to anything but\n`unspecified`.",
+        "description": "Closed class an input is listed under. Rejected inputs carry one of the\nfirst five, declared most severe first; the rest classify the other\nlisted states. Raw stored failure text never maps to anything but\n`unspecified`.",
         "enum": [
           "unsafe_contents",
           "damaged",
@@ -10091,7 +10102,8 @@
           "unspecified",
           "needs_change",
           "retries_exhausted",
-          "format_not_accepted"
+          "format_not_accepted",
+          "duplicate"
         ]
       },
       "InputStatus": {
@@ -10198,6 +10210,28 @@
           "cbz",
           "cbr"
         ]
+      },
+      "MatchedBook": {
+        "type": "object",
+        "description": "The library book a duplicate input matched.",
+        "required": [
+          "manifestation_id",
+          "work_id",
+          "title"
+        ],
+        "properties": {
+          "manifestation_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "title": {
+            "type": "string"
+          },
+          "work_id": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
       },
       "MeResponse": {
         "type": "object",

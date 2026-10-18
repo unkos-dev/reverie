@@ -1,5 +1,5 @@
 import type { FailureClass } from "@/api/enrichment-failures";
-import type { DependencyReason, InputReason } from "@/api/ingestion";
+import type { DependencyReason, AttentionReason } from "@/api/ingestion";
 
 export const DEPENDENCY_COPY: Record<DependencyReason, { reason: string; check: string }> = {
   database_unavailable: {
@@ -41,7 +41,7 @@ type InputReasonCopy = {
   tag: InputStatusTag;
 };
 
-const INPUT_REASON_COPY: Record<InputReason, InputReasonCopy> = {
+const INPUT_REASON_COPY: Record<AttentionReason, InputReasonCopy> = {
   unsafe_contents: {
     label: "Unsafe contents",
     action:
@@ -86,7 +86,7 @@ const INPUT_REASON_COPY: Record<InputReason, InputReasonCopy> = {
 };
 
 /** Group heading for a class; the ignored group carries its own prefix. */
-function inputGroupTitle(reason: InputReason): string {
+function inputGroupTitle(reason: AttentionReason): string {
   return reason === "format_not_accepted"
     ? "Ignored: format not accepted"
     : INPUT_REASON_COPY[reason].label;

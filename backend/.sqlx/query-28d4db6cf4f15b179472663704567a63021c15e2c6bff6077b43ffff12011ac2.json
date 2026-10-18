@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT matched_manifestation_id FROM ingestion_inputs WHERE id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "matched_manifestation_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "ingestion_inputs",
+            "name": "matched_manifestation_id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      true
+    ]
+  },
+  "hash": "28d4db6cf4f15b179472663704567a63021c15e2c6bff6077b43ffff12011ac2"
+}

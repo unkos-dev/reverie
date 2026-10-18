@@ -1,7 +1,7 @@
 import { type ReactElement, type ReactNode } from "react";
 
-import { listInputs } from "@/api/ingestion";
-import type { InputItem, InputReason } from "@/api/ingestion";
+import { isAttentionReason, listInputs } from "@/api/ingestion";
+import type { InputItem, AttentionReason } from "@/api/ingestion";
 import { Table, TableBody, TableCell, TableRow } from "@/components/ui/table";
 import { formatDateTime } from "@/lib/format/datetime";
 import { queryKeys } from "@/lib/query/keys";
@@ -17,7 +17,7 @@ type InputGroupProps = {
   retryState?: BulkRetryState;
   headerControl?: ReactNode;
   feedback?: ReactNode;
-  reason: InputReason;
+  reason: AttentionReason;
   count: number;
   defaultOpen: boolean;
   pollInterval: number | false;
@@ -25,7 +25,10 @@ type InputGroupProps = {
 
 function InputRow({ item }: Readonly<{ item: InputItem }>): ReactElement {
   const { dir, name } = splitPath(item.path);
-  const also = item.reasons.slice(1).map((r) => INPUT_REASON_COPY[r].label);
+  const also = item.reasons
+    .slice(1)
+    .filter(isAttentionReason)
+    .map((r) => INPUT_REASON_COPY[r].label);
   return (
     <TableRow className="border-border hover:bg-transparent">
       <TableCell className="py-2.5 pl-12 align-top whitespace-normal">

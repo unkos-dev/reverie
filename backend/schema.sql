@@ -624,6 +624,7 @@ CREATE TABLE public.ingestion_inputs (
     removal_cause text,
     rejection_reasons text[] DEFAULT '{}'::text[] NOT NULL,
     retries_exhausted_at timestamp with time zone,
+    matched_manifestation_id uuid,
     CONSTRAINT ingestion_inputs_check CHECK (((status = 'removed'::public.ingestion_input_status) = ((removed_at IS NOT NULL) AND (removal_cause IS NOT NULL)))),
     CONSTRAINT ingestion_inputs_check1 CHECK (((status = 'removed'::public.ingestion_input_status) OR ((removed_at IS NULL) AND (removal_cause IS NULL)))),
     CONSTRAINT ingestion_inputs_completed_at_check CHECK (((completed_at >= '0001-01-01 00:00:00+00'::timestamp with time zone) AND (completed_at < '10000-01-01 00:00:00+00'::timestamp with time zone))),
@@ -699,6 +700,7 @@ CREATE VIEW public.ingestion_input_classes WITH (security_invoker='true') AS
                 CASE i.status
                     WHEN 'rejected'::public.ingestion_input_status THEN COALESCE(i.rejection_reasons[1], 'unspecified'::text)
                     WHEN 'not_accepted'::public.ingestion_input_status THEN 'format_not_accepted'::text
+                    WHEN 'duplicate'::public.ingestion_input_status THEN 'duplicate'::text
                     WHEN 'operational_failure'::public.ingestion_input_status THEN
                     CASE
                         WHEN (latest.outcome = 'needs_change'::public.ingestion_attempt_outcome) THEN 'needs_change'::text
@@ -2689,6 +2691,14 @@ ALTER TABLE ONLY public.field_locks
 
 ALTER TABLE ONLY public.field_locks
     ADD CONSTRAINT field_locks_manifestation_id_fkey FOREIGN KEY (manifestation_id) REFERENCES public.manifestations(id) ON DELETE CASCADE;
+
+
+--
+-- Name: ingestion_inputs ingestion_inputs_matched_manifestation_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: reverie_migrator
+--
+
+ALTER TABLE ONLY public.ingestion_inputs
+    ADD CONSTRAINT ingestion_inputs_matched_manifestation_id_fkey FOREIGN KEY (matched_manifestation_id) REFERENCES public.manifestations(id) ON DELETE SET NULL;
 
 
 --
