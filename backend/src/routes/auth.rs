@@ -105,7 +105,11 @@ impl SignInOutcome {
             Self::Account => "/login?outcome=account",
             Self::Throttled => "/login?outcome=throttled",
         };
-        tracing::warn!(outcome = location, "OIDC sign-in did not complete");
+        if matches!(self, Self::Throttled) {
+            tracing::debug!(outcome = location, "OIDC sign-in did not complete");
+        } else {
+            tracing::warn!(outcome = location, "OIDC sign-in did not complete");
+        }
         Redirect::to(location)
     }
 }
@@ -1221,6 +1225,56 @@ mod tests {
     use crate::models::theme_preference::ThemePreference;
     use crate::models::{sign_in, user};
     use crate::test_support;
+
+    #[test]
+    fn oidc_outcome_throttled_logs_at_debug_while_other_outcomes_warn() {
+        use super::SignInOutcome;
+
+        let cases = [
+            (
+                SignInOutcome::Throttled,
+                "DEBUG",
+                "/login?outcome=throttled",
+            ),
+            (SignInOutcome::Denied, "WARN", "/login?outcome=denied"),
+            (SignInOutcome::Expired, "WARN", "/login?outcome=expired"),
+            (
+                SignInOutcome::Unavailable,
+                "WARN",
+                "/login?outcome=unavailable",
+            ),
+            (SignInOutcome::Keys, "WARN", "/login?outcome=keys"),
+            (SignInOutcome::Account, "WARN", "/login?outcome=account"),
+        ];
+        let logs = test_support::CapturedLogs::default();
+        let writer = logs.clone();
+        let subscriber = tracing_subscriber::fmt()
+            .without_time()
+            .with_ansi(false)
+            .with_max_level(tracing::Level::DEBUG)
+            .with_writer(move || writer.clone())
+            .finish();
+        tracing::subscriber::with_default(subscriber, || {
+            for (outcome, _, _) in &cases {
+                let _response = outcome.redirect();
+            }
+        });
+        let captured = logs.text();
+        let events: Vec<_> = captured
+            .lines()
+            .filter(|line| line.contains("OIDC sign-in did not complete"))
+            .collect();
+        assert_eq!(events.len(), cases.len());
+        for (event, (_, level, location)) in events.iter().zip(cases) {
+            assert!(event.trim_start().starts_with(level), "{event}");
+            assert!(event.contains(location), "{event}");
+        }
+        assert!(
+            !captured
+                .lines()
+                .any(|line| { line.contains("/login?outcome=throttled") && line.contains("WARN") })
+        );
+    }
 
     #[sqlx::test(migrations = "./migrations")]
     async fn login_redirects_to_oidc_provider(pool: sqlx::PgPool) {
