@@ -6338,6 +6338,16 @@
           },
           "429": {
             "description": "Too many requests",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "integer",
+                  "format": "int64",
+                  "minimum": 0
+                },
+                "description": "Positive delay in seconds before retrying"
+              }
+            },
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -6358,7 +6368,7 @@
           "auth"
         ],
         "summary": "Sign in with email and password",
-        "description": "Authenticates with `email` and `password` and establishes a session. No authentication is required to call it. Returns 404 if local authentication is disabled, 422 for invalid credentials, and 429 when too many attempts have been made.",
+        "description": "Admits the source and account before verifying `email` and `password`. Ten committed failures in a rolling 15-minute window start a 15-minute block; the tenth failure returns generic 422. Blocked requests, including correct passwords, return generic 429 with Retry-After without verification and do not extend the block. A winning enabled-account login clears accounting before session establishment. Returns 404 if local authentication is disabled.",
         "operationId": "local_login",
         "requestBody": {
           "content": {
@@ -6436,6 +6446,16 @@
           },
           "429": {
             "description": "Too many login attempts",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "integer",
+                  "format": "int64",
+                  "minimum": 0
+                },
+                "description": "Positive delay in seconds before retrying"
+              }
+            },
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -6864,6 +6884,16 @@
           },
           "429": {
             "description": "Too many requests",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "integer",
+                  "format": "int64",
+                  "minimum": 0
+                },
+                "description": "Positive delay in seconds before retrying"
+              }
+            },
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -6952,6 +6982,16 @@
           },
           "429": {
             "description": "Too many requests",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "integer",
+                  "format": "int64",
+                  "minimum": 0
+                },
+                "description": "Positive delay in seconds before retrying"
+              }
+            },
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -7040,6 +7080,16 @@
           },
           "429": {
             "description": "Too many requests",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "integer",
+                  "format": "int64",
+                  "minimum": 0
+                },
+                "description": "Positive delay in seconds before retrying"
+              }
+            },
             "content": {
               "application/problem+json": {
                 "schema": {

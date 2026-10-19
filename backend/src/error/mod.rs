@@ -173,11 +173,12 @@ pub enum AppError {
         /// Fixed, class-level sentence emitted as the `detail` field.
         detail: String,
     },
-    /// Per-source login rate limit exceeded (governor, per client IP). RFC 9457
-    /// `type` [`problems::RATE_LIMITED`]. HTTP 429 Too Many Requests. Raised by
-    /// the login / recovery handlers; the per-account backoff is separate.
+    /// Source or account admission rejected. HTTP 429 with a positive `Retry-After` delay.
     #[error("too many requests")]
-    RateLimited,
+    RateLimited {
+        /// Positive, rounded-up seconds before an explicit retry.
+        retry_after_secs: u64,
+    },
     /// First-run setup (bootstrap) attempted when an administrator already
     /// exists. RFC 9457 `type` [`problems::SETUP_ALREADY_COMPLETE`]. HTTP 409
     /// Conflict. The authoritative guard is the `instance_bootstrap` singleton
@@ -228,6 +229,13 @@ impl IntoResponse for AppError {
             Self::BasicAuthRequired { realm } => {
                 let challenge = format!("Basic realm=\"{realm}\", charset=\"UTF-8\"");
                 HeaderValue::from_str(&challenge).ok()
+            }
+            _ => None,
+        };
+
+        let retry_after = match &self {
+            Self::RateLimited { retry_after_secs } => {
+                Some(HeaderValue::from((*retry_after_secs).max(1)))
             }
             _ => None,
         };
@@ -320,7 +328,7 @@ impl IntoResponse for AppError {
                 "Invalid Request Body",
                 detail,
             ),
-            Self::RateLimited => (
+            Self::RateLimited { .. } => (
                 StatusCode::TOO_MANY_REQUESTS,
                 problems::RATE_LIMITED,
                 "Too Many Requests",
@@ -377,6 +385,10 @@ impl IntoResponse for AppError {
             response
                 .headers_mut()
                 .insert(header::WWW_AUTHENTICATE, value);
+        }
+
+        if let Some(value) = retry_after {
+            response.headers_mut().insert(header::RETRY_AFTER, value);
         }
 
         response

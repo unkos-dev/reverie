@@ -100,9 +100,10 @@ directly rather than assembling its own `AppState` and calling `build_router`.
     receiving shared `LibraryFiles`, the live settings cache and command receiver; it owns its watcher and event
     channel).
   - `services::enrichment::queue::spawn_queue` (the enrichment job queue).
-  - `services::session_sweep::run_sweep` (the hourly session and OIDC-attempt reaper, given the application pool and
-    `PostgresStore`). It deletes expired sessions through `ExpiredDeletion`, cascading `sign_in_cohorts`, then drains
-    expired `oidc_sign_in_attempts` in batches of 1,000. Live attempts remain; failures warn and retry next tick.
+  - `services::session_sweep::run_sweep` (the hourly authentication-state reaper, given the application pool, three
+    source limiter handles and `PostgresStore`). Native governor retention runs before database cleanup. Session
+    deletion cascades `sign_in_cohorts`; expired attempts and inactive account throttles drain in batches of 1,000, with
+    cancellation between batches. Live protection remains; failures warn and retry next tick.
   - `services::writeback::queue::spawn_worker` (the writeback job queue, given the dedicated system-context pool
     described in Data and state and shared `LibraryFiles`; also owns the bounded relocation-intent sweep).
 - The optional `oidc-discovery` worker calls `auth::oidc::OidcRuntime::run_discovery` with the shared runtime and its
@@ -120,6 +121,13 @@ This subject owns the shutdown `CancellationToken` and the storage bindings crea
 writer: startup calls `LibraryFiles::open` before constructing AppState. Library and ingestion capabilities are
 immutable for the lifetime of all AppState clones. Requests neither acquire nor replace roots. Other dependencies are
 written once at construction.
+
+Startup owns the three source maps and supplies their shared handles to requests and the session-sweep worker. Password
+login/setup/registration, recovery and OIDC start each spend only their own map. The sweep reclaims them using native
+governor retention before database cleanup. Account-throttle writers and locked-row reclamation belong to
+[local password sign-in](../../accounts/design/0012-local-password-sign-in.md); this runtime only supplies the pool and
+hourly lifecycle. Synchronous password verification and its account-row wait have no aggregate computation or waiting
+bound here.
 
 The process token has three cancellation writers: `shutdown_signal` on SIGINT or SIGTERM, `run` after HTTP serving
 returns, and `supervise_until_shutdown` when the supervisor exits. Cancellation is idempotent; these writers share the
@@ -173,11 +181,11 @@ observation. Watchdog ticks and completion precede queued watcher traffic.
   and is `Clone` for cheap distribution to handlers and workers: `pool` and `ingestion_pool` are `Arc`-backed `PgPool`s;
   `config` is owned, cloned data; `library_files` is a cheap shared `LibraryFiles` handle; `oidc` is an
   `Option<Arc<_>>`, `None` on an instance that has not configured OIDC; a configured runtime initially has no snapshot;
-  `login_limiter` is an `Arc<LoginLimiter>`; `last_settings_reload` is an `Arc<RwLock<..>>` handle written only by the
-  settings worker, not by this subject; `settings` is likewise an `Arc<RwLock<..>>` handle, but it has a second writer
-  outside this subject — the `PUT /api/v1/settings` route handler also writes it directly, as an immediate local-cache
-  update guarded by `apply_if_newer`'s revision check — so neither writer belongs to this subject, but there is more
-  than one.
+  `login_limiter`, `recovery_limiter` and `oidc_limiter` are distinct `Arc<LoginLimiter>` instances;
+  `last_settings_reload` is an `Arc<RwLock<..>>` handle written only by the settings worker, not by this subject;
+  `settings` is likewise an `Arc<RwLock<..>>` handle, but it has a second writer outside this subject — the
+  `PUT /api/v1/settings` route handler also writes it directly, as an immediate local-cache update guarded by
+  `apply_if_newer`'s revision check — so neither writer belongs to this subject, but there is more than one.
 - **The writeback pool** (`backend/src/db.rs::init_writeback_pool`) is built after `AppState` and is deliberately not
   one of its fields: it is retained by the writeback task factory and cloned for each run. No request handler receives
   it, because no request handler receives anything not reachable through `AppState`.
@@ -225,9 +233,10 @@ observation. Watchdog ticks and completion precede queued watcher traffic.
    [OIDC outbound transport](../../accounts/design/0025-oidc-outbound-transport.md) describes the client policy and
    request paths.
 9. `db::init_pool` opens the ingestion pool; `services::settings::seed_ingestion` conditionally seeds ingestion fields
-   through the primary pool and reads the winning settings row in one transaction; the login rate limiter is built from
-   `config.login_rate_per_min`. The persisted `ingestion_enabled` field is loaded with that snapshot but is independent
-   of the configuration seed. Its database default is true and it has no environment or `Config` field.
+   through the primary pool and reads the winning settings row in one transaction; three independent authentication
+   source limiters are built from `config.login_rate_per_min`. The persisted `ingestion_enabled` field is loaded with
+   that snapshot but is independent of the configuration seed. Its database default is true and it has no environment or
+   `Config` field.
 10. `AppState` is assembled with the opened `LibraryFiles`, and `build_router` is called on a clone of it.
 11. `db::init_writeback_pool` opens the writeback pool, and the TCP listener is bound. One more fallible call follows
     immediately: `listener.local_addr()` is read back to log the bound address. Nothing has been spawned yet at this

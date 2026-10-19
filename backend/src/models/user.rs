@@ -139,7 +139,10 @@ pub async fn admin_exists(pool: &PgPool) -> Result<bool, sqlx::Error> {
 /// # Errors
 ///
 /// Returns [`sqlx::Error`] from the underlying `SELECT`.
-pub async fn find_by_email(pool: &PgPool, email: &str) -> Result<Option<User>, sqlx::Error> {
+pub async fn find_by_email(
+    executor: impl sqlx::PgExecutor<'_>,
+    email: &str,
+) -> Result<Option<User>, sqlx::Error> {
     sqlx::query_as!(
         UserRow,
         "SELECT id, oidc_subject AS \"oidc_subject?\", display_name, email, \
@@ -149,7 +152,7 @@ pub async fn find_by_email(pool: &PgPool, email: &str) -> Result<Option<User>, s
          FROM users WHERE lower(email) = lower($1)",
         email,
     )
-    .fetch_optional(pool)
+    .fetch_optional(executor)
     .await
     .map(|opt| opt.map(User::from))
 }

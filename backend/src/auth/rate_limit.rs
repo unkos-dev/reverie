@@ -2,12 +2,8 @@
 //!
 //! # Tier 2: security-critical
 //!
-//! A keyed [`governor`] limiter caps login/recovery attempts per client IP. It
-//! is the hard blocker against credential-stuffing and unknown-email spray; the
-//! DB-backed per-account backoff ([`crate::models::login_throttle`]) is the
-//! IP-independent backstop. The two are complementary: the per-IP limiter bounds
-//! how fast an attacker can probe, the per-account backoff escalates against a
-//! single targeted account.
+//! Separate governor instances protect password/setup/registration, recovery and OIDC start.
+//! PostgreSQL account admission independently limits distributed password failures.
 //!
 //! THREAT (client-IP spoofing): behind a reverse proxy the TCP peer is the
 //! proxy, not the client, so a naive per-peer limiter would throttle the whole
@@ -34,8 +30,8 @@ use governor::{DefaultKeyedRateLimiter, Quota, RateLimiter};
 /// `OptionalFromRequestParts`, which `ConnectInfo` does not implement), so this
 /// reads the `ConnectInfo` out of the request extensions directly and yields
 /// `None` when absent. The test harness (`axum_test`) supplies no peer, so a
-/// non-optional `ConnectInfo` extractor would 500 every request; the per-account
-/// backoff is the IP-independent backstop when the peer is unknown.
+/// non-optional `ConnectInfo` extractor would 500 every request; account
+/// admission is the IP-independent backstop when the peer is unknown.
 pub struct PeerAddr(pub Option<SocketAddr>);
 
 impl<S: Send + Sync> FromRequestParts<S> for PeerAddr {
@@ -102,6 +98,27 @@ pub fn client_ip(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn throttle_reclamation_governor_preserves_live_and_removes_replenished_keys() {
+        use governor::clock::FakeRelativeClock;
+        let clock = FakeRelativeClock::default();
+        let limiter = RateLimiter::dashmap_with_clock(
+            Quota::per_minute(NonZeroU32::new(1).unwrap()),
+            clock.clone(),
+        );
+        let ip: IpAddr = "192.0.2.1".parse().unwrap();
+        assert!(limiter.check_key(&ip).is_ok());
+        assert!(limiter.check_key(&ip).is_err());
+        limiter.retain_recent();
+        assert_eq!(limiter.len(), 1);
+        assert!(limiter.check_key(&ip).is_err());
+        clock.advance(std::time::Duration::from_secs(121));
+        limiter.retain_recent();
+        assert!(limiter.is_empty());
+        assert!(limiter.check_key(&ip).is_ok());
+    }
+
     use std::net::Ipv4Addr;
 
     fn ip(a: u8, b: u8, c: u8, d: u8) -> IpAddr {

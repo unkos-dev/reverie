@@ -777,9 +777,12 @@ ALTER TABLE public.local_credentials OWNER TO reverie_migrator;
 
 CREATE TABLE public.local_login_throttle (
     email_lower text NOT NULL,
-    fail_count integer DEFAULT 0 NOT NULL,
     locked_until timestamp with time zone,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    completed_failures timestamp with time zone[] DEFAULT '{}'::timestamp with time zone[] NOT NULL,
+    CONSTRAINT local_login_throttle_failure_count CHECK ((cardinality(completed_failures) <= 10)),
+    CONSTRAINT local_login_throttle_failure_shape CHECK (((cardinality(completed_failures) = 0) OR ((array_ndims(completed_failures) = 1) AND (array_lower(completed_failures, 1) = 1) AND (array_position(completed_failures, NULL::timestamp with time zone) IS NULL)))),
+    CONSTRAINT local_login_throttle_failure_ts_decode_range CHECK ((tstzrange('0001-01-01 00:00:00+00'::timestamp with time zone, '10000-01-01 00:00:00+00'::timestamp with time zone, '[)'::text) @> ALL (completed_failures))),
     CONSTRAINT local_login_throttle_locked_until_ts_decode_range CHECK (((locked_until >= '0001-01-01 00:00:00+00'::timestamp with time zone) AND (locked_until < '10000-01-01 00:00:00+00'::timestamp with time zone))),
     CONSTRAINT local_login_throttle_updated_at_ts_decode_range CHECK (((updated_at >= '0001-01-01 00:00:00+00'::timestamp with time zone) AND (updated_at < '10000-01-01 00:00:00+00'::timestamp with time zone)))
 );

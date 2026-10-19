@@ -47,11 +47,12 @@ pub struct AppState {
     /// snapshot and shared transport. `None` means OIDC is unconfigured; an empty
     /// snapshot means discovery is pending. Requests share key-refresh work.
     pub oidc: Option<Arc<OidcRuntime>>,
-    /// Per-source (per-IP) login rate limiter, shared across the login,
-    /// forgot-password, and reset-password handlers. Built once at startup from
-    /// `config.login_rate_per_min`. The IP-independent per-account backoff lives
-    /// in the `local_login_throttle` table, not here.
+    /// Source allowance for password login, setup and registration.
     pub login_limiter: Arc<LoginLimiter>,
+    /// Independent source allowance for password recovery.
+    pub recovery_limiter: Arc<LoginLimiter>,
+    /// Independent source allowance for OIDC start navigations.
+    pub oidc_limiter: Arc<LoginLimiter>,
     /// Operator-tunable settings loaded from the `settings` table.
     /// Refreshed via LISTEN/NOTIFY + 60s fallback poll. Handlers read
     /// via `state.settings.read().await`.

@@ -12,6 +12,7 @@ governed-by:
   - "REV-ADR-0029"
   - "REV-ADR-0034"
   - "REV-ADR-0054"
+  - "REV-ADR-0059"
 ---
 
 # Local password sign-in
@@ -27,7 +28,7 @@ self-service path as a thin caller of that policy. It also covers the two client
 This subject owns `local_login` and `register` (`backend/src/routes/auth.rs`), the `local_credentials` model
 (`backend/src/models/local_credentials.rs`), Argon2id hashing and verification and the anti-enumeration dummy-hash
 control (`backend/src/auth/password.rs`), the per-source login rate limiter and client-IP resolution
-(`backend/src/auth/rate_limit.rs`), the per-account escalating backoff (`backend/src/models/login_throttle.rs`, the
+(`backend/src/auth/rate_limit.rs`), transactional account admission (`backend/src/models/login_throttle.rs`, the
 `local_login_throttle` table), the shared password-strength policy (`backend/src/auth/password_policy.rs`), and the two
 client forms: `frontend/src/routes/auth-login.tsx` (mounted) and `frontend/src/routes/auth-register.tsx` (present and
 tested, but not mounted in `frontend/src/main.tsx`).
@@ -53,14 +54,13 @@ mutation, session-version invalidation policy, the last-admin lock order) is the
 Depends on: `crate::auth::session::login` to establish the session on success; `crate::models::user::find_by_email` and
 `crate::models::user::User` to resolve the account; `crate::services::enrichment::http::api_client`, which supplies the
 SSRF-resistant HTTP client the breach check sends its outbound request through; `Config`'s `login_rate_per_min`,
-`login_throttle_base_secs`, `login_throttle_cap_secs`, `password_min_length`, `password_max_length`,
-`password_min_zxcvbn_score`, `password_breach_check_enabled`, `trusted_client_ip_header`, `local_auth_enabled` and
-`self_registration_enabled` fields.
+`password_min_length`, `password_max_length`, `password_min_zxcvbn_score`, `password_breach_check_enabled`,
+`trusted_client_ip_header`, `local_auth_enabled` and `self_registration_enabled` fields.
 
 Depended on by: `routes/users/mod.rs`'s `create_user`, `admin_reset_password` and `change_own_password`, and
 `routes/auth.rs`'s `reset_password` and `setup`, and `lib.rs`'s `seed_admin_if_configured`, each of which calls
 `password_policy::enforce_from_config` before writing a credential; the `reverie unlock-account <email>` CLI subcommand
-(`run_unlock_account` in `backend/src/lib.rs`), which clears a per-account backoff out of band; and the sign-in page.
+(`run_unlock_account` in `backend/src/lib.rs`), which clears account accounting out of band; and the sign-in page.
 
 ADR-0029 fixes local password sign-in as a co-equal authentication mode alongside OIDC, resolving to the same identity
 and session model with no path to administrator other than bootstrap; this Design is the mechanism that realises that
@@ -106,12 +106,9 @@ decision on the local-password side.
   has no password to change; it signs in through an identity provider") when there is none. Its write uses
   `replace_verified_password`, an UPDATE conditional on the hash verified before the transaction, so it cannot overwrite
   a concurrent change or insert a missing credential.
-- `backend/src/models/login_throttle.rs` holds `record_failure`, `reset` and `backoff_until`, all keyed on
-  `email.to_lowercase()` rather than `user_id`, so the throttle exists independent of whether the email resolves to an
-  account. `record_failure` upserts a capped-exponential-backoff window, `min(cap, base * 2^prior_failures)`, where
-  `prior_failures` is the failure count recorded before the current one (the row's `fail_count` value read at the moment
-  of the upsert, before it is incremented); the first failure therefore waits `min(cap, base)` and each further failure
-  doubles the base, saturating at the cap.
+- `backend/src/models/login_throttle.rs` owns `admit`, the locked `Attempt`, its `fail` and `succeed` commits, CLI
+  `reset`, and bounded `delete_inactive`. All use the same lower-case email key, independent of account existence.
+  Admission owns a PostgreSQL transaction until the credential outcome commits or cancellation rolls it back.
 - `backend/src/routes/auth.rs` holds `local_login` and `register`, and the shared `enforce_source_rate_limit` helper
   that `local_login`, OIDC start, `register`, `setup`, `forgot_password` and `reset_password` call before provider,
   policy or hashing work. `local_login` calls it immediately after the `local_auth_enabled` gate. In every handler that
@@ -131,8 +128,8 @@ decision on the local-password side.
 - `POST /auth/local/login` (`LocalLoginRequest { email, password }`) returns `204` on success and sets the session
   cookie and (via `jar`) the theme cookie; `404` when `local_auth_enabled` is `false`; `422` with a generic message for
   any failed credential; `409 sign-in-inactive` for an authenticated session or a losing cohort; `429` when a rate limit
-  is active. It is unauthenticated (`security(())` in its OpenAPI annotation). Neither `429` source (the per-source
-  limiter or the per-account backoff) sets a `Retry-After` header.
+  is active. It is unauthenticated (`security(())` in its OpenAPI annotation). Each `429` source (the per-source limiter
+  or account admission) supplies a positive, rounded-up `Retry-After` delay in seconds.
 - `POST /auth/register` (`RegisterRequest { email, display_name, password }`) returns `201` with no session on success;
   `404` when `self_registration_enabled` or `local_auth_enabled` is `false`; `409` on a duplicate email; `422` on a
   malformed email or a policy rejection; `429` on the per-source limit. `RegisterRequest` declares no role field, and
@@ -165,24 +162,27 @@ decision on the local-password side.
   its PIN before setting the password. The non-key lock permits PIN issuance's foreign-key key-share lock. A successful
   change increments `session_version` in the same transaction. A stale self-service write returns 422 without changing
   the credential or session version. Policy checks and hashing run before any locked transaction.
-- **`local_login_throttle`.** Keyed on `email_lower`; a row exists only once a failure has been recorded for that key,
-  and `reset` deletes it outright rather than zeroing a counter. `record_failure` runs only for a failed `local_login`
-  attempt whose email is not already inside an active backoff window: `local_login`'s failed-attempt branch checks
-  `backoff_until` first, and when it returns an active window the handler answers `429` immediately without calling
-  `record_failure`, so that attempt is not recorded and the window does not extend. Only a failure that arrives after
-  the prior window has elapsed reaches `record_failure` and escalates it. `reset` is called on a successful login and by
-  the CLI unlock command; no other code path writes or deletes this table. `backoff_until` is the sole reader, called
-  only from `local_login`'s failed-attempt branch; a successful, enabled-account login never reaches it.
-- **The per-source limiter.** `state.login_limiter` is a single in-process `governor` keyed map built once at startup
-  from `login_rate_per_min` (validated `>= 1` before `build_login_limiter` is called); it holds no database row, so a
-  process restart clears every key's accrued state, unlike `local_login_throttle`, which survives one.
-- **Configuration.** `login_rate_per_min` (default 10/min), `login_throttle_base_secs` (default 2) and
-  `login_throttle_cap_secs` (default 900) shape the two throttles; `password_min_length` (default 15, validated to at
-  least 15 and no greater than the maximum), `password_max_length` (default 256, validated to at least 64),
-  `password_min_zxcvbn_score` (default 2), `password_breach_check_enabled` (default `true`) shape the policy;
-  `self_registration_enabled` (default `false`) gates `register`; `trusted_client_ip_header` (default unset) opts a
-  deployment into trusting a forwarded-for header. None of these reload at runtime; each is read once from `Config` at
-  the point of use.
+- **`local_login_throttle`.** Each `email_lower` row stores at most ten `completed_failures`, `locked_until` and
+  `updated_at`. A no-op conflict update creates or locks the row through commit. The handler reads database wall time
+  after acquiring the lock, so lock waiting does not make admission use a stale transaction-start timestamp. At
+  completion it reads wall time again, retains failures in `(t - 15 minutes, t]`, appends this failure and starts a
+  15-minute block at ten. Equality expires both failures and blocks. A slow failure counts at completion.
+- **Account-state writers.** Failed local login commits history; a winning enabled-account login and CLI unlock clear
+  history and the block under the same row lock. They retain an empty row. The sweep alone physically deletes rows,
+  locking current eligible rows with `FOR UPDATE SKIP LOCKED` in deterministic batches of at most 1,000. A row is
+  eligible only when its block and every retained failure are absent or expired. Active blocks survive aged-out history.
+  Password changes and recovery do not reset accounting. Request processing enforces expiry independently of cleanup.
+- **Source-state writers.** Startup builds distinct `login_limiter`, `recovery_limiter` and `oidc_limiter` governor
+  maps. Password login, setup and registration spend the first; forgot/reset-password spend the second; OIDC start
+  spends the third. Every map uses `login_rate_per_min` (default 10/min per source), with the existing
+  peer/trusted-header rule. The hourly sweep calls native `retain_recent` on each map, preserving active allowance.
+  Restart clears these process-local maps; account state persists in PostgreSQL.
+- **Configuration.** Account admission uses fixed ten-failure, 15-minute observation and 15-minute block values.
+  `password_min_length` (default 15, validated to at least 15 and no greater than the maximum), `password_max_length`
+  (default 256, validated to at least 64), `password_min_zxcvbn_score` (default 2), `password_breach_check_enabled`
+  (default `true`) shape the policy; `self_registration_enabled` (default `false`) gates `register`;
+  `trusted_client_ip_header` (default unset) opts a deployment into trusting a forwarded-for header. None of these
+  reload at runtime; each is read once from `Config` at the point of use.
 
 `GET /auth/setup/status` exposes the configured minimum and maximum alongside provider/bootstrap state.
 `usePasswordPolicy` shares the setup-status query key with the setup and sign-in screens. Setup, registration, recovery,
@@ -207,53 +207,32 @@ anonymous session joins its cohort: an already-won cohort returns the same 409 w
 cohort's id is retained until verification. The existing CSRF gate still requires the session token on a mutation
 carrying `user_id`.
 
-After valid local credentials, `claim_win` runs for that retained id. A loser returns 409 before resetting the throttle
-or changing the session. A winner resets the throttle and calls `session::login`; any error in those operations first
-flushes the session and then returns the original error. A failed flush is logged at warning level. A request without a
-live cohort proceeds directly to reset and login after verification.
+**Account admission and credential outcome.** After source/session/cohort admission, `admit` begins a transaction and
+locks the normalised-email row, including the initially absent-row race. An unexpired block rolls back acquisition and
+returns generic `429` plus `Retry-After`, without account lookup or verification. Rejection changes no protection state,
+even for a correct password.
 
-**A login attempt for a known email with the wrong password, after admission:**
+An admitted request resolves the account and credential on that same connection. A known credential performs real
+Argon2id verification; unknown email or missing credentials perform dummy verification. Wrong passwords and disabled
+accounts share the failed-result path. `Attempt::fail` records the completed failure and commits before the generic
+`422` response. The tenth committed failure still returns `422`; the next request receives `429` without hashing.
 
-1. `local_login` checks `state.config.local_auth_enabled`, then calls `enforce_source_rate_limit`. The helper resolves
-   the rate-limit key via `client_ip` and calls `state.login_limiter.check_key` (skipped entirely when `client_ip`
-   resolves to `None`); over quota returns `AppError::RateLimited` before any database work.
-2. `user::find_by_email` resolves the account. Because it is `Some`, `local_credentials::find_by_user_id` runs a second
-   query to fetch the stored PHC string.
-3. `password::verify_password` runs the real Argon2id verification against that PHC string and returns an error;
-   `verified` is `false`.
-4. `session_user` resolves to `None` (the match requires `verified && user.disabled_at.is_none()`), so the function
-   falls into the failed-attempt branch: `login_throttle::backoff_until` is checked (no active window yet on a first
-   failure), then `login_throttle::record_failure` upserts a new window keyed on the submitted email.
-5. The handler returns `AppError::Validation("invalid email or password")`, a generic `422` whose message is the
-   response's `detail` field.
+A valid enabled account claims its retained cohort through the same connection and the existing conditional `claim_win`
+query. A loser returns `409` and rolls back without resetting history. A winner clears accounting and commits, releasing
+the connection before session login, CSRF or cookie work. A request without a live cohort uses the same account
+transaction without a cohort claim. The verified user and session-version snapshot remain unchanged.
 
-**A login attempt for an email with no account:**
+Any error after a winning claim follows the existing session-flush rule. Accounting commits before session storage: if
+storage subsequently fails, history can already be clear without a delivered authenticated session. Cancellation before
+account commit rolls back; cancellation after commit does not undo the result. An unknown commit outcome is never
+replayed automatically. No worker or asynchronous completion callback can write an old result after that transaction
+ends.
 
-1. Steps 1 and 4 to 5 above run identically, keyed on the submitted (non-existent) email.
-2. `user::find_by_email` returns `None`, so step 2's second query never runs: `credential` is set to `None` directly
-   rather than through a database round trip.
-3. Because `credential` is `None`, `password::verify_against_dummy` runs instead of `verify_password`: one Argon2id
-   verification against the process-stable `DUMMY_PHC`, equalising the CPU-bound Argon2 cost between this path and the
-   one above. `verified` stays `false`.
-4. `local_login_wrong_password_is_generic_422`, `local_login_unknown_email_matches_wrong_password` and
-   `local_login_disabled_account_is_generic_422` each assert the resulting status and, for the second, the
-   byte-identical response body against the known-account case.
-
-**A correct password submitted during an active per-account backoff window:**
-
-1. Steps 1 to 3 above run, and `verify_password` succeeds. `local_login` checks `login_throttle::backoff_until` only
-   inside the failed-attempt branch, so a verified login never reaches it: the `session_user` match succeeds, the cohort
-   is claimed when present, `login_throttle::reset` deletes the row, and `session::login` establishes the session in the
-   same request that clears the backoff.
-2. A wrong attempt arriving during that same window instead returns `429` from the `backoff_until` check itself, before
-   `record_failure` runs, so it is not recorded and the window does not extend. The window changes the outcome of a
-   wrong guess only, never a correct one; the per-source limiter is what bounds how many attempts, correct or wrong, can
-   be made in a given period.
-
-**A soft-disabled account presenting its correct password:** `verified` is `true`, but the `session_user` match also
-requires `user.disabled_at.is_none()`, which fails; the request falls into the same failed-attempt branch as a wrong
-password, subject to the same active-window check above, with the same generic `422`. No distinct "account disabled"
-response exists on this path.
+`password_admission_route_two_pools_ninth_failure_race` checks that nine failures plus two simultaneous requests from
+separate application pools and sources yield one verification/`422` and one account `429`.
+`password_admission_route_parity_blocked_correct_and_no_verification` checks equivalent admitted and blocked states for
+known, unknown, disabled and passwordless accounts. The other `password_admission_` tests cover reset ordering,
+cancellation, lost commit acknowledgement, cohort loss, storage failure and the verified version snapshot.
 
 **Self-registration reaching the shared policy:** after the `self_registration_enabled` and `local_auth_enabled` gates
 and `enforce_source_rate_limit`, `register` validates the email shape, then calls `password_policy::enforce_from_config`
@@ -274,10 +253,9 @@ order rather than by the test itself, which observes only the returned variant.
   Reload the page and sign in again." It covers an already signed-in browser and lost arbitration, including an
   already-won anonymous cohort. Switching accounts requires sign-out. When flushing succeeds after a post-win failure,
   the next attempt starts fresh. A failed flush leaves the cohort won until the session expires.
-- **Rate limiting.** Two independent mechanisms can each produce `AppError::RateLimited` (`429`), and neither response
-  carries a `Retry-After` header: the per-source `governor` limiter, checked first (ahead of the disabled-feature gate
-  only on `setup`) whenever a client IP resolves; and the per-account backoff, checked only inside `local_login`'s
-  failed-attempt branch, which a verified login bypasses entirely regardless of the window's state.
+- **Rate limiting.** Source and account rejection each produce generic `429` with positive integer `Retry-After`. Source
+  rejection precedes account-state creation. Account rejection precedes both real and dummy hashing. OIDC start retains
+  its `303 /login?outcome=throttled` navigation and writes no attempt on rejection.
 - **Password policy rejection.** `enforce`'s `PolicyError` variants map to `AppError::Validation` (`422`) with the
   error's `Display` text as the response's `detail` field for HTTP setup, registration, administrator create/reset and
   self-service change: `TooShort`/`TooLong` name the configured bound, `TooWeak` carries zxcvbn's feedback (or a generic
@@ -299,30 +277,19 @@ order rather than by the test itself, which observes only the returned variant.
 
 ## Security and operations
 
-Argon2id verification work is spent identically on the two paths that reach it with nothing to authenticate: a
-credential that fails to verify against a real stored hash, and `verify_against_dummy`'s check against the
-process-stable `DUMMY_PHC` on the no-account and no-local-credential paths. The account and credential lookups that
-precede that step are not equalised the same way: a known email always issues a second query
-(`local_credentials::find_by_user_id`) that an unknown email never reaches, so this equalises Argon2 cost rather than
-overall request latency; no test in this module measures wall-clock timing.
+Equivalent admitted failures spend real or dummy Argon2id verification and return the same generic `422`. Equivalent
+throttled states return generic `429` and perform neither lookup nor verification. The first dummy use initialises its
+hash; known accounts require an additional credential lookup. This is equivalent verification work, not an exact total
+latency guarantee.
 
-Three techniques together keep an unknown email and a wrong password from being distinguished on the response itself:
-both return the identical generic `422` body; a soft-disabled account presenting its correct password folds into the
-same branch rather than surfacing a distinct disabled-account error; and the per-account throttle, when it escalates at
-all, escalates identically for either case, keyed on the submitted email regardless of whether it resolves to an
-account. `local_login_unknown_email_matches_wrong_password` asserts the status and body are byte-identical between the
-two. `local_login_with_session_keeps_failure_parity` checks the same status and body parity with a live anonymous
-cohort.
+A sustained targeted attack can repeatedly obstruct password-only sign-in, including correct credentials. Existing
+sessions remain valid. Hashing is synchronous and account serialisation holds one database connection through it;
+aggregate hashing and waiting are not bounded by this mechanism. The hourly sweep provides eventual reclamation, not a
+hard storage bound under unbounded arrivals. Cleanup errors log and retry later without clearing protection.
 
-`local_login` verifies the password before consulting the per-account backoff window, and consults the window only on
-the failed branch: a correct password succeeds during an active window and clears it, and a wrong attempt during the
-window answers `429` from the `backoff_until` check without ever reaching `record_failure`, so it is not recorded and
-the window does not extend. The window's escalating length changes the outcome of a wrong guess only, never a correct
-one. The per-source limiter is what bounds how many attempts a given client can make in a period; `client_ip` trusts a
-forwarded-for header only when the operator has explicitly named one via `trusted_client_ip_header`, so with none
-configured every client behind a shared front end shares one rate-limit key. The per-account backoff survives a process
-restart (Postgres-backed); the per-source limiter does not (an in-process `governor` map), and an operator can clear it
-per email, out of band, only through `reverie unlock-account`.
+`client_ip` honours a forwarded header only when `trusted_client_ip_header` names it. Without that opt-in, clients
+behind a shared proxy use its peer address as one source key. Source state is process-local; account accounting survives
+restarts. `reverie unlock-account` clears an email's accounting through the same row ordering as login.
 
 `enforce_from_config` builds its breach-check HTTP client through `crate::services::enrichment::http::api_client`, which
 resolves every hostname it dials, including each redirect hop it follows, through the SSRF-filtering `ssrf_resolver`
@@ -349,6 +316,6 @@ verification among its compensating controls; this Design is the mechanism behin
 ## More information
 
 - [Reference configuration](../../../../website/src/content/docs/reference/configuration.mdx): the generated
-  `REVERIE_LOGIN_RATE_PER_MIN`, `REVERIE_LOGIN_THROTTLE_*` and `REVERIE_PASSWORD_*` field reference.
+  `REVERIE_LOGIN_RATE_PER_MIN` and `REVERIE_PASSWORD_*` field reference.
 - [CodeGuard deviation register](../../../security/codeguard/README.md), deviation 5: Reverie's single-factor local
   authentication posture and its compensating controls.

@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "WITH expired AS (SELECT email_lower FROM local_login_throttle WHERE (locked_until IS NULL OR locked_until <= clock_timestamp()) AND clock_timestamp() - interval '15 minutes' >= ALL(completed_failures) ORDER BY updated_at, email_lower LIMIT $1 FOR UPDATE SKIP LOCKED) DELETE FROM local_login_throttle AS throttle USING expired WHERE throttle.email_lower = expired.email_lower AND (throttle.locked_until IS NULL OR throttle.locked_until <= clock_timestamp()) AND clock_timestamp() - interval '15 minutes' >= ALL(throttle.completed_failures)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "c44f95bef20109459ecf8ea462c8c9e5ec35e56d196ac1eacd9d4440d5efe9ba"
+}

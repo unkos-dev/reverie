@@ -177,6 +177,12 @@ of other fields do not. Restarts preserve seeded database values regardless of c
 row remains eligible at any revision. The marker is internal and has no configuration or API representation. Seed
 failure stops startup. Other worker settings retain their own loading behaviour.
 
+`login_rate_per_min` configures each independent authentication source allowance, defaulting to 10/min per client IP.
+Account admission has fixed ten-failure, 15-minute observation and 15-minute block values, with no configuration fields.
+`REVERIE_LOGIN_THROTTLE_BASE_SECS` and `REVERIE_LOGIN_THROTTLE_CAP_SECS` have no `ENV_MAP` entry and follow the existing
+unmapped-variable rule: supplied values are ignored. The generated configuration reference and schema expose only mapped
+fields.
+
 ## Runtime behaviour
 
 **A minimal load: `DATABASE_URL` set, `REVERIE_OPDS_ENABLED=false`, nothing else**, driven by `Config::from_env`:

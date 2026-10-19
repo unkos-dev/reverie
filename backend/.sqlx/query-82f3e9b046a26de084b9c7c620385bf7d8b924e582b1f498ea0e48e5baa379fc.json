@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE local_login_throttle SET completed_failures = $2, locked_until = $3 WHERE email_lower = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "TimestamptzArray",
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "82f3e9b046a26de084b9c7c620385bf7d8b924e582b1f498ea0e48e5baa379fc"
+}

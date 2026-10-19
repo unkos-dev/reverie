@@ -357,6 +357,8 @@ mod tests {
             config,
             oidc: Some(std::sync::Arc::new(test_support::test_oidc_runtime())),
             login_limiter: test_support::test_login_limiter(),
+            recovery_limiter: test_support::test_login_limiter(),
+            oidc_limiter: test_support::test_login_limiter(),
             settings: test_support::test_settings(),
             last_settings_reload: std::sync::Arc::new(tokio::sync::RwLock::new(None)),
         };

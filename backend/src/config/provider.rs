@@ -39,11 +39,6 @@ pub const ENV_MAP: &[(&str, &str)] = &[
     ("RUST_LOG", "log_level"),
     ("REVERIE_DB_MAX_CONNECTIONS", "db_max_connections"),
     ("REVERIE_LOGIN_RATE_PER_MIN", "login_rate_per_min"),
-    (
-        "REVERIE_LOGIN_THROTTLE_BASE_SECS",
-        "login_throttle_base_secs",
-    ),
-    ("REVERIE_LOGIN_THROTTLE_CAP_SECS", "login_throttle_cap_secs"),
     ("REVERIE_PASSWORD_MIN_LENGTH", "password_min_length"),
     ("REVERIE_PASSWORD_MAX_LENGTH", "password_max_length"),
     (

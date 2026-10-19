@@ -131,8 +131,8 @@ disabled. The stored email is never rewritten, whatever the provider now release
 1. Require configured OIDC, else 404.
 2. Call the shared `signed_in_user` rule. `SignedIn` redirects to `/` with 303. Stale, deleted and disabled identities
    are flushed and continue anonymously.
-3. Apply the existing per-source limiter. An over-limit start redirects to `/login?outcome=throttled` with 303 and
-   writes no attempt.
+3. Apply the independent OIDC per-source limiter. An over-limit start redirects to `/login?outcome=throttled` with 303
+   and writes no attempt.
 4. Read the current provider snapshot. When discovery is pending, redirect to `/login?outcome=unavailable` with 303,
    without provider I/O, saving a session or writing a cohort/attempt. A ready start uses that snapshot's client.
 5. Join a live anonymous session's cohort. `Won` redirects to `/login?outcome=expired` with 303 without changing the
@@ -141,8 +141,11 @@ disabled. The stored email is never rewritten, whatever the provider now release
    returns an internal error. Insert the marker and explicitly save the session.
 7. Generate the PKCE pair, state and nonce, persist the attempt, and redirect to the provider with 307.
 
-The source bucket is shared with local sign-in and the registration, setup and recovery paths that use the same limiter.
-The identity check precedes limiting and attempt lookup, so a signed-in browser starts no provider work.
+`state.oidc_limiter` has its own source allowance with the configured `login_rate_per_min` quota. Password/setup/
+registration and recovery use separate governor instances; exhausting either leaves OIDC's allowance intact. The hourly
+sweep uses governor's `retain_recent` to reclaim fully replenished keys. The callback uses its one-shot attempt
+protection without spending password source allowance. The identity check precedes limiting and attempt lookup, so a
+signed-in browser starts no provider work.
 
 **Callback.** OIDC not configured answers 404. Otherwise `callback` applies these steps:
 

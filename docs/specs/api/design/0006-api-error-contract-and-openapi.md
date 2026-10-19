@@ -136,6 +136,10 @@ and the 401 recovery funnel in `frontend/src/lib/query/client.ts` (the Design "S
   `instance` vary per occurrence. Nullable/omitted-field conventions for success bodies follow the same wire conventions
   but are not this subject's concern beyond `instance`, which is the one field this subject computes rather than a
   handler.
+- `AppError::RateLimited` carries a retry delay. Its shared response mapping adds `Retry-After` as a positive integer
+  number of seconds while retaining the generic `429` problem body. Source denial uses governor's wait deadline; account
+  denial uses the current block deadline. Both round up. The authentication operations document the header in their
+  OpenAPI `429` responses. OIDC start keeps its fixed `303` navigation outcome.
 - `crate::openapi::ProblemDetails` is the single point of coupling between the error module and the OpenAPI module: the
   module doc on `backend/src/openapi.rs` names this "intentional... the resulting openapi↔error circularity is the point
   — one struct owns the RFC 9457 wire shape, so the spec and the bytes on the wire cannot drift." Splitting the struct

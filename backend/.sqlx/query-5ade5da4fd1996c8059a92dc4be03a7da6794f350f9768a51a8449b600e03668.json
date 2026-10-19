@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE local_login_throttle SET completed_failures = '{}', locked_until = NULL WHERE email_lower = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "5ade5da4fd1996c8059a92dc4be03a7da6794f350f9768a51a8449b600e03668"
+}

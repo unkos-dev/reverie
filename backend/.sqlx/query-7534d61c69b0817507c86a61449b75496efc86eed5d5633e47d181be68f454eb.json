@@ -1,0 +1,12 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO tower_sessions.session (id, data, expiry_date) VALUES ('migration', 'payload', now() + interval '1 hour')",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": []
+  },
+  "hash": "7534d61c69b0817507c86a61449b75496efc86eed5d5633e47d181be68f454eb"
+}

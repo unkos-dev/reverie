@@ -180,7 +180,7 @@ async fn oidc_login(
     ) {
         return Ok(Redirect::to("/"));
     }
-    if enforce_source_rate_limit(&state, &headers, &peer).is_err() {
+    if enforce_source_rate_limit(&state, &state.oidc_limiter, &headers, &peer).is_err() {
         return Ok(SignInOutcome::Throttled.redirect());
     }
     let Some(snapshot) = oidc.snapshot().await else {
@@ -410,14 +410,12 @@ struct LocalLoginRequest {
 /// `POST /auth/local/login`: email + password sign-in, establishing the same
 /// session contract as the OIDC callback.
 ///
-/// THREAT (enumeration): unknown email and wrong password return the identical
-/// generic 422, and both spend equivalent Argon2 work, so neither
-/// the response nor the timing distinguishes a non-existent account.
+/// THREAT: equivalent admitted failures spend real or dummy verification; blocked requests spend neither.
 ///
 /// # Errors
 /// - [`AppError::NotFound`] when local authentication is disabled.
 /// - [`AppError::RateLimited`] (429) when the per-source limit is exceeded, or a
-///   failed attempt arrives during an active per-account backoff.
+///   request arrives during an active account block.
 /// - [`AppError::Validation`] (422) on bad credentials (generic; no enumeration).
 /// - [`AppError::SignInInactive`] (409) when signed in or arbitration is lost.
 /// - [`AppError::Internal`] on session-store or database failure.
@@ -425,7 +423,7 @@ struct LocalLoginRequest {
     post,
     path = "/auth/local/login",
     summary = "Sign in with email and password",
-    description = "Authenticates with `email` and `password` and establishes a session. No authentication is required to call it. Returns 404 if local authentication is disabled, 422 for invalid credentials, and 429 when too many attempts have been made.",
+    description = "Admits the source and account before verifying `email` and `password`. Ten committed failures in a rolling 15-minute window start a 15-minute block; the tenth failure returns generic 422. Blocked requests, including correct passwords, return generic 429 with Retry-After without verification and do not extend the block. A winning enabled-account login clears accounting before session establishment. Returns 404 if local authentication is disabled.",
     tag = "auth",
     security(()),
     request_body = LocalLoginRequest,
@@ -434,7 +432,7 @@ struct LocalLoginRequest {
         (status = 204, description = "Login succeeded; session established (id rotated, CSRF token minted, theme cookie seeded)"),
         (status = 404, description = "Local authentication is disabled on this instance", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 422, description = "Invalid credentials (generic; identical for unknown email and wrong password)", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
-        (status = 429, description = "Too many login attempts", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
+        (status = 429, description = "Too many login attempts", body = crate::openapi::ProblemDetails, content_type = "application/problem+json", headers(("Retry-After" = u64, description = "Positive delay in seconds before retrying"))),
     )
 )]
 async fn local_login(
@@ -449,7 +447,7 @@ async fn local_login(
         return Err(AppError::NotFound);
     }
 
-    enforce_source_rate_limit(&state, &headers, &peer)?;
+    enforce_source_rate_limit(&state, &state.login_limiter, &headers, &peer)?;
 
     if matches!(
         crate::auth::session::signed_in_user(&session, &state.pool).await?,
@@ -471,54 +469,36 @@ async fn local_login(
         None
     };
 
-    // Resolve the account, then verify. On an unknown email or an account with
-    // no local credential, spend equivalent Argon2 work against a dummy hash so
-    // login latency does not leak account existence.
-    let account = user::find_by_email(&state.pool, &body.email)
+    let mut attempt = match crate::models::login_throttle::admit(&state.pool, &body.email)
         .await
-        .map_err(|e| AppError::Internal(e.into()))?;
-    let credential = match &account {
-        Some(u) => crate::models::local_credentials::find_by_user_id(&state.pool, u.id)
-            .await
-            .map_err(|e| AppError::Internal(e.into()))?,
-        None => None,
+        .map_err(|e| AppError::Internal(e.into()))?
+    {
+        crate::models::login_throttle::Admission::Allowed(attempt) => attempt,
+        crate::models::login_throttle::Admission::Blocked(retry_after_secs) => {
+            return Err(AppError::RateLimited { retry_after_secs });
+        }
     };
-    let verified = if let Some(cred) = &credential {
-        crate::auth::password::verify_password(body.password.as_bytes(), &cred.password_hash)
-            .is_ok()
-    } else {
-        // Spend equivalent Argon2 work and discard the (always false) result so
-        // an unknown account is timing-indistinguishable from a wrong password.
-        crate::auth::password::verify_against_dummy(body.password.as_bytes());
-        false
-    };
-
-    // A correct password succeeds even during an active backoff (which it then
-    // clears). Verify-first means backoff never blocks a legitimate login; it
-    // only rejects continued *wrong* attempts.
-    //
-    // THREAT (account-state enumeration, CWE-204): a soft-disabled account with
-    // a CORRECT password must be indistinguishable from a wrong password. It
-    // falls through to the generic failed-login path below (same email-keyed
-    // throttle escalation, same generic 422, no session) rather than returning a
-    // distinct "account disabled" error, which would be a disabled-state oracle.
-    // The Argon2 verify above already ran, so login latency is preserved.
-    let session_user = match account {
-        Some(user) if verified && user.disabled_at.is_none() => Some(user),
-        _ => None,
-    };
+    // THREAT: rejected requests reach neither real nor dummy verification.
+    let session_user =
+        verify_local_account(attempt.connection(), &body.email, body.password.as_bytes()).await?;
     if let Some(user) = session_user {
         if let Some(id) = &cohort_id
-            && !sign_in::claim_win(&state.pool, id)
+            && !sign_in::claim_win(attempt.connection(), id)
                 .await
                 .map_err(|e| AppError::Internal(e.into()))?
         {
             return Err(AppError::SignInInactive);
         }
         let login_result = async {
-            crate::models::login_throttle::reset(&state.pool, &body.email)
+            #[cfg(test)]
+            tests::password_checkpoint(tests::PasswordStage::BeforeCommit).await;
+            attempt
+                .succeed()
                 .await
                 .map_err(|e| AppError::Internal(e.into()))?;
+
+            #[cfg(test)]
+            tests::password_checkpoint(tests::PasswordStage::AfterCommit).await;
 
             // Session contract: rotate id + persist identity, mint the
             // CSRF synchronizer token, seed the theme cookie. Identical to the OIDC
@@ -548,34 +528,45 @@ async fn local_login(
         return Ok((jar, StatusCode::NO_CONTENT));
     }
 
-    // Failed attempt. Escalate the per-account backoff for ANY email, whether or
-    // not it resolves to an account.
-    //
-    // THREAT (enumeration, CWE-204): gating this on account existence would let
-    // two quick wrong attempts distinguish a known email (which hits the backoff
-    // and returns 429) from an unknown one (which never would), reintroducing the
-    // account-enumeration oracle the constant-work verify paths close. The
-    // throttle table is email-keyed with no FK, so an unknown email simply gets
-    // its own row; record_failure upserts on that key, so repeated attempts on
-    // one email update a single row, and the per-source limiter bounds how fast
-    // distinct rows can be created. A correct password still succeeds during an
-    // active backoff (verify-first, above) and clears the row.
-    if crate::models::login_throttle::backoff_until(&state.pool, &body.email)
+    #[cfg(test)]
+    tests::password_checkpoint(tests::PasswordStage::BeforeCommit).await;
+    attempt
+        .fail()
         .await
-        .map_err(|e| AppError::Internal(e.into()))?
-        .is_some()
-    {
-        return Err(AppError::RateLimited);
-    }
-    crate::models::login_throttle::record_failure(
-        &state.pool,
-        &body.email,
-        state.config.login_throttle_base_secs,
-        state.config.login_throttle_cap_secs,
-    )
-    .await
-    .map_err(|e| AppError::Internal(e.into()))?;
+        .map_err(|e| AppError::Internal(e.into()))?;
+    #[cfg(test)]
+    tests::password_checkpoint(tests::PasswordStage::AfterCommit).await;
     Err(AppError::Validation("invalid email or password".to_owned()))
+}
+
+async fn verify_local_account(
+    connection: &mut sqlx::PgConnection,
+    email: &str,
+    password: &[u8],
+) -> Result<Option<user::User>, AppError> {
+    let account = user::find_by_email(&mut *connection, email)
+        .await
+        .map_err(|e| AppError::Internal(e.into()))?;
+    let credential = match &account {
+        Some(u) => crate::models::local_credentials::find_by_user_id(&mut *connection, u.id)
+            .await
+            .map_err(|e| AppError::Internal(e.into()))?,
+        None => None,
+    };
+    #[cfg(test)]
+    tests::password_checkpoint(tests::PasswordStage::Verify).await;
+    let verified = credential.as_ref().map_or_else(
+        || {
+            crate::auth::password::verify_against_dummy(password);
+            false
+        },
+        |cred| crate::auth::password::verify_password(password, &cred.password_hash).is_ok(),
+    );
+
+    Ok(match account {
+        Some(user) if verified && user.disabled_at.is_none() => Some(user),
+        _ => None,
+    })
 }
 
 /// Public first-run status for the SPA: whether setup is required and which
@@ -672,7 +663,7 @@ struct SetupRequest {
         (status = 201, description = "First administrator created (no auto-login)"),
         (status = 409, description = "An administrator already exists", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 422, description = "Validation failed", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
-        (status = 429, description = "Too many requests", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
+        (status = 429, description = "Too many requests", body = crate::openapi::ProblemDetails, content_type = "application/problem+json", headers(("Retry-After" = u64, description = "Positive delay in seconds before retrying"))),
     )
 )]
 async fn setup(
@@ -681,7 +672,7 @@ async fn setup(
     peer: crate::auth::rate_limit::PeerAddr,
     ApiJson(body): ApiJson<SetupRequest>,
 ) -> Result<StatusCode, AppError> {
-    enforce_source_rate_limit(&state, &headers, &peer)?;
+    enforce_source_rate_limit(&state, &state.login_limiter, &headers, &peer)?;
 
     // Cheap fast-reject; the authoritative guard is the marker insert below.
     if user::admin_exists(&state.pool)
@@ -759,7 +750,7 @@ struct RegisterRequest {
         (status = 404, description = "Self-registration is disabled on this instance", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 409, description = "Email already in use", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 422, description = "Validation failed", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
-        (status = 429, description = "Too many requests", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
+        (status = 429, description = "Too many requests", body = crate::openapi::ProblemDetails, content_type = "application/problem+json", headers(("Retry-After" = u64, description = "Positive delay in seconds before retrying"))),
     )
 )]
 async fn register(
@@ -771,7 +762,7 @@ async fn register(
     if !state.config.self_registration_enabled || !state.config.local_auth_enabled {
         return Err(AppError::NotFound);
     }
-    enforce_source_rate_limit(&state, &headers, &peer)?;
+    enforce_source_rate_limit(&state, &state.login_limiter, &headers, &peer)?;
 
     if !user::is_addr_spec(&body.email) {
         return Err(AppError::Validation("invalid email address".to_owned()));
@@ -802,11 +793,10 @@ async fn register(
     }
 }
 
-/// Resolve the client IP and enforce the per-source login/recovery rate limit.
-/// Tolerates a missing peer (test harness); shared by the login and recovery
-/// handlers.
+/// Apply the selected source allowance using the existing trusted-header boundary.
 fn enforce_source_rate_limit(
     state: &AppState,
+    limiter: &crate::auth::rate_limit::LoginLimiter,
     headers: &HeaderMap,
     peer: &crate::auth::rate_limit::PeerAddr,
 ) -> Result<(), AppError> {
@@ -815,9 +805,15 @@ fn enforce_source_rate_limit(
         headers,
         ip,
         state.config.trusted_client_ip_header.as_deref(),
-    ) && state.login_limiter.check_key(&ip).is_err()
+    ) && let Err(denial) = limiter.check_key(&ip)
     {
-        return Err(AppError::RateLimited);
+        use governor::clock::Clock;
+        let wait = denial.wait_time_from(governor::clock::DefaultClock::default().now());
+        let retry_after_secs = wait
+            .as_secs()
+            .saturating_add(u64::from(wait.subsec_nanos() > 0))
+            .max(1);
+        return Err(AppError::RateLimited { retry_after_secs });
     }
     Ok(())
 }
@@ -858,7 +854,7 @@ struct ForgotPasswordRequest {
     responses(
         (status = 200, description = "Recovery started if the account exists (generic; no enumeration)"),
         (status = 404, description = "Local authentication is disabled", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
-        (status = 429, description = "Too many requests", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
+        (status = 429, description = "Too many requests", body = crate::openapi::ProblemDetails, content_type = "application/problem+json", headers(("Retry-After" = u64, description = "Positive delay in seconds before retrying"))),
     )
 )]
 async fn forgot_password(
@@ -870,7 +866,7 @@ async fn forgot_password(
     if !state.config.local_auth_enabled {
         return Err(AppError::NotFound);
     }
-    enforce_source_rate_limit(&state, &headers, &peer)?;
+    enforce_source_rate_limit(&state, &state.recovery_limiter, &headers, &peer)?;
 
     let user = user::find_by_email(&state.pool, &body.email)
         .await
@@ -963,7 +959,7 @@ struct ResetPasswordRequest {
         (status = 200, description = "Password reset; no session established (re-authentication required)"),
         (status = 404, description = "Local authentication is disabled", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 422, description = "Invalid or expired reset request (generic)", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
-        (status = 429, description = "Too many requests", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
+        (status = 429, description = "Too many requests", body = crate::openapi::ProblemDetails, content_type = "application/problem+json", headers(("Retry-After" = u64, description = "Positive delay in seconds before retrying"))),
     )
 )]
 async fn reset_password(
@@ -975,7 +971,7 @@ async fn reset_password(
     if !state.config.local_auth_enabled {
         return Err(AppError::NotFound);
     }
-    enforce_source_rate_limit(&state, &headers, &peer)?;
+    enforce_source_rate_limit(&state, &state.recovery_limiter, &headers, &peer)?;
 
     let generic = || AppError::Validation("invalid or expired reset request".to_owned());
 
@@ -1238,6 +1234,7 @@ async fn update_theme(
 
 #[cfg(test)]
 mod tests {
+    use crate::state::AppState;
     use axum::http::StatusCode;
 
     use crate::models::theme_preference::ThemePreference;
@@ -1353,6 +1350,590 @@ mod tests {
                 .lines()
                 .any(|line| { line.contains("/login?outcome=throttled") && line.contains("WARN") })
         );
+    }
+
+    #[derive(Clone, Copy, PartialEq, Eq)]
+    pub(super) enum PasswordStage {
+        Verify,
+        BeforeCommit,
+        AfterCommit,
+    }
+
+    struct PasswordProbe {
+        calls: std::sync::atomic::AtomicUsize,
+        pause: Option<PasswordStage>,
+        reached: tokio::sync::Semaphore,
+        resume: tokio::sync::Semaphore,
+    }
+
+    impl PasswordProbe {
+        fn new(pause: Option<PasswordStage>) -> std::sync::Arc<Self> {
+            std::sync::Arc::new(Self {
+                calls: std::sync::atomic::AtomicUsize::new(0),
+                pause,
+                reached: tokio::sync::Semaphore::new(0),
+                resume: tokio::sync::Semaphore::new(0),
+            })
+        }
+        async fn reached(&self) {
+            tokio::time::timeout(std::time::Duration::from_secs(30), self.reached.acquire())
+                .await
+                .unwrap()
+                .unwrap()
+                .forget();
+        }
+        fn calls(&self) -> usize {
+            self.calls.load(std::sync::atomic::Ordering::SeqCst)
+        }
+    }
+
+    tokio::task_local! {
+        static PASSWORD_PROBE: std::sync::Arc<PasswordProbe>;
+    }
+
+    pub(super) async fn password_checkpoint(stage: PasswordStage) {
+        let Ok(probe) = PASSWORD_PROBE.try_with(std::sync::Arc::clone) else {
+            return;
+        };
+        if stage == PasswordStage::Verify {
+            probe
+                .calls
+                .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        }
+        if probe.pause == Some(stage) {
+            probe.reached.add_permits(1);
+            probe.resume.acquire().await.unwrap().forget();
+        }
+    }
+
+    fn password_probe_router(
+        state: AppState,
+        store: impl tower_sessions::SessionStore + Clone,
+        probe: std::sync::Arc<PasswordProbe>,
+    ) -> axum::Router {
+        crate::build_router_with_session_store(state, store).layer(axum::middleware::from_fn(
+            move |request: axum::extract::Request, next: axum::middleware::Next| {
+                let probe = probe.clone();
+                async move { PASSWORD_PROBE.scope(probe, next.run(request)).await }
+            },
+        ))
+    }
+
+    async fn password_state(pool: &sqlx::PgPool) -> AppState {
+        let mut state = test_support::test_state();
+        state.pool = test_support::db::app_pool_for(pool).await;
+        state.ingestion_pool = test_support::db::ingestion_pool_for(pool).await;
+        state
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn password_admission_route_parity_blocked_correct_and_no_verification(
+        pool: sqlx::PgPool,
+    ) {
+        use crate::models::login_throttle::tests::{seed, snapshot};
+        let state = password_state(&pool).await;
+        let disabled = test_support::db::create_adult_with_password(
+            &state.pool,
+            "Disabled",
+            "disabled@example.com",
+            "correct password",
+        )
+        .await;
+        user::disable_account(&state.pool, disabled).await.unwrap();
+        test_support::db::create_adult_with_password(
+            &state.pool,
+            "Known",
+            "known@example.com",
+            "correct password",
+        )
+        .await;
+        let passwordless = test_support::db::create_adult_with_password(
+            &state.pool,
+            "Passwordless",
+            "passwordless@example.com",
+            "correct password",
+        )
+        .await;
+        sqlx::query!(
+            "DELETE FROM local_credentials WHERE user_id = $1",
+            passwordless
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+        let probe = PasswordProbe::new(None);
+        let store = crate::auth::store::PostgresStore::new(state.pool.clone());
+        let server = axum_test::TestServer::new(password_probe_router(state, store, probe.clone()));
+        let mut body = None;
+        for email in [
+            "known@example.com",
+            "unknown@example.com",
+            "disabled@example.com",
+            "passwordless@example.com",
+        ] {
+            let password = if email == "known@example.com" {
+                "wrong"
+            } else {
+                "correct password"
+            };
+            let response = server
+                .post("/auth/local/login")
+                .json(&serde_json::json!({"email":email,"password":password}))
+                .await;
+            assert_eq!(response.status_code(), StatusCode::UNPROCESSABLE_ENTITY);
+            if let Some(body) = &body {
+                assert_eq!(&response.text(), body);
+            } else {
+                body = Some(response.text());
+            }
+        }
+        assert_eq!(probe.calls(), 4);
+        let deadline = chrono::Utc::now() + chrono::TimeDelta::minutes(15);
+        let history = vec![chrono::Utc::now(); 10];
+        let mut body = None;
+        for email in [
+            "known@example.com",
+            "unknown@example.com",
+            "disabled@example.com",
+            "passwordless@example.com",
+        ] {
+            seed(&pool, email, &history, Some(deadline)).await;
+            let before = snapshot(&pool, email).await;
+            for password in ["wrong", "correct password"] {
+                let response = server
+                    .post("/auth/local/login")
+                    .json(&serde_json::json!({"email":email,"password":password}))
+                    .await;
+                assert_eq!(response.status_code(), StatusCode::TOO_MANY_REQUESTS);
+                assert!(
+                    response
+                        .cookies()
+                        .iter()
+                        .all(|cookie| cookie.name() != "id")
+                );
+                if let Some(body) = &body {
+                    assert_eq!(&response.text(), body);
+                } else {
+                    body = Some(response.text());
+                }
+            }
+            assert_eq!(snapshot(&pool, email).await, before);
+        }
+        assert_eq!(probe.calls(), 4);
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn password_admission_route_two_pools_ninth_failure_race(pool: sqlx::PgPool) {
+        use crate::models::login_throttle::tests::{seed, snapshot};
+        seed(&pool, "race@example.com", &[chrono::Utc::now(); 9], None).await;
+        let probe = PasswordProbe::new(Some(PasswordStage::Verify));
+        let mut first = password_state(&pool).await;
+        let mut second = password_state(&pool).await;
+        first.config.trusted_client_ip_header = Some("x-test-source".into());
+        second.config.trusted_client_ip_header = Some("x-test-source".into());
+        let server = std::sync::Arc::new(axum_test::TestServer::new(password_probe_router(
+            first.clone(),
+            crate::auth::store::PostgresStore::new(first.pool.clone()),
+            probe.clone(),
+        )));
+        let other = axum_test::TestServer::new(password_probe_router(
+            second.clone(),
+            crate::auth::store::PostgresStore::new(second.pool.clone()),
+            probe.clone(),
+        ));
+        let request = tokio::spawn(async move {
+            server
+                .post("/auth/local/login")
+                .add_header("x-test-source", "192.0.2.1")
+                .json(&serde_json::json!({"email":"race@example.com","password":"wrong"}))
+                .await
+        });
+        probe.reached().await;
+        let waiting = tokio::spawn(async move {
+            other
+                .post("/auth/local/login")
+                .add_header("x-test-source", "192.0.2.2")
+                .json(&serde_json::json!({"email":"RACE@example.com","password":"wrong"}))
+                .await
+        });
+        test_support::wait_for_blocked_query(&pool, "%INSERT INTO local_login_throttle%", 1).await;
+        probe.resume.add_permits(1);
+        assert_eq!(
+            request.await.unwrap().status_code(),
+            StatusCode::UNPROCESSABLE_ENTITY
+        );
+        assert_eq!(
+            waiting.await.unwrap().status_code(),
+            StatusCode::TOO_MANY_REQUESTS
+        );
+        assert_eq!(probe.calls(), 1);
+        assert_eq!(snapshot(&pool, "race@example.com").await.0.len(), 10);
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn password_admission_route_cancellation_and_late_result(pool: sqlx::PgPool) {
+        use crate::models::login_throttle::tests::{seed, snapshot};
+        for stage in [PasswordStage::BeforeCommit, PasswordStage::AfterCommit] {
+            seed(&pool, "cancel@example.com", &[], None).await;
+            let state = password_state(&pool).await;
+            let probe = PasswordProbe::new(Some(stage));
+            let server = axum_test::TestServer::new(password_probe_router(
+                state.clone(),
+                crate::auth::store::PostgresStore::new(state.pool.clone()),
+                probe.clone(),
+            ));
+            let request = tokio::spawn(async move {
+                server
+                    .post("/auth/local/login")
+                    .json(&serde_json::json!({"email":"cancel@example.com","password":"wrong"}))
+                    .await
+            });
+            probe.reached().await;
+            request.abort();
+            assert!(request.await.unwrap_err().is_cancelled());
+            let mut tx = pool.begin().await.unwrap();
+            sqlx::query!("SELECT email_lower FROM local_login_throttle WHERE email_lower = 'cancel@example.com' FOR UPDATE").fetch_one(&mut *tx).await.unwrap();
+            tx.commit().await.unwrap();
+            assert_eq!(
+                snapshot(&pool, "cancel@example.com").await.0.len(),
+                usize::from(stage == PasswordStage::AfterCommit)
+            );
+            crate::models::login_throttle::reset(&pool, "cancel@example.com")
+                .await
+                .unwrap();
+            probe.resume.add_permits(1);
+            tokio::task::yield_now().await;
+            assert_eq!(snapshot(&pool, "cancel@example.com").await.0.len(), 0);
+        }
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn password_admission_route_retains_verified_version_snapshot(pool: sqlx::PgPool) {
+        let state = password_state(&pool).await;
+        let id = test_support::db::create_adult_with_password(
+            &state.pool,
+            "Version",
+            "version@example.com",
+            "correct password",
+        )
+        .await;
+        let probe = PasswordProbe::new(Some(PasswordStage::BeforeCommit));
+        let mut server = axum_test::TestServer::new(password_probe_router(
+            state.clone(),
+            crate::auth::store::PostgresStore::new(state.pool.clone()),
+            probe.clone(),
+        ));
+        server.save_cookies();
+        let server = std::sync::Arc::new(server);
+        let request_server = server.clone();
+        let request = tokio::spawn(async move {
+            request_server.post("/auth/local/login").json(&serde_json::json!({"email":"version@example.com","password":"correct password"})).await
+        });
+        probe.reached().await;
+        sqlx::query!(
+            "UPDATE users SET session_version = session_version + 1 WHERE id = $1",
+            id
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+        probe.resume.add_permits(1);
+        assert_eq!(request.await.unwrap().status_code(), StatusCode::NO_CONTENT);
+        assert_eq!(
+            server.get("/auth/me").await.status_code(),
+            StatusCode::UNAUTHORIZED
+        );
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn password_admission_success_clears_history_and_preserves_existing_session(
+        pool: sqlx::PgPool,
+    ) {
+        use crate::models::login_throttle::tests::{seed, snapshot};
+        let state = password_state(&pool).await;
+        test_support::db::create_adult_with_password(
+            &state.pool,
+            "Success",
+            "success@example.com",
+            "correct password",
+        )
+        .await;
+        seed(&pool, "success@example.com", &[chrono::Utc::now(); 9], None).await;
+        let probe = PasswordProbe::new(None);
+        let mut server = axum_test::TestServer::new(password_probe_router(
+            state.clone(),
+            crate::auth::store::PostgresStore::new(state.pool.clone()),
+            probe.clone(),
+        ));
+        server.save_cookies();
+        let response = server
+            .post("/auth/local/login")
+            .json(&serde_json::json!({"email":"success@example.com","password":"correct password"}))
+            .await;
+        assert_eq!(response.status_code(), StatusCode::NO_CONTENT);
+        assert_eq!(snapshot(&pool, "success@example.com").await, (vec![], None));
+        assert_eq!(probe.calls(), 1);
+        seed(
+            &pool,
+            "success@example.com",
+            &[chrono::Utc::now(); 10],
+            Some(chrono::Utc::now() + chrono::TimeDelta::minutes(15)),
+        )
+        .await;
+        assert_eq!(server.get("/auth/me").await.status_code(), StatusCode::OK);
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn password_admission_cohort_loser_preserves_history(pool: sqlx::PgPool) {
+        use crate::models::login_throttle::tests::{seed, snapshot};
+        let fixture = CallbackFixture::start(&pool).await;
+        test_support::db::create_adult_with_password(
+            &fixture.app_pool,
+            "Loser",
+            "loser@example.com",
+            "correct password",
+        )
+        .await;
+        seed(&pool, "loser@example.com", &[chrono::Utc::now()], None).await;
+        let before = snapshot(&pool, "loser@example.com").await;
+        let probe = PasswordProbe::new(Some(PasswordStage::Verify));
+        let server = axum_test::TestServer::new(password_probe_router(
+            fixture.state.clone(),
+            fixture.store.clone(),
+            probe.clone(),
+        ));
+        let cookie = axum_extra::extract::cookie::Cookie::new("id", fixture.session_id.to_string());
+        let request = tokio::spawn(async move {
+            server
+                .post("/auth/local/login")
+                .add_cookie(cookie)
+                .json(
+                    &serde_json::json!({"email":"loser@example.com","password":"correct password"}),
+                )
+                .await
+        });
+        probe.reached().await;
+        assert!(
+            sign_in::claim_win(&fixture.app_pool, &fixture.session_id.to_string())
+                .await
+                .unwrap()
+        );
+        probe.resume.add_permits(1);
+        assert_eq!(request.await.unwrap().status_code(), StatusCode::CONFLICT);
+        assert_eq!(snapshot(&pool, "loser@example.com").await, before);
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn password_admission_session_failure_after_commit_clears_history(pool: sqlx::PgPool) {
+        use crate::models::login_throttle::tests::{seed, snapshot};
+        use tower_sessions::SessionStore;
+        let fixture = CallbackFixture::start(&pool).await;
+        test_support::db::create_adult_with_password(
+            &fixture.app_pool,
+            "Storage",
+            "storage@example.com",
+            "correct password",
+        )
+        .await;
+        seed(&pool, "storage@example.com", &[chrono::Utc::now()], None).await;
+        let store = OutcomeStore {
+            inner: fixture.store.clone(),
+            operation: StoreOperation::Delete,
+            failures: std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(1)),
+        };
+        let server = axum_test::TestServer::new(crate::build_router_with_session_store(
+            fixture.state.clone(),
+            store,
+        ));
+        let response = server
+            .post("/auth/local/login")
+            .add_cookie(axum_extra::extract::cookie::Cookie::new(
+                "id",
+                fixture.session_id.to_string(),
+            ))
+            .json(&serde_json::json!({"email":"storage@example.com","password":"correct password"}))
+            .await;
+        assert_eq!(response.status_code(), StatusCode::INTERNAL_SERVER_ERROR);
+        assert_eq!(snapshot(&pool, "storage@example.com").await, (vec![], None));
+        let retained = fixture
+            .store
+            .load(&fixture.session_id)
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(!retained.data.contains_key("user_id"));
+        assert_eq!(
+            sign_in::join_pending(&fixture.app_pool, &fixture.session_id.to_string())
+                .await
+                .unwrap(),
+            sign_in::CohortState::Won
+        );
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn password_admission_disconnect_with_running_handler_commits_result(pool: sqlx::PgPool) {
+        use crate::models::login_throttle::tests::{seed, snapshot};
+        use tokio::io::AsyncWriteExt;
+        seed(&pool, "disconnect@example.com", &[], None).await;
+        let state = password_state(&pool).await;
+        let probe = PasswordProbe::new(Some(PasswordStage::BeforeCommit));
+        let app = password_probe_router(
+            state.clone(),
+            crate::auth::store::PostgresStore::new(state.pool.clone()),
+            probe.clone(),
+        )
+        .layer(axum::middleware::from_fn(
+            |request: axum::extract::Request, next: axum::middleware::Next| async move {
+                tokio::spawn(next.run(request)).await.unwrap()
+            },
+        ));
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let serving = tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap();
+        });
+        let mut stream = tokio::net::TcpStream::connect(address).await.unwrap();
+        let body = r#"{"email":"disconnect@example.com","password":"wrong"}"#;
+        stream.write_all(format!("POST /auth/local/login HTTP/1.1\r\nHost: localhost\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{body}", body.len()).as_bytes()).await.unwrap();
+        probe.reached().await;
+        stream.shutdown().await.unwrap();
+        drop(stream);
+        probe.resume.add_permits(1);
+        tokio::time::timeout(std::time::Duration::from_secs(10), async {
+            loop {
+                if snapshot(&pool, "disconnect@example.com").await.0.len() == 1 {
+                    break;
+                }
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("a running handler commits despite client disconnect");
+        assert_eq!(probe.calls(), 1);
+        serving.abort();
+        assert!(serving.await.unwrap_err().is_cancelled());
+    }
+
+    fn assert_retry(response: &axum_test::TestResponse, upper: u64) -> u64 {
+        assert_eq!(response.status_code(), StatusCode::TOO_MANY_REQUESTS);
+        let seconds = response
+            .header("retry-after")
+            .to_str()
+            .unwrap()
+            .parse::<u64>()
+            .unwrap();
+        assert!((1..=upper).contains(&seconds));
+        seconds
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn auth_allowance_independent_groups_and_rejected_source_creates_no_state(
+        pool: sqlx::PgPool,
+    ) {
+        let mut state = password_state(&pool).await;
+        state.config.trusted_client_ip_header = Some("x-test-source".into());
+        let quota = std::num::NonZeroU32::new(1).unwrap();
+        state.login_limiter = crate::auth::rate_limit::build_login_limiter(quota);
+        state.recovery_limiter = crate::auth::rate_limit::build_login_limiter(quota);
+        state.oidc_limiter = crate::auth::rate_limit::build_login_limiter(quota);
+        let probe = PasswordProbe::new(None);
+        let server = axum_test::TestServer::new(password_probe_router(
+            state.clone(),
+            crate::auth::store::PostgresStore::new(state.pool.clone()),
+            probe.clone(),
+        ));
+        let password = server
+            .post("/auth/local/login")
+            .add_header("x-test-source", "192.0.2.5")
+            .json(&serde_json::json!({"email":"first@example.com","password":"wrong"}))
+            .await;
+        assert_eq!(password.status_code(), StatusCode::UNPROCESSABLE_ENTITY);
+        let rejected = server
+            .post("/auth/local/login")
+            .add_header("x-test-source", "192.0.2.5")
+            .json(&serde_json::json!({"email":"source-rejected@example.com","password":"wrong"}))
+            .await;
+        assert_retry(&rejected, 60);
+        assert_eq!(probe.calls(), 1);
+        assert_eq!(sqlx::query_scalar!("SELECT count(*) FROM local_login_throttle WHERE email_lower = 'source-rejected@example.com'").fetch_one(&pool).await.unwrap(), Some(0));
+        let recovery = server
+            .post("/auth/forgot-password")
+            .add_header("x-test-source", "192.0.2.5")
+            .json(&serde_json::json!({"email":"unknown@example.com"}))
+            .await;
+        assert_eq!(recovery.status_code(), StatusCode::OK);
+        let rejected = server.post("/auth/reset-password").add_header("x-test-source", "192.0.2.5").json(&serde_json::json!({"email":"unknown@example.com","pin":"wrong","new_password":"a perfectly good new password"})).await;
+        assert_retry(&rejected, 60);
+        let oidc = server
+            .get("/auth/oidc/login")
+            .add_header("x-test-source", "192.0.2.5")
+            .await;
+        assert_eq!(oidc.status_code(), StatusCode::TEMPORARY_REDIRECT);
+        let attempts = sqlx::query_scalar!("SELECT count(*) FROM oidc_sign_in_attempts")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        let rejected = server
+            .get("/auth/oidc/login")
+            .add_header("x-test-source", "192.0.2.5")
+            .await;
+        assert_outcome(&rejected, "/login?outcome=throttled");
+        assert_eq!(
+            sqlx::query_scalar!("SELECT count(*) FROM oidc_sign_in_attempts")
+                .fetch_one(&pool)
+                .await
+                .unwrap(),
+            attempts
+        );
+        for (source, group) in [
+            ("192.0.2.6", &state.recovery_limiter),
+            ("192.0.2.7", &state.oidc_limiter),
+        ] {
+            let ip = source.parse().unwrap();
+            assert!(group.check_key(&ip).is_ok());
+            assert!(group.check_key(&ip).is_err());
+            let password = server
+                .post("/auth/local/login")
+                .add_header("x-test-source", source)
+                .json(&serde_json::json!({"email":"separate@example.com","password":"wrong"}))
+                .await;
+            assert_eq!(password.status_code(), StatusCode::UNPROCESSABLE_ENTITY);
+        }
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn auth_allowance_account_retry_decreases_without_extending_block(pool: sqlx::PgPool) {
+        use crate::models::login_throttle::tests::{seed, snapshot};
+        let state = password_state(&pool).await;
+        let probe = PasswordProbe::new(None);
+        let server = axum_test::TestServer::new(password_probe_router(
+            state.clone(),
+            crate::auth::store::PostgresStore::new(state.pool.clone()),
+            probe.clone(),
+        ));
+        seed(
+            &pool,
+            "retry@example.com",
+            &[chrono::Utc::now(); 10],
+            Some(chrono::Utc::now() + chrono::TimeDelta::seconds(900)),
+        )
+        .await;
+        let before = snapshot(&pool, "retry@example.com").await;
+        let first = server
+            .post("/auth/local/login")
+            .json(&serde_json::json!({"email":"retry@example.com","password":"wrong"}))
+            .await;
+        let first_retry = assert_retry(&first, 900);
+        assert_eq!(snapshot(&pool, "retry@example.com").await, before);
+        tokio::time::sleep(std::time::Duration::from_millis(1100)).await;
+        let later = server
+            .post("/auth/local/login")
+            .json(&serde_json::json!({"email":"retry@example.com","password":"correct password"}))
+            .await;
+        assert!(assert_retry(&later, 900) < first_retry);
+        assert_eq!(first.text(), later.text());
+        assert_eq!(snapshot(&pool, "retry@example.com").await, before);
+        assert_eq!(probe.calls(), 0);
     }
 
     #[sqlx::test(migrations = "./migrations")]
@@ -1664,6 +2245,8 @@ mod tests {
             config,
             oidc,
             login_limiter: test_support::test_login_limiter(),
+            recovery_limiter: test_support::test_login_limiter(),
+            oidc_limiter: test_support::test_login_limiter(),
             settings: test_support::test_settings(),
             last_settings_reload: std::sync::Arc::new(tokio::sync::RwLock::new(None)),
         };
@@ -2560,7 +3143,7 @@ mod tests {
         );
         let mut limited_state = fixture.state.clone();
         limited_state.config.trusted_client_ip_header = Some("x-forwarded-for".to_owned());
-        limited_state.login_limiter =
+        limited_state.oidc_limiter =
             crate::auth::rate_limit::build_login_limiter(std::num::NonZeroU32::new(1).unwrap());
         let limited = axum_test::TestServer::new(crate::build_router(limited_state));
         assert_eq!(
@@ -3344,6 +3927,8 @@ mod tests {
                 config,
                 oidc,
                 login_limiter: test_support::test_login_limiter(),
+                recovery_limiter: test_support::test_login_limiter(),
+                oidc_limiter: test_support::test_login_limiter(),
                 settings: test_support::test_settings(),
                 last_settings_reload: std::sync::Arc::new(tokio::sync::RwLock::new(None)),
             };
@@ -3613,6 +4198,8 @@ mod tests {
             config,
             oidc,
             login_limiter: test_support::test_login_limiter(),
+            recovery_limiter: test_support::test_login_limiter(),
+            oidc_limiter: test_support::test_login_limiter(),
             settings: test_support::test_settings(),
             last_settings_reload: std::sync::Arc::new(tokio::sync::RwLock::new(None)),
         };
@@ -3742,6 +4329,8 @@ mod tests {
             config,
             oidc,
             login_limiter: test_support::test_login_limiter(),
+            recovery_limiter: test_support::test_login_limiter(),
+            oidc_limiter: test_support::test_login_limiter(),
             settings: test_support::test_settings(),
             last_settings_reload: std::sync::Arc::new(tokio::sync::RwLock::new(None)),
         };
@@ -3852,6 +4441,8 @@ mod tests {
             config,
             oidc,
             login_limiter: test_support::test_login_limiter(),
+            recovery_limiter: test_support::test_login_limiter(),
+            oidc_limiter: test_support::test_login_limiter(),
             settings: test_support::test_settings(),
             last_settings_reload: std::sync::Arc::new(tokio::sync::RwLock::new(None)),
         };
@@ -3959,6 +4550,8 @@ mod tests {
             config,
             oidc,
             login_limiter: test_support::test_login_limiter(),
+            recovery_limiter: test_support::test_login_limiter(),
+            oidc_limiter: test_support::test_login_limiter(),
             settings: test_support::test_settings(),
             last_settings_reload: std::sync::Arc::new(tokio::sync::RwLock::new(None)),
         };

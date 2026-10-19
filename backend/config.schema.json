@@ -98,24 +98,10 @@
       "default": "info"
     },
     "login_rate_per_min": {
-      "description": "Per-source login rate limit, attempts per minute per client IP\n(`REVERIE_LOGIN_RATE_PER_MIN`, default `10`). The hard blocker against\ncredential-stuffing; must be at least 1 (a zero quota locks everyone out).",
+      "description": "Attempts per minute per client IP, independently for password/setup/registration,\nrecovery and OIDC start (`REVERIE_LOGIN_RATE_PER_MIN`, default `10`).\nAccount admission uses ten completed failures in a rolling 15-minute window\nand a fixed 15-minute block. Rejections do not extend the block.\nMust be at least 1.",
       "type": "integer",
       "format": "uint32",
       "default": 10,
-      "minimum": 1
-    },
-    "login_throttle_base_secs": {
-      "description": "Per-account backoff base, seconds (`REVERIE_LOGIN_THROTTLE_BASE_SECS`,\ndefault `2`). The first failed login for an account waits the lesser of\nbase and cap; each further failure doubles the base up to the cap.",
-      "type": "integer",
-      "format": "int32",
-      "default": 2,
-      "minimum": 1
-    },
-    "login_throttle_cap_secs": {
-      "description": "Per-account backoff cap, seconds (`REVERIE_LOGIN_THROTTLE_CAP_SECS`,\ndefault `900`). Upper bound on the escalating per-account delay.",
-      "type": "integer",
-      "format": "int32",
-      "default": 900,
       "minimum": 1
     },
     "migration_database_url": {
