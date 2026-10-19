@@ -5,16 +5,17 @@ id: "REV-REQ-0040"
 title: "A failed sign-in does not reveal whether the account exists"
 governed-by:
   - "REV-ADR-0029"
+  - "REV-ADR-0059"
 ---
 
 # A failed sign-in does not reveal whether the account exists
 
 ## Statement
 
-WHEN a local sign-in attempt fails, whether because the submitted email matches no account, the password does not match
-the account's stored credential, or the account is disabled, the system MUST respond with the same status code and the
-same response body in every case, and MUST perform equivalent password-verification work regardless of which case
-applies.
+WHEN a local password sign-in fails because the email has no account, the password is wrong, the account is disabled, or
+the account has no local credential, the system MUST return the same status and response body for equivalent source and
+account admission state. Admitted failures MUST perform equivalent real or dummy password verification. Throttled
+requests MUST perform neither real nor dummy verification, including when the submitted password is correct.
 
 ## Rationale
 
@@ -29,18 +30,14 @@ expectation as the rest of Reverie's identity surface.
 
 ## Acceptance criteria
 
-- An unknown email and a wrong password for an existing account produce byte-identical response status and body. Checked
-  by `local_login_unknown_email_matches_wrong_password` in `backend/src/routes/auth.rs`.
-- A wrong password for an existing, enabled account returns a generic `422`. Checked by
-  `local_login_wrong_password_is_generic_422` in `backend/src/routes/auth.rs`.
-- A disabled account presented with its correct password returns the same generic `422` and establishes no session.
-  Checked by `local_login_disabled_account_is_generic_422` in `backend/src/routes/auth.rs`, which asserts the status and
-  the absence of a session; that the response body is identical to the other two failure cases is verified by inspection
-  of the shared failed-attempt code path all three cases fall into.
-- An attempt whose email resolves to no stored credential still performs a full password verification against a
-  well-formed dummy hash that never matches. Checked by `dummy_path_runs_a_verify_and_never_matches` in
-  `backend/src/auth/password.rs`; that `local_login` calls that path on every attempt without a stored credential is
-  verified by inspection of the handler in `backend/src/routes/auth.rs`.
-- This obligation binds the response's status and body. It does not bind the account-lookup step that precedes password
-  verification: an email that resolves to an account issues one further database read (its stored credential) that an
-  unknown email does not, and no acceptance criterion here measures wall-clock timing.
+- With equivalent admitted state, wrong-password, unknown-email, disabled-account and no-local-credential requests
+  return byte-identical generic `422` responses. Each reaches real or dummy verification exactly once.
+- With equivalent blocked state, all four cases and a correct password return byte-identical generic `429` responses
+  with positive integer `Retry-After` and no verification or authenticated session.
+- Rejected requests preserve history and the block deadline. Their retry delay decreases as the deadline approaches.
+- `password_admission_route_parity_blocked_correct_and_no_verification` and
+  `auth_allowance_account_retry_decreases_without_extending_block` in `backend/src/routes/auth.rs` check these responses
+  and verifier invocation counts. `dummy_path_runs_a_verify_and_never_matches` in `backend/src/auth/password.rs` checks
+  the dummy verification path.
+- This obligation does not promise equal total request latency: a known account requires a credential lookup that an
+  unknown email does not, and the first dummy use also initialises its hash.

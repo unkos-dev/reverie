@@ -136,20 +136,13 @@ pub struct Config {
     /// never hand out a connection (`PoolTimedOut` on the first query).
     #[validate(range(min = 1, message = "must be at least 1"))]
     pub db_max_connections: u32,
-    /// Per-source login rate limit, attempts per minute per client IP
-    /// (`REVERIE_LOGIN_RATE_PER_MIN`, default `10`). The hard blocker against
-    /// credential-stuffing; must be at least 1 (a zero quota locks everyone out).
+    /// Attempts per minute per client IP, independently for password/setup/registration,
+    /// recovery and OIDC start (`REVERIE_LOGIN_RATE_PER_MIN`, default `10`).
+    /// Account admission uses ten completed failures in a rolling 15-minute window
+    /// and a fixed 15-minute block. Rejections do not extend the block.
+    /// Must be at least 1.
     #[validate(range(min = 1, message = "must be at least 1"))]
     pub login_rate_per_min: u32,
-    /// Per-account backoff base, seconds (`REVERIE_LOGIN_THROTTLE_BASE_SECS`,
-    /// default `2`). The first failed login for an account waits the lesser of
-    /// base and cap; each further failure doubles the base up to the cap.
-    #[validate(range(min = 1, message = "must be at least 1"))]
-    pub login_throttle_base_secs: i32,
-    /// Per-account backoff cap, seconds (`REVERIE_LOGIN_THROTTLE_CAP_SECS`,
-    /// default `900`). Upper bound on the escalating per-account delay.
-    #[validate(range(min = 1, message = "must be at least 1"))]
-    pub login_throttle_cap_secs: i32,
     /// Minimum length for a local-account password
     /// (`REVERIE_PASSWORD_MIN_LENGTH`, default `15`, the single-factor
     /// floor). The length floor, the zxcvbn strength floor
@@ -708,8 +701,6 @@ impl Default for Config {
             log_level: "info".into(),
             db_max_connections: 10,
             login_rate_per_min: 10,
-            login_throttle_base_secs: 2,
-            login_throttle_cap_secs: 900,
             password_min_length: 15,
             password_max_length: 256,
             password_min_zxcvbn_score: 2,

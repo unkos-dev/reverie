@@ -95,12 +95,15 @@ pub async fn claim_oidc_attempt(
 ///
 /// # Errors
 /// Returns database errors from the conditional update.
-pub async fn claim_win(pool: &PgPool, session_id: &str) -> Result<bool, sqlx::Error> {
+pub async fn claim_win(
+    executor: impl sqlx::PgExecutor<'_>,
+    session_id: &str,
+) -> Result<bool, sqlx::Error> {
     Ok(sqlx::query!(
         "UPDATE sign_in_cohorts SET won_at = now() WHERE session_id = $1 AND won_at IS NULL",
         session_id
     )
-    .execute(pool)
+    .execute(executor)
     .await?
     .rows_affected()
         == 1)

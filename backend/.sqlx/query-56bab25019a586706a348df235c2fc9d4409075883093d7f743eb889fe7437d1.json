@@ -1,0 +1,40 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO local_login_throttle (email_lower) VALUES ($1) ON CONFLICT (email_lower) DO UPDATE SET email_lower = EXCLUDED.email_lower RETURNING completed_failures, locked_until",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "completed_failures",
+        "type_info": "TimestamptzArray",
+        "origin": {
+          "Table": {
+            "table": "local_login_throttle",
+            "name": "completed_failures"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "locked_until",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "local_login_throttle",
+            "name": "locked_until"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      true
+    ]
+  },
+  "hash": "56bab25019a586706a348df235c2fc9d4409075883093d7f743eb889fe7437d1"
+}

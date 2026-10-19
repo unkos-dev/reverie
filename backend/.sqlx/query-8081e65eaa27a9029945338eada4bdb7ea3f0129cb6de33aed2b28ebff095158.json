@@ -1,0 +1,40 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT completed_failures, locked_until FROM local_login_throttle WHERE email_lower = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "completed_failures",
+        "type_info": "TimestamptzArray",
+        "origin": {
+          "Table": {
+            "table": "local_login_throttle",
+            "name": "completed_failures"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "locked_until",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "local_login_throttle",
+            "name": "locked_until"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      true
+    ]
+  },
+  "hash": "8081e65eaa27a9029945338eada4bdb7ea3f0129cb6de33aed2b28ebff095158"
+}

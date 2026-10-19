@@ -55,8 +55,6 @@ pub fn test_config() -> Config {
         oidc_redirect_uri: String::new(),
         local_auth_enabled: true,
         login_rate_per_min: 10,
-        login_throttle_base_secs: 2,
-        login_throttle_cap_secs: 900,
         password_min_length: 15,
         password_max_length: 256,
         password_min_zxcvbn_score: 2,
@@ -201,6 +199,8 @@ pub fn test_state() -> AppState {
         config,
         oidc: Some(std::sync::Arc::new(test_oidc_runtime())),
         login_limiter: test_login_limiter(),
+        recovery_limiter: test_login_limiter(),
+        oidc_limiter: test_login_limiter(),
         settings: test_settings(),
         last_settings_reload: std::sync::Arc::new(tokio::sync::RwLock::new(None)),
     }
@@ -636,6 +636,8 @@ pub mod db {
             config,
             oidc: Some(std::sync::Arc::new(super::test_oidc_runtime())),
             login_limiter: super::test_login_limiter(),
+            recovery_limiter: super::test_login_limiter(),
+            oidc_limiter: super::test_login_limiter(),
             settings: super::test_settings(),
             last_settings_reload: std::sync::Arc::new(tokio::sync::RwLock::new(last_reload)),
         };
@@ -664,6 +666,8 @@ pub mod db {
             config,
             oidc: Some(std::sync::Arc::new(super::test_oidc_runtime())),
             login_limiter: super::test_login_limiter(),
+            recovery_limiter: super::test_login_limiter(),
+            oidc_limiter: super::test_login_limiter(),
             settings: super::test_settings(),
             last_settings_reload: std::sync::Arc::new(tokio::sync::RwLock::new(None)),
         };
@@ -697,6 +701,12 @@ pub mod db {
             config,
             oidc: Some(std::sync::Arc::new(super::test_oidc_runtime())),
             login_limiter: crate::auth::rate_limit::build_login_limiter(
+                std::num::NonZeroU32::new(per_min).expect("per_min must be non-zero"),
+            ),
+            recovery_limiter: crate::auth::rate_limit::build_login_limiter(
+                std::num::NonZeroU32::new(per_min).expect("per_min must be non-zero"),
+            ),
+            oidc_limiter: crate::auth::rate_limit::build_login_limiter(
                 std::num::NonZeroU32::new(per_min).expect("per_min must be non-zero"),
             ),
             settings: super::test_settings(),
@@ -741,6 +751,8 @@ pub mod db {
             config,
             oidc: Some(std::sync::Arc::new(super::test_oidc_runtime())),
             login_limiter: super::test_login_limiter(),
+            recovery_limiter: super::test_login_limiter(),
+            oidc_limiter: super::test_login_limiter(),
             settings: super::test_settings(),
             last_settings_reload: std::sync::Arc::new(tokio::sync::RwLock::new(None)),
         };
@@ -771,6 +783,8 @@ pub mod db {
             config,
             oidc: Some(std::sync::Arc::new(super::test_oidc_runtime())),
             login_limiter: super::test_login_limiter(),
+            recovery_limiter: super::test_login_limiter(),
+            oidc_limiter: super::test_login_limiter(),
             settings: super::test_settings(),
             last_settings_reload: std::sync::Arc::new(tokio::sync::RwLock::new(None)),
         };
@@ -809,6 +823,8 @@ pub mod db {
             config,
             oidc: Some(std::sync::Arc::new(super::test_oidc_runtime())),
             login_limiter: super::test_login_limiter(),
+            recovery_limiter: super::test_login_limiter(),
+            oidc_limiter: super::test_login_limiter(),
             settings: super::test_settings(),
             last_settings_reload: std::sync::Arc::new(tokio::sync::RwLock::new(None)),
         };

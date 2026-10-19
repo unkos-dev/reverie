@@ -260,11 +260,11 @@ are siblings of it, so no handler is wired there and a 401 from a sign-in attemp
    the rest of the JS realm, and a fresh page load re-wires both from `AuthenticatedBoundary`'s mount effect.
 
 **The hourly sweep**, driven from `run` alongside the other background workers: `run_sweep` ticks on a fixed one-hour
-interval (the first tick is skipped so startup does not burst) and calls `sweep_once`, which runs
-`ExpiredDeletion::delete_expired` once. It then deletes expired OIDC attempts in batches of 1,000 until a batch removes
-fewer than 1,000. Session deletion cascades cohort rows; live attempts remain. Its `tokio::select!` checks the
-`CancellationToken` branch `biased`, ahead of the timer branch, so a shutdown in progress returns promptly rather than
-waiting out a mid-sweep interval.
+interval and skips its first tick. It reclaims each authentication source map through governor's `retain_recent`, then
+runs `ExpiredDeletion::delete_expired` once. It deletes expired OIDC attempts in batches of 1,000 and reclaims inactive
+account-throttle rows through the [local password admission model](0012-local-password-sign-in.md). Session deletion
+cascades cohort rows; live attempts remain. Cancellation is checked ahead of the timer and between database batches.
+Each cleanup failure logs and retries on a later tick; source-map reclamation precedes database work.
 
 ## Failure and recovery
 

@@ -431,6 +431,13 @@
       "title": "One-shot sign-in attempts with a single winner"
     },
     {
+      "id": "REV-ADR-0059",
+      "kind": "adr",
+      "path": "docs/adr/0059-password-admission-with-committed-failure-accounting.md",
+      "status": "accepted",
+      "title": "Password admission with committed failure accounting"
+    },
+    {
       "governed-by": [
         "REV-ADR-0041",
         "REV-ADR-0047"
@@ -599,7 +606,8 @@
       "governed-by": [
         "REV-ADR-0029",
         "REV-ADR-0034",
-        "REV-ADR-0054"
+        "REV-ADR-0054",
+        "REV-ADR-0059"
       ],
       "id": "REV-DESIGN-0012",
       "kind": "design",
@@ -1140,7 +1148,8 @@
     },
     {
       "governed-by": [
-        "REV-ADR-0029"
+        "REV-ADR-0029",
+        "REV-ADR-0059"
       ],
       "id": "REV-REQ-0040",
       "kind": "req",

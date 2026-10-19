@@ -1,0 +1,12 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO local_login_throttle (email_lower) SELECT 'batch-' || number FROM generate_series(1, 1005) AS number",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": []
+  },
+  "hash": "51d6acca75f15600b0b82746b9ecaf9d9fde16413d745f669adf3be95ac644d1"
+}

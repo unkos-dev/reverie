@@ -1,0 +1,26 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT email_lower FROM local_login_throttle WHERE email_lower = 'cancel@example.com' FOR UPDATE",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "email_lower",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "local_login_throttle",
+            "name": "email_lower"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "fabf2129ee1d366c82e6e980f00cbd8145dd0fbd6aa45cc2fa6ebc56cc28d83a"
+}

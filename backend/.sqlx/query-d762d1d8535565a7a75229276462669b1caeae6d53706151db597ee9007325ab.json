@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE local_login_throttle SET completed_failures = $1 WHERE email_lower = 'migration'",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "TimestamptzArray"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "d762d1d8535565a7a75229276462669b1caeae6d53706151db597ee9007325ab"
+}

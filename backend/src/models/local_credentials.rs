@@ -51,7 +51,7 @@ pub async fn exists_for_user(pool: &PgPool, user_id: Uuid) -> Result<bool, sqlx:
 ///
 /// Returns [`sqlx::Error`] from the underlying `SELECT`.
 pub async fn find_by_user_id(
-    pool: &PgPool,
+    executor: impl sqlx::PgExecutor<'_>,
     user_id: Uuid,
 ) -> Result<Option<LocalCredential>, sqlx::Error> {
     sqlx::query_as!(
@@ -60,7 +60,7 @@ pub async fn find_by_user_id(
          FROM local_credentials WHERE user_id = $1",
         user_id,
     )
-    .fetch_optional(pool)
+    .fetch_optional(executor)
     .await
 }
 

@@ -924,8 +924,6 @@ mod tests {
             oidc_redirect_uri: String::new(),
             local_auth_enabled: true,
             login_rate_per_min: 10,
-            login_throttle_base_secs: 2,
-            login_throttle_cap_secs: 900,
             password_min_length: 8,
             password_max_length: 256,
             password_min_zxcvbn_score: 2,

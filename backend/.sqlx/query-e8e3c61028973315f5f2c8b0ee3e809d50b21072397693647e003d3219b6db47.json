@@ -1,0 +1,12 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO local_login_throttle (email_lower) SELECT 'cancel-' || number FROM generate_series(1, 1005) AS number",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": []
+  },
+  "hash": "e8e3c61028973315f5f2c8b0ee3e809d50b21072397693647e003d3219b6db47"
+}

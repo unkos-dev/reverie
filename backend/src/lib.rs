@@ -352,14 +352,11 @@ pub async fn run() -> anyhow::Result<()> {
     let settings = std::sync::Arc::new(tokio::sync::RwLock::new(initial_settings));
     let last_settings_reload = std::sync::Arc::new(tokio::sync::RwLock::new(None));
 
-    // Per-IP login limiter. `login_rate_per_min` is validated `>= 1` at config
-    // load, so the NonZeroU32 conversion cannot fail here; surface a startup
-    // error rather than panic on the validated-impossible case.
-    let login_limiter = auth::rate_limit::build_login_limiter(
-        std::num::NonZeroU32::new(config.login_rate_per_min)
-            .ok_or_else(|| anyhow::anyhow!("login_rate_per_min must be >= 1"))?,
-    );
-
+    let quota = std::num::NonZeroU32::new(config.login_rate_per_min)
+        .ok_or_else(|| anyhow::anyhow!("login_rate_per_min must be >= 1"))?;
+    let login_limiter = auth::rate_limit::build_login_limiter(quota);
+    let recovery_limiter = auth::rate_limit::build_login_limiter(quota);
+    let oidc_limiter = auth::rate_limit::build_login_limiter(quota);
     let (ingestion, ingestion_commands) = services::ingestion::coordinator_channel();
     let state = AppState {
         pool,
@@ -369,6 +366,8 @@ pub async fn run() -> anyhow::Result<()> {
         config: config.clone(),
         oidc,
         login_limiter,
+        recovery_limiter,
+        oidc_limiter,
         settings,
         last_settings_reload,
     };
@@ -458,6 +457,11 @@ fn spawn_workers(
     let enrichment_state = state.clone();
     let sweep_store = PostgresStore::new(state.pool.clone());
     let sweep_pool = state.pool.clone();
+    let sweep_limiters = [
+        state.login_limiter.clone(),
+        state.recovery_limiter.clone(),
+        state.oidc_limiter.clone(),
+    ];
     let writeback_config = state.config.clone();
     let writeback_files = state.library_files.clone();
     let builder = worker_supervisor()
@@ -505,8 +509,9 @@ fn spawn_workers(
             Worker(move |cancel| {
                 let store = sweep_store.clone();
                 let pool = sweep_pool.clone();
+                let limiters = sweep_limiters.clone();
                 async move {
-                    services::session_sweep::run_sweep(store, pool, cancel).await;
+                    services::session_sweep::run_sweep(store, pool, limiters, cancel).await;
                     Ok(())
                 }
             }),
