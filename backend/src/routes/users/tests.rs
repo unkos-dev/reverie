@@ -1441,3 +1441,138 @@ async fn change_own_password_oidc_only_returns_422(pool: PgPool) {
         .await;
     test_support::assert_problem(&r, problems::VALIDATION, StatusCode::UNPROCESSABLE_ENTITY);
 }
+
+#[sqlx::test(migrations = "./migrations")]
+async fn auth_hash_census_users_endpoints(pool: PgPool) {
+    let mut state = test_support::test_state();
+    state.pool = test_support::db::app_pool_for(&pool).await;
+    state.ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let (admin, basic) = test_support::db::create_admin_and_basic_auth(&state.pool).await;
+    let phc = crate::auth::password::hash_password(STRONG_PW.as_bytes()).unwrap();
+    crate::models::local_credentials::set_password(&state.pool, admin, &phc)
+        .await
+        .unwrap();
+    let count = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let hook_count = count.clone();
+    state.hash_limiter = crate::auth::password::HashLimiter::new(1).with_before_compute(
+        std::sync::Arc::new(move || {
+            hook_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        }),
+    );
+    let server = axum_test::TestServer::new(crate::build_router(state.clone()));
+    let created = server.post("/api/v1/users").add_header(auth(&basic).0, auth(&basic).1).json(&json!({"email":"census@example.com","display_name":"Census","role":"adult","password":STRONG_PW})).await;
+    assert_eq!(created.status_code(), StatusCode::CREATED);
+    assert_eq!(count.swap(0, std::sync::atomic::Ordering::SeqCst), 1);
+    let target: Uuid =
+        serde_json::from_value(created.json::<serde_json::Value>()["id"].clone()).unwrap();
+    let reset = server
+        .post(&format!("/api/v1/users/{target}/password-reset"))
+        .add_header(auth(&basic).0, auth(&basic).1)
+        .json(&json!({"new_password":"lithe cobalt meadow drift"}))
+        .await;
+    assert_eq!(reset.status_code(), StatusCode::OK);
+    assert_eq!(count.swap(0, std::sync::atomic::Ordering::SeqCst), 1);
+    let changed = server
+        .post("/api/v1/account/password")
+        .add_header(auth(&basic).0, auth(&basic).1)
+        .json(&json!({"current_password":STRONG_PW,"new_password":"lithe cobalt meadow drift"}))
+        .await;
+    assert_eq!(changed.status_code(), StatusCode::OK);
+    assert_eq!(count.load(std::sync::atomic::Ordering::SeqCst), 2);
+    for id in [admin, target] {
+        let credential = crate::models::local_credentials::find_by_user_id(&state.pool, id)
+            .await
+            .unwrap()
+            .unwrap();
+        crate::auth::password::verify_password(
+            b"lithe cobalt meadow drift",
+            &credential.password_hash,
+        )
+        .unwrap();
+    }
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn auth_hash_busy_users_endpoints(pool: PgPool) {
+    let mut state = test_support::test_state();
+    state.pool = test_support::db::app_pool_for(&pool).await;
+    state.ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    let (admin, basic) = test_support::db::create_admin_and_basic_auth(&state.pool).await;
+    let target = test_support::db::create_adult_with_password(
+        &state.pool,
+        "Target",
+        "target@example.com",
+        STRONG_PW,
+    )
+    .await;
+    let phc = crate::auth::password::hash_password(STRONG_PW.as_bytes()).unwrap();
+    crate::models::local_credentials::set_password(&state.pool, admin, &phc)
+        .await
+        .unwrap();
+    let original = crate::models::local_credentials::find_by_user_id(&state.pool, target)
+        .await
+        .unwrap()
+        .unwrap();
+    let count = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let hook_count = count.clone();
+    state.hash_limiter = crate::auth::password::HashLimiter::new(1)
+        .with_wait_limit(std::time::Duration::from_millis(10))
+        .with_before_compute(std::sync::Arc::new(move || {
+            hook_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        }));
+    let _held = state.hash_limiter.acquire().await.unwrap();
+    let server = axum_test::TestServer::new(crate::build_router(state.clone()));
+    for (path, body) in [
+        (
+            "/api/v1/users".to_owned(),
+            json!({"email":"busy@example.com","display_name":"Busy","role":"adult","password":STRONG_PW}),
+        ),
+        (
+            format!("/api/v1/users/{target}/password-reset"),
+            json!({"new_password":"lithe cobalt meadow drift"}),
+        ),
+        (
+            "/api/v1/account/password".to_owned(),
+            json!({"current_password":STRONG_PW,"new_password":"lithe cobalt meadow drift"}),
+        ),
+    ] {
+        let response = server
+            .post(&path)
+            .add_header(auth(&basic).0, auth(&basic).1)
+            .json(&body)
+            .await;
+        assert_eq!(response.status_code(), StatusCode::SERVICE_UNAVAILABLE);
+        assert_eq!(
+            response.headers()["content-type"],
+            "application/problem+json"
+        );
+        assert!(!response.headers().contains_key("retry-after"));
+        assert_eq!(
+            response.json::<serde_json::Value>(),
+            json!({"type":"https://reverie.example/probs/auth-busy","title":"Service Unavailable","status":503,"detail":"The server is busy. Try again in a moment.","instance":path})
+        );
+    }
+    assert_eq!(count.load(std::sync::atomic::Ordering::SeqCst), 0);
+    assert!(
+        crate::models::user::find_by_email(&state.pool, "busy@example.com")
+            .await
+            .unwrap()
+            .is_none()
+    );
+    for (id, expected) in [(admin, phc), (target, original.password_hash)] {
+        assert_eq!(
+            crate::models::local_credentials::find_by_user_id(&state.pool, id)
+                .await
+                .unwrap()
+                .unwrap()
+                .password_hash,
+            expected
+        );
+        assert!(
+            crate::models::password_reset_pin::find_active_by_user(&state.pool, id)
+                .await
+                .unwrap()
+                .is_none()
+        );
+    }
+}

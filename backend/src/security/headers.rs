@@ -354,6 +354,9 @@ mod tests {
             ingestion_pool: sqlx::PgPool::connect_lazy("postgres://invalid").unwrap(),
             ingestion: crate::services::ingestion::coordinator_channel().0,
             library_files,
+            hash_limiter: crate::auth::password::HashLimiter::new(
+                usize::try_from(config.auth_hash_concurrency).unwrap(),
+            ),
             config,
             oidc: Some(std::sync::Arc::new(test_support::test_oidc_runtime())),
             login_limiter: test_support::test_login_limiter(),

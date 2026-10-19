@@ -23,10 +23,10 @@ liveness and readiness probes, and the runtime stage of the container image that
 
 This subject owns: CLI subcommand dispatch (`Command`, `parse_command`); the ordered, fallible setup sequence inside
 `run` (configuration load, CSP header finalisation, tracing, database pools, the schema apply-or-verify step, admin
-storage-root acquisition, admin bootstrap, OIDC runtime construction, settings load, login limiter construction,
-`AppState` assembly, router build, listener bind); how the five unconditional service workers and optional OIDC
-discovery worker are registered and the coordinator owns its filesystem watcher; the supervised drain that awaits them
-on shutdown; the `/health` and `/health/ready` probes; and the `runtime` stage of `Dockerfile` (its `ENTRYPOINT`,
+storage-root acquisition, admin bootstrap, OIDC runtime construction, settings load, source and hash limiter
+construction, `AppState` assembly, router build, listener bind); how the five unconditional service workers and optional
+OIDC discovery worker are registered and the coordinator owns its filesystem watcher; the supervised drain that awaits
+them on shutdown; the `/health` and `/health/ready` probes; and the `runtime` stage of `Dockerfile` (its `ENTRYPOINT`,
 `HEALTHCHECK`, `USER` and `EXPOSE`).
 
 It does not own: what each background worker does once running (the ingestion pipeline, the enrichment queue, the
@@ -126,8 +126,9 @@ Startup owns the three source maps and supplies their shared handles to requests
 login/setup/registration, recovery and OIDC start each spend only their own map. The sweep reclaims them using native
 governor retention before database cleanup. Account-throttle writers and locked-row reclamation belong to
 [local password sign-in](../../accounts/design/0012-local-password-sign-in.md); this runtime only supplies the pool and
-hourly lifecycle. Synchronous password verification and its account-row wait have no aggregate computation or waiting
-bound here.
+hourly lifecycle. Startup also constructs the process-wide `HashLimiter`. Request handlers acquire its shared semaphore
+in FIFO order for at most 30 seconds; started blocking computations retain their capacity until completion, including
+after caller cancellation. Local password sign-in owns permit ordering around account admission.
 
 The process token has three cancellation writers: `shutdown_signal` on SIGINT or SIGTERM, `run` after HTTP serving
 returns, and `supervise_until_shutdown` when the supervisor exits. Cancellation is idempotent; these writers share the
@@ -181,11 +182,12 @@ observation. Watchdog ticks and completion precede queued watcher traffic.
   and is `Clone` for cheap distribution to handlers and workers: `pool` and `ingestion_pool` are `Arc`-backed `PgPool`s;
   `config` is owned, cloned data; `library_files` is a cheap shared `LibraryFiles` handle; `oidc` is an
   `Option<Arc<_>>`, `None` on an instance that has not configured OIDC; a configured runtime initially has no snapshot;
-  `login_limiter`, `recovery_limiter` and `oidc_limiter` are distinct `Arc<LoginLimiter>` instances;
-  `last_settings_reload` is an `Arc<RwLock<..>>` handle written only by the settings worker, not by this subject;
-  `settings` is likewise an `Arc<RwLock<..>>` handle, but it has a second writer outside this subject — the
-  `PUT /api/v1/settings` route handler also writes it directly, as an immediate local-cache update guarded by
-  `apply_if_newer`'s revision check — so neither writer belongs to this subject, but there is more than one.
+  `login_limiter`, `recovery_limiter` and `oidc_limiter` are distinct `Arc<LoginLimiter>` instances; `hash_limiter` is
+  one shared `HashLimiter` for request-path password and recovery-PIN computation; `last_settings_reload` is an
+  `Arc<RwLock<..>>` handle written only by the settings worker, not by this subject; `settings` is likewise an
+  `Arc<RwLock<..>>` handle, but it has a second writer outside this subject — the `PUT /api/v1/settings` route handler
+  also writes it directly, as an immediate local-cache update guarded by `apply_if_newer`'s revision check — so neither
+  writer belongs to this subject, but there is more than one.
 - **The writeback pool** (`backend/src/db.rs::init_writeback_pool`) is built after `AppState` and is deliberately not
   one of its fields: it is retained by the writeback task factory and cloned for each run. No request handler receives
   it, because no request handler receives anything not reachable through `AppState`.
@@ -236,7 +238,8 @@ observation. Watchdog ticks and completion precede queued watcher traffic.
    through the primary pool and reads the winning settings row in one transaction; three independent authentication
    source limiters are built from `config.login_rate_per_min`. The persisted `ingestion_enabled` field is loaded with
    that snapshot but is independent of the configuration seed. Its database default is true and it has no environment or
-   `Config` field.
+   `Config` field. Startup converts `config.auth_hash_concurrency` from `u32` to `usize`, returning an error with
+   context if it does not fit, and constructs the shared hashing semaphore before `AppState`.
 10. `AppState` is assembled with the opened `LibraryFiles`, and `build_router` is called on a clone of it.
 11. `db::init_writeback_pool` opens the writeback pool, and the TCP listener is bound. One more fallible call follows
     immediately: `listener.local_addr()` is read back to log the bound address. Nothing has been spawned yet at this
@@ -288,7 +291,8 @@ metadata supplies Content-Length.
    permit across async cancellation; unfinished claims remain for startup recovery. This timeout does not guarantee
    completion of a blocking operating-system call.
 4. `run` awaits both HTTP and supervisor outcomes. A supervisor error takes precedence; otherwise it returns the HTTP
-   result. `main` propagates errors to a non-zero process exit.
+   result. `main` propagates errors to a non-zero process exit. Tokio runtime shutdown waits for started blocking
+   password and PIN hashes to return; cancelling an async caller does not interrupt its Argon2 computation.
 
 **An HTTP serving error** cancels the process token and follows the same supervisor shutdown and drain path before
 returning the error. A supervisor terminal error also cancels the process token, causing HTTP graceful shutdown.

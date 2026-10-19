@@ -54,8 +54,9 @@ mutation, session-version invalidation policy, the last-admin lock order) is the
 Depends on: `crate::auth::session::login` to establish the session on success; `crate::models::user::find_by_email` and
 `crate::models::user::User` to resolve the account; `crate::services::enrichment::http::api_client`, which supplies the
 SSRF-resistant HTTP client the breach check sends its outbound request through; `Config`'s `login_rate_per_min`,
-`password_min_length`, `password_max_length`, `password_min_zxcvbn_score`, `password_breach_check_enabled`,
-`trusted_client_ip_header`, `local_auth_enabled` and `self_registration_enabled` fields.
+`auth_hash_concurrency`, `password_min_length`, `password_max_length`, `password_min_zxcvbn_score`,
+`password_breach_check_enabled`, `trusted_client_ip_header`, `local_auth_enabled` and `self_registration_enabled`
+fields.
 
 Depended on by: `routes/users/mod.rs`'s `create_user`, `admin_reset_password` and `change_own_password`, and
 `routes/auth.rs`'s `reset_password` and `setup`, and `lib.rs`'s `seed_admin_if_configured`, each of which calls
@@ -74,7 +75,10 @@ decision on the local-password side.
   computed once, at first use, from 32 random bytes generated at runtime (never a hard-coded value);
   `verify_against_dummy` verifies a candidate password against it and returns a `bool` that every caller discards,
   always `false`, so a caller can spend an Argon2id-verification-equivalent amount of work with nothing to verify
-  against.
+  against. `HashLimiter` shares one Tokio semaphore across every request-path password and recovery-PIN hash or
+  verification. `HashPermit` moves owned inputs and an `Arc<OwnedSemaphorePermit>` clone into `spawn_blocking`; the
+  closure holds no database handle or lock. The synchronous kernels remain available for CLI commands, environment
+  seeding and test fixtures. First use of the lazy dummy hash runs inside a request's permit.
 - `backend/src/auth/password_policy.rs` holds `PasswordPolicy` (a config-derived view: `min_length`, `max_length`,
   `min_zxcvbn_score`, `breach_check_enabled`, `breach_check_url`), `PolicyError` (`TooShort`, `TooLong`, `TooWeak`,
   `Breached`), `check_strength` (zxcvbn, penalising any password containing one of the caller-supplied context words
@@ -128,8 +132,9 @@ decision on the local-password side.
 - `POST /auth/local/login` (`LocalLoginRequest { email, password }`) returns `204` on success and sets the session
   cookie and (via `jar`) the theme cookie; `404` when `local_auth_enabled` is `false`; `422` with a generic message for
   any failed credential; `409 sign-in-inactive` for an authenticated session or a losing cohort; `429` when a rate limit
-  is active. It is unauthenticated (`security(())` in its OpenAPI annotation). Each `429` source (the per-source limiter
-  or account admission) supplies a positive, rounded-up `Retry-After` delay in seconds.
+  is active; `503 auth-busy` when hashing capacity remains unavailable for 30 seconds. It is unauthenticated
+  (`security(())` in its OpenAPI annotation). Each `429` source (the per-source limiter or account admission) supplies a
+  positive, rounded-up `Retry-After` delay in seconds.
 - `POST /auth/register` (`RegisterRequest { email, display_name, password }`) returns `201` with no session on success;
   `404` when `self_registration_enabled` or `local_auth_enabled` is `false`; `409` on a duplicate email; `422` on a
   malformed email or a policy rejection; `429` on the per-source limit. `RegisterRequest` declares no role field, and
@@ -177,6 +182,11 @@ decision on the local-password side.
   spends the third. Every map uses `login_rate_per_min` (default 10/min per source), with the existing
   peer/trusted-header rule. The hourly sweep calls native `retain_recent` on each map, preserving active allowance.
   Restart clears these process-local maps; account state persists in PostgreSQL.
+- **Hashing capacity.** Startup constructs one `HashLimiter` from `auth_hash_concurrency`
+  (`REVERIE_AUTH_HASH_CONCURRENCY`, default 1, minimum 1, no configured maximum). Each permit allows one more parallel
+  Argon2 operation of about 19 MiB. Request handlers acquire and release this shared capacity; each blocking closure
+  retains a permit clone until it returns, including after caller cancellation. The fixed `HASH_WAIT_LIMIT` is 30
+  seconds; Tokio queues acquisitions in FIFO order.
 - **Configuration.** Account admission uses fixed ten-failure, 15-minute observation and 15-minute block values.
   `password_min_length` (default 15, validated to at least 15 and no greater than the maximum), `password_max_length`
   (default 256, validated to at least 64), `password_min_zxcvbn_score` (default 2), `password_breach_check_enabled`
@@ -207,10 +217,20 @@ anonymous session joins its cohort: an already-won cohort returns the same 409 w
 cohort's id is retained until verification. The existing CSRF gate still requires the session token on a mutation
 carrying `user_id`.
 
-**Account admission and credential outcome.** After source/session/cohort admission, `admit` begins a transaction and
-locks the normalised-email row, including the initially absent-row race. An unexpired block rolls back acquisition and
-returns generic `429` plus `Retry-After`, without account lookup or verification. Rejection changes no protection state,
-even for a correct password.
+**Hashing and account admission.** After source/session/cohort admission, login acquires a hashing permit before `admit`
+begins its transaction and locks the normalised-email row, including the initially absent-row race. The lock order is
+permit, pool connection, then account row. A request waiting for capacity holds no pool connection. The cohort join in
+`join_pending` precedes capacity acquisition, as it precedes account `429` and credential `422`. Capacity rejection
+writes no throttle, credential or PIN state and claims no cohort win.
+
+Login retains its permit until `Attempt::succeed` or `Attempt::fail` returns, releasing it before session login. Every
+other request-path caller acquires immediately before computation and releases immediately afterwards; password policy
+checks and database work stay outside those permits. Password change and PIN reset each use two separate permits for
+verification and new-password hashing.
+
+**Account admission and credential outcome.** An unexpired block rolls back acquisition and returns generic `429` plus
+`Retry-After`, without account lookup or verification. Rejection changes no protection state, even for a correct
+password.
 
 An admitted request resolves the account and credential on that same connection. A known credential performs real
 Argon2id verification; unknown email or missing credentials perform dummy verification. Wrong passwords and disabled
@@ -226,7 +246,13 @@ Any error after a winning claim follows the existing session-flush rule. Account
 storage subsequently fails, history can already be clear without a delivered authenticated session. Cancellation before
 account commit rolls back; cancellation after commit does not undo the result. An unknown commit outcome is never
 replayed automatically. No worker or asynchronous completion callback can write an old result after that transaction
-ends.
+ends. A cancelled hash caller cannot release computation capacity early: the blocking closure retains its permit clone
+until Argon2 finishes, and its late result cannot write accounting.
+
+`auth_hash_census_` route tests count computations at each endpoint. `auth_hash_login_pool_progress` holds the only
+permit during login, queues four other logins and checks that the pool-backed `GET /health/ready` completes using a
+two-connection application pool. The `auth_hash_` unit tests cover the active bound, wait expiry, cancellation, panic
+and kernel-equivalent results.
 
 `password_admission_route_two_pools_ninth_failure_race` checks that nine failures plus two simultaneous requests from
 separate application pools and sources yield one verification/`422` and one account `429`.
@@ -256,6 +282,11 @@ order rather than by the test itself, which observes only the returned variant.
 - **Rate limiting.** Source and account rejection each produce generic `429` with positive integer `Retry-After`. Source
   rejection precedes account-state creation. Account rejection precedes both real and dummy hashing. OIDC start retains
   its `303 /login?outcome=throttled` navigation and writes no attempt on rejection.
+- **Hashing capacity exhausted.** After a FIFO wait of at most 30 seconds, all eight credential endpoints return
+  `503 auth-busy`, title "Service Unavailable" and detail "The server is busy. Try again in a moment." The response has
+  no `Retry-After`. Credential forms render that detail. For login, local-auth `404`, source `429` and signed-in or
+  cohort `409` precede capacity `503`; account `429` follows it. Blocking-task failures map to the generic internal
+  error response.
 - **Password policy rejection.** `enforce`'s `PolicyError` variants map to `AppError::Validation` (`422`) with the
   error's `Display` text as the response's `detail` field for HTTP setup, registration, administrator create/reset and
   self-service change: `TooShort`/`TooLong` name the configured bound, `TooWeak` carries zxcvbn's feedback (or a generic
@@ -283,11 +314,12 @@ hash; known accounts require an additional credential lookup. This is equivalent
 latency guarantee.
 
 A sustained targeted attack can repeatedly obstruct password-only sign-in, including correct credentials. Existing
-sessions remain valid. Verifying requests and same-email lock waiters hold connections from the shared application pool.
-Hashing is synchronous. The default per-source burst and pool size are both ten, so one source can occupy the entire
-pool and delay unrelated database-backed endpoints. Aggregate verification and waiting are not bounded by this
-mechanism. The hourly sweep provides eventual reclamation, not a hard storage bound under unbounded arrivals. Cleanup
-errors log and retry later without clearing protection.
+sessions remain valid. Login holds at most the configured number of shared-pool connections for credential work per
+process; replicas multiply that bound. With a limit above one, up to N−1 permits can wait on one email's row lock. Once
+the account block is committed, later requests for that email reject without hashing. Other endpoints can still exhaust
+the pool while login holds a permit, queuing all request-path hashing behind it until the 30-second wait expires.
+Recovery shares the same hashing capacity. The hourly sweep provides eventual reclamation, not a hard storage bound
+under unbounded arrivals. Cleanup errors log and retry later without clearing protection.
 
 `client_ip` honours a forwarded header only when `trusted_client_ip_header` names it. Without that opt-in, clients
 behind a shared proxy use its peer address as one source key. Source state is process-local; account accounting survives
@@ -318,6 +350,6 @@ verification among its compensating controls; this Design is the mechanism behin
 ## More information
 
 - [Reference configuration](../../../../website/src/content/docs/reference/configuration.mdx): the generated
-  `REVERIE_LOGIN_RATE_PER_MIN` and `REVERIE_PASSWORD_*` field reference.
+  `REVERIE_LOGIN_RATE_PER_MIN`, `REVERIE_AUTH_HASH_CONCURRENCY` and `REVERIE_PASSWORD_*` field reference.
 - [CodeGuard deviation register](../../../security/codeguard/README.md), deviation 5: Reverie's single-factor local
   authentication posture and its compensating controls.

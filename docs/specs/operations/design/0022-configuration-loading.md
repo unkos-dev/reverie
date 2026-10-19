@@ -164,6 +164,11 @@ so a caller embedding the library and skipping `crate::run` must perform that fi
 emits no `Content-Security-Policy` header. Nothing else in the process mutates a built `Config`; `AppState::config`
 (`backend/src/state.rs`) holds a clone no later request handler writes back.
 
+`REVERIE_AUTH_HASH_CONCURRENCY` maps to the flat `auth_hash_concurrency: u32` field, default 1, minimum 1, with no
+configured maximum. It limits request-path password and recovery-PIN hashing per process. Each permit allows one more
+parallel Argon2 operation of about 19 MiB; login holds one database connection per permit. The value is independent of
+`REVERIE_DB_MAX_CONNECTIONS` and is fixed for the process lifetime. The 30-second capacity wait is an internal constant.
+
 The ingestion configuration exposes an EPUB-only accepted-format set and independent imported/duplicate cleanup options,
 defaulting to EPUB, true and false. An empty accepted-format value refuses startup. The environment names are
 `REVERIE_ACCEPTED_FORMATS`, `REVERIE_CLEANUP_IMPORTED` and `REVERIE_CLEANUP_DUPLICATES`. The singleton settings row and

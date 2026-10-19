@@ -179,6 +179,9 @@ pub enum AppError {
         /// Positive, rounded-up seconds before an explicit retry.
         retry_after_secs: u64,
     },
+    /// Request-path hashing capacity was unavailable within the wait limit. HTTP 503.
+    #[error("authentication processing is busy")]
+    HashBusy,
     /// First-run setup (bootstrap) attempted when an administrator already
     /// exists. RFC 9457 `type` [`problems::SETUP_ALREADY_COMPLETE`]. HTTP 409
     /// Conflict. The authoritative guard is the `instance_bootstrap` singleton
@@ -328,6 +331,12 @@ impl IntoResponse for AppError {
                 "Invalid Request Body",
                 detail,
             ),
+            Self::HashBusy => (
+                StatusCode::SERVICE_UNAVAILABLE,
+                problems::AUTH_BUSY,
+                "Service Unavailable",
+                "The server is busy. Try again in a moment.".to_owned(),
+            ),
             Self::RateLimited { .. } => (
                 StatusCode::TOO_MANY_REQUESTS,
                 problems::RATE_LIMITED,
@@ -451,6 +460,12 @@ impl From<axum::extract::rejection::JsonRejection> for AppError {
     }
 }
 
+impl From<crate::auth::password::HashBusy> for AppError {
+    fn from(_: crate::auth::password::HashBusy) -> Self {
+        Self::HashBusy
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -494,6 +509,21 @@ mod tests {
             json["detail"].as_str().is_some(),
             "detail field present, got {json}",
         );
+    }
+
+    #[tokio::test]
+    async fn auth_hash_busy_problem_shape() {
+        let response = AppError::from(crate::auth::password::HashBusy).into_response();
+        assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+        assert!(!response.headers().contains_key(header::RETRY_AFTER));
+        assert_eq!(
+            response.headers()[header::CONTENT_TYPE],
+            "application/problem+json"
+        );
+        let bytes = to_bytes(response.into_body(), 4096).await.unwrap();
+        let json: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        assert_problem_shape(&json, problems::AUTH_BUSY, 503, "Service Unavailable");
+        assert_eq!(json["detail"], "The server is busy. Try again in a moment.");
     }
 
     #[tokio::test]

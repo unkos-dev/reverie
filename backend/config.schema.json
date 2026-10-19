@@ -21,6 +21,13 @@
       },
       "minItems": 1
     },
+    "auth_hash_concurrency": {
+      "description": "Request-path password and recovery-PIN hashing limit per process\n(`REVERIE_AUTH_HASH_CONCURRENCY`, default `1`). Each permit allows one more\nparallel Argon2 operation of about 19 MiB; login holds one database\nconnection per permit.",
+      "type": "integer",
+      "format": "uint32",
+      "default": 1,
+      "minimum": 1
+    },
     "auto_migrate": {
       "description": "Run pending migrations in-process at startup\n(`REVERIE_AUTO_MIGRATE`, default `false`). The shipped default is\nout-of-band migration via `reverie migrate`; when this is `true` the\nlong-lived server process carries the migration credential for its\nwhole lifetime, so it is an opt-in escape hatch only. Requires\n[`Self::migration_database_url`] to be set.",
       "type": "boolean",

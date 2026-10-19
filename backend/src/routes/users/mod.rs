@@ -433,11 +433,12 @@ struct CreateUserRequest {
     post,
     path = "/api/v1/users",
     summary = "Create a user",
-    description = "Creates an account with an administrator-typed initial password, for the administrator to relay out of band. Admin only; the caller must not be a child. Returns 409 if the email is already in use.",
+    description = "Creates an account with an administrator-typed initial password, for the administrator to relay out of band. Admin only; the caller must not be a child. Returns 409 if the email is already in use. Returns 503 when authentication processing is busy.",
     tag = "users",
     security(("session_cookie" = ["admin"]), ("device_token_bearer" = ["admin"]), ("opds_basic" = ["admin"])),
     request_body = CreateUserRequest,
     responses(
+        (status = 503, description = "Authentication processing is busy", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 201, description = "Created user. Admin only.", body = UserResponse),
         (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 403, description = "Caller is not an admin", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
@@ -458,7 +459,10 @@ async fn create_user(
         return Err(AppError::Validation("invalid email address".into()));
     }
     enforce_password_policy(&state, &req.password, &[&req.email, &req.display_name]).await?;
-    let phc = crate::auth::password::hash_password(req.password.as_bytes())
+    let phc = state
+        .hash_limiter
+        .hash(req.password)
+        .await?
         .map_err(|e| AppError::Internal(anyhow::anyhow!("password hash failed: {e}")))?;
 
     let user = crate::models::user::create_local(
@@ -642,12 +646,13 @@ struct AdminPasswordResetRequest {
     post,
     path = "/api/v1/users/{id}/password-reset",
     summary = "Reset a user's password",
-    description = "Sets a new password for the target account, for the administrator to relay out of band, and invalidates the target's active sessions. Admin only; the caller must not be a child.",
+    description = "Sets a new password for the target account, for the administrator to relay out of band, and invalidates the target's active sessions. Admin only; the caller must not be a child. Returns 503 when authentication processing is busy.",
     tag = "users",
     security(("session_cookie" = ["admin"]), ("device_token_bearer" = ["admin"]), ("opds_basic" = ["admin"])),
     params(("id" = Uuid, Path, max_length = 45, description = "Target user id")),
     request_body = AdminPasswordResetRequest,
     responses(
+        (status = 503, description = "Authentication processing is busy", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 200, description = "Password reset; the target's sessions are invalidated. Admin only."),
         (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 403, description = "Caller is not an admin", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
@@ -677,7 +682,10 @@ async fn admin_reset_password(
         context.push(email);
     }
     enforce_password_policy(&state, &req.new_password, &context).await?;
-    let phc = crate::auth::password::hash_password(req.new_password.as_bytes())
+    let phc = state
+        .hash_limiter
+        .hash(req.new_password)
+        .await?
         .map_err(|e| AppError::Internal(anyhow::anyhow!("password hash failed: {e}")))?;
 
     let mut tx = state
@@ -737,11 +745,12 @@ struct ChangePasswordRequest {
     post,
     path = "/api/v1/account/password",
     summary = "Change your own password",
-    description = "Verifies the caller's current password and sets a new one only if that credential is unchanged, invalidating all of the caller's sessions including the one making this request. Returns 422 for a wrong current password, a rejected new password, no local credential, or a concurrent credential change.",
+    description = "Verifies the caller's current password and sets a new one only if that credential is unchanged, invalidating all of the caller's sessions including the one making this request. Returns 422 for a wrong current password, a rejected new password, no local credential, or a concurrent credential change. Returns 503 when authentication processing is busy.",
     tag = "users",
     security(("session_cookie" = ["write"]), ("device_token_bearer" = ["write"]), ("opds_basic" = ["write"])),
     request_body = ChangePasswordRequest,
     responses(
+        (status = 503, description = "Authentication processing is busy", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 200, description = "Password changed; all of the caller's sessions are invalidated."),
         (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 422, description = "Wrong current password, rejected new password, no local credential, or concurrent credential change", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
@@ -765,12 +774,14 @@ async fn change_own_password(
             )
         })?;
 
-    if crate::auth::password::verify_password(
-        req.current_password.as_bytes(),
-        &credential.password_hash,
-    )
-    .is_err()
-    {
+    let verified = {
+        let permit = state.hash_limiter.acquire().await?;
+        permit
+            .verify(req.current_password, credential.password_hash.clone())
+            .await
+            .map_err(|e| AppError::Internal(e.into()))?
+    };
+    if !verified {
         return Err(AppError::Validation(
             "current password is incorrect".to_owned(),
         ));
@@ -787,7 +798,10 @@ async fn change_own_password(
         context.push(email);
     }
     enforce_password_policy(&state, &req.new_password, &context).await?;
-    let phc = crate::auth::password::hash_password(req.new_password.as_bytes())
+    let phc = state
+        .hash_limiter
+        .hash(req.new_password)
+        .await?
         .map_err(|e| AppError::Internal(anyhow::anyhow!("password hash failed: {e}")))?;
 
     let mut tx = state

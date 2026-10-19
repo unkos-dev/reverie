@@ -140,6 +140,10 @@ and the 401 recovery funnel in `frontend/src/lib/query/client.ts` (the Design "S
   number of seconds while retaining the generic `429` problem body. Source denial uses governor's wait deadline; account
   denial uses the current block deadline. Both round up. The authentication operations document the header in their
   OpenAPI `429` responses. OIDC start keeps its fixed `303` navigation outcome.
+- `AppError::HashBusy` maps to `503 auth-busy`, title "Service Unavailable" and detail "The server is busy. Try again in
+  a moment." It carries no `Retry-After` header. Login, setup, registration, forgot/reset-password, administrator
+  create/reset and self-service password change document this response as `application/problem+json`. The
+  `From<HashBusy>` conversion preserves this class; hash computation and blocking-task errors map to `Internal`.
 - `crate::openapi::ProblemDetails` is the single point of coupling between the error module and the OpenAPI module: the
   module doc on `backend/src/openapi.rs` names this "intentional... the resulting openapi↔error circularity is the point
   — one struct owns the RFC 9457 wire shape, so the spec and the bytes on the wire cannot drift." Splitting the struct

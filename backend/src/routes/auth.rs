@@ -423,11 +423,12 @@ struct LocalLoginRequest {
     post,
     path = "/auth/local/login",
     summary = "Sign in with email and password",
-    description = "Admits the source and account before verifying `email` and `password`. Ten committed failures in a rolling 15-minute window start a 15-minute block; the tenth failure returns generic 422. Blocked requests, including correct passwords, return generic 429 with Retry-After without verification and do not extend the block. A winning enabled-account login clears accounting before session establishment. Returns 404 if local authentication is disabled.",
+    description = "Admits the source and account before verifying `email` and `password`. Ten committed failures in a rolling 15-minute window start a 15-minute block; the tenth failure returns generic 422. Blocked requests, including correct passwords, return generic 429 with Retry-After without verification and do not extend the block. A winning enabled-account login clears accounting before session establishment. Returns 404 if local authentication is disabled. Returns 503 when authentication processing is busy.",
     tag = "auth",
     security(()),
     request_body = LocalLoginRequest,
     responses(
+        (status = 503, description = "Authentication processing is busy", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 409, description = "Already signed in or sign-in no longer active", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 204, description = "Login succeeded; session established (id rotated, CSRF token minted, theme cookie seeded)"),
         (status = 404, description = "Local authentication is disabled on this instance", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
@@ -469,6 +470,7 @@ async fn local_login(
         None
     };
 
+    let permit = state.hash_limiter.acquire().await?;
     let mut attempt = match crate::models::login_throttle::admit(&state.pool, &body.email)
         .await
         .map_err(|e| AppError::Internal(e.into()))?
@@ -480,7 +482,7 @@ async fn local_login(
     };
     // THREAT: rejected requests reach neither real nor dummy verification.
     let session_user =
-        verify_local_account(attempt.connection(), &body.email, body.password.as_bytes()).await?;
+        verify_local_account(attempt.connection(), &body.email, body.password, &permit).await?;
     if let Some(user) = session_user {
         if let Some(id) = &cohort_id
             && !sign_in::claim_win(attempt.connection(), id)
@@ -496,6 +498,7 @@ async fn local_login(
                 .succeed()
                 .await
                 .map_err(|e| AppError::Internal(e.into()))?;
+            drop(permit);
 
             #[cfg(test)]
             tests::password_checkpoint(tests::PasswordStage::AfterCommit).await;
@@ -534,6 +537,7 @@ async fn local_login(
         .fail()
         .await
         .map_err(|e| AppError::Internal(e.into()))?;
+    drop(permit);
     #[cfg(test)]
     tests::password_checkpoint(tests::PasswordStage::AfterCommit).await;
     Err(AppError::Validation("invalid email or password".to_owned()))
@@ -542,7 +546,8 @@ async fn local_login(
 async fn verify_local_account(
     connection: &mut sqlx::PgConnection,
     email: &str,
-    password: &[u8],
+    password: String,
+    permit: &crate::auth::password::HashPermit,
 ) -> Result<Option<user::User>, AppError> {
     let account = user::find_by_email(&mut *connection, email)
         .await
@@ -555,13 +560,18 @@ async fn verify_local_account(
     };
     #[cfg(test)]
     tests::password_checkpoint(tests::PasswordStage::Verify).await;
-    let verified = credential.as_ref().map_or_else(
-        || {
-            crate::auth::password::verify_against_dummy(password);
-            false
-        },
-        |cred| crate::auth::password::verify_password(password, &cred.password_hash).is_ok(),
-    );
+    let verified = if let Some(credential) = credential {
+        permit
+            .verify(password, credential.password_hash)
+            .await
+            .map_err(|e| AppError::Internal(e.into()))?
+    } else {
+        permit
+            .verify_dummy(password)
+            .await
+            .map_err(|e| AppError::Internal(e.into()))?;
+        false
+    };
 
     Ok(match account {
         Some(user) if verified && user.disabled_at.is_none() => Some(user),
@@ -655,11 +665,12 @@ struct SetupRequest {
     post,
     path = "/auth/setup",
     summary = "Create the first administrator",
-    description = "Creates the first administrator account during initial setup and does not sign the caller in. No authentication is required to call it. Returns 409 if an administrator already exists and 429 when too many requests have been made.",
+    description = "Creates the first administrator account during initial setup and does not sign the caller in. No authentication is required to call it. Returns 409 if an administrator already exists and 429 when too many requests have been made. Returns 503 when authentication processing is busy.",
     tag = "auth",
     security(()),
     request_body = SetupRequest,
     responses(
+        (status = 503, description = "Authentication processing is busy", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 201, description = "First administrator created (no auto-login)"),
         (status = 409, description = "An administrator already exists", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 422, description = "Validation failed", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
@@ -691,7 +702,10 @@ async fn setup(
     )
     .await
     .map_err(|e| AppError::Validation(e.to_string()))?;
-    let phc = crate::auth::password::hash_password(body.password.as_bytes())
+    let phc = state
+        .hash_limiter
+        .hash(body.password)
+        .await?
         .map_err(|e| AppError::Internal(anyhow::anyhow!("password hash failed: {e}")))?;
 
     match user::create_first_admin(&state.pool, &body.email, &body.display_name, &phc).await {
@@ -741,11 +755,12 @@ struct RegisterRequest {
     post,
     path = "/auth/register",
     summary = "Register a new account",
-    description = "Creates a new account with the `adult` role and does not sign the caller in. No authentication is required to call it. Returns 404 if self-registration or local authentication is disabled, 409 if the email is already in use, and 429 when too many requests have been made.",
+    description = "Creates a new account with the `adult` role and does not sign the caller in. No authentication is required to call it. Returns 404 if self-registration or local authentication is disabled, 409 if the email is already in use, and 429 when too many requests have been made. Returns 503 when authentication processing is busy.",
     tag = "auth",
     security(()),
     request_body = RegisterRequest,
     responses(
+        (status = 503, description = "Authentication processing is busy", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 201, description = "Account created (no auto-login)"),
         (status = 404, description = "Self-registration is disabled on this instance", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 409, description = "Email already in use", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
@@ -775,7 +790,10 @@ async fn register(
     .await
     .map_err(|e| AppError::Validation(e.to_string()))?;
 
-    let phc = crate::auth::password::hash_password(body.password.as_bytes())
+    let phc = state
+        .hash_limiter
+        .hash(body.password)
+        .await?
         .map_err(|e| AppError::Internal(anyhow::anyhow!("password hash failed: {e}")))?;
 
     match user::create_local(
@@ -847,11 +865,12 @@ struct ForgotPasswordRequest {
     post,
     path = "/auth/forgot-password",
     summary = "Start password recovery",
-    description = "Starts PIN-based password recovery for the given email and always returns the same generic response so it cannot be used to determine whether an account exists. No authentication is required to call it. Returns 404 if local authentication is disabled and 429 when too many requests have been made.",
+    description = "Starts PIN-based password recovery for the given email and always returns the same generic response so it cannot be used to determine whether an account exists. No authentication is required to call it. Returns 404 if local authentication is disabled and 429 when too many requests have been made. Returns 503 when authentication processing is busy.",
     tag = "auth",
     security(()),
     request_body = ForgotPasswordRequest,
     responses(
+        (status = 503, description = "Authentication processing is busy", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 200, description = "Recovery started if the account exists (generic; no enumeration)"),
         (status = 404, description = "Local authentication is disabled", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 429, description = "Too many requests", body = crate::openapi::ProblemDetails, content_type = "application/problem+json", headers(("Retry-After" = u64, description = "Positive delay in seconds before retrying"))),
@@ -876,7 +895,10 @@ async fn forgot_password(
         // Hash before opening the transaction (Argon2 is CPU-bound; do not hold a
         // connection across it).
         let pin = crate::auth::recovery::generate_pin();
-        let pin_hash = crate::auth::password::hash_password(pin.as_bytes())
+        let pin_hash = state
+            .hash_limiter
+            .hash(pin.clone())
+            .await?
             .map_err(|e| AppError::Internal(anyhow::anyhow!("pin hash failed: {e}")))?;
         let expires_at =
             chrono::Utc::now() + chrono::TimeDelta::seconds(state.config.recovery_pin_ttl_secs);
@@ -913,7 +935,12 @@ async fn forgot_password(
     } else {
         // Unknown email: spend comparable Argon2 work so response timing does not
         // reveal account existence.
-        crate::auth::password::verify_against_dummy(body.email.as_bytes());
+        let permit = state.hash_limiter.acquire().await?;
+        permit
+            .verify_dummy(body.email)
+            .await
+            .map_err(|e| AppError::Internal(e.into()))?;
+        drop(permit);
     }
 
     Ok(StatusCode::OK)
@@ -951,11 +978,12 @@ struct ResetPasswordRequest {
     post,
     path = "/auth/reset-password",
     summary = "Reset password with a PIN",
-    description = "Completes password recovery using the PIN issued by `/auth/forgot-password` and does not sign the caller in. No authentication is required to call it. Returns 404 if local authentication is disabled, 422 for an invalid or expired PIN, unknown email, or a new password that fails the password policy, and 429 when too many requests have been made.",
+    description = "Completes password recovery using the PIN issued by `/auth/forgot-password` and does not sign the caller in. No authentication is required to call it. Returns 404 if local authentication is disabled, 422 for an invalid or expired PIN, unknown email, or a new password that fails the password policy, and 429 when too many requests have been made. Returns 503 when authentication processing is busy.",
     tag = "auth",
     security(()),
     request_body = ResetPasswordRequest,
     responses(
+        (status = 503, description = "Authentication processing is busy", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 200, description = "Password reset; no session established (re-authentication required)"),
         (status = 404, description = "Local authentication is disabled", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 422, description = "Invalid or expired reset request (generic)", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
@@ -997,18 +1025,31 @@ async fn reset_password(
             .map_err(|e| AppError::Internal(e.into()))?,
         None => None,
     };
-    let verified = if let Some(pin) = &active {
-        crate::auth::password::verify_password(body.pin.as_bytes(), &pin.pin_hash).is_ok()
-    } else {
-        // Spend equivalent work on the no-PIN path (timing parity).
-        crate::auth::password::verify_against_dummy(body.pin.as_bytes());
-        false
+    let verified = {
+        let permit = state.hash_limiter.acquire().await?;
+        let verified = if let Some(pin) = &active {
+            permit
+                .verify(body.pin, pin.pin_hash.clone())
+                .await
+                .map_err(|e| AppError::Internal(e.into()))?
+        } else {
+            permit
+                .verify_dummy(body.pin)
+                .await
+                .map_err(|e| AppError::Internal(e.into()))?;
+            false
+        };
+        drop(permit);
+        verified
     };
 
     if verified && let (Some(user), Some(pin)) = (&user, &active) {
         // Hash before opening the transaction: Argon2 is CPU-bound (~100 ms) and
         // must not be held across an open DB connection/locks.
-        let phc = crate::auth::password::hash_password(body.new_password.as_bytes())
+        let phc = state
+            .hash_limiter
+            .hash(body.new_password)
+            .await?
             .map_err(|e| AppError::Internal(anyhow::anyhow!("password hash failed: {e}")))?;
 
         // One transaction: consume the PIN, write the new credential, and
@@ -1424,6 +1465,528 @@ mod tests {
         state.pool = test_support::db::app_pool_for(pool).await;
         state.ingestion_pool = test_support::db::ingestion_pool_for(pool).await;
         state
+    }
+
+    fn hash_counter(state: &mut AppState) -> std::sync::Arc<std::sync::atomic::AtomicUsize> {
+        let count = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let hook_count = count.clone();
+        state.hash_limiter = crate::auth::password::HashLimiter::new(1).with_before_compute(
+            std::sync::Arc::new(move || {
+                hook_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            }),
+        );
+        count
+    }
+
+    fn hash_server(state: &AppState) -> axum_test::TestServer {
+        axum_test::TestServer::new(crate::build_router_with_session_store(
+            state.clone(),
+            crate::auth::store::PostgresStore::new(state.pool.clone()),
+        ))
+    }
+
+    fn assert_hash_busy(response: &axum_test::TestResponse, path: &str) {
+        assert_eq!(response.status_code(), StatusCode::SERVICE_UNAVAILABLE);
+        assert_eq!(
+            response.headers()["content-type"],
+            "application/problem+json"
+        );
+        assert!(!response.headers().contains_key("retry-after"));
+        assert_eq!(
+            response.json::<serde_json::Value>(),
+            serde_json::json!({
+                "type": "https://reverie.example/probs/auth-busy",
+                "title": "Service Unavailable", "status": 503,
+                "detail": "The server is busy. Try again in a moment.", "instance": path,
+            })
+        );
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn auth_hash_census_login(pool: sqlx::PgPool) {
+        let mut state = password_state(&pool).await;
+        test_support::db::create_adult_with_password(
+            &state.pool,
+            "Known",
+            "known@example.com",
+            "correct password",
+        )
+        .await;
+        let count = hash_counter(&mut state);
+        let server = hash_server(&state);
+        for (email, status) in [
+            ("known@example.com", StatusCode::NO_CONTENT),
+            ("unknown@example.com", StatusCode::UNPROCESSABLE_ENTITY),
+        ] {
+            count.store(0, std::sync::atomic::Ordering::SeqCst);
+            let response = server
+                .post("/auth/local/login")
+                .json(&serde_json::json!({"email":email,"password":"correct password"}))
+                .await;
+            assert_eq!(response.status_code(), status);
+            assert_eq!(
+                count.load(std::sync::atomic::Ordering::SeqCst),
+                1,
+                "{email}"
+            );
+        }
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn auth_hash_census_setup(pool: sqlx::PgPool) {
+        let mut state = password_state(&pool).await;
+        let count = hash_counter(&mut state);
+        let response = hash_server(&state).post("/auth/setup").json(&serde_json::json!({"email":"setup@example.com","display_name":"Setup","password":"lithe cobalt meadow drift"})).await;
+        assert_eq!(response.status_code(), StatusCode::CREATED);
+        assert_eq!(count.load(std::sync::atomic::Ordering::SeqCst), 1);
+        assert!(user::admin_exists(&state.pool).await.unwrap());
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn auth_hash_census_register(pool: sqlx::PgPool) {
+        let mut state = password_state(&pool).await;
+        state.config.self_registration_enabled = true;
+        let count = hash_counter(&mut state);
+        let response = hash_server(&state).post("/auth/register").json(&serde_json::json!({"email":"register@example.com","display_name":"Registrant","password":"lithe cobalt meadow drift"})).await;
+        assert_eq!(response.status_code(), StatusCode::CREATED);
+        assert_eq!(count.load(std::sync::atomic::Ordering::SeqCst), 1);
+        assert!(
+            user::find_by_email(&state.pool, "register@example.com")
+                .await
+                .unwrap()
+                .is_some()
+        );
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn auth_hash_census_forgot(pool: sqlx::PgPool) {
+        let mut state = password_state(&pool).await;
+        let directory = tempfile::tempdir().unwrap();
+        state.config.recovery_pin_dir = directory.path().to_str().unwrap().to_owned();
+        let id = test_support::db::create_adult_with_password(
+            &state.pool,
+            "Known",
+            "known@example.com",
+            "correct password",
+        )
+        .await;
+        let count = hash_counter(&mut state);
+        let server = hash_server(&state);
+        for email in ["known@example.com", "unknown@example.com"] {
+            count.store(0, std::sync::atomic::Ordering::SeqCst);
+            let response = server
+                .post("/auth/forgot-password")
+                .json(&serde_json::json!({"email":email}))
+                .await;
+            assert_eq!(response.status_code(), StatusCode::OK);
+            assert_eq!(
+                count.load(std::sync::atomic::Ordering::SeqCst),
+                1,
+                "{email}"
+            );
+        }
+        assert!(
+            crate::models::password_reset_pin::find_active_by_user(&state.pool, id)
+                .await
+                .unwrap()
+                .is_some()
+        );
+        assert!(directory.path().join(format!("{id}.pin")).exists());
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn auth_hash_census_reset(pool: sqlx::PgPool) {
+        let mut state = password_state(&pool).await;
+        let directory = tempfile::tempdir().unwrap();
+        state.config.recovery_pin_dir = directory.path().to_str().unwrap().to_owned();
+        let id = test_support::db::create_adult_with_password(
+            &state.pool,
+            "Known",
+            "known@example.com",
+            "correct password",
+        )
+        .await;
+        let phc = crate::auth::password::hash_password(b"1234567890").unwrap();
+        crate::models::password_reset_pin::insert(
+            &state.pool,
+            id,
+            &phc,
+            chrono::Utc::now() + chrono::TimeDelta::minutes(15),
+        )
+        .await
+        .unwrap();
+        let count = hash_counter(&mut state);
+        let server = hash_server(&state);
+        for (expected, status) in [(2, StatusCode::OK), (1, StatusCode::UNPROCESSABLE_ENTITY)] {
+            count.store(0, std::sync::atomic::Ordering::SeqCst);
+            let response = server.post("/auth/reset-password").json(&serde_json::json!({"email":"known@example.com","pin":"1234567890","new_password":"lithe cobalt meadow drift"})).await;
+            assert_eq!(response.status_code(), status);
+            assert_eq!(count.load(std::sync::atomic::Ordering::SeqCst), expected);
+        }
+        let credential = crate::models::local_credentials::find_by_user_id(&state.pool, id)
+            .await
+            .unwrap()
+            .unwrap();
+        crate::auth::password::verify_password(
+            b"lithe cobalt meadow drift",
+            &credential.password_hash,
+        )
+        .unwrap();
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn auth_hash_busy_auth_endpoints(pool: sqlx::PgPool) {
+        let mut state = password_state(&pool).await;
+        state.config.self_registration_enabled = true;
+        let directory = tempfile::tempdir().unwrap();
+        state.config.recovery_pin_dir = directory.path().to_str().unwrap().to_owned();
+        let id = test_support::db::create_adult_with_password(
+            &state.pool,
+            "Known",
+            "known@example.com",
+            "correct password",
+        )
+        .await;
+        let credential = crate::models::local_credentials::find_by_user_id(&state.pool, id)
+            .await
+            .unwrap()
+            .unwrap();
+        let pin_hash = crate::auth::password::hash_password(b"1234567890").unwrap();
+        let pin_id = crate::models::password_reset_pin::insert(
+            &state.pool,
+            id,
+            &pin_hash,
+            chrono::Utc::now() + chrono::TimeDelta::minutes(15),
+        )
+        .await
+        .unwrap();
+        let count = hash_counter(&mut state);
+        state.hash_limiter = state
+            .hash_limiter
+            .with_wait_limit(std::time::Duration::from_millis(10));
+        let _held = state.hash_limiter.acquire().await.unwrap();
+        let probe = PasswordProbe::new(None);
+        let server = axum_test::TestServer::new(password_probe_router(
+            state.clone(),
+            crate::auth::store::PostgresStore::new(state.pool.clone()),
+            probe.clone(),
+        ));
+        for (path, body) in [
+            (
+                "/auth/local/login",
+                serde_json::json!({"email":"source-rejected@example.com","password":"wrong"}),
+            ),
+            (
+                "/auth/setup",
+                serde_json::json!({"email":"setup@example.com","display_name":"Setup","password":"lithe cobalt meadow drift"}),
+            ),
+            (
+                "/auth/register",
+                serde_json::json!({"email":"register@example.com","display_name":"Registrant","password":"lithe cobalt meadow drift"}),
+            ),
+            (
+                "/auth/forgot-password",
+                serde_json::json!({"email":"known@example.com"}),
+            ),
+            (
+                "/auth/reset-password",
+                serde_json::json!({"email":"known@example.com","pin":"1234567890","new_password":"lithe cobalt meadow drift"}),
+            ),
+        ] {
+            let response = server.post(path).json(&body).await;
+            assert_hash_busy(&response, path);
+        }
+        assert_eq!(count.load(std::sync::atomic::Ordering::SeqCst), 0);
+        assert_eq!(probe.calls(), 0);
+        assert_eq!(sqlx::query_scalar!("SELECT count(*) FROM local_login_throttle WHERE email_lower = 'source-rejected@example.com'").fetch_one(&pool).await.unwrap(), Some(0));
+        assert_eq!(
+            crate::models::local_credentials::find_by_user_id(&state.pool, id)
+                .await
+                .unwrap()
+                .unwrap()
+                .password_hash,
+            credential.password_hash
+        );
+        let active = crate::models::password_reset_pin::find_active_by_user(&state.pool, id)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(active.id, pin_id);
+        assert_eq!(active.pin_hash, pin_hash);
+        assert!(
+            std::fs::read_dir(directory.path())
+                .unwrap()
+                .next()
+                .is_none()
+        );
+        for email in ["setup@example.com", "register@example.com"] {
+            assert!(
+                user::find_by_email(&state.pool, email)
+                    .await
+                    .unwrap()
+                    .is_none()
+            );
+        }
+        assert!(!user::admin_exists(&state.pool).await.unwrap());
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn auth_hash_busy_login_parity(pool: sqlx::PgPool) {
+        let mut state = password_state(&pool).await;
+        for email in [
+            "known@example.com",
+            "disabled@example.com",
+            "passwordless@example.com",
+        ] {
+            let id = test_support::db::create_adult_with_password(
+                &state.pool,
+                "Parity",
+                email,
+                "correct password",
+            )
+            .await;
+            if email == "disabled@example.com" {
+                user::disable_account(&state.pool, id).await.unwrap();
+            }
+            if email == "passwordless@example.com" {
+                sqlx::query!("DELETE FROM local_credentials WHERE user_id = $1", id)
+                    .execute(&pool)
+                    .await
+                    .unwrap();
+            }
+        }
+        let count = hash_counter(&mut state);
+        state.hash_limiter = state
+            .hash_limiter
+            .with_wait_limit(std::time::Duration::from_millis(10));
+        let _held = state.hash_limiter.acquire().await.unwrap();
+        let probe = PasswordProbe::new(None);
+        let server = axum_test::TestServer::new(password_probe_router(
+            state.clone(),
+            crate::auth::store::PostgresStore::new(state.pool.clone()),
+            probe.clone(),
+        ));
+        let mut previous = None;
+        for email in [
+            "known@example.com",
+            "unknown@example.com",
+            "disabled@example.com",
+            "passwordless@example.com",
+        ] {
+            let response = server
+                .post("/auth/local/login")
+                .json(&serde_json::json!({"email":email,"password":"wrong"}))
+                .await;
+            assert_hash_busy(&response, "/auth/local/login");
+            if let Some(previous) = &previous {
+                assert_eq!(&response.text(), previous);
+            }
+            previous = Some(response.text());
+        }
+        assert_eq!(count.load(std::sync::atomic::Ordering::SeqCst), 0);
+        assert_eq!(probe.calls(), 0);
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn auth_hash_login_precedence(pool: sqlx::PgPool) {
+        use crate::models::login_throttle::tests::{seed, snapshot};
+        use tower_sessions::SessionStore;
+        let mut state = password_state(&pool).await;
+        test_support::db::create_adult_with_password(
+            &state.pool,
+            "Known",
+            "known@example.com",
+            "correct password",
+        )
+        .await;
+        let count = hash_counter(&mut state);
+        state.hash_limiter = state
+            .hash_limiter
+            .with_wait_limit(std::time::Duration::from_millis(10));
+        let probe = PasswordProbe::new(None);
+        let store = crate::auth::store::PostgresStore::new(state.pool.clone());
+        let mut server = axum_test::TestServer::new(password_probe_router(
+            state.clone(),
+            store.clone(),
+            probe.clone(),
+        ));
+        server.save_cookies();
+        let login = server
+            .post("/auth/local/login")
+            .json(&serde_json::json!({"email":"known@example.com","password":"correct password"}))
+            .await;
+        assert_eq!(login.status_code(), StatusCode::NO_CONTENT);
+        let id = login.cookie("id").value().parse().unwrap();
+        let record = store.load(&id).await.unwrap().unwrap();
+        let _held = state.hash_limiter.acquire().await.unwrap();
+        let signed_in = server
+            .post("/auth/local/login")
+            .add_header("x-csrf-token", record.data["csrf_token"].as_str().unwrap())
+            .json(&serde_json::json!({"email":"known@example.com","password":"wrong"}))
+            .await;
+        assert_eq!(signed_in.status_code(), StatusCode::CONFLICT);
+        state.config.trusted_client_ip_header = Some("x-test-source".into());
+        state.login_limiter =
+            crate::auth::rate_limit::build_login_limiter(std::num::NonZeroU32::new(1).unwrap());
+        assert!(
+            state
+                .login_limiter
+                .check_key(&"192.0.2.1".parse().unwrap())
+                .is_ok()
+        );
+        let server = axum_test::TestServer::new(password_probe_router(
+            state.clone(),
+            crate::auth::store::PostgresStore::new(state.pool.clone()),
+            probe.clone(),
+        ));
+        let exhausted = server
+            .post("/auth/local/login")
+            .add_header("x-test-source", "192.0.2.1")
+            .json(&serde_json::json!({"email":"unknown@example.com","password":"wrong"}))
+            .await;
+        assert_eq!(exhausted.status_code(), StatusCode::TOO_MANY_REQUESTS);
+        seed(
+            &pool,
+            "blocked@example.com",
+            &[chrono::Utc::now(); 10],
+            Some(chrono::Utc::now() + chrono::TimeDelta::minutes(15)),
+        )
+        .await;
+        let before = snapshot(&pool, "blocked@example.com").await;
+        let blocked = server
+            .post("/auth/local/login")
+            .add_header("x-test-source", "192.0.2.2")
+            .json(&serde_json::json!({"email":"blocked@example.com","password":"wrong"}))
+            .await;
+        assert_hash_busy(&blocked, "/auth/local/login");
+        assert_eq!(snapshot(&pool, "blocked@example.com").await, before);
+        assert_eq!(probe.calls(), 1);
+        assert_eq!(count.load(std::sync::atomic::Ordering::SeqCst), 1);
+    }
+
+    struct HashPause {
+        released: std::sync::Mutex<bool>,
+        resume: std::sync::Condvar,
+        reached: tokio::sync::Notify,
+    }
+
+    impl HashPause {
+        fn install(state: &mut AppState) -> std::sync::Arc<Self> {
+            let pause = std::sync::Arc::new(Self {
+                released: std::sync::Mutex::new(false),
+                resume: std::sync::Condvar::new(),
+                reached: tokio::sync::Notify::new(),
+            });
+            let hook_pause = pause.clone();
+            state.hash_limiter = crate::auth::password::HashLimiter::new(1)
+                .with_wait_limit(std::time::Duration::from_secs(5))
+                .with_before_compute(std::sync::Arc::new(move || {
+                    hook_pause.reached.notify_one();
+                    let mut released = hook_pause.released.lock().unwrap();
+                    while !*released {
+                        released = hook_pause.resume.wait(released).unwrap();
+                    }
+                    drop(released);
+                }));
+            pause
+        }
+        fn release(&self) {
+            *self.released.lock().unwrap() = true;
+            self.resume.notify_all();
+        }
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn auth_hash_login_pool_progress(pool: sqlx::PgPool) {
+        let mut state = password_state(&pool).await;
+        state.pool = sqlx::postgres::PgPoolOptions::new()
+            .max_connections(2)
+            .acquire_timeout(std::time::Duration::from_secs(2))
+            .connect_with((*state.pool.connect_options()).clone())
+            .await
+            .unwrap();
+        let pause = HashPause::install(&mut state);
+        let probe = PasswordProbe::new(None);
+        let server = std::sync::Arc::new(axum_test::TestServer::new(password_probe_router(
+            state.clone(),
+            crate::auth::store::PostgresStore::new(state.pool.clone()),
+            probe.clone(),
+        )));
+        let first_server = server.clone();
+        let first = tokio::spawn(async move {
+            first_server
+                .post("/auth/local/login")
+                .json(&serde_json::json!({"email":"first@example.com","password":"wrong"}))
+                .await
+        });
+        pause.reached.notified().await;
+        let mut waiting = Vec::new();
+        for number in 0..4 {
+            let server = server.clone();
+            waiting.push(Box::pin(async move { server.post("/auth/local/login").json(&serde_json::json!({"email":format!("waiting{number}@example.com"),"password":"wrong"})).await }));
+        }
+        for request in &mut waiting {
+            std::future::poll_fn(|cx| {
+                assert!(std::future::Future::poll(request.as_mut(), cx).is_pending());
+                std::task::Poll::Ready(())
+            })
+            .await;
+        }
+        let unrelated = server.get("/health/ready").await;
+        pause.release();
+        assert_eq!(
+            unrelated.status_code(),
+            StatusCode::OK,
+            "pool-backed GET /health/ready must progress"
+        );
+        assert_eq!(
+            first.await.unwrap().status_code(),
+            StatusCode::UNPROCESSABLE_ENTITY
+        );
+        for request in waiting {
+            assert_eq!(
+                request.await.status_code(),
+                StatusCode::UNPROCESSABLE_ENTITY
+            );
+        }
+        assert_eq!(probe.calls(), 5);
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn auth_hash_login_cancel_during_hash(pool: sqlx::PgPool) {
+        use crate::models::login_throttle::tests::{seed, snapshot};
+        let mut state = password_state(&pool).await;
+        seed(&pool, "cancel@example.com", &[chrono::Utc::now()], None).await;
+        let before = snapshot(&pool, "cancel@example.com").await;
+        let pause = HashPause::install(&mut state);
+        let server = hash_server(&state);
+        let task = tokio::spawn(async move {
+            server
+                .post("/auth/local/login")
+                .json(&serde_json::json!({"email":"cancel@example.com","password":"wrong"}))
+                .await
+        });
+        pause.reached.notified().await;
+        task.abort();
+        let cancelled = task.await.unwrap_err().is_cancelled();
+        let unavailable = tokio::time::timeout(
+            std::time::Duration::from_millis(10),
+            state.hash_limiter.acquire(),
+        )
+        .await
+        .is_err();
+        let after = snapshot(&pool, "cancel@example.com").await;
+        let sessions =
+            sqlx::query_scalar!(r#"SELECT count(*) AS "count!" FROM tower_sessions.session"#)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        pause.release();
+        drop(state.hash_limiter.acquire().await.unwrap());
+        assert!(cancelled);
+        assert!(unavailable);
+        assert_eq!(after, before);
+        assert_eq!(sessions, 0);
     }
 
     #[sqlx::test(migrations = "./migrations")]
@@ -2242,6 +2805,9 @@ mod tests {
             ingestion_pool,
             ingestion: crate::services::ingestion::coordinator_channel().0,
             library_files,
+            hash_limiter: crate::auth::password::HashLimiter::new(
+                usize::try_from(config.auth_hash_concurrency).unwrap(),
+            ),
             config,
             oidc,
             login_limiter: test_support::test_login_limiter(),
@@ -3924,6 +4490,9 @@ mod tests {
                 ingestion_pool,
                 ingestion: crate::services::ingestion::coordinator_channel().0,
                 library_files,
+                hash_limiter: crate::auth::password::HashLimiter::new(
+                    usize::try_from(config.auth_hash_concurrency).unwrap(),
+                ),
                 config,
                 oidc,
                 login_limiter: test_support::test_login_limiter(),
@@ -4195,6 +4764,9 @@ mod tests {
             ingestion_pool,
             ingestion: crate::services::ingestion::coordinator_channel().0,
             library_files,
+            hash_limiter: crate::auth::password::HashLimiter::new(
+                usize::try_from(config.auth_hash_concurrency).unwrap(),
+            ),
             config,
             oidc,
             login_limiter: test_support::test_login_limiter(),
@@ -4326,6 +4898,9 @@ mod tests {
             ingestion_pool,
             ingestion: crate::services::ingestion::coordinator_channel().0,
             library_files,
+            hash_limiter: crate::auth::password::HashLimiter::new(
+                usize::try_from(config.auth_hash_concurrency).unwrap(),
+            ),
             config,
             oidc,
             login_limiter: test_support::test_login_limiter(),
@@ -4438,6 +5013,9 @@ mod tests {
             ingestion_pool,
             ingestion: crate::services::ingestion::coordinator_channel().0,
             library_files,
+            hash_limiter: crate::auth::password::HashLimiter::new(
+                usize::try_from(config.auth_hash_concurrency).unwrap(),
+            ),
             config,
             oidc,
             login_limiter: test_support::test_login_limiter(),
@@ -4547,6 +5125,9 @@ mod tests {
             ingestion_pool,
             ingestion: crate::services::ingestion::coordinator_channel().0,
             library_files,
+            hash_limiter: crate::auth::password::HashLimiter::new(
+                usize::try_from(config.auth_hash_concurrency).unwrap(),
+            ),
             config,
             oidc,
             login_limiter: test_support::test_login_limiter(),

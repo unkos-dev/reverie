@@ -55,6 +55,7 @@ pub fn test_config() -> Config {
         oidc_redirect_uri: String::new(),
         local_auth_enabled: true,
         login_rate_per_min: 10,
+        auth_hash_concurrency: 10,
         password_min_length: 15,
         password_max_length: 256,
         password_min_zxcvbn_score: 2,
@@ -196,6 +197,9 @@ pub fn test_state() -> AppState {
         ingestion_pool: sqlx::PgPool::connect_lazy("postgres://invalid").unwrap(),
         ingestion: crate::services::ingestion::coordinator_channel().0,
         library_files,
+        hash_limiter: crate::auth::password::HashLimiter::new(
+            usize::try_from(config.auth_hash_concurrency).unwrap(),
+        ),
         config,
         oidc: Some(std::sync::Arc::new(test_oidc_runtime())),
         login_limiter: test_login_limiter(),
@@ -633,6 +637,9 @@ pub mod db {
             ingestion_pool: ingestion_pool.clone(),
             ingestion: crate::services::ingestion::coordinator_channel().0,
             library_files,
+            hash_limiter: crate::auth::password::HashLimiter::new(
+                usize::try_from(config.auth_hash_concurrency).unwrap(),
+            ),
             config,
             oidc: Some(std::sync::Arc::new(super::test_oidc_runtime())),
             login_limiter: super::test_login_limiter(),
@@ -663,6 +670,9 @@ pub mod db {
             ingestion_pool: ingestion_pool.clone(),
             ingestion: crate::services::ingestion::coordinator_channel().0,
             library_files,
+            hash_limiter: crate::auth::password::HashLimiter::new(
+                usize::try_from(config.auth_hash_concurrency).unwrap(),
+            ),
             config,
             oidc: Some(std::sync::Arc::new(super::test_oidc_runtime())),
             login_limiter: super::test_login_limiter(),
@@ -698,6 +708,9 @@ pub mod db {
             ingestion_pool: ingestion_pool.clone(),
             ingestion: crate::services::ingestion::coordinator_channel().0,
             library_files,
+            hash_limiter: crate::auth::password::HashLimiter::new(
+                usize::try_from(config.auth_hash_concurrency).unwrap(),
+            ),
             config,
             oidc: Some(std::sync::Arc::new(super::test_oidc_runtime())),
             login_limiter: crate::auth::rate_limit::build_login_limiter(
@@ -748,6 +761,9 @@ pub mod db {
             ingestion_pool: ingestion_pool.clone(),
             ingestion: crate::services::ingestion::coordinator_channel().0,
             library_files,
+            hash_limiter: crate::auth::password::HashLimiter::new(
+                usize::try_from(config.auth_hash_concurrency).unwrap(),
+            ),
             config,
             oidc: Some(std::sync::Arc::new(super::test_oidc_runtime())),
             login_limiter: super::test_login_limiter(),
@@ -780,6 +796,9 @@ pub mod db {
             ingestion_pool: ingestion_pool.clone(),
             ingestion: crate::services::ingestion::coordinator_channel().0,
             library_files,
+            hash_limiter: crate::auth::password::HashLimiter::new(
+                usize::try_from(config.auth_hash_concurrency).unwrap(),
+            ),
             config,
             oidc: Some(std::sync::Arc::new(super::test_oidc_runtime())),
             login_limiter: super::test_login_limiter(),
@@ -820,6 +839,9 @@ pub mod db {
             ingestion_pool: ingestion_pool.clone(),
             ingestion: crate::services::ingestion::coordinator_channel().0,
             library_files,
+            hash_limiter: crate::auth::password::HashLimiter::new(
+                usize::try_from(config.auth_hash_concurrency).unwrap(),
+            ),
             config,
             oidc: Some(std::sync::Arc::new(super::test_oidc_runtime())),
             login_limiter: super::test_login_limiter(),
