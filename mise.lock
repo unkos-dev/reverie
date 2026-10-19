@@ -61,14 +61,14 @@ url_api = "https://api.github.com/repos/nextest-rs/nextest/releases/assets/62059
 provenance = "github-attestations"
 
 [[tools."github:owenlamont/ryl"]]
-version = "0.25.0"
+version = "0.25.1"
 backend = "github:owenlamont/ryl"
-specifiers = ["v0.25.0"]
+specifiers = ["v0.25.1"]
 
 [tools."github:owenlamont/ryl"."platforms.linux-x64"]
-checksum = "sha256:1a29c79f60a2bb7f3d00d7aec100cc0f18c2609a6f5641835ef4c5f190257528"
-url = "https://github.com/owenlamont/ryl/releases/download/v0.25.0/ryl-x86_64-unknown-linux-gnu.tar.gz"
-url_api = "https://api.github.com/repos/owenlamont/ryl/releases/assets/646250450"
+checksum = "sha256:96cb18b04e2154a56c2569995fa0118237b2864c1bd122eff88cb45504c40c8c"
+url = "https://github.com/owenlamont/ryl/releases/download/v0.25.1/ryl-x86_64-unknown-linux-gnu.tar.gz"
+url_api = "https://api.github.com/repos/owenlamont/ryl/releases/assets/647112023"
 provenance = "github-attestations"
 
 [[tools."github:quarylabs/sqruff"]]
