@@ -3,7 +3,7 @@ type: ADR
 profile-version: 1
 id: "REV-ADR-0059"
 title: "Password admission with committed failure accounting"
-status: "proposed"
+status: "accepted"
 recorded-on: "2026-10-19"
 decision-makers:
   - "John Unkovich"
@@ -74,7 +74,9 @@ standards-compliance claim.
 - Positive: password source traffic does not consume recovery or OIDC source allowance.
 - Negative: a sustained targeted attack can repeatedly obstruct password-only users, including users with the correct
   password. Existing sessions remain valid.
-- Negative: serialisation spans synchronous hashing and occupies one database connection; same-account callers can wait
-  for that lock. Aggregate hashing and waiting limits require measurement and remain separate work.
+- Negative: verifying requests and same-email lock waiters hold connections from the shared application pool. The
+  default per-source burst and pool size are both ten, so one source can occupy the entire pool and delay unrelated
+  database-backed endpoints. This interim availability risk is accepted; aggregate verification and waiting limits
+  require measurement and remain separate work.
 - Negative: source limits are process-local and reset on restart. They do not establish availability during arbitrary
   floods.

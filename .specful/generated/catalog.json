@@ -434,7 +434,7 @@
       "id": "REV-ADR-0059",
       "kind": "adr",
       "path": "docs/adr/0059-password-admission-with-committed-failure-accounting.md",
-      "status": "proposed",
+      "status": "accepted",
       "title": "Password admission with committed failure accounting"
     },
     {

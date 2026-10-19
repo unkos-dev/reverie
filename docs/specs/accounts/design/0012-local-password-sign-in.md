@@ -283,9 +283,11 @@ hash; known accounts require an additional credential lookup. This is equivalent
 latency guarantee.
 
 A sustained targeted attack can repeatedly obstruct password-only sign-in, including correct credentials. Existing
-sessions remain valid. Hashing is synchronous and account serialisation holds one database connection through it;
-aggregate hashing and waiting are not bounded by this mechanism. The hourly sweep provides eventual reclamation, not a
-hard storage bound under unbounded arrivals. Cleanup errors log and retry later without clearing protection.
+sessions remain valid. Verifying requests and same-email lock waiters hold connections from the shared application pool.
+Hashing is synchronous. The default per-source burst and pool size are both ten, so one source can occupy the entire
+pool and delay unrelated database-backed endpoints. Aggregate verification and waiting are not bounded by this
+mechanism. The hourly sweep provides eventual reclamation, not a hard storage bound under unbounded arrivals. Cleanup
+errors log and retry later without clearing protection.
 
 `client_ip` honours a forwarded header only when `trusted_client_ip_header` names it. Without that opt-in, clients
 behind a shared proxy use its peer address as one source key. Source state is process-local; account accounting survives
