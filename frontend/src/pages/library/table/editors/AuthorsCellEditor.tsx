@@ -1,5 +1,5 @@
 /**
- * Radix Popover editor for the authors column. The popover opens the moment
+ * Popover editor for the authors column. The popover opens the moment
  * this component mounts (mounting an editor already signals edit intent),
  * anchored over the cell it replaces. Author edits are staged locally and
  * only reach the caller on an explicit Save; Escape or an outside click
@@ -16,7 +16,7 @@ import { useRef, useState, type KeyboardEvent, type ReactElement } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Popover, PopoverAnchor, PopoverContent } from "@/components/ui/popover";
+import { PopoverContent } from "@/components/ui/popover";
 
 type AuthorsCellEditorProps = {
   authors: readonly string[];
@@ -38,6 +38,7 @@ export function AuthorsCellEditor({
     authors.map((value, index) => ({ id: index, value })),
   );
   const nextId = useRef(authors.length);
+  const anchor = useRef<HTMLDivElement>(null);
   const [draftName, setDraftName] = useState("");
 
   function updateName(id: number, next: string): void {
@@ -87,11 +88,16 @@ export function AuthorsCellEditor({
   const canSave = names.length > 0 && names.every((entry) => entry.value.trim() !== "");
 
   return (
-    <Popover open onOpenChange={handleOpenChange}>
-      <PopoverAnchor asChild>
-        <div className="h-full w-full" />
-      </PopoverAnchor>
-      <PopoverContent align="start" className="w-80">
+    <>
+      <div ref={anchor} className="h-full w-full" />
+      <PopoverContent
+        isOpen
+        onOpenChange={handleOpenChange}
+        triggerRef={anchor}
+        placement="bottom start"
+        aria-label="Edit authors"
+        className="w-80"
+      >
         <ol className="flex flex-col gap-1.5">
           {names.map((entry, index) => (
             <li key={entry.id} className="flex items-center gap-1.5">
@@ -152,6 +158,6 @@ export function AuthorsCellEditor({
           </Button>
         </div>
       </PopoverContent>
-    </Popover>
+    </>
   );
 }

@@ -122,7 +122,7 @@ describe("TokensPage", () => {
     const user = userEvent.setup();
 
     await user.click(await screen.findByRole("button", { name: "New token" }));
-    await user.click(screen.getByLabelText("Access level"));
+    await user.click(screen.getByRole("button", { name: /Access level/ }));
     expect(await screen.findByRole("option", { name: "Read-only" })).toBeInTheDocument();
     expect(screen.getByRole("option", { name: "Read & write" })).toBeInTheDocument();
     expect(screen.queryByRole("option", { name: "Admin" })).not.toBeInTheDocument();
@@ -133,7 +133,7 @@ describe("TokensPage", () => {
     const user = userEvent.setup();
 
     await user.click(await screen.findByRole("button", { name: "New token" }));
-    await user.click(screen.getByLabelText("Access level"));
+    await user.click(screen.getByRole("button", { name: /Access level/ }));
     expect(await screen.findByRole("option", { name: "Admin" })).toBeInTheDocument();
   });
 
@@ -178,7 +178,7 @@ describe("TokensPage", () => {
 
     await user.click(await screen.findByRole("button", { name: "New token" }));
     await user.type(screen.getByLabelText("Name"), "forever");
-    await user.click(screen.getByLabelText("Expires"));
+    await user.click(screen.getByRole("button", { name: /Expires/ }));
     await user.click(await screen.findByRole("option", { name: "Never" }));
     await user.click(screen.getByRole("button", { name: "Create" }));
 
@@ -199,7 +199,7 @@ describe("TokensPage", () => {
 
     await user.click(await screen.findByRole("button", { name: "New token" }));
     await user.type(screen.getByLabelText("Name"), "ops");
-    await user.click(screen.getByLabelText("Access level"));
+    await user.click(screen.getByRole("button", { name: /Access level/ }));
     await user.click(await screen.findByRole("option", { name: "Admin" }));
     await user.click(screen.getByRole("button", { name: "Create" }));
 

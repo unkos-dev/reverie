@@ -79,7 +79,7 @@ describe("AppShell — drawer (<1024px)", () => {
     await waitFor(() => {
       expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     });
-    expect(menuButton).toHaveFocus();
+    await waitFor(() => expect(menuButton).toHaveFocus());
   });
 
   test("clicking a nav link inside the drawer closes it", async () => {

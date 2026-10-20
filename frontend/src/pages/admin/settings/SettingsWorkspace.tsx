@@ -1,10 +1,9 @@
 import { TriangleAlert } from "lucide-react";
-import { useEffect, useRef, type ReactElement } from "react";
+import { useEffect, type ReactElement } from "react";
 import { NavLink, useBlocker } from "react-router";
 
 import type { SettingsSnapshot } from "@/api/settings";
 import {
-  AlertDialog,
   AlertDialogAction,
   AlertDialogCancel,
   AlertDialogContent,
@@ -28,9 +27,7 @@ import {
   fieldsForArea,
   pluralise,
   type AreaId,
-  type BooleanKey,
 } from "./fields";
-import { controlId } from "./ids";
 import { useSettingsEditor, type SettingsEditor } from "./use-settings-editor";
 
 type Props = Readonly<{ area: AreaId; base: SettingsSnapshot }>;
@@ -163,93 +160,66 @@ function LeaveDialog({
   blocker: ReturnType<typeof useBlocker>;
 }>): ReactElement {
   const title = areaById(area).title;
-  const opener = useRef<HTMLElement | null>(null);
   return (
-    <AlertDialog
-      open={blocker.state === "blocked"}
+    <AlertDialogContent
+      isOpen={blocker.state === "blocked"}
       onOpenChange={(open) => {
         if (!open && blocker.state === "blocked") blocker.reset();
       }}
+
+      className={DIALOG_CONTENT}
     >
-      <AlertDialogContent
-        className={DIALOG_CONTENT}
-        onOpenAutoFocus={() => {
-          opener.current =
-            document.activeElement instanceof HTMLElement ? document.activeElement : null;
-        }}
-        onCloseAutoFocus={(event) => {
-          event.preventDefault();
-          opener.current?.focus();
-        }}
-      >
-        <AlertDialogHeader>
-          <AlertDialogTitle className="text-lg font-semibold">
-            Leave without saving?
-          </AlertDialogTitle>
-          <AlertDialogDescription>
-            You have {count} unsaved {pluralise(count, "change", "changes")} in {title}.{" "}
-            {pluralise(count, "It", "They")} will be lost if you leave.
-          </AlertDialogDescription>
-        </AlertDialogHeader>
-        <AlertDialogFooter className={DIALOG_FOOTER}>
-          <AlertDialogCancel>Stay on this page</AlertDialogCancel>
-          <AlertDialogAction
-            variant="outline"
-            onClick={(event) => {
-              event.preventDefault();
-              if (blocker.state === "blocked") blocker.proceed();
-            }}
-          >
-            Leave and discard changes
-          </AlertDialogAction>
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
+      <AlertDialogHeader>
+        <AlertDialogTitle className="text-lg font-semibold">Leave without saving?</AlertDialogTitle>
+        <AlertDialogDescription>
+          You have {count} unsaved {pluralise(count, "change", "changes")} in {title}.{" "}
+          {pluralise(count, "It", "They")} will be lost if you leave.
+        </AlertDialogDescription>
+      </AlertDialogHeader>
+      <AlertDialogFooter className={DIALOG_FOOTER}>
+        <AlertDialogCancel>Stay on this page</AlertDialogCancel>
+        <AlertDialogAction
+          variant="outline"
+          onPress={() => {
+            if (blocker.state === "blocked") blocker.proceed();
+          }}
+        >
+          Leave and discard changes
+        </AlertDialogAction>
+      </AlertDialogFooter>
+    </AlertDialogContent>
   );
 }
 
 function DeletionDialog({ editor }: Readonly<{ editor: SettingsEditor }>): ReactElement {
   const key = editor.pendingConfirm;
-  const returnTo = useRef<BooleanKey | null>(null);
-  useEffect(() => {
-    if (key !== null) returnTo.current = key;
-    return () => {};
-  }, [key]);
   const copy = key === null ? null : deletionCopy(key);
   return (
-    <AlertDialog
-      open={key !== null}
+    <AlertDialogContent
+      isOpen={key !== null}
       onOpenChange={(open) => {
         if (!open) editor.cancelDeletion();
       }}
+
+      className={DIALOG_CONTENT}
     >
-      <AlertDialogContent
-        className={DIALOG_CONTENT}
-        onCloseAutoFocus={(event) => {
-          event.preventDefault();
-          if (returnTo.current !== null)
-            document.getElementById(controlId(returnTo.current))?.focus();
-        }}
-      >
-        <AlertDialogHeader>
-          <AlertDialogTitle className="text-lg font-semibold">{copy?.title ?? ""}</AlertDialogTitle>
-          <AlertDialogDescription>{copy?.body ?? ""}</AlertDialogDescription>
-        </AlertDialogHeader>
-        <AlertDialogFooter className={DIALOG_FOOTER}>
-          <AlertDialogCancel>Keep source files</AlertDialogCancel>
-          <AlertDialogAction
-            className="bg-danger! text-fg-on-danger! border-danger! hover:bg-danger/90!"
-            onClick={(event) => {
-              event.preventDefault();
-              editor.confirmDeletion();
-            }}
-          >
-            <TriangleAlert aria-hidden="true" />
-            Turn on removal
-          </AlertDialogAction>
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
+      <AlertDialogHeader>
+        <AlertDialogTitle className="text-lg font-semibold">{copy?.title ?? ""}</AlertDialogTitle>
+        <AlertDialogDescription>{copy?.body ?? ""}</AlertDialogDescription>
+      </AlertDialogHeader>
+      <AlertDialogFooter className={DIALOG_FOOTER}>
+        <AlertDialogCancel>Keep source files</AlertDialogCancel>
+        <AlertDialogAction
+          className="bg-danger! text-fg-on-danger! border-danger! hover:bg-danger/90!"
+          onPress={() => {
+            editor.confirmDeletion();
+          }}
+        >
+          <TriangleAlert aria-hidden="true" />
+          Turn on removal
+        </AlertDialogAction>
+      </AlertDialogFooter>
+    </AlertDialogContent>
   );
 }
 

@@ -1,75 +1,40 @@
 /**
- * Accessible multi-select typeahead for the library filter builder.
- *
- * Per the filter-grammar ADR's decomposition (no combobox-with-multiselect
- * pattern is published in APG, and cmdk documents none), this is two in-pattern
- * widgets rather than one invented composite:
- *
- * 1. An APG editable single-select combobox (cmdk inside a Popover). Each Enter
- *    commits exactly one option, the committed option leaves the suggestion
- *    list, the input clears, and the popup stays open for the next pick. No
- *    `aria-selected` persists across picks; the listbox is single-select per
- *    interaction.
- * 2. A separate chip list, adjacent to (not inside) the combobox: a plain list
- *    of labeled dismiss buttons with fully specified button semantics and no
- *    novel ARIA. Backspace in an empty input removes the last chip as a
- *    convenience, never as the only removal path.
- *
- * The component is vocabulary-agnostic: it manages a list of `{ id?, value }`
- * options and leaves the caller to decide which field becomes the URL token
- * (author filters send the id, vocabulary filters send the value).
+ * Controlled vocabulary selection over server-ranked suggestions without local text filtering.
+ * Callers own persisted selections; author identity uses UUIDs while other vocabularies use labels.
  */
 import { useQuery } from "@tanstack/react-query";
+import { useState, type ReactElement } from "react";
+import {
+  Button,
+  ComboBox,
+  ComboBoxValue,
+  Input,
+  Label,
+  ListBox,
+  ListBoxItem,
+  Popover,
+  Tag,
+  TagGroup,
+  TagList,
+  type Key,
+} from "react-aria-components";
 import { X } from "lucide-react";
-import { type KeyboardEvent, type ReactElement, useState } from "react";
 
 import { suggestVocab, type SuggestKind } from "@/api";
-import {
-  Command,
-  CommandEmpty,
-  CommandInput,
-  CommandItem,
-  CommandList,
-} from "@/components/ui/command";
-import { Popover, PopoverAnchor, PopoverContent } from "@/components/ui/popover";
-import { useDebounced } from "@/lib/hooks/use-debounced";
 import { queryKeys } from "@/lib/query/keys";
 
-/** Debounce between a keystroke and the suggest request, long enough that a
- *  fast typist fires one request instead of one per key. */
-const DEBOUNCE_MS = 250;
-/** Minimum query length before a request fires (pg_trgm needs 2+ characters). */
-const MIN_Q_LEN = 2;
-
-/** One selectable option. `id` is the vocabulary row id when known; `value` is
- *  the display label and, for vocabulary filters, the URL token itself. */
+/** A display label with an author UUID when available; other vocabularies use the label as identity. */
 export type TypeaheadOption = { id?: string; value: string };
 
 type Props = {
   kind: SuggestKind;
-  /** Accessible context for the input and chip list, e.g. "author (any of)". */
   label: string;
   selected: readonly TypeaheadOption[];
   onChange: (next: TypeaheadOption[]) => void;
   disabled?: boolean;
 };
 
-/**
- * Two options are the same when their ids match (both known), else when their
- * display values match. Id-first keeps two same-named authors distinct; the
- * value fallback lets a chip hydrated from a URL (id unknown) still match its
- * suggestion so it drops out of the list once selected.
- */
-function sameOption(a: TypeaheadOption, b: TypeaheadOption): boolean {
-  if (a.id !== undefined && b.id !== undefined) return a.id === b.id;
-  return a.value === b.value;
-}
-
-/** Stable React key / listbox id fragment for an option. */
-function optionKey(option: TypeaheadOption): string {
-  return option.id ?? option.value;
-}
-
+/** Emits the complete selection on add/remove and clears the search query after an option is committed. */
 export function TypeaheadMultiSelect({
   kind,
   label,
@@ -79,143 +44,113 @@ export function TypeaheadMultiSelect({
 }: Readonly<Props>): ReactElement {
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
-  const debounced = useDebounced(query.trim(), DEBOUNCE_MS);
-
+  const trimmed = query.trim();
   const { data, isFetching, isError } = useQuery({
-    queryKey: queryKeys.suggest.vocab(kind, debounced),
-    queryFn: ({ signal }) => suggestVocab(kind, debounced, signal),
-    enabled: open && debounced.length >= MIN_Q_LEN,
+    queryKey: queryKeys.suggest.vocab(kind, trimmed),
+    queryFn: ({ signal }) => suggestVocab(kind, trimmed, signal),
+    enabled: open && !disabled && trimmed.length >= 2,
     staleTime: 30_000,
   });
-
-  // Committed options drop out of the suggestion list so the same value cannot
-  // be picked twice; the wire null id is normalized to undefined here.
-  const suggestions: TypeaheadOption[] = (data ?? [])
-    .map((row) => ({ id: row.id ?? undefined, value: row.value }))
-    .filter((option) => !selected.some((chosen) => sameOption(chosen, option)));
-
-  function commit(option: TypeaheadOption): void {
-    if (selected.some((chosen) => sameOption(chosen, option))) return;
-    onChange([...selected, option]);
-    // Clear the input but keep the popup open for the next pick; cmdk leaves
-    // focus in the input on Enter, so no manual refocus is needed.
+  function keyFor(option: TypeaheadOption): string {
+    return kind === "authors" ? (option.id ?? option.value) : option.value;
+  }
+  const suggestions =
+    trimmed.length >= 2
+      ? (data ?? []).map((row) => ({ id: row.id ?? undefined, value: row.value }))
+      : [];
+  const options = [
+    ...new Map([...suggestions, ...selected].map((item) => [keyFor(item), item])).values(),
+  ];
+  function changeSelection(keys: Key[]): void {
+    onChange(options.filter((item) => keys.includes(keyFor(item))));
     setQuery("");
   }
-
-  function remove(target: TypeaheadOption): void {
-    onChange(selected.filter((chosen) => !sameOption(chosen, target)));
-  }
-
-  function handleInputKeyDown(event: KeyboardEvent<HTMLInputElement>): void {
-    // Backspace on an empty input removes the last chip, alongside (never
-    // instead of) the per-chip dismiss buttons.
-    if (event.key === "Backspace" && query === "" && selected.length > 0) {
-      remove(selected[selected.length - 1]);
-    }
-  }
+  let status: string | null = null;
+  if (trimmed.length < 2) status = "Type at least 2 characters to search.";
+  else if (isError) status = "Couldn't load suggestions. Try again.";
+  else if (isFetching && suggestions.length === 0) status = "Searching…";
+  else if (suggestions.length === 0) status = "No matches.";
 
   return (
-    <div className="flex flex-col gap-2">
-      {selected.length > 0 ? (
-        <ul aria-label={`Selected ${label}`} className="flex flex-wrap gap-1.5">
-          {selected.map((chip) => (
-            <li key={optionKey(chip)}>
-              <button
-                type="button"
-                disabled={disabled}
-                onClick={() => {
-                  remove(chip);
-                }}
-                className="border-border bg-accent-soft text-fg hover:bg-accent-soft/80 inline-flex min-h-6 items-center gap-1 rounded-full px-2.5 py-0.5 font-mono text-xs disabled:opacity-50"
-              >
-                {chip.value}
-                <X className="size-3" aria-hidden="true" />
-                <span className="sr-only">Remove {chip.value}</span>
-              </button>
-            </li>
-          ))}
-        </ul>
-      ) : null}
-      {/* cmdk's `label` fills a visually-hidden <label> the input points at via
-          aria-labelledby, so the combobox has an accessible name. */}
-      <Command shouldFilter={false} label={`Add ${label}`}>
-        <Popover open={open} onOpenChange={setOpen}>
-          <PopoverAnchor asChild>
-            <CommandInput
-              placeholder={`Add ${label}…`}
-              value={query}
-              disabled={disabled}
-              onValueChange={(next) => {
-                setQuery(next);
-                setOpen(true);
-              }}
-              onFocus={() => {
-                setOpen(true);
-              }}
-              onKeyDown={handleInputKeyDown}
-            />
-          </PopoverAnchor>
-          <PopoverContent
-            align="start"
-            side="bottom"
-            className="w-(--radix-popover-trigger-width) p-0"
-            // Keep focus in the input so the user keeps typing while the
-            // listbox tracks the active option via aria-activedescendant.
-            onOpenAutoFocus={(event) => {
-              event.preventDefault();
+    <ComboBox<TypeaheadOption, "multiple">
+      selectionMode="multiple"
+      items={options}
+      inputValue={query}
+      onInputChange={setQuery}
+      value={selected.map(keyFor)}
+      onChange={changeSelection}
+      onOpenChange={setOpen}
+      allowsEmptyCollection
+      isDisabled={disabled}
+      className="flex flex-col gap-2"
+    >
+      <Label className="sr-only">Add {label}</Label>
+      <div className="flex items-center gap-2 rounded-lg border border-input px-2.5 dark:bg-input/30">
+        <Input
+          placeholder={`Add ${label}…`}
+          className="h-8 min-w-0 flex-1 bg-transparent text-sm outline-none disabled:opacity-50"
+        />
+        <Button
+          aria-label={`Show ${label} suggestions`}
+          className="rounded-sm px-1 text-muted-foreground"
+        >
+          ⌄
+        </Button>
+      </div>
+      <ComboBoxValue<TypeaheadOption>>
+        {({ selectedItems }) => (
+          <TagGroup
+            aria-label={`Selected ${label}`}
+            disabledKeys={disabled ? selected.map(keyFor) : []}
+            onRemove={(keys) => {
+              onChange(selected.filter((item) => !keys.has(keyFor(item))));
             }}
           >
-            <CommandList>
-              <StatusRow
-                query={debounced}
-                isFetching={isFetching}
-                isError={isError}
-                hasResults={suggestions.length > 0}
-              />
-              {suggestions.map((option) => (
-                <CommandItem
-                  key={optionKey(option)}
-                  value={optionKey(option)}
-                  onSelect={() => {
-                    commit(option);
-                  }}
+            <TagList
+              items={selectedItems.filter((item) => item !== null)}
+              className="flex flex-wrap gap-1.5"
+            >
+              {(item) => (
+                <Tag
+                  id={keyFor(item)}
+                  textValue={item.value}
+                  className="border-border bg-accent-soft text-fg inline-flex min-h-6 items-center gap-1 rounded-full px-2.5 py-0.5 font-mono text-xs outline-none data-focus-visible:ring-2 data-focus-visible:ring-ring"
                 >
-                  {option.value}
-                </CommandItem>
-              ))}
-            </CommandList>
-          </PopoverContent>
-        </Popover>
-      </Command>
-    </div>
+                  {item.value}
+                  <Button
+                    slot="remove"
+                    aria-label={`Remove ${item.value}`}
+                    className="flex min-h-6 min-w-6 items-center justify-center rounded-full"
+                  >
+                    <X className="size-3" aria-hidden="true" />
+                  </Button>
+                </Tag>
+              )}
+            </TagList>
+          </TagGroup>
+        )}
+      </ComboBoxValue>
+      <Popover className="z-50 w-(--trigger-width) max-w-[calc(100vw-2rem)] rounded-lg bg-popover p-1 text-popover-foreground shadow-md ring-1 ring-foreground/10">
+        {status && (
+          <p role="status" className="px-2 py-3 text-sm text-muted-foreground">
+            {status}
+          </p>
+        )}
+        <ListBox<TypeaheadOption>
+          aria-label={`${label} suggestions`}
+          className="max-h-60 overflow-auto outline-none"
+        >
+          {(item) => (
+            <ListBoxItem
+              id={keyFor(item)}
+              textValue={item.value}
+              className="cursor-default rounded-md px-2 py-1.5 text-sm outline-none data-focused:bg-muted data-selected:font-semibold"
+            >
+              {item.value}
+            </ListBoxItem>
+          )}
+        </ListBox>
+      </Popover>
+    </ComboBox>
   );
-}
-
-type StatusRowProps = {
-  query: string;
-  isFetching: boolean;
-  isError: boolean;
-  hasResults: boolean;
-};
-
-/** The listbox's non-result states: below-minimum, error, loading, empty. */
-function StatusRow({
-  query,
-  isFetching,
-  isError,
-  hasResults,
-}: Readonly<StatusRowProps>): ReactElement | null {
-  if (query.length < MIN_Q_LEN) {
-    return <CommandEmpty>Type at least {MIN_Q_LEN} characters to search.</CommandEmpty>;
-  }
-  if (isError) {
-    return <CommandEmpty>Couldn&apos;t load suggestions. Try again.</CommandEmpty>;
-  }
-  if (isFetching && !hasResults) {
-    return <CommandEmpty>Searching…</CommandEmpty>;
-  }
-  if (!hasResults) {
-    return <CommandEmpty>No matches.</CommandEmpty>;
-  }
-  return null;
 }

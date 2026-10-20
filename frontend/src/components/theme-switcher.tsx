@@ -38,15 +38,18 @@ export function ThemeSwitcher(): ReactElement {
   const { preference, setPreference } = useTheme();
   return (
     <DropdownMenu>
-      <DropdownMenuTrigger asChild>
+      <DropdownMenuTrigger>
         <Button variant="outline" size="sm" aria-label="Theme preference">
           Theme: {preference}
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent>
         <DropdownMenuRadioGroup
-          value={preference}
-          onValueChange={(value) => {
+          selectionMode="single"
+          selectedKeys={[preference]}
+          onSelectionChange={(keys) => {
+            if (keys === "all") return;
+            const value = keys.values().next().value;
             // Narrow via OPTIONS (the closed source of values the radio
             // group can emit) instead of an `as` assertion.
             const opt = OPTIONS.find((o) => o.value === value);
@@ -54,12 +57,12 @@ export function ThemeSwitcher(): ReactElement {
           }}
         >
           {OPTIONS.map((opt) => (
-            <DropdownMenuRadioItem key={opt.value} value={opt.value}>
+            <DropdownMenuRadioItem key={opt.value} id={opt.value}>
               {opt.label}
             </DropdownMenuRadioItem>
           ))}
         </DropdownMenuRadioGroup>
-        <DropdownMenuItem disabled className="text-fg-faint">
+        <DropdownMenuItem isDisabled className="text-fg-faint">
           {preference === "system" ? "auto" : `set: ${preference}`}
         </DropdownMenuItem>
       </DropdownMenuContent>

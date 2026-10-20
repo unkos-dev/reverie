@@ -18,7 +18,6 @@
  * submenu re-binds the same three `ThemePreference` values instead.
  */
 import type { ReactElement } from "react";
-import { Link } from "react-router";
 
 import { logout } from "@/api/auth";
 import {
@@ -26,6 +25,7 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuLabel,
+  DropdownMenuGroup,
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
   DropdownMenuSeparator,
@@ -70,7 +70,7 @@ export function UserChip(): ReactElement | null {
 
   return (
     <DropdownMenu>
-      <DropdownMenuTrigger asChild>
+      <DropdownMenuTrigger>
         <button
           type="button"
           className="hover:bg-surface focus-visible:ring-accent flex w-full items-center gap-2.5 rounded-md p-2 text-left transition-colors focus-visible:outline-none focus-visible:ring-2"
@@ -84,49 +84,48 @@ export function UserChip(): ReactElement | null {
           <span className="text-fg min-w-0 truncate text-sm">{me.display_name}</span>
         </button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent side="top" align="start" className="w-56">
-        <DropdownMenuLabel>
-          <span className="block">{me.display_name}</span>
-          {me.email !== null ? (
-            <span className="text-fg-faint block text-xs font-normal">{me.email}</span>
+      <DropdownMenuContent placement="top start" className="w-56">
+        <DropdownMenuGroup>
+          <DropdownMenuLabel>
+            <span className="block">{me.display_name}</span>
+            {me.email !== null ? (
+              <span className="text-fg-faint block text-xs font-normal">{me.email}</span>
+            ) : null}
+          </DropdownMenuLabel>
+          <DropdownMenuSeparator />
+          {me.role === "admin" ? (
+            <DropdownMenuItem href="/admin/settings">Settings</DropdownMenuItem>
           ) : null}
-        </DropdownMenuLabel>
-        <DropdownMenuSeparator />
-        {me.role === "admin" ? (
-          <DropdownMenuItem asChild>
-            <Link to="/admin/settings">Settings</Link>
-          </DropdownMenuItem>
-        ) : null}
-        {me.has_local_password ? (
-          <DropdownMenuItem asChild>
-            <Link to="/account/password">Change password</Link>
-          </DropdownMenuItem>
-        ) : null}
-        <DropdownMenuItem asChild>
-          <Link to="/tokens">API tokens</Link>
-        </DropdownMenuItem>
-        <DropdownMenuSub>
-          <DropdownMenuSubTrigger>Theme</DropdownMenuSubTrigger>
-          <DropdownMenuSubContent>
-            <DropdownMenuRadioGroup
-              value={preference}
-              onValueChange={(value) => {
-                // Narrow through the closed options list — the radio
-                // group's payload type is `string` (no `as` casts).
-                const opt = THEME_OPTIONS.find((o) => o.value === value);
-                if (opt) void setPreference(opt.value);
-              }}
-            >
-              {THEME_OPTIONS.map((opt) => (
-                <DropdownMenuRadioItem key={opt.value} value={opt.value}>
-                  {opt.label}
-                </DropdownMenuRadioItem>
-              ))}
-            </DropdownMenuRadioGroup>
-          </DropdownMenuSubContent>
-        </DropdownMenuSub>
-        <DropdownMenuSeparator />
-        <DropdownMenuItem onSelect={handleSignOut}>Sign out</DropdownMenuItem>
+          {me.has_local_password ? (
+            <DropdownMenuItem href="/account/password">Change password</DropdownMenuItem>
+          ) : null}
+          <DropdownMenuItem href="/tokens">API tokens</DropdownMenuItem>
+          <DropdownMenuSub>
+            <DropdownMenuSubTrigger>Theme</DropdownMenuSubTrigger>
+            <DropdownMenuSubContent>
+              <DropdownMenuRadioGroup
+                selectionMode="single"
+                selectedKeys={[preference]}
+                onSelectionChange={(keys) => {
+                  if (keys === "all") return;
+                  const value = keys.values().next().value;
+                  // Narrow through the closed options list — the radio
+                  // group's payload type is `string` (no `as` casts).
+                  const opt = THEME_OPTIONS.find((o) => o.value === value);
+                  if (opt) void setPreference(opt.value);
+                }}
+              >
+                {THEME_OPTIONS.map((opt) => (
+                  <DropdownMenuRadioItem key={opt.value} id={opt.value}>
+                    {opt.label}
+                  </DropdownMenuRadioItem>
+                ))}
+              </DropdownMenuRadioGroup>
+            </DropdownMenuSubContent>
+          </DropdownMenuSub>
+          <DropdownMenuSeparator />
+          <DropdownMenuItem onAction={handleSignOut}>Sign out</DropdownMenuItem>
+        </DropdownMenuGroup>
       </DropdownMenuContent>
     </DropdownMenu>
   );

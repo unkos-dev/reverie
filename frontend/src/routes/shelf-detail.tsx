@@ -7,7 +7,6 @@ import type { LoaderFunctionArgs } from "react-router";
 import { getShelf } from "@/api";
 import { queryClient } from "@/lib/query/client";
 import { queryKeys } from "@/lib/query/keys";
-import { ShelfDetailPage } from "@/pages/shelves/ShelfDetailPage";
 
 /** Loader for `/shelves/:id` — prefetches the shelf detail. */
 export async function loader({ params }: LoaderFunctionArgs): Promise<null> {
@@ -22,4 +21,4 @@ export async function loader({ params }: LoaderFunctionArgs): Promise<null> {
 }
 
 /** Component export consumed by the route's `lazy()` callback. */
-export const Component = ShelfDetailPage;
+export { ShelfDetailPage as Component } from "@/pages/shelves/ShelfDetailPage";

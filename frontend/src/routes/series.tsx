@@ -15,7 +15,6 @@ import { getSeries, type SeriesDetail } from "@/api";
 import type { TitleData } from "@/components/shell/crumbs";
 import { queryClient } from "@/lib/query/client";
 import { queryKeys } from "@/lib/query/keys";
-import { SeriesPage } from "@/pages/series/SeriesPage";
 
 /**
  * Loader for `/series/:id`. Prefetches the series detail so the
@@ -45,4 +44,4 @@ export async function loader({ params }: LoaderFunctionArgs): Promise<TitleData 
 }
 
 /** Component export consumed by the route's `lazy()` callback. */
-export const Component = SeriesPage;
+export { SeriesPage as Component } from "@/pages/series/SeriesPage";

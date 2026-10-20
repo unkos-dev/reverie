@@ -5948,7 +5948,7 @@
           "users"
         ],
         "summary": "Change a user's role",
-        "description": "Sets the target user's role and invalidates their active sessions. Admin only. Returns 422 if the change would leave zero administrators or conflicts with the target's child status.",
+        "description": "Sets the target user's role and child status together and invalidates their active sessions. Child status is enabled only for the child role. Admin only. Returns 422 if the change would leave zero administrators.",
         "operationId": "update_role",
         "parameters": [
           {
@@ -6045,7 +6045,7 @@
             }
           },
           "422": {
-            "description": "Demotion would leave zero admins, the role change conflicts with the target's child status, or the request body is malformed / contains an unknown role value",
+            "description": "Demotion would leave zero admins, or the request body is malformed / contains an unknown role value",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -9593,11 +9593,13 @@
         "properties": {
           "current_password": {
             "type": "string",
-            "description": "The caller's current password, re-verified before the change."
+            "description": "The caller's current password, re-verified before the change.",
+            "maxLength": 256
           },
           "new_password": {
             "type": "string",
-            "description": "The new password; enforced against the password policy."
+            "description": "The new password; enforced against the password policy.",
+            "maxLength": 256
           }
         }
       },
@@ -9808,7 +9810,10 @@
         ],
         "properties": {
           "token": {
-            "type": "string"
+            "type": "string",
+            "maxLength": 43,
+            "minLength": 43,
+            "pattern": "^[A-Za-z0-9_-]{42}[AEIMQUYcgkosw048]$"
           }
         }
       },
@@ -9835,10 +9840,14 @@
         ],
         "properties": {
           "password": {
-            "type": "string"
+            "type": "string",
+            "maxLength": 256
           },
           "token": {
-            "type": "string"
+            "type": "string",
+            "maxLength": 43,
+            "minLength": 43,
+            "pattern": "^[A-Za-z0-9_-]{42}[AEIMQUYcgkosw048]$"
           }
         }
       },
@@ -10567,7 +10576,8 @@
           },
           "password": {
             "type": "string",
-            "description": "Plaintext password, verified against the stored Argon2id hash."
+            "description": "Plaintext password, verified against the stored Argon2id hash.",
+            "maxLength": 256
           }
         }
       },
@@ -11187,7 +11197,8 @@
           },
           "password": {
             "type": "string",
-            "description": "Plaintext password; enforced against the password policy, then hashed."
+            "description": "Plaintext password; enforced against the password policy, then hashed.",
+            "maxLength": 256
           }
         }
       },
@@ -11233,7 +11244,8 @@
           },
           "new_password": {
             "type": "string",
-            "description": "New plaintext password; enforced against the full password policy."
+            "description": "New plaintext password; enforced against the full password policy.",
+            "maxLength": 256
           },
           "pin": {
             "type": "string",
@@ -11653,7 +11665,8 @@
           },
           "password": {
             "type": "string",
-            "description": "Plaintext password; checked against the shared password policy, then hashed."
+            "description": "Plaintext password; checked against the shared password policy, then hashed.",
+            "maxLength": 256
           }
         }
       },

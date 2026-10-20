@@ -53,6 +53,9 @@ pub async fn issue(
 /// # Errors
 /// Returns database errors from the lookup.
 pub async fn lookup(pool: &PgPool, token: &str) -> Result<Option<LinkAccount>, sqlx::Error> {
+    if token.len() != 43 || Base64UrlUnpadded::decode_vec(token).is_err() {
+        return Ok(None);
+    }
     let token_hash = Sha256::digest(token.as_bytes()).to_vec();
     sqlx::query_as!(
         LinkAccount,

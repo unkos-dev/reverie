@@ -406,6 +406,7 @@ struct LocalLoginRequest {
     /// Account email; matched case-insensitively against `users.email`.
     email: String,
     /// Plaintext password, verified against the stored Argon2id hash.
+    #[schema(max_length = 256)]
     password: String,
 }
 
@@ -458,6 +459,11 @@ async fn local_login(
     ) {
         return Err(AppError::SignInInactive);
     }
+    crate::auth::password_policy::enforce_max_length(
+        &body.password,
+        crate::auth::password_policy::MAX_PASSWORD_LENGTH,
+    )
+    .map_err(|_| AppError::Validation("invalid email or password".into()))?;
     let cohort_id = if let Some(id) = session.id() {
         let id = id.to_string();
         if sign_in::join_pending(&state.pool, &id)
@@ -638,6 +644,7 @@ struct SetupRequest {
     /// Display name.
     display_name: String,
     /// Plaintext password; checked against the shared password policy, then hashed.
+    #[schema(max_length = 256)]
     password: String,
 }
 
@@ -729,6 +736,7 @@ struct RegisterRequest {
     /// Display name.
     display_name: String,
     /// Plaintext password; enforced against the password policy, then hashed.
+    #[schema(max_length = 256)]
     password: String,
 }
 
@@ -840,6 +848,11 @@ fn enforce_source_rate_limit(
 
 #[derive(serde::Deserialize, utoipa::ToSchema)]
 struct CredentialLinkLookupRequest {
+    #[schema(
+        min_length = 43,
+        max_length = 43,
+        pattern = "^[A-Za-z0-9_-]{42}[AEIMQUYcgkosw048]$"
+    )]
     token: String,
 }
 
@@ -851,7 +864,13 @@ struct CredentialLinkLookupResponse {
 
 #[derive(serde::Deserialize, utoipa::ToSchema)]
 struct CredentialLinkRedemptionRequest {
+    #[schema(
+        min_length = 43,
+        max_length = 43,
+        pattern = "^[A-Za-z0-9_-]{42}[AEIMQUYcgkosw048]$"
+    )]
     token: String,
+    #[schema(max_length = 256)]
     password: String,
 }
 
@@ -1081,6 +1100,7 @@ struct ResetPasswordRequest {
     /// The recovery PIN from the host file.
     pin: String,
     /// New plaintext password; enforced against the full password policy.
+    #[schema(max_length = 256)]
     new_password: String,
 }
 

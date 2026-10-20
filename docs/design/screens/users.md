@@ -1,7 +1,7 @@
 # Users screen
 
 Administrators create accounts and give people a single-use link to choose their own password. Copy in double quotes is
-exact. Layout is a target design pending rendered review.
+exact. Layout is approved.
 
 ## Entry point and route
 
@@ -10,7 +10,7 @@ Route: `/admin/users`, inside the authenticated application shell. Non-administr
 ## Layout
 
 Use a centred, 72 rem content column with 24 px padding. Place the "Users" heading and "Create user" action in one row,
-24 px above the table. Retain the Name, Email, Role, Child, Status and Actions columns.
+24 px above the table. Retain the Name, Email, Role, Status and Actions columns.
 
 Status badges sit together in the Status cell. Row actions remain right-aligned. Dialogs use the existing shared Dialog
 primitive, with a title, explanatory text, vertically stacked fields at 16 px intervals and right-aligned footer

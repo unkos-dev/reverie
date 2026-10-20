@@ -1,87 +1,49 @@
 /**
- * Global Cmd-K command palette.
- *
- * Mounted once at the application root (`App.tsx`) so the global
- * `useEffect` keybinding survives route transitions. Opens on
- * `Cmd-K` / `Ctrl-K`; cmdk's built-in `Esc` handling closes it; on
- * select the React Router `navigate(...)` jumps to the chosen book.
- *
- * The internal search input is debounced 200 ms so a fast typer
- * doesn't fire one request per keystroke. The react-query cache
- * keys on the trimmed query — repeating a previous query is free.
- *
- * # Highlighted snippets
- * The backend emits `ts_headline` snippets bracketed by ASCII control
- * codepoints `\x02` STX (start) and `\x03` ETX (end). Those bytes are
- * reserved by Unicode and never appear in valid text, so they don't
- * collide with user-authored typography (e.g. French guillemets
- * `‹›`, math notation). The `<HighlightedSnippet>` helper splits on
- * those bytes and renders `<mark>` runs — no `dangerouslySetInnerHTML`.
- *
- * The marker bytes must stay in lockstep with the
- * `SNIPPET_HL_START` / `SNIPPET_HL_END` constants in
- * `backend/src/routes/library/search.rs`.
+ * Global library search using server-ranked results and safe snippet highlighting.
+ * React Aria owns modal focus and dismissal; application shortcuts respect the focused field.
  */
 import { useQuery } from "@tanstack/react-query";
-import { type ReactElement, type RefObject, useEffect, useRef, useState } from "react";
+import { useEffect, useState, type ReactElement } from "react";
 import { useNavigate } from "react-router";
+import {
+  Autocomplete,
+  Button,
+  Dialog,
+  Heading,
+  Input,
+  Menu,
+  MenuItem,
+  Modal,
+  ModalOverlay,
+  SearchField,
+  Text,
+} from "react-aria-components";
+import { SearchIcon } from "lucide-react";
 
 import { searchLibrary, type SearchHit } from "@/api";
-import {
-  Command,
-  CommandDialog,
-  CommandEmpty,
-  CommandGroup,
-  CommandInput,
-  CommandItem,
-  CommandList,
-} from "@/components/ui/command";
-import { useDebounced } from "@/lib/hooks/use-debounced";
 import { setCommandPaletteOpener } from "@/lib/command-palette";
 import { queryKeys } from "@/lib/query/keys";
 
-/** Debounce delay between keystroke and the `/api/v1/search` request. */
-const DEBOUNCE_MS = 200;
-/** Minimum query length before a request fires — avoids one-char noise. */
-const MIN_Q_LEN = 2;
-/**
- * Snippet highlight markers — must match `SNIPPET_HL_START` /
- * `SNIPPET_HL_END` in `backend/src/routes/library/search.rs`. ASCII
- * STX/ETX are reserved by Unicode and cannot legally appear in
- * UTF-8 text, so they cannot be confused with user typography.
- */
 const SNIPPET_HL_START = "\u0002";
 const SNIPPET_HL_END = "\u0003";
 
-/**
- * Listen for `Cmd-K` / `Ctrl-K` and toggle the palette open. The
- * dialog itself owns `Esc`-to-close via Radix. Also registers the
- * module-level opener (`lib/command-palette.ts`) so chrome like the
- * utility strip's search affordance shares this one surface (spec S5).
- *
- * The invoker (the element focused at open time) is captured
- * explicitly so close can restore focus to it deterministically —
- * Radix's own previously-focused capture races the dialog's autofocus
- * under test renderers, and the spec's testing requirements (§11)
- * make restore a MUST ("focus trapped + restored").
- */
-function useCmdKToggle(): [boolean, (open: boolean) => void, RefObject<HTMLElement | null>] {
+/** Searches from two characters and navigates to the selected book without changing library filters. */
+export function CommandPalette(): ReactElement {
   const [open, setOpen] = useState(false);
-  const openRef = useRef(open);
-  const invokerRef = useRef<HTMLElement | null>(null);
+  const [query, setQuery] = useState("");
+  const trimmed = query.trim();
+  const navigate = useNavigate();
+  const { data, isFetching, isError, error } = useQuery({
+    queryKey: queryKeys.search(trimmed),
+    queryFn: ({ signal }) => searchLibrary(trimmed, signal),
+    enabled: open && trimmed.length >= 2,
+    staleTime: 30_000,
+  });
+  const items = trimmed.length >= 2 ? (data?.items ?? []) : [];
   useEffect(() => {
-    openRef.current = open;
-  }, [open]);
-  useEffect(() => {
-    function capture(): void {
-      invokerRef.current =
-        document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    }
     function onKeyDown(event: KeyboardEvent): void {
       const cmdK = (event.key === "k" || event.key === "K") && (event.metaKey || event.ctrlKey);
-      // "/" is a quick-open shortcut — but only when the caller isn't
-      // typing into a field, or it would swallow a literal slash.
-      const target = event.target;
+      const target = document.activeElement;
       const inField =
         target instanceof HTMLElement &&
         (target.tagName === "INPUT" ||
@@ -92,175 +54,116 @@ function useCmdKToggle(): [boolean, (open: boolean) => void, RefObject<HTMLEleme
         event.key === "/" && !event.metaKey && !event.ctrlKey && !event.altKey && !inField;
       if (!cmdK && !slash) return;
       event.preventDefault();
-      if (!openRef.current) capture();
-      // Cmd-K toggles; "/" only ever opens.
-      setOpen(cmdK ? !openRef.current : true);
+      setOpen(cmdK ? !open : true);
     }
     window.addEventListener("keydown", onKeyDown);
     setCommandPaletteOpener(() => {
-      if (!openRef.current) capture();
       setOpen(true);
     });
     return () => {
       window.removeEventListener("keydown", onKeyDown);
       setCommandPaletteOpener(() => {});
     };
-  }, []);
-  return [open, setOpen, invokerRef];
-}
-
-/** Global Cmd-K search palette. */
-export function CommandPalette(): ReactElement {
-  const [open, setOpen, invokerRef] = useCmdKToggle();
-  const [query, setQuery] = useState("");
-  const debouncedQuery = useDebounced(query.trim(), DEBOUNCE_MS);
-  const navigate = useNavigate();
-
-  const { data, isFetching, isError, error } = useQuery({
-    queryKey: queryKeys.search(debouncedQuery),
-    queryFn: ({ signal }) => searchLibrary(debouncedQuery, signal),
-    enabled: open && debouncedQuery.length >= MIN_Q_LEN,
-    staleTime: 30_000,
-  });
-
+  }, [open]);
   useEffect(() => {
-    if (isError) {
-      // Surface the raw error to the console.
-      // The visible <CommandEmpty> below stays user-friendly; the
-      // console keeps the operator-actionable detail (ZodError, 5xx
-      // status, network failure shape).
-      console.error("[CommandPalette] search query failed", error);
-    }
+    if (isError) console.error("[CommandPalette] search query failed", error);
   }, [isError, error]);
 
-  function handleSelect(hit: SearchHit): void {
-    setOpen(false);
-    setQuery("");
-    void navigate(`/b/${hit.id}`);
+  function changeOpen(next: boolean): void {
+    setOpen(next);
+    if (!next) setQuery("");
   }
-
-  const items = data?.items ?? [];
-  // Currently the backend emits only `kind: "book"`; author/series
-  // result kinds land in a follow-up that fans the hybrid CTE over
-  // authors.name and series.name trigram indexes. The group split
-  // already exists so the UI doesn't need a structural change when
-  // those kinds appear.
-  const bookHits = items;
+  let status: string | null = null;
+  if (trimmed.length < 2) status = "Type to search your library.";
+  else if (isError) status = "Search failed. Try again in a moment.";
+  else if (isFetching && items.length === 0) status = "Searching…";
+  else if (items.length === 0) status = "No results.";
 
   return (
-    <CommandDialog
-      open={open}
-      onOpenChange={(next) => {
-        setOpen(next);
-        if (!next) setQuery("");
-      }}
-      title="Search library"
-      description="Search by title, description, or author across your library."
-      onCloseAutoFocus={(event) => {
-        if (invokerRef.current !== null && invokerRef.current.isConnected) {
-          event.preventDefault();
-          invokerRef.current.focus();
-        }
-        invokerRef.current = null;
-      }}
+    <ModalOverlay
+      isOpen={open}
+      onOpenChange={changeOpen}
+      isDismissable
+      className="fixed inset-0 z-50 flex items-center justify-center bg-overlay p-4"
     >
-      {/* Server is the filter — cmdk's prefix filter is disabled so
-          ranked results render in the order the backend chose. */}
-      <Command shouldFilter={false}>
-        <CommandInput
-          placeholder="Find a volume by title, author, quote…"
-          value={query}
-          onValueChange={setQuery}
-        />
-        <CommandList>
-          {renderStatus({
-            query: debouncedQuery,
-            isFetching,
-            isError,
-            hasResults: items.length > 0,
-          })}
-          {bookHits.length > 0 ? (
-            <CommandGroup heading="Books">
-              {bookHits.map((hit) => (
-                <CommandItem
-                  key={hit.id}
-                  value={hit.id}
-                  onSelect={() => {
-                    handleSelect(hit);
-                  }}
-                >
-                  <BookHitRow hit={hit} />
-                </CommandItem>
-              ))}
-            </CommandGroup>
-          ) : null}
-        </CommandList>
-        <PaletteFooter />
-      </Command>
-    </CommandDialog>
-  );
-}
-
-/** Keyboard-hint footer row (spec §6): `↑↓ navigate · ↵ open · esc close`. */
-function PaletteFooter(): ReactElement {
-  return (
-    <div className="border-border text-fg-muted flex items-center gap-4 border-t px-3 py-2 font-mono text-[0.65rem] tracking-wide">
-      <span>
-        <kbd>↑↓</kbd> navigate
-      </span>
-      <span>
-        <kbd>↵</kbd> open
-      </span>
-      <span>
-        <kbd>esc</kbd> close
-      </span>
-    </div>
-  );
-}
-
-interface StatusRenderArgs {
-  query: string;
-  isFetching: boolean;
-  isError: boolean;
-  hasResults: boolean;
-}
-
-function renderStatus({
-  query,
-  isFetching,
-  isError,
-  hasResults,
-}: StatusRenderArgs): ReactElement | null {
-  if (query.length < MIN_Q_LEN) {
-    return <CommandEmpty>Type to search your library.</CommandEmpty>;
-  }
-  if (isError) {
-    return <CommandEmpty>Search failed. Try again in a moment.</CommandEmpty>;
-  }
-  if (isFetching && !hasResults) {
-    return <CommandEmpty>Searching…</CommandEmpty>;
-  }
-  if (!hasResults) {
-    return <CommandEmpty>No results.</CommandEmpty>;
-  }
-  return null;
-}
-
-interface BookHitRowProps {
-  hit: SearchHit;
-}
-
-function BookHitRow({ hit }: Readonly<BookHitRowProps>): ReactElement {
-  return (
-    <div className="flex flex-col gap-0.5">
-      <span className="text-fg text-sm font-medium">{hit.title}</span>
-      {hit.authors.length > 0 ? (
-        <span className="text-fg-muted text-xs">{hit.authors.join(", ")}</span>
-      ) : null}
-      {hit.snippet ? (
-        <HighlightedSnippet text={hit.snippet} className="text-fg-muted text-xs leading-snug" />
-      ) : null}
-    </div>
+      <Modal className="w-full max-w-lg overflow-hidden rounded-xl bg-popover p-1 text-popover-foreground ring-1 ring-foreground/10">
+        <Dialog aria-label="Search library" className="outline-none">
+          <Heading slot="title" className="sr-only">
+            Search library
+          </Heading>
+          <Text slot="description" className="sr-only">
+            Search by title, description, or author across your library.
+          </Text>
+          <Autocomplete inputValue={query} onInputChange={setQuery}>
+            <SearchField
+              aria-label="Search library"
+              className="flex items-center gap-2 border-b border-border px-3"
+            >
+              <SearchIcon className="size-4 text-muted-foreground" aria-hidden="true" />
+              <Input
+                autoFocus
+                placeholder="Find a volume by title, author, quote…"
+                className="h-10 min-w-0 flex-1 bg-transparent text-sm outline-none"
+              />
+              <Button aria-label="Clear search" className="rounded-sm p-1 text-muted-foreground">
+                ×
+              </Button>
+            </SearchField>
+            {status && (
+              <p role="status" className="p-6 text-center text-sm text-fg-muted">
+                {status}
+              </p>
+            )}
+            <div
+              role="region"
+              aria-label="Search results"
+              tabIndex={0}
+              className="max-h-72 overflow-y-auto"
+            >
+              <Menu
+                aria-label="Books"
+                items={items}
+                className="p-1 outline-none"
+                onAction={(key) => {
+                  changeOpen(false);
+                  void navigate(`/b/${encodeURIComponent(String(key))}`);
+                }}
+              >
+                {(hit: SearchHit) => (
+                  <MenuItem
+                    id={hit.id}
+                    textValue={hit.title}
+                    className="cursor-default rounded-md px-2 py-1.5 outline-none data-focused:bg-muted"
+                  >
+                    <Text slot="label">
+                      <span className="block text-sm font-medium">{hit.title}</span>{" "}
+                      <span className="block text-xs text-fg-muted">{hit.authors.join(", ")}</span>
+                      {hit.snippet && (
+                        <HighlightedSnippet
+                          text={hit.snippet}
+                          className="block text-xs text-fg-muted"
+                        />
+                      )}
+                    </Text>
+                  </MenuItem>
+                )}
+              </Menu>
+            </div>
+          </Autocomplete>
+          <div className="border-border text-fg-muted flex items-center gap-4 border-t px-3 py-2 font-mono text-[0.65rem] tracking-wide">
+            <span>
+              <kbd>↑↓</kbd> navigate
+            </span>
+            <span>
+              <kbd>↵</kbd> open
+            </span>
+            <span>
+              <kbd>esc</kbd> close
+            </span>
+          </div>
+        </Dialog>
+      </Modal>
+    </ModalOverlay>
   );
 }
 
@@ -296,9 +199,6 @@ export function HighlightedSnippet({
   return (
     <span className={className}>
       {parts.map((part) => {
-        // Stable id baked into each split: position in text plus a
-        // marker tag, so React's reconciliation never collides even
-        // when two runs share identical text.
         const key = `${String(part.start)}-${part.highlight ? "h" : "p"}`;
         return part.highlight ? (
           <mark key={key} className="bg-accent-soft text-fg rounded-sm px-0.5">

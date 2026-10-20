@@ -14,13 +14,7 @@ import { toast } from "sonner";
 
 import { ApiError, createShelf, deleteShelf, listShelves, renameShelf, type Shelf } from "@/api";
 import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -209,39 +203,37 @@ function NameDialog({
     onSubmit(trimmed);
   }
   return (
-    <Dialog
-      open={open}
+    <DialogContent
+      isOpen={open}
       onOpenChange={(next) => {
         if (!next) onClose();
       }}
     >
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>{title}</DialogTitle>
-        </DialogHeader>
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="space-y-2">
-            <Label htmlFor="shelf-name">Name</Label>
-            <Input
-              id="shelf-name"
-              autoFocus
-              value={name}
-              onChange={(e) => {
-                setName(e.target.value);
-              }}
-            />
-          </div>
-          <DialogFooter>
-            <Button type="button" variant="outline" onClick={onClose}>
-              Cancel
-            </Button>
-            <Button type="submit" disabled={pending}>
-              Save
-            </Button>
-          </DialogFooter>
-        </form>
-      </DialogContent>
-    </Dialog>
+      <DialogHeader>
+        <DialogTitle>{title}</DialogTitle>
+      </DialogHeader>
+      <form onSubmit={handleSubmit} className="space-y-4">
+        <div className="space-y-2">
+          <Label htmlFor="shelf-name">Name</Label>
+          <Input
+            id="shelf-name"
+            autoFocus
+            value={name}
+            onChange={(e) => {
+              setName(e.target.value);
+            }}
+          />
+        </div>
+        <DialogFooter>
+          <Button type="button" variant="outline" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button type="submit" disabled={pending}>
+            Save
+          </Button>
+        </DialogFooter>
+      </form>
+    </DialogContent>
   );
 }
 

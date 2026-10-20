@@ -168,17 +168,26 @@ async fn demote_sole_admin_returns_422(pool: PgPool) {
     let (admin_id, admin_basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
 
     let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
-    let r = server
-        .put(&format!("/api/v1/users/{admin_id}/role"))
-        .add_header(auth(&admin_basic).0, auth(&admin_basic).1)
-        .json(&json!({"role": "adult"}))
-        .await;
-    let problem =
-        test_support::assert_problem(&r, problems::VALIDATION, StatusCode::UNPROCESSABLE_ENTITY);
-    assert_eq!(
-        problem["detail"].as_str().unwrap(),
-        "would leave zero admins"
-    );
+    for role in ["adult", "child"] {
+        let r = server
+            .put(&format!("/api/v1/users/{admin_id}/role"))
+            .add_header(auth(&admin_basic).0, auth(&admin_basic).1)
+            .json(&json!({"role": role}))
+            .await;
+        let problem = test_support::assert_problem(
+            &r,
+            problems::VALIDATION,
+            StatusCode::UNPROCESSABLE_ENTITY,
+        );
+        assert_eq!(problem["detail"], "would leave zero admins");
+        let stored = crate::models::user::find_by_id(&app_pool, admin_id)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(stored.role.as_str(), "admin");
+        assert!(!stored.is_child);
+        assert_eq!(stored.session_version, 0);
+    }
 }
 
 #[sqlx::test(migrations = "./migrations")]
@@ -198,26 +207,52 @@ async fn non_admin_put_role_returns_403(pool: PgPool) {
 }
 
 #[sqlx::test(migrations = "./migrations")]
-async fn set_role_child_on_non_child_user_returns_422(pool: PgPool) {
+async fn role_transitions_sync_child_status_and_invalidate_sessions(pool: PgPool) {
     let app_pool = test_support::db::app_pool_for(&pool).await;
     let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
     let (_admin_id, admin_basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
-    let (adult_id, _) =
-        test_support::db::create_adult_and_basic_auth(&app_pool, "child-role-sync").await;
-
+    let target_id = test_support::db::create_adult_with_password(
+        &app_pool,
+        "role-transitions",
+        "role-transitions@example.com",
+        OLD_PW,
+    )
+    .await;
     let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
-    let r = server
-        .put(&format!("/api/v1/users/{adult_id}/role"))
-        .add_header(auth(&admin_basic).0, auth(&admin_basic).1)
-        .json(&json!({"role": "child"}))
-        .await;
-    let problem =
-        test_support::assert_problem(&r, problems::VALIDATION, StatusCode::UNPROCESSABLE_ENTITY);
-    assert!(
-        problem["detail"].as_str().unwrap().contains("child status"),
-        "expected child-role-sync validation, got: {}",
-        problem["detail"],
-    );
+    let mut target_server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+    target_server.save_cookies();
+
+    for (index, role) in ["child", "admin", "child", "adult"].iter().enumerate() {
+        let login = target_server
+            .post("/auth/local/login")
+            .json(&json!({"email": "role-transitions@example.com", "password": OLD_PW}))
+            .await;
+        assert_eq!(login.status_code(), StatusCode::NO_CONTENT);
+        assert_eq!(
+            target_server.get("/auth/me").await.status_code(),
+            StatusCode::OK
+        );
+        let response = server
+            .put(&format!("/api/v1/users/{target_id}/role"))
+            .add_header(auth(&admin_basic).0, auth(&admin_basic).1)
+            .json(&json!({"role": role}))
+            .await;
+        assert_eq!(response.status_code(), StatusCode::OK);
+        let body: serde_json::Value = response.json();
+        assert_eq!(body["role"], *role);
+        assert_eq!(body["is_child"], *role == "child");
+        let stored = crate::models::user::find_by_id(&app_pool, target_id)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(stored.role.as_str(), *role);
+        assert_eq!(stored.is_child, *role == "child");
+        assert_eq!(stored.session_version, i32::try_from(index + 1).unwrap());
+        assert_eq!(
+            target_server.get("/auth/me").await.status_code(),
+            StatusCode::UNAUTHORIZED
+        );
+    }
 }
 
 #[sqlx::test(migrations = "./migrations")]
@@ -652,7 +687,7 @@ async fn patch_user_whitespace_email_returns_422(pool: PgPool) {
 // ---------- child/role sync: mirror branch ----------
 
 #[sqlx::test(migrations = "./migrations")]
-async fn set_non_child_role_on_child_user_returns_422(pool: PgPool) {
+async fn set_admin_role_on_child_user_clears_child_status(pool: PgPool) {
     let app_pool = test_support::db::app_pool_for(&pool).await;
     let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
     let (_admin_id, admin_basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
@@ -663,15 +698,12 @@ async fn set_non_child_role_on_child_user_returns_422(pool: PgPool) {
     let r = server
         .put(&format!("/api/v1/users/{child_id}/role"))
         .add_header(auth(&admin_basic).0, auth(&admin_basic).1)
-        .json(&json!({"role": "adult"}))
+        .json(&json!({"role": "admin"}))
         .await;
-    let problem =
-        test_support::assert_problem(&r, problems::VALIDATION, StatusCode::UNPROCESSABLE_ENTITY);
-    assert!(
-        problem["detail"].as_str().unwrap().contains("child status"),
-        "expected child-role-sync validation, got: {}",
-        problem["detail"],
-    );
+    assert_eq!(r.status_code(), StatusCode::OK);
+    let body: serde_json::Value = r.json();
+    assert_eq!(body["role"], "admin");
+    assert_eq!(body["is_child"], false);
 }
 
 // ---------- PATCH session_version bump policy ----------
@@ -1652,7 +1684,17 @@ async fn credential_link_invalid_cases_are_indistinguishable(pool: PgPool) {
     let app = test_support::db::app_pool_for(&pool).await;
     let ingestion = test_support::db::ingestion_pool_for(&pool).await;
     let server = test_support::db::server_with_real_pools(&app, &ingestion);
-    let mut tokens = vec!["unknown".to_owned()];
+    let mut tokens = vec![
+        "A".repeat(43),
+        String::new(),
+        "A".repeat(42),
+        "A".repeat(44),
+        format!("{}=", "A".repeat(42)),
+        format!("{}+", "A".repeat(42)),
+        format!("{} ", "A".repeat(42)),
+        "B".repeat(43),
+        "é".repeat(43),
+    ];
     for case in ["expired", "used", "disabled", "no-email"] {
         let id = crate::models::user::create_local(
             &app,
@@ -1969,4 +2011,114 @@ async fn credential_link_recovery_allowance_not_password_allowance(pool: PgPool)
     );
     assert!(state.recovery_limiter.check_key(&lookup_ip).is_err());
     assert!(state.login_limiter.check_key(&lookup_ip).is_ok());
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn credential_link_malformed_tokens_spend_recovery_allowance_first(pool: PgPool) {
+    let mut state = test_support::test_state();
+    state.pool = test_support::db::app_pool_for(&pool).await;
+    state.ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    state.config.trusted_client_ip_header = Some("x-forwarded-for".into());
+    state.recovery_limiter =
+        crate::auth::rate_limit::build_login_limiter(std::num::NonZeroU32::new(1).unwrap());
+    let server = axum_test::TestServer::new(crate::build_router(state));
+    for (path, source) in [
+        ("/auth/credential-links/lookups", "192.0.2.20"),
+        ("/auth/credential-links/redemptions", "192.0.2.21"),
+    ] {
+        for expected in [
+            StatusCode::UNPROCESSABLE_ENTITY,
+            StatusCode::TOO_MANY_REQUESTS,
+        ] {
+            let response = server
+                .post(path)
+                .add_header(
+                    HeaderName::from_static("x-forwarded-for"),
+                    HeaderValue::from_str(source).unwrap(),
+                )
+                .json(&json!({"token":"malformed", "password": STRONG_PW}))
+                .await;
+            assert_eq!(response.status_code(), expected);
+            if expected == StatusCode::UNPROCESSABLE_ENTITY {
+                assert_eq!(
+                    response.json::<serde_json::Value>()["detail"],
+                    "invalid or expired link"
+                );
+            }
+        }
+    }
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn password_ceiling_login_and_own_change_preserve_full_unicode_input(pool: PgPool) {
+    let mut state = test_support::test_state();
+    state.pool = test_support::db::app_pool_for(&pool).await;
+    state.ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    state.config.password_min_zxcvbn_score = 0;
+    state.hash_limiter = crate::auth::password::HashLimiter::new(1);
+    let password = "🦀".repeat(256);
+    test_support::db::create_adult_with_password(
+        &state.pool,
+        "Ceiling",
+        "ceiling@example.test",
+        &password,
+    )
+    .await;
+    let mut server = axum_test::TestServer::new(crate::build_router(state.clone()));
+    server.save_cookies();
+    let held = state.hash_limiter.acquire().await.unwrap();
+    let response = tokio::time::timeout(
+        std::time::Duration::from_secs(2),
+        server
+            .post("/auth/local/login")
+            .json(&json!({"email":"ceiling@example.test", "password":format!("{password}x")})),
+    )
+    .await
+    .unwrap();
+    assert_eq!(response.status_code(), StatusCode::UNPROCESSABLE_ENTITY);
+    assert_eq!(
+        response.json::<serde_json::Value>()["detail"],
+        "invalid email or password"
+    );
+    drop(held);
+    assert_eq!(
+        server
+            .post("/auth/local/login")
+            .json(&json!({"email":"ceiling@example.test", "password":password}))
+            .await
+            .status_code(),
+        StatusCode::NO_CONTENT
+    );
+    let me: serde_json::Value = server.get("/auth/me").await.json();
+    let csrf = me["csrf_token"].as_str().unwrap();
+    let held = state.hash_limiter.acquire().await.unwrap();
+    for (current, next) in [
+        (format!("{password}x"), STRONG_PW.to_owned()),
+        (password.clone(), "é".repeat(257)),
+    ] {
+        let response = tokio::time::timeout(
+            std::time::Duration::from_secs(2),
+            server
+                .post("/api/v1/account/password")
+                .add_header(csrf_header(csrf).0, csrf_header(csrf).1)
+                .json(&json!({"current_password":current, "new_password":next})),
+        )
+        .await
+        .unwrap();
+        assert_eq!(response.status_code(), StatusCode::UNPROCESSABLE_ENTITY);
+        assert_eq!(
+            response.json::<serde_json::Value>()["detail"],
+            "password must be at most 256 characters"
+        );
+    }
+    drop(held);
+    assert_eq!(
+        server
+            .post("/api/v1/account/password")
+            .add_header(csrf_header(csrf).0, csrf_header(csrf).1)
+            .json(&json!({"current_password":password, "new_password":"é".repeat(256)}))
+            .await
+            .status_code(),
+        StatusCode::OK
+    );
 }

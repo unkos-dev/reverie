@@ -49,6 +49,11 @@ These are absolute invariants for the Reverie repository.
   - For untracked work, do not search for or create a Linear issue and do not add a synthetic closure reference.
     </git_and_linear_workflow>
 
+## Code Review Rules
+
+- Leave commit sign-off enforcement to the commit-msg hook and required DCO check. Do not report missing `Signed-off-by`
+  trailers in code review. Review changes to DCO enforcement itself when included in the diff.
+
 <security_reference>
 
 - **CodeGuard:** Implementation work in any covered area MUST follow every applicable rule in

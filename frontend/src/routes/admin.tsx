@@ -6,7 +6,6 @@ import { listUsers } from "@/api/users";
 import { queryClient } from "@/lib/query/client";
 import { queryKeys } from "@/lib/query/keys";
 import type { AuthMe } from "@/hooks/useAuthMe";
-import { UsersPage } from "@/pages/admin/UsersPage";
 
 /**
  * Loader for `/admin/users` — prefetches the user list for known admins.
@@ -31,4 +30,4 @@ export async function loader(): Promise<null> {
 }
 
 /** Component export consumed by the route's `lazy()` callback. */
-export const Component = UsersPage;
+export { UsersPage as Component } from "@/pages/admin/UsersPage";

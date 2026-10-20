@@ -23,13 +23,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import {
-  Sheet,
-  SheetContent,
-  SheetDescription,
-  SheetHeader,
-  SheetTitle,
-} from "@/components/ui/sheet";
+import { SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Skeleton } from "@/components/ui/skeleton";
 import { queryKeys } from "@/lib/query/keys";
 
@@ -39,26 +33,22 @@ type BookDetailDrawerProps = {
   /** Book to show; `null` renders the drawer closed. */
   bookId: string | null;
   onOpenChange: (open: boolean) => void;
-  /** Focus restoration on close; the container owns the opener element. */
-  onCloseAutoFocus?: (event: Event) => void;
 };
 
 export function BookDetailDrawer({
   bookId,
   onOpenChange,
-  onCloseAutoFocus,
 }: Readonly<BookDetailDrawerProps>): ReactElement {
   return (
-    <Sheet open={bookId !== null} onOpenChange={onOpenChange}>
-      <SheetContent
-        side="right"
-        aria-describedby={undefined}
-        onCloseAutoFocus={onCloseAutoFocus}
-        className="w-[390px] max-w-[100vw] overflow-y-auto"
-      >
-        {bookId === null ? null : <DrawerBody bookId={bookId} />}
-      </SheetContent>
-    </Sheet>
+    <SheetContent
+      isOpen={bookId !== null}
+      onOpenChange={onOpenChange}
+      side="right"
+      aria-describedby={undefined}
+      className="w-[390px] max-w-[100vw] overflow-y-auto"
+    >
+      {bookId === null ? null : <DrawerBody bookId={bookId} />}
+    </SheetContent>
   );
 }
 
@@ -245,7 +235,7 @@ function AddToShelf({
 
   return (
     <DropdownMenu>
-      <DropdownMenuTrigger asChild>
+      <DropdownMenuTrigger>
         <Button type="button" variant="outline" disabled={addMutation.isPending}>
           {addMutation.isPending ? (
             <Loader2 className="size-4 animate-spin" aria-hidden="true" />
@@ -255,9 +245,9 @@ function AddToShelf({
           Add to shelf
         </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="start">
+      <DropdownMenuContent placement="bottom start">
         {shelves === undefined || shelves.length === 0 ? (
-          <DropdownMenuItem disabled>
+          <DropdownMenuItem isDisabled>
             {isError
               ? "Couldn't load shelves"
               : shelves === undefined
@@ -268,7 +258,7 @@ function AddToShelf({
           shelves.map((shelf) => (
             <DropdownMenuItem
               key={shelf.id}
-              onSelect={() => {
+              onAction={() => {
                 addMutation.mutate({ shelfId: shelf.id, shelfName: shelf.name });
               }}
             >

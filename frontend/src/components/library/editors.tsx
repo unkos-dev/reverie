@@ -97,8 +97,10 @@ export function TextFilterEditor({
       <div className="flex flex-col gap-1">
         <Label htmlFor={`${id}-op`}>Operator</Label>
         <Select
+          aria-label="Operator"
           value={op}
-          onValueChange={(next) => {
+          onChange={(next) => {
+            if (typeof next !== "string") return;
             if (isTextOp(next)) changeOp(next);
           }}
         >
@@ -107,7 +109,7 @@ export function TextFilterEditor({
           </SelectTrigger>
           <SelectContent>
             {ops.map((candidate) => (
-              <SelectItem key={candidate} value={candidate}>
+              <SelectItem key={candidate} id={candidate}>
                 {TEXT_OP_LABELS[candidate]}
               </SelectItem>
             ))}
@@ -545,8 +547,10 @@ export function VocabEditor({
   return (
     <div className="flex flex-col gap-2">
       <Select
+        aria-label="Match mode"
         value={mode}
-        onValueChange={(value) => {
+        onChange={(value) => {
+          if (typeof value !== "string") return;
           if (isSetMode(value)) setMode(value);
         }}
       >
@@ -554,9 +558,9 @@ export function VocabEditor({
           <SelectValue />
         </SelectTrigger>
         <SelectContent>
-          <SelectItem value="any">any of</SelectItem>
-          <SelectItem value="all">all of</SelectItem>
-          <SelectItem value="none">none of</SelectItem>
+          <SelectItem id="any">any of</SelectItem>
+          <SelectItem id="all">all of</SelectItem>
+          <SelectItem id="none">none of</SelectItem>
         </SelectContent>
       </Select>
       <TypeaheadMultiSelect

@@ -87,8 +87,8 @@ function DrawerSlot(): ReactElement {
 
   return (
     <div className="flex items-center gap-3 lg:hidden">
-      <Sheet open={open} onOpenChange={setOpen}>
-        <SheetTrigger asChild>
+      <Sheet isOpen={open} onOpenChange={setOpen}>
+        <SheetTrigger>
           <button
             type="button"
             className="hover:bg-surface focus-visible:ring-accent flex size-9 items-center justify-center rounded-md transition-colors focus-visible:outline-none focus-visible:ring-2"

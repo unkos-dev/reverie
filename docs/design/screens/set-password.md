@@ -1,7 +1,7 @@
 # Set-password screen
 
 A credential-link holder chooses a password for the account bound to that link. Copy in double quotes is exact. Layout
-is a target design pending rendered review.
+is approved.
 
 ## Entry point and route
 

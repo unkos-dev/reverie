@@ -15,7 +15,6 @@ import { getBook, type BookDetail } from "@/api";
 import type { TitleData } from "@/components/shell/crumbs";
 import { queryClient } from "@/lib/query/client";
 import { queryKeys } from "@/lib/query/keys";
-import { BookPage } from "@/pages/book/BookPage";
 
 /**
  * Loader for `/b/:id`. Prefetches the detail so the component's
@@ -47,4 +46,4 @@ export async function loader({ params }: LoaderFunctionArgs): Promise<TitleData 
   return detail === undefined ? null : ({ title: detail.title } satisfies TitleData);
 }
 
-export { BookPage as Component };
+export { BookPage as Component } from "@/pages/book/BookPage";

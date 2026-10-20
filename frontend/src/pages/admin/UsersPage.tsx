@@ -1,9 +1,10 @@
+import { Label as AriaLabel } from "react-aria-components";
 /**
  * `/admin/users` — admin-only user management page.
  *
- * Lists every user with controls to change role, toggle child status, create a
- * new account, disable or re-enable an account, and reset a password. Non-admin
- * callers are redirected to `/library`.
+ * Lists every user with controls to change role, create an account, disable or
+ * re-enable an account, and reset a password. Non-admin callers are redirected
+ * to `/library`.
  */
 import { type ReactElement, type SyntheticEvent, useCallback, useState } from "react";
 import { Navigate } from "react-router";
@@ -15,7 +16,6 @@ import { queryKeys } from "@/lib/query/keys";
 import {
   listUsers,
   updateUserRole,
-  updateUserChildStatus,
   createUser,
   setAccountStatus,
   issueCredentialLink,
@@ -54,7 +54,6 @@ import {
 } from "@/components/ui/dialog";
 import { Field, FieldError, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
-import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -105,18 +104,6 @@ function UsersPage(): ReactElement {
     },
   });
 
-  const childMutation = useMutation({
-    mutationFn: ({ id, isChild }: { id: string; isChild: boolean }) =>
-      updateUserChildStatus(id, isChild),
-    onSuccess: () => {
-      invalidateUsers();
-      void queryClient.invalidateQueries({ queryKey: queryKeys.auth.me() });
-    },
-    onError: (err: Error) => {
-      toast.error(`Child status update failed: ${errorDetail(err)}`);
-    },
-  });
-
   const statusMutation = useMutation({
     mutationFn: ({ id, disabled }: { id: string; disabled: boolean }) =>
       setAccountStatus(id, disabled),
@@ -134,13 +121,6 @@ function UsersPage(): ReactElement {
       roleMutation.mutate({ id: userId, role });
     },
     [roleMutation],
-  );
-
-  const handleChildToggle = useCallback(
-    (userId: string, isChild: boolean) => {
-      childMutation.mutate({ id: userId, isChild });
-    },
-    [childMutation],
   );
 
   const handleStatusToggle = useCallback(
@@ -200,7 +180,6 @@ function UsersPage(): ReactElement {
               <TableHead>Name</TableHead>
               <TableHead>Email</TableHead>
               <TableHead>Role</TableHead>
-              <TableHead>Child</TableHead>
               <TableHead>Status</TableHead>
               <TableHead className="text-right">Actions</TableHead>
             </TableRow>
@@ -214,7 +193,6 @@ function UsersPage(): ReactElement {
                 localAuthEnabled={localAuthEnabled}
                 onLinkChange={invalidateUsers}
                 onRoleChange={handleRoleChange}
-                onChildToggle={handleChildToggle}
                 onStatusToggle={handleStatusToggle}
               />
             ))}
@@ -231,7 +209,6 @@ type UserRowProps = {
   user: User;
   isSelf: boolean;
   onRoleChange: (userId: string, role: Role) => void;
-  onChildToggle: (userId: string, isChild: boolean) => void;
   onStatusToggle: (userId: string, disabled: boolean) => void;
 };
 
@@ -245,7 +222,6 @@ function UserRow({
   user,
   isSelf,
   onRoleChange,
-  onChildToggle,
   onStatusToggle,
 }: Readonly<UserRowProps>): ReactElement {
   const activeExpiry = user.credential_link_expires_at;
@@ -274,8 +250,10 @@ function UserRow({
       <TableCell className="text-muted-foreground">{user.email ?? "no email"}</TableCell>
       <TableCell>
         <Select
+          aria-label="Role"
           value={user.role}
-          onValueChange={(v) => {
+          onChange={(v) => {
+            if (typeof v !== "string") return;
             if (isRole(v)) onRoleChange(user.id, v);
           }}
         >
@@ -283,19 +261,11 @@ function UserRow({
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="admin">admin</SelectItem>
-            <SelectItem value="adult">adult</SelectItem>
-            <SelectItem value="child">child</SelectItem>
+            <SelectItem id="admin">admin</SelectItem>
+            <SelectItem id="adult">adult</SelectItem>
+            <SelectItem id="child">child</SelectItem>
           </SelectContent>
         </Select>
-      </TableCell>
-      <TableCell>
-        <Switch
-          checked={user.is_child}
-          onCheckedChange={(v) => {
-            onChildToggle(user.id, v);
-          }}
-        />
       </TableCell>
       <TableCell>
         <div className="flex flex-wrap gap-2">
@@ -307,6 +277,7 @@ function UserRow({
           {linkActive ? (
             <Badge
               variant="outline"
+              role="status"
               aria-label={`${linkStatus} expires ${formatDateTime(activeExpiry)}`}
             >
               {linkStatus}
@@ -361,7 +332,7 @@ function LinkResultDialog({
     : `${result.name} uses this link to choose a new password. It expires ${expiry}. You won't see it again.`;
   return (
     <Dialog
-      open
+      isOpen
       onOpenChange={(open) => {
         if (!open) onDone();
       }}
@@ -436,8 +407,8 @@ function CreateUserDialog({ onCreated }: Readonly<{ onCreated: () => void }>): R
   }
   return (
     <>
-      <Dialog open={open} onOpenChange={handleOpenChange}>
-        <DialogTrigger asChild>
+      <Dialog isOpen={open} onOpenChange={handleOpenChange}>
+        <DialogTrigger>
           <Button>Create user</Button>
         </DialogTrigger>
         <DialogContent>
@@ -458,19 +429,23 @@ function CreateUserDialog({ onCreated }: Readonly<{ onCreated: () => void }>): R
               <Input id="create-email" name="email" type="email" autoComplete="off" required />
             </Field>
             <Field>
-              <FieldLabel htmlFor="create-role">Role</FieldLabel>
               <Select
+                className="flex flex-col gap-2"
                 value={role}
-                onValueChange={(value) => {
+                onChange={(value) => {
+                  if (typeof value !== "string") return;
                   if (isRole(value)) setRole(value);
                 }}
               >
+                <AriaLabel className="flex w-fit gap-2 text-sm font-medium leading-snug">
+                  Role
+                </AriaLabel>
                 <SelectTrigger id="create-role" className="w-full">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
                   {ROLE_OPTIONS.map((value) => (
-                    <SelectItem key={value} value={value}>
+                    <SelectItem key={value} id={value}>
                       {value}
                     </SelectItem>
                   ))}
@@ -479,11 +454,7 @@ function CreateUserDialog({ onCreated }: Readonly<{ onCreated: () => void }>): R
             </Field>
             {error !== null ? <FieldError>{error}</FieldError> : null}
             <DialogFooter>
-              <DialogClose asChild>
-                <Button type="button" variant="outline">
-                  Cancel
-                </Button>
-              </DialogClose>
+              <DialogClose type="button">Cancel</DialogClose>
               <Button type="submit" disabled={mutation.isPending}>
                 Create user
               </Button>
@@ -530,13 +501,13 @@ function ResetPasswordDialog({
   return (
     <>
       <Dialog
-        open={open}
+        isOpen={open}
         onOpenChange={(next) => {
           setOpen(next);
           if (!next) setError(null);
         }}
       >
-        <DialogTrigger asChild>
+        <DialogTrigger>
           <Button variant="outline" size="sm">
             Reset password
           </Button>
@@ -552,9 +523,7 @@ function ResetPasswordDialog({
           </DialogHeader>
           {error !== null ? <FieldError>{error}</FieldError> : null}
           <DialogFooter>
-            <DialogClose asChild>
-              <Button variant="outline">Cancel</Button>
-            </DialogClose>
+            <DialogClose type="button">Cancel</DialogClose>
             <Button
               disabled={mutation.isPending}
               onClick={() => {

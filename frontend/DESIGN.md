@@ -412,10 +412,14 @@ radius and a single border. Cover thumbnails are rectangular; count badges are p
 The component philosophy is **considered, inscribed**: every primitive feels like it was placed deliberately and cannot
 be moved by accident. Each affordance is a carved gesture, not a frictionless tap. Weight + restraint + intent.
 
-Reverie ships shadcn/ui primitives (button, card, input, dialog, alert-dialog, dropdown, sheet, etc.) rebound to the
-canonical brand palette via a shadcn-compatibility alias layer in `styles/themes/index.css`. New code prefers the
-canonical `--color-canvas` / `--color-fg` / `--color-accent` token names; the alias layer means stock primitives drop in
-without per-file rewrites.
+Reverie's interacting overlays use React Aria Components with local Tailwind wrappers. Dialog, alert dialog, sheet,
+popover, dropdown menu, select and tooltip components share this interaction foundation with the command palette and
+vocabulary pickers. Existing shadcn-derived components, including buttons, cards and inputs, retain their presentation;
+remaining Radix controls migrate separately. The shadcn generator is not used to create or regenerate primitives.
+
+The canonical brand palette, Radix Colors and generated colour primitives remain the colour foundation. The
+shadcn-compatibility aliases in `styles/themes/index.css` remain available to existing components. New code prefers the
+canonical `--color-canvas` / `--color-fg` / `--color-accent` token names.
 
 ### Buttons
 

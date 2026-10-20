@@ -36,6 +36,8 @@ function userList(): unknown[] {
       role: "adult",
       is_child: false,
       disabled: false,
+      has_password: true,
+      credential_link_expires_at: null,
       created_at: "2026-01-01T00:00:00Z",
       updated_at: "2026-01-01T00:00:00Z",
     },

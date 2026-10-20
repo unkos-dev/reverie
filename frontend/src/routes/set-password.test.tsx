@@ -1,0 +1,159 @@
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { cleanup, render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { beforeEach, afterEach, expect, test, vi } from "vite-plus/test";
+import { MemoryRouter } from "react-router";
+
+import { ApiError } from "@/api";
+import { fetchSetupStatus, lookupCredentialLink, redeemCredentialLink } from "@/api/auth";
+
+import { Component } from "./set-password";
+
+vi.mock("@/api/auth");
+vi.mock("@/lib/theme/ThemeProvider", () => ({
+  useTheme: () => ({ effective: "dark", preference: "system", setPreference: vi.fn() }),
+}));
+
+beforeEach(() => {
+  vi.resetAllMocks();
+  window.history.replaceState(null, "", "/set-password#test-link");
+  vi.mocked(fetchSetupStatus).mockResolvedValue({
+    setup_required: false,
+    local_auth_enabled: true,
+    oidc_enabled: false,
+    password_min_length: 15,
+    password_max_length: 256,
+  });
+  vi.mocked(lookupCredentialLink).mockResolvedValue({
+    email: "bob@example.com",
+    has_password: false,
+  });
+  vi.mocked(redeemCredentialLink).mockResolvedValue(undefined);
+});
+afterEach(cleanup);
+
+function renderPage(): void {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  render(
+    <QueryClientProvider client={client}>
+      <MemoryRouter>
+        <Component />
+      </MemoryRouter>
+    </QueryClientProvider>,
+  );
+}
+
+async function submitPassword(password = "a long chosen passphrase"): Promise<void> {
+  const user = userEvent.setup();
+  await user.type(await screen.findByLabelText("New password"), password);
+  await user.type(screen.getByLabelText("Confirm password"), password);
+  await user.click(screen.getByRole("button", { name: "Set password" }));
+}
+
+test("checks the link and clears the fragment", () => {
+  vi.mocked(lookupCredentialLink).mockReturnValue(new Promise(() => {}));
+  renderPage();
+  expect(screen.getByRole("status", { name: "Checking link" })).toBeInTheDocument();
+  expect(window.location.hash).toBe("");
+  expect(lookupCredentialLink).toHaveBeenCalledWith("test-link", expect.any(AbortSignal));
+});
+
+test("sets a new account password and offers explicit sign in", async () => {
+  renderPage();
+  expect(await screen.findByText("Set your password")).toBeInTheDocument();
+  expect(screen.getByText("Choose a password for bob@example.com.")).toBeInTheDocument();
+  expect(document.querySelector('input[autocomplete="username"]')).toHaveValue("bob@example.com");
+  await submitPassword();
+  expect(redeemCredentialLink).toHaveBeenCalledWith("test-link", "a long chosen passphrase");
+  expect(await screen.findByText("Password set")).toBeInTheDocument();
+  expect(screen.getByText("You can now sign in with your new password.")).toBeInTheDocument();
+  expect(screen.getByRole("link", { name: "Sign in" })).toHaveAttribute("href", "/login");
+});
+
+test("shows reset copy for an account with a password", async () => {
+  vi.mocked(lookupCredentialLink).mockResolvedValue({
+    email: "bob@example.com",
+    has_password: true,
+  });
+  renderPage();
+  expect(await screen.findByText("Reset your password")).toBeInTheDocument();
+  expect(
+    screen.getByText(
+      "Choose a new password for bob@example.com. Saving it signs you out everywhere.",
+    ),
+  ).toBeInTheDocument();
+});
+
+test.each(["unknown", "expired", "used", "disabled", "no email"])(
+  "shows the same invalid state for %s links",
+  async () => {
+    vi.mocked(lookupCredentialLink).mockRejectedValue(
+      new ApiError(422, null, "Validation failed", "invalid or expired link"),
+    );
+    renderPage();
+    expect(await screen.findByText("This link can't be used")).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "It may have expired or already been used. Ask your administrator for a new link.",
+      ),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Go to sign in" })).toHaveAttribute("href", "/login");
+  },
+);
+
+test("a missing fragment is invalid without a lookup", () => {
+  window.history.replaceState(null, "", "/set-password");
+  renderPage();
+  expect(screen.getByText("This link can't be used")).toBeInTheDocument();
+  expect(lookupCredentialLink).not.toHaveBeenCalled();
+});
+
+test("rejects mismatched passwords without redemption", async () => {
+  renderPage();
+  const user = userEvent.setup();
+  await user.type(await screen.findByLabelText("New password"), "a long chosen passphrase");
+  await user.type(screen.getByLabelText("Confirm password"), "different passphrase");
+  await user.click(screen.getByRole("button", { name: "Set password" }));
+  expect(await screen.findByRole("alert")).toHaveTextContent("The passwords don't match.");
+  expect(redeemCredentialLink).not.toHaveBeenCalled();
+});
+
+test("enforces the existing password policy", async () => {
+  renderPage();
+  await submitPassword("short");
+  expect(await screen.findByRole("alert")).toHaveTextContent("Use at least 15 characters.");
+  expect(redeemCredentialLink).not.toHaveBeenCalled();
+});
+
+test.each([422, 429, 503])("renders the redemption detail for %s", async (status) => {
+  vi.mocked(redeemCredentialLink).mockRejectedValue(
+    new ApiError(status, null, "Request failed", "Please try again later."),
+  );
+  renderPage();
+  await submitPassword();
+  expect(await screen.findByRole("alert")).toHaveTextContent("Please try again later.");
+});
+
+test.each([429, 503])("renders the lookup detail for %s", async (status) => {
+  vi.mocked(lookupCredentialLink).mockRejectedValue(
+    new ApiError(status, null, "Request failed", "Please try again later."),
+  );
+  renderPage();
+  expect(await screen.findByRole("alert")).toHaveTextContent("Please try again later.");
+});
+
+test("an invalid redemption replaces the form with the invalid state", async () => {
+  vi.mocked(redeemCredentialLink).mockRejectedValue(
+    new ApiError(422, null, "Validation failed", "invalid or expired link"),
+  );
+  renderPage();
+  await submitPassword();
+  expect(await screen.findByText("This link can't be used")).toBeInTheDocument();
+});
+
+test("disables submission while redemption is pending", async () => {
+  vi.mocked(redeemCredentialLink).mockReturnValue(new Promise(() => {}));
+  renderPage();
+  await submitPassword();
+  expect(screen.getByRole("button", { name: "Set password" })).toBeDisabled();
+});

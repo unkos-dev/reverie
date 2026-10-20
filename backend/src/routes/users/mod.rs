@@ -183,16 +183,12 @@ struct UpdateRoleRequest {
 /// - [`AppError::NotFound`] when the target user does not exist.
 /// - [`AppError::Validation`] with detail "would leave zero admins"
 ///   when the demotion would remove the last admin.
-/// - [`AppError::Validation`] with message "cannot set role to child without
-///   enabling child status first" when `role = child` on an `is_child = false`
-///   user, or "cannot change role from child without disabling child status
-///   first" when setting a non-child role on an `is_child = true` user.
 /// - [`AppError::Internal`] on database errors.
 #[utoipa::path(
     put,
     path = "/api/v1/users/{id}/role",
     summary = "Change a user's role",
-    description = "Sets the target user's role and invalidates their active sessions. Admin only. Returns 422 if the change would leave zero administrators or conflicts with the target's child status.",
+    description = "Sets the target user's role and child status together and invalidates their active sessions. Child status is enabled only for the child role. Admin only. Returns 422 if the change would leave zero administrators.",
     tag = "users",
     security(("session_cookie" = ["admin"]), ("device_token_bearer" = ["admin"]), ("opds_basic" = ["admin"])),
     params(("id" = Uuid, Path, max_length = 45, description = "Target user id")),
@@ -202,7 +198,7 @@ struct UpdateRoleRequest {
         (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 403, description = "Caller is not an admin", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 404, description = "Target user does not exist", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
-        (status = 422, description = "Demotion would leave zero admins, the role change conflicts with the target's child status, or the request body is malformed / contains an unknown role value", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
+        (status = 422, description = "Demotion would leave zero admins, or the request body is malformed / contains an unknown role value", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
     )
 )]
 async fn update_role(
@@ -245,24 +241,11 @@ async fn update_role(
         return Err(AppError::Validation("would leave zero admins".into()));
     }
 
-    // Check child/role sync constraint: setting role='child' on
-    // is_child=false (or non-child role on is_child=true) will violate
-    // chk_child_role_sync.
-    if req.role == Role::Child && !target.is_child {
-        return Err(AppError::Validation(
-            "cannot set role to child without enabling child status first".into(),
-        ));
-    }
-    if req.role != Role::Child && target.is_child {
-        return Err(AppError::Validation(
-            "cannot change role from child without disabling child status first".into(),
-        ));
-    }
-
     let row = sqlx::query_as!(
         UserResponse,
         r#"WITH changed AS (UPDATE users
               SET role = ($1::text)::user_role,
+                  is_child = ($1::text = 'child'),
                   session_version = session_version + 1,
                   updated_at = now()
             WHERE id = $2
@@ -743,8 +726,10 @@ async fn cancel_credential_link(
 #[derive(Debug, Deserialize, utoipa::ToSchema)]
 struct ChangePasswordRequest {
     /// The caller's current password, re-verified before the change.
+    #[schema(max_length = 256)]
     current_password: String,
     /// The new password; enforced against the password policy.
+    #[schema(max_length = 256)]
     new_password: String,
 }
 
@@ -786,6 +771,17 @@ async fn change_own_password(
 ) -> Result<impl IntoResponse, AppError> {
     current_user.require_scope(Scope::Write)?;
     let user_id = current_user.user_id;
+
+    crate::auth::password_policy::enforce_max_length(
+        &req.current_password,
+        crate::auth::password_policy::MAX_PASSWORD_LENGTH,
+    )
+    .map_err(|e| AppError::Validation(e.to_string()))?;
+    crate::auth::password_policy::enforce_max_length(
+        &req.new_password,
+        state.config.password_max_length,
+    )
+    .map_err(|e| AppError::Validation(e.to_string()))?;
 
     let credential = crate::models::local_credentials::find_by_user_id(&state.pool, user_id)
         .await
@@ -832,7 +828,7 @@ async fn change_own_password(
         .begin()
         .await
         .map_err(|e| AppError::Internal(e.into()))?;
-    // THREAT: user-before-credential locking prevents inversion with administrator resets.
+    // THREAT: user-before-credential locking prevents inversion with recovery writers.
     sqlx::query_scalar!(
         "SELECT id FROM users WHERE id = $1 FOR NO KEY UPDATE",
         user_id

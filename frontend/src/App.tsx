@@ -1,6 +1,7 @@
+import { RouterProvider as AriaRouterProvider } from "react-aria-components";
 import { NuqsAdapter } from "nuqs/adapters/react-router/v8";
 import type { ReactElement } from "react";
-import { Outlet } from "react-router";
+import { Outlet, useHref, useNavigate } from "react-router";
 
 import { CommandPalette } from "@/components/CommandPalette";
 import { AppShell } from "@/components/shell/AppShell";
@@ -23,13 +24,21 @@ import { AppShell } from "@/components/shell/AppShell";
  * state.
  */
 function App(): ReactElement {
+  const navigate = useNavigate();
   return (
-    <NuqsAdapter>
-      <AppShell>
-        <Outlet />
-      </AppShell>
-      <CommandPalette />
-    </NuqsAdapter>
+    <AriaRouterProvider
+      navigate={(to, options) => {
+        void navigate(to, options);
+      }}
+      useHref={useHref}
+    >
+      <NuqsAdapter>
+        <AppShell>
+          <Outlet />
+        </AppShell>
+        <CommandPalette />
+      </NuqsAdapter>
+    </AriaRouterProvider>
   );
 }
 

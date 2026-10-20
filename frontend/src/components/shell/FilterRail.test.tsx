@@ -123,7 +123,7 @@ async function debounceSettled(): Promise<void> {
 function sectionByTitle(title: string): HTMLElement {
   const rail = screen.getByRole("complementary", { name: "Filters" });
   const section = within(rail)
-    .getAllByText(title)
+    .getAllByRole("button", { name: new RegExp(`^${title}(?:\\s*\\d+)?$`) })
     .map((node) => node.closest("section"))
     .find((candidate): candidate is HTMLElement => candidate !== null);
   if (section === undefined) throw new Error(`no section titled ${title}`);
@@ -451,7 +451,7 @@ describe("FilterRail sort section", () => {
     renderRail();
     openSection("Sort");
     const user = userEvent.setup();
-    await user.click(screen.getByRole("combobox", { name: "Add sort field" }));
+    await user.click(screen.getByRole("button", { name: /Add sort field/ }));
     await user.click(screen.getByRole("option", { name: "Title" }));
     // The inherited installation stack is what the reader sees, so adding a
     // field extends it: the whole effective stack materialises as their
@@ -553,7 +553,7 @@ describe("FilterRail sort section", () => {
   test("the rail hosts no live region of its own; announcements are page-level", () => {
     renderRail("/library", [{ field: "pages", desc: true }]);
     const rail = screen.getByRole("complementary", { name: "Filters" });
-    expect(rail.querySelector("[aria-live]")).toBeNull();
+    expect(rail.querySelector('[aria-live="polite"], [aria-live="assertive"]')).toBeNull();
   });
 
   test("the add-field picker hides fields already in the stack and caps the stack", () => {

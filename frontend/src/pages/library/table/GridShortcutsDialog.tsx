@@ -3,16 +3,7 @@
  *
  * `?` opens the dialog from anywhere on the page (guarded so typing a
  * literal `?` into a field doesn't hijack it); `Esc` or the close button
- * dismiss it. Focus is captured in a layout effect on the open
- * transition, since layout effects flush before Radix's own
- * passive-effect focus trap (`@radix-ui/react-focus-scope` captures
- * `document.activeElement` in a `useEffect`). That ordering lets the
- * invoker (whichever element was focused when `?` fired, or the
- * trigger button on click) be captured before focus ever moves, then
- * restored on close. This mirrors `CommandPalette.tsx`'s
- * invokerRef/`onCloseAutoFocus` pattern, adapted for a dialog whose
- * open state is owned by the parent rather than an internal toggle
- * hook.
+ * dismiss it. The shared native dialog owns focus restoration.
  *
  * The shortcut list documents react-data-grid's native keyboard model
  * (no custom key handling is added by this feature) plus the paging
@@ -27,11 +18,10 @@
  * react-data-grid at the pinned tag implements F2-open only, so Escape or
  * Enter are the close paths.
  */
-import { useEffect, useLayoutEffect, useRef, type ReactElement } from "react";
+import { useEffect, type ReactElement } from "react";
 
 import { Button } from "@/components/ui/button";
 import {
-  Dialog,
   DialogContent,
   DialogDescription,
   DialogHeader,
@@ -59,7 +49,7 @@ export function useShortcutsHotkey(setOpen: (open: boolean) => void): void {
         !event.metaKey &&
         !event.ctrlKey &&
         !event.altKey &&
-        !inEditableField(event.target)
+        !inEditableField(document.activeElement)
       ) {
         event.preventDefault();
         setOpen(true);
@@ -111,73 +101,45 @@ export function GridShortcutsDialog({
   open,
   onOpenChange,
 }: Readonly<GridShortcutsDialogProps>): ReactElement {
-  const invokerRef = useRef<HTMLElement | null>(null);
-  const wasOpenRef = useRef(open);
-
-  // Layout effects flush before any passive effect in the same commit,
-  // including Radix FocusScope's `useEffect` that reads
-  // `document.activeElement` to trap focus. Capturing here, gated on
-  // the false-to-true transition, guarantees the invoker is whatever
-  // had focus immediately before open, never a focus target already
-  // moved inside the dialog.
-  useLayoutEffect(() => {
-    if (open && !wasOpenRef.current) {
-      invokerRef.current =
-        document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    }
-    wasOpenRef.current = open;
-  }, [open]);
-
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent
-        aria-labelledby="grid-shortcuts-title"
-        onCloseAutoFocus={(event) => {
-          if (invokerRef.current !== null && invokerRef.current.isConnected) {
-            event.preventDefault();
-            invokerRef.current.focus();
-          }
-          invokerRef.current = null;
-        }}
-      >
-        <DialogHeader>
-          <DialogTitle id="grid-shortcuts-title">Keyboard shortcuts</DialogTitle>
-          <DialogDescription className="sr-only">
-            Keyboard shortcuts available in the library table view.
-          </DialogDescription>
-        </DialogHeader>
-        <table className="w-full border-collapse text-sm">
-          <caption className="sr-only">Keyboard shortcuts for the library table view</caption>
-          <thead>
-            <tr className="border-b text-left text-xs text-muted-foreground">
-              <th scope="col" className="w-32 py-1.5 pr-3 font-medium">
-                Shortcut
-              </th>
-              <th scope="col" className="py-1.5 font-medium">
-                Action
-              </th>
+    <DialogContent isOpen={open} onOpenChange={onOpenChange} aria-labelledby="grid-shortcuts-title">
+      <DialogHeader>
+        <DialogTitle id="grid-shortcuts-title">Keyboard shortcuts</DialogTitle>
+        <DialogDescription className="sr-only">
+          Keyboard shortcuts available in the library table view.
+        </DialogDescription>
+      </DialogHeader>
+      <table className="w-full border-collapse text-sm">
+        <caption className="sr-only">Keyboard shortcuts for the library table view</caption>
+        <thead>
+          <tr className="border-b text-left text-xs text-muted-foreground">
+            <th scope="col" className="w-32 py-1.5 pr-3 font-medium">
+              Shortcut
+            </th>
+            <th scope="col" className="py-1.5 font-medium">
+              Action
+            </th>
+          </tr>
+        </thead>
+        <tbody>
+          {SHORTCUT_ROWS.map((row) => (
+            <tr key={row.description} className="border-b last:border-0">
+              <td className="py-1.5 pr-3 align-top">
+                <span className="flex flex-wrap items-center gap-1 font-mono text-[0.65rem]">
+                  {row.keys.map((key, index) => (
+                    <span key={key} className="flex items-center gap-1">
+                      {index > 0 ? <span className="text-muted-foreground">+</span> : null}
+                      <kbd>{key}</kbd>
+                    </span>
+                  ))}
+                </span>
+              </td>
+              <td className="py-1.5 align-top text-foreground">{row.description}</td>
             </tr>
-          </thead>
-          <tbody>
-            {SHORTCUT_ROWS.map((row) => (
-              <tr key={row.description} className="border-b last:border-0">
-                <td className="py-1.5 pr-3 align-top">
-                  <span className="flex flex-wrap items-center gap-1 font-mono text-[0.65rem]">
-                    {row.keys.map((key, index) => (
-                      <span key={key} className="flex items-center gap-1">
-                        {index > 0 ? <span className="text-muted-foreground">+</span> : null}
-                        <kbd>{key}</kbd>
-                      </span>
-                    ))}
-                  </span>
-                </td>
-                <td className="py-1.5 align-top text-foreground">{row.description}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </DialogContent>
-    </Dialog>
+          ))}
+        </tbody>
+      </table>
+    </DialogContent>
   );
 }
 

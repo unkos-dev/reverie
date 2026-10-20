@@ -8,10 +8,10 @@ These rules define the React and TypeScript architecture. Do not deviate.
 1. **No Any:** `any` is forbidden. Use `unknown` and narrow with type guards.
 2. **No Inline Styles or Hex:** Do not use inline style objects (except dynamic calcs) or arbitrary hex values. Use
    Tailwind utility classes and the established theme variables.
-3. **shadcn via CLI only:** Do not manually create or paste shadcn/ui components. Run
-   `vp dlx shadcn@latest add <component>` from `frontend/` so the CLI reads the workspace `components.json`. The CLI is
-   deliberately not a dependency: it is invoked only when adding a primitive, while retaining it adds a persistent
-   package and advisory surface to every development install. Review and commit all generated source.
+3. **React Aria foundation:** Compose new interactive primitives with React Aria Components and semantic HTML, styled
+   with Reverie's Tailwind utilities and tokens. Preserve existing shadcn-derived components until their planned
+   migration. Do not run the shadcn generator or overwrite React Aria wrappers with Radix or `cmdk` components. Radix
+   Colors and the generated colour primitives remain independent of this interaction-library migration.
 4. **No console.log:** Do not leave `console.log` statements in production code.
    </cardinal_rules>
 
