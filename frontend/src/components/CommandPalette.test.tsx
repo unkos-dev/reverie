@@ -216,6 +216,33 @@ describe("CommandPalette — search flow", () => {
     });
   });
 
+  test("shows server results whose title does not contain the query", async () => {
+    vi.spyOn(globalThis, "fetch").mockImplementation(() =>
+      Promise.resolve(
+        jsonResponse({
+          items: [
+            {
+              kind: "book",
+              id: "abc-123",
+              work_id: "w-1",
+              title: "Stoner",
+              authors: ["John Williams"],
+              snippet: null,
+              cover_url: null,
+            },
+          ],
+        }),
+      ),
+    );
+    renderPalette();
+    const user = userEvent.setup();
+    triggerCmdK();
+    const input = await screen.findByPlaceholderText("Find a volume by title, author, quote…");
+    await user.type(input, "stonre");
+    expect(await screen.findByRole("menuitem", { name: /Stoner/ })).toBeInTheDocument();
+    expect(screen.queryByText("No results.")).not.toBeInTheDocument();
+  });
+
   test("logs and surfaces a user message on query error", async () => {
     const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
     vi.spyOn(globalThis, "fetch").mockImplementation(() =>
