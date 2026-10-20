@@ -441,7 +441,7 @@
       "id": "REV-ADR-0060",
       "kind": "adr",
       "path": "docs/adr/0060-use-react-aria-for-the-interactive-ui-foundation.md",
-      "status": "proposed",
+      "status": "accepted",
       "title": "Use React Aria for the interactive UI foundation"
     },
     {

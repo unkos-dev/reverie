@@ -1,3 +1,7 @@
+/**
+ * Controlled vocabulary selection over server-ranked suggestions without local text filtering.
+ * Callers own persisted selections; author identity uses UUIDs while other vocabularies use labels.
+ */
 import { useQuery } from "@tanstack/react-query";
 import { useState, type ReactElement } from "react";
 import {
@@ -19,6 +23,7 @@ import { X } from "lucide-react";
 import { suggestVocab, type SuggestKind } from "@/api";
 import { queryKeys } from "@/lib/query/keys";
 
+/** A display label with an author UUID when available; other vocabularies use the label as identity. */
 export type TypeaheadOption = { id?: string; value: string };
 
 type Props = {
@@ -29,6 +34,7 @@ type Props = {
   disabled?: boolean;
 };
 
+/** Emits the complete selection on add/remove and clears the search query after an option is committed. */
 export function TypeaheadMultiSelect({
   kind,
   label,

@@ -1,3 +1,7 @@
+/**
+ * Global library search using server-ranked results and safe snippet highlighting.
+ * React Aria owns modal focus and dismissal; application shortcuts respect the focused field.
+ */
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useState, type ReactElement } from "react";
 import { useNavigate } from "react-router";
@@ -23,6 +27,7 @@ import { queryKeys } from "@/lib/query/keys";
 const SNIPPET_HL_START = "\u0002";
 const SNIPPET_HL_END = "\u0003";
 
+/** Searches from two characters and navigates to the selected book without changing library filters. */
 export function CommandPalette(): ReactElement {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");

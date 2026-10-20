@@ -3,8 +3,9 @@ type: ADR
 profile-version: 1
 id: "REV-ADR-0060"
 title: "Use React Aria for the interactive UI foundation"
-status: "proposed"
+status: "accepted"
 recorded-on: "2026-10-20"
+decided-on: "2026-10-20"
 decision-makers:
   - "John Unkovich"
 ---
