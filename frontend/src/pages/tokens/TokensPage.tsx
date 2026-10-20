@@ -1,3 +1,4 @@
+import { Label as AriaLabel } from "react-aria-components";
 /**
  * `/tokens` — self-service device-token management.
  *
@@ -270,8 +271,8 @@ function CreateTokenDialog({ isAdmin, onCreated }: Readonly<CreateTokenDialogPro
   const availableLevels = ACCESS_LEVELS.filter((l) => l.value !== "admin" || isAdmin);
 
   return (
-    <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogTrigger asChild>
+    <Dialog isOpen={open} onOpenChange={handleOpenChange}>
+      <DialogTrigger>
         <Button>New token</Button>
       </DialogTrigger>
       <DialogContent>
@@ -296,20 +297,24 @@ function CreateTokenDialog({ isAdmin, onCreated }: Readonly<CreateTokenDialogPro
                 <Input id="create-token-name" name="name" type="text" required />
               </Field>
               <Field>
-                <FieldLabel htmlFor="create-token-level">Access level</FieldLabel>
                 <Select
+                  className="flex flex-col gap-2"
                   value={level}
-                  onValueChange={(v) => {
+                  onChange={(v) => {
+                    if (typeof v !== "string") return;
                     const match = ACCESS_LEVELS.find((l) => l.value === v);
                     if (match) setLevel(match.value);
                   }}
                 >
+                  <AriaLabel className="flex w-fit gap-2 text-sm font-medium leading-snug">
+                    Access level
+                  </AriaLabel>
                   <SelectTrigger id="create-token-level" className="w-full">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
                     {availableLevels.map((l) => (
-                      <SelectItem key={l.value} value={l.value}>
+                      <SelectItem key={l.value} id={l.value}>
                         {l.label}
                       </SelectItem>
                     ))}
@@ -320,20 +325,24 @@ function CreateTokenDialog({ isAdmin, onCreated }: Readonly<CreateTokenDialogPro
                 </p>
               </Field>
               <Field>
-                <FieldLabel htmlFor="create-token-expiry">Expires</FieldLabel>
                 <Select
+                  className="flex flex-col gap-2"
                   value={expiry}
-                  onValueChange={(v) => {
+                  onChange={(v) => {
+                    if (typeof v !== "string") return;
                     const match = EXPIRY_OPTIONS.find((o) => o.value === v);
                     if (match) setExpiry(match.value);
                   }}
                 >
+                  <AriaLabel className="flex w-fit gap-2 text-sm font-medium leading-snug">
+                    Expires
+                  </AriaLabel>
                   <SelectTrigger id="create-token-expiry" className="w-full">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
                     {EXPIRY_OPTIONS.map((opt) => (
-                      <SelectItem key={opt.value} value={opt.value}>
+                      <SelectItem key={opt.value} id={opt.value}>
                         {opt.label}
                       </SelectItem>
                     ))}
@@ -342,11 +351,7 @@ function CreateTokenDialog({ isAdmin, onCreated }: Readonly<CreateTokenDialogPro
               </Field>
               {error ? <FieldError>{error}</FieldError> : null}
               <DialogFooter>
-                <DialogClose asChild>
-                  <Button type="button" variant="outline">
-                    Cancel
-                  </Button>
-                </DialogClose>
+                <DialogClose type="button">Cancel</DialogClose>
                 <Button type="submit" disabled={mutation.isPending}>
                   Create
                 </Button>

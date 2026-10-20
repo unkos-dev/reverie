@@ -335,6 +335,7 @@ describe("LibraryTableView", () => {
       await screen.findByRole("grid");
       const user = userEvent.setup();
       const trigger = screen.getAllByRole("button", { name: "(all editions)" })[0];
+      await user.tab();
       trigger.focus();
       expect(await screen.findByRole("tooltip")).toHaveTextContent(
         "Edits apply to all editions of the work",

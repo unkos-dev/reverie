@@ -36,7 +36,6 @@ import {
   type UpdateBookMetadataFields,
 } from "@/api";
 import {
-  AlertDialog,
   AlertDialogAction,
   AlertDialogCancel,
   AlertDialogContent,
@@ -49,7 +48,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
-  Sheet,
   SheetContent,
   SheetDescription,
   SheetFooter,
@@ -124,26 +122,29 @@ export function EditMetadataDialog({
   fields,
 }: Readonly<EditMetadataDialogProps>): ReactElement {
   return (
-    <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent side="right" className="flex w-full flex-col sm:max-w-lg">
-        <SheetHeader>
-          <SheetTitle>Edit metadata</SheetTitle>
-          <SheetDescription>
-            Empty an input to clear that field on save. Untouched fields stay as-is.
-          </SheetDescription>
-        </SheetHeader>
-        {open ? (
-          <EditMetadataForm
-            key={manifestationId}
-            manifestationId={manifestationId}
-            fields={fields}
-            onDone={() => {
-              onOpenChange(false);
-            }}
-          />
-        ) : null}
-      </SheetContent>
-    </Sheet>
+    <SheetContent
+      isOpen={open}
+      onOpenChange={onOpenChange}
+      side="right"
+      className="flex w-full flex-col sm:max-w-lg"
+    >
+      <SheetHeader>
+        <SheetTitle>Edit metadata</SheetTitle>
+        <SheetDescription>
+          Empty an input to clear that field on save. Untouched fields stay as-is.
+        </SheetDescription>
+      </SheetHeader>
+      {open ? (
+        <EditMetadataForm
+          key={manifestationId}
+          manifestationId={manifestationId}
+          fields={fields}
+          onDone={() => {
+            onOpenChange(false);
+          }}
+        />
+      ) : null}
+    </SheetContent>
   );
 }
 
@@ -333,41 +334,39 @@ function EditMetadataFields({
         </SheetFooter>
       </form>
 
-      <AlertDialog
-        open={pendingClearConfirm !== null}
+      <AlertDialogContent
+        isOpen={pendingClearConfirm !== null}
         onOpenChange={(o) => {
           if (!o) setPendingClearConfirm(null);
         }}
       >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Clear populated field?</AlertDialogTitle>
-            <AlertDialogDescription>
-              You&apos;re clearing a field that already has a value. The canonical column will be
-              set to NULL and an audit row recorded. Continue?
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel
-              onClick={() => {
+        <AlertDialogHeader>
+          <AlertDialogTitle>Clear populated field?</AlertDialogTitle>
+          <AlertDialogDescription>
+            You&apos;re clearing a field that already has a value. The canonical column will be set
+            to NULL and an audit row recorded. Continue?
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel
+            onClick={() => {
+              setPendingClearConfirm(null);
+            }}
+          >
+            Cancel
+          </AlertDialogCancel>
+          <AlertDialogAction
+            onClick={() => {
+              if (pendingClearConfirm) {
+                mutation.mutate(pendingClearConfirm);
                 setPendingClearConfirm(null);
-              }}
-            >
-              Cancel
-            </AlertDialogCancel>
-            <AlertDialogAction
-              onClick={() => {
-                if (pendingClearConfirm) {
-                  mutation.mutate(pendingClearConfirm);
-                  setPendingClearConfirm(null);
-                }
-              }}
-            >
-              Clear and save
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+              }
+            }}
+          >
+            Clear and save
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
     </>
   );
 }

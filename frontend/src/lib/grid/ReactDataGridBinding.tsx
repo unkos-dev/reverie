@@ -9,14 +9,7 @@
  * but, like every other RDG type, never appears in this module's exports.
  */
 import { Info } from "lucide-react";
-import {
-  useId,
-  useMemo,
-  type ChangeEvent,
-  type MouseEvent,
-  type ReactElement,
-  type ReactNode,
-} from "react";
+import { useId, useMemo, type ChangeEvent, type ReactElement, type ReactNode } from "react";
 import {
   DataGrid,
   SelectColumn,
@@ -36,7 +29,7 @@ import {
 import "react-data-grid/lib/styles.css";
 import "./grid-theme.css";
 
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 
 import type { GridBindingProps, GridColumn } from "./types";
 
@@ -123,10 +116,10 @@ function HeaderCellWithTooltip<R>(
       </span>
       <Tooltip>
         <TooltipTrigger
-          tabIndex={-1}
+          excludeFromTabOrder
           aria-label={tooltip.label}
           className="text-fg-muted hover:text-fg focus-visible:ring-accent flex min-h-6 min-w-6 items-center justify-center rounded-sm focus-visible:outline-none focus-visible:ring-2"
-          onClick={(event: MouseEvent) => {
+          onClick={(event) => {
             event.stopPropagation();
           }}
         >
@@ -310,10 +303,7 @@ export function ReactDataGridBinding<R>(props: ReactDataGridBindingProps<R>): Re
   return (
     // Height is a dynamic, prop-driven scroll viewport (cardinal-rule
     // exception); when omitted the caller's className must size the wrapper.
-    // The tooltip provider is mounted here because header tooltips are the
-    // binding's own affordance and no app-level provider exists; Radix
-    // Tooltip.Root throws without a provider ancestor.
-    <TooltipProvider>
+    <>
       <div className={wrapperClass} style={height === undefined ? undefined : { height }}>
         <DataGrid
           aria-label={label}
@@ -356,6 +346,6 @@ export function ReactDataGridBinding<R>(props: ReactDataGridBindingProps<R>): Re
           }}
         />
       </div>
-    </TooltipProvider>
+    </>
   );
 }

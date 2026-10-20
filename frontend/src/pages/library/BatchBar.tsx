@@ -118,7 +118,7 @@ export function BatchBar({
         Clear selection
       </button>
       <DropdownMenu>
-        <DropdownMenuTrigger asChild>
+        <DropdownMenuTrigger>
           <Button type="button" variant="outline" size="sm" disabled={running}>
             {running ? (
               <Loader2 className="size-4 animate-spin" aria-hidden="true" />
@@ -128,9 +128,9 @@ export function BatchBar({
             Add to shelf
           </Button>
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="end">
+        <DropdownMenuContent placement="bottom end">
           {shelves === undefined || shelves.length === 0 ? (
-            <DropdownMenuItem disabled>
+            <DropdownMenuItem isDisabled>
               {shelvesError
                 ? "Couldn't load shelves"
                 : shelves === undefined
@@ -141,7 +141,7 @@ export function BatchBar({
             shelves.map((shelf) => (
               <DropdownMenuItem
                 key={shelf.id}
-                onSelect={() => {
+                onAction={() => {
                   void addAllToShelf(shelf);
                 }}
               >

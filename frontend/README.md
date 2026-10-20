@@ -4,6 +4,16 @@ This directory contains the Vite React frontend.
 
 Run `just js::test` from the repository root to execute the frontend unit tests.
 
+## Interactive components
+
+React Aria Components owns dialogs, drawers, popovers, menus, selects, tooltip behaviour, the command palette and
+vocabulary pickers. Wrappers in `src/components/ui/` use Reverie's Tailwind classes and theme tokens. Prefer native
+interaction defaults and keep API queries and domain state in their owning components.
+
+Radix UI remains for controls awaiting migration, including checkboxes, switches, tabs and the button slot. Radix Colors
+and `src/styles/themes/primitives.generated.css` remain the colour foundation independently of the interaction library.
+The grid engine and its editing, sorting and loading state are unchanged.
+
 ## Environment Variables
 
 Configure the development environment using these variables.
@@ -25,7 +35,7 @@ frontend/
 ├── src/
 │   ├── api/             # API client functions
 │   ├── components/      # Reusable UI components
-│   │   └── ui/          # generated shadcn/ui components
+│   │   └── ui/          # Token-styled interaction primitives
 │   ├── fouc/            # Pre-paint script hashed into HTML CSP at build
 │   ├── hooks/           # Custom React hooks
 │   ├── pages/           # Route-level page components

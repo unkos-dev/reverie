@@ -12,7 +12,7 @@
  * honest if that default ever changes.
  */
 import { Columns3 } from "lucide-react";
-import type { ReactElement } from "react";
+import { useRef, type ReactElement } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -37,9 +37,10 @@ export function ColumnsPopover({
   canReset,
   onReset,
 }: Readonly<ColumnsPopoverProps>): ReactElement {
+  const dialogRef = useRef<HTMLElement>(null);
   return (
     <Popover>
-      <PopoverTrigger asChild>
+      <PopoverTrigger>
         <Button type="button" variant="outline" size="sm">
           <Columns3 className="size-4" aria-hidden="true" />
           Columns
@@ -50,7 +51,12 @@ export function ColumnsPopover({
           ) : null}
         </Button>
       </PopoverTrigger>
-      <PopoverContent align="end" className="w-56">
+      <PopoverContent
+        dialogRef={dialogRef}
+        aria-label="Columns"
+        placement="bottom end"
+        className="w-56"
+      >
         <p className="text-fg-muted mb-3 font-mono text-xs uppercase tracking-[0.12em]">Columns</p>
         <div className="flex flex-col gap-2">
           <div className="flex items-center gap-2">
@@ -81,7 +87,10 @@ export function ColumnsPopover({
           size="sm"
           className="mt-3 w-full"
           disabled={!canReset}
-          onClick={onReset}
+          onClick={() => {
+            dialogRef.current?.focus();
+            onReset();
+          }}
         >
           Reset to default
         </Button>

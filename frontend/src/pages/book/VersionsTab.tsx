@@ -20,7 +20,6 @@ import {
   type MetadataVersionRow,
 } from "@/api";
 import {
-  AlertDialog,
   AlertDialogAction,
   AlertDialogCancel,
   AlertDialogContent,
@@ -175,27 +174,25 @@ function FieldGroup({
         ))}
       </dl>
 
-      <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Clear {FIELD_LABEL[field] ?? field}?</AlertDialogTitle>
-            <AlertDialogDescription>
-              The canonical value will be set to NULL and an audit row recorded. Continue?
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={() => {
-                revertMutation.mutate();
-                setConfirmOpen(false);
-              }}
-            >
-              Clear
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      <AlertDialogContent isOpen={confirmOpen} onOpenChange={setConfirmOpen}>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Clear {FIELD_LABEL[field] ?? field}?</AlertDialogTitle>
+          <AlertDialogDescription>
+            The canonical value will be set to NULL and an audit row recorded. Continue?
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel>Cancel</AlertDialogCancel>
+          <AlertDialogAction
+            onClick={() => {
+              revertMutation.mutate();
+              setConfirmOpen(false);
+            }}
+          >
+            Clear
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
     </section>
   );
 }

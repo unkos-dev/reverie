@@ -14,6 +14,7 @@ import {
   TextFilterEditor,
   VocabEditor,
   type TextOp,
+  type VocabFamily,
 } from "./editors";
 
 const TEXT_OPS: readonly TextOp[] = ["contains", "eq", "ne"];
@@ -32,7 +33,7 @@ describe("TextFilterEditor", () => {
     render(<TextFilterEditor value={{}} ops={["contains", "empty"]} onChange={vi.fn()} />);
     const user = userEvent.setup();
 
-    await user.click(screen.getByRole("combobox", { name: /operator/i }));
+    await user.click(screen.getByRole("button", { name: /operator/i }));
 
     expect(screen.getByRole("option", { name: "contains" })).toBeInTheDocument();
     expect(screen.getByRole("option", { name: "is empty" })).toBeInTheDocument();
@@ -44,7 +45,7 @@ describe("TextFilterEditor", () => {
     render(<TextFilterEditor value={{}} ops={["contains", "empty"]} onChange={onChange} />);
     const user = userEvent.setup();
 
-    await user.click(screen.getByRole("combobox", { name: /operator/i }));
+    await user.click(screen.getByRole("button", { name: /operator/i }));
     await user.click(screen.getByRole("option", { name: "is empty" }));
 
     expect(onChange).toHaveBeenLastCalledWith({ empty: true });
@@ -344,22 +345,31 @@ function jsonResponse(body: unknown): Response {
 }
 
 function mockSuggest(suggestions: { id: string | null; value: string }[]): void {
-  vi.spyOn(globalThis, "fetch").mockResolvedValue(jsonResponse({ suggestions }));
+  vi.spyOn(globalThis, "fetch").mockImplementation(() =>
+    Promise.resolve(jsonResponse({ suggestions })),
+  );
 }
 
-function VocabHarness({ initial }: { initial: SetFilter }): ReactElement {
+function VocabHarness({
+  initial,
+  family = "tags",
+}: {
+  initial: SetFilter;
+  family?: VocabFamily;
+}): ReactElement {
   const [client] = useState(
     () => new QueryClient({ defaultOptions: { queries: { retry: false } } }),
   );
-  const [draft, setDraft] = useState<FilterState>({ ...emptyFilterState(), tags: initial });
+  const [draft, setDraft] = useState<FilterState>({ ...emptyFilterState(), [family]: initial });
   return (
     <QueryClientProvider client={client}>
       <VocabEditor
-        family="tags"
+        family={family}
         draft={draft}
         setDraft={setDraft}
         resolveAuthorLabel={(id) => id}
       />
+      <output data-testid="vocab-draft">{JSON.stringify(draft[family])}</output>
     </QueryClientProvider>
   );
 }
@@ -379,12 +389,12 @@ describe("VocabEditor", () => {
     // any.length > 0 wins the initial mode.
     expect(screen.getByRole("button", { name: /remove mystery/i })).toBeInTheDocument();
 
-    await user.click(screen.getByRole("combobox", { name: /match mode/i }));
+    await user.click(screen.getByRole("button", { name: /match mode/i }));
     await user.click(screen.getByRole("option", { name: "all of" }));
     expect(screen.getByRole("button", { name: /remove fiction/i })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /remove mystery/i })).not.toBeInTheDocument();
 
-    await user.click(screen.getByRole("combobox", { name: /match mode/i }));
+    await user.click(screen.getByRole("button", { name: /match mode/i }));
     await user.click(screen.getByRole("option", { name: "none of" }));
     expect(screen.getByRole("button", { name: /remove romance/i })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /remove fiction/i })).not.toBeInTheDocument();
@@ -395,16 +405,17 @@ describe("VocabEditor", () => {
     render(<VocabHarness initial={{ all: [], any: ["mystery"], none: [] }} />);
     const user = userEvent.setup();
 
-    await user.click(screen.getByRole("combobox", { name: /match mode/i }));
+    await user.click(screen.getByRole("button", { name: /match mode/i }));
     await user.click(screen.getByRole("option", { name: "all of" }));
 
     const input = screen.getByRole("combobox", { name: /add tags/i });
     await user.type(input, "my");
     await user.click(await screen.findByRole("option", { name: "mystery" }));
+    await user.keyboard("{Escape}");
 
     expect(screen.getByRole("button", { name: /remove mystery/i })).toBeInTheDocument();
 
-    await user.click(screen.getByRole("combobox", { name: /match mode/i }));
+    await user.click(screen.getByRole("button", { name: /match mode/i }));
     await user.click(screen.getByRole("option", { name: "any of" }));
     expect(screen.queryByRole("button", { name: /remove mystery/i })).not.toBeInTheDocument();
   });
@@ -418,6 +429,7 @@ describe("VocabEditor", () => {
     await user.type(input, "fa");
     await user.click(await screen.findByRole("option", { name: "fantasy" }));
 
+    await user.keyboard("{Escape}");
     const chip = screen.getByRole("button", { name: /remove fantasy/i });
     expect(chip).toBeInTheDocument();
 
@@ -425,3 +437,26 @@ describe("VocabEditor", () => {
     expect(screen.queryByRole("button", { name: /remove fantasy/i })).not.toBeInTheDocument();
   });
 });
+
+test.each(["authors", "tags", "genres", "moods"] as const)(
+  "%s commits its persisted identity and keeps mode sets exclusive",
+  async (family) => {
+    __seedCsrfTokenForTesting("test-csrf-token-0000000000000000000000000");
+    const id = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+    const value = "Literary";
+    const persisted = family === "authors" ? id : value;
+    mockSuggest([{ id, value }]);
+    render(<VocabHarness family={family} initial={{ all: [], any: [persisted], none: [] }} />);
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: /Match mode/ }));
+    await user.click(screen.getByRole("option", { name: "none of" }));
+    await user.type(screen.getByRole("combobox"), "li");
+    await user.click(await screen.findByRole("option", { name: value }));
+    await user.keyboard("{Escape}");
+    expect(JSON.parse(screen.getByTestId("vocab-draft").textContent)).toEqual({
+      all: [],
+      any: [],
+      none: [persisted],
+    });
+  },
+);

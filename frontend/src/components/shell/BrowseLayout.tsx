@@ -15,13 +15,7 @@
  */
 import type { ReactElement, ReactNode } from "react";
 
-import {
-  Sheet,
-  SheetContent,
-  SheetDescription,
-  SheetHeader,
-  SheetTitle,
-} from "@/components/ui/sheet";
+import { SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 
 /**
  * Media query for the rail-column breakpoint. Must describe the same width
@@ -65,15 +59,19 @@ export function BrowseLayout({
       }
     >
       <div className="min-w-0">
-        <Sheet open={sheetOpen} onOpenChange={onSheetOpenChange}>
-          <SheetContent side="right" className="w-[300px] max-w-[85vw] overflow-y-auto p-4">
-            <SheetHeader className="p-0">
-              <SheetTitle>Filters</SheetTitle>
-              <SheetDescription className="sr-only">Refine the books in view.</SheetDescription>
-            </SheetHeader>
-            {rail}
-          </SheetContent>
-        </Sheet>
+        <SheetContent
+          isOpen={sheetOpen}
+          onOpenChange={onSheetOpenChange}
+          side="right"
+          className="w-[300px] max-w-[85vw] overflow-y-auto p-4"
+        >
+          <SheetHeader className="p-0">
+            <SheetTitle>Filters</SheetTitle>
+            <SheetDescription className="sr-only">Refine the books in view.</SheetDescription>
+          </SheetHeader>
+          {rail}
+        </SheetContent>
+
         {children}
       </div>
       {railCollapsed ? null : (
