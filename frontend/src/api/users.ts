@@ -18,6 +18,8 @@ const UserSchema = z.object({
   role: z.enum(ROLE_VALUES),
   is_child: z.boolean(),
   disabled: z.boolean(),
+  has_password: z.boolean(),
+  credential_link_expires_at: z.iso.datetime().nullable(),
   created_at: z.iso.datetime(),
   updated_at: z.iso.datetime(),
 });
@@ -61,17 +63,20 @@ type CreateUserInput = {
   email: string;
   display_name: string;
   role: Role;
-  password: string;
 };
 
-/** `POST /api/v1/users` — create a user with an admin-typed password (admin only). */
-async function createUser(input: CreateUserInput, signal?: AbortSignal): Promise<User> {
+const CredentialLinkSchema = z.object({ token: z.string(), expires_at: z.iso.datetime() });
+type CredentialLink = z.infer<typeof CredentialLinkSchema>;
+const CreatedUserSchema = z.object({ user: UserSchema, link: CredentialLinkSchema });
+type CreatedUser = z.infer<typeof CreatedUserSchema>;
+
+async function createUser(input: CreateUserInput, signal?: AbortSignal): Promise<CreatedUser> {
   const raw = await apiFetch("/api/v1/users", {
     method: "POST",
     body: JSON.stringify(input),
     signal,
   });
-  return UserSchema.parse(raw);
+  return CreatedUserSchema.parse(raw);
 }
 
 /** `PUT /api/v1/users/{id}/account-status` — soft-disable or re-enable (admin only). */
@@ -88,21 +93,14 @@ async function setAccountStatus(
   return UserSchema.parse(raw);
 }
 
-/**
- * `POST /api/v1/users/{id}/password-reset` — an admin sets a new password for a
- * target account (admin only). Returns 200 with no body; the admin relays the
- * password out-of-band.
- */
-async function adminResetPassword(
-  id: string,
-  newPassword: string,
-  signal?: AbortSignal,
-): Promise<void> {
-  await apiFetch(`/api/v1/users/${id}/password-reset`, {
-    method: "POST",
-    body: JSON.stringify({ new_password: newPassword }),
-    signal,
-  });
+async function issueCredentialLink(id: string): Promise<CredentialLink> {
+  return CredentialLinkSchema.parse(
+    await apiFetch(`/api/v1/users/${id}/credential-links`, { method: "POST" }),
+  );
+}
+
+async function cancelCredentialLink(id: string): Promise<void> {
+  await apiFetch(`/api/v1/users/${id}/credential-links`, { method: "DELETE" });
 }
 
 /** Fields accepted by `PATCH /api/v1/users/{id}`. */
@@ -132,6 +130,7 @@ export {
   updateUser,
   createUser,
   setAccountStatus,
-  adminResetPassword,
+  issueCredentialLink,
+  cancelCredentialLink,
 };
-export type { User, Role, UpdateUserFields, CreateUserInput };
+export type { CredentialLink, CreatedUser, User, Role, UpdateUserFields, CreateUserInput };

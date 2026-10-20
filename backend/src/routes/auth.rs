@@ -43,6 +43,8 @@ pub fn router() -> OpenApiRouter<AppState> {
         .routes(routes!(register))
         .routes(routes!(forgot_password))
         .routes(routes!(reset_password))
+        .routes(routes!(lookup_credential_link))
+        .routes(routes!(redeem_credential_link))
         .routes(routes!(logout))
         .routes(routes!(me))
         .routes(routes!(update_theme))
@@ -834,6 +836,131 @@ fn enforce_source_rate_limit(
         return Err(AppError::RateLimited { retry_after_secs });
     }
     Ok(())
+}
+
+#[derive(serde::Deserialize, utoipa::ToSchema)]
+struct CredentialLinkLookupRequest {
+    token: String,
+}
+
+#[derive(serde::Serialize, utoipa::ToSchema)]
+struct CredentialLinkLookupResponse {
+    email: String,
+    has_password: bool,
+}
+
+#[derive(serde::Deserialize, utoipa::ToSchema)]
+struct CredentialLinkRedemptionRequest {
+    token: String,
+    password: String,
+}
+
+fn invalid_credential_link() -> AppError {
+    AppError::Validation("invalid or expired link".into())
+}
+
+/// Resolve account context using a live credential link.
+#[utoipa::path(
+    post, path = "/auth/credential-links/lookups", summary = "Look up a credential link",
+    description = "Returns the email and password state for a valid link. Invalid, expired, used, disabled-account and no-email links share one generic refusal.",
+    tag = "auth", security(()), request_body = CredentialLinkLookupRequest,
+    responses(
+        (status = 200, description = "Valid link", body = CredentialLinkLookupResponse),
+        (status = 404, description = "Local authentication is disabled", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
+        (status = 422, description = "Invalid or expired link", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
+        (status = 429, description = "Too many recovery requests", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
+    )
+)]
+async fn lookup_credential_link(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    peer: crate::auth::rate_limit::PeerAddr,
+    ApiJson(body): ApiJson<CredentialLinkLookupRequest>,
+) -> Result<impl IntoResponse, AppError> {
+    if !state.config.local_auth_enabled {
+        return Err(AppError::NotFound);
+    }
+    enforce_source_rate_limit(&state, &state.recovery_limiter, &headers, &peer)?;
+    let account = crate::models::credential_link::lookup(&state.pool, &body.token)
+        .await
+        .map_err(|e| AppError::Internal(e.into()))?
+        .ok_or_else(invalid_credential_link)?;
+    Ok(Json(CredentialLinkLookupResponse {
+        email: account.email,
+        has_password: account.has_password,
+    }))
+}
+
+/// Consume a credential link and invalidate earlier sessions without signing in.
+#[utoipa::path(
+    post, path = "/auth/credential-links/redemptions", summary = "Redeem a credential link",
+    description = "Sets the account's password once before the link expires, invalidates earlier sessions and creates no session. Leaves login throttling and device tokens unchanged.",
+    tag = "auth", security(()), request_body = CredentialLinkRedemptionRequest,
+    responses(
+        (status = 204, description = "Password set; sign-in required"),
+        (status = 404, description = "Local authentication is disabled", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
+        (status = 422, description = "Invalid or expired link, or password policy rejection", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
+        (status = 429, description = "Too many recovery requests", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
+        (status = 503, description = "Authentication processing is busy", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
+    )
+)]
+async fn redeem_credential_link(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    peer: crate::auth::rate_limit::PeerAddr,
+    ApiJson(body): ApiJson<CredentialLinkRedemptionRequest>,
+) -> Result<impl IntoResponse, AppError> {
+    if !state.config.local_auth_enabled {
+        return Err(AppError::NotFound);
+    }
+    enforce_source_rate_limit(&state, &state.recovery_limiter, &headers, &peer)?;
+    let account = crate::models::credential_link::lookup(&state.pool, &body.token)
+        .await
+        .map_err(|e| AppError::Internal(e.into()))?
+        .ok_or_else(invalid_credential_link)?;
+    crate::auth::password_policy::enforce_from_config(
+        &state.config,
+        &body.password,
+        &[&account.email, &account.display_name],
+    )
+    .await
+    .map_err(|e| AppError::Validation(e.to_string()))?;
+    let phc = state
+        .hash_limiter
+        .hash(body.password)
+        .await?
+        .map_err(|e| AppError::Internal(e.into()))?;
+    let mut tx = state
+        .pool
+        .begin()
+        .await
+        .map_err(|e| AppError::Internal(e.into()))?;
+    // THREAT: Every password writer locks the user before credential or proof rows.
+    let target = sqlx::query!(
+        "SELECT disabled_at, email FROM users WHERE id = $1 FOR NO KEY UPDATE",
+        account.user_id
+    )
+    .fetch_optional(&mut *tx)
+    .await
+    .map_err(|e| AppError::Internal(e.into()))?
+    .ok_or_else(invalid_credential_link)?;
+    let consumed = crate::models::credential_link::consume(&mut *tx, account.user_id, &body.token)
+        .await
+        .map_err(|e| AppError::Internal(e.into()))?;
+    if !consumed || target.disabled_at.is_some() || target.email.is_none() {
+        return Err(invalid_credential_link());
+    }
+    crate::models::local_credentials::set_password(&mut *tx, account.user_id, &phc)
+        .await
+        .map_err(|e| AppError::Internal(e.into()))?;
+    // THREAT: Sessions issued before replacement must no longer authenticate.
+    user::increment_session_version(&mut *tx, account.user_id)
+        .await
+        .map_err(|e| AppError::Internal(e.into()))?;
+    tx.commit()
+        .await
+        .map_err(|e| AppError::Internal(e.into()))?;
+    Ok(StatusCode::NO_CONTENT)
 }
 
 /// Request body for `POST /auth/forgot-password`.
@@ -1635,6 +1762,32 @@ mod tests {
     }
 
     #[sqlx::test(migrations = "./migrations")]
+    async fn auth_hash_census_credential_link_redemption(pool: sqlx::PgPool) {
+        let mut state = password_state(&pool).await;
+        let id = user::create_local(
+            &state.pool,
+            "census-link@example.test",
+            "Holder",
+            crate::models::role::Role::Adult,
+            None,
+        )
+        .await
+        .unwrap()
+        .id;
+        let (token, _) = crate::models::credential_link::issue(&state.pool, id)
+            .await
+            .unwrap();
+        let count = hash_counter(&mut state);
+        let server = hash_server(&state);
+        let response = server
+            .post("/auth/credential-links/redemptions")
+            .json(&serde_json::json!({"token":token,"password":"lithe cobalt meadow drift"}))
+            .await;
+        assert_eq!(response.status_code(), StatusCode::NO_CONTENT);
+        assert_eq!(count.load(std::sync::atomic::Ordering::SeqCst), 1);
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
     async fn auth_hash_busy_auth_endpoints(pool: sqlx::PgPool) {
         let mut state = password_state(&pool).await;
         state.config.self_registration_enabled = true;
@@ -1660,6 +1813,9 @@ mod tests {
         )
         .await
         .unwrap();
+        let (link_token, _) = crate::models::credential_link::issue(&state.pool, id)
+            .await
+            .unwrap();
         let count = hash_counter(&mut state);
         state.hash_limiter = state
             .hash_limiter
@@ -1691,6 +1847,10 @@ mod tests {
             (
                 "/auth/reset-password",
                 serde_json::json!({"email":"known@example.com","pin":"1234567890","new_password":"lithe cobalt meadow drift"}),
+            ),
+            (
+                "/auth/credential-links/redemptions",
+                serde_json::json!({"token":link_token,"password":"lithe cobalt meadow drift"}),
             ),
         ] {
             let response = server.post(path).json(&body).await;

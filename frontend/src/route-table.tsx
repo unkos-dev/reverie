@@ -81,6 +81,14 @@ export const routes: RouteObject[] = [
       return { Component: mod.Component };
     },
   },
+  {
+    path: "/set-password",
+    errorElement: <RootErrorBoundary />,
+    lazy: async () => {
+      const mod = await import("./routes/set-password");
+      return { Component: mod.Component };
+    },
+  },
   // No `/register` route on purpose. The self-registration screen and its API
   // client exist and are tested, but registration today is an unmoderated
   // free-for-all (an enabled flag mints immediately-active adult accounts), so

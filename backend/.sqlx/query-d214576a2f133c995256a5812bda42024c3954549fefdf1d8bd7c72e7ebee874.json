@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT id,\n                  display_name,\n                  email,\n                  role AS \"role: Role\",\n                  is_child,\n                  created_at,\n                  updated_at,\n                  (disabled_at IS NOT NULL) AS \"disabled!\"\n             FROM users WHERE id = $1",
+  "query": "SELECT users.id,\n                  users.display_name,\n                  users.email,\n                  users.role AS \"role: Role\",\n                  users.is_child,\n                  users.created_at,\n                  users.updated_at,\n                  (users.disabled_at IS NOT NULL) AS \"disabled!\",\n                  (c.user_id IS NOT NULL) AS \"has_password!\",\n                  l.expires_at AS \"credential_link_expires_at?\"\n             FROM users\n LEFT JOIN local_credentials c ON c.user_id = users.id\n LEFT JOIN credential_links l ON l.user_id = users.id AND l.expires_at > now() WHERE users.id = $1",
   "describe": {
     "columns": [
       {
@@ -96,6 +96,23 @@
         "name": "disabled!",
         "type_info": "Bool",
         "origin": "Expression"
+      },
+      {
+        "ordinal": 8,
+        "name": "has_password!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 9,
+        "name": "credential_link_expires_at?",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "credential_links",
+            "name": "expires_at"
+          }
+        }
       }
     ],
     "parameters": {
@@ -111,8 +128,10 @@
       false,
       false,
       false,
-      null
+      null,
+      null,
+      true
     ]
   },
-  "hash": "3eed0e04d49f4ff749cac97632a4392c9853c92c2a07e59df07f80d3be91457a"
+  "hash": "d214576a2f133c995256a5812bda42024c3954549fefdf1d8bd7c72e7ebee874"
 }

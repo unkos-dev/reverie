@@ -1,6 +1,7 @@
 //! Integration tests for `/api/v1/users*` admin endpoints.
 
 use axum::http::{HeaderName, HeaderValue, StatusCode};
+use base64ct::Encoding as _;
 use serde_json::json;
 use sqlx::PgPool;
 use uuid::Uuid;
@@ -806,21 +807,19 @@ const STRONG_PW: &str = "correct-horse-battery-staple-7!";
 async fn create_user_as_admin_creates_adult(pool: PgPool) {
     let app_pool = test_support::db::app_pool_for(&pool).await;
     let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
-    let (_admin_id, admin_basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
-    let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+    let (server, csrf, _) = credential_link_admin(&app_pool, &ingestion_pool).await;
 
     let r = server
         .post("/api/v1/users")
-        .add_header(auth(&admin_basic).0, auth(&admin_basic).1)
+        .add_header(csrf_header(&csrf).0, csrf_header(&csrf).1)
         .json(&json!({
             "email": "new-adult@example.com",
             "display_name": "New Adult",
             "role": "adult",
-            "password": STRONG_PW,
         }))
         .await;
     assert_eq!(r.status_code(), StatusCode::CREATED);
-    let body: serde_json::Value = r.json();
+    let body = r.json::<serde_json::Value>()["user"].clone();
     assert_eq!(body["role"], "adult");
     assert_eq!(body["is_child"], false);
     assert_eq!(body["disabled"], false);
@@ -830,40 +829,36 @@ async fn create_user_as_admin_creates_adult(pool: PgPool) {
 async fn create_user_creates_child(pool: PgPool) {
     let app_pool = test_support::db::app_pool_for(&pool).await;
     let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
-    let (_admin_id, admin_basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
-    let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+    let (server, csrf, _) = credential_link_admin(&app_pool, &ingestion_pool).await;
 
     let r = server
         .post("/api/v1/users")
-        .add_header(auth(&admin_basic).0, auth(&admin_basic).1)
+        .add_header(csrf_header(&csrf).0, csrf_header(&csrf).1)
         .json(&json!({
             "email": "new-child@example.com",
             "display_name": "New Child",
             "role": "child",
-            "password": STRONG_PW,
         }))
         .await;
     assert_eq!(r.status_code(), StatusCode::CREATED);
-    let body: serde_json::Value = r.json();
+    let body = r.json::<serde_json::Value>()["user"].clone();
     assert_eq!(body["role"], "child");
     assert_eq!(body["is_child"], true);
 }
 
 #[sqlx::test(migrations = "./migrations")]
-async fn create_user_weak_password_returns_422(pool: PgPool) {
+async fn create_user_invalid_email_returns_422(pool: PgPool) {
     let app_pool = test_support::db::app_pool_for(&pool).await;
     let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
-    let (_admin_id, admin_basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
-    let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+    let (server, csrf, _) = credential_link_admin(&app_pool, &ingestion_pool).await;
 
     let r = server
         .post("/api/v1/users")
-        .add_header(auth(&admin_basic).0, auth(&admin_basic).1)
+        .add_header(csrf_header(&csrf).0, csrf_header(&csrf).1)
         .json(&json!({
-            "email": "weak@example.com",
+            "email": "invalid",
             "display_name": "Weak",
             "role": "adult",
-            "password": "password",
         }))
         .await;
     test_support::assert_problem(&r, problems::VALIDATION, StatusCode::UNPROCESSABLE_ENTITY);
@@ -884,7 +879,6 @@ async fn create_user_non_admin_returns_403(pool: PgPool) {
             "email": "x@example.com",
             "display_name": "X",
             "role": "adult",
-            "password": STRONG_PW,
         }))
         .await;
     test_support::assert_problem(&r, problems::FORBIDDEN, StatusCode::FORBIDDEN);
@@ -905,7 +899,6 @@ async fn create_user_child_caller_returns_403(pool: PgPool) {
             "email": "x@example.com",
             "display_name": "X",
             "role": "adult",
-            "password": STRONG_PW,
         }))
         .await;
     test_support::assert_problem(&r, problems::FORBIDDEN, StatusCode::FORBIDDEN);
@@ -915,18 +908,16 @@ async fn create_user_child_caller_returns_403(pool: PgPool) {
 async fn create_user_duplicate_email_returns_409(pool: PgPool) {
     let app_pool = test_support::db::app_pool_for(&pool).await;
     let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
-    let (_admin_id, admin_basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
-    let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+    let (server, csrf, _) = credential_link_admin(&app_pool, &ingestion_pool).await;
 
     let make = |email: &str| {
         server
             .post("/api/v1/users")
-            .add_header(auth(&admin_basic).0, auth(&admin_basic).1)
+            .add_header(csrf_header(&csrf).0, csrf_header(&csrf).1)
             .json(&json!({
                 "email": email,
                 "display_name": "Dup",
                 "role": "adult",
-                "password": STRONG_PW,
             }))
     };
     assert_eq!(
@@ -1122,100 +1113,6 @@ async fn concurrent_cross_disable_keeps_one_enabled_admin(pool: PgPool) {
         enabled_admins, 1,
         "at least one enabled admin must always remain"
     );
-}
-
-// ---------- POST /api/v1/users/{id}/password-reset ----------
-
-#[sqlx::test(migrations = "./migrations")]
-async fn admin_reset_password_bumps_session_version(pool: PgPool) {
-    let app_pool = test_support::db::app_pool_for(&pool).await;
-    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
-    let (_admin_id, admin_basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
-    let (target_id, _) =
-        test_support::db::create_adult_and_basic_auth(&app_pool, "reset-target").await;
-    let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
-
-    let before: i32 = sqlx::query_scalar!(
-        r#"SELECT session_version AS "sv!" FROM users WHERE id = $1"#,
-        target_id,
-    )
-    .fetch_one(&pool)
-    .await
-    .unwrap();
-
-    let r = server
-        .post(&format!("/api/v1/users/{target_id}/password-reset"))
-        .add_header(auth(&admin_basic).0, auth(&admin_basic).1)
-        .json(&json!({"new_password": STRONG_PW}))
-        .await;
-    assert_eq!(r.status_code(), StatusCode::OK);
-
-    let after: i32 = sqlx::query_scalar!(
-        r#"SELECT session_version AS "sv!" FROM users WHERE id = $1"#,
-        target_id,
-    )
-    .fetch_one(&pool)
-    .await
-    .unwrap();
-    assert!(
-        after > before,
-        "admin reset bumps the target's session_version"
-    );
-
-    let cred = crate::models::local_credentials::find_by_user_id(&app_pool, target_id)
-        .await
-        .unwrap();
-    assert!(cred.is_some(), "admin reset upserts a local credential");
-}
-
-#[sqlx::test(migrations = "./migrations")]
-async fn admin_reset_weak_password_returns_422(pool: PgPool) {
-    let app_pool = test_support::db::app_pool_for(&pool).await;
-    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
-    let (_admin_id, admin_basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
-    let (target_id, _) =
-        test_support::db::create_adult_and_basic_auth(&app_pool, "reset-weak").await;
-    let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
-
-    let r = server
-        .post(&format!("/api/v1/users/{target_id}/password-reset"))
-        .add_header(auth(&admin_basic).0, auth(&admin_basic).1)
-        .json(&json!({"new_password": "password"}))
-        .await;
-    test_support::assert_problem(&r, problems::VALIDATION, StatusCode::UNPROCESSABLE_ENTITY);
-}
-
-#[sqlx::test(migrations = "./migrations")]
-async fn admin_reset_non_admin_returns_403(pool: PgPool) {
-    let app_pool = test_support::db::app_pool_for(&pool).await;
-    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
-    let (_adult_id, adult_basic) =
-        test_support::db::create_adult_and_basic_auth(&app_pool, "reset-forbidden").await;
-    let (target_id, _) =
-        test_support::db::create_adult_and_basic_auth(&app_pool, "reset-victim").await;
-    let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
-
-    let r = server
-        .post(&format!("/api/v1/users/{target_id}/password-reset"))
-        .add_header(auth(&adult_basic).0, auth(&adult_basic).1)
-        .json(&json!({"new_password": STRONG_PW}))
-        .await;
-    test_support::assert_problem(&r, problems::FORBIDDEN, StatusCode::FORBIDDEN);
-}
-
-#[sqlx::test(migrations = "./migrations")]
-async fn admin_reset_unknown_id_returns_404(pool: PgPool) {
-    let app_pool = test_support::db::app_pool_for(&pool).await;
-    let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
-    let (_admin_id, admin_basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
-    let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
-
-    let r = server
-        .post(&format!("/api/v1/users/{}/password-reset", Uuid::new_v4()))
-        .add_header(auth(&admin_basic).0, auth(&admin_basic).1)
-        .json(&json!({"new_password": STRONG_PW}))
-        .await;
-    test_support::assert_problem(&r, problems::NOT_FOUND, StatusCode::NOT_FOUND);
 }
 
 // ---------- POST /api/v1/account/password (self-service) ----------
@@ -1460,18 +1357,6 @@ async fn auth_hash_census_users_endpoints(pool: PgPool) {
         }),
     );
     let server = axum_test::TestServer::new(crate::build_router(state.clone()));
-    let created = server.post("/api/v1/users").add_header(auth(&basic).0, auth(&basic).1).json(&json!({"email":"census@example.com","display_name":"Census","role":"adult","password":STRONG_PW})).await;
-    assert_eq!(created.status_code(), StatusCode::CREATED);
-    assert_eq!(count.swap(0, std::sync::atomic::Ordering::SeqCst), 1);
-    let target: Uuid =
-        serde_json::from_value(created.json::<serde_json::Value>()["id"].clone()).unwrap();
-    let reset = server
-        .post(&format!("/api/v1/users/{target}/password-reset"))
-        .add_header(auth(&basic).0, auth(&basic).1)
-        .json(&json!({"new_password":"lithe cobalt meadow drift"}))
-        .await;
-    assert_eq!(reset.status_code(), StatusCode::OK);
-    assert_eq!(count.swap(0, std::sync::atomic::Ordering::SeqCst), 1);
     let changed = server
         .post("/api/v1/account/password")
         .add_header(auth(&basic).0, auth(&basic).1)
@@ -1479,7 +1364,7 @@ async fn auth_hash_census_users_endpoints(pool: PgPool) {
         .await;
     assert_eq!(changed.status_code(), StatusCode::OK);
     assert_eq!(count.load(std::sync::atomic::Ordering::SeqCst), 2);
-    for id in [admin, target] {
+    for id in [admin] {
         let credential = crate::models::local_credentials::find_by_user_id(&state.pool, id)
             .await
             .unwrap()
@@ -1498,20 +1383,9 @@ async fn auth_hash_busy_users_endpoints(pool: PgPool) {
     state.pool = test_support::db::app_pool_for(&pool).await;
     state.ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
     let (admin, basic) = test_support::db::create_admin_and_basic_auth(&state.pool).await;
-    let target = test_support::db::create_adult_with_password(
-        &state.pool,
-        "Target",
-        "target@example.com",
-        STRONG_PW,
-    )
-    .await;
     let phc = crate::auth::password::hash_password(STRONG_PW.as_bytes()).unwrap();
     crate::models::local_credentials::set_password(&state.pool, admin, &phc)
         .await
-        .unwrap();
-    let original = crate::models::local_credentials::find_by_user_id(&state.pool, target)
-        .await
-        .unwrap()
         .unwrap();
     let count = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
     let hook_count = count.clone();
@@ -1522,20 +1396,10 @@ async fn auth_hash_busy_users_endpoints(pool: PgPool) {
         }));
     let _held = state.hash_limiter.acquire().await.unwrap();
     let server = axum_test::TestServer::new(crate::build_router(state.clone()));
-    for (path, body) in [
-        (
-            "/api/v1/users".to_owned(),
-            json!({"email":"busy@example.com","display_name":"Busy","role":"adult","password":STRONG_PW}),
-        ),
-        (
-            format!("/api/v1/users/{target}/password-reset"),
-            json!({"new_password":"lithe cobalt meadow drift"}),
-        ),
-        (
-            "/api/v1/account/password".to_owned(),
-            json!({"current_password":STRONG_PW,"new_password":"lithe cobalt meadow drift"}),
-        ),
-    ] {
+    for (path, body) in [(
+        "/api/v1/account/password".to_owned(),
+        json!({"current_password":STRONG_PW,"new_password":"lithe cobalt meadow drift"}),
+    )] {
         let response = server
             .post(&path)
             .add_header(auth(&basic).0, auth(&basic).1)
@@ -1559,7 +1423,7 @@ async fn auth_hash_busy_users_endpoints(pool: PgPool) {
             .unwrap()
             .is_none()
     );
-    for (id, expected) in [(admin, phc), (target, original.password_hash)] {
+    for (id, expected) in [(admin, phc)] {
         assert_eq!(
             crate::models::local_credentials::find_by_user_id(&state.pool, id)
                 .await
@@ -1575,4 +1439,534 @@ async fn auth_hash_busy_users_endpoints(pool: PgPool) {
                 .is_none()
         );
     }
+}
+
+async fn credential_link_admin(
+    app_pool: &PgPool,
+    ingestion_pool: &PgPool,
+) -> (axum_test::TestServer, String, Uuid) {
+    let id = test_support::db::create_adult_with_password(
+        app_pool,
+        "Admin",
+        "link-admin@example.test",
+        STRONG_PW,
+    )
+    .await;
+    sqlx::query!(
+        "UPDATE users SET role = 'admin'::user_role WHERE id = $1",
+        id
+    )
+    .execute(app_pool)
+    .await
+    .unwrap();
+    let mut server = test_support::db::server_with_real_pools(app_pool, ingestion_pool);
+    server.save_cookies();
+    let login = server
+        .post("/auth/local/login")
+        .json(&json!({"email":"link-admin@example.test","password":STRONG_PW}))
+        .await;
+    assert_eq!(login.status_code(), StatusCode::NO_CONTENT);
+    let csrf = server.get("/auth/me").await.json::<serde_json::Value>()["csrf_token"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    (server, csrf, id)
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn credential_link_create_issue_cancel_and_response_producers(pool: PgPool) {
+    let app = test_support::db::app_pool_for(&pool).await;
+    let ingestion = test_support::db::ingestion_pool_for(&pool).await;
+    let (server, csrf, _) = credential_link_admin(&app, &ingestion).await;
+    let created = server
+        .post("/api/v1/users")
+        .add_header(csrf_header(&csrf).0, csrf_header(&csrf).1)
+        .json(&json!({"email":"invite@example.test","display_name":"Invite","role":"adult"}))
+        .await;
+    assert_eq!(created.status_code(), StatusCode::CREATED);
+    let body: serde_json::Value = created.json();
+    let id: Uuid = serde_json::from_value(body["user"]["id"].clone()).unwrap();
+    let first = body["link"]["token"].as_str().unwrap();
+    assert_eq!(body["user"]["has_password"], false);
+    assert_eq!(
+        body["user"]["credential_link_expires_at"],
+        body["link"]["expires_at"]
+    );
+    assert!(
+        !crate::models::local_credentials::exists_for_user(&app, id)
+            .await
+            .unwrap()
+    );
+    let issued = server
+        .post(&format!("/api/v1/users/{id}/credential-links"))
+        .add_header(csrf_header(&csrf).0, csrf_header(&csrf).1)
+        .await;
+    assert_eq!(issued.status_code(), StatusCode::CREATED);
+    assert!(
+        crate::models::credential_link::lookup(&app, first)
+            .await
+            .unwrap()
+            .is_none()
+    );
+    let expiry = issued.json::<serde_json::Value>()["expires_at"].clone();
+    for response in [
+        server
+            .put(&format!("/api/v1/users/{id}/role"))
+            .add_header(csrf_header(&csrf).0, csrf_header(&csrf).1)
+            .json(&json!({"role":"adult"}))
+            .await,
+        server
+            .put(&format!("/api/v1/users/{id}/child-status"))
+            .add_header(csrf_header(&csrf).0, csrf_header(&csrf).1)
+            .json(&json!({"is_child":true}))
+            .await,
+        server
+            .put(&format!("/api/v1/users/{id}/account-status"))
+            .add_header(csrf_header(&csrf).0, csrf_header(&csrf).1)
+            .json(&json!({"disabled":false}))
+            .await,
+        server
+            .patch(&format!("/api/v1/users/{id}"))
+            .add_header(csrf_header(&csrf).0, csrf_header(&csrf).1)
+            .json(&json!({"display_name":"Updated"}))
+            .await,
+    ] {
+        assert_eq!(response.status_code(), StatusCode::OK);
+        let user: serde_json::Value = response.json();
+        assert_eq!(user["has_password"], false);
+        assert_eq!(user["credential_link_expires_at"], expiry);
+    }
+    let phc = crate::auth::password::hash_password(STRONG_PW.as_bytes()).unwrap();
+    crate::models::local_credentials::set_password(&app, id, &phc)
+        .await
+        .unwrap();
+    let listed: Vec<serde_json::Value> = server.get("/api/v1/users").await.json();
+    let target = listed.iter().find(|u| u["id"] == id.to_string()).unwrap();
+    assert_eq!(target["has_password"], true);
+    assert_eq!(target["credential_link_expires_at"], expiry);
+    for _ in 0..2 {
+        assert_eq!(
+            server
+                .delete(&format!("/api/v1/users/{id}/credential-links"))
+                .add_header(csrf_header(&csrf).0, csrf_header(&csrf).1)
+                .await
+                .status_code(),
+            StatusCode::NO_CONTENT
+        );
+    }
+    let listed: Vec<serde_json::Value> = server.get("/api/v1/users").await.json();
+    assert!(
+        listed.iter().find(|u| u["id"] == id.to_string()).unwrap()["credential_link_expires_at"]
+            .is_null()
+    );
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn credential_link_issuance_gates(pool: PgPool) {
+    let app = test_support::db::app_pool_for(&pool).await;
+    let ingestion = test_support::db::ingestion_pool_for(&pool).await;
+    let (id, basic) = test_support::db::create_admin_and_basic_auth(&app).await;
+    let decoded = base64ct::Base64::decode_vec(basic.strip_prefix("Basic ").unwrap()).unwrap();
+    let credentials = String::from_utf8(decoded).unwrap();
+    let bearer = format!("Bearer {}", credentials.replace(':', "."));
+    let server = test_support::db::server_with_real_pools(&app, &ingestion);
+    for header in [basic, bearer] {
+        for response in [
+            server
+                .post("/api/v1/users")
+                .add_header(auth(&header).0, auth(&header).1)
+                .json(&json!({"email":"a@example.test","display_name":"A","role":"adult"}))
+                .await,
+            server
+                .post(&format!("/api/v1/users/{id}/credential-links"))
+                .add_header(auth(&header).0, auth(&header).1)
+                .await,
+            server
+                .delete(&format!("/api/v1/users/{id}/credential-links"))
+                .add_header(auth(&header).0, auth(&header).1)
+                .await,
+        ] {
+            assert_eq!(response.status_code(), StatusCode::FORBIDDEN);
+        }
+    }
+    let (session, csrf, _) = credential_link_admin(&app, &ingestion).await;
+    let no_email = session
+        .post(&format!("/api/v1/users/{id}/credential-links"))
+        .add_header(csrf_header(&csrf).0, csrf_header(&csrf).1)
+        .await;
+    assert_eq!(no_email.status_code(), StatusCode::UNPROCESSABLE_ENTITY);
+    assert_eq!(
+        no_email.json::<serde_json::Value>()["detail"],
+        "the account has no email address"
+    );
+    crate::models::user::disable_account(&app, id)
+        .await
+        .unwrap();
+    let disabled = session
+        .post(&format!("/api/v1/users/{id}/credential-links"))
+        .add_header(csrf_header(&csrf).0, csrf_header(&csrf).1)
+        .await;
+    assert_eq!(
+        disabled.json::<serde_json::Value>()["detail"],
+        "the account is disabled"
+    );
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn credential_link_local_auth_disabled_all_endpoints(pool: PgPool) {
+    let app = test_support::db::app_pool_for(&pool).await;
+    let ingestion = test_support::db::ingestion_pool_for(&pool).await;
+    let (id, basic) = test_support::db::create_admin_and_basic_auth(&app).await;
+    let mut config = test_support::test_config();
+    config.local_auth_enabled = false;
+    let server = test_support::db::server_with_config(&app, &ingestion, config);
+    for response in [
+        server
+            .post("/api/v1/users")
+            .add_header(auth(&basic).0, auth(&basic).1)
+            .json(&json!({"email":"a@example.test","display_name":"A","role":"adult"}))
+            .await,
+        server
+            .post(&format!("/api/v1/users/{id}/credential-links"))
+            .add_header(auth(&basic).0, auth(&basic).1)
+            .await,
+        server
+            .delete(&format!("/api/v1/users/{id}/credential-links"))
+            .add_header(auth(&basic).0, auth(&basic).1)
+            .await,
+        server
+            .post("/auth/credential-links/lookups")
+            .json(&json!({"token":"unknown"}))
+            .await,
+        server
+            .post("/auth/credential-links/redemptions")
+            .json(&json!({"token":"unknown","password":STRONG_PW}))
+            .await,
+    ] {
+        assert_eq!(response.status_code(), StatusCode::NOT_FOUND);
+    }
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn credential_link_invalid_cases_are_indistinguishable(pool: PgPool) {
+    let app = test_support::db::app_pool_for(&pool).await;
+    let ingestion = test_support::db::ingestion_pool_for(&pool).await;
+    let server = test_support::db::server_with_real_pools(&app, &ingestion);
+    let mut tokens = vec!["unknown".to_owned()];
+    for case in ["expired", "used", "disabled", "no-email"] {
+        let id = crate::models::user::create_local(
+            &app,
+            &format!("{case}@example.test"),
+            case,
+            crate::models::role::Role::Adult,
+            None,
+        )
+        .await
+        .unwrap()
+        .id;
+        let (token, _) = crate::models::credential_link::issue(&app, id)
+            .await
+            .unwrap();
+        match case {
+            "expired" => {
+                sqlx::query!(
+                    "UPDATE credential_links SET expires_at = now() WHERE user_id = $1",
+                    id
+                )
+                .execute(&app)
+                .await
+                .unwrap();
+            }
+            "used" => {
+                assert!(
+                    crate::models::credential_link::consume(&app, id, &token)
+                        .await
+                        .unwrap()
+                );
+            }
+            "disabled" => {
+                crate::models::user::disable_account(&app, id)
+                    .await
+                    .unwrap();
+            }
+            "no-email" => {
+                sqlx::query!("UPDATE users SET email = NULL WHERE id = $1", id)
+                    .execute(&app)
+                    .await
+                    .unwrap();
+            }
+            _ => unreachable!(),
+        }
+        tokens.push(token);
+    }
+    for path in [
+        "/auth/credential-links/lookups",
+        "/auth/credential-links/redemptions",
+    ] {
+        let mut expected = None;
+        for token in &tokens {
+            let response = server
+                .post(path)
+                .json(&json!({"token":token,"password":STRONG_PW}))
+                .await;
+            assert_eq!(response.status_code(), StatusCode::UNPROCESSABLE_ENTITY);
+            let body: serde_json::Value = response.json();
+            assert_eq!(body["detail"], "invalid or expired link");
+            if let Some(ref expected) = expected {
+                assert_eq!(&body, expected);
+            } else {
+                expected = Some(body);
+            }
+        }
+    }
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn credential_link_redemption_password_sessions_throttle_and_pin(pool: PgPool) {
+    let app = test_support::db::app_pool_for(&pool).await;
+    let ingestion = test_support::db::ingestion_pool_for(&pool).await;
+    let id = test_support::db::create_adult_with_password(
+        &app,
+        "Holder",
+        "holder@example.test",
+        STRONG_PW,
+    )
+    .await;
+    let mut signed_in = test_support::db::server_with_real_pools(&app, &ingestion);
+    signed_in.save_cookies();
+    assert_eq!(
+        signed_in
+            .post("/auth/local/login")
+            .json(&json!({"email":"holder@example.test","password":STRONG_PW}))
+            .await
+            .status_code(),
+        StatusCode::NO_CONTENT
+    );
+    let before_version = crate::models::user::find_by_id(&app, id)
+        .await
+        .unwrap()
+        .unwrap()
+        .session_version;
+    sqlx::query!("UPDATE local_login_throttle SET completed_failures = ARRAY[now()], locked_until = now() + interval '15 minutes' WHERE email_lower = 'holder@example.test'")
+        .execute(&app).await.unwrap();
+    let before = sqlx::query_scalar!(
+        "SELECT to_jsonb(t) FROM local_login_throttle t WHERE email_lower = 'holder@example.test'"
+    )
+    .fetch_one(&app)
+    .await
+    .unwrap();
+    let pin = crate::models::password_reset_pin::insert(
+        &app,
+        id,
+        "unchanged-pin-hash",
+        chrono::Utc::now() + chrono::TimeDelta::minutes(15),
+    )
+    .await
+    .unwrap();
+    let (token, _) = crate::models::credential_link::issue(&app, id)
+        .await
+        .unwrap();
+    let server = test_support::db::server_with_real_pools(&app, &ingestion);
+    let lookup = server
+        .post("/auth/credential-links/lookups")
+        .json(&json!({"token":token}))
+        .await;
+    assert_eq!(
+        lookup.json::<serde_json::Value>(),
+        json!({"email":"holder@example.test","has_password":true})
+    );
+    let result = server
+        .post("/auth/credential-links/redemptions")
+        .json(&json!({"token":token,"password":"lithe cobalt meadow drift"}))
+        .await;
+    assert_eq!(result.status_code(), StatusCode::NO_CONTENT);
+    assert!(!result.headers().contains_key("set-cookie"));
+    assert!(!result.headers().contains_key("retry-after"));
+    assert_eq!(
+        server.get("/auth/me").await.status_code(),
+        StatusCode::UNAUTHORIZED
+    );
+    assert_eq!(
+        signed_in.get("/auth/me").await.status_code(),
+        StatusCode::UNAUTHORIZED
+    );
+    assert_eq!(
+        crate::models::user::find_by_id(&app, id)
+            .await
+            .unwrap()
+            .unwrap()
+            .session_version,
+        before_version + 1
+    );
+    let credential = crate::models::local_credentials::find_by_user_id(&app, id)
+        .await
+        .unwrap()
+        .unwrap();
+    crate::auth::password::verify_password(b"lithe cobalt meadow drift", &credential.password_hash)
+        .unwrap();
+    assert!(
+        crate::models::credential_link::lookup(&app, &token)
+            .await
+            .unwrap()
+            .is_none()
+    );
+    assert_eq!(
+        crate::models::password_reset_pin::find_active_by_user(&app, id)
+            .await
+            .unwrap()
+            .unwrap()
+            .id,
+        pin
+    );
+    let after = sqlx::query_scalar!(
+        "SELECT to_jsonb(t) FROM local_login_throttle t WHERE email_lower = 'holder@example.test'"
+    )
+    .fetch_one(&app)
+    .await
+    .unwrap();
+    assert_eq!(before, after);
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn credential_link_policy_rejection_and_concurrent_redemption(pool: PgPool) {
+    let app = test_support::db::app_pool_for(&pool).await;
+    let ingestion = test_support::db::ingestion_pool_for(&pool).await;
+    let id = crate::models::user::create_local(
+        &app,
+        "new@example.test",
+        "New",
+        crate::models::role::Role::Adult,
+        None,
+    )
+    .await
+    .unwrap()
+    .id;
+    let (token, _) = crate::models::credential_link::issue(&app, id)
+        .await
+        .unwrap();
+    let server = test_support::db::server_with_real_pools(&app, &ingestion);
+    assert_eq!(
+        server
+            .post("/auth/credential-links/lookups")
+            .json(&json!({"token":token}))
+            .await
+            .json::<serde_json::Value>(),
+        json!({"email":"new@example.test","has_password":false})
+    );
+    assert_eq!(
+        server
+            .post("/auth/credential-links/redemptions")
+            .json(&json!({"token":token,"password":"short"}))
+            .await
+            .status_code(),
+        StatusCode::UNPROCESSABLE_ENTITY
+    );
+    assert!(
+        crate::models::credential_link::lookup(&app, &token)
+            .await
+            .unwrap()
+            .is_some()
+    );
+    let body = json!({"token":token,"password":STRONG_PW});
+    let (a, b) = tokio::join!(
+        server
+            .post("/auth/credential-links/redemptions")
+            .json(&body),
+        server
+            .post("/auth/credential-links/redemptions")
+            .json(&body)
+    );
+    let statuses = [a.status_code(), b.status_code()];
+    assert!(statuses.contains(&StatusCode::NO_CONTENT));
+    assert!(statuses.contains(&StatusCode::UNPROCESSABLE_ENTITY));
+    assert!(
+        crate::models::local_credentials::exists_for_user(&app, id)
+            .await
+            .unwrap()
+    );
+    assert_eq!(
+        crate::models::user::find_by_id(&app, id)
+            .await
+            .unwrap()
+            .unwrap()
+            .session_version,
+        1
+    );
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn credential_link_recovery_allowance_not_password_allowance(pool: PgPool) {
+    let mut state = test_support::test_state();
+    state.pool = test_support::db::app_pool_for(&pool).await;
+    state.ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
+    state.config.trusted_client_ip_header = Some("x-forwarded-for".into());
+    state.recovery_limiter =
+        crate::auth::rate_limit::build_login_limiter(std::num::NonZeroU32::new(1).unwrap());
+    state.login_limiter =
+        crate::auth::rate_limit::build_login_limiter(std::num::NonZeroU32::new(1).unwrap());
+    let ip = "192.0.2.9".parse().unwrap();
+    state.login_limiter.check_key(&ip).unwrap();
+    let id = crate::models::user::create_local(
+        &state.pool,
+        "budget@example.test",
+        "Budget",
+        crate::models::role::Role::Adult,
+        None,
+    )
+    .await
+    .unwrap()
+    .id;
+    let (token, _) = crate::models::credential_link::issue(&state.pool, id)
+        .await
+        .unwrap();
+    let server = axum_test::TestServer::new(crate::build_router(state.clone()));
+    let result = server
+        .post("/auth/credential-links/redemptions")
+        .add_header(
+            HeaderName::from_static("x-forwarded-for"),
+            HeaderValue::from_static("192.0.2.9"),
+        )
+        .json(&json!({"token":token,"password":STRONG_PW}))
+        .await;
+    assert_eq!(result.status_code(), StatusCode::NO_CONTENT);
+    assert!(state.recovery_limiter.check_key(&ip).is_err());
+    assert_eq!(
+        server
+            .post("/auth/credential-links/lookups")
+            .add_header(
+                HeaderName::from_static("x-forwarded-for"),
+                HeaderValue::from_static("192.0.2.9")
+            )
+            .json(&json!({"token":token}))
+            .await
+            .status_code(),
+        StatusCode::TOO_MANY_REQUESTS
+    );
+    assert_eq!(
+        server
+            .post("/auth/credential-links/redemptions")
+            .add_header(
+                HeaderName::from_static("x-forwarded-for"),
+                HeaderValue::from_static("192.0.2.9")
+            )
+            .json(&json!({"token":token,"password":STRONG_PW}))
+            .await
+            .status_code(),
+        StatusCode::TOO_MANY_REQUESTS
+    );
+    let lookup_ip = "192.0.2.10".parse().unwrap();
+    assert_eq!(
+        server
+            .post("/auth/credential-links/lookups")
+            .add_header(
+                HeaderName::from_static("x-forwarded-for"),
+                HeaderValue::from_static("192.0.2.10")
+            )
+            .json(&json!({"token":"invalid"}))
+            .await
+            .status_code(),
+        StatusCode::UNPROCESSABLE_ENTITY
+    );
+    assert!(state.recovery_limiter.check_key(&lookup_ip).is_err());
+    assert!(state.login_limiter.check_key(&lookup_ip).is_ok());
 }

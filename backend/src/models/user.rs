@@ -298,15 +298,15 @@ pub enum CreateUserError {
 ///
 /// [`CreateUserError::EmailExists`] on an email collision, or
 /// [`CreateUserError::Db`] for any other failure.
-pub async fn create_local(
-    pool: &PgPool,
+pub async fn create_local<'a>(
+    executor: impl sqlx::Acquire<'a, Database = sqlx::Postgres>,
     email: &str,
     display_name: &str,
     role: Role,
     password_hash: Option<&str>,
 ) -> Result<User, CreateUserError> {
     let is_child = role == Role::Child;
-    let mut tx = pool.begin().await.map_err(CreateUserError::Db)?;
+    let mut tx = executor.begin().await.map_err(CreateUserError::Db)?;
 
     let row = match sqlx::query_as!(
         UserRow,
