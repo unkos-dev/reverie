@@ -170,7 +170,8 @@ restore a pre-disable session's validity, so no live session skips re-authentica
 
 **Force-logout after a role change**, continuing from an already-authenticated session:
 
-1. An admin calls `update_role`, which bumps the target's `session_version` in the same transaction as the role write.
+1. An admin calls `update_role`, which writes the target's role, sets `is_child` to whether the role is `child`, and
+   bumps `session_version` in the same transaction.
 2. The target's browser, still holding its old session cookie, makes another request. The session leg loads the (now
    different-role) user row; `disabled_at` is still `None`.
 3. The stored claim (captured at the earlier login) no longer equals the live `session_version`, so neither success

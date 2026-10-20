@@ -167,17 +167,26 @@ async fn demote_sole_admin_returns_422(pool: PgPool) {
     let (admin_id, admin_basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
 
     let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
-    let r = server
-        .put(&format!("/api/v1/users/{admin_id}/role"))
-        .add_header(auth(&admin_basic).0, auth(&admin_basic).1)
-        .json(&json!({"role": "adult"}))
-        .await;
-    let problem =
-        test_support::assert_problem(&r, problems::VALIDATION, StatusCode::UNPROCESSABLE_ENTITY);
-    assert_eq!(
-        problem["detail"].as_str().unwrap(),
-        "would leave zero admins"
-    );
+    for role in ["adult", "child"] {
+        let r = server
+            .put(&format!("/api/v1/users/{admin_id}/role"))
+            .add_header(auth(&admin_basic).0, auth(&admin_basic).1)
+            .json(&json!({"role": role}))
+            .await;
+        let problem = test_support::assert_problem(
+            &r,
+            problems::VALIDATION,
+            StatusCode::UNPROCESSABLE_ENTITY,
+        );
+        assert_eq!(problem["detail"], "would leave zero admins");
+        let stored = crate::models::user::find_by_id(&app_pool, admin_id)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(stored.role.as_str(), "admin");
+        assert!(!stored.is_child);
+        assert_eq!(stored.session_version, 0);
+    }
 }
 
 #[sqlx::test(migrations = "./migrations")]
@@ -197,26 +206,52 @@ async fn non_admin_put_role_returns_403(pool: PgPool) {
 }
 
 #[sqlx::test(migrations = "./migrations")]
-async fn set_role_child_on_non_child_user_returns_422(pool: PgPool) {
+async fn role_transitions_sync_child_status_and_invalidate_sessions(pool: PgPool) {
     let app_pool = test_support::db::app_pool_for(&pool).await;
     let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
     let (_admin_id, admin_basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
-    let (adult_id, _) =
-        test_support::db::create_adult_and_basic_auth(&app_pool, "child-role-sync").await;
-
+    let target_id = test_support::db::create_adult_with_password(
+        &app_pool,
+        "role-transitions",
+        "role-transitions@example.com",
+        OLD_PW,
+    )
+    .await;
     let server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
-    let r = server
-        .put(&format!("/api/v1/users/{adult_id}/role"))
-        .add_header(auth(&admin_basic).0, auth(&admin_basic).1)
-        .json(&json!({"role": "child"}))
-        .await;
-    let problem =
-        test_support::assert_problem(&r, problems::VALIDATION, StatusCode::UNPROCESSABLE_ENTITY);
-    assert!(
-        problem["detail"].as_str().unwrap().contains("child status"),
-        "expected child-role-sync validation, got: {}",
-        problem["detail"],
-    );
+    let mut target_server = test_support::db::server_with_real_pools(&app_pool, &ingestion_pool);
+    target_server.save_cookies();
+
+    for (index, role) in ["child", "admin", "child", "adult"].iter().enumerate() {
+        let login = target_server
+            .post("/auth/local/login")
+            .json(&json!({"email": "role-transitions@example.com", "password": OLD_PW}))
+            .await;
+        assert_eq!(login.status_code(), StatusCode::NO_CONTENT);
+        assert_eq!(
+            target_server.get("/auth/me").await.status_code(),
+            StatusCode::OK
+        );
+        let response = server
+            .put(&format!("/api/v1/users/{target_id}/role"))
+            .add_header(auth(&admin_basic).0, auth(&admin_basic).1)
+            .json(&json!({"role": role}))
+            .await;
+        assert_eq!(response.status_code(), StatusCode::OK);
+        let body: serde_json::Value = response.json();
+        assert_eq!(body["role"], *role);
+        assert_eq!(body["is_child"], *role == "child");
+        let stored = crate::models::user::find_by_id(&app_pool, target_id)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(stored.role.as_str(), *role);
+        assert_eq!(stored.is_child, *role == "child");
+        assert_eq!(stored.session_version, i32::try_from(index + 1).unwrap());
+        assert_eq!(
+            target_server.get("/auth/me").await.status_code(),
+            StatusCode::UNAUTHORIZED
+        );
+    }
 }
 
 #[sqlx::test(migrations = "./migrations")]
@@ -651,7 +686,7 @@ async fn patch_user_whitespace_email_returns_422(pool: PgPool) {
 // ---------- child/role sync: mirror branch ----------
 
 #[sqlx::test(migrations = "./migrations")]
-async fn set_non_child_role_on_child_user_returns_422(pool: PgPool) {
+async fn set_admin_role_on_child_user_clears_child_status(pool: PgPool) {
     let app_pool = test_support::db::app_pool_for(&pool).await;
     let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
     let (_admin_id, admin_basic) = test_support::db::create_admin_and_basic_auth(&app_pool).await;
@@ -662,15 +697,12 @@ async fn set_non_child_role_on_child_user_returns_422(pool: PgPool) {
     let r = server
         .put(&format!("/api/v1/users/{child_id}/role"))
         .add_header(auth(&admin_basic).0, auth(&admin_basic).1)
-        .json(&json!({"role": "adult"}))
+        .json(&json!({"role": "admin"}))
         .await;
-    let problem =
-        test_support::assert_problem(&r, problems::VALIDATION, StatusCode::UNPROCESSABLE_ENTITY);
-    assert!(
-        problem["detail"].as_str().unwrap().contains("child status"),
-        "expected child-role-sync validation, got: {}",
-        problem["detail"],
-    );
+    assert_eq!(r.status_code(), StatusCode::OK);
+    let body: serde_json::Value = r.json();
+    assert_eq!(body["role"], "admin");
+    assert_eq!(body["is_child"], false);
 }
 
 // ---------- PATCH session_version bump policy ----------

@@ -1,13 +1,15 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, test, vi } from "vite-plus/test";
 import { RouterProvider, createMemoryRouter, type RouteObject } from "react-router";
 import type { ReactElement } from "react";
 
 import { queryKeys } from "@/lib/query/keys";
-import type { User } from "@/api/users";
+import type { Role, User } from "@/api/users";
 import * as usersApi from "@/api/users";
+import { toast } from "sonner";
+import { ApiError } from "@/api";
 import { fetchSetupStatus } from "@/api/auth";
 
 import { UsersPage } from "./UsersPage";
@@ -136,6 +138,63 @@ describe("UsersPage", () => {
     renderUsersPage(ADMIN_ME, [makeUser({ email: "bob@example.com" })]);
     expect(await screen.findByText("Bob")).toBeInTheDocument();
     expect(screen.getByText("bob@example.com")).toBeInTheDocument();
+    expect(screen.getAllByRole("columnheader").map((header) => header.textContent)).toEqual([
+      "Name",
+      "Email",
+      "Role",
+      "Status",
+      "Actions",
+    ]);
+    expect(screen.queryByRole("switch")).not.toBeInTheDocument();
+  });
+
+  test.each<{ from: Role; to: Role }>([
+    { from: "adult", to: "child" },
+    { from: "admin", to: "child" },
+    { from: "child", to: "adult" },
+    { from: "child", to: "admin" },
+  ])("changes $from to $to through the Role dropdown", async ({ from, to }) => {
+    const target = makeUser({ role: from, is_child: from === "child" });
+    const updated = { ...target, role: to, is_child: to === "child" };
+    vi.spyOn(usersApi, "listUsers").mockResolvedValue([target]);
+    const changeRole = vi.spyOn(usersApi, "updateUserRole").mockResolvedValue(updated);
+    const childStatus = vi.spyOn(usersApi, "updateUserChildStatus");
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify(ADMIN_ME)));
+    const client = renderUsersPage(ADMIN_ME, [target]);
+    const invalidate = vi.spyOn(client, "invalidateQueries");
+    const user = userEvent.setup();
+
+    await user.click(await screen.findByRole("combobox"));
+    vi.mocked(usersApi.listUsers).mockResolvedValue([updated]);
+    await user.click(await screen.findByRole("option", { name: to }));
+
+    await waitFor(() => {
+      expect(changeRole).toHaveBeenCalledWith(target.id, to);
+    });
+    await waitFor(() => {
+      expect(screen.getByRole("combobox")).toHaveTextContent(to);
+    });
+    expect(childStatus).not.toHaveBeenCalled();
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: queryKeys.users.all });
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: queryKeys.auth.me() });
+  });
+
+  test("keeps the admin role and reports a last-admin refusal", async () => {
+    const target = makeUser({ role: "admin" });
+    vi.spyOn(usersApi, "listUsers").mockResolvedValue([target]);
+    vi.spyOn(usersApi, "updateUserRole").mockRejectedValue(
+      new ApiError(422, null, "Validation failed", "would leave zero admins"),
+    );
+    renderUsersPage(ADMIN_ME, [target]);
+    const user = userEvent.setup();
+
+    await user.click(await screen.findByRole("combobox"));
+    await user.click(await screen.findByRole("option", { name: "child" }));
+
+    await waitFor(() => {
+      expect(toast.error).toHaveBeenCalledWith("Role update failed: would leave zero admins");
+    });
+    expect(screen.getByRole("combobox")).toHaveTextContent("admin");
   });
 
   test("renders a disabled badge for a disabled account", async () => {
