@@ -12,6 +12,7 @@ import { TypeaheadMultiSelect, type TypeaheadOption } from "./TypeaheadMultiSele
 
 const LE_GUIN = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 const LEM = "bbbbbbbb-bbbb-4bbb-9bbb-bbbbbbbbbbbb";
+const BUTLER = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
 
 function jsonResponse(body: unknown): Response {
   return new Response(JSON.stringify(body), {
@@ -131,13 +132,130 @@ describe("TypeaheadMultiSelect", () => {
       "aria-selected",
       "true",
     );
+    await user.click(screen.getByRole("option", { name: "Ursula K. Le Guin" }));
+    expect(screen.getByTestId("selection")).toHaveTextContent("[]");
+    expect(input).toHaveValue("");
+    await user.keyboard("{Escape}");
+    expect(
+      screen.queryByRole("button", { name: /Remove Ursula K\. Le Guin/i }),
+    ).not.toBeInTheDocument();
+  });
+
+  test.each(["add", "blur"] as const)(
+    "%s preserves selection order despite reversed server ranking",
+    async (action) => {
+      const initial = [
+        { id: LE_GUIN, value: "Ursula K. Le Guin" },
+        { id: LEM, value: "Stanislaw Lem" },
+      ];
+      const added = { id: BUTLER, value: "Octavia Butler" };
+      mockSuggest([initial[1], { id: LE_GUIN, value: "Ursula Le Guin" }, added]);
+      render(<Harness initial={initial} />);
+      const user = userEvent.setup();
+      const input = screen.getByRole("combobox");
+      await user.type(input, "le");
+      await screen.findByRole("option", { name: "Octavia Butler" });
+
+      if (action === "add") {
+        await user.click(screen.getByRole("option", { name: "Octavia Butler" }));
+      } else {
+        await user.click(screen.getByTestId("selection"));
+      }
+
+      const expected = action === "add" ? [...initial, added] : initial;
+      expect(JSON.parse(screen.getByTestId("selection").textContent)).toEqual(expected);
+      expect(input).toHaveValue("");
+      await user.keyboard("{Escape}");
+      const chips = screen.getByRole("grid", { name: /selected author/i });
+      expect(
+        within(chips)
+          .getAllByRole("row")
+          .map((row) => row.textContent),
+      ).toEqual(expected.map((item) => item.value));
+    },
+  );
+
+  test("disjoint search results retain selected chips without adding them to suggestions", async () => {
+    vi.spyOn(globalThis, "fetch").mockImplementation((input) => {
+      const url = new URL(
+        typeof input === "string" ? input : input instanceof URL ? input.href : input.url,
+      );
+      const suggestions =
+        url.searchParams.get("q") === "le"
+          ? [{ id: LE_GUIN, value: "Ursula K. Le Guin" }]
+          : [{ id: LEM, value: "Stanislaw Lem" }];
+      return Promise.resolve(jsonResponse({ suggestions }));
+    });
+    render(<Harness />);
+    const user = userEvent.setup();
+    const input = screen.getByRole("combobox");
+    await user.type(input, "le");
+    await user.click(await screen.findByRole("option", { name: "Ursula K. Le Guin" }));
+    await user.type(input, "st");
+    await screen.findByRole("option", { name: "Stanislaw Lem" });
+    expect(screen.getAllByRole("option").map((option) => option.textContent)).toEqual([
+      "Stanislaw Lem",
+    ]);
+    await user.keyboard("{Escape}");
+    expect(screen.getByRole("button", { name: /Remove Ursula K\. Le Guin/i })).toBeVisible();
+    await user.type(input, "st");
+    await user.click(await screen.findByRole("option", { name: "Stanislaw Lem" }));
+    await user.keyboard("{Escape}");
+    expect(JSON.parse(screen.getByTestId("selection").textContent)).toEqual([
+      { id: LE_GUIN, value: "Ursula K. Le Guin" },
+      { id: LEM, value: "Stanislaw Lem" },
+    ]);
+    const chips = screen.getByRole("grid", { name: /selected author/i });
+    expect(
+      within(chips)
+        .getAllByRole("row")
+        .map((row) => row.textContent),
+    ).toEqual(["Ursula K. Le Guin", "Stanislaw Lem"]);
+  });
+
+  test.each([
+    ["l", "Type at least 2 characters to search."],
+    ["zz", "No matches."],
+  ])("selected chips stay out of suggestions for query %s", async (query, status) => {
+    mockSuggest([]);
+    render(<Harness initial={[{ id: LE_GUIN, value: "Ursula K. Le Guin" }]} />);
+    const user = userEvent.setup();
+    const input = screen.getByRole("combobox");
+    await user.type(input, query);
+    expect(await screen.findByRole("status")).toHaveTextContent(status);
+    expect(screen.queryAllByRole("option")).toHaveLength(0);
+    expect(input).toHaveAttribute("aria-expanded", "true");
+    await user.keyboard("{Escape}");
+    const chip = screen.getByRole("button", { name: /Remove Ursula K\. Le Guin/i });
+    expect(chip).toBeVisible();
+    expect(input).toHaveAccessibleDescription(/Ursula K\. Le Guin/);
+    const descriptions = input.getAttribute("aria-describedby")?.split(" ") ?? [];
+    expect(descriptions.some((id) => document.getElementById(id)?.contains(chip))).toBe(true);
+  });
+
+  test("removes an off-query chip after native popup dismissal", async () => {
+    mockSuggest([{ id: LEM, value: "Stanislaw Lem" }]);
+    render(<Harness initial={[{ id: LE_GUIN, value: "Ursula K. Le Guin" }]} />);
+    const user = userEvent.setup();
+    const input = screen.getByRole("combobox");
+    await user.type(input, "st");
+    await screen.findByRole("option", { name: "Stanislaw Lem" });
+    await user.keyboard("{Escape}");
+    expect(input).toHaveValue("");
+    await user.click(screen.getByRole("button", { name: /Remove Ursula K\. Le Guin/i }));
+    expect(screen.getByTestId("selection")).toHaveTextContent("[]");
+    expect(input).toHaveValue("");
+    await user.type(input, "st");
+    expect(await screen.findByRole("option", { name: "Stanislaw Lem" })).toBeVisible();
   });
 
   test("removes a chip via its dismiss button", async () => {
     render(<Harness initial={[{ id: LE_GUIN, value: "Ursula K. Le Guin" }]} />);
     const user = userEvent.setup();
 
-    await user.click(screen.getByRole("button", { name: /Remove Ursula K\. Le Guin/i }));
+    const remove = screen.getByRole("button", { name: /Remove Ursula K\. Le Guin/i });
+    expect(remove).toHaveAccessibleName("Remove Ursula K. Le Guin");
+    await user.click(remove);
 
     expect(
       screen.queryByRole("button", { name: /Remove Ursula K\. Le Guin/i }),
@@ -260,10 +378,17 @@ test("late suggestions cannot replace the current query or resurrect committed i
   ]);
 });
 
-test("disabled controls cannot change a hydrated selection", () => {
+test("disabled controls cannot change a hydrated selection", async () => {
   render(<Harness disabled initial={[{ id: LE_GUIN, value: "Ursula" }]} />);
   expect(screen.getByRole("combobox")).toBeDisabled();
+  expect(screen.getByRole("button", { name: /Show author suggestions/ })).toBeDisabled();
   expect(screen.getByRole("button", { name: /Remove Ursula/ })).toBeDisabled();
+  const user = userEvent.setup();
+  await user.click(screen.getByRole("button", { name: /Remove Ursula/ }));
+  await user.click(screen.getByRole("button", { name: /Show author suggestions/ }));
+  expect(JSON.parse(screen.getByTestId("selection").textContent)).toEqual([
+    { id: LE_GUIN, value: "Ursula" },
+  ]);
 });
 
 test("empty and failed suggestion requests expose their status", async () => {
