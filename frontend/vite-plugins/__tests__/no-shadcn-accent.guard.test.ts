@@ -6,11 +6,9 @@ import { join, resolve } from "node:path";
 // the signature for primary affordances and must never appear as a shadcn
 // primitive's hover/focus treatment — the dropped `--color-accent-foreground`
 // alias means stock shadcn primitives that ship with `focus:bg-accent
-// focus:text-accent-foreground` would render with broken text colour. A
-// future `vp dlx shadcn@latest add <component>` must rewrite those utilities to
-// `focus:bg-hover focus:text-fg` (matching dropdown-menu.tsx and select.tsx)
-// before merging. This guard fails the build if a primitive reintroduces the
-// pattern.
+// focus:text-accent-foreground` would render with broken text colour.
+// Both React Aria wrappers and retained shadcn-derived primitives must use
+// hover/focus tokens rather than brand accent fills.
 //
 // Lives under `vite-plugins/__tests__/` (not co-located with the primitives)
 // because the scan needs node env + node types and the app's tsconfig is
