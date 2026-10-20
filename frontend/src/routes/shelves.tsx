@@ -5,7 +5,6 @@
 import { listShelves } from "@/api";
 import { queryClient } from "@/lib/query/client";
 import { queryKeys } from "@/lib/query/keys";
-import { ShelvesListPage } from "@/pages/shelves/ShelvesListPage";
 
 /** Loader for `/shelves` — prefetches the shelf list. */
 export async function loader(): Promise<null> {
@@ -19,4 +18,4 @@ export async function loader(): Promise<null> {
 }
 
 /** Component export consumed by the route's `lazy()` callback. */
-export const Component = ShelvesListPage;
+export { ShelvesListPage as Component } from "@/pages/shelves/ShelvesListPage";
