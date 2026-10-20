@@ -143,6 +143,12 @@ pub struct Config {
     /// Must be at least 1.
     #[validate(range(min = 1, message = "must be at least 1"))]
     pub login_rate_per_min: u32,
+    /// Request-path password and recovery-PIN hashing limit per process
+    /// (`REVERIE_AUTH_HASH_CONCURRENCY`, default `1`). Each permit allows one more
+    /// parallel Argon2 operation of about 19 MiB; login holds one database
+    /// connection per permit.
+    #[validate(range(min = 1, message = "must be at least 1"))]
+    pub auth_hash_concurrency: u32,
     /// Minimum length for a local-account password
     /// (`REVERIE_PASSWORD_MIN_LENGTH`, default `15`, the single-factor
     /// floor). The length floor, the zxcvbn strength floor
@@ -701,6 +707,7 @@ impl Default for Config {
             log_level: "info".into(),
             db_max_connections: 10,
             login_rate_per_min: 10,
+            auth_hash_concurrency: 1,
             password_min_length: 15,
             password_max_length: 256,
             password_min_zxcvbn_score: 2,
@@ -855,6 +862,14 @@ mod tests {
             "staging.env.runtime.example contains keys absent from ENV_MAP: {violations:?}. \
              Add them to ENV_MAP (with their dotted field path), or drop them from the example."
         );
+    }
+
+    #[test]
+    fn auth_hash_config_default_and_zero() {
+        assert_eq!(cfg_from(BASE_VARS).unwrap().auth_hash_concurrency, 1);
+        let vars = with_overrides(&[("REVERIE_AUTH_HASH_CONCURRENCY", "0")]);
+        let error = cfg_from_owned(&vars).unwrap_err();
+        assert!(error.to_string().contains("REVERIE_AUTH_HASH_CONCURRENCY"));
     }
 
     #[test]

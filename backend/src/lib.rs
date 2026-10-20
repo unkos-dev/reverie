@@ -358,6 +358,10 @@ pub async fn run() -> anyhow::Result<()> {
     let recovery_limiter = auth::rate_limit::build_login_limiter(quota);
     let oidc_limiter = auth::rate_limit::build_login_limiter(quota);
     let (ingestion, ingestion_commands) = services::ingestion::coordinator_channel();
+    let hash_limiter = auth::password::HashLimiter::new(
+        usize::try_from(config.auth_hash_concurrency)
+            .context("REVERIE_AUTH_HASH_CONCURRENCY does not fit usize")?,
+    );
     let state = AppState {
         pool,
         ingestion_pool,
@@ -366,6 +370,7 @@ pub async fn run() -> anyhow::Result<()> {
         config: config.clone(),
         oidc,
         login_limiter,
+        hash_limiter,
         recovery_limiter,
         oidc_limiter,
         settings,

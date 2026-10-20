@@ -13,9 +13,10 @@ governed-by:
 ## Statement
 
 WHEN a local password sign-in fails because the email has no account, the password is wrong, the account is disabled, or
-the account has no local credential, the system MUST return the same status and response body for equivalent source and
-account admission state. Admitted failures MUST perform equivalent real or dummy password verification. Throttled
-requests MUST perform neither real nor dummy verification, including when the submitted password is correct.
+the account has no local credential, the system MUST return the same status and response body for equivalent source,
+account and hashing-capacity admission state. Admitted failures MUST perform equivalent real or dummy password
+verification. Throttled requests MUST perform neither real nor dummy verification, including when the submitted password
+is correct.
 
 ## Rationale
 
@@ -34,6 +35,9 @@ expectation as the rest of Reverie's identity surface.
   return byte-identical generic `422` responses. Each reaches real or dummy verification exactly once.
 - With equivalent blocked state, all four cases and a correct password return byte-identical generic `429` responses
   with positive integer `Retry-After` and no verification or authenticated session.
+- With hashing capacity exhausted, wrong-password, unknown-email, disabled-account and no-local-credential requests
+  return byte-identical `503` responses with no verification, checked by `auth_hash_busy_login_parity` in
+  `backend/src/routes/auth.rs`.
 - Rejected requests preserve history and the block deadline. Their retry delay decreases as the deadline approaches.
 - `password_admission_route_parity_blocked_correct_and_no_verification` and
   `auth_allowance_account_retry_decreases_without_extending_block` in `backend/src/routes/auth.rs` check these responses

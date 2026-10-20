@@ -36,6 +36,9 @@ fn server_with_page_size(app_pool: &PgPool, ingestion_pool: &PgPool, page_size: 
         ingestion_pool: ingestion_pool.clone(),
         ingestion: crate::services::ingestion::coordinator_channel().0,
         library_files,
+        hash_limiter: crate::auth::password::HashLimiter::new(
+            usize::try_from(config.auth_hash_concurrency).unwrap(),
+        ),
         config,
         oidc: Some(std::sync::Arc::new(test_support::test_oidc_runtime())),
         login_limiter: test_support::test_login_limiter(),
