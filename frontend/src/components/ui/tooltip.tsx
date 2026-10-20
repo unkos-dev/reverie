@@ -1,9 +1,5 @@
 import type { ComponentProps, ReactElement } from "react";
-import {
-  Button as TooltipTrigger,
-  Tooltip as AriaTooltip,
-  TooltipTrigger as Tooltip,
-} from "react-aria-components";
+import { Tooltip as AriaTooltip } from "react-aria-components";
 import { cn } from "@/lib/utils";
 
 function TooltipContent({ className, ...props }: ComponentProps<typeof AriaTooltip>): ReactElement {
@@ -19,4 +15,5 @@ function TooltipContent({ className, ...props }: ComponentProps<typeof AriaToolt
   );
 }
 
-export { Tooltip, TooltipContent, TooltipTrigger };
+export { TooltipTrigger as Tooltip, Button as TooltipTrigger } from "react-aria-components";
+export { TooltipContent };

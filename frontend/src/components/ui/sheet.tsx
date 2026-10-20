@@ -1,12 +1,5 @@
 import type { ComponentProps, ReactElement } from "react";
-import {
-  Dialog,
-  DialogClose,
-  DialogContent,
-  DialogDescription,
-  DialogTitle,
-  DialogTrigger,
-} from "./dialog";
+import { DialogContent, DialogTitle } from "./dialog";
 import { cn } from "@/lib/utils";
 
 function SheetContent({
@@ -65,9 +58,6 @@ export {
   Dialog as Sheet,
   DialogTrigger as SheetTrigger,
   DialogClose as SheetClose,
-  SheetContent,
-  SheetHeader,
-  SheetFooter,
-  SheetTitle,
   DialogDescription as SheetDescription,
-};
+} from "./dialog";
+export { SheetContent, SheetHeader, SheetFooter, SheetTitle };

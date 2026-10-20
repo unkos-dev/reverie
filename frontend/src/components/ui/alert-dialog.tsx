@@ -1,15 +1,7 @@
 import type { ComponentProps, ReactElement } from "react";
 import { Button } from "react-aria-components";
 import { type Button as StyledButton, buttonVariants } from "./button";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "./dialog";
+import { DialogContent } from "./dialog";
 import { cn } from "@/lib/utils";
 
 type ActionProps = ComponentProps<typeof Button> &
@@ -71,11 +63,9 @@ function AlertDialogCancel({
 export {
   Dialog as AlertDialog,
   DialogTrigger as AlertDialogTrigger,
-  AlertDialogContent,
   DialogHeader as AlertDialogHeader,
   DialogFooter as AlertDialogFooter,
   DialogTitle as AlertDialogTitle,
   DialogDescription as AlertDialogDescription,
-  AlertDialogAction,
-  AlertDialogCancel,
-};
+} from "./dialog";
+export { AlertDialogContent, AlertDialogAction, AlertDialogCancel };

@@ -2,11 +2,9 @@ import type { ComponentProps, KeyboardEventHandler, ReactElement, ReactNode } fr
 import {
   Button,
   Dialog as AriaDialog,
-  DialogTrigger as Dialog,
   Heading,
   Modal,
   ModalOverlay,
-  Pressable as DialogTrigger,
   Text,
 } from "react-aria-components";
 import { XIcon } from "lucide-react";
@@ -123,13 +121,12 @@ function DialogDescription({ className, ...props }: ComponentProps<typeof Text>)
   );
 }
 
+export { DialogTrigger as Dialog, Pressable as DialogTrigger } from "react-aria-components";
 export {
-  Dialog,
   DialogClose,
   DialogContent,
   DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 };

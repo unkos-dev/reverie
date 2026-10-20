@@ -1,5 +1,5 @@
 import type { ComponentProps, ReactElement, ReactNode } from "react";
-import { Button, ListBox, ListBoxItem, Popover, Select, SelectValue } from "react-aria-components";
+import { Button, ListBox, ListBoxItem, Popover } from "react-aria-components";
 import { CheckIcon, ChevronDownIcon } from "lucide-react";
 
 import { cn } from "@/lib/utils";
@@ -76,4 +76,5 @@ function SelectItem({
   );
 }
 
-export { Select, SelectContent, SelectItem, SelectTrigger, SelectValue };
+export { Select, SelectValue } from "react-aria-components";
+export { SelectContent, SelectItem, SelectTrigger };

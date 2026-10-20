@@ -1,10 +1,5 @@
 import type { ComponentProps, ReactElement, ReactNode, Ref } from "react";
-import {
-  Dialog,
-  DialogTrigger as Popover,
-  Popover as AriaPopover,
-  Pressable as PopoverTrigger,
-} from "react-aria-components";
+import { Dialog, Popover as AriaPopover } from "react-aria-components";
 import { cn } from "@/lib/utils";
 
 type PopoverContentProps = Omit<ComponentProps<typeof AriaPopover>, "children" | "className"> & {
@@ -36,4 +31,5 @@ function PopoverContent({
   );
 }
 
-export { Popover, PopoverTrigger, PopoverContent };
+export { DialogTrigger as Popover, Pressable as PopoverTrigger } from "react-aria-components";
+export { PopoverContent };

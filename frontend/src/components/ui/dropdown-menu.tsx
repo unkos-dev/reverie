@@ -1,15 +1,5 @@
 import type { ComponentProps, ReactElement, ReactNode } from "react";
-import {
-  Header as DropdownMenuLabel,
-  Menu,
-  MenuItem,
-  MenuSection as DropdownMenuGroup,
-  MenuTrigger as DropdownMenu,
-  Popover,
-  Pressable as DropdownMenuTrigger,
-  Separator,
-  SubmenuTrigger as DropdownMenuSub,
-} from "react-aria-components";
+import { Menu, MenuItem, Popover, Separator } from "react-aria-components";
 import { cn } from "@/lib/utils";
 
 type ContentProps = Omit<ComponentProps<typeof Popover>, "children" | "className"> & {
@@ -57,16 +47,18 @@ function DropdownMenuSeparator(props: ComponentProps<typeof Separator>): ReactEl
 }
 
 export {
-  DropdownMenu,
-  DropdownMenuTrigger,
+  MenuTrigger as DropdownMenu,
+  Pressable as DropdownMenuTrigger,
+  MenuSection as DropdownMenuGroup,
+  MenuSection as DropdownMenuRadioGroup,
+  Header as DropdownMenuLabel,
+  SubmenuTrigger as DropdownMenuSub,
+} from "react-aria-components";
+export {
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuGroup,
-  DropdownMenuGroup as DropdownMenuRadioGroup,
   DropdownMenuItem as DropdownMenuRadioItem,
-  DropdownMenuLabel,
   DropdownMenuSeparator,
-  DropdownMenuSub,
   DropdownMenuItem as DropdownMenuSubTrigger,
   DropdownMenuContent as DropdownMenuSubContent,
 };
