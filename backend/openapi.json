@@ -5928,7 +5928,7 @@
           "users"
         ],
         "summary": "Change a user's role",
-        "description": "Sets the target user's role and invalidates their active sessions. Admin only. Returns 422 if the change would leave zero administrators or conflicts with the target's child status.",
+        "description": "Sets the target user's role and child status together and invalidates their active sessions. Child status is enabled only for the child role. Admin only. Returns 422 if the change would leave zero administrators.",
         "operationId": "update_role",
         "parameters": [
           {
@@ -6025,7 +6025,7 @@
             }
           },
           "422": {
-            "description": "Demotion would leave zero admins, the role change conflicts with the target's child status, or the request body is malformed / contains an unknown role value",
+            "description": "Demotion would leave zero admins, or the request body is malformed / contains an unknown role value",
             "content": {
               "application/problem+json": {
                 "schema": {
