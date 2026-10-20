@@ -231,12 +231,6 @@
         "scope": ["frontend/src/**/*.tsx"]
       },
       {
-        "id": "shadcn-generated-exempt",
-        "severity": "low",
-        "rule": "shadcn/ui primitives in src/components/ui/** are CLI-generated (`vp dlx shadcn@latest add <component>`). Do not flag style or convention divergences in this directory unless they affect runtime correctness.",
-        "scope": ["frontend/src/components/ui/**"]
-      },
-      {
         "id": "library-url-single-writer",
         "severity": "high",
         "rule": "Library filter/sort/view URL state has exactly one writer: the page-owned useLiveSearchParams hook. A direct setSearchParams call for library state is a defect, and debounced writes must re-validate against current state at fire time.",

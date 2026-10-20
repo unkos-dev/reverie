@@ -202,12 +202,13 @@ describe("BatchBar shelves-load failure", () => {
 
     renderBar({}, { seedShelves: false });
     const user = userEvent.setup();
+    const toolbar = screen.getByRole("toolbar", { name: "Batch actions" });
     await user.click(screen.getByRole("button", { name: /Add to shelf/ }));
 
     const notice = await screen.findByRole("menuitem", { name: "Couldn't load shelves" });
     expect(notice).toHaveAttribute("aria-disabled", "true");
     // The toolbar is still mounted: degraded, not unmounted by an error.
-    expect(screen.getByRole("toolbar", { name: "Batch actions" })).toBeInTheDocument();
+    expect(toolbar).toBeInTheDocument();
     // The other half of the tier: degrading silently is the failure mode
     // this surface must not have, since QueryCache.onError routes only 401s.
     await waitFor(() => {

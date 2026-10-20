@@ -164,7 +164,7 @@ describe("UsersPage", () => {
     const invalidate = vi.spyOn(client, "invalidateQueries");
     const user = userEvent.setup();
 
-    await user.click(await screen.findByRole("combobox"));
+    await user.click(await screen.findByRole("button", { name: /Role/ }));
     vi.mocked(usersApi.listUsers).mockResolvedValue([updated]);
     await user.click(await screen.findByRole("option", { name: to }));
 
@@ -172,7 +172,7 @@ describe("UsersPage", () => {
       expect(changeRole).toHaveBeenCalledWith(target.id, to);
     });
     await waitFor(() => {
-      expect(screen.getByRole("combobox")).toHaveTextContent(to);
+      expect(screen.getByRole("button", { name: /Role/ })).toHaveTextContent(to);
     });
     expect(childStatus).not.toHaveBeenCalled();
     expect(invalidate).toHaveBeenCalledWith({ queryKey: queryKeys.users.all });
@@ -188,13 +188,13 @@ describe("UsersPage", () => {
     renderUsersPage(ADMIN_ME, [target]);
     const user = userEvent.setup();
 
-    await user.click(await screen.findByRole("combobox"));
+    await user.click(await screen.findByRole("button", { name: /Role/ }));
     await user.click(await screen.findByRole("option", { name: "child" }));
 
     await waitFor(() => {
       expect(toast.error).toHaveBeenCalledWith("Role update failed: would leave zero admins");
     });
-    expect(screen.getByRole("combobox")).toHaveTextContent("admin");
+    expect(screen.getByRole("button", { name: /Role/ })).toHaveTextContent("admin");
   });
 
   test("renders a disabled badge for a disabled account", async () => {

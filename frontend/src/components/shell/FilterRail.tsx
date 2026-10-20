@@ -329,7 +329,7 @@ function RailSection({
             setOpen((current) => !current);
           }}
           className={`flex flex-1 cursor-pointer select-none items-center gap-2 self-stretch text-left font-mono text-xs uppercase tracking-[0.14em] ${
-            active ? "text-accent" : "text-fg-muted"
+            active ? "text-accent-text" : "text-fg-muted"
           }`}
         >
           <span>{title}</span>
@@ -490,18 +490,21 @@ function SortSection({ levels, inherited, onChange }: Readonly<SortSectionProps>
       {levels.length < MAX_SORT_LEVELS && remaining.length > 0 ? (
         <div className="mt-2">
           <Select
+            aria-label="Add sort field"
+            placeholder="Add sort field…"
             value=""
-            onValueChange={(field) => {
+            onChange={(field) => {
+              if (typeof field !== "string") return;
               const match = remaining.find((candidate) => candidate === field);
               if (match !== undefined) onChange([...levels, { field: match, desc: false }]);
             }}
           >
             <SelectTrigger className="h-8 w-full" aria-label="Add sort field">
-              <SelectValue placeholder="Add sort field…" />
+              <SelectValue />
             </SelectTrigger>
             <SelectContent>
               {remaining.map((field) => (
-                <SelectItem key={field} value={field}>
+                <SelectItem key={field} id={field}>
                   {SORT_FIELD_LABELS[field]}
                 </SelectItem>
               ))}

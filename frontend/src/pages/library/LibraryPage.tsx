@@ -24,7 +24,6 @@ import {
   useDeferredValue,
   useEffect,
   useMemo,
-  useRef,
   useState,
   type CSSProperties,
   type ReactElement,
@@ -40,7 +39,7 @@ import { sortStackSummary } from "@/components/library/sort-summary";
 import { FilterRail, type SeriesFacetOption } from "@/components/shell/FilterRail";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
-import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import { SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useCinematicMode } from "@/hooks/useCinematicMode";
 import { useLibraryFilters, useLibrarySearchParams } from "@/lib/hooks/use-library-filters";
@@ -100,10 +99,6 @@ function LibraryContent(): ReactElement {
   // reads it); the boolean return is unused — visibility is CSS-only.
   useCinematicMode();
   const [overlay, setOverlay] = useState<OverlayState>(null);
-  // The overlays open from state, not a Radix Trigger, so Radix has no
-  // trigger to restore focus to on close; the opener is captured here and
-  // restored via onCloseAutoFocus instead (WCAG 2.4.3).
-  const overlayReturnFocus = useRef<HTMLElement | null>(null);
   const [selectedIds, setSelectedIds] = useState<ReadonlySet<string>>(new Set());
   const preferences = useLibraryPreferences();
   const { density, hiddenColumns, sortOverride, sortLevels, setSortLevels } = preferences;
@@ -218,19 +213,7 @@ function LibraryContent(): ReactElement {
   const activeFilterCount = Object.keys(filterStateToParams(filterState)).length;
 
   function openOverlay(next: Exclude<OverlayState, null>): void {
-    overlayReturnFocus.current =
-      document.activeElement instanceof HTMLElement ? document.activeElement : null;
     setOverlay(next);
-  }
-
-  function restoreOverlayFocus(event: Event): void {
-    // A detached opener (row refetched away while the drawer was open)
-    // must fall through to Radix's default rather than stranding focus
-    // on <body> behind a prevented default.
-    const opener = overlayReturnFocus.current;
-    if (opener === null || !opener.isConnected) return;
-    event.preventDefault();
-    opener.focus();
   }
 
   /** Empty states first, then one branch per projection. */
@@ -406,40 +389,40 @@ function LibraryContent(): ReactElement {
 
       {/* The two right-side overlays share the slot above; opening either
           closes the other by construction. */}
-      <Sheet
-        open={overlay === "filters"}
+
+      <SheetContent
+        isOpen={overlay === "filters"}
         onOpenChange={(open) => {
           setOverlay(open ? "filters" : null);
         }}
+
+        id="library-filter-drawer"
+        side="right"
+        aria-describedby={undefined}
+        // Escape abandons: revert the typed slices to the URL's values,
+        // which cancels their pending writes. Scrim and close-button
+        // closes leave them alone, so those edits still settle.
+        onKeyDown={(event) => {
+          if (event.key === "Escape" && !event.defaultPrevented) revertTypedEdits();
+        }}
+        className="max-w-[100vw] overflow-y-auto p-6 data-[side=right]:w-[340px]"
       >
-        <SheetContent
-          id="library-filter-drawer"
-          side="right"
-          aria-describedby={undefined}
-          onCloseAutoFocus={restoreOverlayFocus}
-          // Escape abandons: revert the typed slices to the URL's values,
-          // which cancels their pending writes. Scrim and close-button
-          // closes leave them alone, so those edits still settle.
-          onEscapeKeyDown={revertTypedEdits}
-          className="max-w-[100vw] overflow-y-auto p-6 data-[side=right]:w-[340px]"
-        >
-          <SheetHeader className="mb-2 p-0">
-            <SheetTitle className="font-display text-2xl font-medium">Refine</SheetTitle>
-          </SheetHeader>
-          <FilterRail
-            seriesOptions={seriesOptions}
-            sortLevels={sortLevels}
-            sortInherited={preferences.sortInherited}
-            onSortChange={handleSortChange}
-          />
-        </SheetContent>
-      </Sheet>
+        <SheetHeader className="mb-2 p-0">
+          <SheetTitle className="font-display text-2xl font-medium">Refine</SheetTitle>
+        </SheetHeader>
+        <FilterRail
+          seriesOptions={seriesOptions}
+          sortLevels={sortLevels}
+          sortInherited={preferences.sortInherited}
+          onSortChange={handleSortChange}
+        />
+      </SheetContent>
+
       <BookDetailDrawer
         bookId={typeof overlay === "object" && overlay !== null ? overlay.detail : null}
         onOpenChange={(open) => {
           if (!open) setOverlay(null);
         }}
-        onCloseAutoFocus={restoreOverlayFocus}
       />
     </>
   );

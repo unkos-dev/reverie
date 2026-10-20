@@ -1,3 +1,4 @@
+import { Label as AriaLabel } from "react-aria-components";
 /**
  * `/admin/users` — admin-only user management page.
  *
@@ -227,8 +228,10 @@ function UserRow({
       <TableCell className="text-muted-foreground">{user.email ?? "no email"}</TableCell>
       <TableCell>
         <Select
+          aria-label="Role"
           value={user.role}
-          onValueChange={(v) => {
+          onChange={(v) => {
+            if (typeof v !== "string") return;
             if (isRole(v)) onRoleChange(user.id, v);
           }}
         >
@@ -236,9 +239,9 @@ function UserRow({
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="admin">admin</SelectItem>
-            <SelectItem value="adult">adult</SelectItem>
-            <SelectItem value="child">child</SelectItem>
+            <SelectItem id="admin">admin</SelectItem>
+            <SelectItem id="adult">adult</SelectItem>
+            <SelectItem id="child">child</SelectItem>
           </SelectContent>
         </Select>
       </TableCell>
@@ -341,8 +344,8 @@ function CreateUserDialog({
   }
 
   return (
-    <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogTrigger asChild>
+    <Dialog isOpen={open} onOpenChange={handleOpenChange}>
+      <DialogTrigger>
         <Button>Create user</Button>
       </DialogTrigger>
       <DialogContent>
@@ -363,19 +366,23 @@ function CreateUserDialog({
             <Input id="create-email" name="email" type="email" autoComplete="off" required />
           </Field>
           <Field>
-            <FieldLabel htmlFor="create-role">Role</FieldLabel>
             <Select
+              className="flex flex-col gap-2"
               value={role}
-              onValueChange={(v) => {
+              onChange={(v) => {
+                if (typeof v !== "string") return;
                 if (isRole(v)) setRole(v);
               }}
             >
+              <AriaLabel className="flex w-fit gap-2 text-sm font-medium leading-snug">
+                Role
+              </AriaLabel>
               <SelectTrigger id="create-role" className="w-full">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
                 {ROLE_OPTIONS.map((r) => (
-                  <SelectItem key={r} value={r}>
+                  <SelectItem key={r} id={r}>
                     {r}
                   </SelectItem>
                 ))}
@@ -395,11 +402,7 @@ function CreateUserDialog({
           </Field>
           {error ? <FieldError>{error}</FieldError> : null}
           <DialogFooter>
-            <DialogClose asChild>
-              <Button type="button" variant="outline">
-                Cancel
-              </Button>
-            </DialogClose>
+            <DialogClose type="button">Cancel</DialogClose>
             <Button type="submit" disabled={mutation.isPending || !ready}>
               Create
             </Button>
@@ -458,8 +461,8 @@ function ResetPasswordDialog({
   }
 
   return (
-    <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogTrigger asChild>
+    <Dialog isOpen={open} onOpenChange={handleOpenChange}>
+      <DialogTrigger>
         <Button variant="outline" size="sm">
           Reset password
         </Button>
@@ -486,11 +489,7 @@ function ResetPasswordDialog({
           </Field>
           {error ? <FieldError>{error}</FieldError> : null}
           <DialogFooter>
-            <DialogClose asChild>
-              <Button type="button" variant="outline">
-                Cancel
-              </Button>
-            </DialogClose>
+            <DialogClose type="button">Cancel</DialogClose>
             <Button type="submit" disabled={mutation.isPending || !ready}>
               Reset
             </Button>

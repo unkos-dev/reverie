@@ -438,6 +438,13 @@
       "title": "Password admission with committed failure accounting"
     },
     {
+      "id": "REV-ADR-0060",
+      "kind": "adr",
+      "path": "docs/adr/0060-use-react-aria-for-the-interactive-ui-foundation.md",
+      "status": "accepted",
+      "title": "Use React Aria for the interactive UI foundation"
+    },
+    {
       "governed-by": [
         "REV-ADR-0041",
         "REV-ADR-0047"

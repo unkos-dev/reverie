@@ -1,8 +1,10 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useState, type ReactElement } from "react";
 import { beforeEach, describe, expect, test, vi } from "vite-plus/test";
+
+import type { SuggestKind } from "@/api";
 
 import { __seedCsrfTokenForTesting } from "@/api/csrf";
 
@@ -19,10 +21,20 @@ function jsonResponse(body: unknown): Response {
 }
 
 function mockSuggest(suggestions: { id: string; value: string }[]): void {
-  vi.spyOn(globalThis, "fetch").mockResolvedValue(jsonResponse({ suggestions }));
+  vi.spyOn(globalThis, "fetch").mockImplementation(() =>
+    Promise.resolve(jsonResponse({ suggestions })),
+  );
 }
 
-function Harness({ initial = [] }: { initial?: TypeaheadOption[] }): ReactElement {
+function Harness({
+  initial = [],
+  kind = "authors",
+  disabled = false,
+}: {
+  initial?: TypeaheadOption[];
+  kind?: SuggestKind;
+  disabled?: boolean;
+}): ReactElement {
   const [client] = useState(
     () => new QueryClient({ defaultOptions: { queries: { retry: false } } }),
   );
@@ -30,11 +42,13 @@ function Harness({ initial = [] }: { initial?: TypeaheadOption[] }): ReactElemen
   return (
     <QueryClientProvider client={client}>
       <TypeaheadMultiSelect
-        kind="authors"
+        kind={kind}
+        disabled={disabled}
         label="author"
         selected={selected}
         onChange={setSelected}
       />
+      <output data-testid="selection">{JSON.stringify(selected)}</output>
     </QueryClientProvider>
   );
 }
@@ -51,7 +65,7 @@ describe("TypeaheadMultiSelect", () => {
   test("gates the request below the minimum query length", async () => {
     const fetchSpy = vi
       .spyOn(globalThis, "fetch")
-      .mockResolvedValue(jsonResponse({ suggestions: [] }));
+      .mockImplementation(() => Promise.resolve(jsonResponse({ suggestions: [] })));
     render(<Harness />);
     const user = userEvent.setup();
 
@@ -62,20 +76,20 @@ describe("TypeaheadMultiSelect", () => {
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 
-  test("fires the suggest request once the debounce settles at 2+ characters", async () => {
+  test("starts an eligible suggestion request without an added query delay", async () => {
     const fetchSpy = vi
       .spyOn(globalThis, "fetch")
-      .mockResolvedValue(
-        jsonResponse({ suggestions: [{ id: LE_GUIN, value: "Ursula K. Le Guin" }] }),
+      .mockImplementation(() =>
+        Promise.resolve(
+          jsonResponse({ suggestions: [{ id: LE_GUIN, value: "Ursula K. Le Guin" }] }),
+        ),
       );
     render(<Harness />);
     const user = userEvent.setup();
-
-    await user.type(screen.getByRole("combobox", { name: /add author/i }), "le");
-
-    await waitFor(() => {
-      expect(fetchSpy).toHaveBeenCalled();
-    });
+    const input = screen.getByRole("combobox", { name: /add author/i });
+    await user.click(input);
+    fireEvent.change(input, { target: { value: "le" } });
+    expect(fetchSpy).toHaveBeenCalled();
     const url = fetchSpy.mock.calls[0]?.[0] as URL;
     expect(url.pathname).toBe("/api/v1/authors/suggest");
     expect(url.searchParams.get("q")).toBe("le");
@@ -91,12 +105,13 @@ describe("TypeaheadMultiSelect", () => {
     const option = await screen.findByRole("option", { name: "Ursula K. Le Guin" });
     await user.click(option);
 
-    const chips = screen.getByRole("list", { name: /selected author/i });
+    await user.keyboard("{Escape}");
+    const chips = screen.getByRole("grid", { name: /selected author/i });
     expect(within(chips).getByRole("button", { name: /Remove Ursula K\. Le Guin/i })).toBeVisible();
     expect(input).toHaveValue("");
   });
 
-  test("a committed option is no longer offered when the query is retyped", async () => {
+  test("a committed option remains selected when the query is retyped", async () => {
     mockSuggest([
       { id: LE_GUIN, value: "Ursula K. Le Guin" },
       { id: LEM, value: "Stanislaw Lem" },
@@ -112,7 +127,10 @@ describe("TypeaheadMultiSelect", () => {
     await waitFor(() => {
       expect(screen.getByRole("option", { name: "Stanislaw Lem" })).toBeInTheDocument();
     });
-    expect(screen.queryByRole("option", { name: "Ursula K. Le Guin" })).not.toBeInTheDocument();
+    expect(screen.getByRole("option", { name: "Ursula K. Le Guin" })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
   });
 
   test("removes a chip via its dismiss button", async () => {
@@ -126,7 +144,7 @@ describe("TypeaheadMultiSelect", () => {
     ).not.toBeInTheDocument();
   });
 
-  test("Backspace on an empty input removes the last chip", async () => {
+  test("Delete removes a focused tag through native keyboard interaction", async () => {
     render(
       <Harness
         initial={[
@@ -136,11 +154,9 @@ describe("TypeaheadMultiSelect", () => {
       />,
     );
     const user = userEvent.setup();
-
-    const input = screen.getByRole("combobox", { name: /add author/i });
-    input.focus();
-    await user.keyboard("{Backspace}");
-
+    const tag = screen.getByRole("row", { name: /Stanislaw Lem/ });
+    tag.focus();
+    await user.keyboard("{Delete}");
     expect(screen.queryByRole("button", { name: /Remove Stanislaw Lem/i })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Remove Ursula K\. Le Guin/i })).toBeInTheDocument();
   });
@@ -153,11 +169,116 @@ describe("TypeaheadMultiSelect", () => {
 
     await user.type(input, "le");
     await screen.findByRole("option", { name: "Ursula K. Le Guin" });
-    await user.keyboard("{Enter}");
+    await user.keyboard("{ArrowDown}{Enter}");
+    expect(input).toHaveValue("");
+    await user.keyboard("{Escape}");
 
     expect(
       await screen.findByRole("button", { name: /Remove Ursula K\. Le Guin/i }),
     ).toBeInTheDocument();
     expect(input).toHaveValue("");
   });
+});
+
+test.each(["tags", "genres", "moods"] as const)(
+  "%s matches hydrated labels to suggestion identities",
+  async (kind) => {
+    mockSuggest([
+      { id: LE_GUIN, value: "fiction" },
+      { id: LEM, value: "literary" },
+    ]);
+    render(<Harness kind={kind} initial={[{ value: "fiction" }]} />);
+    const user = userEvent.setup();
+    await user.type(screen.getByRole("combobox"), "fi");
+    expect(await screen.findAllByRole("option", { name: "fiction" })).toHaveLength(1);
+    expect(screen.getByRole("option", { name: "fiction" })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
+    await user.click(screen.getByRole("option", { name: "literary" }));
+    await user.keyboard("{Escape}");
+    expect(JSON.parse(screen.getByTestId("selection").textContent)).toEqual([
+      { value: "fiction" },
+      { id: LEM, value: "literary" },
+    ]);
+  },
+);
+
+test("same-named authors remain distinct and a second selection clears the new query", async () => {
+  mockSuggest([
+    { id: LE_GUIN, value: "Alex Smith" },
+    { id: LEM, value: "Alex Smith" },
+  ]);
+  render(<Harness />);
+  const user = userEvent.setup();
+  const input = screen.getByRole("combobox");
+  await user.type(input, "al");
+  await user.click((await screen.findAllByRole("option", { name: "Alex Smith" }))[0]);
+  expect(input).toHaveValue("");
+  await user.type(input, "alex");
+  const options = await screen.findAllByRole("option", { name: "Alex Smith" });
+  expect(options[0]).toHaveAttribute("aria-selected", "true");
+  await user.click(options[1]);
+  expect(input).toHaveValue("");
+  await user.keyboard("{Escape}");
+  expect(JSON.parse(screen.getByTestId("selection").textContent)).toEqual([
+    { id: LE_GUIN, value: "Alex Smith" },
+    { id: LEM, value: "Alex Smith" },
+  ]);
+});
+
+test("late suggestions cannot replace the current query or resurrect committed input", async () => {
+  let resolveOld: ((response: Response) => void) | undefined;
+  const old = new Promise<Response>((resolve) => {
+    resolveOld = resolve;
+  });
+  vi.spyOn(globalThis, "fetch").mockImplementation((input) => {
+    const url = new URL(
+      typeof input === "string" ? input : input instanceof URL ? input.href : input.url,
+    );
+    return url.searchParams.get("q") === "old"
+      ? old
+      : Promise.resolve(jsonResponse({ suggestions: [{ id: LEM, value: "New author" }] }));
+  });
+  render(<Harness />);
+  const user = userEvent.setup();
+  const input = screen.getByRole("combobox");
+  await user.click(input);
+  fireEvent.change(input, { target: { value: "old" } });
+  expect(await screen.findByText("Searching…")).toBeInTheDocument();
+  fireEvent.change(input, { target: { value: "new" } });
+  await user.click(await screen.findByRole("option", { name: "New author" }));
+  await act(async () => {
+    resolveOld?.(jsonResponse({ suggestions: [{ id: LE_GUIN, value: "Old author" }] }));
+    await old;
+  });
+  expect(input).toHaveValue("");
+  expect(screen.queryByRole("option", { name: "Old author" })).not.toBeInTheDocument();
+  await user.keyboard("{Escape}");
+  expect(JSON.parse(screen.getByTestId("selection").textContent)).toEqual([
+    { id: LEM, value: "New author" },
+  ]);
+});
+
+test("disabled controls cannot change a hydrated selection", () => {
+  render(<Harness disabled initial={[{ id: LE_GUIN, value: "Ursula" }]} />);
+  expect(screen.getByRole("combobox")).toBeDisabled();
+  expect(screen.getByRole("button", { name: /Remove Ursula/ })).toBeDisabled();
+});
+
+test("empty and failed suggestion requests expose their status", async () => {
+  vi.spyOn(globalThis, "fetch").mockImplementation((input) =>
+    new URL(
+      typeof input === "string" ? input : input instanceof URL ? input.href : input.url,
+    ).searchParams.get("q") === "fail"
+      ? Promise.resolve(new Response("failed", { status: 500 }))
+      : Promise.resolve(jsonResponse({ suggestions: [] })),
+  );
+  render(<Harness />);
+  const input = screen.getByRole("combobox");
+  await userEvent.setup().click(input);
+  fireEvent.change(input, { target: { value: "empty" } });
+  expect(await screen.findByText("No matches.")).toBeInTheDocument();
+  fireEvent.change(input, { target: { value: "fail" } });
+  expect(await screen.findByText("Couldn't load suggestions. Try again.")).toBeInTheDocument();
 });

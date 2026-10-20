@@ -1114,14 +1114,14 @@ describe("leaving with unsaved edits", () => {
     await waitFor(() => {
       expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
     });
-    expect(covers).toHaveFocus();
+    await waitFor(() => expect(covers).toHaveFocus());
     await user.click(covers);
     await screen.findByRole("alertdialog");
     await user.keyboard("{Escape}");
     await waitFor(() => {
       expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
     });
-    expect(covers).toHaveFocus();
+    await waitFor(() => expect(covers).toHaveFocus());
   });
 
   test("Leave discards the draft; coming back shows the saved value", async () => {
@@ -1198,7 +1198,7 @@ describe("source-file deletion switches", () => {
       expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
     });
     expect(toggle).not.toBeChecked();
-    expect(toggle).toHaveFocus();
+    await waitFor(() => expect(toggle).toHaveFocus());
     expect(screen.getByText("No unsaved changes.")).toBeInTheDocument();
   });
 
