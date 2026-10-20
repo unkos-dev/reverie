@@ -10,6 +10,11 @@ React Aria Components owns dialogs, drawers, popovers, menus, selects, tooltip b
 vocabulary pickers. Wrappers in `src/components/ui/` use Reverie's Tailwind classes and theme tokens. Prefer native
 interaction defaults and keep API queries and domain state in their owning components.
 
+Vocabulary pickers supply server suggestions to the `ComboBox` collection and render hydrated selections inside
+`ComboBoxValue` separately. Selection order follows the selected keys, not server ranking. Multiple selection keeps the
+native popup lifecycle. The command palette uses virtual focus from `Autocomplete` with scrolling on its `Menu`; dialog
+and select labels belong to their native parent composition.
+
 Radix UI remains for controls awaiting migration, including checkboxes, switches, tabs and the button slot. Radix Colors
 and `src/styles/themes/primitives.generated.css` remain the colour foundation independently of the interaction library.
 The grid engine and its editing, sorting and loading state are unchanged.

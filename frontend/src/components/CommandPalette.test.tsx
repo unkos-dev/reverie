@@ -148,6 +148,10 @@ describe("CommandPalette — dialog semantics (spec §6)", () => {
     triggerCmdK();
     const dialog = await screen.findByRole("dialog", { name: /search library/i });
     expect(dialog).toBeInTheDocument();
+    expect(dialog).toHaveAttribute(
+      "aria-labelledby",
+      within(dialog).getByRole("heading", { name: "Search library" }).id,
+    );
     expect(
       screen
         .getByRole("button", { name: "Background action", hidden: true })
@@ -160,6 +164,47 @@ describe("CommandPalette — dialog semantics (spec §6)", () => {
 });
 
 describe("CommandPalette — search flow", () => {
+  test("Tab stays in the search field and arrow keys navigate results with input focus", async () => {
+    vi.spyOn(globalThis, "fetch").mockImplementation(() =>
+      Promise.resolve(
+        jsonResponse({
+          items: ["Stoner", "Butcher's Crossing"].map((title, index) => ({
+            kind: "book",
+            id: `book-${String(index)}`,
+            work_id: `work-${String(index)}`,
+            title,
+            authors: ["John Williams"],
+            snippet: null,
+            cover_url: null,
+          })),
+        }),
+      ),
+    );
+    const { router } = renderPalette();
+    const user = userEvent.setup();
+    triggerCmdK();
+    const input = await screen.findByRole("searchbox", { name: "Search library" });
+    await user.type(input, "williams");
+    const first = await screen.findByRole("menuitem", { name: /Stoner/ });
+    const second = screen.getByRole("menuitem", { name: /Butcher's Crossing/ });
+    expect(input).toHaveFocus();
+    await user.tab();
+    expect(input).toHaveFocus();
+    await user.tab({ shift: true });
+    expect(input).toHaveFocus();
+    expect(input).toHaveAttribute("aria-activedescendant", first.id);
+    await user.keyboard("{ArrowDown}");
+    expect(input).toHaveFocus();
+    expect(input).toHaveAttribute("aria-activedescendant", second.id);
+    await user.keyboard("{ArrowUp}");
+    expect(input).toHaveAttribute("aria-activedescendant", first.id);
+    await user.keyboard("{ArrowDown}{Enter}");
+    await waitFor(() => {
+      expect(router.state.location.pathname).toBe("/b/book-1");
+    });
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+
   test("does not fire a request while query is under MIN_Q_LEN", async () => {
     const fetchSpy = vi.spyOn(globalThis, "fetch");
     renderPalette();

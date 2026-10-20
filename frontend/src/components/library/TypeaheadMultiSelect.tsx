@@ -58,11 +58,16 @@ export function TypeaheadMultiSelect({
     trimmed.length >= 2
       ? (data ?? []).map((row) => ({ id: row.id ?? undefined, value: row.value }))
       : [];
-  const options = [
-    ...new Map([...suggestions, ...selected].map((item) => [keyFor(item), item])).values(),
-  ];
+  const optionsByKey = new Map<Key, TypeaheadOption>(
+    [...suggestions, ...selected].map((item) => [keyFor(item), item]),
+  );
   function changeSelection(keys: Key[]): void {
-    onChange(options.filter((item) => keys.includes(keyFor(item))));
+    onChange(
+      keys.flatMap((key) => {
+        const item = optionsByKey.get(key);
+        return item ? [item] : [];
+      }),
+    );
     setQuery("");
   }
   let status: string | null = null;
@@ -74,7 +79,7 @@ export function TypeaheadMultiSelect({
   return (
     <ComboBox<TypeaheadOption, "multiple">
       selectionMode="multiple"
-      items={options}
+      items={suggestions}
       inputValue={query}
       onInputChange={setQuery}
       value={selected.map(keyFor)}
@@ -98,37 +103,31 @@ export function TypeaheadMultiSelect({
         </Button>
       </div>
       <ComboBoxValue<TypeaheadOption>>
-        {({ selectedItems }) => (
-          <TagGroup
-            aria-label={`Selected ${label}`}
-            disabledKeys={disabled ? selected.map(keyFor) : []}
-            onRemove={(keys) => {
-              onChange(selected.filter((item) => !keys.has(keyFor(item))));
-            }}
-          >
-            <TagList
-              items={selectedItems.filter((item) => item !== null)}
-              className="flex flex-wrap gap-1.5"
-            >
-              {(item) => (
-                <Tag
-                  id={keyFor(item)}
-                  textValue={item.value}
-                  className="border-border bg-accent-soft text-fg inline-flex min-h-6 items-center gap-1 rounded-full px-2.5 py-0.5 font-mono text-xs outline-none data-focus-visible:ring-2 data-focus-visible:ring-ring"
+        <TagGroup
+          aria-label={`Selected ${label}`}
+          disabledKeys={disabled ? selected.map(keyFor) : []}
+          onRemove={(keys) => {
+            onChange(selected.filter((item) => !keys.has(keyFor(item))));
+          }}
+        >
+          <TagList items={selected} className="flex flex-wrap gap-1.5">
+            {(item) => (
+              <Tag
+                id={keyFor(item)}
+                textValue={item.value}
+                className="border-border bg-accent-soft text-fg inline-flex min-h-6 items-center gap-1 rounded-full px-2.5 py-0.5 font-mono text-xs outline-none data-focus-visible:ring-2 data-focus-visible:ring-ring"
+              >
+                {item.value}
+                <Button
+                  slot="remove"
+                  className="flex min-h-6 min-w-6 items-center justify-center rounded-full"
                 >
-                  {item.value}
-                  <Button
-                    slot="remove"
-                    aria-label={`Remove ${item.value}`}
-                    className="flex min-h-6 min-w-6 items-center justify-center rounded-full"
-                  >
-                    <X className="size-3" aria-hidden="true" />
-                  </Button>
-                </Tag>
-              )}
-            </TagList>
-          </TagGroup>
-        )}
+                  <X className="size-3" aria-hidden="true" />
+                </Button>
+              </Tag>
+            )}
+          </TagList>
+        </TagGroup>
       </ComboBoxValue>
       <Popover className="z-50 w-(--trigger-width) max-w-[calc(100vw-2rem)] rounded-lg bg-popover p-1 text-popover-foreground shadow-md ring-1 ring-foreground/10">
         {status && (
