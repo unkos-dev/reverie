@@ -1975,14 +1975,14 @@ mod tests {
         )
         .await
         .is_err();
+        pause.release();
+        drop(state.hash_limiter.acquire().await.unwrap());
         let after = snapshot(&pool, "cancel@example.com").await;
         let sessions =
             sqlx::query_scalar!(r#"SELECT count(*) AS "count!" FROM tower_sessions.session"#)
                 .fetch_one(&pool)
                 .await
                 .unwrap();
-        pause.release();
-        drop(state.hash_limiter.acquire().await.unwrap());
         assert!(cancelled);
         assert!(unavailable);
         assert_eq!(after, before);
