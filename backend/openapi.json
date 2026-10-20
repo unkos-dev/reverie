@@ -9780,7 +9780,7 @@
           },
           "email": {
             "type": "string",
-            "description": "Email address for the new account; must be a syntactically valid\naddr-spec and unique (case-insensitive)."
+            "description": "Email address with an unquoted local part, no display name or domain\nliteral; unique (case-insensitive)."
           },
           "role": {
             "$ref": "#/components/schemas/Role",
@@ -11193,7 +11193,7 @@
           },
           "email": {
             "type": "string",
-            "description": "New account email (RFC 5322 addr-spec)."
+            "description": "New account email with an unquoted local part, no display name or domain literal."
           },
           "password": {
             "type": "string",
@@ -11661,7 +11661,7 @@
           },
           "email": {
             "type": "string",
-            "description": "First administrator's email (RFC 5322 addr-spec)."
+            "description": "First administrator's email with an unquoted local part, no display name or domain literal."
           },
           "password": {
             "type": "string",
@@ -12554,7 +12554,7 @@
               "string",
               "null"
             ],
-            "description": "New email (RFC 5322 addr-spec). Absent = unchanged; explicit `null`\nclears the stored address."
+            "description": "New email with an unquoted local part, no display name or domain literal.\nAbsent = unchanged; explicit `null` clears the stored address."
           }
         }
       },

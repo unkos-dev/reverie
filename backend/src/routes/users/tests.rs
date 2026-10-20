@@ -505,6 +505,8 @@ async fn patch_user_invalid_email_format_returns_422(pool: PgPool) {
         // `is_addr_spec` unit test.
         "Bob <bob@example.com>",
         "bob@[127.0.0.1]",
+        "\"john doe\"@example.com",
+        "\"john\"@example.com",
         "",
     ] {
         if bad.is_empty() {
@@ -884,16 +886,28 @@ async fn create_user_invalid_email_returns_422(pool: PgPool) {
     let ingestion_pool = test_support::db::ingestion_pool_for(&pool).await;
     let (server, csrf, _) = credential_link_admin(&app_pool, &ingestion_pool).await;
 
-    let r = server
-        .post("/api/v1/users")
-        .add_header(csrf_header(&csrf).0, csrf_header(&csrf).1)
-        .json(&json!({
-            "email": "invalid",
-            "display_name": "Weak",
-            "role": "adult",
-        }))
-        .await;
-    test_support::assert_problem(&r, problems::VALIDATION, StatusCode::UNPROCESSABLE_ENTITY);
+    for email in [
+        "invalid",
+        "\"john doe\"@example.com",
+        "\"john\"@example.com",
+    ] {
+        let r = server
+            .post("/api/v1/users")
+            .add_header(csrf_header(&csrf).0, csrf_header(&csrf).1)
+            .json(&json!({
+                "email": email,
+                "display_name": "Weak",
+                "role": "adult",
+            }))
+            .await;
+        test_support::assert_problem(&r, problems::VALIDATION, StatusCode::UNPROCESSABLE_ENTITY);
+        assert!(
+            crate::models::user::find_by_email(&app_pool, email)
+                .await
+                .unwrap()
+                .is_none()
+        );
+    }
 }
 
 #[sqlx::test(migrations = "./migrations")]
@@ -1396,17 +1410,13 @@ async fn auth_hash_census_users_endpoints(pool: PgPool) {
         .await;
     assert_eq!(changed.status_code(), StatusCode::OK);
     assert_eq!(count.load(std::sync::atomic::Ordering::SeqCst), 2);
-    for id in [admin] {
-        let credential = crate::models::local_credentials::find_by_user_id(&state.pool, id)
-            .await
-            .unwrap()
-            .unwrap();
-        crate::auth::password::verify_password(
-            b"lithe cobalt meadow drift",
-            &credential.password_hash,
-        )
+    let id = admin;
+    let credential = crate::models::local_credentials::find_by_user_id(&state.pool, id)
+        .await
+        .unwrap()
         .unwrap();
-    }
+    crate::auth::password::verify_password(b"lithe cobalt meadow drift", &credential.password_hash)
+        .unwrap();
 }
 
 #[sqlx::test(migrations = "./migrations")]
@@ -1428,26 +1438,25 @@ async fn auth_hash_busy_users_endpoints(pool: PgPool) {
         }));
     let _held = state.hash_limiter.acquire().await.unwrap();
     let server = axum_test::TestServer::new(crate::build_router(state.clone()));
-    for (path, body) in [(
+    let (path, body) = (
         "/api/v1/account/password".to_owned(),
         json!({"current_password":STRONG_PW,"new_password":"lithe cobalt meadow drift"}),
-    )] {
-        let response = server
-            .post(&path)
-            .add_header(auth(&basic).0, auth(&basic).1)
-            .json(&body)
-            .await;
-        assert_eq!(response.status_code(), StatusCode::SERVICE_UNAVAILABLE);
-        assert_eq!(
-            response.headers()["content-type"],
-            "application/problem+json"
-        );
-        assert!(!response.headers().contains_key("retry-after"));
-        assert_eq!(
-            response.json::<serde_json::Value>(),
-            json!({"type":"https://reverie.example/probs/auth-busy","title":"Service Unavailable","status":503,"detail":"The server is busy. Try again in a moment.","instance":path})
-        );
-    }
+    );
+    let response = server
+        .post(&path)
+        .add_header(auth(&basic).0, auth(&basic).1)
+        .json(&body)
+        .await;
+    assert_eq!(response.status_code(), StatusCode::SERVICE_UNAVAILABLE);
+    assert_eq!(
+        response.headers()["content-type"],
+        "application/problem+json"
+    );
+    assert!(!response.headers().contains_key("retry-after"));
+    assert_eq!(
+        response.json::<serde_json::Value>(),
+        json!({"type":"https://reverie.example/probs/auth-busy","title":"Service Unavailable","status":503,"detail":"The server is busy. Try again in a moment.","instance":path})
+    );
     assert_eq!(count.load(std::sync::atomic::Ordering::SeqCst), 0);
     assert!(
         crate::models::user::find_by_email(&state.pool, "busy@example.com")
@@ -1455,22 +1464,21 @@ async fn auth_hash_busy_users_endpoints(pool: PgPool) {
             .unwrap()
             .is_none()
     );
-    for (id, expected) in [(admin, phc)] {
-        assert_eq!(
-            crate::models::local_credentials::find_by_user_id(&state.pool, id)
-                .await
-                .unwrap()
-                .unwrap()
-                .password_hash,
-            expected
-        );
-        assert!(
-            crate::models::password_reset_pin::find_active_by_user(&state.pool, id)
-                .await
-                .unwrap()
-                .is_none()
-        );
-    }
+    let (id, expected) = (admin, phc);
+    assert_eq!(
+        crate::models::local_credentials::find_by_user_id(&state.pool, id)
+            .await
+            .unwrap()
+            .unwrap()
+            .password_hash,
+        expected
+    );
+    assert!(
+        crate::models::password_reset_pin::find_active_by_user(&state.pool, id)
+            .await
+            .unwrap()
+            .is_none()
+    );
 }
 
 async fn credential_link_admin(

@@ -406,8 +406,8 @@ async fn update_child_status(
 /// Body for `POST /api/v1/users`.
 #[derive(Debug, Deserialize, utoipa::ToSchema)]
 struct CreateUserRequest {
-    /// Email address for the new account; must be a syntactically valid
-    /// addr-spec and unique (case-insensitive).
+    /// Email address with an unquoted local part, no display name or domain
+    /// literal; unique (case-insensitive).
     email: String,
     /// Human-readable display name.
     display_name: String,
@@ -880,8 +880,8 @@ struct UpdateUserRequest {
     #[serde(default, deserialize_with = "deserialize_optional_string")]
     #[schema(value_type = String)]
     display_name: Option<Option<String>>,
-    /// New email (RFC 5322 addr-spec). Absent = unchanged; explicit `null`
-    /// clears the stored address.
+    /// New email with an unquoted local part, no display name or domain literal.
+    /// Absent = unchanged; explicit `null` clears the stored address.
     #[serde(default, deserialize_with = "deserialize_optional_string")]
     #[schema(value_type = Option<String>)]
     email: Option<Option<String>>,
@@ -915,7 +915,7 @@ fn unique_violation_or_internal(e: sqlx::Error, msg: &'static str) -> AppError {
 /// Validate an admin-supplied `email` for `PATCH /api/v1/users/{id}`.
 ///
 /// Returns the trimmed addr-spec on success. Rejects an empty/whitespace-only
-/// value and any non-addr-spec form (display-name, domain-literal — see
+/// value, quoted local parts and unsupported forms (display-name, domain-literal; see
 /// [`is_addr_spec`]) with [`AppError::Validation`] (422).
 ///
 /// THREAT: an admin submitting a malformed value is surfaced server-side for

@@ -117,7 +117,7 @@ is never an identity key.
 On first sign-in, `upsert_from_oidc` creates a `users` row with the column defaults (role `adult`, not a child, session
 version 0, no promotion) and the link row. The display name is the `name` claim in its default locale, falling back to
 the subject when the claim is absent. The email is the trimmed `email` claim when it parses as an RFC 5322 addr-spec
-with display-name and domain-literal forms disallowed; an absent, blank or invalid claim stores `NULL`.
+with an unquoted local part and no display name or domain literal; an absent, blank or unsupported claim stores `NULL`.
 `idx_users_email_lower`, a unique index over `lower(email)` for non-null emails, makes an email unique across accounts
 without regard to case.
 

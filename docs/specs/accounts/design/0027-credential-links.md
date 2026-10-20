@@ -46,6 +46,10 @@ The three administrator operations require an administrator, a non-child account
 authentication. Device tokens over Basic or Bearer receive 403. All five operations return 404 when local authentication
 is disabled. User responses expose `has_password` and an unexpired `credential_link_expires_at`, or null.
 
+Account email inputs use the shared backend validator: an unquoted local part with no display name or domain literal.
+Admin creation and edits reject unsupported addresses with 422. Frontend forms and lookup responses reject quoted local
+parts through their Zod email validators.
+
 ## Data and state
 
 `credential_links` has one row per user: a cascading user primary key, a unique SHA-256 `token_hash`, `expires_at` and

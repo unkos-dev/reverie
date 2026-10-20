@@ -639,7 +639,7 @@ async fn setup_status(
 /// Request body for `POST /auth/setup`. Explicit allow-list (no mass-assignment).
 #[derive(serde::Deserialize, utoipa::ToSchema)]
 struct SetupRequest {
-    /// First administrator's email (RFC 5322 addr-spec).
+    /// First administrator's email with an unquoted local part, no display name or domain literal.
     email: String,
     /// Display name.
     display_name: String,
@@ -731,7 +731,7 @@ async fn setup(
 /// mass-assignment): a self-registrant cannot smuggle a role or child flag.
 #[derive(serde::Deserialize, utoipa::ToSchema)]
 struct RegisterRequest {
-    /// New account email (RFC 5322 addr-spec).
+    /// New account email with an unquoted local part, no display name or domain literal.
     email: String,
     /// Display name.
     display_name: String,

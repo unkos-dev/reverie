@@ -421,22 +421,10 @@ pub async fn find_by_oidc_identity(
     find_by_id(pool, user_id).await
 }
 
-/// Whether `e` parses as an RFC-5322 *addr-spec* with display-name and
-/// domain-literal forms disallowed.
+/// Whether `e` is an addr-spec with an unquoted local part.
 ///
-/// THREAT: [`EmailAddress::is_valid`] uses [`Options::default`], which sets both
-/// `allow_display_text` and `allow_domain_literal` to `true` — it accepts
-/// display-name (`Name <a@b>`) and domain-literal (`a@[127.0.0.1]`) forms and
-/// would store those angle/bracket-bearing strings raw in `users.email`. This
-/// helper disables both options, so every write path to that column (OIDC upsert
-/// + admin `PATCH /api/v1/users/{id}`) rejects those two shapes.
-///
-/// This is *not* full normalisation. A quoted local-part
-/// (`"john doe"@example.com`) is a valid addr-spec and is still accepted, so the
-/// stored value may contain quotes and spaces inside the quoted segment. CR/LF
-/// can never appear (qtext/wsp exclude control bytes), so the value is safe to
-/// log and store, but downstream consumers must treat it as an opaque address —
-/// not assume a bare `local@domain` free of quoting.
+/// THREAT: shared input validation excludes quoted local parts, display names
+/// and domain literals from stored account email addresses.
 pub(crate) fn is_addr_spec(e: &str) -> bool {
     EmailAddress::parse_with_options(
         e,
@@ -444,7 +432,7 @@ pub(crate) fn is_addr_spec(e: &str) -> bool {
             .without_display_text()
             .without_domain_literal(),
     )
-    .is_ok()
+    .is_ok_and(|email| !email.local_part().starts_with('"'))
 }
 
 /// Trim the OIDC email claim and degrade an absent, blank or invalid value to
@@ -463,7 +451,7 @@ fn validated_oidc_email<'a>(email: Option<&'a str>, subject: &str) -> Option<&'a
             tracing::warn!(
                 oidc_subject = %subject,
                 rejected_email_len = e.len(),
-                "OIDC email claim is not RFC-5322 valid; persisting NULL and matching on sub"
+                "OIDC email claim has an unsupported format; persisting NULL and matching on sub"
             );
             None
         }
@@ -646,6 +634,39 @@ mod tests {
         assert!(!is_addr_spec("Bob <bob@example.com>"));
         assert!(!is_addr_spec("bob@[127.0.0.1]"));
         assert!(!is_addr_spec("not-an-email"));
+    }
+
+    #[test]
+    fn is_addr_spec_rejects_quoted_local_parts() {
+        for email in [
+            "\"john doe\"@example.com",
+            "\"john\"@example.com",
+            "\"john@doe\"@example.com",
+            "john doe@example.com",
+        ] {
+            assert!(!is_addr_spec(email), "accepted {email:?}");
+        }
+        assert!(is_addr_spec("john.doe+books@example.com"));
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn upsert_drops_quoted_oidc_email_to_none(pool: PgPool) {
+        let subject = "quoted-email";
+        let user = upsert_from_oidc(
+            &pool,
+            TEST_ISSUER,
+            subject,
+            "John",
+            Some("\"john doe\"@example.com"),
+        )
+        .await
+        .unwrap();
+        assert_eq!(user.email, None);
+        let resolved = find_by_oidc_identity(&pool, TEST_ISSUER, subject)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(resolved.id, user.id);
     }
 
     const TEST_ISSUER: &str = "https://test-issuer.example.com";
