@@ -2,9 +2,9 @@ import { Label as AriaLabel } from "react-aria-components";
 /**
  * `/admin/users` — admin-only user management page.
  *
- * Lists every user with controls to change role, toggle child status, create a
- * new account, disable or re-enable an account, and reset a password. Non-admin
- * callers are redirected to `/library`.
+ * Lists every user with controls to change role, create an account, disable or
+ * re-enable an account, and reset a password. Non-admin callers are redirected
+ * to `/library`.
  */
 import { type ReactElement, type SyntheticEvent, useCallback, useState } from "react";
 import { Navigate } from "react-router";
@@ -16,7 +16,6 @@ import { queryKeys } from "@/lib/query/keys";
 import {
   listUsers,
   updateUserRole,
-  updateUserChildStatus,
   createUser,
   setAccountStatus,
   adminResetPassword,
@@ -53,7 +52,6 @@ import {
 } from "@/components/ui/dialog";
 import { Field, FieldError, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
-import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import { PasswordPolicyHint } from "@/components/PasswordPolicyHint";
 import { Button } from "@/components/ui/button";
@@ -100,18 +98,6 @@ function UsersPage(): ReactElement {
     },
   });
 
-  const childMutation = useMutation({
-    mutationFn: ({ id, isChild }: { id: string; isChild: boolean }) =>
-      updateUserChildStatus(id, isChild),
-    onSuccess: () => {
-      invalidateUsers();
-      void queryClient.invalidateQueries({ queryKey: queryKeys.auth.me() });
-    },
-    onError: (err: Error) => {
-      toast.error(`Child status update failed: ${errorDetail(err)}`);
-    },
-  });
-
   const statusMutation = useMutation({
     mutationFn: ({ id, disabled }: { id: string; disabled: boolean }) =>
       setAccountStatus(id, disabled),
@@ -129,13 +115,6 @@ function UsersPage(): ReactElement {
       roleMutation.mutate({ id: userId, role });
     },
     [roleMutation],
-  );
-
-  const handleChildToggle = useCallback(
-    (userId: string, isChild: boolean) => {
-      childMutation.mutate({ id: userId, isChild });
-    },
-    [childMutation],
   );
 
   const handleStatusToggle = useCallback(
@@ -195,7 +174,6 @@ function UsersPage(): ReactElement {
               <TableHead>Name</TableHead>
               <TableHead>Email</TableHead>
               <TableHead>Role</TableHead>
-              <TableHead>Child</TableHead>
               <TableHead>Status</TableHead>
               <TableHead className="text-right">Actions</TableHead>
             </TableRow>
@@ -208,7 +186,6 @@ function UsersPage(): ReactElement {
                 isSelf={user.id === me.id}
                 passwordPolicy={passwordPolicy}
                 onRoleChange={handleRoleChange}
-                onChildToggle={handleChildToggle}
                 onStatusToggle={handleStatusToggle}
               />
             ))}
@@ -224,7 +201,6 @@ type UserRowProps = {
   user: User;
   isSelf: boolean;
   onRoleChange: (userId: string, role: Role) => void;
-  onChildToggle: (userId: string, isChild: boolean) => void;
   onStatusToggle: (userId: string, disabled: boolean) => void;
 };
 
@@ -237,7 +213,6 @@ function UserRow({
   user,
   isSelf,
   onRoleChange,
-  onChildToggle,
   onStatusToggle,
 }: Readonly<UserRowProps>): ReactElement {
   return (
@@ -269,14 +244,6 @@ function UserRow({
             <SelectItem id="child">child</SelectItem>
           </SelectContent>
         </Select>
-      </TableCell>
-      <TableCell>
-        <Switch
-          checked={user.is_child}
-          onCheckedChange={(v) => {
-            onChildToggle(user.id, v);
-          }}
-        />
       </TableCell>
       <TableCell>
         {user.disabled ? (

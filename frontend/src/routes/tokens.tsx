@@ -5,7 +5,6 @@
 import { listTokens } from "@/api/tokens";
 import { queryClient } from "@/lib/query/client";
 import { queryKeys } from "@/lib/query/keys";
-import { TokensPage } from "@/pages/tokens/TokensPage";
 
 /** Loader for `/tokens` — prefetches the caller's token list. */
 export async function loader(): Promise<null> {
@@ -19,4 +18,4 @@ export async function loader(): Promise<null> {
 }
 
 /** Component export consumed by the route's `lazy()` callback. */
-export const Component = TokensPage;
+export { TokensPage as Component } from "@/pages/tokens/TokensPage";
