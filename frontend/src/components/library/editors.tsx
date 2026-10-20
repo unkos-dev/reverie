@@ -104,7 +104,7 @@ export function TextFilterEditor({
             if (isTextOp(next)) changeOp(next);
           }}
         >
-          <SelectTrigger id={`${id}-op`} aria-label="Operator">
+          <SelectTrigger id={`${id}-op`}>
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -554,7 +554,7 @@ export function VocabEditor({
           if (isSetMode(value)) setMode(value);
         }}
       >
-        <SelectTrigger className="w-32" aria-label="Match mode">
+        <SelectTrigger className="w-32">
           <SelectValue />
         </SelectTrigger>
         <SelectContent>

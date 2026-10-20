@@ -19,7 +19,7 @@ function NestedDialog(): ReactElement {
       <DialogContent>
         <DialogTitle>Editor</DialogTitle>
         <Select aria-label="Status" defaultValue="new">
-          <SelectTrigger aria-label="Status">
+          <SelectTrigger>
             <SelectValue />
           </SelectTrigger>
           <SelectContent>

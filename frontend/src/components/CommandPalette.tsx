@@ -87,7 +87,7 @@ export function CommandPalette(): ReactElement {
       className="fixed inset-0 z-50 flex items-center justify-center bg-overlay p-4"
     >
       <Modal className="w-full max-w-lg overflow-hidden rounded-xl bg-popover p-1 text-popover-foreground ring-1 ring-foreground/10">
-        <Dialog aria-label="Search library" className="outline-none">
+        <Dialog className="outline-none">
           <Heading slot="title" className="sr-only">
             Search library
           </Heading>
@@ -114,41 +114,34 @@ export function CommandPalette(): ReactElement {
                 {status}
               </p>
             )}
-            <div
-              role="region"
-              aria-label="Search results"
-              tabIndex={0}
-              className="max-h-72 overflow-y-auto"
+            <Menu
+              aria-label="Books"
+              items={items}
+              className="max-h-72 overflow-y-auto p-1 outline-none"
+              onAction={(key) => {
+                changeOpen(false);
+                void navigate(`/b/${encodeURIComponent(String(key))}`);
+              }}
             >
-              <Menu
-                aria-label="Books"
-                items={items}
-                className="p-1 outline-none"
-                onAction={(key) => {
-                  changeOpen(false);
-                  void navigate(`/b/${encodeURIComponent(String(key))}`);
-                }}
-              >
-                {(hit: SearchHit) => (
-                  <MenuItem
-                    id={hit.id}
-                    textValue={hit.title}
-                    className="cursor-default rounded-md px-2 py-1.5 outline-none data-focused:bg-muted"
-                  >
-                    <Text slot="label">
-                      <span className="block text-sm font-medium">{hit.title}</span>{" "}
-                      <span className="block text-xs text-fg-muted">{hit.authors.join(", ")}</span>
-                      {hit.snippet && (
-                        <HighlightedSnippet
-                          text={hit.snippet}
-                          className="block text-xs text-fg-muted"
-                        />
-                      )}
-                    </Text>
-                  </MenuItem>
-                )}
-              </Menu>
-            </div>
+              {(hit: SearchHit) => (
+                <MenuItem
+                  id={hit.id}
+                  textValue={hit.title}
+                  className="cursor-default rounded-md px-2 py-1.5 outline-none data-focused:bg-muted"
+                >
+                  <Text slot="label">
+                    <span className="block text-sm font-medium">{hit.title}</span>{" "}
+                    <span className="block text-xs text-fg-muted">{hit.authors.join(", ")}</span>
+                    {hit.snippet && (
+                      <HighlightedSnippet
+                        text={hit.snippet}
+                        className="block text-xs text-fg-muted"
+                      />
+                    )}
+                  </Text>
+                </MenuItem>
+              )}
+            </Menu>
           </Autocomplete>
           <div className="border-border text-fg-muted flex items-center gap-4 border-t px-3 py-2 font-mono text-[0.65rem] tracking-wide">
             <span>

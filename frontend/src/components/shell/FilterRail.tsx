@@ -499,7 +499,7 @@ function SortSection({ levels, inherited, onChange }: Readonly<SortSectionProps>
               if (match !== undefined) onChange([...levels, { field: match, desc: false }]);
             }}
           >
-            <SelectTrigger className="h-8 w-full" aria-label="Add sort field">
+            <SelectTrigger className="h-8 w-full">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
