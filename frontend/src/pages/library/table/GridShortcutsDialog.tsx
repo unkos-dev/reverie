@@ -49,7 +49,7 @@ export function useShortcutsHotkey(setOpen: (open: boolean) => void): void {
         !event.metaKey &&
         !event.ctrlKey &&
         !event.altKey &&
-        !inEditableField(event.target)
+        !inEditableField(document.activeElement)
       ) {
         event.preventDefault();
         setOpen(true);

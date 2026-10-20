@@ -38,7 +38,7 @@ export function CommandPalette(): ReactElement {
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent): void {
       const cmdK = (event.key === "k" || event.key === "K") && (event.metaKey || event.ctrlKey);
-      const target = event.target;
+      const target = document.activeElement;
       const inField =
         target instanceof HTMLElement &&
         (target.tagName === "INPUT" ||

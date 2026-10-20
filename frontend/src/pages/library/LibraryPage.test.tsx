@@ -16,6 +16,8 @@ import type {
 import type { AuthMe } from "@/hooks/useAuthMe";
 import { queryKeys } from "@/lib/query/keys";
 
+import { CommandPalette } from "@/components/CommandPalette";
+
 import { rememberActiveUser } from "@/lib/active-user";
 
 import { displayStorageKey } from "./display-storage";
@@ -162,6 +164,7 @@ interface RenderOpts {
   me?: AuthMe;
   /** Prefill book-detail cache slots so the drawer renders without a fetch. */
   details?: BookDetail[];
+  withPalette?: boolean;
 }
 
 function findLibraryTable(): Promise<HTMLElement> {
@@ -177,6 +180,7 @@ function renderLibrary({
   extraCacheParams = [],
   me,
   details = [],
+  withPalette = false,
 }: RenderOpts): {
   client: QueryClient;
 } {
@@ -222,6 +226,7 @@ function renderLibrary({
         element: (
           <NuqsAdapter>
             <LibraryPage />
+            {withPalette && <CommandPalette />}
             <LocationProbe />
           </NuqsAdapter>
         ),
@@ -259,6 +264,36 @@ function drawerSection(drawer: HTMLElement, title: string): HTMLElement {
 }
 
 describe("LibraryPage", () => {
+  test.each(["AC/DC", "fantasy", "why?"])(
+    "palette accepts %s without invoking library shortcuts",
+    async (query) => {
+      const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation(() =>
+        Promise.resolve(
+          new Response(JSON.stringify({ items: [] }), {
+            headers: { "Content-Type": "application/json" },
+          }),
+        ),
+      );
+      renderLibrary({
+        items: [bookFixture()],
+        nextCursor: null,
+        initialEntries: ["/library?view=table"],
+        me: meFixture(),
+        withPalette: true,
+      });
+      await findLibraryTable();
+      const user = userEvent.setup();
+      await user.keyboard("{Control>}k{/Control}");
+      const palette = await screen.findByRole("dialog", { name: "Search library" });
+      const input = within(palette).getByRole("searchbox");
+      await user.type(input, query);
+      expect(input).toHaveValue(query);
+      expect(document.documentElement).not.toHaveAttribute("data-cinematic");
+      expect(screen.queryByRole("dialog", { name: /Keyboard shortcuts/i })).not.toBeInTheDocument();
+      fetchSpy.mockRestore();
+    },
+  );
+
   test("renders the heading without a fabricated total", async () => {
     renderLibrary({ items: [bookFixture()], nextCursor: null });
     expect(await screen.findByRole("heading", { name: "Library" })).toBeInTheDocument();
