@@ -17,7 +17,6 @@ import { listBooks, parseSortParam, serializeSortParam, type ListBooksParams } f
 import { queryClient } from "@/lib/query/client";
 import { queryKeys } from "@/lib/query/keys";
 import { readDisplayPreferences } from "@/pages/library/display-storage";
-import { LibraryPage } from "@/pages/library/LibraryPage";
 
 import { paramsFromSearch } from "./library-params";
 
@@ -60,4 +59,4 @@ export async function loader({ request }: LoaderFunctionArgs): Promise<null> {
   return null;
 }
 
-export { LibraryPage as Component };
+export { LibraryPage as Component } from "@/pages/library/LibraryPage";

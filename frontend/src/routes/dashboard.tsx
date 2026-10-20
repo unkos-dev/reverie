@@ -6,7 +6,6 @@ import { getDashboardStats } from "@/api/dashboard";
 import { queryClient } from "@/lib/query/client";
 import { queryKeys } from "@/lib/query/keys";
 import type { AuthMe } from "@/hooks/useAuthMe";
-import { DashboardPage } from "@/pages/admin/DashboardPage";
 
 /**
  * Loader for `/admin/dashboard` — prefetches the stats for known admins.
@@ -31,4 +30,4 @@ export async function loader(): Promise<null> {
 }
 
 /** Component export consumed by the route's `lazy()` callback. */
-export const Component = DashboardPage;
+export { DashboardPage as Component } from "@/pages/admin/DashboardPage";
