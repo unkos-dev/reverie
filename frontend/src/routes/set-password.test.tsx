@@ -6,6 +6,7 @@ import { createMemoryRouter, RouterProvider } from "react-router";
 import { StrictMode } from "react";
 
 import { ApiError } from "@/api";
+import { queryKeys } from "@/lib/query/keys";
 import { fetchSetupStatus, lookupCredentialLink, redeemCredentialLink } from "@/api/auth";
 
 import { Component } from "./set-password";
@@ -59,7 +60,9 @@ test("checks the link and clears the fragment", async () => {
   renderPage();
   expect(await screen.findByRole("status", { name: "Checking link" })).toBeInTheDocument();
   expect(window.location.hash).toBe("");
-  expect(lookupCredentialLink).toHaveBeenCalledWith("test-link", expect.any(AbortSignal));
+  await waitFor(() => {
+    expect(lookupCredentialLink).toHaveBeenCalledWith("test-link", expect.any(AbortSignal));
+  });
 });
 
 test("clears the fragment before lookup starts, including Strict Mode mounting", async () => {
@@ -123,6 +126,23 @@ test.each([new TypeError("Failed to fetch"), new ApiError(503, null, "Busy", "Tr
     expect(await screen.findByText("Password set")).toBeInTheDocument();
   },
 );
+
+test("keeps a loaded password policy usable during background refresh", async () => {
+  const client = renderPage();
+  await waitFor(() => {
+    expect(screen.getByRole("button", { name: "Set password" })).toBeEnabled();
+  });
+  vi.mocked(fetchSetupStatus).mockReturnValueOnce(new Promise(() => {}));
+  act(() => {
+    void client.invalidateQueries({ queryKey: queryKeys.auth.setupStatus() });
+  });
+  await waitFor(() => {
+    expect(fetchSetupStatus).toHaveBeenCalledTimes(2);
+  });
+  expect(screen.getByText(/Use 15 to 256 characters/)).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Set password" })).toBeEnabled();
+  expect(screen.queryByRole("button", { name: "Retry password policy" })).not.toBeInTheDocument();
+});
 
 test("sets a new account password and offers explicit sign in", async () => {
   renderPage();

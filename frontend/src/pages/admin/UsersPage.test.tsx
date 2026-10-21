@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, test, vi } from "vite-plus/test";
 import { RouterProvider, createMemoryRouter, type RouteObject } from "react-router";
@@ -406,4 +406,55 @@ describe("UsersPage", () => {
     expect(screen.queryByRole("button", { name: "Reset password" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Cancel link" })).not.toBeInTheDocument();
   });
+
+  test("shows authentication settings loading until credential actions are known", async () => {
+    vi.mocked(fetchSetupStatus).mockReturnValueOnce(new Promise(() => {}));
+    renderUsersPage(ADMIN_ME, [makeUser()]);
+    expect(await screen.findByRole("status")).toHaveTextContent("Loading authentication settings…");
+    expect(screen.queryByRole("button", { name: "Create user" })).not.toBeInTheDocument();
+    expect(screen.getByText("Bob")).toBeInTheDocument();
+  });
+
+  test.each([new TypeError("Failed to fetch"), new ApiError(503, null, "Busy", "Try later")])(
+    "recovers credential actions in place after authentication settings fail: %s",
+    async (error) => {
+      vi.mocked(fetchSetupStatus).mockClear();
+      vi.mocked(fetchSetupStatus).mockRejectedValueOnce(error);
+      const target = makeUser({ credential_link_expires_at: "2026-10-23T12:00:00Z" });
+      renderUsersPage(ADMIN_ME, [target]);
+      const retry = await screen.findByRole("button", { name: "Retry authentication settings" });
+      expect(screen.getByRole("alert")).toHaveTextContent(
+        "Could not load authentication settings.",
+      );
+      expect(screen.queryByRole("button", { name: "Create user" })).not.toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "Reset password" })).not.toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "Cancel link" })).not.toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Disable" })).toBeEnabled();
+      const status = {
+        setup_required: false,
+        local_auth_enabled: true,
+        oidc_enabled: false,
+        password_min_length: 15,
+        password_max_length: 256,
+      };
+      let complete: ((value: typeof status) => void) | undefined;
+      vi.mocked(fetchSetupStatus).mockReturnValueOnce(
+        new Promise((resolve) => {
+          complete = resolve;
+        }),
+      );
+      await userEvent.setup().click(retry);
+      expect(retry).toBeDisabled();
+      act(() => {
+        complete?.(status);
+      });
+      expect(await screen.findByRole("button", { name: "Create user" })).toBeEnabled();
+      expect(screen.getByRole("button", { name: "Reset password" })).toBeEnabled();
+      expect(screen.getByRole("button", { name: "Cancel link" })).toBeEnabled();
+      expect(
+        screen.queryByRole("button", { name: "Retry authentication settings" }),
+      ).not.toBeInTheDocument();
+      expect(fetchSetupStatus).toHaveBeenCalledTimes(2);
+    },
+  );
 });

@@ -17,14 +17,14 @@ export function PasswordPolicyHint({
   onRetry,
   retrying = false,
 }: Readonly<Props>): ReactElement {
-  const message =
-    policy !== undefined
-      ? `Use ${String(policy.password_min_length)} to ${String(policy.password_max_length)} characters. Avoid common words or passwords from known data breaches.`
-      : failed || retrying
-        ? onRetry
-          ? "Could not load the password policy."
-          : "Could not load the password policy. Reload to try again."
-        : "Loading password policy…";
+  let message = "Loading password policy…";
+  if (policy !== undefined) {
+    message = `Use ${String(policy.password_min_length)} to ${String(policy.password_max_length)} characters. Avoid common words or passwords from known data breaches.`;
+  } else if (failed || retrying) {
+    message = onRetry
+      ? "Could not load the password policy."
+      : "Could not load the password policy. Reload to try again.";
+  }
   return (
     <>
       <FieldDescription role={policy === undefined && failed ? "alert" : undefined}>

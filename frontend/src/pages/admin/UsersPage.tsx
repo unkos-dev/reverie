@@ -67,7 +67,12 @@ function errorDetail(err: unknown): string {
 }
 
 function UsersPage(): ReactElement {
-  const { data: setup } = useQuery({
+  const {
+    data: setup,
+    isFetched: setupFetched,
+    isFetching: setupFetching,
+    refetch: refetchSetup,
+  } = useQuery({
     queryKey: queryKeys.auth.setupStatus(),
     queryFn: ({ signal }) => fetchSetupStatus(signal),
     retry: false,
@@ -158,6 +163,30 @@ function UsersPage(): ReactElement {
         <h1 className="text-2xl font-bold text-fg">Users</h1>
         {localAuthEnabled ? <CreateUserDialog onCreated={invalidateUsers} /> : null}
       </div>
+
+      {setup === undefined && !setupFetched ? (
+        <p role="status" className="mb-6 text-muted-foreground">
+          Loading authentication settings…
+        </p>
+      ) : null}
+      {setup === undefined && setupFetched ? (
+        <div className="mb-6 flex flex-col items-start gap-2">
+          <p role="alert" className="text-destructive">
+            Could not load authentication settings.
+          </p>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            disabled={setupFetching}
+            onClick={() => {
+              void refetchSetup();
+            }}
+          >
+            Retry authentication settings
+          </Button>
+        </div>
+      ) : null}
 
       {isLoading && (
         <div className="space-y-2">

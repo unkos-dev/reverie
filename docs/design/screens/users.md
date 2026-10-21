@@ -61,6 +61,12 @@ Hide "Reset password" on the administrator's own row. Hide "Create user", "Reset
 authentication is disabled. Retain the existing account and role controls, loading skeletons, empty state and list-error
 state.
 
+While authentication settings load, show "Loading authentication settings…" beneath the heading. If loading fails, show
+"Could not load authentication settings." with a small outline "Retry authentication settings" button. Retry in place,
+keeping the button disabled during the request. Keep the user list and existing account and role controls available.
+Credential actions appear once settings confirm local authentication is enabled; a failed background refresh retains the
+previously loaded settings.
+
 ## Keyboard and accessibility
 
 Retain table headers, labelled fields, visible focus rings and keyboard activation. Dialogs trap focus, close with

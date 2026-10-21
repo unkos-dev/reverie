@@ -31,7 +31,7 @@ export function usePasswordPolicy(): PasswordPolicyState {
     retry: () => {
       void refetch();
     },
-    retrying: isFetching && isFetched,
+    retrying: data === undefined && isFetching && isFetched,
     ready: data !== undefined,
     isError: data === undefined && isError,
     validate,
