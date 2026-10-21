@@ -58,5 +58,9 @@ not an explicit Apply operation or a new persistence boundary for incomplete tex
 
 ## More information
 
+The common dismissal outcome concerns valid edits already passed to the filter owner. A completed out-of-range draft is
+corrected on blur or Enter; dismissal itself does not commit it. If the editor is removed before blur, that local draft
+is not applied. Identical persistence of uncommitted drafts is outside this decision.
+
 React Aria's [Modal documentation](https://react-aria.adobe.com/Modal) describes native dismissal and controlled open
 state. The native interaction foundation is recorded in REV-ADR-0060.
