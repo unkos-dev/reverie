@@ -1,8 +1,8 @@
 ALTER TABLE public.ingestion_inputs
-ADD COLUMN rejection_reasons text [] NOT NULL DEFAULT '{}' CHECK (
+ADD COLUMN rejection_reasons text[] NOT NULL DEFAULT '{}' CHECK (
     rejection_reasons <@ ARRAY[
         'unsafe_contents', 'damaged', 'invalid_structure', 'over_limits', 'unspecified'
-    ]::text []
+    ]::text[]
 );
 
 ALTER TABLE public.ingestion_inputs
@@ -28,7 +28,7 @@ LEFT JOIN LATERAL (
 INNER JOIN LATERAL (
     SELECT
         CASE i.status
-            WHEN 'rejected' THEN coalesce(i.rejection_reasons[1], 'unspecified') -- noqa: CV11
+            WHEN 'rejected' THEN coalesce(i.rejection_reasons[1], 'unspecified')
             WHEN 'not_accepted' THEN 'format_not_accepted'
             WHEN 'operational_failure' THEN
                 CASE

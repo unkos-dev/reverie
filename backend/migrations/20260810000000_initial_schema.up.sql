@@ -1,5 +1,5 @@
--- Preserve valid casts, correlated references, and join ordering; review these exclusions at the next schema rollup.
--- noqa: disable=CV11,RF01,RF03,ST09
+-- Preserve correlated references and join ordering; review these exclusions at the next schema rollup.
+-- noqa: disable=RF03,ST09
 
 CREATE EXTENSION IF NOT EXISTS pg_trgm WITH SCHEMA public;
 CREATE EXTENSION IF NOT EXISTS pgcrypto WITH SCHEMA public;
@@ -216,10 +216,10 @@ ALTER TEXT SEARCH CONFIGURATION public.unaccent_english
 ADD MAPPING FOR file WITH simple;
 
 ALTER TEXT SEARCH CONFIGURATION public.unaccent_english
-ADD MAPPING FOR "float" WITH simple;
+ADD MAPPING FOR float WITH simple;
 
 ALTER TEXT SEARCH CONFIGURATION public.unaccent_english
-ADD MAPPING FOR "int" WITH simple;
+ADD MAPPING FOR int WITH simple;
 
 ALTER TEXT SEARCH CONFIGURATION public.unaccent_english
 ADD MAPPING FOR uint WITH simple;
@@ -265,7 +265,7 @@ CREATE TABLE public.device_tokens (
     last_used_at timestamp with time zone,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     revoked_at timestamp with time zone,
-    scopes public.scope [] DEFAULT '{read}'::public.scope [] NOT NULL,
+    scopes public.scope[] DEFAULT '{read}'::public.scope[] NOT NULL,
     expires_at timestamp with time zone,
     CONSTRAINT device_tokens_created_at_ts_decode_range
     CHECK ((
@@ -565,7 +565,7 @@ CREATE TABLE public.moods (
 CREATE TABLE public.omnibus_contents (
     omnibus_manifestation_id uuid NOT NULL,
     contained_work_id uuid NOT NULL,
-    "position" integer DEFAULT 0 NOT NULL
+    position integer DEFAULT 0 NOT NULL
 );
 
 CREATE TABLE public.password_reset_pins (
@@ -689,7 +689,7 @@ CREATE TABLE public.series (
 CREATE TABLE public.series_works (
     series_id uuid NOT NULL,
     work_id uuid NOT NULL,
-    "position" double precision,
+    position double precision,
     is_omnibus boolean DEFAULT FALSE NOT NULL,
     note text
 );
@@ -710,7 +710,7 @@ CREATE TABLE public.settings (
     writeback_max_attempts integer DEFAULT 3 NOT NULL,
     opds_enabled boolean DEFAULT TRUE NOT NULL,
     opds_page_size integer DEFAULT 50 NOT NULL,
-    format_priority text [] DEFAULT '{epub,pdf,mobi,azw3,cbz,cbr}'::text [] NOT NULL,
+    format_priority text[] DEFAULT '{epub,pdf,mobi,azw3,cbz,cbr}'::text[] NOT NULL,
     cleanup_mode text DEFAULT 'all'::text NOT NULL,
     openlibrary_base_url text DEFAULT 'https://openlibrary.org'::text NOT NULL,
     googlebooks_base_url text DEFAULT 'https://www.googleapis.com/books/v1'::text NOT NULL,
@@ -752,7 +752,7 @@ CREATE TABLE public.shelf_items (
     shelf_id uuid NOT NULL,
     manifestation_id uuid NOT NULL,
     added_at timestamp with time zone DEFAULT now() NOT NULL,
-    "position" integer DEFAULT 0 NOT NULL,
+    position integer DEFAULT 0 NOT NULL,
     CONSTRAINT shelf_items_added_at_ts_decode_range
     CHECK ((
         (added_at >= '0001-01-01 00:00:00+00'::timestamp with time zone)
@@ -810,7 +810,7 @@ CREATE TABLE public.user_identities (
 
 CREATE TABLE public.user_preferences (
     user_id uuid NOT NULL,
-    hidden_columns text [],
+    hidden_columns text[],
     density public.library_density,
     view public.library_view,
     sort_stack text,
@@ -916,7 +916,7 @@ CREATE TABLE public.work_authors (
     work_id uuid NOT NULL,
     author_id uuid NOT NULL,
     role public.author_role DEFAULT 'author'::public.author_role NOT NULL,
-    "position" integer DEFAULT 0 NOT NULL,
+    position integer DEFAULT 0 NOT NULL,
     source_version_id uuid
 );
 
@@ -1288,7 +1288,7 @@ CREATE INDEX idx_series_parent_id ON public.series USING btree (parent_id) WHERE
 
 CREATE INDEX idx_series_sort_name_id ON public.series USING btree (sort_name, id);
 
-CREATE INDEX idx_series_works_series_position ON public.series_works USING btree (series_id, "position");
+CREATE INDEX idx_series_works_series_position ON public.series_works USING btree (series_id, position);
 
 CREATE INDEX idx_series_works_work_id ON public.series_works USING btree (work_id);
 
@@ -1296,7 +1296,7 @@ CREATE INDEX idx_shelf_items_manifestation_id ON public.shelf_items USING btree 
 
 CREATE INDEX idx_shelf_items_shelf_keyset ON public.shelf_items USING btree (
     shelf_id,
-    "position",
+    position,
     added_at,
     manifestation_id
 );
@@ -1324,7 +1324,7 @@ CREATE INDEX idx_work_authors_author_id ON public.work_authors USING btree (auth
 CREATE INDEX idx_work_authors_source_version_id ON public.work_authors USING btree (source_version_id)
 WHERE (source_version_id IS NOT NULL);
 
-CREATE INDEX idx_work_authors_work_position ON public.work_authors USING btree (work_id, "position");
+CREATE INDEX idx_work_authors_work_position ON public.work_authors USING btree (work_id, position);
 
 CREATE INDEX idx_work_external_identifiers_source_version_id ON public.work_external_identifiers
 USING btree (source_version_id) WHERE (source_version_id IS NOT NULL);
@@ -1406,220 +1406,220 @@ description ON public.works FOR EACH ROW EXECUTE FUNCTION public.works_search_ve
 CREATE TRIGGER trg_works_updated_at BEFORE UPDATE ON public.works FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
 
 ALTER TABLE ONLY public.device_tokens
-ADD CONSTRAINT device_tokens_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
+ADD CONSTRAINT device_tokens_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users (id) ON DELETE CASCADE;
 
 ALTER TABLE ONLY public.field_locks
-ADD CONSTRAINT field_locks_locked_by_fkey FOREIGN KEY (locked_by) REFERENCES public.users(id) ON DELETE SET NULL;
+ADD CONSTRAINT field_locks_locked_by_fkey FOREIGN KEY (locked_by) REFERENCES public.users (id) ON DELETE SET NULL;
 
 ALTER TABLE ONLY public.field_locks
-ADD CONSTRAINT field_locks_manifestation_id_fkey FOREIGN KEY (manifestation_id) REFERENCES public.manifestations(id)
+ADD CONSTRAINT field_locks_manifestation_id_fkey FOREIGN KEY (manifestation_id) REFERENCES public.manifestations (id)
 ON DELETE CASCADE;
 
 ALTER TABLE ONLY public.local_credentials
-ADD CONSTRAINT local_credentials_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
+ADD CONSTRAINT local_credentials_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users (id) ON DELETE CASCADE;
 
 ALTER TABLE ONLY public.manifestation_external_identifiers
 ADD CONSTRAINT manifestation_external_identifiers_manifestation_id_fkey FOREIGN KEY (manifestation_id)
-REFERENCES public.manifestations(id) ON DELETE CASCADE;
+REFERENCES public.manifestations (id) ON DELETE CASCADE;
 
 ALTER TABLE ONLY public.manifestation_external_identifiers
 ADD CONSTRAINT manifestation_external_identifiers_scheme_fkey FOREIGN KEY (scheme)
-REFERENCES public.identifier_schemes(id);
+REFERENCES public.identifier_schemes (id);
 
 ALTER TABLE ONLY public.manifestation_external_identifiers
 ADD CONSTRAINT manifestation_external_identifiers_source_version_id_fkey FOREIGN KEY (source_version_id)
-REFERENCES public.metadata_versions(id) ON DELETE SET NULL;
+REFERENCES public.metadata_versions (id) ON DELETE SET NULL;
 
 ALTER TABLE ONLY public.manifestation_external_ratings
 ADD CONSTRAINT manifestation_external_ratings_manifestation_id_fkey FOREIGN KEY (manifestation_id)
-REFERENCES public.manifestations(id) ON DELETE CASCADE;
+REFERENCES public.manifestations (id) ON DELETE CASCADE;
 
 ALTER TABLE ONLY public.manifestation_external_ratings
-ADD CONSTRAINT manifestation_external_ratings_source_fkey FOREIGN KEY (source) REFERENCES public.rating_sources(id);
+ADD CONSTRAINT manifestation_external_ratings_source_fkey FOREIGN KEY (source) REFERENCES public.rating_sources (id);
 
 ALTER TABLE ONLY public.manifestation_genres
-ADD CONSTRAINT manifestation_genres_genre_id_fkey FOREIGN KEY (genre_id) REFERENCES public.genres(id)
+ADD CONSTRAINT manifestation_genres_genre_id_fkey FOREIGN KEY (genre_id) REFERENCES public.genres (id)
 ON DELETE CASCADE;
 
 ALTER TABLE ONLY public.manifestation_genres
 ADD CONSTRAINT manifestation_genres_manifestation_id_fkey FOREIGN KEY (manifestation_id)
-REFERENCES public.manifestations(id) ON DELETE CASCADE;
+REFERENCES public.manifestations (id) ON DELETE CASCADE;
 
 ALTER TABLE ONLY public.manifestation_genres
 ADD CONSTRAINT manifestation_genres_source_version_id_fkey FOREIGN KEY (source_version_id)
-REFERENCES public.metadata_versions(id) ON DELETE SET NULL;
+REFERENCES public.metadata_versions (id) ON DELETE SET NULL;
 
 ALTER TABLE ONLY public.manifestation_moods
 ADD CONSTRAINT manifestation_moods_manifestation_id_fkey FOREIGN KEY (manifestation_id)
-REFERENCES public.manifestations(id) ON DELETE CASCADE;
+REFERENCES public.manifestations (id) ON DELETE CASCADE;
 
 ALTER TABLE ONLY public.manifestation_moods
-ADD CONSTRAINT manifestation_moods_mood_id_fkey FOREIGN KEY (mood_id) REFERENCES public.moods(id) ON DELETE CASCADE;
+ADD CONSTRAINT manifestation_moods_mood_id_fkey FOREIGN KEY (mood_id) REFERENCES public.moods (id) ON DELETE CASCADE;
 
 ALTER TABLE ONLY public.manifestation_moods
 ADD CONSTRAINT manifestation_moods_source_version_id_fkey FOREIGN KEY (source_version_id)
-REFERENCES public.metadata_versions(id) ON DELETE SET NULL;
+REFERENCES public.metadata_versions (id) ON DELETE SET NULL;
 
 ALTER TABLE ONLY public.manifestation_tags
 ADD CONSTRAINT manifestation_tags_manifestation_id_fkey FOREIGN KEY (manifestation_id)
-REFERENCES public.manifestations(id) ON DELETE CASCADE;
+REFERENCES public.manifestations (id) ON DELETE CASCADE;
 
 ALTER TABLE ONLY public.manifestation_tags
 ADD CONSTRAINT manifestation_tags_source_version_id_fkey FOREIGN KEY (source_version_id)
-REFERENCES public.metadata_versions(id) ON DELETE SET NULL;
+REFERENCES public.metadata_versions (id) ON DELETE SET NULL;
 
 ALTER TABLE ONLY public.manifestation_tags
-ADD CONSTRAINT manifestation_tags_tag_id_fkey FOREIGN KEY (tag_id) REFERENCES public.tags(id) ON DELETE CASCADE;
+ADD CONSTRAINT manifestation_tags_tag_id_fkey FOREIGN KEY (tag_id) REFERENCES public.tags (id) ON DELETE CASCADE;
 
 ALTER TABLE ONLY public.manifestations
 ADD CONSTRAINT manifestations_content_rating_version_id_fkey FOREIGN KEY (content_rating_version_id)
-REFERENCES public.metadata_versions(id) ON DELETE SET NULL;
+REFERENCES public.metadata_versions (id) ON DELETE SET NULL;
 
 ALTER TABLE ONLY public.manifestations
-ADD CONSTRAINT manifestations_cover_source_fkey FOREIGN KEY (cover_source) REFERENCES public.metadata_sources(id);
+ADD CONSTRAINT manifestations_cover_source_fkey FOREIGN KEY (cover_source) REFERENCES public.metadata_sources (id);
 
 ALTER TABLE ONLY public.manifestations
 ADD CONSTRAINT manifestations_cover_version_id_fkey FOREIGN KEY (cover_version_id)
-REFERENCES public.metadata_versions(id) ON DELETE SET NULL;
+REFERENCES public.metadata_versions (id) ON DELETE SET NULL;
 
 ALTER TABLE ONLY public.manifestations
 ADD CONSTRAINT manifestations_isbn_10_version_id_fkey FOREIGN KEY (isbn_10_version_id)
-REFERENCES public.metadata_versions(id) ON DELETE SET NULL;
+REFERENCES public.metadata_versions (id) ON DELETE SET NULL;
 
 ALTER TABLE ONLY public.manifestations
 ADD CONSTRAINT manifestations_isbn_13_version_id_fkey FOREIGN KEY (isbn_13_version_id)
-REFERENCES public.metadata_versions(id) ON DELETE SET NULL;
+REFERENCES public.metadata_versions (id) ON DELETE SET NULL;
 
 ALTER TABLE ONLY public.manifestations
 ADD CONSTRAINT manifestations_pages_version_id_fkey FOREIGN KEY (pages_version_id)
-REFERENCES public.metadata_versions(id) ON DELETE SET NULL;
+REFERENCES public.metadata_versions (id) ON DELETE SET NULL;
 
 ALTER TABLE ONLY public.manifestations
 ADD CONSTRAINT manifestations_pub_date_version_id_fkey FOREIGN KEY (pub_date_version_id)
-REFERENCES public.metadata_versions(id) ON DELETE SET NULL;
+REFERENCES public.metadata_versions (id) ON DELETE SET NULL;
 
 ALTER TABLE ONLY public.manifestations
 ADD CONSTRAINT manifestations_publisher_version_id_fkey FOREIGN KEY (publisher_version_id)
-REFERENCES public.metadata_versions(id) ON DELETE SET NULL;
+REFERENCES public.metadata_versions (id) ON DELETE SET NULL;
 
 ALTER TABLE ONLY public.manifestations
 ADD CONSTRAINT manifestations_suspected_duplicate_work_id_fkey FOREIGN KEY (suspected_duplicate_work_id)
-REFERENCES public.works(id) ON DELETE SET NULL;
+REFERENCES public.works (id) ON DELETE SET NULL;
 
 ALTER TABLE ONLY public.manifestations
-ADD CONSTRAINT manifestations_work_id_fkey FOREIGN KEY (work_id) REFERENCES public.works(id) ON DELETE CASCADE;
+ADD CONSTRAINT manifestations_work_id_fkey FOREIGN KEY (work_id) REFERENCES public.works (id) ON DELETE CASCADE;
 
 ALTER TABLE ONLY public.metadata_versions
 ADD CONSTRAINT metadata_versions_manifestation_id_fkey FOREIGN KEY (manifestation_id)
-REFERENCES public.manifestations(id) ON DELETE CASCADE;
+REFERENCES public.manifestations (id) ON DELETE CASCADE;
 
 ALTER TABLE ONLY public.metadata_versions
-ADD CONSTRAINT metadata_versions_resolved_by_fkey FOREIGN KEY (resolved_by) REFERENCES public.users(id)
+ADD CONSTRAINT metadata_versions_resolved_by_fkey FOREIGN KEY (resolved_by) REFERENCES public.users (id)
 ON DELETE SET NULL;
 
 ALTER TABLE ONLY public.metadata_versions
-ADD CONSTRAINT metadata_versions_source_fk FOREIGN KEY (source) REFERENCES public.metadata_sources(id);
+ADD CONSTRAINT metadata_versions_source_fk FOREIGN KEY (source) REFERENCES public.metadata_sources (id);
 
 ALTER TABLE ONLY public.omnibus_contents
-ADD CONSTRAINT omnibus_contents_contained_work_id_fkey FOREIGN KEY (contained_work_id) REFERENCES public.works(id)
+ADD CONSTRAINT omnibus_contents_contained_work_id_fkey FOREIGN KEY (contained_work_id) REFERENCES public.works (id)
 ON DELETE CASCADE;
 
 ALTER TABLE ONLY public.omnibus_contents
 ADD CONSTRAINT omnibus_contents_omnibus_manifestation_id_fkey FOREIGN KEY (omnibus_manifestation_id)
-REFERENCES public.manifestations(id) ON DELETE CASCADE;
+REFERENCES public.manifestations (id) ON DELETE CASCADE;
 
 ALTER TABLE ONLY public.password_reset_pins
-ADD CONSTRAINT password_reset_pins_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
+ADD CONSTRAINT password_reset_pins_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users (id) ON DELETE CASCADE;
 
 ALTER TABLE ONLY public.rating_sources
-ADD CONSTRAINT rating_sources_id_fkey FOREIGN KEY (id) REFERENCES public.metadata_sources(id);
+ADD CONSTRAINT rating_sources_id_fkey FOREIGN KEY (id) REFERENCES public.metadata_sources (id);
 
 ALTER TABLE ONLY public.reading_sessions
 ADD CONSTRAINT reading_sessions_manifestation_id_fkey FOREIGN KEY (manifestation_id)
-REFERENCES public.manifestations(id) ON DELETE CASCADE;
+REFERENCES public.manifestations (id) ON DELETE CASCADE;
 
 ALTER TABLE ONLY public.reading_sessions
-ADD CONSTRAINT reading_sessions_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
+ADD CONSTRAINT reading_sessions_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users (id) ON DELETE CASCADE;
 
 ALTER TABLE ONLY public.reading_state
 ADD CONSTRAINT reading_state_manifestation_id_fkey FOREIGN KEY (manifestation_id)
-REFERENCES public.manifestations(id) ON DELETE CASCADE;
+REFERENCES public.manifestations (id) ON DELETE CASCADE;
 
 ALTER TABLE ONLY public.reading_state
-ADD CONSTRAINT reading_state_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
+ADD CONSTRAINT reading_state_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users (id) ON DELETE CASCADE;
 
 ALTER TABLE ONLY public.series
-ADD CONSTRAINT series_parent_id_fkey FOREIGN KEY (parent_id) REFERENCES public.series(id) ON DELETE SET NULL;
+ADD CONSTRAINT series_parent_id_fkey FOREIGN KEY (parent_id) REFERENCES public.series (id) ON DELETE SET NULL;
 
 ALTER TABLE ONLY public.series_works
-ADD CONSTRAINT series_works_series_id_fkey FOREIGN KEY (series_id) REFERENCES public.series(id) ON DELETE CASCADE;
+ADD CONSTRAINT series_works_series_id_fkey FOREIGN KEY (series_id) REFERENCES public.series (id) ON DELETE CASCADE;
 
 ALTER TABLE ONLY public.series_works
-ADD CONSTRAINT series_works_work_id_fkey FOREIGN KEY (work_id) REFERENCES public.works(id) ON DELETE CASCADE;
+ADD CONSTRAINT series_works_work_id_fkey FOREIGN KEY (work_id) REFERENCES public.works (id) ON DELETE CASCADE;
 
 ALTER TABLE ONLY public.shelf_items
-ADD CONSTRAINT shelf_items_manifestation_id_fkey FOREIGN KEY (manifestation_id) REFERENCES public.manifestations(id)
+ADD CONSTRAINT shelf_items_manifestation_id_fkey FOREIGN KEY (manifestation_id) REFERENCES public.manifestations (id)
 ON DELETE CASCADE;
 
 ALTER TABLE ONLY public.shelf_items
-ADD CONSTRAINT shelf_items_shelf_id_fkey FOREIGN KEY (shelf_id) REFERENCES public.shelves(id) ON DELETE CASCADE;
+ADD CONSTRAINT shelf_items_shelf_id_fkey FOREIGN KEY (shelf_id) REFERENCES public.shelves (id) ON DELETE CASCADE;
 
 ALTER TABLE ONLY public.shelves
-ADD CONSTRAINT shelves_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
+ADD CONSTRAINT shelves_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users (id) ON DELETE CASCADE;
 
 ALTER TABLE ONLY public.user_identities
-ADD CONSTRAINT user_identities_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
+ADD CONSTRAINT user_identities_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users (id) ON DELETE CASCADE;
 
 ALTER TABLE ONLY public.user_preferences
-ADD CONSTRAINT user_preferences_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
+ADD CONSTRAINT user_preferences_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users (id) ON DELETE CASCADE;
 
 ALTER TABLE ONLY public.webhook_deliveries
-ADD CONSTRAINT webhook_deliveries_webhook_id_fkey FOREIGN KEY (webhook_id) REFERENCES public.webhooks(id)
+ADD CONSTRAINT webhook_deliveries_webhook_id_fkey FOREIGN KEY (webhook_id) REFERENCES public.webhooks (id)
 ON DELETE CASCADE;
 
 ALTER TABLE ONLY public.webhooks
-ADD CONSTRAINT webhooks_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
+ADD CONSTRAINT webhooks_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users (id) ON DELETE CASCADE;
 
 ALTER TABLE ONLY public.work_authors
-ADD CONSTRAINT work_authors_author_id_fkey FOREIGN KEY (author_id) REFERENCES public.authors(id) ON DELETE CASCADE;
+ADD CONSTRAINT work_authors_author_id_fkey FOREIGN KEY (author_id) REFERENCES public.authors (id) ON DELETE CASCADE;
 
 ALTER TABLE ONLY public.work_authors
 ADD CONSTRAINT work_authors_source_version_id_fkey FOREIGN KEY (source_version_id)
-REFERENCES public.metadata_versions(id) ON DELETE SET NULL;
+REFERENCES public.metadata_versions (id) ON DELETE SET NULL;
 
 ALTER TABLE ONLY public.work_authors
-ADD CONSTRAINT work_authors_work_id_fkey FOREIGN KEY (work_id) REFERENCES public.works(id) ON DELETE CASCADE;
+ADD CONSTRAINT work_authors_work_id_fkey FOREIGN KEY (work_id) REFERENCES public.works (id) ON DELETE CASCADE;
 
 ALTER TABLE ONLY public.work_external_identifiers
-ADD CONSTRAINT work_external_identifiers_scheme_fkey FOREIGN KEY (scheme) REFERENCES public.identifier_schemes(id);
+ADD CONSTRAINT work_external_identifiers_scheme_fkey FOREIGN KEY (scheme) REFERENCES public.identifier_schemes (id);
 
 ALTER TABLE ONLY public.work_external_identifiers
 ADD CONSTRAINT work_external_identifiers_source_version_id_fkey FOREIGN KEY (source_version_id)
-REFERENCES public.metadata_versions(id) ON DELETE SET NULL;
+REFERENCES public.metadata_versions (id) ON DELETE SET NULL;
 
 ALTER TABLE ONLY public.work_external_identifiers
-ADD CONSTRAINT work_external_identifiers_work_id_fkey FOREIGN KEY (work_id) REFERENCES public.works(id)
+ADD CONSTRAINT work_external_identifiers_work_id_fkey FOREIGN KEY (work_id) REFERENCES public.works (id)
 ON DELETE CASCADE;
 
 ALTER TABLE ONLY public.works
 ADD CONSTRAINT works_description_version_id_fkey FOREIGN KEY (description_version_id)
-REFERENCES public.metadata_versions(id) ON DELETE SET NULL;
+REFERENCES public.metadata_versions (id) ON DELETE SET NULL;
 
 ALTER TABLE ONLY public.works
 ADD CONSTRAINT works_language_version_id_fkey FOREIGN KEY (language_version_id)
-REFERENCES public.metadata_versions(id) ON DELETE SET NULL;
+REFERENCES public.metadata_versions (id) ON DELETE SET NULL;
 
 ALTER TABLE ONLY public.works
 ADD CONSTRAINT works_subtitle_version_id_fkey FOREIGN KEY (subtitle_version_id)
-REFERENCES public.metadata_versions(id) ON DELETE SET NULL;
+REFERENCES public.metadata_versions (id) ON DELETE SET NULL;
 
 ALTER TABLE ONLY public.works
-ADD CONSTRAINT works_title_version_id_fkey FOREIGN KEY (title_version_id) REFERENCES public.metadata_versions(id)
+ADD CONSTRAINT works_title_version_id_fkey FOREIGN KEY (title_version_id) REFERENCES public.metadata_versions (id)
 ON DELETE SET NULL;
 
 ALTER TABLE ONLY public.writeback_jobs
 ADD CONSTRAINT writeback_jobs_manifestation_id_fkey FOREIGN KEY (manifestation_id)
-REFERENCES public.manifestations(id) ON DELETE CASCADE;
+REFERENCES public.manifestations (id) ON DELETE CASCADE;
 
 ALTER TABLE public.manifestation_external_identifiers ENABLE ROW LEVEL SECURITY;
 

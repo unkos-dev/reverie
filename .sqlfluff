@@ -1,12 +1,9 @@
-# Config for Codacy's hosted SQLFluff analysis, mirroring `.sqruff`. Keep the
-# two in step by hand. While Codacy is set to read this file its own per-rule
-# toggles are inert, so rule selection has to happen here.
 [sqlfluff]
 dialect = postgres
 templater = raw
 
 rules = all
-exclude_rules = AL07,ST05,ST06
+exclude_rules = AL07,ST05,ST06,RF04
 
 output_line_length = 120
 max_line_length = 120

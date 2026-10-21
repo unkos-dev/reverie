@@ -7,7 +7,7 @@ permissions:
   contents: read
 
 env:
-  MISE_TOOLS: just rumdl shellcheck hadolint typos vale github:owenlamont/ryl github:quarylabs/sqruff actionlint zizmor github:unkos-dev/specful
+  MISE_TOOLS: just rumdl shellcheck hadolint typos vale github:owenlamont/ryl uv actionlint zizmor github:unkos-dev/specful
 
 jobs:
   changes:
@@ -169,8 +169,8 @@ jobs:
       - name: YAML lint (ryl)
         run: just infra::ryl
 
-      - name: SQL lint (sqruff)
-        run: just infra::sqruff
+      - name: SQL lint (SQLFluff)
+        run: just infra::sqlfluff
 
       - name: Format check (oxfmt)
         run: just js::fmt-check

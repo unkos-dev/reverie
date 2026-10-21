@@ -1,10 +1,10 @@
 CREATE TABLE public.sign_in_cohorts (
     session_id text NOT NULL,
     won_at timestamp with time zone,
-    created_at timestamp with time zone DEFAULT now() NOT NULL, -- noqa: CV11
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
     CONSTRAINT sign_in_cohorts_pkey PRIMARY KEY (session_id),
     CONSTRAINT sign_in_cohorts_session_id_fkey FOREIGN KEY (session_id)
-    REFERENCES tower_sessions.session(id) ON DELETE CASCADE,
+    REFERENCES tower_sessions.session (id) ON DELETE CASCADE,
     CONSTRAINT sign_in_cohorts_won_at_ts_decode_range
     CHECK ((
         (won_at >= '0001-01-01 00:00:00+00'::timestamp with time zone)
@@ -23,11 +23,11 @@ CREATE TABLE public.oidc_sign_in_attempts (
     pkce_verifier text NOT NULL,
     nonce text NOT NULL,
     expires_at timestamp with time zone NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL, -- noqa: CV11
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
     CONSTRAINT oidc_sign_in_attempts_pkey PRIMARY KEY (session_id),
     CONSTRAINT oidc_sign_in_attempts_session_id_fkey FOREIGN KEY (session_id)
-    REFERENCES public.sign_in_cohorts(session_id) ON DELETE CASCADE,
-    CONSTRAINT oidc_sign_in_attempts_state_digest_length CHECK ((octet_length(state_digest) = 32)), -- noqa: CV11
+    REFERENCES public.sign_in_cohorts (session_id) ON DELETE CASCADE,
+    CONSTRAINT oidc_sign_in_attempts_state_digest_length CHECK ((octet_length(state_digest) = 32)),
     CONSTRAINT oidc_sign_in_attempts_expires_at_ts_decode_range
     CHECK ((
         (expires_at >= '0001-01-01 00:00:00+00'::timestamp with time zone)
