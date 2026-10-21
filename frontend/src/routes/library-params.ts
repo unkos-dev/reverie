@@ -28,8 +28,8 @@ import {
 // The view vocabulary is a Postgres enum on the preferences resource, so it
 // is declared once at the API boundary and re-exported here for the `?view=`
 // codec's existing consumers.
-export { isLibraryView };
-export type { LibraryView };
+export { isLibraryView } from "@/api";
+export type { LibraryView } from "@/api";
 
 /**
  * Parse `?view=` into a {@link LibraryView}, or `null` when the param is

@@ -34,7 +34,7 @@ export default defineConfig({
     ],
   },
   lint: {
-    plugins: ["typescript", "react"],
+    plugins: ["typescript", "react", "unicorn"],
     categories: {
       correctness: "off",
     },
@@ -50,6 +50,7 @@ export default defineConfig({
       {
         files: ["frontend/**/*.{ts,tsx}"],
         rules: {
+          "unicorn/prefer-export-from": "error",
           "constructor-super": "error",
           "for-direction": "error",
           "getter-return": "error",

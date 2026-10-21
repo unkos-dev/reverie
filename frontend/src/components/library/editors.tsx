@@ -30,7 +30,7 @@ import {
 
 import { TypeaheadMultiSelect, type TypeaheadOption } from "./TypeaheadMultiSelect";
 
-export type { TextOp };
+export type { TextOp } from "@/routes/library-params";
 
 const TEXT_OP_LABELS: Record<TextOp, string> = {
   contains: "contains",
