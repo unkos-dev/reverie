@@ -87,6 +87,20 @@ Log any reverie-specific override here with the overridden file + section,
 reverie's position, rationale, and compensating controls. Prefer documenting
 the deviation over editing the imported file.
 
+### Credential links on private HTTP deployments
+
+**Override:** `codeguard-0-input-validation-injection.md` → "Caching and Transport" and
+`codeguard-0-authentication-mfa.md` → "Authentication Flow Hardening" and "Recovery and Reset".
+
+**Reverie's position:** Credential links use the browser-facing origin, including HTTP for private deployments.
+
+**Rationale:** A private Docker Compose installation can operate without a reverse proxy or certificates. Publicly
+reachable deployments should use HTTPS; HTTP provides no confidentiality for tokens or passwords in transit.
+
+**Compensating controls:** Issuance requires an administrator browser session. Links are account-bound, expire after
+72 hours and are consumed once; only their hashes are stored. Token-bearing responses use `Cache-Control: no-store`.
+These controls limit credential-link exposure but do not protect HTTP traffic from network interception.
+
 ### 1. Session cookie `Secure` flag omitted on plain-HTTP deployments
 
 **Override:** `codeguard-0-session-management-and-cookies.md` → "Cookie Security

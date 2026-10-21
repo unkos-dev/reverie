@@ -5267,7 +5267,7 @@
           "users"
         ],
         "summary": "Create a user",
-        "description": "Creates an account with an administrator-typed initial password, for the administrator to relay out of band. Admin only; the caller must not be a child. Returns 409 if the email is already in use. Returns 503 when authentication processing is busy.",
+        "description": "Creates an account and returns a single-use link for its holder to choose a password through `/auth/credential-links/redemptions`. Requires an administrator browser session and enabled local authentication.",
         "operationId": "create_user",
         "requestBody": {
           "content": {
@@ -5281,11 +5281,19 @@
         },
         "responses": {
           "201": {
-            "description": "Created user. Admin only.",
+            "description": "Account and credential link created",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "no-store"
+              }
+            },
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/UserResponse"
+                  "$ref": "#/components/schemas/CreateUserResponse"
                 }
               }
             }
@@ -5311,7 +5319,17 @@
             }
           },
           "403": {
-            "description": "Caller is not an admin",
+            "description": "Administrator browser session required",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Local authentication is disabled",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -5351,17 +5369,7 @@
             }
           },
           "422": {
-            "description": "Invalid email, or password rejected by the policy",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
-          },
-          "503": {
-            "description": "Authentication processing is busy",
+            "description": "Invalid email or request",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -5374,16 +5382,6 @@
         "security": [
           {
             "session_cookie": [
-              "admin"
-            ]
-          },
-          {
-            "device_token_bearer": [
-              "admin"
-            ]
-          },
-          {
-            "opds_basic": [
               "admin"
             ]
           }
@@ -5787,14 +5785,14 @@
         ]
       }
     },
-    "/api/v1/users/{id}/password-reset": {
+    "/api/v1/users/{id}/credential-links": {
       "post": {
         "tags": [
           "users"
         ],
-        "summary": "Reset a user's password",
-        "description": "Sets a new password for the target account, for the administrator to relay out of band, and invalidates the target's active sessions. Admin only; the caller must not be a child. Returns 503 when authentication processing is busy.",
-        "operationId": "admin_reset_password",
+        "summary": "Issue a credential link",
+        "description": "Returns a single-use link for the account holder to choose a password. Replaces any prior link without changing the current password or sessions.",
+        "operationId": "issue_credential_link",
         "parameters": [
           {
             "name": "id",
@@ -5808,22 +5806,27 @@
             }
           }
         ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/AdminPasswordResetRequest"
+        "responses": {
+          "201": {
+            "description": "Credential link issued",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "no-store"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CredentialLinkResponse"
+                }
               }
             }
           },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "Password reset; the target's sessions are invalidated. Admin only."
-          },
           "400": {
-            "description": "The request body is not valid JSON, or a path parameter is malformed",
+            "description": "A path parameter is malformed",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -5843,7 +5846,7 @@
             }
           },
           "403": {
-            "description": "Caller is not an admin",
+            "description": "Administrator browser session required",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -5853,27 +5856,7 @@
             }
           },
           "404": {
-            "description": "Target user does not exist",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
-          },
-          "413": {
-            "description": "The request body is too large",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
-          },
-          "415": {
-            "description": "The request body is not sent as application/json",
+            "description": "Local authentication disabled or account not found",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -5883,17 +5866,7 @@
             }
           },
           "422": {
-            "description": "Password rejected by the policy",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
-          },
-          "503": {
-            "description": "Authentication processing is busy",
+            "description": "Account disabled or without an email address",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -5908,14 +5881,77 @@
             "session_cookie": [
               "admin"
             ]
-          },
+          }
+        ]
+      },
+      "delete": {
+        "tags": [
+          "users"
+        ],
+        "summary": "Cancel a credential link",
+        "description": "Cancels the account's link without changing its password or sessions.",
+        "operationId": "cancel_credential_link",
+        "parameters": [
           {
-            "device_token_bearer": [
-              "admin"
-            ]
+            "name": "id",
+            "in": "path",
+            "description": "Target user id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "maxLength": 45
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No active link remains"
           },
+          "400": {
+            "description": "A path parameter is malformed",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Administrator browser session required",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Local authentication is disabled",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
           {
-            "opds_basic": [
+            "session_cookie": [
               "admin"
             ]
           }
@@ -6287,6 +6323,227 @@
           },
           "500": {
             "description": "Session middleware subsequent save failed; empty response"
+          }
+        },
+        "security": [
+          {}
+        ]
+      }
+    },
+    "/auth/credential-links/lookups": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Look up a credential link",
+        "description": "Returns the email and password state for a valid link. Invalid, expired, used, disabled-account and no-email links share one generic refusal.",
+        "operationId": "lookup_credential_link",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CredentialLinkLookupRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Valid link",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "no-store"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CredentialLinkLookupResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request body is not valid JSON",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Local authentication is disabled",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "The request body is too large",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "The request body is not sent as application/json",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid or expired link",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too many recovery requests",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "integer",
+                  "format": "int64",
+                  "minimum": 0
+                },
+                "description": "Positive delay in seconds before retrying"
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {}
+        ]
+      }
+    },
+    "/auth/credential-links/redemptions": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Redeem a credential link",
+        "description": "Sets the account's password once before the link expires, invalidates earlier sessions and creates no session. Leaves login throttling and device tokens unchanged.",
+        "operationId": "redeem_credential_link",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CredentialLinkRedemptionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Password set; sign-in required"
+          },
+          "400": {
+            "description": "The request body is not valid JSON",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Local authentication is disabled",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "The request body is too large",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "The request body is not sent as application/json",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid or expired link, or password policy rejection",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too many recovery requests",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "integer",
+                  "format": "int64",
+                  "minimum": 0
+                },
+                "description": "Positive delay in seconds before retrying"
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Authentication processing is busy",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -8750,19 +9007,6 @@
           }
         }
       },
-      "AdminPasswordResetRequest": {
-        "type": "object",
-        "description": "Body for `POST /api/v1/users/{id}/password-reset`.",
-        "required": [
-          "new_password"
-        ],
-        "properties": {
-          "new_password": {
-            "type": "string",
-            "description": "New password the admin sets for the target and relays out-of-band.\nEnforced against the password policy."
-          }
-        }
-      },
       "AttemptOutcome": {
         "type": "string",
         "enum": [
@@ -9393,11 +9637,13 @@
         "properties": {
           "current_password": {
             "type": "string",
-            "description": "The caller's current password, re-verified before the change."
+            "description": "The caller's current password, re-verified before the change.",
+            "maxLength": 256
           },
           "new_password": {
             "type": "string",
-            "description": "The new password; enforced against the password policy."
+            "description": "The new password; enforced against the password policy.",
+            "maxLength": 256
           }
         }
       },
@@ -9569,8 +9815,7 @@
         "required": [
           "email",
           "display_name",
-          "role",
-          "password"
+          "role"
         ],
         "properties": {
           "display_name": {
@@ -9579,15 +9824,90 @@
           },
           "email": {
             "type": "string",
-            "description": "Email address for the new account; must be a syntactically valid\naddr-spec and unique (case-insensitive)."
-          },
-          "password": {
-            "type": "string",
-            "description": "Initial password, typed by the admin and handed off out-of-band. Required;\nenforced against the password policy (length, zxcvbn floor, HIBP breach)."
+            "description": "Account email in the common ASCII format with a dotted domain and an\nalphabetic suffix of at least two letters; unique (case-insensitive)."
           },
           "role": {
             "$ref": "#/components/schemas/Role",
             "description": "Role for the new account. `child` and `admin` accounts are created only\nhere, by an existing administrator."
+          }
+        }
+      },
+      "CreateUserResponse": {
+        "type": "object",
+        "required": [
+          "user",
+          "link"
+        ],
+        "properties": {
+          "link": {
+            "$ref": "#/components/schemas/CredentialLinkResponse"
+          },
+          "user": {
+            "$ref": "#/components/schemas/UserResponse"
+          }
+        }
+      },
+      "CredentialLinkLookupRequest": {
+        "type": "object",
+        "required": [
+          "token"
+        ],
+        "properties": {
+          "token": {
+            "type": "string",
+            "maxLength": 43,
+            "minLength": 43,
+            "pattern": "^[A-Za-z0-9_-]{42}[AEIMQUYcgkosw048]$"
+          }
+        }
+      },
+      "CredentialLinkLookupResponse": {
+        "type": "object",
+        "required": [
+          "email",
+          "has_password"
+        ],
+        "properties": {
+          "email": {
+            "type": "string"
+          },
+          "has_password": {
+            "type": "boolean"
+          }
+        }
+      },
+      "CredentialLinkRedemptionRequest": {
+        "type": "object",
+        "required": [
+          "token",
+          "password"
+        ],
+        "properties": {
+          "password": {
+            "type": "string",
+            "maxLength": 256
+          },
+          "token": {
+            "type": "string",
+            "maxLength": 43,
+            "minLength": 43,
+            "pattern": "^[A-Za-z0-9_-]{42}[AEIMQUYcgkosw048]$"
+          }
+        }
+      },
+      "CredentialLinkResponse": {
+        "type": "object",
+        "required": [
+          "token",
+          "expires_at"
+        ],
+        "properties": {
+          "expires_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "token": {
+            "type": "string"
           }
         }
       },
@@ -10300,7 +10620,8 @@
           },
           "password": {
             "type": "string",
-            "description": "Plaintext password, verified against the stored Argon2id hash."
+            "description": "Plaintext password, verified against the stored Argon2id hash.",
+            "maxLength": 256
           }
         }
       },
@@ -10916,11 +11237,12 @@
           },
           "email": {
             "type": "string",
-            "description": "New account email (RFC 5322 addr-spec)."
+            "description": "New account email in the common ASCII format with a dotted domain and an\nalphabetic suffix of at least two letters."
           },
           "password": {
             "type": "string",
-            "description": "Plaintext password; enforced against the password policy, then hashed."
+            "description": "Plaintext password; enforced against the password policy, then hashed.",
+            "maxLength": 256
           }
         }
       },
@@ -10966,7 +11288,8 @@
           },
           "new_password": {
             "type": "string",
-            "description": "New plaintext password; enforced against the full password policy."
+            "description": "New plaintext password; enforced against the full password policy.",
+            "maxLength": 256
           },
           "pin": {
             "type": "string",
@@ -11382,11 +11705,12 @@
           },
           "email": {
             "type": "string",
-            "description": "First administrator's email (RFC 5322 addr-spec)."
+            "description": "First administrator's email in the common ASCII format with a dotted\ndomain and an alphabetic suffix of at least two letters."
           },
           "password": {
             "type": "string",
-            "description": "Plaintext password; checked against the shared password policy, then hashed."
+            "description": "Plaintext password; checked against the shared password policy, then hashed.",
+            "maxLength": 256
           }
         }
       },
@@ -12274,7 +12598,7 @@
               "string",
               "null"
             ],
-            "description": "New email (RFC 5322 addr-spec). Absent = unchanged; explicit `null`\nclears the stored address."
+            "description": "New account email in the common ASCII format with a dotted domain and an\nalphabetic suffix of at least two letters.\nAbsent = unchanged; explicit `null` clears the stored address."
           }
         }
       },
@@ -12288,13 +12612,21 @@
           "is_child",
           "created_at",
           "updated_at",
-          "disabled"
+          "disabled",
+          "has_password"
         ],
         "properties": {
           "created_at": {
             "type": "string",
             "format": "date-time",
             "description": "Row creation timestamp."
+          },
+          "credential_link_expires_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
           },
           "disabled": {
             "type": "boolean",
@@ -12310,6 +12642,9 @@
               "null"
             ],
             "description": "Email address; `null` when the user has none on file."
+          },
+          "has_password": {
+            "type": "boolean"
           },
           "id": {
             "type": "string",

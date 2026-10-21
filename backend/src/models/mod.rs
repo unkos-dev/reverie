@@ -8,6 +8,8 @@
 pub mod content_rating;
 /// Closed value set for the `author_role` Postgres `ENUM`.
 pub mod contributor_role;
+/// Account-bound credential links.
+pub mod credential_link;
 /// Per-user device tokens for OPDS / mobile-client Basic-auth flows.
 pub mod device_token;
 /// Closed failure classes persisted with a failed enrichment attempt.

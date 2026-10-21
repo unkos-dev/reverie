@@ -6,8 +6,11 @@
 //! `(issuer, subject)`; `users.oidc_subject` is a vestigial nullable column,
 //! no longer the identity key, and OIDC login no longer auto-promotes.
 
+use std::sync::LazyLock;
+
 use chrono::{DateTime, Utc};
 use email_address::{EmailAddress, Options};
+use regex::Regex;
 use serde::Serialize;
 use sqlx::PgPool;
 use uuid::Uuid;
@@ -298,15 +301,15 @@ pub enum CreateUserError {
 ///
 /// [`CreateUserError::EmailExists`] on an email collision, or
 /// [`CreateUserError::Db`] for any other failure.
-pub async fn create_local(
-    pool: &PgPool,
+pub async fn create_local<'a>(
+    executor: impl sqlx::Acquire<'a, Database = sqlx::Postgres>,
     email: &str,
     display_name: &str,
     role: Role,
     password_hash: Option<&str>,
 ) -> Result<User, CreateUserError> {
     let is_child = role == Role::Child;
-    let mut tx = pool.begin().await.map_err(CreateUserError::Db)?;
+    let mut tx = executor.begin().await.map_err(CreateUserError::Db)?;
 
     let row = match sqlx::query_as!(
         UserRow,
@@ -421,30 +424,30 @@ pub async fn find_by_oidc_identity(
     find_by_id(pool, user_id).await
 }
 
-/// Whether `e` parses as an RFC-5322 *addr-spec* with display-name and
-/// domain-literal forms disallowed.
+/// Whether `e` is an addr-spec in the frontend's common ASCII email format.
 ///
-/// THREAT: [`EmailAddress::is_valid`] uses [`Options::default`], which sets both
-/// `allow_display_text` and `allow_domain_literal` to `true` — it accepts
-/// display-name (`Name <a@b>`) and domain-literal (`a@[127.0.0.1]`) forms and
-/// would store those angle/bracket-bearing strings raw in `users.email`. This
-/// helper disables both options, so every write path to that column (OIDC upsert
-/// + admin `PATCH /api/v1/users/{id}`) rejects those two shapes.
-///
-/// This is *not* full normalisation. A quoted local-part
-/// (`"john doe"@example.com`) is a valid addr-spec and is still accepted, so the
-/// stored value may contain quotes and spaces inside the quoted segment. CR/LF
-/// can never appear (qtext/wsp exclude control bytes), so the value is safe to
-/// log and store, but downstream consumers must treat it as an opaque address —
-/// not assume a bare `local@domain` free of quoting.
+/// THREAT: stored account emails must pass frontend format validation to remain
+/// usable for credential-link redemption.
 pub(crate) fn is_addr_spec(e: &str) -> bool {
+    static PATTERN: LazyLock<Result<Regex, regex::Error>> = LazyLock::new(|| {
+        Regex::new(
+            r"^(?:[A-Za-z0-9_'+\-]+\.)*[A-Za-z0-9_'+\-]*[A-Za-z0-9_+-]@(?:[A-Za-z0-9][A-Za-z0-9\-]*\.)+[A-Za-z]{2,}$",
+        )
+    });
+    let pattern = match PATTERN.as_ref() {
+        Ok(pattern) => pattern,
+        Err(error) => {
+            tracing::error!(%error, "account email pattern failed to compile");
+            return false;
+        }
+    };
     EmailAddress::parse_with_options(
         e,
         Options::default()
             .without_display_text()
             .without_domain_literal(),
     )
-    .is_ok()
+    .is_ok_and(|_| pattern.is_match(e))
 }
 
 /// Trim the OIDC email claim and degrade an absent, blank or invalid value to
@@ -463,7 +466,7 @@ fn validated_oidc_email<'a>(email: Option<&'a str>, subject: &str) -> Option<&'a
             tracing::warn!(
                 oidc_subject = %subject,
                 rejected_email_len = e.len(),
-                "OIDC email claim is not RFC-5322 valid; persisting NULL and matching on sub"
+                "OIDC email claim has an unsupported format; persisting NULL and matching on sub"
             );
             None
         }
@@ -646,6 +649,55 @@ mod tests {
         assert!(!is_addr_spec("Bob <bob@example.com>"));
         assert!(!is_addr_spec("bob@[127.0.0.1]"));
         assert!(!is_addr_spec("not-an-email"));
+    }
+
+    #[test]
+    fn is_addr_spec_rejects_unsupported_account_emails() {
+        for email in [
+            "\"john doe\"@example.com",
+            "\"john\"@example.com",
+            "\"john@doe\"@example.com",
+            "john doe@example.com",
+            "jane@homelab",
+            "jane!books@example.com",
+            "jane#books@example.com",
+            "jane%books@example.com",
+            "jane/books@example.com",
+            "josé@example.com",
+        ] {
+            assert!(!is_addr_spec(email), "accepted {email:?}");
+        }
+        for email in [
+            "john.doe+books@example.com",
+            "o'brien@example.com",
+            "Jane_Doe@EXAMPLE.COM",
+        ] {
+            assert!(is_addr_spec(email), "rejected {email:?}");
+        }
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn upsert_drops_unsupported_oidc_email_to_none(pool: PgPool) {
+        for email in [
+            "\"john doe\"@example.com",
+            "jane@homelab",
+            "jane!books@example.com",
+            "jane#books@example.com",
+            "jane%books@example.com",
+            "jane/books@example.com",
+            "josé@example.com",
+        ] {
+            let subject = Uuid::new_v4().to_string();
+            let user = upsert_from_oidc(&pool, TEST_ISSUER, &subject, "John", Some(email))
+                .await
+                .unwrap();
+            assert_eq!(user.email, None);
+            let resolved = find_by_oidc_identity(&pool, TEST_ISSUER, &subject)
+                .await
+                .unwrap()
+                .unwrap();
+            assert_eq!(resolved.id, user.id);
+        }
     }
 
     const TEST_ISSUER: &str = "https://test-issuer.example.com";

@@ -536,6 +536,22 @@ CREATE TABLE public.authors (
 ALTER TABLE public.authors OWNER TO reverie_migrator;
 
 --
+-- Name: credential_links; Type: TABLE; Schema: public; Owner: reverie_migrator
+--
+
+CREATE TABLE public.credential_links (
+    user_id uuid NOT NULL,
+    token_hash bytea NOT NULL,
+    expires_at timestamp with time zone NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT credential_links_created_at_ts_decode_range CHECK (((created_at >= '0001-01-01 00:00:00+00'::timestamp with time zone) AND (created_at < '10000-01-01 00:00:00+00'::timestamp with time zone))),
+    CONSTRAINT credential_links_expires_at_ts_decode_range CHECK (((expires_at >= '0001-01-01 00:00:00+00'::timestamp with time zone) AND (expires_at < '10000-01-01 00:00:00+00'::timestamp with time zone)))
+);
+
+
+ALTER TABLE public.credential_links OWNER TO reverie_migrator;
+
+--
 -- Name: device_tokens; Type: TABLE; Schema: public; Owner: reverie_migrator
 --
 
@@ -1561,6 +1577,22 @@ ALTER TABLE ONLY public.authors
 
 ALTER TABLE ONLY public.authors
     ADD CONSTRAINT authors_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: credential_links credential_links_pkey; Type: CONSTRAINT; Schema: public; Owner: reverie_migrator
+--
+
+ALTER TABLE ONLY public.credential_links
+    ADD CONSTRAINT credential_links_pkey PRIMARY KEY (user_id);
+
+
+--
+-- Name: credential_links credential_links_token_hash_key; Type: CONSTRAINT; Schema: public; Owner: reverie_migrator
+--
+
+ALTER TABLE ONLY public.credential_links
+    ADD CONSTRAINT credential_links_token_hash_key UNIQUE (token_hash);
 
 
 --
@@ -2687,6 +2719,14 @@ CREATE TRIGGER trg_works_updated_at BEFORE UPDATE ON public.works FOR EACH ROW E
 
 
 --
+-- Name: credential_links credential_links_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: reverie_migrator
+--
+
+ALTER TABLE ONLY public.credential_links
+    ADD CONSTRAINT credential_links_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
+
+
+--
 -- Name: device_tokens device_tokens_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: reverie_migrator
 --
 
@@ -3732,6 +3772,13 @@ GRANT SELECT ON TABLE public.api_cache TO reverie_readonly;
 GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.authors TO reverie_app;
 GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.authors TO reverie_ingestion;
 GRANT SELECT ON TABLE public.authors TO reverie_readonly;
+
+
+--
+-- Name: TABLE credential_links; Type: ACL; Schema: public; Owner: reverie_migrator
+--
+
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.credential_links TO reverie_app;
 
 
 --

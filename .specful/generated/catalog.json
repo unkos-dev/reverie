@@ -445,6 +445,13 @@
       "title": "Use React Aria for the interactive UI foundation"
     },
     {
+      "id": "REV-ADR-0061",
+      "kind": "adr",
+      "path": "docs/adr/0061-administrators-issue-account-bound-credential-links.md",
+      "status": "proposed",
+      "title": "Administrators issue account-bound credential links"
+    },
+    {
       "governed-by": [
         "REV-ADR-0041",
         "REV-ADR-0047"
@@ -831,6 +838,19 @@
         "REV-REQ-0070"
       ],
       "title": "OIDC sign-in"
+    },
+    {
+      "governed-by": [
+        "REV-ADR-0061"
+      ],
+      "id": "REV-DESIGN-0027",
+      "kind": "design",
+      "path": "docs/specs/accounts/design/0027-credential-links.md",
+      "satisfies": [
+        "REV-REQ-0029",
+        "REV-REQ-0030"
+      ],
+      "title": "Credential links"
     },
     {
       "governed-by": [

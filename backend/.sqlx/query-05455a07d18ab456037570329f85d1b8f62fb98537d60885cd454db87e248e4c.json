@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "UPDATE users\n              SET role = ($1::text)::user_role,\n                  is_child = ($1::text = 'child'),\n                  session_version = session_version + 1,\n                  updated_at = now()\n            WHERE id = $2\n        RETURNING id,\n                  display_name,\n                  email,\n                  role AS \"role: Role\",\n                  is_child,\n                  created_at,\n                  updated_at,\n                  (disabled_at IS NOT NULL) AS \"disabled!\"",
+  "query": "SELECT users.id,\n                  users.display_name,\n                  users.email,\n                  users.role AS \"role: Role\",\n                  users.is_child,\n                  users.created_at,\n                  users.updated_at,\n                  (users.disabled_at IS NOT NULL) AS \"disabled!\",\n                  (c.user_id IS NOT NULL) AS \"has_password!\",\n                  l.expires_at AS \"credential_link_expires_at?\"\n             FROM users\n LEFT JOIN local_credentials c ON c.user_id = users.id\n LEFT JOIN credential_links l ON l.user_id = users.id AND l.expires_at > now()\n            WHERE users.id = $1",
   "describe": {
     "columns": [
       {
@@ -96,11 +96,27 @@
         "name": "disabled!",
         "type_info": "Bool",
         "origin": "Expression"
+      },
+      {
+        "ordinal": 8,
+        "name": "has_password!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 9,
+        "name": "credential_link_expires_at?",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "credential_links",
+            "name": "expires_at"
+          }
+        }
       }
     ],
     "parameters": {
       "Left": [
-        "Text",
         "Uuid"
       ]
     },
@@ -112,8 +128,10 @@
       false,
       false,
       false,
-      null
+      null,
+      null,
+      true
     ]
   },
-  "hash": "dd2749f6d0144d47c61ea3b09a44c4ac7ff49ccb07c103fa903722541b172a6e"
+  "hash": "05455a07d18ab456037570329f85d1b8f62fb98537d60885cd454db87e248e4c"
 }
