@@ -66,9 +66,10 @@ Issuance upserts the account's row. Cancellation deletes it. Redemption conditio
 transaction. User deletion cascades. Expired rows remain inert until replaced, redeemed or cascaded; their count cannot
 exceed the user count. There is no sweep.
 
-The Set password component owns the fragment token for its mounted lifetime and removes it from browser history with
-`replaceState`. React Query owns lookup and mutation state. The Users dialogs own the once-displayed result and clear it
-when closed. The browser builds the link from `window.location.origin`; the backend never uses Host to construct it.
+The Set password route loader captures the fragment token and removes it from browser history with `replaceState` before
+mounting the page or starting lookup. The router retains the token in memory for that route. React Query owns lookup,
+password-policy loading and mutation state. The Users dialogs own the once-displayed result and clear it when closed.
+The browser builds the link from `window.location.origin`; the backend never uses Host to construct it.
 
 ## Runtime behaviour
 
@@ -93,12 +94,19 @@ lookup or discard form values. Success offers an explicit Sign in link and is te
 errors cannot replace it. Redemption creates no session and does not reset the login throttle. PIN recovery and device
 tokens remain unchanged.
 
+Redemption emits a structured authentication event after success or failure. Events include an outcome, a generated
+request ID, the account ID when known, the resolved source IP and a bounded, control-free user agent. Events contain
+neither link tokens nor passwords, email addresses or raw error details. Success is recorded only after commit.
+
 ## Failure and recovery
 
 Unknown, expired, consumed, disabled-account and no-email links all return 422 with `invalid or expired link`. A failed
 transaction rolls back link consumption and password writes. Policy rejection leaves the link usable. Recovery source
-exhaustion returns 429; hash-capacity exhaustion returns the existing 503 detail without Retry-After. Database errors
-use the generic internal-error response.
+exhaustion returns 429 with the shared positive `Retry-After` delay; hash-capacity exhaustion returns the existing 503
+detail without Retry-After. Database errors use the generic internal-error response.
+
+Password-policy loading failures offer an in-page retry while retaining the token and entered values. The retry action
+is disabled while fetching, and submission remains disabled until the policy is ready.
 
 A redemption network failure retains the entered values and explains that the password may have changed, with an
 explicit sign-in link. The browser does not retry redemption automatically or infer success from a consumed token.

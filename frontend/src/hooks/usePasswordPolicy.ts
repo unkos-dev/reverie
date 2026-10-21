@@ -8,11 +8,13 @@ export type PasswordPolicyState = {
   policy: SetupStatus | undefined;
   ready: boolean;
   isError: boolean;
+  retry: () => void;
+  retrying: boolean;
   validate: (password: string) => string | undefined;
 };
 
 export function usePasswordPolicy(): PasswordPolicyState {
-  const { data, isError } = useQuery({
+  const { data, isError, isFetching, isFetched, refetch } = useQuery({
     queryKey: queryKeys.auth.setupStatus(),
     queryFn: ({ signal }) => fetchSetupStatus(signal),
     retry: false,
@@ -26,6 +28,10 @@ export function usePasswordPolicy(): PasswordPolicyState {
   }
   return {
     policy: data,
+    retry: () => {
+      void refetch();
+    },
+    retrying: isFetching && isFetched,
     ready: data !== undefined,
     isError: data === undefined && isError,
     validate,

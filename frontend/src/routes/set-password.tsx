@@ -1,6 +1,6 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { useEffect, useState, type ReactElement, type SyntheticEvent } from "react";
-import { Link } from "react-router";
+import { useState, type ReactElement, type SyntheticEvent } from "react";
+import { Link, useLoaderData } from "react-router";
 import { z } from "zod";
 
 import { ApiError } from "@/api";
@@ -63,19 +63,18 @@ function LookupFailure({
 }
 
 export function Component(): ReactElement {
-  const [token] = useState(() => z.string().parse(window.location.hash.slice(1)));
+  const token = z.string().parse(useLoaderData());
   const [error, setError] = useState<string | ReactElement | null>(null);
   const [invalid, setInvalid] = useState(false);
   const [hasRetriedLookup, setHasRetriedLookup] = useState(false);
-  const { policy, ready, isError: policyError, validate } = usePasswordPolicy();
-
-  useEffect(() => {
-    window.history.replaceState(
-      window.history.state,
-      "",
-      window.location.pathname + window.location.search,
-    );
-  }, []);
+  const {
+    policy,
+    ready,
+    isError: policyError,
+    validate,
+    retry: retryPolicy,
+    retrying: policyRetrying,
+  } = usePasswordPolicy();
 
   const redemption = useMutation({
     mutationFn: (password: string) => redeemCredentialLink(token, password),
@@ -184,7 +183,12 @@ export function Component(): ReactElement {
             required
             aria-invalid={error !== null || undefined}
           />
-          <PasswordPolicyHint policy={policy} failed={policyError} />
+          <PasswordPolicyHint
+            policy={policy}
+            failed={policyError}
+            onRetry={retryPolicy}
+            retrying={policyRetrying}
+          />
         </Field>
         <Field>
           <FieldLabel htmlFor="confirm-password">Confirm password</FieldLabel>

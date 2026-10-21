@@ -6,7 +6,8 @@ is approved.
 ## Entry point and route
 
 Route: `/set-password`, inside AuthShell and outside the authenticated application shell. Read the token from the URL
-fragment and clear the fragment with `history.replaceState` before looking it up. Keep the token only in memory.
+fragment in the route loader and clear it with `history.replaceState` before the page mounts or lookup starts. Keep the
+token only in router memory.
 
 ## Layout
 
@@ -51,6 +52,11 @@ button. Include a hidden field with `autocomplete="username"` holding {email}; b
 A mismatch shows "The passwords don't match." inline. Policy, 503 and 429 errors render their existing `detail`.
 Submission does not sign the person in. Reconnect does not repeat lookup or replace the form; entered passwords stay in
 their fields.
+
+If password-policy loading fails, show "Could not load the password policy." beneath the new-password field, followed by
+an existing small outline button labelled "Retry password policy". Retry in place without clearing either password field
+or the captured token. Keep the action visible but disabled while retrying. Submission stays disabled until the policy
+loads; do not direct the person to reload the page.
 
 If the redemption response is lost to a network failure, retain the form and show this inline message:
 

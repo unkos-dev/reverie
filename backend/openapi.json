@@ -6419,6 +6419,16 @@
           },
           "429": {
             "description": "Too many recovery requests",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "integer",
+                  "format": "int64",
+                  "minimum": 0
+                },
+                "description": "Positive delay in seconds before retrying"
+              }
+            },
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -6507,6 +6517,16 @@
           },
           "429": {
             "description": "Too many recovery requests",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "integer",
+                  "format": "int64",
+                  "minimum": 0
+                },
+                "description": "Positive delay in seconds before retrying"
+              }
+            },
             "content": {
               "application/problem+json": {
                 "schema": {

@@ -2,12 +2,14 @@ import { onlineManager, QueryClient, QueryClientProvider } from "@tanstack/react
 import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, afterEach, expect, test, vi } from "vite-plus/test";
-import { MemoryRouter } from "react-router";
+import { createMemoryRouter, RouterProvider } from "react-router";
+import { StrictMode } from "react";
 
 import { ApiError } from "@/api";
 import { fetchSetupStatus, lookupCredentialLink, redeemCredentialLink } from "@/api/auth";
 
 import { Component } from "./set-password";
+import { credentialLinkLoader as loader } from "@/route-table";
 
 vi.mock("@/api/auth");
 vi.mock("@/lib/theme/ThemeProvider", () => ({
@@ -34,11 +36,12 @@ afterEach(cleanup);
 
 function renderPage(): QueryClient {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const router = createMemoryRouter([{ path: "/set-password", Component, loader }], {
+    initialEntries: ["/set-password"],
+  });
   render(
     <QueryClientProvider client={client}>
-      <MemoryRouter>
-        <Component />
-      </MemoryRouter>
+      <RouterProvider router={router} />
     </QueryClientProvider>,
   );
   return client;
@@ -51,13 +54,75 @@ async function submitPassword(password = "a long chosen passphrase"): Promise<vo
   await user.click(screen.getByRole("button", { name: "Set password" }));
 }
 
-test("checks the link and clears the fragment", () => {
+test("checks the link and clears the fragment", async () => {
   vi.mocked(lookupCredentialLink).mockReturnValue(new Promise(() => {}));
   renderPage();
-  expect(screen.getByRole("status", { name: "Checking link" })).toBeInTheDocument();
+  expect(await screen.findByRole("status", { name: "Checking link" })).toBeInTheDocument();
   expect(window.location.hash).toBe("");
   expect(lookupCredentialLink).toHaveBeenCalledWith("test-link", expect.any(AbortSignal));
 });
+
+test("clears the fragment before lookup starts, including Strict Mode mounting", async () => {
+  const fragments: string[] = [];
+  vi.mocked(lookupCredentialLink).mockImplementation(() => {
+    fragments.push(window.location.hash);
+    return new Promise(() => {});
+  });
+  const client = new QueryClient();
+  const router = createMemoryRouter([{ path: "/set-password", Component, loader }], {
+    initialEntries: ["/set-password"],
+  });
+  render(
+    <StrictMode>
+      <QueryClientProvider client={client}>
+        <RouterProvider router={router} />
+      </QueryClientProvider>
+    </StrictMode>,
+  );
+  await waitFor(() => {
+    expect(lookupCredentialLink).toHaveBeenCalledWith("test-link", expect.any(AbortSignal));
+  });
+  expect(fragments.every((fragment) => fragment === "")).toBe(true);
+});
+
+test.each([new TypeError("Failed to fetch"), new ApiError(503, null, "Busy", "Try later")])(
+  "retries password-policy loading in place after %s",
+  async (error) => {
+    const status = {
+      setup_required: false,
+      local_auth_enabled: true,
+      oidc_enabled: false,
+      password_min_length: 15,
+      password_max_length: 256,
+    };
+    vi.mocked(fetchSetupStatus).mockRejectedValueOnce(error);
+    renderPage();
+    const user = userEvent.setup();
+    const retry = await screen.findByRole("button", { name: "Retry password policy" });
+    await user.type(screen.getByLabelText("New password"), "a long chosen passphrase");
+    await user.type(screen.getByLabelText("Confirm password"), "a long chosen passphrase");
+    expect(screen.getByRole("button", { name: "Set password" })).toBeDisabled();
+    let complete: ((value: typeof status) => void) | undefined;
+    vi.mocked(fetchSetupStatus).mockReturnValueOnce(
+      new Promise((resolve) => {
+        complete = resolve;
+      }),
+    );
+    await user.click(retry);
+    expect(retry).toBeDisabled();
+    expect(screen.queryByText(/Reload to try again/)).not.toBeInTheDocument();
+    await act(async () => {
+      complete?.(status);
+      await Promise.resolve();
+    });
+    expect(await screen.findByRole("button", { name: "Set password" })).toBeEnabled();
+    expect(screen.getByLabelText("New password")).toHaveValue("a long chosen passphrase");
+    expect(window.location.hash).toBe("");
+    expect(lookupCredentialLink).toHaveBeenCalledTimes(1);
+    await user.click(screen.getByRole("button", { name: "Set password" }));
+    expect(await screen.findByText("Password set")).toBeInTheDocument();
+  },
+);
 
 test("sets a new account password and offers explicit sign in", async () => {
   renderPage();
@@ -191,10 +256,10 @@ test.each(["unknown", "expired", "used", "disabled", "no email"])(
   },
 );
 
-test("a missing fragment is invalid without a lookup", () => {
+test("a missing fragment is invalid without a lookup", async () => {
   window.history.replaceState(null, "", "/set-password");
   renderPage();
-  expect(screen.getByText("This link can't be used")).toBeInTheDocument();
+  expect(await screen.findByText("This link can't be used")).toBeInTheDocument();
   expect(lookupCredentialLink).not.toHaveBeenCalled();
 });
 
