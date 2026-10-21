@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE credential_links SET expires_at = clock_timestamp() WHERE user_id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "79f3d9bcbae93461600a32bd7dec6b7ce63cc67570b6f803284a809d45246833"
+}

@@ -1,0 +1,12 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE local_login_throttle SET completed_failures = ARRAY[now()], locked_until = now() + interval '15 minutes' WHERE email_lower = 'holder@example.test'",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": []
+  },
+  "hash": "b7066abb1bcc847a62c3a2879b605b24c09ace03cfb34cdea2dd5fd63cba13e8"
+}

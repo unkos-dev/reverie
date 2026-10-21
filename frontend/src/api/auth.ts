@@ -176,3 +176,29 @@ export async function changeOwnPassword(
     body: JSON.stringify(body),
   });
 }
+
+const CredentialLinkAccountSchema = z.object({ email: z.email(), has_password: z.boolean() });
+const CredentialLinkTokenSchema = z.string();
+
+export async function lookupCredentialLink(
+  token: string,
+  signal?: AbortSignal,
+): Promise<z.infer<typeof CredentialLinkAccountSchema>> {
+  return CredentialLinkAccountSchema.parse(
+    await apiFetch("/auth/credential-links/lookups", {
+      method: "POST",
+      body: JSON.stringify({ token: CredentialLinkTokenSchema.parse(token) }),
+      signal,
+    }),
+  );
+}
+
+export async function redeemCredentialLink(token: string, password: string): Promise<void> {
+  const body = z
+    .object({ token: CredentialLinkTokenSchema, password: z.string().min(1) })
+    .parse({ token, password });
+  await apiFetch("/auth/credential-links/redemptions", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}

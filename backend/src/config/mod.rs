@@ -154,18 +154,18 @@ pub struct Config {
     /// floor). The length floor, the zxcvbn strength floor
     /// ([`Self::password_min_zxcvbn_score`]), and the HIBP breach check
     /// ([`Self::password_breach_check_enabled`]) together form the password
-    /// policy applied at bootstrap, registration, recovery, admin create/reset,
-    /// and self-service change. Existing credentials remain valid. Must not
-    /// exceed [`Self::password_max_length`].
+    /// policy applied at bootstrap, registration, recovery, credential-link redemption
+    /// and self-service change. Must not exceed [`Self::password_max_length`].
     #[validate(range(min = 15, message = "must be at least 15"))]
     pub password_min_length: usize,
-    /// Maximum length for a local-account password, in characters
-    /// (`REVERIE_PASSWORD_MAX_LENGTH`, default `256`). A denial-of-service cap,
+    /// Maximum new-password length in Unicode code points
+    /// (`REVERIE_PASSWORD_MAX_LENGTH`, default `256`, range `64..=256`).
+    /// A denial-of-service cap,
     /// not a composition rule: NIST SP 800-63B forbids composition rules but
     /// permits a length cap, and an unbounded password is a CPU-exhaustion
     /// vector on the unauthenticated registration path (zxcvbn and Argon2 cost
     /// both grow with length). Checked before any strength or breach work.
-    #[validate(range(min = 64, message = "must be at least 64 (NIST SP 800-63B)"))]
+    #[validate(range(min = 64, max = 256, message = "must be between 64 and 256"))]
     pub password_max_length: usize,
     /// Minimum acceptable zxcvbn strength score, 0..=4
     /// (`REVERIE_PASSWORD_MIN_ZXCVBN_SCORE`, default `2`). A candidate scoring
@@ -1786,7 +1786,12 @@ mod tests {
         let error = cfg_from_owned(&vars).unwrap_err();
         assert!(error.to_string().contains("REVERIE_PASSWORD_MIN_LENGTH"));
         assert!(error.to_string().contains("REVERIE_PASSWORD_MAX_LENGTH"));
-        for (minimum, maximum) in [("256", "256"), ("300", "300"), ("24", "64")] {
+        for maximum in ["63", "257", "300"] {
+            let vars = with_overrides(&[("REVERIE_PASSWORD_MAX_LENGTH", maximum)]);
+            let error = cfg_from_owned(&vars).unwrap_err();
+            assert!(error.to_string().contains("REVERIE_PASSWORD_MAX_LENGTH"));
+        }
+        for (minimum, maximum) in [("256", "256"), ("24", "64")] {
             let vars = with_overrides(&[
                 ("REVERIE_PASSWORD_MIN_LENGTH", minimum),
                 ("REVERIE_PASSWORD_MAX_LENGTH", maximum),

@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, test, vi } from "vite-plus/test";
 import { RouterProvider, createMemoryRouter, type RouteObject } from "react-router";
@@ -52,6 +52,8 @@ function makeUser(overrides: Partial<User> = {}): User {
     role: "adult",
     is_child: false,
     disabled: false,
+    has_password: true,
+    credential_link_expires_at: null,
     created_at: "2026-05-25T00:00:00Z",
     updated_at: "2026-05-25T00:00:00Z",
     ...overrides,
@@ -245,89 +247,214 @@ describe("UsersPage", () => {
     expect(screen.queryByRole("button", { name: "Enable" })).not.toBeInTheDocument();
   });
 
-  test.each(["create", "reset"] as const)(
-    "%s dialog enforces stricter operator bounds",
-    async (mode) => {
-      vi.mocked(fetchSetupStatus).mockResolvedValueOnce({
-        setup_required: false,
-        local_auth_enabled: true,
-        oidc_enabled: false,
-        password_min_length: 24,
-        password_max_length: 64,
-      });
-      const create = vi.spyOn(usersApi, "createUser").mockResolvedValue(makeUser());
-      const reset = vi.spyOn(usersApi, "adminResetPassword").mockResolvedValue(undefined);
-      renderUsersPage(ADMIN_ME, [makeUser()]);
-      const user = userEvent.setup();
-      await user.click(
-        await screen.findByRole("button", {
-          name: mode === "create" ? "Create user" : "Reset password",
-        }),
-      );
-      if (mode === "create") {
-        await user.type(screen.getByLabelText("Display name"), "Carol");
-        await user.type(screen.getByLabelText("Email"), "carol@example.com");
-      }
-      await user.type(
-        screen.getByLabelText(mode === "create" ? "Initial password" : "New password"),
-        "a".repeat(23),
-      );
-      await user.click(
-        screen.getByRole("button", { name: mode === "create" ? "Create" : "Reset" }),
-      );
-      expect(await screen.findByRole("alert")).toHaveTextContent("Use at least 24 characters.");
-      expect(create).not.toHaveBeenCalled();
-      expect(reset).not.toHaveBeenCalled();
-    },
-  );
-
-  test("create-user dialog submits the new account", async () => {
+  test("create-user dialog returns a link without accepting a password", async () => {
     vi.spyOn(usersApi, "listUsers").mockResolvedValue([]);
-    const create = vi
-      .spyOn(usersApi, "createUser")
-      .mockResolvedValue(makeUser({ display_name: "Carol", email: "carol@example.com" }));
+    const create = vi.spyOn(usersApi, "createUser").mockResolvedValue({
+      user: makeUser({ display_name: "Carol", email: "carol@example.com", has_password: false }),
+      link: { token: "test-link", expires_at: "2026-10-23T12:00:00Z" },
+    });
     renderUsersPage(ADMIN_ME, []);
     const user = userEvent.setup();
-
     await user.click(await screen.findByRole("button", { name: "Create user" }));
+    expect(screen.queryByLabelText(/password/i)).not.toBeInTheDocument();
     await user.type(screen.getByLabelText("Display name"), "Carol");
     await user.type(screen.getByLabelText("Email"), "carol@example.com");
-    await user.type(screen.getByLabelText("Initial password"), "correct-horse-battery");
-    await user.click(screen.getByRole("button", { name: "Create" }));
-
+    await user.click(screen.getByRole("button", { name: "Create user" }));
     expect(create).toHaveBeenCalledWith({
       email: "carol@example.com",
       display_name: "Carol",
       role: "adult",
-      password: "correct-horse-battery",
     });
+    expect(
+      await screen.findByRole("heading", { name: "Send this link to Carol" }),
+    ).toBeInTheDocument();
+    expect(screen.getByLabelText("Credential link")).toHaveValue(
+      `${window.location.origin}/set-password#test-link`,
+    );
+    expect(screen.getByText(/If it's lost, create a new link/)).toBeInTheDocument();
+    const clipboard = vi.spyOn(navigator.clipboard, "writeText").mockResolvedValue();
+    await user.click(screen.getByRole("button", { name: "Copy link" }));
+    expect(clipboard).toHaveBeenCalledWith(`${window.location.origin}/set-password#test-link`);
+    expect(toast.success).toHaveBeenCalledWith("Link copied.");
+    await user.click(screen.getByRole("button", { name: "Done" }));
+    expect(screen.queryByLabelText("Credential link")).not.toBeInTheDocument();
   });
 
-  test("create-user dialog blocks a blank display name without calling the API", async () => {
+  test("create-user dialog blocks a blank display name", async () => {
     const create = vi.spyOn(usersApi, "createUser");
     renderUsersPage(ADMIN_ME, []);
     const user = userEvent.setup();
-
     await user.click(await screen.findByRole("button", { name: "Create user" }));
     await user.type(screen.getByLabelText("Email"), "carol@example.com");
-    await user.type(screen.getByLabelText("Initial password"), "correct-horse-battery");
-    await user.click(screen.getByRole("button", { name: "Create" }));
-
-    expect(await screen.findByRole("alert")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Create user" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("Enter a display name.");
     expect(create).not.toHaveBeenCalled();
   });
 
-  test("reset-password dialog calls adminResetPassword", async () => {
-    const target = makeUser();
+  test.each(["unavailable", "denied"])(
+    "copy gives manual guidance when clipboard is %s",
+    async (mode) => {
+      const target = makeUser();
+      vi.spyOn(usersApi, "issueCredentialLink").mockResolvedValue({
+        token: "test-link",
+        expires_at: "2026-10-23T12:00:00Z",
+      });
+      renderUsersPage(ADMIN_ME, [target]);
+      const user = userEvent.setup();
+      await user.click(await screen.findByRole("button", { name: "Reset password" }));
+      await user.click(screen.getByRole("button", { name: "Create link" }));
+      const copy = await screen.findByRole("button", { name: "Copy link" });
+      const descriptor = Object.getOwnPropertyDescriptor(navigator, "clipboard");
+      if (mode === "unavailable") {
+        Object.defineProperty(navigator, "clipboard", { value: undefined, configurable: true });
+      } else {
+        vi.spyOn(navigator.clipboard, "writeText").mockRejectedValue(
+          new Error("Permission denied"),
+        );
+      }
+      try {
+        await user.click(copy);
+        expect(toast.error).toHaveBeenCalledWith(
+          "Couldn't copy the link. Select the link and copy it manually.",
+        );
+        expect(screen.getByLabelText("Credential link")).toHaveValue(
+          `${window.location.origin}/set-password#test-link`,
+        );
+        expect(toast.success).not.toHaveBeenCalled();
+      } finally {
+        if (descriptor) Object.defineProperty(navigator, "clipboard", descriptor);
+      }
+    },
+  );
+
+  test("reset confirmation replaces a pending link and returns the new link", async () => {
+    const target = makeUser({ credential_link_expires_at: "2026-10-23T12:00:00Z" });
     vi.spyOn(usersApi, "listUsers").mockResolvedValue([target]);
-    const reset = vi.spyOn(usersApi, "adminResetPassword").mockResolvedValue(undefined);
+    const issue = vi
+      .spyOn(usersApi, "issueCredentialLink")
+      .mockResolvedValue({ token: "replacement", expires_at: "2026-10-24T12:00:00Z" });
     renderUsersPage(ADMIN_ME, [target]);
     const user = userEvent.setup();
-
     await user.click(await screen.findByRole("button", { name: "Reset password" }));
-    await user.type(screen.getByLabelText("New password"), "correct-horse-battery");
-    await user.click(screen.getByRole("button", { name: "Reset" }));
-
-    expect(reset).toHaveBeenCalledWith(target.id, "correct-horse-battery");
+    expect(screen.getByRole("heading", { name: "Reset password for Bob?" })).toBeInTheDocument();
+    expect(screen.getByText(/This replaces the link created earlier/)).toHaveTextContent(
+      "Their current password keeps working until the link is used.",
+    );
+    expect(screen.queryByLabelText("New password")).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Create link" }));
+    expect(issue).toHaveBeenCalledWith(target.id);
+    expect(
+      await screen.findByRole("heading", { name: "Send this link to Bob" }),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/uses this link to choose a new password/)).toBeInTheDocument();
   });
+
+  test("reports the no-email refusal", async () => {
+    vi.spyOn(usersApi, "issueCredentialLink").mockRejectedValue(
+      new ApiError(422, null, "Validation failed", "the account has no email address"),
+    );
+    renderUsersPage(ADMIN_ME, [makeUser()]);
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole("button", { name: "Reset password" }));
+    await user.click(screen.getByRole("button", { name: "Create link" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Add an email address to Bob before creating a link.",
+    );
+  });
+
+  test.each([false, true])(
+    "shows the pending badge and cancels a link (has password: %s)",
+    async (hasPassword) => {
+      const target = makeUser({
+        has_password: hasPassword,
+        credential_link_expires_at: "2026-10-23T12:00:00Z",
+      });
+      const list = vi.spyOn(usersApi, "listUsers").mockResolvedValue([target]);
+      const cancel = vi.spyOn(usersApi, "cancelCredentialLink").mockImplementation(() => {
+        list.mockResolvedValue([{ ...target, credential_link_expires_at: null }]);
+        return Promise.resolve();
+      });
+      renderUsersPage(ADMIN_ME, [target]);
+      const user = userEvent.setup();
+      const label = hasPassword ? "link pending" : "invited";
+      expect(await screen.findByText(label)).toHaveAccessibleName(new RegExp(`${label} expires`));
+      await user.click(await screen.findByRole("button", { name: "Cancel link" }));
+      expect(cancel).toHaveBeenCalledWith(target.id);
+      await waitFor(() => {
+        expect(toast.success).toHaveBeenCalledWith("Link cancelled.");
+      });
+    },
+  );
+
+  test("hides reset on the current administrator's row", async () => {
+    renderUsersPage(ADMIN_ME, [makeUser({ id: ADMIN_ME.id })]);
+    await screen.findByText("Bob");
+    expect(screen.queryByRole("button", { name: "Reset password" })).not.toBeInTheDocument();
+  });
+
+  test("hides all credential actions when local authentication is disabled", async () => {
+    vi.mocked(fetchSetupStatus).mockResolvedValueOnce({
+      setup_required: false,
+      local_auth_enabled: false,
+      oidc_enabled: true,
+      password_min_length: 15,
+      password_max_length: 256,
+    });
+    renderUsersPage(ADMIN_ME, [makeUser({ credential_link_expires_at: "2026-10-23T12:00:00Z" })]);
+    await screen.findByText("Bob");
+    expect(screen.queryByRole("button", { name: "Create user" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Reset password" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Cancel link" })).not.toBeInTheDocument();
+  });
+
+  test("shows authentication settings loading until credential actions are known", async () => {
+    vi.mocked(fetchSetupStatus).mockReturnValueOnce(new Promise(() => {}));
+    renderUsersPage(ADMIN_ME, [makeUser()]);
+    expect(await screen.findByRole("status")).toHaveTextContent("Loading authentication settings…");
+    expect(screen.queryByRole("button", { name: "Create user" })).not.toBeInTheDocument();
+    expect(screen.getByText("Bob")).toBeInTheDocument();
+  });
+
+  test.each([new TypeError("Failed to fetch"), new ApiError(503, null, "Busy", "Try later")])(
+    "recovers credential actions in place after authentication settings fail: %s",
+    async (error) => {
+      vi.mocked(fetchSetupStatus).mockClear();
+      vi.mocked(fetchSetupStatus).mockRejectedValueOnce(error);
+      const target = makeUser({ credential_link_expires_at: "2026-10-23T12:00:00Z" });
+      renderUsersPage(ADMIN_ME, [target]);
+      const retry = await screen.findByRole("button", { name: "Retry authentication settings" });
+      expect(screen.getByRole("alert")).toHaveTextContent(
+        "Could not load authentication settings.",
+      );
+      expect(screen.queryByRole("button", { name: "Create user" })).not.toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "Reset password" })).not.toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "Cancel link" })).not.toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Disable" })).toBeEnabled();
+      const status = {
+        setup_required: false,
+        local_auth_enabled: true,
+        oidc_enabled: false,
+        password_min_length: 15,
+        password_max_length: 256,
+      };
+      let complete: ((value: typeof status) => void) | undefined;
+      vi.mocked(fetchSetupStatus).mockReturnValueOnce(
+        new Promise((resolve) => {
+          complete = resolve;
+        }),
+      );
+      await userEvent.setup().click(retry);
+      expect(retry).toBeDisabled();
+      act(() => {
+        complete?.(status);
+      });
+      expect(await screen.findByRole("button", { name: "Create user" })).toBeEnabled();
+      expect(screen.getByRole("button", { name: "Reset password" })).toBeEnabled();
+      expect(screen.getByRole("button", { name: "Cancel link" })).toBeEnabled();
+      expect(
+        screen.queryByRole("button", { name: "Retry authentication settings" }),
+      ).not.toBeInTheDocument();
+      expect(fetchSetupStatus).toHaveBeenCalledTimes(2);
+    },
+  );
 });

@@ -4,11 +4,14 @@
 #
 # owasp-protection-global-unsafe-strict requires every write operation to name
 # a non-empty security scheme, and treats the `security: [{}]` opt-out as a
-# violation. The six operations below are unauthenticated because they cannot
+# violation. The operations below are unauthenticated because they cannot
 # be anything else: a client has no session to present when logging in,
 # registering, recovering a password, or bootstrapping the first admin.
 #
-# The rule stays on globally so a seventh public write operation fails the
+# Credential-link lookup and redemption use the link as authority; recovery
+# cannot require an existing session.
+#
+# The rule stays on globally so an additional public write operation fails the
 # gate. Adding a path here is a decision that an endpoint is public by design,
 # and belongs in review as one.
 #
@@ -18,6 +21,8 @@
 # then restore this header, which the generator does not preserve.
 
 owasp-protection-global-unsafe-strict:
+  - $.paths['/auth/credential-links/lookups'].post.security[0]
+  - $.paths['/auth/credential-links/redemptions'].post.security[0]
   - $.paths['/auth/forgot-password'].post.security[0]
   - $.paths['/auth/local/login'].post.security[0]
   - $.paths['/auth/logout'].post.security[0]
@@ -87,9 +92,6 @@ owasp-string-limit:
   - $.paths['/opds/shelves/{shelf_id}/search'].get.parameters[1].schema
   - $.paths['/opds/shelves/{shelf_id}/series'].get.parameters[1].schema
   - $.paths['/opds/shelves/{shelf_id}/series/{series_id}'].get.parameters[2].schema
-  - $.components.schemas['AdminPasswordResetRequest'].properties['new_password']
-  - $.components.schemas['ChangePasswordRequest'].properties['current_password']
-  - $.components.schemas['ChangePasswordRequest'].properties['new_password']
   - $.components.schemas['ContributorsPatch'].properties['author'].items
   - $.components.schemas['ContributorsPatch'].properties['editor'].items
   - $.components.schemas['ContributorsPatch'].properties['translator'].items
@@ -97,21 +99,16 @@ owasp-string-limit:
   - $.components.schemas['CreateTokenRequest'].properties['name']
   - $.components.schemas['CreateUserRequest'].properties['display_name']
   - $.components.schemas['CreateUserRequest'].properties['email']
-  - $.components.schemas['CreateUserRequest'].properties['password']
   - $.components.schemas['ForgotPasswordRequest'].properties['email']
   - $.components.schemas['LocalLoginRequest'].properties['email']
-  - $.components.schemas['LocalLoginRequest'].properties['password']
   - $.components.schemas['LockPayload'].properties['field_name']
   - $.components.schemas['RegisterRequest'].properties['display_name']
   - $.components.schemas['RegisterRequest'].properties['email']
-  - $.components.schemas['RegisterRequest'].properties['password']
   - $.components.schemas['RenameShelfRequest'].properties['name']
   - $.components.schemas['ResetPasswordRequest'].properties['email']
-  - $.components.schemas['ResetPasswordRequest'].properties['new_password']
   - $.components.schemas['ResetPasswordRequest'].properties['pin']
   - $.components.schemas['SetupRequest'].properties['display_name']
   - $.components.schemas['SetupRequest'].properties['email']
-  - $.components.schemas['SetupRequest'].properties['password']
   - $.components.schemas['UpdateMetadataFields'].properties['description']
   - $.components.schemas['UpdateMetadataFields'].properties['genres'].items
   - $.components.schemas['UpdateMetadataFields'].properties['isbn_10']

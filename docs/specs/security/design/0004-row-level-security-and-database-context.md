@@ -144,7 +144,7 @@ ingestion pipeline alone.
 **Owner-scoped tables** (`reading_state` and `user_preferences`) each have one `ALL` policy (`reading_state_owner`,
 `user_preferences_owner`) for `reverie_app` and `reverie_readonly`, matching `user_id = app.current_user_id` in both
 `USING` and `WITH CHECK`, so a caller can neither read nor write another account's row. `reverie_ingestion` has no grant
-on either table, so the pipeline cannot reach personal rows at all.
+on those tables, so the pipeline cannot reach personal rows at all.
 
 **Tables with row-level security enabled and no policy** (`reading_sessions`, `webhooks` and `webhook_deliveries`) deny
 every operation to every role except their owner, whatever the grants say. No application role can reach them.
@@ -166,11 +166,12 @@ there is no input-management endpoint. Manifestation RLS remains the content-vis
 ### The grant boundary
 
 Row-level security decides which rows a query sees; the grant decides whether the role may run the query at all, and the
-two checks are independent. Six tables have no policy and are granted to `reverie_app` alone, with no grant to
+two checks are independent. Seven tables have no policy and are granted to `reverie_app` alone, with no grant to
 `reverie_readonly` or `reverie_ingestion`: `device_tokens`, `local_credentials`, `instance_bootstrap`,
-`local_login_throttle`, `password_reset_pins` and the migration history table `_sqlx_migrations`. For `device_tokens`
-and `local_credentials`, which hold hashed token and password material, the missing `reverie_readonly` grant is the
-whole boundary against a reporting connection; there is no policy on either table to narrow or widen.
+`local_login_throttle`, `password_reset_pins`, `credential_links` and the migration history table `_sqlx_migrations`.
+For `device_tokens`, `credential_links` and `local_credentials`, which hold hashed token and password material, the
+missing `reverie_readonly` grant is the whole boundary against a reporting connection; there is no policy on those
+tables to narrow or widen.
 
 `reverie_app` holds `SELECT`, `INSERT`, `UPDATE` and `DELETE` on every table it is granted except nine: `SELECT` only on
 `libraries`, `identifier_schemes`, `metadata_sources`, `rating_sources`, `manifestation_external_ratings` and the

@@ -72,9 +72,22 @@ pub struct CurrentUser {
     /// explicit scope chosen at mint. Private, gated via
     /// [`require_scope`](CurrentUser::require_scope).
     scopes: Vec<Scope>,
+    via_session: bool,
 }
 
 impl CurrentUser {
+    /// Require a browser session for credential administration.
+    ///
+    /// # Errors
+    /// Returns Forbidden for device-token and Basic authentication.
+    pub const fn require_browser_session(&self) -> Result<(), AppError> {
+        if self.via_session {
+            Ok(())
+        } else {
+            Err(AppError::Forbidden)
+        }
+    }
+
     /// Return `Err(Forbidden)` unless the user is an admin.
     ///
     /// Role-assertion invariant: callers that gate on admin must use this
@@ -246,6 +259,7 @@ async fn resolve_device_token(
         role: u.role,
         is_child: u.is_child,
         scopes: dt.scopes,
+        via_session: false,
     }))
 }
 
@@ -342,6 +356,7 @@ impl FromRequestParts<AppState> for CurrentUser {
                         role: user.role,
                         is_child: user.is_child,
                         scopes: Scope::for_role(user.role).to_vec(),
+                        via_session: true,
                     });
                 }
                 crate::auth::session::SessionUser::Disabled => return Err(AppError::Unauthorized),
