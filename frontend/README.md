@@ -20,6 +20,9 @@ and `isPending` for their native states. Disclosure retains filter drafts while 
 children only while expanded. Book tabs activate from arrow keys and mount only the selected panel. Buttons styled as
 navigation links use React Router Link with `buttonVariants`.
 
+Token receipt fields use native `TextField`, `Label` and `Input` composition for their read-only values and label
+associations. The supported `render` prop retains the shared field styling.
+
 Refine dismissal retains valid filter edits for Escape, close and outside clicks. Columns Reset closes the popover and
 returns focus through native dismissal. Settings actions are disabled when pristine; Save stays in the tab order while
 pending.

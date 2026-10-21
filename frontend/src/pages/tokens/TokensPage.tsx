@@ -1,4 +1,4 @@
-import { Label as AriaLabel } from "react-aria-components";
+import { Input as AriaInput, Label as AriaLabel, TextField } from "react-aria-components";
 /**
  * `/tokens` — self-service device-token management.
  *
@@ -427,10 +427,10 @@ type CopyFieldProps = {
 
 function CopyField({ label, value }: Readonly<CopyFieldProps>): ReactElement {
   return (
-    <Field>
-      <FieldLabel>{label}</FieldLabel>
+    <TextField isReadOnly value={value} render={(props) => <Field {...props} />}>
+      <AriaLabel render={(props) => <FieldLabel {...props} />}>{label}</AriaLabel>
       <div className="flex items-center gap-2">
-        <Input readOnly value={value} className="font-mono text-xs" />
+        <AriaInput render={(props) => <Input {...props} />} className="font-mono text-xs" />
         <Button
           type="button"
           variant="outline"
@@ -443,7 +443,7 @@ function CopyField({ label, value }: Readonly<CopyFieldProps>): ReactElement {
           <Copy className="size-4" aria-hidden="true" />
         </Button>
       </div>
-    </Field>
+    </TextField>
   );
 }
 
