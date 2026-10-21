@@ -6365,7 +6365,8 @@ mod tests {
             .unwrap();
         let server = test_support::db::server_with_real_pools(&app, &ingestion);
         let logs = test_support::CapturedLogs::default();
-        let password = "lithe cobalt meadow drift";
+        let password = uuid::Uuid::new_v4().to_string();
+        let password = password.as_str();
         async {
             for (submitted_token, submitted_password, expected) in [
                 ("private-invalid-token", password, StatusCode::UNPROCESSABLE_ENTITY),
