@@ -16,7 +16,6 @@ import { useRef, type ReactElement } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Label } from "@/components/ui/label";
 import { Popover, PopoverContent } from "@/components/ui/popover";
 
 import { HIDEABLE_COLUMNS } from "./table-columns";
@@ -57,27 +56,21 @@ export function ColumnsPopover({
       >
         <p className="text-fg-muted mb-3 font-mono text-xs uppercase tracking-[0.12em]">Columns</p>
         <div className="flex flex-col gap-2">
-          <div className="flex items-center gap-2">
-            <Checkbox id="library-column-title" checked disabled />
-            <Label htmlFor="library-column-title" className="text-fg-muted">
-              Title
-            </Label>
-          </div>
-          {HIDEABLE_COLUMNS.map((column) => {
-            const id = `library-column-${column.key}`;
-            return (
-              <div key={column.key} className="flex items-center gap-2">
-                <Checkbox
-                  id={id}
-                  checked={!hiddenColumns.has(column.key)}
-                  onCheckedChange={(checked) => {
-                    onToggleColumn(column.key, checked !== true);
-                  }}
-                />
-                <Label htmlFor={id}>{column.name}</Label>
-              </div>
-            );
-          })}
+          <Checkbox id="library-column-title" isSelected isDisabled className="text-fg-muted">
+            Title
+          </Checkbox>
+          {HIDEABLE_COLUMNS.map((column) => (
+            <Checkbox
+              key={column.key}
+              id={`library-column-${column.key}`}
+              isSelected={!hiddenColumns.has(column.key)}
+              onChange={(selected) => {
+                onToggleColumn(column.key, !selected);
+              }}
+            >
+              {column.name}
+            </Checkbox>
+          ))}
         </div>
         <Button
           type="button"

@@ -22,6 +22,7 @@
     "nuqs": "2.10.2",
     "radix-ui": "^1.4.3",
     "react": "^19.2.6",
+    "react-aria": "3.53.1",
     "react-aria-components": "1.22.1",
     "react-data-grid": "7.0.0-beta.61",
     "react-dom": "^19.2.6",

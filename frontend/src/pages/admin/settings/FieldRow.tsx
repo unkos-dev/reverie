@@ -2,10 +2,9 @@ import { TriangleAlert } from "lucide-react";
 import type { ReactElement, ReactNode } from "react";
 
 import type { SettingsKey, SettingsSnapshot } from "@/api/settings";
-import { Checkbox } from "@/components/ui/checkbox";
+import { Checkbox, CheckboxGroup } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import { RadioGroup, Radio } from "@/components/ui/radio-group";
 import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
 
@@ -139,11 +138,11 @@ function SwitchControl({
       <Switch
         id={controlId(field.key)}
         className="motion-reduce:[&>[data-slot=switch-thumb]]:transition-none"
-        checked={on}
+        isSelected={on}
         aria-labelledby={labelId(field.key)}
         aria-describedby={`help-${field.key}`}
-        disabled={editor.phase !== "idle"}
-        onCheckedChange={(value) => {
+        isDisabled={editor.phase !== "idle"}
+        onChange={(value) => {
           editor.editBoolean(field.key, value);
         }}
       />
@@ -165,37 +164,40 @@ function FormatsControl({ field, base, editor }: Props): ReactElement {
   const lockId = `lock-${field.key}`;
   const lastEnabled = enabledFormatCount(editor.draft, base.values) === 1;
   return (
-    <div role="group" aria-labelledby={labelId(field.key)}>
-      {SUPPORTED_FORMATS.map((format, index) => {
-        const checked = shownFormat(editor.draft, base.values, format);
-        const locked = checked && lastEnabled;
-        return (
-          <Label
-            key={format}
-            className="flex w-fit cursor-pointer items-center gap-2 py-0.5 text-sm font-normal has-[[aria-disabled=true]]:cursor-not-allowed"
-          >
-            <Checkbox
-              id={index === 0 ? controlId(field.key) : `${controlId(field.key)}-${format}`}
-              checked={checked}
-              disabled={editor.phase !== "idle"}
-              aria-disabled={locked ? true : undefined}
-              aria-describedby={locked ? lockId : undefined}
-              onCheckedChange={(value) => {
-                if (locked) return;
-                editor.editFormat(format, value === true);
-              }}
-            />
-            {format.toUpperCase()}
-          </Label>
-        );
-      })}
+    <CheckboxGroup
+      aria-labelledby={labelId(field.key)}
+      value={SUPPORTED_FORMATS.filter((format) => shownFormat(editor.draft, base.values, format))}
+      isDisabled={editor.phase !== "idle"}
+      onChange={(formats) => {
+        for (const format of SUPPORTED_FORMATS) {
+          const selected = formats.includes(format);
+          if (selected !== shownFormat(editor.draft, base.values, format)) {
+            editor.editFormat(format, selected);
+          }
+        }
+      }}
+    >
+      {SUPPORTED_FORMATS.map((format, index) => (
+        <Checkbox
+          key={format}
+          value={format}
+          id={index === 0 ? controlId(field.key) : `${controlId(field.key)}-${format}`}
+          isReadOnly={shownFormat(editor.draft, base.values, format) && lastEnabled}
+          aria-describedby={
+            shownFormat(editor.draft, base.values, format) && lastEnabled ? lockId : undefined
+          }
+          className="cursor-pointer py-0.5 font-normal"
+        >
+          {format.toUpperCase()}
+        </Checkbox>
+      ))}
       {lastEnabled ? (
         <p id={lockId} className="text-fg-muted mt-1.5 max-w-[52ch] text-[13px] leading-normal">
           This is the only format selected. At least one format must stay selected, or Reverie would
           have nothing to import.
         </p>
       ) : null}
-    </div>
+    </CheckboxGroup>
   );
 }
 
@@ -222,24 +224,24 @@ function ConflictChoices({
   const prefix = `choice-${row.key}`;
   return (
     <fieldset className="m-0 mt-2.5 border-0 p-0">
-      <legend className="text-fg-muted p-0 text-[13px] leading-normal">
+      <legend id={`${prefix}-legend`} className="text-fg-muted p-0 text-[13px] leading-normal">
         Someone else saved {row.theirs} while you were editing. You set {row.mine}.
       </legend>
       <RadioGroup
+        aria-labelledby={`${prefix}-legend`}
+        orientation="horizontal"
         className="mt-1.5 flex w-auto gap-5"
         value={row.choice}
-        onValueChange={(value) => {
+        onChange={(value) => {
           if (value === "mine" || value === "theirs") editor.choose(row.key, value);
         }}
       >
-        <Label className="gap-2 text-sm font-normal">
-          <RadioGroupItem id={`${prefix}-mine`} value="mine" />
+        <Radio id={`${prefix}-mine`} value="mine">
           Keep mine ({row.mine})
-        </Label>
-        <Label className="gap-2 text-sm font-normal">
-          <RadioGroupItem id={`${prefix}-theirs`} value="theirs" />
+        </Radio>
+        <Radio id={`${prefix}-theirs`} value="theirs">
           Use theirs ({row.theirs})
-        </Label>
+        </Radio>
       </RadioGroup>
     </fieldset>
   );

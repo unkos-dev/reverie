@@ -101,6 +101,29 @@ describe("BookPage", () => {
     expect(within(overviewPanel).getByText(/passionate, polyphonic novel/)).toBeInTheDocument();
   });
 
+  test("tabs activate automatically from the keyboard and mount only the selected panel", async () => {
+    const user = userEvent.setup();
+    renderBook(bookFixture());
+    const tabs = await screen.findByRole("tablist", { name: "Book details" });
+    const overview = within(tabs).getByRole("tab", { name: "Overview" });
+    expect(overview).toHaveAttribute("aria-selected", "true");
+    expect(screen.queryByRole("button", { name: /edit metadata/i })).not.toBeInTheDocument();
+    expect(screen.getAllByRole("tabpanel")).toHaveLength(1);
+    overview.focus();
+    await user.keyboard("{ArrowRight}");
+    expect(within(tabs).getByRole("tab", { name: "Versions" })).toHaveFocus();
+    expect(screen.getByRole("tabpanel", { name: "Versions" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /edit metadata/i })).toBeInTheDocument();
+    await user.keyboard("{ArrowRight}");
+    expect(screen.getByRole("tabpanel", { name: "Activity" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /edit metadata/i })).not.toBeInTheDocument();
+    await user.keyboard("{Home}");
+    expect(overview).toHaveFocus();
+    expect(screen.getByRole("tabpanel", { name: "Overview" })).toBeInTheDocument();
+    expect(screen.getAllByRole("tabpanel")).toHaveLength(1);
+    expect(getBook).not.toHaveBeenCalled();
+  });
+
   test("Versions tab badges the pending count and exposes the editor", async () => {
     const user = userEvent.setup();
     renderBook(

@@ -31,9 +31,12 @@
  */
 import { useQuery } from "@tanstack/react-query";
 import { ArrowDown, ArrowUp, ChevronDown, ChevronUp, X } from "lucide-react";
-import { useEffect, useId, useState, type ReactElement, type ReactNode } from "react";
+import { Button as AriaButton } from "react-aria-components";
+import { useEffect, type ReactElement, type ReactNode } from "react";
 
 import { listShelves, MAX_SORT_LEVELS, SORT_FIELDS, type Shelf, type SortLevelParam } from "@/api";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Disclosure, DisclosurePanel } from "@/components/ui/collapsible";
 import { Button } from "@/components/ui/button";
 import {
   Select,
@@ -301,59 +304,38 @@ function RailSection({
   clearAriaLabel,
   children,
 }: Readonly<RailSectionProps>): ReactElement {
-  const [open, setOpen] = useState(activeCount > 0);
-  const contentId = useId();
   const active = activeCount > 0;
-  // `hidden="until-found"` keeps collapsed text reachable by the browser's
-  // find-in-page, which fires `beforematch` on a hit. React renders `hidden`
-  // as a boolean and has no `beforematch` prop, so both are set on the node.
-  const syncCollapsed = (content: HTMLDivElement): (() => void) => {
-    if (open) content.removeAttribute("hidden");
-    else content.setAttribute("hidden", "until-found");
-    const expand = (): void => {
-      setOpen(true);
-    };
-    content.addEventListener("beforematch", expand);
-    return () => {
-      content.removeEventListener("beforematch", expand);
-    };
-  };
   return (
     <section>
-      <div className="flex items-center gap-2">
-        <button
-          type="button"
-          aria-expanded={open}
-          aria-controls={contentId}
-          onClick={() => {
-            setOpen((current) => !current);
-          }}
-          className={`flex flex-1 cursor-pointer select-none items-center gap-2 self-stretch text-left font-mono text-xs uppercase tracking-[0.14em] ${
-            active ? "text-accent-text" : "text-fg-muted"
-          }`}
-        >
-          <span>{title}</span>
-          {active ? (
-            <span className="bg-accent-soft text-fg rounded-full px-1.5 py-0.5 text-[0.65rem] leading-none">
-              {activeCount}
-            </span>
-          ) : null}
-        </button>
-        {active ? (
-          <button
+      <Disclosure defaultExpanded={activeCount > 0} className="group/section">
+        <div className="flex items-center gap-2">
+          <AriaButton
             type="button"
-            aria-label={clearAriaLabel ?? `Clear ${title} filters`}
-            onClick={onClear}
-            className="text-fg-muted hover:text-fg focus-visible:ring-accent flex min-h-6 items-center rounded-sm px-2 font-mono text-xs uppercase tracking-wide transition-colors focus-visible:outline-none focus-visible:ring-2"
+            slot="trigger"
+            className={`flex flex-1 cursor-pointer select-none items-center gap-2 self-stretch text-left font-mono text-xs uppercase tracking-[0.14em] ${
+              active ? "text-accent-text" : "text-fg-muted"
+            }`}
           >
-            {clearLabel}
-          </button>
-        ) : null}
-      </div>
-      {/* Collapsed content stays mounted: the range editors hold drafts locally. */}
-      <div id={contentId} ref={syncCollapsed} className={open ? "mt-2" : undefined}>
-        {children}
-      </div>
+            <span>{title}</span>
+            {active ? (
+              <span className="bg-accent-soft text-fg rounded-full px-1.5 py-0.5 text-[0.65rem] leading-none">
+                {activeCount}
+              </span>
+            ) : null}
+          </AriaButton>
+          {active ? (
+            <button
+              type="button"
+              aria-label={clearAriaLabel ?? `Clear ${title} filters`}
+              onClick={onClear}
+              className="text-fg-muted hover:text-fg focus-visible:ring-accent flex min-h-6 items-center rounded-sm px-2 font-mono text-xs uppercase tracking-wide transition-colors focus-visible:outline-none focus-visible:ring-2"
+            >
+              {clearLabel}
+            </button>
+          ) : null}
+        </div>
+        <DisclosurePanel className="group-data-expanded/section:mt-2">{children}</DisclosurePanel>
+      </Disclosure>
     </section>
   );
 }
@@ -529,21 +511,17 @@ function FacetList({ options, active, emptyText, onPick }: Readonly<FacetListPro
   return (
     <div className="flex flex-col gap-0.5">
       {options.map((option) => (
-        <label
+        <Checkbox
           key={option.id}
-          className="text-fg-muted hover:bg-surface hover:text-fg has-checked:bg-surface has-checked:text-fg flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 transition-colors"
+          value={option.id}
+          isSelected={active === option.id}
+          onChange={(selected) => {
+            onPick(selected ? option.id : undefined);
+          }}
+          className="text-fg-muted hover:bg-surface hover:text-fg data-selected:bg-surface data-selected:text-fg w-full cursor-pointer gap-2 rounded-md px-2 py-1.5 font-normal transition-colors [&>[data-slot=checkbox-indicator]]:size-3.5"
         >
-          <input
-            type="checkbox"
-            value={option.id}
-            checked={active === option.id}
-            onChange={() => {
-              onPick(active === option.id ? undefined : option.id);
-            }}
-            className="accent-accent focus-visible:ring-accent size-3.5 focus-visible:outline-none focus-visible:ring-2"
-          />
           <span className="truncate">{option.name}</span>
-        </label>
+        </Checkbox>
       ))}
       {options.length === 0 ? <p className="text-fg-faint px-2 py-1.5">{emptyText}</p> : null}
     </div>

@@ -1,9 +1,11 @@
 import { type ReactElement, type ReactNode } from "react";
+import { FocusScope } from "react-aria/FocusScope";
+import { Button as AriaButton } from "react-aria-components";
 import { ChevronDown } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import { Disclosure, DisclosurePanel } from "@/components/ui/collapsible";
 import { cn } from "@/lib/utils";
 
 import { formatCount } from "./format";
@@ -49,38 +51,43 @@ function GroupShell({
   children,
 }: Readonly<GroupShellProps>): ReactElement {
   return (
-    <Collapsible defaultOpen={defaultOpen} className="border-border border-t">
-      <div className="flex flex-wrap items-center gap-x-3 pr-4">
-        <CollapsibleTrigger asChild>
-          <button
-            type="button"
-            className="group/trigger focus-visible:-outline-offset-2! hover:bg-surface-2/60 grid min-w-0 flex-1 basis-full grid-cols-[20px_minmax(0,1fr)] sm:basis-auto sm:grid-cols-[20px_minmax(0,1fr)_auto] items-start gap-3 px-4 py-3.5 text-left"
-          >
-            <ChevronDown
-              aria-hidden="true"
-              className="text-fg-muted mt-1 size-4 transition-transform motion-reduce:transition-none group-data-[state=closed]/trigger:-rotate-90"
-            />
-            <span className="flex flex-col gap-0.5">
-              <strong
-                className={cn("text-[15px]", muted ? "text-fg-muted font-medium" : "font-bold")}
+    <FocusScope>
+      <Disclosure defaultExpanded={defaultOpen} className="group/disclosure border-border border-t">
+        {({ isExpanded }) => (
+          <>
+            <div className="flex flex-wrap items-center gap-x-3 pr-4">
+              <AriaButton
+                slot="trigger"
+                type="button"
+                className="data-focus-visible:-outline-offset-2! hover:bg-surface-2/60 grid min-w-0 flex-1 basis-full grid-cols-[20px_minmax(0,1fr)] sm:basis-auto sm:grid-cols-[20px_minmax(0,1fr)_auto] items-start gap-3 px-4 py-3.5 text-left"
               >
-                {title}
-              </strong>
-              <span className="text-fg-muted text-[13px]">{action}</span>
-            </span>
-            <span className="col-start-2 flex flex-wrap items-center gap-2 sm:col-start-auto">
-              {tag ? <StatusTag tag={tag} /> : null}
-              <span className="font-mono text-[13px]">{countLabel}</span>
-            </span>
-          </button>
-        </CollapsibleTrigger>
-        {headerControl}
-      </div>
-      {feedback}
-      <CollapsibleContent className="border-border bg-canvas-2/55 border-t">
-        {children}
-      </CollapsibleContent>
-    </Collapsible>
+                <ChevronDown
+                  aria-hidden="true"
+                  className="text-fg-muted mt-1 size-4 transition-transform motion-reduce:transition-none -rotate-90 group-data-expanded/disclosure:rotate-0"
+                />
+                <span className="flex flex-col gap-0.5">
+                  <strong
+                    className={cn("text-[15px]", muted ? "text-fg-muted font-medium" : "font-bold")}
+                  >
+                    {title}
+                  </strong>
+                  <span className="text-fg-muted text-[13px]">{action}</span>
+                </span>
+                <span className="col-start-2 flex flex-wrap items-center gap-2 sm:col-start-auto">
+                  {tag ? <StatusTag tag={tag} /> : null}
+                  <span className="font-mono text-[13px]">{countLabel}</span>
+                </span>
+              </AriaButton>
+              {headerControl}
+            </div>
+            {feedback}
+            <DisclosurePanel className="border-border bg-canvas-2/55 border-t">
+              {isExpanded ? children : null}
+            </DisclosurePanel>
+          </>
+        )}
+      </Disclosure>
+    </FocusScope>
   );
 }
 

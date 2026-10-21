@@ -201,6 +201,20 @@ describe("FilterRail shelf facet", () => {
     });
   });
 
+  test("Space re-picks an active shelf to clear its single value", async () => {
+    renderRail("/library?shelf=shelf-1");
+    const user = userEvent.setup();
+    const shelf = await screen.findByRole("checkbox", { name: "Wishlist" });
+    expect(shelf).toBeChecked();
+    shelf.focus();
+    await user.keyboard(" ");
+    await waitFor(() => {
+      expect(currentSearch().getAll("shelf")).toEqual([]);
+    });
+    expect(shelf).not.toBeChecked();
+    expect(shelf).toHaveFocus();
+  });
+
   test("section clear removes the shelf filter", async () => {
     renderRail("/library?shelf=shelf-2");
     const user = userEvent.setup();
@@ -385,6 +399,24 @@ describe("FilterRail section state", () => {
     fireEvent(content, new Event("beforematch"));
     expect(disclosure).toHaveAttribute("aria-expanded", "true");
     expect(content).not.toHaveAttribute("hidden");
+  });
+
+  test("collapsing retains a mounted uncommitted range draft", async () => {
+    renderRail("/library?pages_lte=900");
+    const user = userEvent.setup();
+    const pages = sectionByTitle("Pages");
+    const min = within(pages).getByRole("spinbutton", { name: "Min" });
+    fireEvent.change(min, { target: { value: "1000" } });
+    expect(currentSearch().get("pages_gte")).toBeNull();
+    const disclosure = disclosureOf(pages);
+    disclosure.focus();
+    await user.keyboard("{Enter}");
+    expect(min).toBeInTheDocument();
+    expect(min).toHaveValue(1000);
+    await user.keyboard(" ");
+    expect(within(pages).getByRole("spinbutton", { name: "Min" })).toBe(min);
+    expect(min).toHaveValue(1000);
+    expect(disclosure).toHaveAttribute("aria-expanded", "true");
   });
 
   test("Tab moves from the disclosure to its clear control", async () => {

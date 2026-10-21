@@ -597,6 +597,32 @@ describe("Needs attention", () => {
     });
   });
 
+  test("finishing a page does not steal focus after the user leaves its action", async () => {
+    let release: (value: {
+      items: ReturnType<typeof inputItem>[];
+      next_cursor: null;
+    }) => void = () => {};
+    vi.mocked(getInputCounts).mockResolvedValue(
+      countsFixture({ by_reason: [{ reason: "damaged", count: 3 }], attention_total: 3 }),
+    );
+    vi.mocked(listInputs).mockImplementation(({ cursor }) =>
+      cursor === undefined
+        ? Promise.resolve({ items: [inputItem(1), inputItem(2)], next_cursor: "cur-1" })
+        : new Promise((resolve) => {
+            release = resolve;
+          }),
+    );
+    renderPage();
+    await userEvent.click(await screen.findByRole("button", { name: "Show more" }));
+    const header = screen.getByRole("button", { name: /The file is damaged/ });
+    header.focus();
+    act(() => {
+      release({ items: [inputItem(3)], next_cursor: null });
+    });
+    await screen.findByText("Showing 3 of 3");
+    expect(header).toHaveFocus();
+  });
+
   test("Show more keeps focus on its button while more pages remain", async () => {
     vi.mocked(getInputCounts).mockResolvedValue(
       countsFixture({ by_reason: [{ reason: "damaged", count: 5 }], attention_total: 5 }),
@@ -733,6 +759,57 @@ describe("Needs attention", () => {
     await userEvent.click(within(card).getByRole("button", { name: "Try again" }));
     await screen.findByText("Marlow - The Salt Archive.epub");
     expect(within(card).getByRole("button", { name: /The file is damaged/ })).toHaveFocus();
+  });
+
+  test("failed retry focuses only its own group and Tab can leave a group", async () => {
+    vi.mocked(listInputs).mockImplementation(({ reason }) =>
+      reason === "invalid_structure"
+        ? Promise.reject(new ApiError(500, null, "Internal", ""))
+        : Promise.resolve(DAMAGED_PAGE),
+    );
+    renderPage();
+    const user = userEvent.setup();
+    await screen.findByText("Marlow - The Salt Archive.epub");
+    const first = screen.getByRole("button", { name: /The file is damaged/ });
+    const second = screen.getByRole("button", { name: /Not a valid EPUB.*Try another copy/ });
+    await user.click(second);
+    const panel = screen.getByRole("group", { name: /Not a valid EPUB.*Try another copy/ });
+    const retry = await within(panel).findByRole("button", { name: "Try again" });
+    vi.mocked(listInputs).mockResolvedValue({ items: [inputItem(50)], next_cursor: null });
+    retry.focus();
+    await user.keyboard("{Enter}");
+    await within(panel).findByText("Book 50.epub");
+    expect(second).toHaveFocus();
+    expect(first).not.toHaveFocus();
+    const last = screen.getByRole("button", { name: /Ignored: format not accepted/ });
+    const lastGroup = document.getElementById(
+      last.getAttribute("aria-controls") ?? "",
+    )?.parentElement;
+    if (lastGroup === undefined || lastGroup === null) throw new Error("group missing");
+    last.focus();
+    await user.tab();
+    expect(lastGroup.contains(document.activeElement)).toBe(false);
+    await user.tab({ shift: true });
+    expect(last).toHaveFocus();
+  });
+
+  test("count refresh retains the user's group expansion", async () => {
+    const client = renderPage();
+    const user = userEvent.setup();
+    const first = await screen.findByRole("button", { name: /The file is damaged/ });
+    const second = screen.getByRole("button", { name: /Not a valid EPUB.*Try another copy/ });
+    await user.click(first);
+    await user.click(second);
+    await screen.findByText("Book 50.epub");
+    act(() => {
+      client.setQueryData(queryKeys.ingestion.counts(), countsFixture());
+    });
+    expect(first).toHaveAttribute("aria-expanded", "false");
+    expect(second).toHaveAttribute("aria-expanded", "true");
+    expect(vi.mocked(listInputs).mock.calls.map(([p]) => p.reason)).toEqual([
+      "damaged",
+      "invalid_structure",
+    ]);
   });
 
   test("the ignored group is muted, counted on its own and requests format_not_accepted", async () => {
@@ -1001,6 +1078,26 @@ describe("Enrichment problems", () => {
     await waitFor(() => {
       expect(queued).toHaveFocus();
     });
+  });
+
+  test("a queued receipt does not steal focus after the user leaves retry", async () => {
+    let release: () => void = () => {};
+    vi.mocked(triggerEnrichment).mockReturnValue(
+      new Promise((resolve) => {
+        release = resolve;
+      }),
+    );
+    renderPage();
+    const row = (await screen.findByText("Book title 1")).closest("tr");
+    if (row === null) throw new Error("row missing");
+    await userEvent.click(within(row).getByRole("button", { name: "Try again" }));
+    const other = screen.getByRole("button", { name: /The file is damaged/ });
+    other.focus();
+    act(() => {
+      release();
+    });
+    await within(row).findByText("Queued. It leaves this list once it runs.");
+    expect(other).toHaveFocus();
   });
 
   test("a second press on a queuing retry sends no second request", async () => {
