@@ -476,7 +476,6 @@ function BookCard({ book }: Readonly<BookCardProps>): ReactElement {
     <article className="group relative z-0 transition-[z-index] delay-200 duration-0 hover:z-10 hover:delay-0 focus-within:z-10 focus-within:delay-0">
       <Link
         to={`/b/${book.id}`}
-        viewTransition
         className="focus-visible:ring-accent focus-visible:ring-offset-canvas flex flex-col gap-3 rounded-md transition-transform duration-200 ease-out hover:-translate-y-2 hover:scale-[1.04] focus-visible:-translate-y-2 focus-visible:scale-[1.04] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 motion-reduce:transform-none"
       >
         <div className="border-border group-hover:border-border-strong bg-surface-1 group-hover:shadow-[0_14px_32px_-16px_var(--accent-glow)] group-focus-within:shadow-[0_14px_32px_-16px_var(--accent-glow)] relative aspect-[2/3] overflow-hidden border transition-[border-color,box-shadow] duration-200 motion-reduce:transition-none">

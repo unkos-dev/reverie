@@ -56,7 +56,6 @@ export function LeftRail(): ReactElement {
       <div className="px-5 pb-4 pt-6">
         <Link
           to="/library"
-          viewTransition
           className="focus-visible:ring-accent inline-flex rounded-sm focus-visible:outline-none focus-visible:ring-2"
         >
           <Lockup size={20} theme={effective} />
@@ -130,7 +129,6 @@ function RailItem({ item }: Readonly<RailItemProps>): ReactElement {
   return (
     <NavLink
       to={item.to}
-      viewTransition
       className={({ isActive }) =>
         cn(
           ITEM_BASE,
@@ -171,7 +169,6 @@ function ShelfList({ shelves }: Readonly<ShelfListProps>): ReactElement | null {
         <li key={shelf.id}>
           <NavLink
             to={`/shelves/${shelf.id}`}
-            viewTransition
             className={({ isActive }) =>
               cn(
                 "text-fg-muted hover:bg-surface hover:text-fg flex items-center justify-between gap-2 rounded-md py-1.5 pl-9 pr-3 text-[13px] font-normal transition-colors",
@@ -192,7 +189,6 @@ function ShelfList({ shelves }: Readonly<ShelfListProps>): ReactElement | null {
         <li>
           <Link
             to="/shelves"
-            viewTransition
             className="text-fg-muted hover:text-fg focus-visible:ring-accent flex rounded-md py-1.5 pl-9 pr-3 text-[13px] transition-colors focus-visible:outline-none focus-visible:ring-2"
           >
             All shelves →
