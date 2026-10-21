@@ -116,10 +116,10 @@ is never an identity key.
 
 On first sign-in, `upsert_from_oidc` creates a `users` row with the column defaults (role `adult`, not a child, session
 version 0, no promotion) and the link row. The display name is the `name` claim in its default locale, falling back to
-the subject when the claim is absent. The email is the trimmed `email` claim when it parses as an RFC 5322 addr-spec
-with an unquoted local part and no display name or domain literal; an absent, blank or unsupported claim stores `NULL`.
-`idx_users_email_lower`, a unique index over `lower(email)` for non-null emails, makes an email unique across accounts
-without regard to case.
+the subject when the claim is absent. The trimmed `email` claim passes the shared account-email validator, which applies
+addr-spec syntax and length bounds alongside the frontend's common ASCII address pattern. An absent, blank or
+unsupported claim stores `NULL`. `idx_users_email_lower`, a unique index over `lower(email)` for non-null emails, makes
+an email unique across accounts without regard to case.
 
 On a returning sign-in, the only write is the display name and `updated_at`, and only for an account that is not
 disabled. The stored email is never rewritten, whatever the provider now releases.

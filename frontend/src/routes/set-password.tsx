@@ -19,6 +19,7 @@ export function Component(): ReactElement {
   const [token] = useState(() => z.string().parse(window.location.hash.slice(1)));
   const [error, setError] = useState<string | null>(null);
   const [invalid, setInvalid] = useState(false);
+  const [hasRetriedLookup, setHasRetriedLookup] = useState(false);
   const { policy, ready, isError: policyError, validate } = usePasswordPolicy();
 
   useEffect(() => {
@@ -29,13 +30,6 @@ export function Component(): ReactElement {
     );
   }, []);
 
-  const lookup = useQuery({
-    queryKey: ["credential-link", token],
-    queryFn: ({ signal }) => lookupCredentialLink(token, signal),
-    enabled: token !== "",
-    retry: false,
-    refetchOnWindowFocus: false,
-  });
   const redemption = useMutation({
     mutationFn: (password: string) => redeemCredentialLink(token, password),
     onError: (err) => {
@@ -45,6 +39,13 @@ export function Component(): ReactElement {
         setError(err instanceof ApiError ? err.detail : err.message);
       }
     },
+  });
+  const lookup = useQuery({
+    queryKey: ["credential-link", token],
+    queryFn: ({ signal }) => lookupCredentialLink(token, signal),
+    enabled: token !== "" && !redemption.isSuccess,
+    retry: false,
+    refetchOnWindowFocus: false,
   });
 
   function handleSubmit(event: SyntheticEvent<HTMLFormElement>): void {
@@ -66,6 +67,15 @@ export function Component(): ReactElement {
     redemption.mutate(password);
   }
 
+  if (redemption.isSuccess) {
+    return (
+      <AuthShell title="Password set" description="You can now sign in with your new password.">
+        <Button asChild className="w-full">
+          <Link to="/login">Sign in</Link>
+        </Button>
+      </AuthShell>
+    );
+  }
   if (
     token === "" ||
     invalid ||
@@ -82,12 +92,36 @@ export function Component(): ReactElement {
       </AuthShell>
     );
   }
-  if (lookup.isError) {
+  if (lookup.isError || (hasRetriedLookup && lookup.isPending)) {
+    const canRetry =
+      lookup.isFetching ||
+      lookup.error instanceof TypeError ||
+      (lookup.error instanceof ApiError &&
+        (lookup.error.status === 429 || lookup.error.status >= 500));
     return (
       <AuthShell title="">
-        <FieldError>
-          {lookup.error instanceof ApiError ? lookup.error.detail : lookup.error.message}
-        </FieldError>
+        {lookup.error ? (
+          <FieldError>
+            {lookup.error instanceof ApiError ? lookup.error.detail : lookup.error.message}
+          </FieldError>
+        ) : (
+          <div role="status" aria-label="Checking link">
+            <Skeleton className="h-6 w-40" />
+          </div>
+        )}
+        {canRetry ? (
+          <Button
+            type="button"
+            className="mt-4 w-full"
+            disabled={lookup.isFetching}
+            onClick={() => {
+              setHasRetriedLookup(true);
+              void lookup.refetch();
+            }}
+          >
+            Try again
+          </Button>
+        ) : null}
       </AuthShell>
     );
   }
@@ -98,15 +132,6 @@ export function Component(): ReactElement {
           <Skeleton className="h-6 w-40" />
           <Skeleton className="mt-4 h-10 w-full" />
         </div>
-      </AuthShell>
-    );
-  }
-  if (redemption.isSuccess) {
-    return (
-      <AuthShell title="Password set" description="You can now sign in with your new password.">
-        <Button asChild className="w-full">
-          <Link to="/login">Sign in</Link>
-        </Button>
       </AuthShell>
     );
   }

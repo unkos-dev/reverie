@@ -5282,6 +5282,14 @@
         "responses": {
           "201": {
             "description": "Account and credential link created",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "no-store"
+              }
+            },
             "content": {
               "application/json": {
                 "schema": {
@@ -5801,6 +5809,14 @@
         "responses": {
           "201": {
             "description": "Credential link issued",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "no-store"
+              }
+            },
             "content": {
               "application/json": {
                 "schema": {
@@ -9780,7 +9796,7 @@
           },
           "email": {
             "type": "string",
-            "description": "Email address with an unquoted local part, no display name or domain\nliteral; unique (case-insensitive)."
+            "description": "Account email in the common ASCII format with a dotted domain and an\nalphabetic suffix of at least two letters; unique (case-insensitive)."
           },
           "role": {
             "$ref": "#/components/schemas/Role",
@@ -11193,7 +11209,7 @@
           },
           "email": {
             "type": "string",
-            "description": "New account email with an unquoted local part, no display name or domain literal."
+            "description": "New account email in the common ASCII format with a dotted domain and an\nalphabetic suffix of at least two letters."
           },
           "password": {
             "type": "string",
@@ -11661,7 +11677,7 @@
           },
           "email": {
             "type": "string",
-            "description": "First administrator's email with an unquoted local part, no display name or domain literal."
+            "description": "First administrator's email in the common ASCII format with a dotted\ndomain and an alphabetic suffix of at least two letters."
           },
           "password": {
             "type": "string",
@@ -12554,7 +12570,7 @@
               "string",
               "null"
             ],
-            "description": "New email with an unquoted local part, no display name or domain literal.\nAbsent = unchanged; explicit `null` clears the stored address."
+            "description": "New account email in the common ASCII format with a dotted domain and an\nalphabetic suffix of at least two letters.\nAbsent = unchanged; explicit `null` clears the stored address."
           }
         }
       },

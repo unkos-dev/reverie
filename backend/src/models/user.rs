@@ -6,8 +6,11 @@
 //! `(issuer, subject)`; `users.oidc_subject` is a vestigial nullable column,
 //! no longer the identity key, and OIDC login no longer auto-promotes.
 
+use std::sync::LazyLock;
+
 use chrono::{DateTime, Utc};
 use email_address::{EmailAddress, Options};
+use regex::Regex;
 use serde::Serialize;
 use sqlx::PgPool;
 use uuid::Uuid;
@@ -421,18 +424,30 @@ pub async fn find_by_oidc_identity(
     find_by_id(pool, user_id).await
 }
 
-/// Whether `e` is an addr-spec with an unquoted local part.
+/// Whether `e` is an addr-spec in the frontend's common ASCII email format.
 ///
-/// THREAT: shared input validation excludes quoted local parts, display names
-/// and domain literals from stored account email addresses.
+/// THREAT: stored account emails must pass frontend format validation to remain
+/// usable for credential-link redemption.
 pub(crate) fn is_addr_spec(e: &str) -> bool {
+    static PATTERN: LazyLock<Result<Regex, regex::Error>> = LazyLock::new(|| {
+        Regex::new(
+            r"^(?:[A-Za-z0-9_'+\-]+\.)*[A-Za-z0-9_'+\-]*[A-Za-z0-9_+-]@(?:[A-Za-z0-9][A-Za-z0-9\-]*\.)+[A-Za-z]{2,}$",
+        )
+    });
+    let pattern = match PATTERN.as_ref() {
+        Ok(pattern) => pattern,
+        Err(error) => {
+            tracing::error!(%error, "account email pattern failed to compile");
+            return false;
+        }
+    };
     EmailAddress::parse_with_options(
         e,
         Options::default()
             .without_display_text()
             .without_domain_literal(),
     )
-    .is_ok_and(|email| !email.local_part().starts_with('"'))
+    .is_ok_and(|_| pattern.is_match(e))
 }
 
 /// Trim the OIDC email claim and degrade an absent, blank or invalid value to
@@ -637,36 +652,52 @@ mod tests {
     }
 
     #[test]
-    fn is_addr_spec_rejects_quoted_local_parts() {
+    fn is_addr_spec_rejects_unsupported_account_emails() {
         for email in [
             "\"john doe\"@example.com",
             "\"john\"@example.com",
             "\"john@doe\"@example.com",
             "john doe@example.com",
+            "jane@homelab",
+            "jane!books@example.com",
+            "jane#books@example.com",
+            "jane%books@example.com",
+            "jane/books@example.com",
+            "josé@example.com",
         ] {
             assert!(!is_addr_spec(email), "accepted {email:?}");
         }
-        assert!(is_addr_spec("john.doe+books@example.com"));
+        for email in [
+            "john.doe+books@example.com",
+            "o'brien@example.com",
+            "Jane_Doe@EXAMPLE.COM",
+        ] {
+            assert!(is_addr_spec(email), "rejected {email:?}");
+        }
     }
 
     #[sqlx::test(migrations = "./migrations")]
-    async fn upsert_drops_quoted_oidc_email_to_none(pool: PgPool) {
-        let subject = "quoted-email";
-        let user = upsert_from_oidc(
-            &pool,
-            TEST_ISSUER,
-            subject,
-            "John",
-            Some("\"john doe\"@example.com"),
-        )
-        .await
-        .unwrap();
-        assert_eq!(user.email, None);
-        let resolved = find_by_oidc_identity(&pool, TEST_ISSUER, subject)
-            .await
-            .unwrap()
-            .unwrap();
-        assert_eq!(resolved.id, user.id);
+    async fn upsert_drops_unsupported_oidc_email_to_none(pool: PgPool) {
+        for email in [
+            "\"john doe\"@example.com",
+            "jane@homelab",
+            "jane!books@example.com",
+            "jane#books@example.com",
+            "jane%books@example.com",
+            "jane/books@example.com",
+            "josé@example.com",
+        ] {
+            let subject = Uuid::new_v4().to_string();
+            let user = upsert_from_oidc(&pool, TEST_ISSUER, &subject, "John", Some(email))
+                .await
+                .unwrap();
+            assert_eq!(user.email, None);
+            let resolved = find_by_oidc_identity(&pool, TEST_ISSUER, &subject)
+                .await
+                .unwrap()
+                .unwrap();
+            assert_eq!(resolved.id, user.id);
+        }
     }
 
     const TEST_ISSUER: &str = "https://test-issuer.example.com";

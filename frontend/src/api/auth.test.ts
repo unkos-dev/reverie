@@ -13,7 +13,12 @@ import { __seedCsrfTokenForTesting } from "./csrf";
 import { ApiError } from "./errors";
 
 describe("credential-link account email", () => {
-  test.each(["john@example.com", "john.doe+books@example.com"])("accepts %s", async (email) => {
+  test.each([
+    "john@example.com",
+    "john.doe+books@example.com",
+    "o'brien@example.com",
+    "Jane_Doe@EXAMPLE.COM",
+  ])("accepts %s", async (email) => {
     vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
       new Response(JSON.stringify({ email, has_password: false }), { status: 200 }),
     );
@@ -23,7 +28,16 @@ describe("credential-link account email", () => {
     });
   });
 
-  test.each(['"john doe"@example.com', '"john"@example.com'])("rejects %s", async (email) => {
+  test.each([
+    '"john doe"@example.com',
+    '"john"@example.com',
+    "jane@homelab",
+    "jane!books@example.com",
+    "jane#books@example.com",
+    "jane%books@example.com",
+    "jane/books@example.com",
+    "josé@example.com",
+  ])("rejects %s", async (email) => {
     vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
       new Response(JSON.stringify({ email, has_password: false }), { status: 200 }),
     );

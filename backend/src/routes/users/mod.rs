@@ -27,7 +27,7 @@
 //! with 422 "would leave zero admins".
 
 use axum::extract::State;
-use axum::http::StatusCode;
+use axum::http::{StatusCode, header};
 use axum::response::IntoResponse;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -406,8 +406,8 @@ async fn update_child_status(
 /// Body for `POST /api/v1/users`.
 #[derive(Debug, Deserialize, utoipa::ToSchema)]
 struct CreateUserRequest {
-    /// Email address with an unquoted local part, no display name or domain
-    /// literal; unique (case-insensitive).
+    /// Account email in the common ASCII format with a dotted domain and an
+    /// alphabetic suffix of at least two letters; unique (case-insensitive).
     email: String,
     /// Human-readable display name.
     display_name: String,
@@ -435,7 +435,7 @@ struct CreateUserResponse {
     tag = "users", security(("session_cookie" = ["admin"])),
     request_body = CreateUserRequest,
     responses(
-        (status = 201, description = "Account and credential link created", body = CreateUserResponse),
+        (status = 201, description = "Account and credential link created", body = CreateUserResponse, headers(("Cache-Control" = String, description = "no-store"))),
         (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 403, description = "Administrator browser session required", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 404, description = "Local authentication is disabled", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
@@ -490,6 +490,7 @@ async fn create_user(
     };
     Ok((
         StatusCode::CREATED,
+        [(header::CACHE_CONTROL, "no-store")],
         axum::Json(CreateUserResponse {
             user: body,
             link: CredentialLinkResponse { token, expires_at },
@@ -639,7 +640,7 @@ async fn update_account_status(
     tag = "users", security(("session_cookie" = ["admin"])),
     params(("id" = Uuid, Path, max_length = 45, description = "Target user id")),
     responses(
-        (status = 201, description = "Credential link issued", body = CredentialLinkResponse),
+        (status = 201, description = "Credential link issued", body = CredentialLinkResponse, headers(("Cache-Control" = String, description = "no-store"))),
         (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 403, description = "Administrator browser session required", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 404, description = "Local authentication disabled or account not found", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
@@ -687,6 +688,7 @@ async fn issue_credential_link(
         .map_err(|e| AppError::Internal(e.into()))?;
     Ok((
         StatusCode::CREATED,
+        [(header::CACHE_CONTROL, "no-store")],
         axum::Json(CredentialLinkResponse { token, expires_at }),
     ))
 }
@@ -880,7 +882,8 @@ struct UpdateUserRequest {
     #[serde(default, deserialize_with = "deserialize_optional_string")]
     #[schema(value_type = String)]
     display_name: Option<Option<String>>,
-    /// New email with an unquoted local part, no display name or domain literal.
+    /// New account email in the common ASCII format with a dotted domain and an
+    /// alphabetic suffix of at least two letters.
     /// Absent = unchanged; explicit `null` clears the stored address.
     #[serde(default, deserialize_with = "deserialize_optional_string")]
     #[schema(value_type = Option<String>)]
@@ -915,7 +918,7 @@ fn unique_violation_or_internal(e: sqlx::Error, msg: &'static str) -> AppError {
 /// Validate an admin-supplied `email` for `PATCH /api/v1/users/{id}`.
 ///
 /// Returns the trimmed addr-spec on success. Rejects an empty/whitespace-only
-/// value, quoted local parts and unsupported forms (display-name, domain-literal; see
+/// value and addresses outside the supported common ASCII format (see
 /// [`is_addr_spec`]) with [`AppError::Validation`] (422).
 ///
 /// THREAT: an admin submitting a malformed value is surfaced server-side for

@@ -42,13 +42,18 @@ The [OpenAPI contract](../../../../backend/openapi.json) defines request and res
 - `POST /auth/credential-links/lookups` accepts a token and returns the account email and password-presence flag.
 - `POST /auth/credential-links/redemptions` accepts a token and password and returns 204 without creating a session.
 
+Both responses that return a credential-link token carry `Cache-Control: no-store`.
+
 The three administrator operations require an administrator, a non-child account, Admin scope and browser-session
 authentication. Device tokens over Basic or Bearer receive 403. All five operations return 404 when local authentication
 is disabled. User responses expose `has_password` and an unexpired `credential_link_expires_at`, or null.
 
-Account email inputs use the shared backend validator: an unquoted local part with no display name or domain literal.
-Admin creation and edits reject unsupported addresses with 422. Frontend forms and lookup responses reject quoted local
-parts through their Zod email validators.
+Account email inputs use the shared backend validator, which applies addr-spec syntax and length bounds alongside the
+frontend's common ASCII address pattern. Local parts use letters, digits, apostrophes, plus signs, hyphens, underscores
+and single separating dots, and end in a letter, digit, plus sign, hyphen or underscore. Domains contain at least one
+dot and end in an alphabetic suffix of at least two letters. Quoted local parts, single-label domains, other local-part
+punctuation and Unicode addresses are unsupported. Admin creation and edits reject unsupported addresses with 422.
+Frontend forms and lookup responses enforce the common pattern through their Zod email validators.
 
 ## Data and state
 
@@ -82,8 +87,10 @@ increments `session_version` and commits. The wall-clock comparison catches expi
 Concurrent redemption has one winner. No database handle or user lock is held while hashing.
 
 The form shows new-account or reset copy from `has_password`, checks confirmation and the existing client policy, and
-renders server errors. Success offers an explicit Sign in link. It creates no session and does not reset the login
-throttle. PIN recovery and device tokens remain unchanged.
+renders server errors. A temporary lookup failure offers an explicit retry that retains the token in memory and disables
+its action while fetching. The component owns retry intent; React Query owns request state. Success offers an explicit
+Sign in link and is terminal: lookup stops and late lookup errors cannot replace it. Redemption creates no session and
+does not reset the login throttle. PIN recovery and device tokens remain unchanged.
 
 ## Failure and recovery
 

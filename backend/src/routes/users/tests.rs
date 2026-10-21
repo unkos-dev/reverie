@@ -507,6 +507,12 @@ async fn patch_user_invalid_email_format_returns_422(pool: PgPool) {
         "bob@[127.0.0.1]",
         "\"john doe\"@example.com",
         "\"john\"@example.com",
+        "jane@homelab",
+        "jane!books@example.com",
+        "jane#books@example.com",
+        "jane%books@example.com",
+        "jane/books@example.com",
+        "josé@example.com",
         "",
     ] {
         if bad.is_empty() {
@@ -890,6 +896,12 @@ async fn create_user_invalid_email_returns_422(pool: PgPool) {
         "invalid",
         "\"john doe\"@example.com",
         "\"john\"@example.com",
+        "jane@homelab",
+        "jane!books@example.com",
+        "jane#books@example.com",
+        "jane%books@example.com",
+        "jane/books@example.com",
+        "josé@example.com",
     ] {
         let r = server
             .post("/api/v1/users")
@@ -1524,6 +1536,7 @@ async fn credential_link_create_issue_cancel_and_response_producers(pool: PgPool
         .json(&json!({"email":"invite@example.test","display_name":"Invite","role":"adult"}))
         .await;
     assert_eq!(created.status_code(), StatusCode::CREATED);
+    assert_eq!(created.headers()["cache-control"], "no-store");
     let body: serde_json::Value = created.json();
     let id: Uuid = serde_json::from_value(body["user"]["id"].clone()).unwrap();
     let first = body["link"]["token"].as_str().unwrap();
@@ -1542,6 +1555,7 @@ async fn credential_link_create_issue_cancel_and_response_producers(pool: PgPool
         .add_header(csrf_header(&csrf).0, csrf_header(&csrf).1)
         .await;
     assert_eq!(issued.status_code(), StatusCode::CREATED);
+    assert_eq!(issued.headers()["cache-control"], "no-store");
     assert!(
         crate::models::credential_link::lookup(&app, first)
             .await

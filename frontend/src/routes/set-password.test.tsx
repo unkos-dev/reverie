@@ -1,5 +1,5 @@
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, render, screen } from "@testing-library/react";
+import { onlineManager, QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, afterEach, expect, test, vi } from "vite-plus/test";
 import { MemoryRouter } from "react-router";
@@ -32,7 +32,7 @@ beforeEach(() => {
 });
 afterEach(cleanup);
 
-function renderPage(): void {
+function renderPage(): QueryClient {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(
     <QueryClientProvider client={client}>
@@ -41,6 +41,7 @@ function renderPage(): void {
       </MemoryRouter>
     </QueryClientProvider>,
   );
+  return client;
 }
 
 async function submitPassword(password = "a long chosen passphrase"): Promise<void> {
@@ -68,6 +69,71 @@ test("sets a new account password and offers explicit sign in", async () => {
   expect(await screen.findByText("Password set")).toBeInTheDocument();
   expect(screen.getByText("You can now sign in with your new password.")).toBeInTheDocument();
   expect(screen.getByRole("link", { name: "Sign in" })).toHaveAttribute("href", "/login");
+});
+
+test("successful redemption stays saved after reconnect and a late lookup error", async () => {
+  const client = renderPage();
+  await submitPassword();
+  expect(await screen.findByText("Password set")).toBeInTheDocument();
+  vi.mocked(lookupCredentialLink).mockRejectedValue(
+    new ApiError(422, null, "Validation failed", "invalid or expired link"),
+  );
+  await act(async () => {
+    onlineManager.setOnline(false);
+    onlineManager.setOnline(true);
+    await Promise.resolve();
+  });
+  expect(lookupCredentialLink).toHaveBeenCalledTimes(1);
+  const query = client.getQueryCache().find({ queryKey: ["credential-link", "test-link"] });
+  expect(query).toBeDefined();
+  await act(async () => {
+    query?.setState({
+      status: "error",
+      error: new ApiError(422, null, "Validation failed", "invalid or expired link"),
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  });
+  expect(screen.getByText("Password set")).toBeInTheDocument();
+  expect(screen.queryByText("This link can't be used")).not.toBeInTheDocument();
+});
+
+test("does not offer retry for a permanent lookup refusal", async () => {
+  vi.mocked(lookupCredentialLink).mockRejectedValue(
+    new ApiError(403, null, "Forbidden", "Access refused"),
+  );
+  renderPage();
+  expect(await screen.findByRole("alert")).toHaveTextContent("Access refused");
+  expect(screen.queryByRole("button", { name: "Try again" })).not.toBeInTheDocument();
+});
+
+test.each([
+  new TypeError("Failed to fetch"),
+  new ApiError(503, null, "Busy", "Try later"),
+  new ApiError(429, null, "Limited", "Try later"),
+])("retries a temporary lookup failure without restoring the fragment: %s", async (error) => {
+  vi.mocked(lookupCredentialLink).mockRejectedValueOnce(error);
+  renderPage();
+  const user = userEvent.setup();
+  const retry = await screen.findByRole("button", { name: "Try again" });
+  let complete: ((account: { email: string; has_password: boolean }) => void) | undefined;
+  vi.mocked(lookupCredentialLink).mockReturnValueOnce(
+    new Promise((resolve) => {
+      complete = resolve;
+    }),
+  );
+  await user.click(retry);
+  expect(retry).toBeDisabled();
+  expect(window.location.hash).toBe("");
+  expect(redeemCredentialLink).not.toHaveBeenCalled();
+  await act(async () => {
+    complete?.({ email: "bob@example.com", has_password: false });
+    await Promise.resolve();
+  });
+  expect(await screen.findByLabelText("New password")).toBeInTheDocument();
+  await waitFor(() => {
+    expect(lookupCredentialLink).toHaveBeenCalledTimes(2);
+  });
+  expect(lookupCredentialLink).toHaveBeenLastCalledWith("test-link", expect.any(AbortSignal));
 });
 
 test("shows reset copy for an account with a password", async () => {
@@ -98,6 +164,7 @@ test.each(["unknown", "expired", "used", "disabled", "no email"])(
       ),
     ).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Go to sign in" })).toHaveAttribute("href", "/login");
+    expect(screen.queryByRole("button", { name: "Try again" })).not.toBeInTheDocument();
   },
 );
 

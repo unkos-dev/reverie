@@ -26,6 +26,10 @@ Body: "It may have expired or already been used. Ask your administrator for a ne
 
 Link: "Go to sign in".
 
+For a network failure, 429 or 5xx lookup response, show the error and a full-width "Try again" button 16 px below it.
+Activation repeats only lookup using the token retained in memory. Disable the button while lookup is pending. Keep the
+fragment cleared. Invalid or expired links have no retry button.
+
 ## Password form
 
 For an account without a password:
@@ -55,6 +59,9 @@ Body: "You can now sign in with your new password."
 
 Button: "Sign in", leading to `/login` only on activation.
 
+Saving is terminal for this page. Stop lookup after success; reconnects and late lookup failures cannot replace the
+saved screen.
+
 ## Keyboard and accessibility
 
 Use labelled inputs, normal reading and Tab order, visible focus rings and keyboard submission. Permit paste and
@@ -66,5 +73,6 @@ pending and retain entered values after a refusal. The loading skeleton has an a
 - Compare new-account and reset forms at 1920 x 1080 in both themes.
 - Confirm exact copy, form spacing, policy hint and password-manager attributes.
 - Check checking, invalid, mismatch, policy, 429, 503 and saved states.
+- Check lookup retry, its pending disabled state and saved-state stability after reconnect.
 - Confirm the fragment clears and the page neither logs nor persists the token.
 - Check keyboard completion and explicit navigation to sign in after saving.
