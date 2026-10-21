@@ -27,7 +27,7 @@ function redemptionError(error: Error): string | ReactElement {
   if (error instanceof TypeError) {
     return (
       <>
-        We couldn't confirm whether your password changed.{" "}
+        Your password may have changed.{" "}
         <Link to="/login" className="underline underline-offset-4">
           Try signing in
         </Link>{" "}

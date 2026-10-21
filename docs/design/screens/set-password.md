@@ -54,8 +54,7 @@ their fields.
 
 If the redemption response is lost to a network failure, retain the form and show this inline message:
 
-"We couldn't confirm whether your password changed. Try signing in with the password you entered before submitting
-again."
+"Your password may have changed. Try signing in with the password you entered before submitting again."
 
 "Try signing in" links to `/login` on activation. Do not retry redemption automatically or show success without a
 successful response.

@@ -229,7 +229,7 @@ test("a lost redemption response explains possible success without retrying or c
   renderPage();
   await submitPassword();
   expect(await screen.findByRole("alert")).toHaveTextContent(
-    "We couldn't confirm whether your password changed. Try signing in with the password you entered before submitting again.",
+    "Your password may have changed. Try signing in with the password you entered before submitting again.",
   );
   expect(screen.getByRole("link", { name: "Try signing in" })).toHaveAttribute("href", "/login");
   expect(screen.getByLabelText("New password")).toHaveValue("a long chosen passphrase");
