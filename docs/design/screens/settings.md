@@ -100,9 +100,10 @@ Each area has a description under its heading.
 - **Accepted formats.** While EPUB is the only supported format, this row is the read-only line "Reverie imports EPUB
   files." It has no checkbox, no help text and no part in a save. Once more formats are supported, the row becomes a
   checkbox list labelled "Accepted formats", one checkbox per format, and a save sends the whole list. The last enabled
-  format cannot be turned off: its checkbox stays checked and is marked `aria-disabled`, and the note "This is the only
-  format selected. At least one format must stay selected, or Reverie would have nothing to import." appears beneath the
-  list and is tied to the checkbox as its description. Enabling a second format removes the lock and the note.
+  format cannot be turned off: its checkbox stays checked and in the tab order with native `isReadOnly`, and the note
+  "This is the only format selected. At least one format must stay selected, or Reverie would have nothing to import."
+  appears beneath the list and is tied to the checkbox as its description. Enabling a second format removes the lock and
+  the note.
 - **Remove the source file after a successful import.** A switch. Help: "Deletes the original file from the ingestion
   folder once the book is in the library. This cannot be undone." Turning it on asks first (see the removal
   confirmation).
@@ -194,10 +195,12 @@ These appear beneath the field, with a warning glyph, when a save is attempted w
 - The `PUT` response is the new base. There is no refetch after a save.
 - The settings snapshot is read when an area is entered, fresh each time. It is not read again on window focus or
   reconnect, so the saved values never change underneath a draft. The 412 path below is the reconciliation point.
-- "Discard changes" reverts the open area's edits at once, with no confirmation, and keeps keyboard focus on the button.
+- "Discard changes" reverts the open area's edits at once, with no confirmation. The now-pristine actions become
+  disabled.
 - Pressing Enter in a field saves, and keeps focus in that field.
-- "Discard changes" and "Save changes" use `aria-disabled`, not `disabled`, so they can still take keyboard focus. Both
-  are inactive when the area has no edits or a save is in flight; activating an inactive button does nothing.
+- "Discard changes" and "Save changes" use native `isDisabled` when the area has no edits. During a save, Save uses
+  `isPending` to retain focus and suppress repeat activation; Discard is disabled. Idle conflict actions remain
+  available even when there are no ordinary dirty fields.
 
 ### Edited rows
 
@@ -249,8 +252,8 @@ Each state gives its trigger and its exact copy.
 ### Saving
 
 - Trigger: a save is in flight.
-- Controls are disabled. The primary button reads "Saving" and is marked `aria-busy`. The bar message is a status
-  reading "Saving {n} change" or "Saving {n} changes".
+- Controls are read-only or disabled. The primary button reads "Saving" and uses native `isPending`. The bar message is
+  a status reading "Saving {n} change" or "Saving {n} changes".
 
 ### Saved
 
@@ -379,12 +382,13 @@ Each state gives its trigger and its exact copy.
 ## Keyboard, focus and accessibility
 
 - Tab order: the shell, the sub-navigation, the form fields in document order, then "Discard changes" and the save
-  button.
+  button when those actions are enabled.
 - Each area form is named "{Area} settings". The area title is an `h2` under the page's `h1`.
 - Status notices ("Settings saved", the reapplying notice, the removal note and the bar message) are `role="status"`.
   The conflict, validation, nothing-was-saved, save-failed, load-error and forbidden notices are `role="alert"`.
 - A failed save moves focus to the validation alert. Each "Go to" button moves focus to its field.
-- The save and discard buttons keep keyboard focus through a save and after it, and ignore activation while inactive.
+- The save button stays in the tab order while pending and rejects repeat activation. Pristine actions and Discard
+  during a save are disabled and leave the tab order; no application focus transfer runs when they become disabled.
 - Dialogs trap focus, close on Escape as the safe choice (Stay or Keep), and return focus as described above. The
   backdrop uses the overlay colour; the dialog uses the surface colour with rounded corners and no shadow.
 - Exactly one primary button is on the page: "Save changes", or "Save my choices" during a conflict. Everything else is
@@ -410,12 +414,12 @@ A rendered page is accepted when every item holds, in the dark theme and the lig
 4. An administrator sees "Settings" in the user menu. A non-administrator sees no item and no hint, and a direct visit
    shows the Forbidden state without a settings request.
 5. While EPUB is the only supported format, Acquisition shows the line "Reverie imports EPUB files." and no checkbox or
-   help text. With more formats, the last enabled format is locked and the note appears.
+   help text. With more formats, the last enabled format is read-only and in the tab order, and the note describes it.
 6. The Covers field shows the exact byte count beneath the input and keeps it in step with typing.
 7. Editing a field shows the Edited row, the Edited sub-navigation tag, "Saved value: {value}" and the unsaved count in
    the bar. Editing back to the saved value clears all of them. Edits in one area never show in another area's bar.
-8. "Discard changes" reverts without a dialog and keeps focus. Both bar buttons can still take keyboard focus when
-   inactive.
+8. "Discard changes" reverts without a dialog. Pristine actions are disabled; Save retains focus while pending and
+   rejects repeat activation. Idle conflict actions remain available.
 9. A save sends only the dirty fields with the settings revision in `If-Match`, never an empty patch, and the response
    becomes the base with no refetch.
 10. A forced stale save with no overlapping field reloads, sends once more and shows "Settings saved" with the reapply

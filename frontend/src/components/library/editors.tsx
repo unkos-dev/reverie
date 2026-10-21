@@ -310,12 +310,6 @@ function DraftBoundInput<T extends BoundValue>({
         onBlur={commitDraft}
         onKeyDown={(event) => {
           if (event.key === "Enter") commitDraft();
-          if (event.key === "Escape") {
-            setCorrection("");
-            setBadInput(false);
-            setLastNotifiedDraft(canonical);
-            setDraft(canonical);
-          }
         }}
       />
       <p id={`${id}-correction`} role="status" className="text-fg-muted text-sm empty:sr-only">

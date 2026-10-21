@@ -13,9 +13,7 @@
  * the backstop); the raw error goes to the console for the operator.
  *
  * Theme switching reuses the `useTheme()` write-through that powers
- * `theme-switcher.tsx`. The standalone `<ThemeSwitcher/>` carries its
- * own dropdown trigger, which cannot nest inside a Radix menu — the
- * submenu re-binds the same three `ThemePreference` values instead.
+ * `theme-switcher.tsx`.
  */
 import { Button } from "react-aria-components";
 import type { ReactElement } from "react";

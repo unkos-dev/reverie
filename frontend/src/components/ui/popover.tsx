@@ -1,17 +1,15 @@
-import type { ComponentProps, ReactElement, ReactNode, Ref } from "react";
+import type { ComponentProps, ReactElement, ReactNode } from "react";
 import { Dialog, Popover as AriaPopover } from "react-aria-components";
 import { cn } from "@/lib/utils";
 
 type PopoverContentProps = Omit<ComponentProps<typeof AriaPopover>, "children" | "className"> & {
   children: ReactNode;
   className?: string;
-  dialogRef?: Ref<HTMLElement>;
 };
 
 function PopoverContent({
   className,
   children,
-  dialogRef,
   "aria-label": label,
   ...props
 }: PopoverContentProps): ReactElement {
@@ -24,7 +22,7 @@ function PopoverContent({
       )}
       {...props}
     >
-      <Dialog ref={dialogRef} aria-label={label} className="outline-none">
+      <Dialog aria-label={label} className="outline-none">
         {children}
       </Dialog>
     </AriaPopover>

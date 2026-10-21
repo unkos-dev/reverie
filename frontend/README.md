@@ -6,7 +6,7 @@ Run `just js::test` from the repository root to execute the frontend unit tests.
 
 ## Interactive components
 
-React Aria Components owns dialogs, drawers, popovers, menus, selects, tooltip behaviour, the command palette and
+React Aria Components owns buttons, selection controls, disclosures, tabs, progress, overlays, the command palette and
 vocabulary pickers. Wrappers in `src/components/ui/` use Reverie's Tailwind classes and theme tokens. Prefer native
 interaction defaults and keep API queries and domain state in their owning components.
 
@@ -15,9 +15,18 @@ Vocabulary pickers supply server suggestions to the `ComboBox` collection and re
 native popup lifecycle. The command palette uses virtual focus from `Autocomplete` with scrolling on its `Menu`; dialog
 and select labels belong to their native parent composition.
 
-Radix UI remains for controls awaiting migration, including checkboxes, switches, tabs and the button slot. Radix Colors
-and `src/styles/themes/primitives.generated.css` remain the colour foundation independently of the interaction library.
-The grid engine and its editing, sorting and loading state are unchanged.
+Selection controls compose native fields and buttons with labelled content. Use `isSelected`, `isReadOnly`, `isDisabled`
+and `isPending` for their native states. Disclosure retains filter drafts while collapsed; ingestion mounts query
+children only while expanded. Book tabs activate from arrow keys and mount only the selected panel. Buttons styled as
+navigation links use React Router Link with `buttonVariants`.
+
+Refine dismissal retains valid filter edits for Escape, close and outside clicks. Columns Reset closes the popover and
+returns focus through native dismissal. Settings actions are disabled when pristine; Save stays in the tab order while
+pending.
+
+Radix UI remains installed for the unused avatar and scroll-area wrappers. Radix Colors and
+`src/styles/themes/primitives.generated.css` remain the colour foundation independently of the interaction library. The
+grid engine and its editing, sorting and loading state are unchanged.
 
 ## Environment Variables
 

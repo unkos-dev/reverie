@@ -3,13 +3,15 @@ type: ADR
 profile-version: 1
 id: "REV-ADR-0041"
 title: "Library filters in a drawer with removable chips"
-status: "accepted"
+status: "superseded"
 recorded-on: "2026-09-05"
 decided-on: "2026-07-14"
 decision-makers:
   - "John Unkovich"
 supersedes:
   - "REV-ADR-0039"
+superseded-by:
+  - "REV-ADR-0061"
 ---
 
 # Library filters in a drawer with removable chips

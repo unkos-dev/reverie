@@ -94,7 +94,7 @@ function LibraryContent(): ReactElement {
   // the router's history does not observe, so its own `useSearchParams`
   // would go stale against anything quick search writes.
   const searchParams = useLibrarySearchParams();
-  const { commitAll, clearAll, revertTypedEdits, setView: setViewParam } = useLibraryFilters();
+  const { commitAll, clearAll, setView: setViewParam } = useLibraryFilters();
   // Drives cinematic mode via the document `data-cinematic` attribute (CSS
   // reads it); the boolean return is unused — visibility is CSS-only.
   useCinematicMode();
@@ -399,12 +399,6 @@ function LibraryContent(): ReactElement {
         id="library-filter-drawer"
         side="right"
         aria-describedby={undefined}
-        // Escape abandons: revert the typed slices to the URL's values,
-        // which cancels their pending writes. Scrim and close-button
-        // closes leave them alone, so those edits still settle.
-        onKeyDown={(event) => {
-          if (event.key === "Escape" && !event.defaultPrevented) revertTypedEdits();
-        }}
         className="max-w-[100vw] overflow-y-auto p-6 data-[side=right]:w-[340px]"
       >
         <SheetHeader className="mb-2 p-0">

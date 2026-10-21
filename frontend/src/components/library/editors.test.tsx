@@ -211,7 +211,7 @@ describe("RangeFilterEditor", () => {
     expect(screen.getByLabelText("Min")).toHaveValue(null);
   });
 
-  test("Escape resets the local draft and still bubbles to the parent", () => {
+  test("Escape leaves an incomplete draft for blur validation and bubbles to the parent", () => {
     const parentKeyDown = vi.fn();
     render(
       <div onKeyDown={parentKeyDown}>
@@ -223,8 +223,10 @@ describe("RangeFilterEditor", () => {
     fireEvent.change(min, { target: { value: "12.5" } });
     fireEvent.keyDown(min, { key: "Escape" });
 
-    expect(min).toHaveValue(300);
+    expect(min).toHaveValue(12.5);
     expect(parentKeyDown).toHaveBeenCalled();
+    fireEvent.blur(min);
+    expect(min).toHaveValue(300);
   });
 
   test("checking `has no value` reports empty and disables the inputs", async () => {
