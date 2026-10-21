@@ -1,6 +1,3 @@
--- sqruff reports current_setting() as a casting-style violation regardless of cast syntax, so CV11 is
--- suppressed file-wide.
--- noqa: disable=CV11
 ALTER TABLE public.manifestation_genres ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY manifestation_genres_select ON public.manifestation_genres FOR SELECT

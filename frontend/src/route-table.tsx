@@ -1,3 +1,4 @@
+import { z } from "zod";
 import { Navigate, type RouteObject } from "react-router";
 
 import App from "./App.tsx";
@@ -15,6 +16,16 @@ import {
   shelvesRoute,
   tokensRoute,
 } from "./routes/production";
+
+export function credentialLinkLoader(): string {
+  const token = z.string().parse(window.location.hash.slice(1));
+  window.history.replaceState(
+    window.history.state,
+    "",
+    window.location.pathname + window.location.search,
+  );
+  return token;
+}
 
 export const routes: RouteObject[] = [
   // Every route that requires a session. The 401 redirect handler and session
@@ -78,6 +89,15 @@ export const routes: RouteObject[] = [
     errorElement: <RootErrorBoundary />,
     lazy: async () => {
       const mod = await import("./routes/auth-forgot-password");
+      return { Component: mod.Component };
+    },
+  },
+  {
+    path: "/set-password",
+    errorElement: <RootErrorBoundary />,
+    loader: credentialLinkLoader,
+    lazy: async () => {
+      const mod = await import("./routes/set-password");
       return { Component: mod.Component };
     },
   },

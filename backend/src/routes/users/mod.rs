@@ -27,7 +27,7 @@
 //! with 422 "would leave zero admins".
 
 use axum::extract::State;
-use axum::http::StatusCode;
+use axum::http::{StatusCode, header};
 use axum::response::IntoResponse;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -60,7 +60,8 @@ pub fn router() -> OpenApiRouter<AppState> {
         .routes(routes!(update_child_status))
         .routes(routes!(update_user))
         .routes(routes!(update_account_status))
-        .routes(routes!(admin_reset_password))
+        .routes(routes!(issue_credential_link))
+        .routes(routes!(cancel_credential_link))
         .routes(routes!(change_own_password))
 }
 
@@ -99,6 +100,8 @@ struct UserResponse {
     /// Whether the account is soft-disabled (cannot authenticate). Derived from
     /// `disabled_at`; the timestamp itself is not exposed on the wire.
     disabled: bool,
+    has_password: bool,
+    credential_link_expires_at: Option<DateTime<Utc>>,
 }
 
 /// Defensive bound on the users list (the justified
@@ -136,16 +139,20 @@ async fn list_users(
 
     let rows = sqlx::query_as!(
         UserResponse,
-        r#"SELECT id,
-                  display_name,
-                  email,
-                  role AS "role: Role",
-                  is_child,
-                  created_at,
-                  updated_at,
-                  (disabled_at IS NOT NULL) AS "disabled!"
+        r#"SELECT users.id,
+                  users.display_name,
+                  users.email,
+                  users.role AS "role: Role",
+                  users.is_child,
+                  users.created_at,
+                  users.updated_at,
+                  (users.disabled_at IS NOT NULL) AS "disabled!",
+                  (c.user_id IS NOT NULL) AS "has_password!",
+                  l.expires_at AS "credential_link_expires_at?"
              FROM users
-            ORDER BY created_at ASC, id ASC
+ LEFT JOIN local_credentials c ON c.user_id = users.id
+ LEFT JOIN credential_links l ON l.user_id = users.id AND l.expires_at > now()
+            ORDER BY users.created_at ASC, users.id ASC
             LIMIT $1"#,
         MAX_LISTED_USERS,
     )
@@ -236,20 +243,26 @@ async fn update_role(
 
     let row = sqlx::query_as!(
         UserResponse,
-        r#"UPDATE users
+        r#"WITH changed AS (UPDATE users
               SET role = ($1::text)::user_role,
                   is_child = ($1::text = 'child'),
                   session_version = session_version + 1,
                   updated_at = now()
             WHERE id = $2
-        RETURNING id,
-                  display_name,
-                  email,
-                  role AS "role: Role",
-                  is_child,
-                  created_at,
-                  updated_at,
-                  (disabled_at IS NOT NULL) AS "disabled!""#,
+        RETURNING *)
+ SELECT users.id,
+                  users.display_name,
+                  users.email,
+                  users.role AS "role: Role",
+                  users.is_child,
+                  users.created_at,
+                  users.updated_at,
+                  (users.disabled_at IS NOT NULL) AS "disabled!",
+                  (c.user_id IS NOT NULL) AS "has_password!",
+                  l.expires_at AS "credential_link_expires_at?"
+ FROM changed AS users
+ LEFT JOIN local_credentials c ON c.user_id = users.id
+ LEFT JOIN credential_links l ON l.user_id = users.id AND l.expires_at > now()"#,
         req.role.as_str(),
         id,
     )
@@ -355,20 +368,26 @@ async fn update_child_status(
 
     let row = sqlx::query_as!(
         UserResponse,
-        r#"UPDATE users
+        r#"WITH changed AS (UPDATE users
               SET is_child = $1,
                   role = ($2::text)::user_role,
                   session_version = session_version + 1,
                   updated_at = now()
             WHERE id = $3
-        RETURNING id,
-                  display_name,
-                  email,
-                  role AS "role: Role",
-                  is_child,
-                  created_at,
-                  updated_at,
-                  (disabled_at IS NOT NULL) AS "disabled!""#,
+        RETURNING *)
+ SELECT users.id,
+                  users.display_name,
+                  users.email,
+                  users.role AS "role: Role",
+                  users.is_child,
+                  users.created_at,
+                  users.updated_at,
+                  (users.disabled_at IS NOT NULL) AS "disabled!",
+                  (c.user_id IS NOT NULL) AS "has_password!",
+                  l.expires_at AS "credential_link_expires_at?"
+ FROM changed AS users
+ LEFT JOIN local_credentials c ON c.user_id = users.id
+ LEFT JOIN credential_links l ON l.user_id = users.id AND l.expires_at > now()"#,
         req.is_child,
         new_role.as_str(),
         id,
@@ -387,46 +406,41 @@ async fn update_child_status(
 /// Body for `POST /api/v1/users`.
 #[derive(Debug, Deserialize, utoipa::ToSchema)]
 struct CreateUserRequest {
-    /// Email address for the new account; must be a syntactically valid
-    /// addr-spec and unique (case-insensitive).
+    /// Account email in the common ASCII format with a dotted domain and an
+    /// alphabetic suffix of at least two letters; unique (case-insensitive).
     email: String,
     /// Human-readable display name.
     display_name: String,
     /// Role for the new account. `child` and `admin` accounts are created only
     /// here, by an existing administrator.
     role: Role,
-    /// Initial password, typed by the admin and handed off out-of-band. Required;
-    /// enforced against the password policy (length, zxcvbn floor, HIBP breach).
-    password: String,
 }
 
-/// Create an account with an admin-typed initial password (admin only).
-///
-/// This is the create-and-invite path: there is no invite email and no forced
-/// first-login change. The admin relays the password out-of-band; the user may
-/// self-service change it afterward.
-///
-/// # Errors
-/// - [`AppError::Forbidden`] when the caller is not an admin or is a child.
-/// - [`AppError::Validation`] (422) on an invalid email or a password that
-///   fails the policy (too short/long, too weak, or breached).
-/// - [`AppError::EmailConflict`] (409) when the email is already in use.
-/// - [`AppError::Internal`] on database errors.
+#[derive(Serialize, utoipa::ToSchema)]
+struct CredentialLinkResponse {
+    token: String,
+    expires_at: DateTime<Utc>,
+}
+
+#[derive(Serialize, utoipa::ToSchema)]
+struct CreateUserResponse {
+    user: UserResponse,
+    link: CredentialLinkResponse,
+}
+
+/// Create a password-less account and its single-use credential link atomically.
 #[utoipa::path(
-    post,
-    path = "/api/v1/users",
-    summary = "Create a user",
-    description = "Creates an account with an administrator-typed initial password, for the administrator to relay out of band. Admin only; the caller must not be a child. Returns 409 if the email is already in use. Returns 503 when authentication processing is busy.",
-    tag = "users",
-    security(("session_cookie" = ["admin"]), ("device_token_bearer" = ["admin"]), ("opds_basic" = ["admin"])),
+    post, path = "/api/v1/users", summary = "Create a user",
+    description = "Creates an account and returns a single-use link for its holder to choose a password through `/auth/credential-links/redemptions`. Requires an administrator browser session and enabled local authentication.",
+    tag = "users", security(("session_cookie" = ["admin"])),
     request_body = CreateUserRequest,
     responses(
-        (status = 503, description = "Authentication processing is busy", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
-        (status = 201, description = "Created user. Admin only.", body = UserResponse),
+        (status = 201, description = "Account and credential link created", body = CreateUserResponse, headers(("Cache-Control" = String, description = "no-store"))),
         (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
-        (status = 403, description = "Caller is not an admin", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
+        (status = 403, description = "Administrator browser session required", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
+        (status = 404, description = "Local authentication is disabled", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 409, description = "Email already in use", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
-        (status = 422, description = "Invalid email, or password rejected by the policy", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
+        (status = 422, description = "Invalid email or request", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
     )
 )]
 async fn create_user(
@@ -434,33 +448,34 @@ async fn create_user(
     State(state): State<AppState>,
     ApiJson(req): ApiJson<CreateUserRequest>,
 ) -> Result<impl IntoResponse, AppError> {
+    if !state.config.local_auth_enabled {
+        return Err(AppError::NotFound);
+    }
     current_user.require_scope(Scope::Admin)?;
     current_user.require_admin()?;
     current_user.require_not_child()?;
-
+    current_user.require_browser_session()?;
     if !is_addr_spec(&req.email) {
         return Err(AppError::Validation("invalid email address".into()));
     }
-    enforce_password_policy(&state, &req.password, &[&req.email, &req.display_name]).await?;
-    let phc = state
-        .hash_limiter
-        .hash(req.password)
-        .await?
-        .map_err(|e| AppError::Internal(anyhow::anyhow!("password hash failed: {e}")))?;
-
-    let user = crate::models::user::create_local(
-        &state.pool,
-        &req.email,
-        &req.display_name,
-        req.role,
-        Some(&phc),
-    )
-    .await
-    .map_err(|e| match e {
-        crate::models::user::CreateUserError::EmailExists => AppError::EmailConflict,
-        crate::models::user::CreateUserError::Db(db) => AppError::Internal(db.into()),
-    })?;
-
+    let mut tx = state
+        .pool
+        .begin()
+        .await
+        .map_err(|e| AppError::Internal(e.into()))?;
+    let user =
+        crate::models::user::create_local(&mut *tx, &req.email, &req.display_name, req.role, None)
+            .await
+            .map_err(|e| match e {
+                crate::models::user::CreateUserError::EmailExists => AppError::EmailConflict,
+                crate::models::user::CreateUserError::Db(db) => AppError::Internal(db.into()),
+            })?;
+    let (token, expires_at) = crate::models::credential_link::issue(&mut *tx, user.id)
+        .await
+        .map_err(|e| AppError::Internal(e.into()))?;
+    tx.commit()
+        .await
+        .map_err(|e| AppError::Internal(e.into()))?;
     let body = UserResponse {
         id: user.id,
         display_name: user.display_name,
@@ -470,8 +485,17 @@ async fn create_user(
         created_at: user.created_at,
         updated_at: user.updated_at,
         disabled: user.disabled_at.is_some(),
+        has_password: false,
+        credential_link_expires_at: Some(expires_at),
     };
-    Ok((StatusCode::CREATED, axum::Json(body)))
+    Ok((
+        StatusCode::CREATED,
+        [(header::CACHE_CONTROL, "no-store")],
+        axum::Json(CreateUserResponse {
+            user: body,
+            link: CredentialLinkResponse { token, expires_at },
+        }),
+    ))
 }
 
 /// Body for `PUT /api/v1/users/{id}/account-status`.
@@ -583,15 +607,19 @@ async fn update_account_status(
 
     let row = sqlx::query_as!(
         UserResponse,
-        r#"SELECT id,
-                  display_name,
-                  email,
-                  role AS "role: Role",
-                  is_child,
-                  created_at,
-                  updated_at,
-                  (disabled_at IS NOT NULL) AS "disabled!"
-             FROM users WHERE id = $1"#,
+        r#"SELECT users.id,
+                  users.display_name,
+                  users.email,
+                  users.role AS "role: Role",
+                  users.is_child,
+                  users.created_at,
+                  users.updated_at,
+                  (users.disabled_at IS NOT NULL) AS "disabled!",
+                  (c.user_id IS NOT NULL) AS "has_password!",
+                  l.expires_at AS "credential_link_expires_at?"
+             FROM users
+ LEFT JOIN local_credentials c ON c.user_id = users.id
+ LEFT JOIN credential_links l ON l.user_id = users.id AND l.expires_at > now() WHERE users.id = $1"#,
         id,
     )
     .fetch_one(&mut *tx)
@@ -605,106 +633,105 @@ async fn update_account_status(
     Ok(axum::Json(row))
 }
 
-/// Body for `POST /api/v1/users/{id}/password-reset`.
-#[derive(Debug, Deserialize, utoipa::ToSchema)]
-struct AdminPasswordResetRequest {
-    /// New password the admin sets for the target and relays out-of-band.
-    /// Enforced against the password policy.
-    new_password: String,
-}
-
-/// Set a new password for a target account (admin only).
-///
-/// Consistent with create: the admin types the password and hands it off; no
-/// PIN, no email. Bumps the target's `session_version` so their existing
-/// sessions are invalidated. Works for an OIDC-only account too (the local
-/// credential is upserted).
-///
-/// # Errors
-/// - [`AppError::Forbidden`] when the caller is not an admin or is a child.
-/// - [`AppError::Validation`] (422) when the password fails the policy.
-/// - [`AppError::NotFound`] when the target does not exist.
-/// - [`AppError::Internal`] on database errors.
+/// Issue or replace an enabled account's credential link.
 #[utoipa::path(
-    post,
-    path = "/api/v1/users/{id}/password-reset",
-    summary = "Reset a user's password",
-    description = "Sets a new password for the target account, for the administrator to relay out of band, and invalidates the target's active sessions. Admin only; the caller must not be a child. Returns 503 when authentication processing is busy.",
-    tag = "users",
-    security(("session_cookie" = ["admin"]), ("device_token_bearer" = ["admin"]), ("opds_basic" = ["admin"])),
+    post, path = "/api/v1/users/{id}/credential-links", summary = "Issue a credential link",
+    description = "Returns a single-use link for the account holder to choose a password. Replaces any prior link without changing the current password or sessions.",
+    tag = "users", security(("session_cookie" = ["admin"])),
     params(("id" = Uuid, Path, max_length = 45, description = "Target user id")),
-    request_body = AdminPasswordResetRequest,
     responses(
-        (status = 503, description = "Authentication processing is busy", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
-        (status = 200, description = "Password reset; the target's sessions are invalidated. Admin only."),
+        (status = 201, description = "Credential link issued", body = CredentialLinkResponse, headers(("Cache-Control" = String, description = "no-store"))),
         (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
-        (status = 403, description = "Caller is not an admin", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
-        (status = 404, description = "Target user does not exist", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
-        (status = 422, description = "Password rejected by the policy", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
+        (status = 403, description = "Administrator browser session required", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
+        (status = 404, description = "Local authentication disabled or account not found", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
+        (status = 422, description = "Account disabled or without an email address", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
     )
 )]
-async fn admin_reset_password(
+async fn issue_credential_link(
     current_user: CurrentUser,
     State(state): State<AppState>,
     ApiPath(id): ApiPath<Uuid>,
-    ApiJson(req): ApiJson<AdminPasswordResetRequest>,
 ) -> Result<impl IntoResponse, AppError> {
+    if !state.config.local_auth_enabled {
+        return Err(AppError::NotFound);
+    }
     current_user.require_scope(Scope::Admin)?;
     current_user.require_admin()?;
     current_user.require_not_child()?;
-
-    // Feed the target's own email and display name to the strength estimator so a
-    // password echoing them is penalized. The authoritative existence check is the
-    // row lock below; this read only supplies the context words.
-    let target = crate::models::user::find_by_id(&state.pool, id)
-        .await
-        .map_err(|e| AppError::Internal(e.into()))?
-        .ok_or(AppError::NotFound)?;
-    let mut context: Vec<&str> = vec![target.display_name.as_str()];
-    if let Some(email) = target.email.as_deref() {
-        context.push(email);
-    }
-    enforce_password_policy(&state, &req.new_password, &context).await?;
-    let phc = state
-        .hash_limiter
-        .hash(req.new_password)
-        .await?
-        .map_err(|e| AppError::Internal(anyhow::anyhow!("password hash failed: {e}")))?;
-
+    current_user.require_browser_session()?;
     let mut tx = state
         .pool
         .begin()
         .await
         .map_err(|e| AppError::Internal(e.into()))?;
-
-    let exists = sqlx::query_scalar!("SELECT id FROM users WHERE id = $1 FOR NO KEY UPDATE", id)
-        .fetch_optional(&mut *tx)
-        .await
-        .map_err(|e| AppError::Internal(e.into()))?;
-    if exists.is_none() {
-        return Err(AppError::NotFound);
+    let target = sqlx::query!(
+        "SELECT disabled_at, email FROM users WHERE id = $1 FOR NO KEY UPDATE",
+        id
+    )
+    .fetch_optional(&mut *tx)
+    .await
+    .map_err(|e| AppError::Internal(e.into()))?
+    .ok_or(AppError::NotFound)?;
+    if target.disabled_at.is_some() {
+        return Err(AppError::Validation("the account is disabled".into()));
     }
-
-    crate::models::local_credentials::set_password(&mut *tx, id, &phc)
+    if target.email.is_none() {
+        return Err(AppError::Validation(
+            "the account has no email address".into(),
+        ));
+    }
+    let (token, expires_at) = crate::models::credential_link::issue(&mut *tx, id)
         .await
         .map_err(|e| AppError::Internal(e.into()))?;
-    crate::models::user::increment_session_version(&mut *tx, id)
-        .await
-        .map_err(|e| AppError::Internal(e.into()))?;
-
     tx.commit()
         .await
         .map_err(|e| AppError::Internal(e.into()))?;
+    Ok((
+        StatusCode::CREATED,
+        [(header::CACHE_CONTROL, "no-store")],
+        axum::Json(CredentialLinkResponse { token, expires_at }),
+    ))
+}
 
-    Ok(StatusCode::OK)
+/// Cancel an account's credential link idempotently.
+#[utoipa::path(
+    delete, path = "/api/v1/users/{id}/credential-links", summary = "Cancel a credential link",
+    description = "Cancels the account's link without changing its password or sessions.",
+    tag = "users", security(("session_cookie" = ["admin"])),
+    params(("id" = Uuid, Path, max_length = 45, description = "Target user id")),
+    responses(
+        (status = 204, description = "No active link remains"),
+        (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
+        (status = 403, description = "Administrator browser session required", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
+        (status = 404, description = "Local authentication is disabled", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
+    )
+)]
+async fn cancel_credential_link(
+    current_user: CurrentUser,
+    State(state): State<AppState>,
+    ApiPath(id): ApiPath<Uuid>,
+) -> Result<impl IntoResponse, AppError> {
+    if !state.config.local_auth_enabled {
+        return Err(AppError::NotFound);
+    }
+    current_user.require_scope(Scope::Admin)?;
+    current_user.require_admin()?;
+    current_user.require_not_child()?;
+    current_user.require_browser_session()?;
+    crate::models::credential_link::cancel(&state.pool, id)
+        .await
+        .map_err(|e| AppError::Internal(e.into()))?;
+    Ok(StatusCode::NO_CONTENT)
 }
 
 /// Body for `POST /api/v1/account/password`.
 #[derive(Debug, Deserialize, utoipa::ToSchema)]
 struct ChangePasswordRequest {
     /// The caller's current password, re-verified before the change.
+    #[schema(max_length = 256)]
     current_password: String,
     /// The new password; enforced against the password policy.
+    #[schema(max_length = 256)]
     new_password: String,
 }
 
@@ -746,6 +773,17 @@ async fn change_own_password(
 ) -> Result<impl IntoResponse, AppError> {
     current_user.require_scope(Scope::Write)?;
     let user_id = current_user.user_id;
+
+    crate::auth::password_policy::enforce_max_length(
+        &req.current_password,
+        crate::auth::password_policy::MAX_PASSWORD_LENGTH,
+    )
+    .map_err(|e| AppError::Validation(e.to_string()))?;
+    crate::auth::password_policy::enforce_max_length(
+        &req.new_password,
+        state.config.password_max_length,
+    )
+    .map_err(|e| AppError::Validation(e.to_string()))?;
 
     let credential = crate::models::local_credentials::find_by_user_id(&state.pool, user_id)
         .await
@@ -792,7 +830,7 @@ async fn change_own_password(
         .begin()
         .await
         .map_err(|e| AppError::Internal(e.into()))?;
-    // THREAT: user-before-credential locking prevents inversion with administrator resets.
+    // THREAT: user-before-credential locking prevents inversion with recovery writers.
     sqlx::query_scalar!(
         "SELECT id FROM users WHERE id = $1 FOR NO KEY UPDATE",
         user_id
@@ -844,8 +882,9 @@ struct UpdateUserRequest {
     #[serde(default, deserialize_with = "deserialize_optional_string")]
     #[schema(value_type = String)]
     display_name: Option<Option<String>>,
-    /// New email (RFC 5322 addr-spec). Absent = unchanged; explicit `null`
-    /// clears the stored address.
+    /// New account email in the common ASCII format with a dotted domain and an
+    /// alphabetic suffix of at least two letters.
+    /// Absent = unchanged; explicit `null` clears the stored address.
     #[serde(default, deserialize_with = "deserialize_optional_string")]
     #[schema(value_type = Option<String>)]
     email: Option<Option<String>>,
@@ -879,7 +918,7 @@ fn unique_violation_or_internal(e: sqlx::Error, msg: &'static str) -> AppError {
 /// Validate an admin-supplied `email` for `PATCH /api/v1/users/{id}`.
 ///
 /// Returns the trimmed addr-spec on success. Rejects an empty/whitespace-only
-/// value and any non-addr-spec form (display-name, domain-literal — see
+/// value and addresses outside the supported common ASCII format (see
 /// [`is_addr_spec`]) with [`AppError::Validation`] (422).
 ///
 /// THREAT: an admin submitting a malformed value is surfaced server-side for
@@ -1031,16 +1070,20 @@ async fn update_user(
 
     let row = sqlx::query_as!(
         UserResponse,
-        r#"SELECT id,
-                  display_name,
-                  email,
-                  role AS "role: Role",
-                  is_child,
-                  created_at,
-                  updated_at,
-                  (disabled_at IS NOT NULL) AS "disabled!"
+        r#"SELECT users.id,
+                  users.display_name,
+                  users.email,
+                  users.role AS "role: Role",
+                  users.is_child,
+                  users.created_at,
+                  users.updated_at,
+                  (users.disabled_at IS NOT NULL) AS "disabled!",
+                  (c.user_id IS NOT NULL) AS "has_password!",
+                  l.expires_at AS "credential_link_expires_at?"
              FROM users
-            WHERE id = $1"#,
+ LEFT JOIN local_credentials c ON c.user_id = users.id
+ LEFT JOIN credential_links l ON l.user_id = users.id AND l.expires_at > now()
+            WHERE users.id = $1"#,
         id,
     )
     .fetch_one(&mut *tx)

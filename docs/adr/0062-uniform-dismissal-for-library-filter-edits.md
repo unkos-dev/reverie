@@ -1,7 +1,7 @@
 ---
 type: ADR
 profile-version: 1
-id: "REV-ADR-0061"
+id: "REV-ADR-0062"
 title: "Uniform dismissal for library filter edits"
 status: "accepted"
 recorded-on: "2026-10-21"

@@ -3,7 +3,7 @@
 
 use axum::Json;
 use axum::extract::State;
-use axum::http::{HeaderMap, StatusCode};
+use axum::http::{HeaderMap, StatusCode, header};
 use axum::response::{IntoResponse, Redirect};
 use axum_extra::extract::cookie::CookieJar;
 use axum_extra::extract::{Query, QueryRejection};
@@ -43,6 +43,8 @@ pub fn router() -> OpenApiRouter<AppState> {
         .routes(routes!(register))
         .routes(routes!(forgot_password))
         .routes(routes!(reset_password))
+        .routes(routes!(lookup_credential_link))
+        .routes(routes!(redeem_credential_link))
         .routes(routes!(logout))
         .routes(routes!(me))
         .routes(routes!(update_theme))
@@ -404,6 +406,7 @@ struct LocalLoginRequest {
     /// Account email; matched case-insensitively against `users.email`.
     email: String,
     /// Plaintext password, verified against the stored Argon2id hash.
+    #[schema(max_length = 256)]
     password: String,
 }
 
@@ -456,6 +459,11 @@ async fn local_login(
     ) {
         return Err(AppError::SignInInactive);
     }
+    crate::auth::password_policy::enforce_max_length(
+        &body.password,
+        crate::auth::password_policy::MAX_PASSWORD_LENGTH,
+    )
+    .map_err(|_| AppError::Validation("invalid email or password".into()))?;
     let cohort_id = if let Some(id) = session.id() {
         let id = id.to_string();
         if sign_in::join_pending(&state.pool, &id)
@@ -631,11 +639,13 @@ async fn setup_status(
 /// Request body for `POST /auth/setup`. Explicit allow-list (no mass-assignment).
 #[derive(serde::Deserialize, utoipa::ToSchema)]
 struct SetupRequest {
-    /// First administrator's email (RFC 5322 addr-spec).
+    /// First administrator's email in the common ASCII format with a dotted
+    /// domain and an alphabetic suffix of at least two letters.
     email: String,
     /// Display name.
     display_name: String,
     /// Plaintext password; checked against the shared password policy, then hashed.
+    #[schema(max_length = 256)]
     password: String,
 }
 
@@ -722,11 +732,13 @@ async fn setup(
 /// mass-assignment): a self-registrant cannot smuggle a role or child flag.
 #[derive(serde::Deserialize, utoipa::ToSchema)]
 struct RegisterRequest {
-    /// New account email (RFC 5322 addr-spec).
+    /// New account email in the common ASCII format with a dotted domain and an
+    /// alphabetic suffix of at least two letters.
     email: String,
     /// Display name.
     display_name: String,
     /// Plaintext password; enforced against the password policy, then hashed.
+    #[schema(max_length = 256)]
     password: String,
 }
 
@@ -834,6 +846,175 @@ fn enforce_source_rate_limit(
         return Err(AppError::RateLimited { retry_after_secs });
     }
     Ok(())
+}
+
+#[derive(serde::Deserialize, utoipa::ToSchema)]
+struct CredentialLinkLookupRequest {
+    #[schema(
+        min_length = 43,
+        max_length = 43,
+        pattern = "^[A-Za-z0-9_-]{42}[AEIMQUYcgkosw048]$"
+    )]
+    token: String,
+}
+
+#[derive(serde::Serialize, utoipa::ToSchema)]
+struct CredentialLinkLookupResponse {
+    email: String,
+    has_password: bool,
+}
+
+#[derive(serde::Deserialize, utoipa::ToSchema)]
+struct CredentialLinkRedemptionRequest {
+    #[schema(
+        min_length = 43,
+        max_length = 43,
+        pattern = "^[A-Za-z0-9_-]{42}[AEIMQUYcgkosw048]$"
+    )]
+    token: String,
+    #[schema(max_length = 256)]
+    password: String,
+}
+
+fn invalid_credential_link() -> AppError {
+    AppError::Validation("invalid or expired link".into())
+}
+
+/// Resolve account context using a live credential link.
+#[utoipa::path(
+    post, path = "/auth/credential-links/lookups", summary = "Look up a credential link",
+    description = "Returns the email and password state for a valid link. Invalid, expired, used, disabled-account and no-email links share one generic refusal.",
+    tag = "auth", security(()), request_body = CredentialLinkLookupRequest,
+    responses(
+        (status = 200, description = "Valid link", body = CredentialLinkLookupResponse, headers(("Cache-Control" = String, description = "no-store"))),
+        (status = 404, description = "Local authentication is disabled", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
+        (status = 422, description = "Invalid or expired link", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
+        (status = 429, description = "Too many recovery requests", body = crate::openapi::ProblemDetails, content_type = "application/problem+json", headers(("Retry-After" = u64, description = "Positive delay in seconds before retrying"))),
+    )
+)]
+async fn lookup_credential_link(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    peer: crate::auth::rate_limit::PeerAddr,
+    ApiJson(body): ApiJson<CredentialLinkLookupRequest>,
+) -> Result<impl IntoResponse, AppError> {
+    if !state.config.local_auth_enabled {
+        return Err(AppError::NotFound);
+    }
+    enforce_source_rate_limit(&state, &state.recovery_limiter, &headers, &peer)?;
+    let account = crate::models::credential_link::lookup(&state.pool, &body.token)
+        .await
+        .map_err(|e| AppError::Internal(e.into()))?
+        .ok_or_else(invalid_credential_link)?;
+    Ok((
+        [(header::CACHE_CONTROL, "no-store")],
+        Json(CredentialLinkLookupResponse {
+            email: account.email,
+            has_password: account.has_password,
+        }),
+    ))
+}
+
+/// Consume a credential link and invalidate earlier sessions without signing in.
+#[utoipa::path(
+    post, path = "/auth/credential-links/redemptions", summary = "Redeem a credential link",
+    description = "Sets the account's password once before the link expires, invalidates earlier sessions and creates no session. Leaves login throttling and device tokens unchanged.",
+    tag = "auth", security(()), request_body = CredentialLinkRedemptionRequest,
+    responses(
+        (status = 204, description = "Password set; sign-in required"),
+        (status = 404, description = "Local authentication is disabled", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
+        (status = 422, description = "Invalid or expired link, or password policy rejection", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
+        (status = 429, description = "Too many recovery requests", body = crate::openapi::ProblemDetails, content_type = "application/problem+json", headers(("Retry-After" = u64, description = "Positive delay in seconds before retrying"))),
+        (status = 503, description = "Authentication processing is busy", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
+    )
+)]
+async fn redeem_credential_link(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    peer: crate::auth::rate_limit::PeerAddr,
+    ApiJson(body): ApiJson<CredentialLinkRedemptionRequest>,
+) -> Result<impl IntoResponse, AppError> {
+    let request_id = Uuid::new_v4();
+    let source_ip = crate::auth::rate_limit::client_ip(
+        &headers,
+        peer.0.map(|address| address.ip()),
+        state.config.trusted_client_ip_header.as_deref(),
+    );
+    // THREAT: Untrusted agent text is bounded and stripped of control characters before logging.
+    let user_agent = headers.get(header::USER_AGENT).map(|value| {
+        String::from_utf8_lossy(value.as_bytes())
+            .chars()
+            .filter(|c| !c.is_control())
+            .take(256)
+            .collect::<String>()
+    });
+    let mut user_id = None;
+    let result: Result<StatusCode, AppError> = async {
+        if !state.config.local_auth_enabled {
+            return Err(AppError::NotFound);
+        }
+        enforce_source_rate_limit(&state, &state.recovery_limiter, &headers, &peer)?;
+        let account = crate::models::credential_link::lookup(&state.pool, &body.token)
+            .await
+            .map_err(|e| AppError::Internal(e.into()))?
+            .ok_or_else(invalid_credential_link)?;
+        user_id = Some(account.user_id);
+        crate::auth::password_policy::enforce_from_config(
+            &state.config,
+            &body.password,
+            &[&account.email, &account.display_name],
+        )
+        .await
+        .map_err(|e| AppError::Validation(e.to_string()))?;
+        let phc = state
+            .hash_limiter
+            .hash(body.password)
+            .await?
+            .map_err(|e| AppError::Internal(e.into()))?;
+        let mut tx = state
+            .pool
+            .begin()
+            .await
+            .map_err(|e| AppError::Internal(e.into()))?;
+        // THREAT: Every password writer locks the user before credential or proof rows.
+        let target = sqlx::query!(
+            "SELECT disabled_at, email FROM users WHERE id = $1 FOR NO KEY UPDATE",
+            account.user_id
+        )
+        .fetch_optional(&mut *tx)
+        .await
+        .map_err(|e| AppError::Internal(e.into()))?
+        .ok_or_else(invalid_credential_link)?;
+        let consumed =
+            crate::models::credential_link::consume(&mut *tx, account.user_id, &body.token)
+                .await
+                .map_err(|e| AppError::Internal(e.into()))?;
+        if !consumed || target.disabled_at.is_some() || target.email.is_none() {
+            return Err(invalid_credential_link());
+        }
+        crate::models::local_credentials::set_password(&mut *tx, account.user_id, &phc)
+            .await
+            .map_err(|e| AppError::Internal(e.into()))?;
+        // THREAT: Sessions issued before replacement must no longer authenticate.
+        user::increment_session_version(&mut *tx, account.user_id)
+            .await
+            .map_err(|e| AppError::Internal(e.into()))?;
+        tx.commit()
+            .await
+            .map_err(|e| AppError::Internal(e.into()))?;
+        Ok(StatusCode::NO_CONTENT)
+    }
+    .await;
+    tracing::info!(
+        action = "credential_link_redemption",
+        outcome = if result.is_ok() { "success" } else { "failure" },
+        user_id = ?user_id,
+        request_id = %request_id,
+        source_ip = ?source_ip,
+        user_agent = user_agent.as_deref(),
+        "credential link redemption"
+    );
+    result
 }
 
 /// Request body for `POST /auth/forgot-password`.
@@ -954,6 +1135,7 @@ struct ResetPasswordRequest {
     /// The recovery PIN from the host file.
     pin: String,
     /// New plaintext password; enforced against the full password policy.
+    #[schema(max_length = 256)]
     new_password: String,
 }
 
@@ -1635,6 +1817,32 @@ mod tests {
     }
 
     #[sqlx::test(migrations = "./migrations")]
+    async fn auth_hash_census_credential_link_redemption(pool: sqlx::PgPool) {
+        let mut state = password_state(&pool).await;
+        let id = user::create_local(
+            &state.pool,
+            "census-link@example.test",
+            "Holder",
+            crate::models::role::Role::Adult,
+            None,
+        )
+        .await
+        .unwrap()
+        .id;
+        let (token, _) = crate::models::credential_link::issue(&state.pool, id)
+            .await
+            .unwrap();
+        let count = hash_counter(&mut state);
+        let server = hash_server(&state);
+        let response = server
+            .post("/auth/credential-links/redemptions")
+            .json(&serde_json::json!({"token":token,"password":"lithe cobalt meadow drift"}))
+            .await;
+        assert_eq!(response.status_code(), StatusCode::NO_CONTENT);
+        assert_eq!(count.load(std::sync::atomic::Ordering::SeqCst), 1);
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
     async fn auth_hash_busy_auth_endpoints(pool: sqlx::PgPool) {
         let mut state = password_state(&pool).await;
         state.config.self_registration_enabled = true;
@@ -1660,6 +1868,9 @@ mod tests {
         )
         .await
         .unwrap();
+        let (link_token, _) = crate::models::credential_link::issue(&state.pool, id)
+            .await
+            .unwrap();
         let count = hash_counter(&mut state);
         state.hash_limiter = state
             .hash_limiter
@@ -1691,6 +1902,10 @@ mod tests {
             (
                 "/auth/reset-password",
                 serde_json::json!({"email":"known@example.com","pin":"1234567890","new_password":"lithe cobalt meadow drift"}),
+            ),
+            (
+                "/auth/credential-links/redemptions",
+                serde_json::json!({"token":link_token,"password":"lithe cobalt meadow drift"}),
             ),
         ] {
             let response = server.post(path).json(&body).await;
@@ -6129,5 +6344,92 @@ mod tests {
             }))
             .await;
         assert_eq!(r.status_code(), StatusCode::UNPROCESSABLE_ENTITY);
+    }
+    #[sqlx::test(migrations = "./migrations")]
+    async fn credential_link_redemption_audit_success_failure_and_redaction(pool: sqlx::PgPool) {
+        use tracing::instrument::WithSubscriber;
+        let app = test_support::db::app_pool_for(&pool).await;
+        let ingestion = test_support::db::ingestion_pool_for(&pool).await;
+        let id = crate::models::user::create_local(
+            &app,
+            "audit-holder@example.test",
+            "Private Holder",
+            crate::models::role::Role::Adult,
+            None,
+        )
+        .await
+        .unwrap()
+        .id;
+        let (token, _) = crate::models::credential_link::issue(&app, id)
+            .await
+            .unwrap();
+        let server = test_support::db::server_with_real_pools(&app, &ingestion);
+        let logs = test_support::CapturedLogs::default();
+        let password = uuid::Uuid::new_v4().to_string();
+        let password = password.as_str();
+        async {
+            for (submitted_token, submitted_password, expected) in [
+                ("private-invalid-token", password, StatusCode::UNPROCESSABLE_ENTITY),
+                (token.as_str(), "short", StatusCode::UNPROCESSABLE_ENTITY),
+                (token.as_str(), password, StatusCode::NO_CONTENT),
+                (token.as_str(), password, StatusCode::UNPROCESSABLE_ENTITY),
+            ] {
+                let response = server.post("/auth/credential-links/redemptions")
+                    .add_header(axum::http::header::USER_AGENT, "audit\tclient")
+                    .json(&serde_json::json!({"token": submitted_token, "password": submitted_password}))
+                    .await;
+                assert_eq!(response.status_code(), expected);
+            }
+        }.with_subscriber(logs.subscriber()).await;
+        let captured = logs.text();
+        let events: Vec<_> = captured
+            .lines()
+            .filter(|line| line.contains("action=\"credential_link_redemption\""))
+            .collect();
+        assert_eq!(events.len(), 4, "{captured}");
+        assert_eq!(
+            events
+                .iter()
+                .filter(|line| line.contains("outcome=\"success\""))
+                .count(),
+            1
+        );
+        assert_eq!(
+            events
+                .iter()
+                .filter(|line| line.contains("outcome=\"failure\""))
+                .count(),
+            3
+        );
+        let mut request_ids = std::collections::HashSet::new();
+        for event in events {
+            assert!(event.contains("user_id="));
+            assert!(event.contains("source_ip="));
+            assert!(event.contains("user_agent=\"auditclient\""));
+            let request_id = event
+                .split("request_id=")
+                .nth(1)
+                .unwrap()
+                .split_whitespace()
+                .next()
+                .unwrap();
+            assert!(uuid::Uuid::parse_str(request_id).is_ok());
+            assert!(request_ids.insert(request_id));
+        }
+        assert!(captured.contains(&id.to_string()));
+        for secret in [
+            token.as_str(),
+            password,
+            "short",
+            "audit-holder@example.test",
+            "Private Holder",
+            "private-invalid-token",
+            "audit\tclient",
+        ] {
+            assert!(
+                !captured.contains(secret),
+                "redemption audit leaked a submitted value"
+            );
+        }
     }
 }

@@ -69,7 +69,6 @@ export {
   updateUser,
   createUser,
   setAccountStatus,
-  adminResetPassword,
 } from "./users";
 export type { User, Role as UserRole, UpdateUserFields, CreateUserInput } from "./users";
 export {

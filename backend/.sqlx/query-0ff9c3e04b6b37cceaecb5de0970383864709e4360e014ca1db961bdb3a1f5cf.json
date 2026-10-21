@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT id,\n                  display_name,\n                  email,\n                  role AS \"role: Role\",\n                  is_child,\n                  created_at,\n                  updated_at,\n                  (disabled_at IS NOT NULL) AS \"disabled!\"\n             FROM users\n            WHERE id = $1",
+  "query": "WITH changed AS (UPDATE users\n              SET role = ($1::text)::user_role,\n                  is_child = ($1::text = 'child'),\n                  session_version = session_version + 1,\n                  updated_at = now()\n            WHERE id = $2\n        RETURNING *)\n SELECT users.id,\n                  users.display_name,\n                  users.email,\n                  users.role AS \"role: Role\",\n                  users.is_child,\n                  users.created_at,\n                  users.updated_at,\n                  (users.disabled_at IS NOT NULL) AS \"disabled!\",\n                  (c.user_id IS NOT NULL) AS \"has_password!\",\n                  l.expires_at AS \"credential_link_expires_at?\"\n FROM changed AS users\n LEFT JOIN local_credentials c ON c.user_id = users.id\n LEFT JOIN credential_links l ON l.user_id = users.id AND l.expires_at > now()",
   "describe": {
     "columns": [
       {
@@ -96,10 +96,28 @@
         "name": "disabled!",
         "type_info": "Bool",
         "origin": "Expression"
+      },
+      {
+        "ordinal": 8,
+        "name": "has_password!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 9,
+        "name": "credential_link_expires_at?",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "credential_links",
+            "name": "expires_at"
+          }
+        }
       }
     ],
     "parameters": {
       "Left": [
+        "Text",
         "Uuid"
       ]
     },
@@ -111,8 +129,10 @@
       false,
       false,
       false,
-      null
+      null,
+      null,
+      true
     ]
   },
-  "hash": "ee8ef867511ae63e88ce746569bf442c979d687a296a67a396bb6a0da5482f46"
+  "hash": "0ff9c3e04b6b37cceaecb5de0970383864709e4360e014ca1db961bdb3a1f5cf"
 }

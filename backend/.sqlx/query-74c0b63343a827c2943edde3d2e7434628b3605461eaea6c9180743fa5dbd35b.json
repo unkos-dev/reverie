@@ -1,0 +1,21 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT to_jsonb(t) FROM local_login_throttle t WHERE email_lower = 'holder@example.test'",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "to_jsonb",
+        "type_info": "Jsonb",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "74c0b63343a827c2943edde3d2e7434628b3605461eaea6c9180743fa5dbd35b"
+}

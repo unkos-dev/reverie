@@ -2,7 +2,7 @@
 //!
 //! Combines three NIST SP 800-63B / OWASP ASVS V2.1 controls behind a single
 //! [`enforce`](crate::auth::password_policy::enforce) entry point so every credential-setting path (registration,
-//! admin create, admin reset, self-service change) applies the same gate:
+//! credential-link redemption, recovery, self-service change) applies the same gate:
 //!
 //! 1. Length bounds: a minimum floor and a maximum cap. The cap is a DoS guard,
 //!    not a composition rule (NIST forbids composition rules but permits a cap).
@@ -22,6 +22,9 @@ use std::fmt::Write as _;
 use sha1::{Digest, Sha1};
 
 use crate::config::Config;
+
+/// Application-wide ceiling in Unicode code points; passwords are never truncated.
+pub const MAX_PASSWORD_LENGTH: usize = 256;
 
 /// The HTTP header that asks HIBP to pad its response with synthetic entries so
 /// the on-the-wire response size does not reveal whether the queried prefix had
@@ -63,6 +66,18 @@ impl PasswordPolicy {
             breach_check_url: DEFAULT_BREACH_CHECK_URL.into(),
         }
     }
+}
+
+/// Refuse passwords above the deployment maximum or application ceiling before costly work.
+///
+/// # Errors
+/// Returns [`PolicyError::TooLong`] for an oversized password.
+pub fn enforce_max_length(password: &str, maximum: usize) -> Result<(), PolicyError> {
+    let maximum = maximum.min(MAX_PASSWORD_LENGTH);
+    if password.chars().take(maximum + 1).count() > maximum {
+        return Err(PolicyError::TooLong { max: maximum });
+    }
+    Ok(())
 }
 
 /// Why a candidate password was rejected. The `Display` text is surfaced
@@ -218,12 +233,8 @@ pub async fn enforce(
     policy: &PasswordPolicy,
     breach_client: &reqwest::Client,
 ) -> Result<(), PolicyError> {
+    enforce_max_length(password, policy.max_length)?;
     let length = password.chars().count();
-    if length > policy.max_length {
-        return Err(PolicyError::TooLong {
-            max: policy.max_length,
-        });
-    }
     if length < policy.min_length {
         return Err(PolicyError::TooShort {
             min: policy.min_length,
@@ -284,6 +295,34 @@ mod tests {
             breach_check_enabled: true,
             breach_check_url: url,
         }
+    }
+
+    #[test]
+    fn password_ceiling_counts_unicode_and_keeps_deployment_bounds() {
+        assert!(enforce_max_length(&"🦀".repeat(256), 256).is_ok());
+        assert!(matches!(
+            enforce_max_length(&"🦀".repeat(257), 256),
+            Err(PolicyError::TooLong { max: 256 })
+        ));
+        assert!(enforce_max_length(&"é".repeat(64), 64).is_ok());
+        assert!(matches!(
+            enforce_max_length(&"é".repeat(65), 64),
+            Err(PolicyError::TooLong { max: 64 })
+        ));
+        assert!(matches!(
+            enforce_max_length(&"a".repeat(257), 300),
+            Err(PolicyError::TooLong { max: 256 })
+        ));
+    }
+
+    #[tokio::test]
+    async fn password_ceiling_precedes_strength_and_breach_processing() {
+        let server = MockServer::start().await;
+        let mut settings = policy(server.uri());
+        settings.max_length = 300;
+        let result = enforce(&"a".repeat(257), &[], &settings, &dummy_client()).await;
+        assert!(matches!(result, Err(PolicyError::TooLong { max: 256 })));
+        assert!(server.received_requests().await.unwrap().is_empty());
     }
 
     #[test]

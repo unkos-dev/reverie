@@ -18,3 +18,5 @@ The wider design rules live in [Design Philosophy](../philosophy.md), [Visual Id
 | [Settings](./settings.md)               | `/admin/settings/{area}` |
 | [Admin ingestion](./admin-ingestion.md) | `/admin/dashboard`       |
 | [Login](./login.md)                     | `/login`                 |
+| [Users](./users.md)                     | `/admin/users`           |
+| [Set password](./set-password.md)       | `/set-password`          |

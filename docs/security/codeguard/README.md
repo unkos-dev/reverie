@@ -87,6 +87,20 @@ Log any reverie-specific override here with the overridden file + section,
 reverie's position, rationale, and compensating controls. Prefer documenting
 the deviation over editing the imported file.
 
+### Credential links on private HTTP deployments
+
+**Override:** `codeguard-0-input-validation-injection.md` → "Caching and Transport" and
+`codeguard-0-authentication-mfa.md` → "Authentication Flow Hardening" and "Recovery and Reset".
+
+**Reverie's position:** Credential links use the browser-facing origin, including HTTP for private deployments.
+
+**Rationale:** A private Docker Compose installation can operate without a reverse proxy or certificates. Publicly
+reachable deployments should use HTTPS; HTTP provides no confidentiality for tokens or passwords in transit.
+
+**Compensating controls:** Issuance requires an administrator browser session. Links are account-bound, expire after
+72 hours and are consumed once; only their hashes are stored. Token-bearing responses use `Cache-Control: no-store`.
+These controls limit credential-link exposure but do not protect HTTP traffic from network interception.
+
 ### 1. Session cookie `Secure` flag omitted on plain-HTTP deployments
 
 **Override:** `codeguard-0-session-management-and-cookies.md` → "Cookie Security
@@ -287,3 +301,17 @@ its responses.
 **Compensating controls:** HTTPS with platform trust, disabled redirects, five-second connect and ten-second total HTTP
 timeouts, and one shared in-flight key refresh. The timeout bounds HTTP duration through body completion, not bytes or
 parser allocations. A large provider response can consume excessive memory; that residual risk is accepted.
+
+### 10. SQLFluff tool dependencies are not locked
+
+**Override:** `codeguard-0-supply-chain-security.md`, "Policy and Governance", requires dependency lockfiles.
+
+**Reverie's position:** SQLFluff runs through `uvx` with a pinned CLI version and no repository Python dependency
+lockfile. Its transitive dependencies may change between fresh tool environments and are outside the locked dependency
+audits.
+
+**Rationale:** SQLFluff is developer tooling and is absent from the application. Maintaining a separate Python dependency
+lockfile adds work without changing the shipped dependency tree.
+
+**Compensating controls:** uv is mise-pinned and checksum-verified. The SQLFluff version is pinned in the shared local
+and CI recipe, which disables source builds. The tool environment is isolated from the application.

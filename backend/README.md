@@ -154,6 +154,10 @@ Operator-facing `MigrationError` modes:
 
 ### Upgrade Note
 
+The [pre-v0.1 SQL lint transition](../docs/deployment/database-migrations.md#pre-v01-sql-lint-transition) changes
+applied migration checksums and requires database recreation. The confirmed-volume procedure below applies to disposable
+local development data.
+
 The Postgres 18 upgrade changed the volume mount from `pgdata:/var/lib/postgresql/data` to `pgdata:/var/lib/postgresql`.
 Confirm the development cluster's project, container and mounted volume, and coordinate all consumers before deleting
 the existing development data:

@@ -36,6 +36,7 @@ struct Operation {
     method: String,
     path: String,
     scopes: Vec<Scope>,
+    transports: Vec<String>,
 }
 
 const HTTP_METHODS: &[&str] = &[
@@ -91,10 +92,21 @@ fn parse_operations() -> Vec<Operation> {
                         .collect()
                 })
                 .unwrap_or_default();
+            let transports = op["security"]
+                .as_array()
+                .map(|requirements| {
+                    requirements
+                        .iter()
+                        .filter_map(Value::as_object)
+                        .flat_map(|requirement| requirement.keys().cloned())
+                        .collect()
+                })
+                .unwrap_or_default();
             ops.push(Operation {
                 method: method.to_uppercase(),
                 path: path.clone(),
                 scopes,
+                transports,
             });
         }
     }
@@ -325,6 +337,31 @@ async fn scope_grid_enforces_the_hierarchy(pool: PgPool) {
     for (op, required) in gated {
         let path = substitute_path_params(&op.path);
         let body = body_for(&op.method, &op.path);
+
+        if !op
+            .transports
+            .iter()
+            .any(|transport| transport == "device_token_bearer")
+        {
+            let status = call_with_scoped_token(
+                &server,
+                &app_pool,
+                admin_id,
+                &[Scope::Admin],
+                &op.method,
+                &path,
+                body.as_ref(),
+            )
+            .await;
+            assert_eq!(
+                status,
+                StatusCode::FORBIDDEN,
+                "{} {} must reject device tokens",
+                op.method,
+                op.path
+            );
+            continue;
+        }
 
         // Positive: a token at the required scope must not 403.
         let at_required = call_with_scoped_token(

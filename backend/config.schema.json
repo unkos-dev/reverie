@@ -157,14 +157,15 @@
       "default": true
     },
     "password_max_length": {
-      "description": "Maximum length for a local-account password, in characters\n(`REVERIE_PASSWORD_MAX_LENGTH`, default `256`). A denial-of-service cap,\nnot a composition rule: NIST SP 800-63B forbids composition rules but\npermits a length cap, and an unbounded password is a CPU-exhaustion\nvector on the unauthenticated registration path (zxcvbn and Argon2 cost\nboth grow with length). Checked before any strength or breach work.",
+      "description": "Maximum new-password length in Unicode code points\n(`REVERIE_PASSWORD_MAX_LENGTH`, default `256`, range `64..=256`).\nA denial-of-service cap,\nnot a composition rule: NIST SP 800-63B forbids composition rules but\npermits a length cap, and an unbounded password is a CPU-exhaustion\nvector on the unauthenticated registration path (zxcvbn and Argon2 cost\nboth grow with length). Checked before any strength or breach work.",
       "type": "integer",
       "format": "uint",
       "default": 256,
+      "maximum": 256,
       "minimum": 64
     },
     "password_min_length": {
-      "description": "Minimum length for a local-account password\n(`REVERIE_PASSWORD_MIN_LENGTH`, default `15`, the single-factor\nfloor). The length floor, the zxcvbn strength floor\n([`Self::password_min_zxcvbn_score`]), and the HIBP breach check\n([`Self::password_breach_check_enabled`]) together form the password\npolicy applied at bootstrap, registration, recovery, admin create/reset,\nand self-service change. Existing credentials remain valid. Must not\nexceed [`Self::password_max_length`].",
+      "description": "Minimum length for a local-account password\n(`REVERIE_PASSWORD_MIN_LENGTH`, default `15`, the single-factor\nfloor). The length floor, the zxcvbn strength floor\n([`Self::password_min_zxcvbn_score`]), and the HIBP breach check\n([`Self::password_breach_check_enabled`]) together form the password\npolicy applied at bootstrap, registration, recovery, credential-link redemption\nand self-service change. Must not exceed [`Self::password_max_length`].",
       "type": "integer",
       "format": "uint",
       "default": 15,

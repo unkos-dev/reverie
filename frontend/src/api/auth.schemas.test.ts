@@ -1,6 +1,31 @@
 import { describe, expect, test } from "vite-plus/test";
 
-import { currentPasswordField, newPasswordField } from "./auth.schemas";
+import { currentPasswordField, emailField, newPasswordField } from "./auth.schemas";
+
+describe("account email format", () => {
+  test.each([
+    "john@example.com",
+    "john.doe+books@example.com",
+    "o'brien@example.com",
+    "Jane_Doe@EXAMPLE.COM",
+  ])("accepts %s", (email) => {
+    expect(emailField.safeParse(email).success).toBe(true);
+  });
+
+  test.each([
+    '"john doe"@example.com',
+    '"john"@example.com',
+    "john doe@example.com",
+    "jane@homelab",
+    "jane!books@example.com",
+    "jane#books@example.com",
+    "jane%books@example.com",
+    "jane/books@example.com",
+    "josé@example.com",
+  ])("rejects %s", (email) => {
+    expect(emailField.safeParse(email).success).toBe(false);
+  });
+});
 
 describe("configured new-password length", () => {
   const policy = { password_min_length: 15, password_max_length: 64 };

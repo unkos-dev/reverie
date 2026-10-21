@@ -18,15 +18,15 @@ governed-by:
 This Design covers how an inbound request becomes a `CurrentUser`: the session-cookie, HTTP Basic, and Bearer resolution
 legs `CurrentUser`'s `FromRequestParts` implementation tries in order; the device-token lookup Basic and Bearer share;
 the Bearer leg's refusal of unsupported credentials; the force-logout and soft-disabled-account gates each leg enforces;
-and the `require_admin`, `require_not_child`, `require_scope`, and `may_grant_scope` assertion methods every gated
-handler in the application calls once it holds a `CurrentUser`.
+and the `require_admin`, `require_not_child`, `require_scope`, `require_browser_session`, and `may_grant_scope`
+assertion methods every gated handler in the application calls once it holds a `CurrentUser`.
 
 ## Purpose and boundaries
 
 This subject owns `backend/src/auth/middleware.rs` in full: the `CurrentUser` struct and its private `role`, `is_child`,
-and `scopes` fields; the `FromRequestParts<AppState>` implementation that tries the session-cookie leg, then
-`verify_basic`, then `verify_bearer`, returning on the first that resolves an identity; `resolve_device_token`, the
-single indexed lookup Basic and Bearer both call; and the four assertion methods. It also owns `BasicOnly`
+`scopes` and `via_session` fields; the `FromRequestParts<AppState>` implementation that tries the session-cookie leg,
+then `verify_basic`, then `verify_bearer`, returning on the first that resolves an identity; `resolve_device_token`, the
+single indexed lookup Basic and Bearer both call; and the five assertion methods. It also owns `BasicOnly`
 (`backend/src/auth/basic_only.rs`), a thin wrapper that calls this subject's own `verify_basic` and substitutes an RFC
 7617 challenge for the generic one, because that wrapper has no logic of its own beyond the challenge substitution.
 
@@ -59,10 +59,10 @@ resolution path across every `/api/v1` operation to prove the scope gate behind 
 
 ## Structure
 
-- `CurrentUser` (`backend/src/auth/middleware.rs`) holds `user_id` public and `role`, `is_child`, `scopes` private,
-  reachable only through the four assertion methods. The fields are private specifically so a handler cannot match on
-  `role` or scan `scopes` directly and bypass the single enforcement point; the "Authorization axes" Design covers what
-  those methods enforce, this Design covers how the fields they read are populated.
+- `CurrentUser` (`backend/src/auth/middleware.rs`) holds `user_id` public and `role`, `is_child`, `scopes`,
+  `via_session` private, reachable only through the five assertion methods. The fields are private specifically so a
+  handler cannot match on `role` or scan `scopes` directly and bypass the single enforcement point; the "Authorization
+  axes" Design covers what those methods enforce, this Design covers how the fields they read are populated.
 - `impl FromRequestParts<AppState> for CurrentUser` is the one entry point every extraction goes through. It tries the
   session-cookie leg first: reads `Session::from_request_parts`, and if a `user_id` claim is present, loads the user
   row, checks `disabled_at`, then compares the session's stored `session_version` claim against the live row's. A
@@ -90,15 +90,18 @@ resolution path across every `/api/v1` operation to prove the scope gate behind 
 - `verify_bearer(state, parts)` reads `Authorization: Bearer`. A credential starting with `token::TOKEN_PREFIX` splits
   on the first `.` and calls `resolve_device_token`. Any other Bearer value returns `AppError::InvalidCredential`
   without provider requests or identity lookups. An absent header returns `Ok(None)`.
-- The four assertion methods (`require_admin`, `require_not_child`, `require_scope`, `may_grant_scope`) are plain
-  comparisons against the private fields: `require_scope` does a floor check against `Scope`'s derived `Ord`
-  (`self.scopes.iter().any(|held| *held >= needed)`) and logs a `tracing::warn!` naming the caller and the scope needed
-  on rejection; the other three are direct field comparisons with no logging of their own.
+- The five assertion methods (`require_admin`, `require_not_child`, `require_scope`, `require_browser_session`,
+  `may_grant_scope`) are plain comparisons against the private fields: `require_scope` does a floor check against
+  `Scope`'s derived `Ord` (`self.scopes.iter().any(|held| *held >= needed)`) and logs a `tracing::warn!` naming the
+  caller and the scope needed on rejection; the other four are direct field comparisons with no logging of their own.
 - `BasicOnly` (`backend/src/auth/basic_only.rs`) wraps a `CurrentUser` resolved exclusively via `verify_basic`: it calls
   that function directly, and maps every rejection (`Ok(None)`, `AppError::Unauthorized`, or
   `AppError::InvalidCredential`) to `AppError::BasicAuthRequired`, so a caller that speaks only Basic (the OPDS readers
   this extractor serves) always gets the RFC 7617 challenge rather than the generic Bearer one `InvalidCredential`'s own
   response would otherwise carry.
+
+`via_session` is true only for a resolved browser session and false for device tokens over Basic or Bearer.
+`require_browser_session` returns Forbidden when it is false; credential-link administration uses this gate.
 
 ## Interfaces and dependencies
 
@@ -145,7 +148,7 @@ self-service:
 | `session_version` | `update_role` (`routes/users/mod.rs`) |
 | `session_version` | `update_child_status` (`routes/users/mod.rs`) |
 | `session_version`, `disabled_at` | `update_account_status`/`disable_account` (same file, + `models/user.rs`) |
-| `session_version` | `admin_reset_password` (`routes/users/mod.rs`) |
+| `session_version` | `redeem_credential_link` (`routes/auth.rs`) |
 | `session_version` | `reset_password`, recovery PIN (`routes/auth.rs`) |
 | `session_version` | `change_own_password` (`routes/users/mod.rs`) |
 | `disabled_at` cleared only | `update_account_status` → `enable_account` (`routes/users/mod.rs`, `models/user.rs`) |
@@ -164,9 +167,9 @@ restore a pre-disable session's validity, so no live session skips re-authentica
 
 1. `Session::from_request_parts` returns a session carrying `SESSION_KEY_USER_ID`.
 2. `user::find_by_id` loads the row. `disabled_at` is `None`, so the disabled check does not fire.
-3. The stored `SESSION_KEY_SESSION_VERSION` claim equals `user.session_version`, so the function returns
-   `Ok(CurrentUser { user_id, role: user.role, is_child: user.is_child, scopes: Scope::for_role(user.role).to_vec() })`
-   without ever evaluating `verify_basic` or `verify_bearer`.
+3. The stored `SESSION_KEY_SESSION_VERSION` claim equals `user.session_version`, so the function returns a `CurrentUser`
+   with the user id, live role and child status, the role-derived scopes and `via_session: true`, without ever
+   evaluating `verify_basic` or `verify_bearer`.
 
 **Force-logout after a role change**, continuing from an already-authenticated session:
 

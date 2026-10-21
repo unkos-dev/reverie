@@ -292,7 +292,7 @@
       "path": "docs/adr/0041-library-filters-in-a-drawer-with-removable-chips.md",
       "status": "superseded",
       "superseded-by": [
-        "REV-ADR-0061"
+        "REV-ADR-0062"
       ],
       "supersedes": [
         "REV-ADR-0039"
@@ -450,7 +450,14 @@
     {
       "id": "REV-ADR-0061",
       "kind": "adr",
-      "path": "docs/adr/0061-uniform-dismissal-for-library-filter-edits.md",
+      "path": "docs/adr/0061-administrators-issue-account-bound-credential-links.md",
+      "status": "proposed",
+      "title": "Administrators issue account-bound credential links"
+    },
+    {
+      "id": "REV-ADR-0062",
+      "kind": "adr",
+      "path": "docs/adr/0062-uniform-dismissal-for-library-filter-edits.md",
       "status": "accepted",
       "supersedes": [
         "REV-ADR-0041"
@@ -459,7 +466,7 @@
     },
     {
       "governed-by": [
-        "REV-ADR-0061",
+        "REV-ADR-0062",
         "REV-ADR-0047"
       ],
       "id": "REV-DESIGN-0001",
@@ -844,6 +851,19 @@
         "REV-REQ-0070"
       ],
       "title": "OIDC sign-in"
+    },
+    {
+      "governed-by": [
+        "REV-ADR-0061"
+      ],
+      "id": "REV-DESIGN-0027",
+      "kind": "design",
+      "path": "docs/specs/accounts/design/0027-credential-links.md",
+      "satisfies": [
+        "REV-REQ-0029",
+        "REV-REQ-0030"
+      ],
+      "title": "Credential links"
     },
     {
       "governed-by": [

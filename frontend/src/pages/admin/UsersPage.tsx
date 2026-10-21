@@ -18,12 +18,14 @@ import {
   updateUserRole,
   createUser,
   setAccountStatus,
-  adminResetPassword,
+  issueCredentialLink,
+  cancelCredentialLink,
 } from "@/api/users";
-import type { User, Role, CreateUserInput } from "@/api/users";
+import type { User, Role, CreateUserInput, CredentialLink } from "@/api/users";
 import { ApiError } from "@/api";
 import { displayNameField, emailField } from "@/api/auth.schemas";
-import { usePasswordPolicy, type PasswordPolicyState } from "@/hooks/usePasswordPolicy";
+import { fetchSetupStatus } from "@/api/auth";
+import { formatDateTime } from "@/lib/format/datetime";
 import { formString } from "@/lib/form";
 import {
   Table,
@@ -52,7 +54,6 @@ import {
 import { Field, FieldError, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { PasswordPolicyHint } from "@/components/PasswordPolicyHint";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 
@@ -65,7 +66,17 @@ function errorDetail(err: unknown): string {
 }
 
 function UsersPage(): ReactElement {
-  const passwordPolicy = usePasswordPolicy();
+  const {
+    data: setup,
+    isFetched: setupFetched,
+    isFetching: setupFetching,
+    refetch: refetchSetup,
+  } = useQuery({
+    queryKey: queryKeys.auth.setupStatus(),
+    queryFn: ({ signal }) => fetchSetupStatus(signal),
+    retry: false,
+  });
+  const localAuthEnabled = setup?.local_auth_enabled === true;
   const { data: me, isLoading: meLoading, isError: meError } = useAuthMe();
   const queryClient = useQueryClient();
 
@@ -125,7 +136,7 @@ function UsersPage(): ReactElement {
 
   if (meLoading) {
     return (
-      <div className="mx-auto max-w-4xl p-6">
+      <div className="mx-auto max-w-6xl p-6">
         <Skeleton className="h-8 w-48" />
       </div>
     );
@@ -133,7 +144,7 @@ function UsersPage(): ReactElement {
 
   if (meError) {
     return (
-      <div className="mx-auto max-w-4xl p-6">
+      <div className="mx-auto max-w-6xl p-6">
         <p className="text-destructive">
           Could not verify your identity. Please refresh the page or try again later.
         </p>
@@ -146,11 +157,35 @@ function UsersPage(): ReactElement {
   }
 
   return (
-    <div className="mx-auto max-w-4xl p-6">
+    <div className="mx-auto max-w-6xl p-6">
       <div className="mb-6 flex items-center justify-between">
         <h1 className="text-2xl font-bold text-fg">Users</h1>
-        <CreateUserDialog onCreated={invalidateUsers} passwordPolicy={passwordPolicy} />
+        {localAuthEnabled ? <CreateUserDialog onCreated={invalidateUsers} /> : null}
       </div>
+
+      {setup === undefined && !setupFetched ? (
+        <p role="status" className="mb-6 text-muted-foreground">
+          Loading authentication settings…
+        </p>
+      ) : null}
+      {setup === undefined && setupFetched ? (
+        <div className="mb-6 flex flex-col items-start gap-2">
+          <p role="alert" className="text-destructive">
+            Could not load authentication settings.
+          </p>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            isDisabled={setupFetching}
+            onPress={() => {
+              void refetchSetup();
+            }}
+          >
+            Retry authentication settings
+          </Button>
+        </div>
+      ) : null}
 
       {isLoading && (
         <div className="space-y-2">
@@ -183,7 +218,8 @@ function UsersPage(): ReactElement {
                 key={user.id}
                 user={user}
                 isSelf={user.id === me.id}
-                passwordPolicy={passwordPolicy}
+                localAuthEnabled={localAuthEnabled}
+                onLinkChange={invalidateUsers}
                 onRoleChange={handleRoleChange}
                 onStatusToggle={handleStatusToggle}
               />
@@ -196,7 +232,8 @@ function UsersPage(): ReactElement {
 }
 
 type UserRowProps = {
-  passwordPolicy: PasswordPolicyState;
+  localAuthEnabled: boolean;
+  onLinkChange: () => void;
   user: User;
   isSelf: boolean;
   onRoleChange: (userId: string, role: Role) => void;
@@ -208,12 +245,26 @@ function isRole(v: string): v is Role {
 }
 
 function UserRow({
-  passwordPolicy,
+  localAuthEnabled,
+  onLinkChange,
   user,
   isSelf,
   onRoleChange,
   onStatusToggle,
 }: Readonly<UserRowProps>): ReactElement {
+  const activeExpiry = user.credential_link_expires_at;
+  const linkActive = activeExpiry !== null;
+  const linkStatus = user.has_password ? "link pending" : "invited";
+  const cancel = useMutation({
+    mutationFn: () => cancelCredentialLink(user.id),
+    onSuccess: () => {
+      onLinkChange();
+      toast.success("Link cancelled.");
+    },
+    onError: (err: Error) => {
+      toast.error(errorDetail(err));
+    },
+  });
   return (
     <TableRow>
       <TableCell className="font-medium">
@@ -245,19 +296,40 @@ function UserRow({
         </Select>
       </TableCell>
       <TableCell>
-        {user.disabled ? (
-          <Badge variant="destructive">disabled</Badge>
-        ) : (
-          <Badge variant="outline">active</Badge>
-        )}
+        <div className="flex flex-wrap gap-2">
+          {user.disabled ? (
+            <Badge variant="destructive">disabled</Badge>
+          ) : (
+            <Badge variant="outline">active</Badge>
+          )}
+          {linkActive ? (
+            <Badge
+              variant="outline"
+              role="status"
+              aria-label={`${linkStatus} expires ${formatDateTime(activeExpiry)}`}
+            >
+              {linkStatus}
+            </Badge>
+          ) : null}
+        </div>
       </TableCell>
       <TableCell className="text-right">
         <div className="flex items-center justify-end gap-2">
-          <ResetPasswordDialog
-            passwordPolicy={passwordPolicy}
-            userId={user.id}
-            displayName={user.display_name}
-          />
+          {localAuthEnabled && !isSelf ? (
+            <ResetPasswordDialog user={user} linkActive={linkActive} onIssued={onLinkChange} />
+          ) : null}
+          {localAuthEnabled && linkActive ? (
+            <Button
+              variant="outline"
+              size="sm"
+              isDisabled={cancel.isPending}
+              onPress={() => {
+                cancel.mutate();
+              }}
+            >
+              Cancel link
+            </Button>
+          ) : null}
           {!isSelf && (
             <Button
               variant={user.disabled ? "outline" : "destructive"}
@@ -275,36 +347,70 @@ function UserRow({
   );
 }
 
-type CreateUserDialogProps = {
-  passwordPolicy: PasswordPolicyState;
-  onCreated: () => void;
-};
+type LinkResult = CredentialLink & { name: string; newAccount: boolean };
 
-function CreateUserDialog({
-  onCreated,
-  passwordPolicy,
-}: Readonly<CreateUserDialogProps>): ReactElement {
-  const { policy, ready, isError: policyError, validate } = passwordPolicy;
+function LinkResultDialog({
+  result,
+  onDone,
+}: Readonly<{ result: LinkResult; onDone: () => void }>): ReactElement {
+  const url = `${window.location.origin}/set-password#${result.token}`;
+  const expiry = formatDateTime(result.expires_at);
+  const description = result.newAccount
+    ? `${result.name} uses this link to choose a password. It expires ${expiry}. You won't see it again. If it's lost, create a new link from the user list.`
+    : `${result.name} uses this link to choose a new password. It expires ${expiry}. You won't see it again.`;
+  async function copyLink(): Promise<void> {
+    try {
+      await navigator.clipboard.writeText(url);
+      toast.success("Link copied.");
+    } catch {
+      toast.error("Couldn't copy the link. Select the link and copy it manually.");
+    }
+  }
+  return (
+    <Dialog
+      isOpen
+      onOpenChange={(open) => {
+        if (!open) onDone();
+      }}
+    >
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Send this link to {result.name}</DialogTitle>
+          <DialogDescription>{description}</DialogDescription>
+        </DialogHeader>
+        <Input readOnly value={url} aria-label="Credential link" />
+        <DialogFooter>
+          <Button
+            variant="outline"
+            onPress={() => {
+              void copyLink();
+            }}
+          >
+            Copy link
+          </Button>
+          <Button onPress={onDone}>Done</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function CreateUserDialog({ onCreated }: Readonly<{ onCreated: () => void }>): ReactElement {
   const [open, setOpen] = useState(false);
   const [role, setRole] = useState<Role>("adult");
   const [error, setError] = useState<string | null>(null);
-
+  const [result, setResult] = useState<LinkResult | null>(null);
   const mutation = useMutation({
     mutationFn: (input: CreateUserInput) => createUser(input),
-    onSuccess: (user) => {
-      toast.success(`Created ${user.display_name}.`);
+    onSuccess: ({ user, link }) => {
       onCreated();
-      // Close through the same handler as a manual dismiss so the role selection
-      // resets; a bare setOpen(false) would leave it on the last-created role.
       handleOpenChange(false);
+      setResult({ ...link, name: user.display_name, newAccount: true });
     },
     onError: (err: Error) => {
-      const detail = errorDetail(err);
-      setError(detail);
-      toast.error(`Create failed: ${detail}`);
+      setError(errorDetail(err));
     },
   });
-
   function handleOpenChange(next: boolean): void {
     setOpen(next);
     if (!next) {
@@ -312,12 +418,10 @@ function CreateUserDialog({
       setRole("adult");
     }
   }
-
-  function handleSubmit(e: SyntheticEvent<HTMLFormElement>): void {
-    e.preventDefault();
-    if (!ready) return;
+  function handleSubmit(event: SyntheticEvent<HTMLFormElement>): void {
+    event.preventDefault();
     setError(null);
-    const data = new FormData(e.currentTarget);
+    const data = new FormData(event.currentTarget);
     const displayName = displayNameField.safeParse(formString(data, "display_name"));
     if (!displayName.success) {
       setError("Enter a display name.");
@@ -328,170 +432,145 @@ function CreateUserDialog({
       setError("Enter a valid email address.");
       return;
     }
-    const password = formString(data, "password");
-    const passwordError = validate(password);
-    if (passwordError !== undefined) {
-      setError(passwordError);
-      return;
-    }
-    mutation.mutate({
-      email: email.data,
-      display_name: displayName.data,
-      role,
-      password: password,
-    });
+    mutation.mutate({ email: email.data, display_name: displayName.data, role });
   }
-
   return (
-    <Dialog isOpen={open} onOpenChange={handleOpenChange}>
-      <Button>Create user</Button>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>Create user</DialogTitle>
-          <DialogDescription>
-            Set an initial password and hand it to the user out of band. They can change it after
-            signing in.
-          </DialogDescription>
-        </DialogHeader>
-        <form onSubmit={handleSubmit} className="flex flex-col gap-4" noValidate>
-          <Field>
-            <FieldLabel htmlFor="create-display-name">Display name</FieldLabel>
-            <Input id="create-display-name" name="display_name" type="text" required />
-          </Field>
-          <Field>
-            <FieldLabel htmlFor="create-email">Email</FieldLabel>
-            <Input id="create-email" name="email" type="email" autoComplete="off" required />
-          </Field>
-          <Field>
-            <Select
-              className="flex flex-col gap-2"
-              value={role}
-              onChange={(v) => {
-                if (typeof v !== "string") return;
-                if (isRole(v)) setRole(v);
-              }}
-            >
-              <AriaLabel className="flex w-fit gap-2 text-sm font-medium leading-snug">
-                Role
-              </AriaLabel>
-              <SelectTrigger id="create-role" className="w-full">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {ROLE_OPTIONS.map((r) => (
-                  <SelectItem key={r} id={r}>
-                    {r}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </Field>
-          <Field>
-            <FieldLabel htmlFor="create-password">Initial password</FieldLabel>
-            <Input
-              id="create-password"
-              name="password"
-              type="password"
-              autoComplete="new-password"
-              required
-            />
-            <PasswordPolicyHint policy={policy} failed={policyError} />
-          </Field>
-          {error ? <FieldError>{error}</FieldError> : null}
-          <DialogFooter>
-            <DialogClose type="button">Cancel</DialogClose>
-            <Button type="submit" isDisabled={mutation.isPending || !ready}>
-              Create
-            </Button>
-          </DialogFooter>
-        </form>
-      </DialogContent>
-    </Dialog>
+    <>
+      <Dialog isOpen={open} onOpenChange={handleOpenChange}>
+        <Button>Create user</Button>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Create user</DialogTitle>
+            <DialogDescription>
+              Create the account, then send the person the link it gives you. They choose their own
+              password.
+            </DialogDescription>
+          </DialogHeader>
+          <form onSubmit={handleSubmit} className="flex flex-col gap-4" noValidate>
+            <Field>
+              <FieldLabel htmlFor="create-display-name">Display name</FieldLabel>
+              <Input id="create-display-name" name="display_name" type="text" required />
+            </Field>
+            <Field>
+              <FieldLabel htmlFor="create-email">Email</FieldLabel>
+              <Input id="create-email" name="email" type="email" autoComplete="off" required />
+            </Field>
+            <Field>
+              <Select
+                className="flex flex-col gap-2"
+                value={role}
+                onChange={(value) => {
+                  if (typeof value !== "string") return;
+                  if (isRole(value)) setRole(value);
+                }}
+              >
+                <AriaLabel className="flex w-fit gap-2 text-sm font-medium leading-snug">
+                  Role
+                </AriaLabel>
+                <SelectTrigger id="create-role" className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {ROLE_OPTIONS.map((value) => (
+                    <SelectItem key={value} id={value}>
+                      {value}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </Field>
+            {error !== null ? <FieldError>{error}</FieldError> : null}
+            <DialogFooter>
+              <DialogClose type="button">Cancel</DialogClose>
+              <Button type="submit" isDisabled={mutation.isPending}>
+                Create user
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+      {result !== null ? (
+        <LinkResultDialog
+          result={result}
+          onDone={() => {
+            setResult(null);
+            mutation.reset();
+          }}
+        />
+      ) : null}
+    </>
   );
 }
 
-type ResetPasswordDialogProps = {
-  passwordPolicy: PasswordPolicyState;
-  userId: string;
-  displayName: string;
-};
-
 function ResetPasswordDialog({
-  passwordPolicy,
-  userId,
-  displayName,
-}: Readonly<ResetPasswordDialogProps>): ReactElement {
-  const { policy, ready, isError: policyError, validate } = passwordPolicy;
+  user,
+  linkActive,
+  onIssued,
+}: Readonly<{ user: User; linkActive: boolean; onIssued: () => void }>): ReactElement {
   const [open, setOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
+  const [result, setResult] = useState<LinkResult | null>(null);
   const mutation = useMutation({
-    mutationFn: (newPassword: string) => adminResetPassword(userId, newPassword),
-    onSuccess: () => {
-      toast.success(`Password reset for ${displayName}.`);
+    mutationFn: () => issueCredentialLink(user.id),
+    onSuccess: (link) => {
       setOpen(false);
+      onIssued();
+      setResult({ ...link, name: user.display_name, newAccount: false });
     },
     onError: (err: Error) => {
-      const detail = errorDetail(err);
-      setError(detail);
-      toast.error(`Reset failed: ${detail}`);
+      setError(
+        err instanceof ApiError && err.detail === "the account has no email address"
+          ? `Add an email address to ${user.display_name} before creating a link.`
+          : errorDetail(err),
+      );
     },
   });
-
-  function handleOpenChange(next: boolean): void {
-    setOpen(next);
-    if (!next) setError(null);
-  }
-
-  function handleSubmit(e: SyntheticEvent<HTMLFormElement>): void {
-    e.preventDefault();
-    if (!ready) return;
-    setError(null);
-    const data = new FormData(e.currentTarget);
-    const password = formString(data, "password");
-    const passwordError = validate(password);
-    if (passwordError !== undefined) {
-      setError(passwordError);
-      return;
-    }
-    mutation.mutate(password);
-  }
-
   return (
-    <Dialog isOpen={open} onOpenChange={handleOpenChange}>
-      <Button variant="outline" size="sm">
-        Reset password
-      </Button>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>Reset password</DialogTitle>
-          <DialogDescription>
-            Set a new password for {displayName} and relay it out of band. Their existing sessions
-            are signed out.
-          </DialogDescription>
-        </DialogHeader>
-        <form onSubmit={handleSubmit} className="flex flex-col gap-4" noValidate>
-          <Field>
-            <FieldLabel htmlFor="reset-password">New password</FieldLabel>
-            <Input
-              id="reset-password"
-              name="password"
-              type="password"
-              autoComplete="new-password"
-              required
-            />
-            <PasswordPolicyHint policy={policy} failed={policyError} />
-          </Field>
-          {error ? <FieldError>{error}</FieldError> : null}
+    <>
+      <Dialog
+        isOpen={open}
+        onOpenChange={(next) => {
+          setOpen(next);
+          if (!next) setError(null);
+        }}
+      >
+        <Button variant="outline" size="sm">
+          Reset password
+        </Button>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Reset password for {user.display_name}?</DialogTitle>
+            <DialogDescription>
+              This creates a link {user.display_name} can use to choose a new password. Their
+              current password keeps working until the link is used. Using it signs them out
+              everywhere.{linkActive ? " This replaces the link created earlier." : ""}
+            </DialogDescription>
+          </DialogHeader>
+          {error !== null ? <FieldError>{error}</FieldError> : null}
           <DialogFooter>
             <DialogClose type="button">Cancel</DialogClose>
-            <Button type="submit" isDisabled={mutation.isPending || !ready}>
-              Reset
+            <Button
+              isDisabled={mutation.isPending}
+              onPress={() => {
+                setError(null);
+                mutation.mutate();
+              }}
+            >
+              Create link
             </Button>
           </DialogFooter>
-        </form>
-      </DialogContent>
-    </Dialog>
+        </DialogContent>
+      </Dialog>
+      {result !== null ? (
+        <LinkResultDialog
+          result={result}
+          onDone={() => {
+            setResult(null);
+            mutation.reset();
+          }}
+        />
+      ) : null}
+    </>
   );
 }
 

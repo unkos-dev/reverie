@@ -8,7 +8,8 @@ import {
   updateUser,
   createUser,
   setAccountStatus,
-  adminResetPassword,
+  issueCredentialLink,
+  cancelCredentialLink,
 } from "./users";
 
 function jsonResponse(body: unknown, init?: ResponseInit): Response {
@@ -33,6 +34,8 @@ const STUB_USER = {
   role: "admin",
   is_child: false,
   disabled: false,
+  has_password: true,
+  credential_link_expires_at: null,
   created_at: "2026-05-25T00:00:00Z",
   updated_at: "2026-05-25T00:00:00Z",
 };
@@ -166,15 +169,19 @@ describe("createUser", () => {
       email: "carol@example.com",
       role: "adult",
     };
-    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(jsonResponse(created, { status: 201 }));
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      jsonResponse(
+        { user: created, link: { token: "test-link", expires_at: "2026-10-23T12:00:00Z" } },
+        { status: 201 },
+      ),
+    );
     const result = await createUser({
       email: "carol@example.com",
       display_name: "Carol",
       role: "adult",
-      password: "correct-horse-battery-staple",
     });
-    expect(result.display_name).toBe("Carol");
-    expect(result.role).toBe("adult");
+    expect(result.user.display_name).toBe("Carol");
+    expect(result.user.role).toBe("adult");
     const call = vi.mocked(fetch).mock.calls[0];
     expect(call[0]).toBe("/api/v1/users");
     expect(call[1]?.method).toBe("POST");
@@ -182,7 +189,6 @@ describe("createUser", () => {
       email: "carol@example.com",
       display_name: "Carol",
       role: "adult",
-      password: "correct-horse-battery-staple",
     });
   });
 
@@ -198,7 +204,6 @@ describe("createUser", () => {
         email: "taken@example.com",
         display_name: "Carol",
         role: "adult",
-        password: "correct-horse-battery-staple",
       }),
     ).rejects.toThrow();
   });
@@ -231,29 +236,28 @@ describe("setAccountStatus", () => {
   });
 });
 
-describe("adminResetPassword", () => {
-  test("sends POST with new_password and resolves void on empty 200", async () => {
-    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(new Response(null, { status: 200 }));
-    await expect(
-      adminResetPassword(STUB_USER.id, "correct-horse-battery-staple"),
-    ).resolves.toBeUndefined();
-    const call = vi.mocked(fetch).mock.calls[0];
-    expect(call[0]).toBe(`/api/v1/users/${STUB_USER.id}/password-reset`);
-    expect(call[1]?.method).toBe("POST");
-    expect(bodyJson(call[1])).toEqual({ new_password: "correct-horse-battery-staple" });
-  });
-
-  test("throws on policy rejection (422)", async () => {
-    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
-      jsonResponse(
-        {
-          type: "https://reverie.example/probs/validation",
-          status: 422,
-          title: "Validation Error",
-        },
-        { status: 422, headers: { "Content-Type": "application/problem+json" } },
-      ),
+describe("credential links", () => {
+  test("issues a link and validates its expiry", async () => {
+    const link = { token: "test-link", expires_at: "2026-10-23T12:00:00Z" };
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(jsonResponse(link, { status: 201 }));
+    expect(await issueCredentialLink(STUB_USER.id)).toEqual(link);
+    expect(vi.mocked(fetch).mock.calls[0][0]).toBe(
+      `/api/v1/users/${STUB_USER.id}/credential-links`,
     );
-    await expect(adminResetPassword(STUB_USER.id, "weak")).rejects.toThrow();
+    expect(vi.mocked(fetch).mock.calls[0][1]?.method).toBe("POST");
+  });
+  test("rejects a malformed expiry", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      jsonResponse({ token: "test-link", expires_at: "tomorrow" }),
+    );
+    await expect(issueCredentialLink(STUB_USER.id)).rejects.toThrow();
+  });
+  test("cancels a link with DELETE and accepts 204", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(new Response(null, { status: 204 }));
+    await expect(cancelCredentialLink(STUB_USER.id)).resolves.toBeUndefined();
+    expect(vi.mocked(fetch).mock.calls[0][0]).toBe(
+      `/api/v1/users/${STUB_USER.id}/credential-links`,
+    );
+    expect(vi.mocked(fetch).mock.calls[0][1]?.method).toBe("DELETE");
   });
 });

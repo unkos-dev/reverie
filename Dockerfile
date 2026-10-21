@@ -128,7 +128,7 @@ RUN node /usr/local/lib/verify-frontend-sbom.mjs /sbom-tree /build/frontend.cdx.
 
 # Stage 3: Runtime
 # Codename MUST match the builder stage above. See note on `chef`.
-FROM debian:trixie-slim@sha256:a29215f6a35e51e22adffa17f89e9d2ef06214e64a2bad10d765c46aea49f11f AS runtime
+FROM debian:trixie-slim@sha256:62bd423aeee912639ca8ee681c2b762cb3e25137e0a92b20be455898a9f034ad AS runtime
 # curl is the HTTP client used by the HEALTHCHECK below; readiness
 # probe needs a working HTTP client baked in so docker / compose / Incus can
 # detect when the server is up and the schema check has passed before

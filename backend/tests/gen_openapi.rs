@@ -467,3 +467,19 @@ fn extractor_failure_statuses_are_declared_as_problem_json() {
     omissions.dedup();
     assert_eq!(omissions, Vec::<String>::new());
 }
+
+#[test]
+fn credential_link_throttling_declares_existing_retry_after() {
+    let rendered = reverie_api::openapi::spec_json().unwrap();
+    let doc: serde_json::Value = serde_json::from_str(&rendered).unwrap();
+    for path in [
+        "/auth/credential-links/lookups",
+        "/auth/credential-links/redemptions",
+    ] {
+        assert_eq!(
+            doc["paths"][path]["post"]["responses"]["429"]["headers"]["Retry-After"]["schema"]["type"],
+            "integer"
+        );
+        assert!(doc["paths"][path]["post"]["responses"]["503"]["headers"]["Retry-After"].is_null());
+    }
+}
