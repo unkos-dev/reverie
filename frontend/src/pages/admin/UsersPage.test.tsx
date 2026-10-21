@@ -291,6 +291,42 @@ describe("UsersPage", () => {
     expect(create).not.toHaveBeenCalled();
   });
 
+  test.each(["unavailable", "denied"])(
+    "copy gives manual guidance when clipboard is %s",
+    async (mode) => {
+      const target = makeUser();
+      vi.spyOn(usersApi, "issueCredentialLink").mockResolvedValue({
+        token: "test-link",
+        expires_at: "2026-10-23T12:00:00Z",
+      });
+      renderUsersPage(ADMIN_ME, [target]);
+      const user = userEvent.setup();
+      await user.click(await screen.findByRole("button", { name: "Reset password" }));
+      await user.click(screen.getByRole("button", { name: "Create link" }));
+      const copy = await screen.findByRole("button", { name: "Copy link" });
+      const descriptor = Object.getOwnPropertyDescriptor(navigator, "clipboard");
+      if (mode === "unavailable") {
+        Object.defineProperty(navigator, "clipboard", { value: undefined, configurable: true });
+      } else {
+        vi.spyOn(navigator.clipboard, "writeText").mockRejectedValue(
+          new Error("Permission denied"),
+        );
+      }
+      try {
+        await user.click(copy);
+        expect(toast.error).toHaveBeenCalledWith(
+          "Couldn't copy the link. Select the link and copy it manually.",
+        );
+        expect(screen.getByLabelText("Credential link")).toHaveValue(
+          `${window.location.origin}/set-password#test-link`,
+        );
+        expect(toast.success).not.toHaveBeenCalled();
+      } finally {
+        if (descriptor) Object.defineProperty(navigator, "clipboard", descriptor);
+      }
+    },
+  );
+
   test("reset confirmation replaces a pending link and returns the new link", async () => {
     const target = makeUser({ credential_link_expires_at: "2026-10-23T12:00:00Z" });
     vi.spyOn(usersApi, "listUsers").mockResolvedValue([target]);

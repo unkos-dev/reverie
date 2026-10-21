@@ -22,6 +22,30 @@ function canRetryLookup(error: Error | null): boolean {
   );
 }
 
+function LookupFailure({
+  error,
+  fetching,
+  onRetry,
+}: Readonly<{ error: Error | null; fetching: boolean; onRetry: () => void }>): ReactElement {
+  const canRetry = fetching || canRetryLookup(error);
+  return (
+    <AuthShell title="">
+      {error ? (
+        <FieldError>{error instanceof ApiError ? error.detail : error.message}</FieldError>
+      ) : (
+        <div role="status" aria-label="Checking link">
+          <Skeleton className="h-6 w-40" />
+        </div>
+      )}
+      {canRetry ? (
+        <Button type="button" className="mt-4 w-full" disabled={fetching} onClick={onRetry}>
+          Try again
+        </Button>
+      ) : null}
+    </AuthShell>
+  );
+}
+
 export function Component(): ReactElement {
   const [token] = useState(() => z.string().parse(window.location.hash.slice(1)));
   const [error, setError] = useState<string | null>(null);
@@ -53,6 +77,7 @@ export function Component(): ReactElement {
     enabled: token !== "" && !redemption.isSuccess,
     retry: false,
     refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
   });
 
   function handleSubmit(event: SyntheticEvent<HTMLFormElement>): void {
@@ -100,32 +125,15 @@ export function Component(): ReactElement {
     );
   }
   if (lookup.isError || (hasRetriedLookup && lookup.isPending)) {
-    const canRetry = lookup.isFetching || canRetryLookup(lookup.error);
     return (
-      <AuthShell title="">
-        {lookup.error ? (
-          <FieldError>
-            {lookup.error instanceof ApiError ? lookup.error.detail : lookup.error.message}
-          </FieldError>
-        ) : (
-          <div role="status" aria-label="Checking link">
-            <Skeleton className="h-6 w-40" />
-          </div>
-        )}
-        {canRetry ? (
-          <Button
-            type="button"
-            className="mt-4 w-full"
-            disabled={lookup.isFetching}
-            onClick={() => {
-              setHasRetriedLookup(true);
-              void lookup.refetch();
-            }}
-          >
-            Try again
-          </Button>
-        ) : null}
-      </AuthShell>
+      <LookupFailure
+        error={lookup.error}
+        fetching={lookup.isFetching}
+        onRetry={() => {
+          setHasRetriedLookup(true);
+          void lookup.refetch();
+        }}
+      />
     );
   }
   if (lookup.isPending) {

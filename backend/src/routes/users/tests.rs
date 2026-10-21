@@ -1835,6 +1835,7 @@ async fn credential_link_redemption_password_sessions_throttle_and_pin(pool: PgP
         .post("/auth/credential-links/lookups")
         .json(&json!({"token":token}))
         .await;
+    assert_eq!(lookup.headers()["cache-control"], "no-store");
     assert_eq!(
         lookup.json::<serde_json::Value>(),
         json!({"email":"holder@example.test","has_password":true})

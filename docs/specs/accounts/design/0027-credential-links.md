@@ -42,7 +42,7 @@ The [OpenAPI contract](../../../../backend/openapi.json) defines request and res
 - `POST /auth/credential-links/lookups` accepts a token and returns the account email and password-presence flag.
 - `POST /auth/credential-links/redemptions` accepts a token and password and returns 204 without creating a session.
 
-Both responses that return a credential-link token carry `Cache-Control: no-store`.
+Issuance and lookup responses carry `Cache-Control: no-store` to prevent caching of tokens and account metadata.
 
 The three administrator operations require an administrator, a non-child account, Admin scope and browser-session
 authentication. Device tokens over Basic or Bearer receive 403. All five operations return 404 when local authentication
@@ -88,9 +88,10 @@ Concurrent redemption has one winner. No database handle or user lock is held wh
 
 The form shows new-account or reset copy from `has_password`, checks confirmation and the existing client policy, and
 renders server errors. A temporary lookup failure offers an explicit retry that retains the token in memory and disables
-its action while fetching. The component owns retry intent; React Query owns request state. Success offers an explicit
-Sign in link and is terminal: lookup stops and late lookup errors cannot replace it. Redemption creates no session and
-does not reset the login throttle. PIN recovery and device tokens remain unchanged.
+its action while fetching. The component owns retry intent; React Query owns request state. Reconnect does not repeat
+lookup or discard form values. Success offers an explicit Sign in link and is terminal: lookup stops and late lookup
+errors cannot replace it. Redemption creates no session and does not reset the login throttle. PIN recovery and device
+tokens remain unchanged.
 
 ## Failure and recovery
 
@@ -101,7 +102,8 @@ use the generic internal-error response.
 
 Issuing to a disabled account returns 422 with `the account is disabled`; a missing email returns 422 with
 `the account has no email address`. The Users screen explains how to correct the latter. A lost link requires another
-link. The result is shown once and can be copied or dismissed.
+link. The result is shown once and can be copied or dismissed. If clipboard access is unavailable or denied, the
+existing error toast directs the administrator to select and copy the displayed link manually.
 
 ## Security and operations
 

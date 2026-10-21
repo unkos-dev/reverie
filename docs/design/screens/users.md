@@ -40,7 +40,8 @@ For a reset:
 
 Show the read-only link, then "Copy link" and "Done". Copying succeeds with the toast "Link copied.". Build the URL from
 the browser's origin as `/set-password#{token}`. Closing the result clears the displayed link. Format {expiry} with the
-existing date-time formatter.
+existing date-time formatter. If clipboard access is unavailable or denied, keep the link visible and show the error
+toast "Couldn't copy the link. Select the link and copy it manually.".
 
 ## Reset and cancel
 

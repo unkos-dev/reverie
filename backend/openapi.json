@@ -6351,6 +6351,14 @@
         "responses": {
           "200": {
             "description": "Valid link",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "no-store"
+              }
+            },
             "content": {
               "application/json": {
                 "schema": {

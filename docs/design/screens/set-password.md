@@ -49,7 +49,8 @@ button. Include a hidden field with `autocomplete="username"` holding {email}; b
 `autocomplete="new-password"`.
 
 A mismatch shows "The passwords don't match." inline. Policy, 503 and 429 errors render their existing `detail`.
-Submission does not sign the person in.
+Submission does not sign the person in. Reconnect does not repeat lookup or replace the form; entered passwords stay in
+their fields.
 
 ## Saved
 

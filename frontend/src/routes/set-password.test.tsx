@@ -106,6 +106,29 @@ test("does not offer retry for a permanent lookup refusal", async () => {
   expect(screen.queryByRole("button", { name: "Try again" })).not.toBeInTheDocument();
 });
 
+test.each([new TypeError("Failed to fetch"), new ApiError(503, null, "Busy", "Try later")])(
+  "reconnect preserves entered passwords when lookup would fail: %s",
+  async (error) => {
+    renderPage();
+    const user = userEvent.setup();
+    const password = await screen.findByLabelText("New password");
+    const confirm = screen.getByLabelText("Confirm password");
+    await user.type(password, "a long chosen passphrase");
+    await user.type(confirm, "a long chosen passphrase");
+    vi.mocked(lookupCredentialLink).mockRejectedValue(error);
+    await act(async () => {
+      onlineManager.setOnline(false);
+      onlineManager.setOnline(true);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    expect(lookupCredentialLink).toHaveBeenCalledTimes(1);
+    expect(password).toBeInTheDocument();
+    expect(confirm).toBeInTheDocument();
+    expect(password).toHaveValue("a long chosen passphrase");
+    expect(confirm).toHaveValue("a long chosen passphrase");
+  },
+);
+
 test.each([
   new TypeError("Failed to fetch"),
   new ApiError(503, null, "Busy", "Try later"),

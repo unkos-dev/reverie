@@ -3,7 +3,7 @@
 
 use axum::Json;
 use axum::extract::State;
-use axum::http::{HeaderMap, StatusCode};
+use axum::http::{HeaderMap, StatusCode, header};
 use axum::response::{IntoResponse, Redirect};
 use axum_extra::extract::cookie::CookieJar;
 use axum_extra::extract::{Query, QueryRejection};
@@ -886,7 +886,7 @@ fn invalid_credential_link() -> AppError {
     description = "Returns the email and password state for a valid link. Invalid, expired, used, disabled-account and no-email links share one generic refusal.",
     tag = "auth", security(()), request_body = CredentialLinkLookupRequest,
     responses(
-        (status = 200, description = "Valid link", body = CredentialLinkLookupResponse),
+        (status = 200, description = "Valid link", body = CredentialLinkLookupResponse, headers(("Cache-Control" = String, description = "no-store"))),
         (status = 404, description = "Local authentication is disabled", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 422, description = "Invalid or expired link", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
         (status = 429, description = "Too many recovery requests", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
@@ -906,10 +906,13 @@ async fn lookup_credential_link(
         .await
         .map_err(|e| AppError::Internal(e.into()))?
         .ok_or_else(invalid_credential_link)?;
-    Ok(Json(CredentialLinkLookupResponse {
-        email: account.email,
-        has_password: account.has_password,
-    }))
+    Ok((
+        [(header::CACHE_CONTROL, "no-store")],
+        Json(CredentialLinkLookupResponse {
+            email: account.email,
+            has_password: account.has_password,
+        }),
+    ))
 }
 
 /// Consume a credential link and invalidate earlier sessions without signing in.

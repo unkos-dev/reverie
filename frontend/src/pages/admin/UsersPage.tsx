@@ -330,6 +330,14 @@ function LinkResultDialog({
   const description = result.newAccount
     ? `${result.name} uses this link to choose a password. It expires ${expiry}. You won't see it again. If it's lost, create a new link from the user list.`
     : `${result.name} uses this link to choose a new password. It expires ${expiry}. You won't see it again.`;
+  async function copyLink(): Promise<void> {
+    try {
+      await navigator.clipboard.writeText(url);
+      toast.success("Link copied.");
+    } catch {
+      toast.error("Couldn't copy the link. Select the link and copy it manually.");
+    }
+  }
   return (
     <Dialog
       isOpen
@@ -347,14 +355,7 @@ function LinkResultDialog({
           <Button
             variant="outline"
             onClick={() => {
-              void navigator.clipboard
-                .writeText(url)
-                .then(() => {
-                  toast.success("Link copied.");
-                })
-                .catch((err: unknown) => {
-                  toast.error(errorDetail(err));
-                });
+              void copyLink();
             }}
           >
             Copy link
