@@ -13,10 +13,12 @@ screen that are approved but not yet implemented are marked as target design ins
 The wider design rules live in [Design Philosophy](../philosophy.md), [Visual Identity](../visual-identity.md) and
 [Color Tokens](../color-tokens.md).
 
-| Screen                                  | Route                    |
-| --------------------------------------- | ------------------------ |
-| [Settings](./settings.md)               | `/admin/settings/{area}` |
-| [Admin ingestion](./admin-ingestion.md) | `/admin/dashboard`       |
-| [Login](./login.md)                     | `/login`                 |
-| [Users](./users.md)                     | `/admin/users`           |
-| [Set password](./set-password.md)       | `/set-password`          |
+| Screen                                        | Route                             |
+| --------------------------------------------- | --------------------------------- |
+| [Settings](./settings.md)                     | `/admin/settings/{area}`          |
+| [Admin ingestion](./admin-ingestion.md)       | `/admin/dashboard`                |
+| [Login](./login.md)                           | `/login`                          |
+| [Users](./users.md)                           | `/admin/users`                    |
+| [Set password](./set-password.md)             | `/set-password`                   |
+| [Forgot password](./forgot-password.md)       | `/forgot-password`                |
+| [Email verification](./email-verification.md) | `/account/email`, `/verify-email` |

@@ -67,6 +67,70 @@ keeping the button disabled during the request. Keep the user list and existing 
 Credential actions appear once settings confirm local authentication is enabled; a failed background refresh retains the
 previously loaded settings.
 
+## Send link by email
+
+This section is target design.
+
+When mail is configured, the link result adds "Send email" before "Copy link". The button is absent when mail is not
+configured; copying works the same either way. Sending uses the link currently shown and the account's stored address.
+The administrator enters no address. Nothing is sent when the account is created; sending happens only on activation.
+
+After activation, a status line appears 16 px beneath the link field. While the dialog is open, the page refreshes that
+delivery's status every 3 seconds and stops at Accepted, Failed or when the dialog closes.
+
+| Status | Text | Actions |
+| ------ | ---- | ------- |
+| Queued | "Sending to {email}…" | "Send email" disabled |
+| Accepted | "The mail server accepted the email for {email}. This doesn't confirm it reached the inbox." | "Send email" hidden |
+| Failed | "The email wasn't sent: {reason}. Copy the link instead, or try again." | "Try again" replaces "Send email" |
+
+| Failure category     | {reason}                                          |
+| -------------------- | ------------------------------------------------- |
+| `connection`         | "couldn't connect to the mail server"             |
+| `tls`                | "the secure connection to the mail server failed" |
+| `authentication`     | "the mail server rejected Reverie's sign-in"      |
+| `temporary_refusal`  | "the mail server refused it for now"              |
+| `permanent_refusal`  | "the mail server refused it"                      |
+| `timeout`            | "the mail server didn't respond in time"          |
+| `payload_unreadable` | "the queued message couldn't be read"             |
+
+"Try again" sends the same link as a new delivery. A 503 response shows "Email isn't available right now. Copy the link
+instead." A refusal because the link was replaced, cancelled or expired shows "This link is no longer active. Create a
+new link to send it." A network failure shows "Couldn't send the email. Try again." In every case the link and "Copy
+link" stay available. Closing the dialog stops status refresh and discards the link.
+
+Link email, with {origin} the configured public URL and {support} the configured support address, also the Reply-To. For
+a new account:
+
+Subject: "Set your Reverie password"
+
+```text
+An administrator created a Reverie account for {email} at {origin}.
+
+To choose your password, open this link:
+{origin}/set-password#{token}
+
+The link works once and expires on {expiry} UTC.
+
+If you weren't expecting this, ignore this email or write to {support}.
+```
+
+For a reset:
+
+Subject: "Reset your Reverie password"
+
+```text
+An administrator started a password reset for the Reverie account {email} at {origin}.
+
+To choose a new password, open this link:
+{origin}/set-password#{token}
+
+The link works once and expires on {expiry} UTC. Your current password keeps working until the link is used. Using it
+signs the account out everywhere.
+
+If you weren't expecting this, write to {support}.
+```
+
 ## Keyboard and accessibility
 
 Retain table headers, labelled fields, visible focus rings and keyboard activation. Dialogs trap focus, close with
@@ -80,3 +144,5 @@ order and supports text selection. Badges express state in text and expose their
 - Confirm own-row and local-auth-disabled action hiding, and the no-email refusal.
 - Check dialog focus, Tab order, Escape, clipboard feedback and pending submission.
 - Confirm administrators never enter a password and links are displayed only in the result.
+- With mail configured, check each send status and failure message, refresh stopping at a final status or on close, and
+  "Send email" absent when mail is not configured.

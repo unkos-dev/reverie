@@ -9,6 +9,9 @@ Route: `/set-password`, inside AuthShell and outside the authenticated applicati
 fragment in the route loader and clear it with `history.replaceState` before the page mounts or lookup starts. Keep the
 token only in router memory.
 
+The page serves every password link: administrator links, links printed by the host `reset-password` command and
+password reset emails. Each reaches the same states below; the page cannot tell them apart.
+
 ## Layout
 
 Use the shared AuthShell: a centred column no wider than 24 rem, 24 px horizontal and 64 px vertical outer padding, and

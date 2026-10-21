@@ -31,3 +31,4 @@
 - [REV-DESIGN-0025](design/0025-oidc-outbound-transport.md): OIDC outbound transport
 - [REV-DESIGN-0026](design/0026-oidc-sign-in.md): OIDC sign-in
 - [REV-DESIGN-0027](design/0027-credential-links.md): Credential links
+- [REV-DESIGN-0028](design/0028-account-mailbox-verification-and-email-recovery.md): Account mailbox verification and email recovery

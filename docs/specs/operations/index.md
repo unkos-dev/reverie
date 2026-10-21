@@ -16,3 +16,4 @@
 - [REV-DESIGN-0022](design/0022-configuration-loading.md): Configuration loading
 - [REV-DESIGN-0023](design/0023-database-migration-model.md): Database migration model
 - [REV-DESIGN-0024](design/0024-application-runtime-startup-workers-and-shutdown.md): Application runtime: startup, workers, and shutdown
+- [REV-DESIGN-0029](design/0029-authentication-mail-delivery.md): Authentication mail delivery
