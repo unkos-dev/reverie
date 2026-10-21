@@ -20,7 +20,6 @@
     "clsx": "^2.1.1",
     "lucide-react": "^1.21.0",
     "nuqs": "2.10.2",
-    "radix-ui": "^1.4.3",
     "react": "^19.2.6",
     "react-aria": "3.53.1",
     "react-aria-components": "1.22.1",
