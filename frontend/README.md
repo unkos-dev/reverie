@@ -27,9 +27,9 @@ Refine dismissal retains valid filter edits for Escape, close and outside clicks
 returns focus through native dismissal. Settings actions are disabled when pristine; Save stays in the tab order while
 pending.
 
-Radix UI remains installed for the unused avatar and scroll-area wrappers. Radix Colors and
-`src/styles/themes/primitives.generated.css` remain the colour foundation independently of the interaction library. The
-grid engine and its editing, sorting and loading state are unchanged.
+Radix Colors and `src/styles/themes/primitives.generated.css` supply the colour foundation independently of the
+interaction library. The Radix UI runtime is not installed. The grid engine and its editing, sorting and loading state
+remain separate from the shared controls.
 
 ## Environment Variables
 

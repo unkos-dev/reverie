@@ -419,8 +419,8 @@ Reverie uses React Aria Components with local Tailwind wrappers for buttons, sel
 progress and overlays, alongside the command palette and vocabulary pickers. Checkbox, switch and radio wrappers use
 native Field/Button composition with their labels. Semantic HTML supplies presentation-only badges, labels and
 separators; Router Links retain navigation behaviour with button styling. Cards and plain inputs retain their
-presentation. The unused avatar and scroll-area wrappers still import Radix UI. The shadcn generator is not used to
-create or regenerate primitives.
+presentation. The Radix UI runtime is not installed. The shadcn generator is not used to create or regenerate
+primitives.
 
 Native `data-selected`, `data-expanded`, `data-focus-visible`, `data-disabled` and `data-pending` attributes drive
 control styles. The last selected settings format uses native read-only behaviour. Filter disclosures retain mounted
