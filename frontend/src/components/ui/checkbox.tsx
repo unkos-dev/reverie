@@ -3,7 +3,6 @@ import { CheckIcon } from "lucide-react";
 import {
   CheckboxField as AriaCheckboxField,
   CheckboxButton as AriaCheckboxButton,
-  CheckboxGroup,
   composeRenderProps,
 } from "react-aria-components";
 
@@ -38,4 +37,5 @@ function Checkbox({
   );
 }
 
-export { Checkbox, CheckboxGroup };
+export { Checkbox };
+export { CheckboxGroup } from "react-aria-components";
