@@ -106,10 +106,9 @@ export function BulkRetryButton({
 }>): ReactElement {
   const fresh = state?.kind === "success" && countsVersion > state.countsVersion;
   const remaining = state?.kind === "success" && !fresh ? state.remaining : count;
+  const pending = state?.kind === "pending";
   const disabled =
-    state?.kind === "pending" ||
-    (state?.kind === "failure" && state.cause === "forbidden") ||
-    (state?.kind === "success" && remaining === 0);
+    !pending && ((state?.kind === "failure" && state.cause === "forbidden") || remaining === 0);
   let label = count === 1 ? `Retry 1 ${noun}` : `Retry all ${formatCount(count)}`;
   if (state?.kind === "pending") label = `Queuing ${formatCount(state.count)}`;
   if (state?.kind === "failure") label = "Try again";
@@ -122,10 +121,11 @@ export function BulkRetryButton({
       type="button"
       variant="outline"
       size="sm"
-      aria-disabled={disabled}
+      isDisabled={disabled}
+      isPending={pending}
       className="my-2 ml-12 sm:ml-0"
-      onClick={() => {
-        if (!disabled) onRetry(remaining);
+      onPress={() => {
+        onRetry(remaining);
       }}
     >
       {label}

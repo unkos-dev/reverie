@@ -2,7 +2,6 @@ import { type ReactElement } from "react";
 import { Loader2, RefreshCw } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
-import { cn } from "@/lib/utils";
 
 type ScanControlProps = {
   pending: boolean;
@@ -14,13 +13,7 @@ type ScanControlProps = {
 function ScanControl({ pending, forbidden, onScan }: Readonly<ScanControlProps>): ReactElement {
   return (
     <div className="flex flex-col items-end gap-1.5">
-      <Button
-        type="button"
-        disabled={forbidden}
-        aria-disabled={pending}
-        className={cn(pending && "pointer-events-none opacity-50")}
-        onClick={onScan}
-      >
+      <Button type="button" isDisabled={forbidden} isPending={pending} onPress={onScan}>
         {pending ? (
           <Loader2 aria-hidden="true" className="motion-safe:animate-spin" />
         ) : (

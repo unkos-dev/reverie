@@ -196,7 +196,7 @@ function ScanNotice({
             extra={
               scanFailure === "failed" ? (
                 <span className="mt-2">
-                  <Button type="button" variant="outline" size="sm" onClick={onRetry}>
+                  <Button type="button" variant="outline" size="sm" onPress={onRetry}>
                     Try again
                   </Button>
                 </span>
@@ -315,7 +315,7 @@ function PipelineNotice({
                 type="button"
                 variant="outline"
                 size="sm"
-                onClick={() => {
+                onPress={() => {
                   void status.refetch();
                 }}
               >

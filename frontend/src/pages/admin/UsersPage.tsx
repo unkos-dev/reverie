@@ -48,7 +48,6 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from "@/components/ui/dialog";
 import { Field, FieldError, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
@@ -263,7 +262,7 @@ function UserRow({
             <Button
               variant={user.disabled ? "outline" : "destructive"}
               size="sm"
-              onClick={() => {
+              onPress={() => {
                 onStatusToggle(user.id, !user.disabled);
               }}
             >
@@ -345,9 +344,7 @@ function CreateUserDialog({
 
   return (
     <Dialog isOpen={open} onOpenChange={handleOpenChange}>
-      <DialogTrigger>
-        <Button>Create user</Button>
-      </DialogTrigger>
+      <Button>Create user</Button>
       <DialogContent>
         <DialogHeader>
           <DialogTitle>Create user</DialogTitle>
@@ -403,7 +400,7 @@ function CreateUserDialog({
           {error ? <FieldError>{error}</FieldError> : null}
           <DialogFooter>
             <DialogClose type="button">Cancel</DialogClose>
-            <Button type="submit" disabled={mutation.isPending || !ready}>
+            <Button type="submit" isDisabled={mutation.isPending || !ready}>
               Create
             </Button>
           </DialogFooter>
@@ -462,11 +459,9 @@ function ResetPasswordDialog({
 
   return (
     <Dialog isOpen={open} onOpenChange={handleOpenChange}>
-      <DialogTrigger>
-        <Button variant="outline" size="sm">
-          Reset password
-        </Button>
-      </DialogTrigger>
+      <Button variant="outline" size="sm">
+        Reset password
+      </Button>
       <DialogContent>
         <DialogHeader>
           <DialogTitle>Reset password</DialogTitle>
@@ -490,7 +485,7 @@ function ResetPasswordDialog({
           {error ? <FieldError>{error}</FieldError> : null}
           <DialogFooter>
             <DialogClose type="button">Cancel</DialogClose>
-            <Button type="submit" disabled={mutation.isPending || !ready}>
+            <Button type="submit" isDisabled={mutation.isPending || !ready}>
               Reset
             </Button>
           </DialogFooter>

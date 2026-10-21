@@ -77,7 +77,7 @@ export function VersionsTab({ book }: Readonly<VersionsTabProps>): ReactElement 
         </p>
         <Button
           variant="outline"
-          onClick={() => {
+          onPress={() => {
             setEditOpen(true);
           }}
         >
@@ -158,10 +158,10 @@ function FieldGroup({
           <Button
             size="sm"
             variant="ghost"
-            onClick={() => {
+            onPress={() => {
               setConfirmOpen(true);
             }}
-            disabled={revertMutation.isPending}
+            isDisabled={revertMutation.isPending}
           >
             Clear
           </Button>
@@ -184,7 +184,7 @@ function FieldGroup({
         <AlertDialogFooter>
           <AlertDialogCancel>Cancel</AlertDialogCancel>
           <AlertDialogAction
-            onClick={() => {
+            onPress={() => {
               revertMutation.mutate();
               setConfirmOpen(false);
             }}
@@ -270,20 +270,20 @@ function PendingRow({ manifestationId, field, row }: Readonly<PendingRowProps>):
       <div className="flex shrink-0 gap-2">
         <Button
           size="sm"
-          onClick={() => {
+          onPress={() => {
             acceptMutation.mutate();
           }}
-          disabled={busy}
+          isDisabled={busy}
         >
           Accept
         </Button>
         <Button
           size="sm"
           variant="outline"
-          onClick={() => {
+          onPress={() => {
             rejectMutation.mutate();
           }}
-          disabled={busy}
+          isDisabled={busy}
         >
           Reject
         </Button>

@@ -127,9 +127,28 @@ describe("EmptyLibrary", () => {
     ).toBeInTheDocument();
     expect(screen.getByText("7 imported, 1 did not import, 4 in progress")).toBeInTheDocument();
     const bar = screen.getByRole("progressbar", { name: "Files imported in the latest batch" });
+    expect(bar).toHaveAttribute("aria-valuenow", "58");
+    expect(bar).toHaveAttribute("aria-valuemin", "0");
+    expect(bar).toHaveAttribute("aria-valuemax", "100");
     expect(bar).toHaveAttribute("aria-valuetext", "7 of 12 files imported");
     expect(bar).toHaveClass("motion-reduce:[&>[data-slot=progress-indicator]]:transition-none");
     expect(screen.getByRole("link", { name: "Open Ingestion" })).toBeInTheDocument();
+  });
+
+  test("a batch with no completed files exposes zero progress", async () => {
+    vi.mocked(getDashboardActivity).mockResolvedValue(
+      batch({ ended_at: null, completed: 0, failed: 0, in_progress: 12 }),
+    );
+    renderEmpty(ADMIN_ME);
+    const bar = await screen.findByRole("progressbar", {
+      name: "Files imported in the latest batch",
+    });
+    expect(bar).toHaveAttribute("aria-valuenow", "0");
+    expect(bar).toHaveAttribute("aria-valuetext", "0 of 12 files imported");
+    expect(screen.getByRole("link", { name: "Open Ingestion" })).toHaveAttribute(
+      "href",
+      "/admin/dashboard",
+    );
   });
 
   test("under way takes precedence over files needing attention", async () => {

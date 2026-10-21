@@ -699,7 +699,7 @@ function PagingFooter({
     // the viewport is too tall for a scrollbar, and the keyboard-reachable
     // path either way.
     return (
-      <Button type="button" variant="outline" size="sm" onClick={onLoadMore}>
+      <Button type="button" variant="outline" size="sm" onPress={onLoadMore}>
         Load more
       </Button>
     );

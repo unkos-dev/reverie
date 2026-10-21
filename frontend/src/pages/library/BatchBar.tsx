@@ -16,12 +16,7 @@ import { toast } from "sonner";
 
 import { addShelfItem, listShelves, type Shelf } from "@/api";
 import { Button } from "@/components/ui/button";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import { queryKeys } from "@/lib/query/keys";
 
 type BatchBarProps = {
@@ -118,16 +113,14 @@ export function BatchBar({
         Clear selection
       </button>
       <DropdownMenu>
-        <DropdownMenuTrigger>
-          <Button type="button" variant="outline" size="sm" disabled={running}>
-            {running ? (
-              <Loader2 className="size-4 animate-spin" aria-hidden="true" />
-            ) : (
-              <FolderPlus className="size-4" aria-hidden="true" />
-            )}
-            Add to shelf
-          </Button>
-        </DropdownMenuTrigger>
+        <Button type="button" variant="outline" size="sm" isDisabled={running}>
+          {running ? (
+            <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+          ) : (
+            <FolderPlus className="size-4" aria-hidden="true" />
+          )}
+          Add to shelf
+        </Button>
         <DropdownMenuContent placement="bottom end">
           {shelves === undefined || shelves.length === 0 ? (
             <DropdownMenuItem isDisabled>

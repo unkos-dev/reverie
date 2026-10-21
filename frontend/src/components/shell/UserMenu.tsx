@@ -17,6 +17,7 @@
  * own dropdown trigger, which cannot nest inside a Radix menu — the
  * submenu re-binds the same three `ThemePreference` values instead.
  */
+import { Button } from "react-aria-components";
 import type { ReactElement } from "react";
 
 import { logout } from "@/api/auth";
@@ -32,7 +33,6 @@ import {
   DropdownMenuSub,
   DropdownMenuSubContent,
   DropdownMenuSubTrigger,
-  DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { useAuthMe } from "@/hooks/useAuthMe";
 import { forgetActiveUser } from "@/lib/active-user";
@@ -70,20 +70,18 @@ export function UserChip(): ReactElement | null {
 
   return (
     <DropdownMenu>
-      <DropdownMenuTrigger>
-        <button
-          type="button"
-          className="hover:bg-surface focus-visible:ring-accent flex w-full items-center gap-2.5 rounded-md p-2 text-left transition-colors focus-visible:outline-none focus-visible:ring-2"
+      <Button
+        type="button"
+        className="data-hovered:bg-surface data-focus-visible:ring-accent flex w-full items-center gap-2.5 rounded-md p-2 text-left transition-colors data-focus-visible:outline-none data-focus-visible:ring-2"
+      >
+        <span
+          aria-hidden="true"
+          className="bg-surface-2 text-fg-muted border-border flex size-7 shrink-0 items-center justify-center rounded-full border font-mono text-[0.65rem] tracking-wide"
         >
-          <span
-            aria-hidden="true"
-            className="bg-surface-2 text-fg-muted border-border flex size-7 shrink-0 items-center justify-center rounded-full border font-mono text-[0.65rem] tracking-wide"
-          >
-            {initials(me.display_name)}
-          </span>
-          <span className="text-fg min-w-0 truncate text-sm">{me.display_name}</span>
-        </button>
-      </DropdownMenuTrigger>
+          {initials(me.display_name)}
+        </span>
+        <span className="text-fg min-w-0 truncate text-sm">{me.display_name}</span>
+      </Button>
       <DropdownMenuContent placement="top start" className="w-56">
         <DropdownMenuGroup>
           <DropdownMenuLabel>

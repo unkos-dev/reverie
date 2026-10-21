@@ -17,7 +17,7 @@ import { useRef, type ReactElement } from "react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Popover, PopoverContent } from "@/components/ui/popover";
 
 import { HIDEABLE_COLUMNS } from "./table-columns";
 
@@ -40,17 +40,15 @@ export function ColumnsPopover({
   const dialogRef = useRef<HTMLElement>(null);
   return (
     <Popover>
-      <PopoverTrigger>
-        <Button type="button" variant="outline" size="sm">
-          <Columns3 className="size-4" aria-hidden="true" />
-          Columns
-          {hiddenColumns.size > 0 ? (
-            <span className="bg-accent-soft text-fg rounded-full px-1.5 py-0.5 text-[0.65rem] leading-none">
-              {hiddenColumns.size}
-            </span>
-          ) : null}
-        </Button>
-      </PopoverTrigger>
+      <Button type="button" variant="outline" size="sm">
+        <Columns3 className="size-4" aria-hidden="true" />
+        Columns
+        {hiddenColumns.size > 0 ? (
+          <span className="bg-accent-soft text-fg rounded-full px-1.5 py-0.5 text-[0.65rem] leading-none">
+            {hiddenColumns.size}
+          </span>
+        ) : null}
+      </Button>
       <PopoverContent
         dialogRef={dialogRef}
         aria-label="Columns"
@@ -86,8 +84,8 @@ export function ColumnsPopover({
           variant="ghost"
           size="sm"
           className="mt-3 w-full"
-          disabled={!canReset}
-          onClick={() => {
+          isDisabled={!canReset}
+          onPress={() => {
             dialogRef.current?.focus();
             onReset();
           }}

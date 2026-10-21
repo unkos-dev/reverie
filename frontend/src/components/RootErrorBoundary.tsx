@@ -19,7 +19,7 @@ import type { ReactElement } from "react";
 import { Link, isRouteErrorResponse, useRouteError } from "react-router";
 
 import { ApiError } from "@/api";
-import { Button } from "@/components/ui/button";
+import { buttonVariants } from "@/components/ui/button";
 
 /**
  * Root `errorElement` for the data-mode router. Distinguishes
@@ -76,9 +76,9 @@ function ErrorSurface({ title, detail }: Readonly<ErrorSurfaceProps>): ReactElem
         <h1 className="font-display text-fg mb-3 text-2xl font-semibold tracking-tight">{title}</h1>
         <p className="text-fg-muted mb-6 text-sm leading-relaxed">{detail}</p>
         <div className="flex justify-center gap-3">
-          <Button asChild variant="outline">
-            <Link to="/library">Back to library</Link>
-          </Button>
+          <Link to="/library" className={buttonVariants({ variant: "outline" })}>
+            Back to library
+          </Link>
         </div>
       </div>
     </div>

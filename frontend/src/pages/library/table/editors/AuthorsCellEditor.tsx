@@ -114,7 +114,7 @@ export function AuthorsCellEditor({
                 variant="ghost"
                 size="icon-xs"
                 aria-label={`Remove ${entry.value === "" ? `author ${String(index + 1)}` : entry.value}`}
-                onClick={() => {
+                onPress={() => {
                   removeName(entry.id);
                 }}
               >
@@ -133,7 +133,7 @@ export function AuthorsCellEditor({
             }}
             onKeyDown={handleAddKeyDown}
           />
-          <Button type="button" variant="ghost" size="icon-xs" aria-label="Add" onClick={addName}>
+          <Button type="button" variant="ghost" size="icon-xs" aria-label="Add" onPress={addName}>
             <Plus aria-hidden="true" />
           </Button>
         </div>
@@ -143,14 +143,14 @@ export function AuthorsCellEditor({
           </p>
         )}
         <div className="mt-3 flex justify-end gap-1.5">
-          <Button type="button" variant="outline" size="sm" onClick={onCancel}>
+          <Button type="button" variant="outline" size="sm" onPress={onCancel}>
             Cancel
           </Button>
           <Button
             type="button"
             size="sm"
-            disabled={!canSave}
-            onClick={() => {
+            isDisabled={!canSave}
+            onPress={() => {
               onCommit(names.map((entry) => entry.value.trim()));
             }}
           >

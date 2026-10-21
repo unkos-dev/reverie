@@ -434,7 +434,7 @@ function SortSection({ levels, inherited, onChange }: Readonly<SortSectionProps>
                 size="icon-xs"
                 className="min-h-6 min-w-6"
                 aria-label={`Change ${label} sort direction (currently ${level.desc ? "descending" : "ascending"})`}
-                onClick={() => {
+                onPress={() => {
                   toggleDirection(index);
                 }}
               >
@@ -446,8 +446,8 @@ function SortSection({ levels, inherited, onChange }: Readonly<SortSectionProps>
                 size="icon-xs"
                 className="min-h-6 min-w-6"
                 aria-label={`Move ${label} earlier in sort priority`}
-                disabled={index === 0}
-                onClick={() => {
+                isDisabled={index === 0}
+                onPress={() => {
                   moveUp(index);
                 }}
               >
@@ -459,8 +459,8 @@ function SortSection({ levels, inherited, onChange }: Readonly<SortSectionProps>
                 size="icon-xs"
                 className="min-h-6 min-w-6"
                 aria-label={`Move ${label} later in sort priority`}
-                disabled={index === levels.length - 1}
-                onClick={() => {
+                isDisabled={index === levels.length - 1}
+                onPress={() => {
                   moveDown(index);
                 }}
               >
@@ -476,8 +476,8 @@ function SortSection({ levels, inherited, onChange }: Readonly<SortSectionProps>
                 // stack's ends: removing the last inherited level would
                 // dispatch a reset to the state already showing, a press
                 // that visibly does nothing.
-                disabled={inherited && levels.length === 1}
-                onClick={() => {
+                isDisabled={inherited && levels.length === 1}
+                onPress={() => {
                   remove(index);
                 }}
               >

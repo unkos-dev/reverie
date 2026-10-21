@@ -120,7 +120,7 @@ export function Component(): ReactElement {
           <PasswordPolicyHint policy={policy} failed={policyError} />
         </Field>
         {error ? <FieldError>{error.message}</FieldError> : null}
-        <Button type="submit" disabled={changeMutation.isPending || !ready}>
+        <Button type="submit" isDisabled={changeMutation.isPending || !ready}>
           Change password
         </Button>
       </form>

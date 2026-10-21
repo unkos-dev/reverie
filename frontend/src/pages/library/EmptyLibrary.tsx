@@ -6,7 +6,7 @@ import { ArrowRight } from "lucide-react";
 import { getDashboardActivity } from "@/api/dashboard";
 import type { BatchRow } from "@/api/dashboard";
 import { getInputCounts } from "@/api/ingestion";
-import { Button } from "@/components/ui/button";
+import { buttonVariants } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useAuthMe } from "@/hooks/useAuthMe";
@@ -49,12 +49,14 @@ function OpenIngestion({
   children: ReactNode;
 }>): ReactElement {
   return (
-    <Button asChild variant={primary ? "default" : "outline"} className="mt-6">
-      <Link to="/admin/dashboard">
-        {children}
-        <ArrowRight aria-hidden="true" />
-      </Link>
-    </Button>
+    <Link
+      data-variant={primary ? "default" : "outline"}
+      to="/admin/dashboard"
+      className={buttonVariants({ variant: primary ? "default" : "outline", className: "mt-6" })}
+    >
+      {children}
+      <ArrowRight aria-hidden="true" />
+    </Link>
   );
 }
 
@@ -128,7 +130,7 @@ function UnderwayGuidance({ batch }: Readonly<{ batch: BatchRow }>): ReactElemen
         <Progress
           value={percent}
           aria-label="Files imported in the latest batch"
-          aria-valuetext={`${COUNT_FORMAT.format(batch.completed)} of ${COUNT_FORMAT.format(batch.total)} files imported`}
+          valueLabel={`${COUNT_FORMAT.format(batch.completed)} of ${COUNT_FORMAT.format(batch.total)} files imported`}
           className="bg-surface-3 h-1.5 motion-reduce:[&>[data-slot=progress-indicator]]:transition-none [&>[data-slot=progress-indicator]]:bg-accent-text dark:[&>[data-slot=progress-indicator]]:bg-primary"
         />
       </div>

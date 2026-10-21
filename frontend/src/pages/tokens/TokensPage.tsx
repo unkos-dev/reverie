@@ -45,7 +45,6 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from "@/components/ui/dialog";
 import { Field, FieldError, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
@@ -204,8 +203,8 @@ function TokenRow({ token, onRevoke, revoking }: Readonly<TokenRowProps>): React
         <Button
           variant="destructive"
           size="sm"
-          disabled={revoking}
-          onClick={() => {
+          isDisabled={revoking}
+          onPress={() => {
             onRevoke(token.id);
           }}
         >
@@ -272,9 +271,7 @@ function CreateTokenDialog({ isAdmin, onCreated }: Readonly<CreateTokenDialogPro
 
   return (
     <Dialog isOpen={open} onOpenChange={handleOpenChange}>
-      <DialogTrigger>
-        <Button>New token</Button>
-      </DialogTrigger>
+      <Button>New token</Button>
       <DialogContent>
         {created ? (
           <RevealCredential
@@ -352,7 +349,7 @@ function CreateTokenDialog({ isAdmin, onCreated }: Readonly<CreateTokenDialogPro
               {error ? <FieldError>{error}</FieldError> : null}
               <DialogFooter>
                 <DialogClose type="button">Cancel</DialogClose>
-                <Button type="submit" disabled={mutation.isPending}>
+                <Button type="submit" isDisabled={mutation.isPending}>
                   Create
                 </Button>
               </DialogFooter>
@@ -415,7 +412,7 @@ function RevealCredential({ token, onDone }: Readonly<RevealCredentialProps>): R
         )}
       </div>
       <DialogFooter>
-        <Button type="button" onClick={onDone}>
+        <Button type="button" onPress={onDone}>
           Done
         </Button>
       </DialogFooter>
@@ -439,7 +436,7 @@ function CopyField({ label, value }: Readonly<CopyFieldProps>): ReactElement {
           variant="outline"
           size="icon"
           aria-label={`Copy ${label}`}
-          onClick={() => {
+          onPress={() => {
             void copyToClipboard(value);
           }}
         >

@@ -69,27 +69,31 @@ afterEach(() => {
 });
 
 describe("auth-login", () => {
-  test("submitting credentials calls loginLocal then navigates to /library", async () => {
-    vi.mocked(loginLocal).mockResolvedValue(undefined);
-    const loc = mockLocation();
-    renderLogin({
-      setup_required: false,
-      local_auth_enabled: true,
-      password_min_length: 15,
-      password_max_length: 256,
-      oidc_enabled: false,
-    });
-    const user = userEvent.setup();
+  test.each(["pointer", "Enter"])(
+    "submitting credentials with %s calls loginLocal once then navigates to /library",
+    async (activation) => {
+      vi.mocked(loginLocal).mockResolvedValue(undefined);
+      const loc = mockLocation();
+      renderLogin({
+        setup_required: false,
+        local_auth_enabled: true,
+        password_min_length: 15,
+        password_max_length: 256,
+        oidc_enabled: false,
+      });
+      const user = userEvent.setup();
 
-    await user.type(screen.getByLabelText("Email"), "ada@example.com");
-    await user.type(screen.getByLabelText("Password"), "hunter2hunter2");
-    await user.click(screen.getByRole("button", { name: "Sign in" }));
+      await user.type(screen.getByLabelText("Email"), "ada@example.com");
+      await user.type(screen.getByLabelText("Password"), "hunter2hunter2");
+      if (activation === "Enter") await user.keyboard("{Enter}");
+      else await user.click(screen.getByRole("button", { name: "Sign in" }));
 
-    await waitFor(() => {
-      expect(loginLocal).toHaveBeenCalledWith("ada@example.com", "hunter2hunter2");
-      expect(loc.assign).toHaveBeenCalledWith("/library");
-    });
-  });
+      await waitFor(() => {
+        expect(loginLocal).toHaveBeenCalledExactlyOnceWith("ada@example.com", "hunter2hunter2");
+        expect(loc.assign).toHaveBeenCalledWith("/library");
+      });
+    },
+  );
 
   test("surfaces an inline error and toast when login fails", async () => {
     vi.mocked(loginLocal).mockRejectedValue(

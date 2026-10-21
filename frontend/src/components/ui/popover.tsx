@@ -31,5 +31,5 @@ function PopoverContent({
   );
 }
 
-export { DialogTrigger as Popover, Pressable as PopoverTrigger } from "react-aria-components";
+export { DialogTrigger as Popover } from "react-aria-components";
 export { PopoverContent };

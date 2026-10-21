@@ -16,7 +16,7 @@ function GroupLoading({ label }: Readonly<{ label: string }>): ReactElement {
 }
 
 /** The failed state unmounts as soon as a retry starts, so focus moves to the group header first. */
-function focusGroupHeader(from: HTMLElement): void {
+function focusGroupHeader(from: Element): void {
   from
     .closest("[data-slot=collapsible]")
     ?.querySelector<HTMLElement>("[data-slot=collapsible-trigger]")

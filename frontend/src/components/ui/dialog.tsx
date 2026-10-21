@@ -121,7 +121,7 @@ function DialogDescription({ className, ...props }: ComponentProps<typeof Text>)
   );
 }
 
-export { DialogTrigger as Dialog, Pressable as DialogTrigger } from "react-aria-components";
+export { DialogTrigger as Dialog } from "react-aria-components";
 export {
   DialogClose,
   DialogContent,

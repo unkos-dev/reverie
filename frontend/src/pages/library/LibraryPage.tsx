@@ -363,8 +363,8 @@ function LibraryContent(): ReactElement {
               <Button
                 type="button"
                 variant="outline"
-                disabled={isFetchingNextPage}
-                onClick={() => {
+                isDisabled={isFetchingNextPage}
+                onPress={() => {
                   void fetchNextPage();
                 }}
               >
@@ -531,7 +531,7 @@ function FilteredEmptyState({ onClear }: Readonly<FilteredEmptyStateProps>): Rea
         No books match these filters
       </p>
       <p className="text-sm">Try removing a filter to widen your search.</p>
-      <Button type="button" variant="outline" size="sm" className="mt-6" onClick={onClear}>
+      <Button type="button" variant="outline" size="sm" className="mt-6" onPress={onClear}>
         Clear all filters
       </Button>
     </div>

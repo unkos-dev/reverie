@@ -540,11 +540,8 @@ describe("loading", () => {
     expect(within(nav).queryByText(/Provider display/)).not.toBeInTheDocument();
     expect(screen.getByText("Last changed")).toBeInTheDocument();
     expect(screen.getByText("No unsaved changes.")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Discard changes" })).toHaveAttribute(
-      "aria-disabled",
-      "true",
-    );
-    expect(save()).toHaveAttribute("aria-disabled", "true");
+    expect(screen.getByRole("button", { name: "Discard changes" })).toBeDisabled();
+    expect(save()).toBeDisabled();
   });
 
   test("reload age uses the time the server status was read", async () => {
@@ -597,7 +594,7 @@ describe("editing", () => {
     expect(screen.queryByText("Edited")).not.toBeInTheDocument();
   });
 
-  test("Discard changes keeps keyboard focus after discarding, and ignores activation with nothing to discard", async () => {
+  test("Discard changes becomes disabled after discarding and is skipped by Tab", async () => {
     const user = userEvent.setup();
     await loaded();
     await type(user, "Concurrent lookups", "6");
@@ -607,11 +604,11 @@ describe("editing", () => {
     });
     await user.keyboard("{Enter}");
     expect(screen.getByText("No unsaved changes.")).toBeInTheDocument();
-    expect(discard).toHaveFocus();
-    expect(discard).toHaveAttribute("aria-disabled", "true");
-    expect(discard).not.toHaveAttribute("disabled");
-    await user.keyboard("{Enter}");
-    expect(discard).toHaveFocus();
+    expect(discard).toBeDisabled();
+    await user.tab();
+    expect(discard).not.toHaveFocus();
+    expect(save()).not.toHaveFocus();
+    expect(server.puts).toHaveLength(0);
   });
 
   test("editing back to the saved value clears the dirty state", async () => {
@@ -620,7 +617,7 @@ describe("editing", () => {
     await type(user, "Concurrent lookups", "6");
     await type(user, "Concurrent lookups", "4");
     expect(screen.getByText("No unsaved changes.")).toBeInTheDocument();
-    expect(save()).toHaveAttribute("aria-disabled", "true");
+    expect(save()).toBeDisabled();
   });
 
   test("an area's edits never appear in another area's bar", async () => {
@@ -868,7 +865,8 @@ describe("saving", () => {
     await type(user, "Concurrent lookups", "6");
     await user.click(save());
     const busy = await screen.findByRole("button", { name: "Saving" });
-    expect(busy).toHaveAttribute("aria-busy", "true");
+    expect(busy).toHaveAttribute("data-pending");
+    expect(screen.getByRole("button", { name: "Discard changes" })).toBeDisabled();
     expect(screen.getByRole("textbox", { name: "Concurrent lookups" })).toHaveAttribute("readonly");
     expect(screen.getByText("Saving 1 change")).toBeInTheDocument();
     await user.click(busy);
@@ -877,7 +875,7 @@ describe("saving", () => {
     expect(server.puts).toHaveLength(1);
   });
 
-  test("Save keeps keyboard focus while saving and after the save, and ignores activation meanwhile", async () => {
+  test("Save retains focus and suppresses repeat activation while pending, then becomes disabled", async () => {
     const release = holdPut();
     const user = userEvent.setup();
     await loaded();
@@ -897,9 +895,9 @@ describe("saving", () => {
     release();
     await screen.findByText("Settings saved");
     expect(server.puts).toHaveLength(1);
-    expect(save()).toHaveFocus();
-    expect(save()).toHaveAttribute("aria-disabled", "true");
-    expect(save()).not.toHaveAttribute("disabled");
+    expect(save()).toBeDisabled();
+    await user.tab();
+    expect(save()).not.toHaveFocus();
     await user.keyboard("{Enter}");
     expect(server.puts).toHaveLength(1);
   });
@@ -1391,7 +1389,7 @@ describe("a stale write", () => {
     expect(screen.queryByText("Settings changed while you were editing")).not.toBeInTheDocument();
     expect(server.puts).toHaveLength(1);
     expect(screen.getByText(/^Saved at .*\d.*\.$/)).toBeInTheDocument();
-    expect(save()).toHaveAttribute("aria-disabled", "true");
+    expect(save()).toBeDisabled();
   });
 
   test("agreement on one field still reapplies the others", async () => {
@@ -1608,7 +1606,7 @@ describe("a stale write", () => {
     expect(screen.getByText("No unsaved changes.")).toBeInTheDocument();
   });
 
-  test("Discard mine and reload keeps keyboard focus on the discard control", async () => {
+  test("Discard mine and reload becomes natively disabled after discarding", async () => {
     server.stale.set(1, () => {
       server.values.enrichment_concurrency = 8;
       server.revision += 1;
@@ -1626,8 +1624,9 @@ describe("a stale write", () => {
       expect(screen.queryByText("Settings changed while you were editing")).not.toBeInTheDocument();
     });
     const discard = screen.getByRole("button", { name: "Discard changes" });
-    expect(discard).toHaveFocus();
-    expect(discard).toHaveAttribute("aria-disabled", "true");
+    expect(discard).toBeDisabled();
+    await user.tab();
+    expect(discard).not.toHaveFocus();
   });
 
   test("the retry is bounded: a second stale answer opens the conflict panel after exactly two writes", async () => {
