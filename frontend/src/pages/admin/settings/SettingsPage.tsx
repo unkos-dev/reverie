@@ -12,7 +12,7 @@ import { ApiError } from "@/api/errors";
 import { useAuthMe } from "@/hooks/useAuthMe";
 import { formatDateTime, formatTimeWithAge } from "@/lib/format/datetime";
 import { queryKeys } from "@/lib/query/keys";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 
 import { Note, NoteText } from "./Notices";
@@ -157,7 +157,7 @@ function LoadError({ retry }: Readonly<{ retry: () => void }>): ReactElement {
       role="alert"
       strong
       actions={
-        <Button type="button" variant="outline" onClick={retry}>
+        <Button type="button" variant="outline" onPress={retry}>
           Try again
         </Button>
       }
@@ -176,9 +176,9 @@ function ForbiddenNote(): ReactElement {
       role="alert"
       strong
       actions={
-        <Button asChild variant="outline">
-          <Link to="/library">Back to the library</Link>
-        </Button>
+        <Link to="/library" className={buttonVariants({ variant: "outline" })}>
+          Back to the library
+        </Link>
       }
     >
       <NoteText>

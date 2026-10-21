@@ -1,7 +1,7 @@
 import { useEffect, useRef, type ReactElement, type ReactNode } from "react";
 import { Link } from "react-router";
 
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
 import { FIELDS, fieldCountText, restartLabels } from "./fields";
@@ -64,7 +64,7 @@ function ValidationNote({
         type="button"
         variant="outline"
         size="sm"
-        onClick={() => {
+        onPress={() => {
           document.getElementById(controlId(field.key))?.focus();
         }}
       >
@@ -120,9 +120,9 @@ export function Notices({ notice }: Readonly<{ notice: Notice }>): ReactElement 
           role="alert"
           strong
           actions={
-            <Button asChild variant="outline" size="sm">
-              <Link to="/library">Leave settings</Link>
-            </Button>
+            <Link to="/library" className={buttonVariants({ variant: "outline", size: "sm" })}>
+              Leave settings
+            </Link>
           }
         >
           <NoteText>

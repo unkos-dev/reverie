@@ -170,7 +170,7 @@ export function Component(): ReactElement {
         />
       </Field>
       {error !== null ? <FieldError>{error}</FieldError> : null}
-      <Button type="submit" disabled={loginMutation.isPending}>
+      <Button type="submit" isDisabled={loginMutation.isPending}>
         Sign in
       </Button>
     </form>
@@ -180,7 +180,7 @@ export function Component(): ReactElement {
     <Button
       type="button"
       variant="outline"
-      onClick={() => {
+      onPress={() => {
         window.location.assign("/auth/oidc/login");
       }}
     >

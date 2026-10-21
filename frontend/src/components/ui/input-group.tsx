@@ -1,6 +1,7 @@
 "use client"
 
 import type * as React from "react"
+import { composeRenderProps } from "react-aria-components"
 import { cva, type VariantProps } from "class-variance-authority"
 
 import { cn } from "@/lib/utils"
@@ -96,7 +97,9 @@ function InputGroupButton({
       type={type}
       data-size={size}
       variant={variant}
-      className={cn(inputGroupButtonVariants({ size }), className)}
+      className={composeRenderProps(className, (className) =>
+        cn(inputGroupButtonVariants({ size }), className)
+      )}
       {...props}
     />
   )

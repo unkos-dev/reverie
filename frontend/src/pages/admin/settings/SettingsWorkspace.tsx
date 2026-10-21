@@ -116,8 +116,7 @@ function barSummary(editor: SettingsEditor): ReactElement {
 function SaveBar({ editor }: Readonly<{ editor: SettingsEditor }>): ReactElement {
   const conflict = editor.notice.kind === "conflict";
   const busy = editor.phase !== "idle";
-  const idle = editor.dirty.length === 0 || busy;
-  const inactive = conflict ? busy : idle;
+  const pristine = !conflict && editor.dirty.length === 0;
   const saveLabel = conflict ? "Save my choices" : "Save changes";
   return (
     <div className="bg-surface border-border-strong sticky bottom-0 z-20 -mx-10 mt-8 flex items-center gap-3 border-t px-10 py-3">
@@ -125,25 +124,15 @@ function SaveBar({ editor }: Readonly<{ editor: SettingsEditor }>): ReactElement
       <Button
         type="button"
         variant="outline"
-        aria-disabled={inactive ? true : undefined}
-        className="aria-disabled:pointer-events-none aria-disabled:opacity-50"
-        onClick={() => {
-          if (inactive) return;
+        isDisabled={pristine || busy}
+        onPress={() => {
           if (conflict) editor.discardAndReload();
           else editor.discard();
         }}
       >
         {conflict ? "Discard mine and reload" : "Discard changes"}
       </Button>
-      <Button
-        type="submit"
-        aria-disabled={inactive ? true : undefined}
-        aria-busy={busy ? true : undefined}
-        className="aria-disabled:pointer-events-none aria-disabled:opacity-50"
-        onClick={(event) => {
-          if (inactive) event.preventDefault();
-        }}
-      >
+      <Button type="submit" isDisabled={pristine && !busy} isPending={busy}>
         {busy ? "Saving" : saveLabel}
       </Button>
     </div>

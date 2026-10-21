@@ -101,6 +101,29 @@ describe("BookPage", () => {
     expect(within(overviewPanel).getByText(/passionate, polyphonic novel/)).toBeInTheDocument();
   });
 
+  test("tabs activate automatically from the keyboard and mount only the selected panel", async () => {
+    const user = userEvent.setup();
+    renderBook(bookFixture());
+    const tabs = await screen.findByRole("tablist", { name: "Book details" });
+    const overview = within(tabs).getByRole("tab", { name: "Overview" });
+    expect(overview).toHaveAttribute("aria-selected", "true");
+    expect(screen.queryByRole("button", { name: /edit metadata/i })).not.toBeInTheDocument();
+    expect(screen.getAllByRole("tabpanel")).toHaveLength(1);
+    overview.focus();
+    await user.keyboard("{ArrowRight}");
+    expect(within(tabs).getByRole("tab", { name: "Versions" })).toHaveFocus();
+    expect(screen.getByRole("tabpanel", { name: "Versions" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /edit metadata/i })).toBeInTheDocument();
+    await user.keyboard("{ArrowRight}");
+    expect(screen.getByRole("tabpanel", { name: "Activity" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /edit metadata/i })).not.toBeInTheDocument();
+    await user.keyboard("{Home}");
+    expect(overview).toHaveFocus();
+    expect(screen.getByRole("tabpanel", { name: "Overview" })).toBeInTheDocument();
+    expect(screen.getAllByRole("tabpanel")).toHaveLength(1);
+    expect(getBook).not.toHaveBeenCalled();
+  });
+
   test("Versions tab badges the pending count and exposes the editor", async () => {
     const user = userEvent.setup();
     renderBook(
@@ -117,6 +140,26 @@ describe("BookPage", () => {
             match_type: "isbn",
             observation_count: 1,
           },
+          {
+            id: "v-2",
+            field_name: "title",
+            source: "googlebooks",
+            new_value: "Another Title",
+            status: "pending",
+            confidence_score: 0.84,
+            match_type: "isbn",
+            observation_count: 1,
+          },
+          {
+            id: "v-3",
+            field_name: "publisher",
+            source: "openlibrary",
+            new_value: "Publisher Draft",
+            status: "pending",
+            confidence_score: 0.8,
+            match_type: "title",
+            observation_count: 1,
+          },
         ],
       }),
     );
@@ -126,12 +169,15 @@ describe("BookPage", () => {
 
     await user.click(versionsTab);
     const panel = await screen.findByRole("tabpanel", { name: /versions/i });
-    // Per-field section header for the one pending draft.
     expect(within(panel).getByRole("heading", { name: /title/i, level: 3 })).toBeInTheDocument();
+    expect(within(panel).getAllByRole("list")).toHaveLength(2);
+    expect(within(panel).getAllByRole("listitem")).toHaveLength(5);
+    expect(within(panel).getByText("The Brothers Karamazov")).toBeInTheDocument();
+    expect(within(panel).getByText("unset")).toBeInTheDocument();
     // Pending row exposes the draft value + Accept/Reject buttons.
     expect(within(panel).getByText("Alt Title")).toBeInTheDocument();
-    expect(within(panel).getByRole("button", { name: /accept/i })).toBeInTheDocument();
-    expect(within(panel).getByRole("button", { name: /reject/i })).toBeInTheDocument();
+    expect(within(panel).getAllByRole("button", { name: /accept/i })).toHaveLength(3);
+    expect(within(panel).getAllByRole("button", { name: /reject/i })).toHaveLength(3);
     // Manual edit button is always present.
     expect(within(panel).getByRole("button", { name: /edit metadata/i })).toBeInTheDocument();
   });

@@ -31,7 +31,7 @@ export function PasswordPolicyHint({
         {message}
       </FieldDescription>
       {onRetry && (failed || retrying) ? (
-        <Button type="button" variant="outline" size="sm" disabled={retrying} onClick={onRetry}>
+        <Button type="button" variant="outline" size="sm" isDisabled={retrying} onPress={onRetry}>
           Retry password policy
         </Button>
       ) : null}

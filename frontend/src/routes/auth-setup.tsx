@@ -159,7 +159,7 @@ export function Component(): ReactElement {
           <PasswordPolicyHint policy={status} failed={false} />
         </Field>
         {error !== null ? <FieldError>{error}</FieldError> : null}
-        <Button type="submit" disabled={setupMutation.isPending}>
+        <Button type="submit" isDisabled={setupMutation.isPending}>
           Create administrator
         </Button>
       </form>

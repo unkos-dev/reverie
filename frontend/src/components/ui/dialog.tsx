@@ -1,4 +1,4 @@
-import type { ComponentProps, KeyboardEventHandler, ReactElement, ReactNode } from "react";
+import type { ComponentProps, ReactElement, ReactNode } from "react";
 import {
   Button,
   Dialog as AriaDialog,
@@ -18,7 +18,6 @@ type DialogContentProps = Omit<ComponentProps<typeof AriaDialog>, "children"> & 
   isDismissable?: boolean;
   isOpen?: boolean;
   onOpenChange?: (open: boolean) => void;
-  onKeyDown?: KeyboardEventHandler<HTMLElement>;
 };
 
 function DialogContent({
@@ -28,7 +27,6 @@ function DialogContent({
   isDismissable = true,
   isOpen,
   onOpenChange,
-  onKeyDown,
   ...props
 }: DialogContentProps): ReactElement {
   return (
@@ -40,7 +38,6 @@ function DialogContent({
     >
       <Modal className="contents">
         <AriaDialog
-          render={(dialogProps) => <section {...dialogProps} onKeyDown={onKeyDown} />}
           data-slot="dialog-content"
           className={cn(
             "fixed top-1/2 left-1/2 z-50 grid w-full max-w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 gap-4 rounded-xl bg-popover p-4 text-sm text-popover-foreground ring-1 ring-foreground/10 outline-none sm:max-w-sm",
@@ -121,7 +118,7 @@ function DialogDescription({ className, ...props }: ComponentProps<typeof Text>)
   );
 }
 
-export { DialogTrigger as Dialog, Pressable as DialogTrigger } from "react-aria-components";
+export { DialogTrigger as Dialog } from "react-aria-components";
 export {
   DialogClose,
   DialogContent,

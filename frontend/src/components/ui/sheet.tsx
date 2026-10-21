@@ -56,7 +56,6 @@ function SheetTitle({ className, ...props }: ComponentProps<typeof DialogTitle>)
 
 export {
   Dialog as Sheet,
-  DialogTrigger as SheetTrigger,
   DialogClose as SheetClose,
   DialogDescription as SheetDescription,
 } from "./dialog";

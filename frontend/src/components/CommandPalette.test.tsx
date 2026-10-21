@@ -7,7 +7,8 @@ import { useState, type ReactElement, type ReactNode } from "react";
 
 import { openCommandPalette } from "@/lib/command-palette";
 
-import { Dialog, DialogContent, DialogTitle, DialogTrigger } from "./ui/dialog";
+import { Button } from "./ui/button";
+import { Dialog, DialogContent, DialogTitle } from "./ui/dialog";
 
 import { CommandPalette, HighlightedSnippet } from "./CommandPalette";
 
@@ -350,9 +351,7 @@ function ParentEditor(): ReactElement {
   const [open, setOpen] = useState(false);
   return (
     <Dialog isOpen={open} onOpenChange={setOpen}>
-      <DialogTrigger>
-        <button type="button">Open parent editor</button>
-      </DialogTrigger>
+      <Button type="button">Open parent editor</Button>
       <DialogContent>
         <DialogTitle>Parent editor</DialogTitle>
         <input aria-label="Parent value" />

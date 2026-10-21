@@ -183,7 +183,7 @@ function EditMetadataForm({
         <Button
           type="button"
           variant="outline"
-          onClick={() => {
+          onPress={() => {
             void metadataQuery.refetch();
           }}
         >
@@ -321,14 +321,14 @@ function EditMetadataFields({
           <Button
             type="button"
             variant="outline"
-            onClick={() => {
+            onPress={() => {
               onDone();
             }}
-            disabled={mutation.isPending}
+            isDisabled={mutation.isPending}
           >
             Cancel
           </Button>
-          <Button type="submit" disabled={mutation.isPending}>
+          <Button type="submit" isDisabled={mutation.isPending}>
             Save
           </Button>
         </SheetFooter>
@@ -349,14 +349,14 @@ function EditMetadataFields({
         </AlertDialogHeader>
         <AlertDialogFooter>
           <AlertDialogCancel
-            onClick={() => {
+            onPress={() => {
               setPendingClearConfirm(null);
             }}
           >
             Cancel
           </AlertDialogCancel>
           <AlertDialogAction
-            onClick={() => {
+            onPress={() => {
               if (pendingClearConfirm) {
                 mutation.mutate(pendingClearConfirm);
                 setPendingClearConfirm(null);

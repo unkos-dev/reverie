@@ -7,6 +7,7 @@
  * its unstyled default.
  */
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import userEvent from "@testing-library/user-event";
 import { render, screen } from "@testing-library/react";
 import { describe, expect, test, vi } from "vite-plus/test";
 import {
@@ -21,7 +22,7 @@ import { ApiError } from "@/api";
 
 import { RootErrorBoundary } from "./RootErrorBoundary";
 
-function renderRouterWithFailure(loader: LoaderFunction): void {
+function renderRouterWithFailure(loader: LoaderFunction): ReturnType<typeof createMemoryRouter> {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   const routes: RouteObject[] = [
     {
@@ -30,6 +31,7 @@ function renderRouterWithFailure(loader: LoaderFunction): void {
       errorElement: <RootErrorBoundary />,
       children: [{ path: "fail", loader, element: <p>NEVER</p> }],
     },
+    { path: "/library", element: <p>Library destination</p> },
   ];
   const router = createMemoryRouter(routes, { initialEntries: ["/fail"] });
 
@@ -41,17 +43,27 @@ function renderRouterWithFailure(loader: LoaderFunction): void {
     );
   }
   render(<Wrapper />);
+  return router;
 }
 
 describe("RootErrorBoundary", () => {
   test("renders a branded 'Not found' surface when the loader throws a 404 Response", async () => {
-    renderRouterWithFailure(() => {
+    const router = renderRouterWithFailure(() => {
       // oxlint-disable-next-line typescript/only-throw-error -- react-router loaders bail out via `throw new Response(...)`.
       throw new Response("nope", { status: 404 });
     });
 
     expect(await screen.findByRole("heading", { name: /not found/i })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: /back to library/i })).toBeInTheDocument();
+    const link = screen.getByRole("link", { name: /back to library/i });
+    expect(link).toHaveAttribute("href", "/library");
+    expect(screen.queryByRole("button", { name: /back to library/i })).not.toBeInTheDocument();
+    const user = userEvent.setup();
+    await user.keyboard("{Control>}");
+    await user.click(link);
+    await user.keyboard("{/Control}");
+    expect(router.state.location.pathname).toBe("/fail");
+    await user.click(link);
+    expect(await screen.findByText("Library destination")).toBeInTheDocument();
   });
 
   test("renders a numbered 'Error N' surface for other route response statuses", async () => {

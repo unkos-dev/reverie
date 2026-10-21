@@ -290,7 +290,10 @@
       "id": "REV-ADR-0041",
       "kind": "adr",
       "path": "docs/adr/0041-library-filters-in-a-drawer-with-removable-chips.md",
-      "status": "accepted",
+      "status": "superseded",
+      "superseded-by": [
+        "REV-ADR-0062"
+      ],
       "supersedes": [
         "REV-ADR-0039"
       ],
@@ -452,8 +455,18 @@
       "title": "Administrators issue account-bound credential links"
     },
     {
+      "id": "REV-ADR-0062",
+      "kind": "adr",
+      "path": "docs/adr/0062-uniform-dismissal-for-library-filter-edits.md",
+      "status": "accepted",
+      "supersedes": [
+        "REV-ADR-0041"
+      ],
+      "title": "Uniform dismissal for library filter edits"
+    },
+    {
       "governed-by": [
-        "REV-ADR-0041",
+        "REV-ADR-0062",
         "REV-ADR-0047"
       ],
       "id": "REV-DESIGN-0001",

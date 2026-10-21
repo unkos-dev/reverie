@@ -509,7 +509,7 @@ describe("loading", () => {
     }
     await screen.findByRole("form", { name: "Enrichment settings" });
     expect(
-      screen.getByRole("switch", { name: "Fetch metadata from external sources" }),
+      screen.getByRole("switch", { name: "Fetch metadata from external sources" }).closest("label"),
     ).toHaveClass("motion-reduce:[&>[data-slot=switch-thumb]]:transition-none");
   });
 
@@ -540,11 +540,8 @@ describe("loading", () => {
     expect(within(nav).queryByText(/Provider display/)).not.toBeInTheDocument();
     expect(screen.getByText("Last changed")).toBeInTheDocument();
     expect(screen.getByText("No unsaved changes.")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Discard changes" })).toHaveAttribute(
-      "aria-disabled",
-      "true",
-    );
-    expect(save()).toHaveAttribute("aria-disabled", "true");
+    expect(screen.getByRole("button", { name: "Discard changes" })).toBeDisabled();
+    expect(save()).toBeDisabled();
   });
 
   test("reload age uses the time the server status was read", async () => {
@@ -597,7 +594,7 @@ describe("editing", () => {
     expect(screen.queryByText("Edited")).not.toBeInTheDocument();
   });
 
-  test("Discard changes keeps keyboard focus after discarding, and ignores activation with nothing to discard", async () => {
+  test("Discard changes becomes disabled after discarding and is skipped by Tab", async () => {
     const user = userEvent.setup();
     await loaded();
     await type(user, "Concurrent lookups", "6");
@@ -607,11 +604,11 @@ describe("editing", () => {
     });
     await user.keyboard("{Enter}");
     expect(screen.getByText("No unsaved changes.")).toBeInTheDocument();
-    expect(discard).toHaveFocus();
-    expect(discard).toHaveAttribute("aria-disabled", "true");
-    expect(discard).not.toHaveAttribute("disabled");
-    await user.keyboard("{Enter}");
-    expect(discard).toHaveFocus();
+    expect(discard).toBeDisabled();
+    await user.tab();
+    expect(discard).not.toHaveFocus();
+    expect(save()).not.toHaveFocus();
+    expect(server.puts).toHaveLength(0);
   });
 
   test("editing back to the saved value clears the dirty state", async () => {
@@ -620,7 +617,7 @@ describe("editing", () => {
     await type(user, "Concurrent lookups", "6");
     await type(user, "Concurrent lookups", "4");
     expect(screen.getByText("No unsaved changes.")).toBeInTheDocument();
-    expect(save()).toHaveAttribute("aria-disabled", "true");
+    expect(save()).toBeDisabled();
   });
 
   test("an area's edits never appear in another area's bar", async () => {
@@ -729,7 +726,7 @@ describe("accepted formats", () => {
       supported.formats = ["epub"];
     });
 
-    test("the checkbox list renders and the last enabled format is locked", async () => {
+    test("the checkbox list renders and the last enabled format is read-only", async () => {
       const user = userEvent.setup();
       await loaded("acquisition");
       expect(screen.queryByText("Reverie imports EPUB files.")).not.toBeInTheDocument();
@@ -738,9 +735,9 @@ describe("accepted formats", () => {
       const pdf = screen.getByRole("checkbox", { name: "PDF" });
       expect(epub).toBeChecked();
       expect(pdf).not.toBeChecked();
-      expect(epub).toHaveAttribute("aria-disabled", "true");
+      expect(epub).toHaveAttribute("aria-readonly", "true");
       expect(epub).not.toHaveAttribute("disabled");
-      expect(pdf).not.toHaveAttribute("aria-disabled");
+      expect(pdf).not.toHaveAttribute("aria-readonly");
       expect(epub).toHaveAccessibleDescription(
         "This is the only format selected. At least one format must stay selected, or Reverie would have nothing to import.",
       );
@@ -761,15 +758,21 @@ describe("accepted formats", () => {
       await loaded("acquisition");
       await user.click(screen.getByRole("checkbox", { name: "PDF" }));
       const epub = screen.getByRole("checkbox", { name: "EPUB" });
-      expect(epub).not.toHaveAttribute("aria-disabled");
+      expect(epub).not.toHaveAttribute("aria-readonly");
       expect(screen.queryByText(/This is the only format selected/)).not.toBeInTheDocument();
+      const release = holdPut();
       await user.click(save());
+      expect(epub).toBeDisabled();
+      expect(screen.getByRole("checkbox", { name: "PDF" })).toBeDisabled();
+      act(() => {
+        release();
+      });
       await screen.findByText("Settings saved");
       expect(server.puts[0]?.patch).toEqual({ accepted_formats: ["epub", "pdf"] });
       await user.click(epub);
       expect(epub).not.toBeChecked();
       expect(screen.getByRole("checkbox", { name: "PDF" })).toHaveAttribute(
-        "aria-disabled",
+        "aria-readonly",
         "true",
       );
     });
@@ -868,7 +871,8 @@ describe("saving", () => {
     await type(user, "Concurrent lookups", "6");
     await user.click(save());
     const busy = await screen.findByRole("button", { name: "Saving" });
-    expect(busy).toHaveAttribute("aria-busy", "true");
+    expect(busy).toHaveAttribute("data-pending");
+    expect(screen.getByRole("button", { name: "Discard changes" })).toBeDisabled();
     expect(screen.getByRole("textbox", { name: "Concurrent lookups" })).toHaveAttribute("readonly");
     expect(screen.getByText("Saving 1 change")).toBeInTheDocument();
     await user.click(busy);
@@ -877,7 +881,7 @@ describe("saving", () => {
     expect(server.puts).toHaveLength(1);
   });
 
-  test("Save keeps keyboard focus while saving and after the save, and ignores activation meanwhile", async () => {
+  test("Save retains focus and suppresses repeat activation while pending, then becomes disabled", async () => {
     const release = holdPut();
     const user = userEvent.setup();
     await loaded();
@@ -897,9 +901,9 @@ describe("saving", () => {
     release();
     await screen.findByText("Settings saved");
     expect(server.puts).toHaveLength(1);
-    expect(save()).toHaveFocus();
-    expect(save()).toHaveAttribute("aria-disabled", "true");
-    expect(save()).not.toHaveAttribute("disabled");
+    expect(save()).toBeDisabled();
+    await user.tab();
+    expect(save()).not.toHaveFocus();
     await user.keyboard("{Enter}");
     expect(server.puts).toHaveLength(1);
   });
@@ -1185,13 +1189,18 @@ describe("source-file deletion switches", () => {
     const toggle = screen.getByRole("switch", {
       name: "Remove the source file when the book is a duplicate",
     });
-    await user.click(toggle);
+    act(() => {
+      toggle.focus();
+    });
+    await user.keyboard(" ");
     const dialog = await screen.findByRole("alertdialog");
     expect(within(dialog).getByText("Remove source files for duplicates?")).toBeInTheDocument();
     expect(
       within(dialog).getByText(/This cannot be undone\. The setting takes effect when you save\./),
     ).toBeInTheDocument();
-    expect(within(dialog).getByRole("button", { name: "Keep source files" })).toHaveFocus();
+    await waitFor(() => {
+      expect(within(dialog).getByRole("button", { name: "Keep source files" })).toHaveFocus();
+    });
     expect(toggle).not.toBeChecked();
     await user.click(within(dialog).getByRole("button", { name: "Keep source files" }));
     await waitFor(() => {
@@ -1391,7 +1400,7 @@ describe("a stale write", () => {
     expect(screen.queryByText("Settings changed while you were editing")).not.toBeInTheDocument();
     expect(server.puts).toHaveLength(1);
     expect(screen.getByText(/^Saved at .*\d.*\.$/)).toBeInTheDocument();
-    expect(save()).toHaveAttribute("aria-disabled", "true");
+    expect(save()).toBeDisabled();
   });
 
   test("agreement on one field still reapplies the others", async () => {
@@ -1461,7 +1470,10 @@ describe("a stale write", () => {
     await editTwoFields(user);
     await user.click(save());
     await screen.findByText("Settings changed while you were editing");
-    await user.click(screen.getByRole("radio", { name: "Use theirs (8 lookups)" }));
+    screen.getByRole("radio", { name: "Keep mine (6 lookups)" }).focus();
+    await user.keyboard("{ArrowRight}");
+    expect(screen.getByRole("radio", { name: "Use theirs (8 lookups)" })).toBeChecked();
+    expect(screen.getByRole("radio", { name: "Use theirs (8 lookups)" })).toHaveFocus();
     await user.click(screen.getByRole("button", { name: "Save my choices" }));
     await screen.findByText("Settings saved");
     expect(server.puts[1]?.patch).toEqual({ enrichment_fetch_budget_secs: 30 });
@@ -1608,7 +1620,7 @@ describe("a stale write", () => {
     expect(screen.getByText("No unsaved changes.")).toBeInTheDocument();
   });
 
-  test("Discard mine and reload keeps keyboard focus on the discard control", async () => {
+  test("Discard mine and reload becomes natively disabled after discarding", async () => {
     server.stale.set(1, () => {
       server.values.enrichment_concurrency = 8;
       server.revision += 1;
@@ -1626,8 +1638,9 @@ describe("a stale write", () => {
       expect(screen.queryByText("Settings changed while you were editing")).not.toBeInTheDocument();
     });
     const discard = screen.getByRole("button", { name: "Discard changes" });
-    expect(discard).toHaveFocus();
-    expect(discard).toHaveAttribute("aria-disabled", "true");
+    expect(discard).toBeDisabled();
+    await user.tab();
+    expect(discard).not.toHaveFocus();
   });
 
   test("the retry is bounded: a second stale answer opens the conflict panel after exactly two writes", async () => {

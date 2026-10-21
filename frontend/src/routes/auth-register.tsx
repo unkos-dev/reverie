@@ -144,7 +144,7 @@ export function Component(): ReactElement {
           <PasswordPolicyHint policy={policy} failed={policyError} />
         </Field>
         {error ? <FieldError>{error.message}</FieldError> : null}
-        <Button type="submit" disabled={registerMutation.isPending || !ready}>
+        <Button type="submit" isDisabled={registerMutation.isPending || !ready}>
           Create account
         </Button>
       </form>

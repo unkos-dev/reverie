@@ -2,7 +2,7 @@ import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useState, type ReactElement } from "react";
 import { expect, test } from "vite-plus/test";
-import { Button, Pressable } from "react-aria-components";
+import { Button } from "./button";
 
 import { AlertDialogCancel, AlertDialogContent, AlertDialogTitle } from "./alert-dialog";
 
@@ -13,9 +13,7 @@ function NestedDialog(): ReactElement {
   const [open, setOpen] = useState(false);
   return (
     <Dialog isOpen={open} onOpenChange={setOpen}>
-      <Pressable>
-        <button type="button">Open editor</button>
-      </Pressable>
+      <Button type="button">Open editor</Button>
       <DialogContent>
         <DialogTitle>Editor</DialogTitle>
         <Select aria-label="Status" defaultValue="new">
@@ -84,9 +82,7 @@ function NestedConfirmation(): ReactElement {
   const [confirm, setConfirm] = useState(false);
   return (
     <Dialog>
-      <Pressable>
-        <button type="button">Open parent</button>
-      </Pressable>
+      <Button type="button">Open parent</Button>
       <DialogContent>
         <DialogTitle>Parent</DialogTitle>
         <Button

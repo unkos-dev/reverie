@@ -2,7 +2,6 @@ import { type ReactElement, useEffect, useRef } from "react";
 import { Loader2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
-import { cn } from "@/lib/utils";
 
 import { formatCount } from "./format";
 import type { PagedGroup } from "./use-paged-group";
@@ -48,7 +47,7 @@ function GroupFooter({ group, total, noun }: Readonly<GroupFooterProps>): ReactE
             type="button"
             variant="outline"
             size="sm"
-            onClick={() => {
+            onPress={() => {
               restoreFocus.current = true;
               retry();
             }}
@@ -67,9 +66,8 @@ function GroupFooter({ group, total, noun }: Readonly<GroupFooterProps>): ReactE
               type="button"
               variant="outline"
               size="sm"
-              aria-disabled={isLoadingMore}
-              className={cn(isLoadingMore && "pointer-events-none opacity-50")}
-              onClick={() => {
+              isPending={isLoadingMore}
+              onPress={() => {
                 restoreFocus.current = true;
                 showMore();
               }}

@@ -305,21 +305,9 @@ export type LibraryFilters = {
   commitAll: (patch: (current: FilterState) => FilterState) => void;
   /** Drop every filter condition, dead params included. Never debounced. */
   clearAll: () => void;
-  /**
-   * Discard whatever the typed slices are holding, by writing the applied
-   * URL's values back over their keys. Undebounced, so it cancels their
-   * pending writes; this is how the drawer's Escape abandons an edit
-   * without any surface tracking that an abandon happened. Only the typed
-   * slices can hold anything: every other gesture writes immediately.
-   */
-  revertTypedEdits: () => void;
   /** Set the browse projection. Not a filter, so it leaves the cursor. */
   setView: (view: string | null) => void;
 };
-
-/** The slices whose writes are debounced, so the only ones that can be
- *  holding a value the URL has not taken yet. */
-const TYPED_SLICES: readonly FilterSlice[] = ["title", "subtitle", "isbn13", "pages", "rating"];
 
 /** The library's filter grammar. Every library write goes through this. */
 export function useLibraryFilters(): LibraryFilters {
@@ -353,14 +341,6 @@ export function useLibraryFilters(): LibraryFilters {
       const cleared: LibraryUpdate = { cursor: null };
       for (const key of ALL_FILTER_KEYS) cleared[key] = null;
       void setParams(cleared, { limitUrlUpdates: defaultRateLimit });
-    },
-    revertTypedEdits: () => {
-      const appliedFilters = parseFilterParams(applied);
-      let update: LibraryUpdate = {};
-      for (const slice of TYPED_SLICES) {
-        update = { ...update, ...updateFor(SLICE_KEYS[slice], appliedFilters) };
-      }
-      void setParams(update, { limitUrlUpdates: defaultRateLimit });
     },
     setView: (view) => {
       void setParams({ view }, { limitUrlUpdates: defaultRateLimit });

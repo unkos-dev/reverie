@@ -6,7 +6,7 @@ import { z } from "zod";
 import { ApiError } from "@/api";
 import { lookupCredentialLink, redeemCredentialLink } from "@/api/auth";
 import { PasswordPolicyHint } from "@/components/PasswordPolicyHint";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { Field, FieldError, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -54,7 +54,7 @@ function LookupFailure({
         </div>
       )}
       {canRetry ? (
-        <Button type="button" className="mt-4 w-full" disabled={fetching} onClick={onRetry}>
+        <Button type="button" className="mt-4 w-full" isDisabled={fetching} onPress={onRetry}>
           Try again
         </Button>
       ) : null}
@@ -117,9 +117,9 @@ export function Component(): ReactElement {
   if (redemption.isSuccess) {
     return (
       <AuthShell title="Password set" description="You can now sign in with your new password.">
-        <Button asChild className="w-full">
-          <Link to="/login">Sign in</Link>
-        </Button>
+        <Link to="/login" className={buttonVariants({ className: "w-full" })}>
+          Sign in
+        </Link>
       </AuthShell>
     );
   }
@@ -202,7 +202,7 @@ export function Component(): ReactElement {
           />
         </Field>
         {error !== null ? <FieldError>{error}</FieldError> : null}
-        <Button type="submit" disabled={redemption.isPending || !ready}>
+        <Button type="submit" isDisabled={redemption.isPending || !ready}>
           Set password
         </Button>
       </form>

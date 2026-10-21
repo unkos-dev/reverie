@@ -69,7 +69,7 @@ export function LibraryToolbar({
                   variant="ghost"
                   size="sm"
                   aria-pressed={density === option}
-                  onClick={() => {
+                  onPress={() => {
                     onDensityChange(option);
                   }}
                   className={`font-mono text-[0.65rem] uppercase tracking-[0.08em] ${
@@ -98,7 +98,7 @@ export function LibraryToolbar({
             variant="ghost"
             size="sm"
             aria-pressed={view === "grid"}
-            onClick={() => {
+            onPress={() => {
               onViewChange("grid");
             }}
             className={view === "grid" ? "bg-accent-soft text-fg hover:bg-accent-soft" : ""}
@@ -111,7 +111,7 @@ export function LibraryToolbar({
             variant="ghost"
             size="sm"
             aria-pressed={view === "table"}
-            onClick={() => {
+            onPress={() => {
               onViewChange("table");
             }}
             className={view === "table" ? "bg-accent-soft text-fg hover:bg-accent-soft" : ""}
@@ -126,7 +126,7 @@ export function LibraryToolbar({
           size="sm"
           aria-expanded={filtersOpen}
           aria-controls="library-filter-drawer"
-          onClick={onOpenFilters}
+          onPress={onOpenFilters}
         >
           <SlidersHorizontal className="size-4" aria-hidden="true" />
           Filters

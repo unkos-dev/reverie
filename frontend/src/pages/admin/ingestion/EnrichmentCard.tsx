@@ -102,7 +102,7 @@ function EnrichmentCard(): ReactElement {
               variant="outline"
               size="sm"
               className="mt-2"
-              onClick={() => {
+              onPress={() => {
                 void counts.refetch();
               }}
             >
