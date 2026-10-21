@@ -52,6 +52,14 @@ A mismatch shows "The passwords don't match." inline. Policy, 503 and 429 errors
 Submission does not sign the person in. Reconnect does not repeat lookup or replace the form; entered passwords stay in
 their fields.
 
+If the redemption response is lost to a network failure, retain the form and show this inline message:
+
+"We couldn't confirm whether your password changed. Try signing in with the password you entered before submitting
+again."
+
+"Try signing in" links to `/login` on activation. Do not retry redemption automatically or show success without a
+successful response.
+
 ## Saved
 
 Title: "Password set".

@@ -100,6 +100,9 @@ transaction rolls back link consumption and password writes. Policy rejection le
 exhaustion returns 429; hash-capacity exhaustion returns the existing 503 detail without Retry-After. Database errors
 use the generic internal-error response.
 
+A redemption network failure retains the entered values and explains that the password may have changed, with an
+explicit sign-in link. The browser does not retry redemption automatically or infer success from a consumed token.
+
 Issuing to a disabled account returns 422 with `the account is disabled`; a missing email returns 422 with
 `the account has no email address`. The Users screen explains how to correct the latter. A lost link requires another
 link. The result is shown once and can be copied or dismissed. If clipboard access is unavailable or denied, the

@@ -224,6 +224,21 @@ test.each([422, 429, 503])("renders the redemption detail for %s", async (status
   expect(await screen.findByRole("alert")).toHaveTextContent("Please try again later.");
 });
 
+test("a lost redemption response explains possible success without retrying or clearing the form", async () => {
+  vi.mocked(redeemCredentialLink).mockRejectedValue(new TypeError("Failed to fetch"));
+  renderPage();
+  await submitPassword();
+  expect(await screen.findByRole("alert")).toHaveTextContent(
+    "We couldn't confirm whether your password changed. Try signing in with the password you entered before submitting again.",
+  );
+  expect(screen.getByRole("link", { name: "Try signing in" })).toHaveAttribute("href", "/login");
+  expect(screen.getByLabelText("New password")).toHaveValue("a long chosen passphrase");
+  expect(screen.getByLabelText("Confirm password")).toHaveValue("a long chosen passphrase");
+  expect(redeemCredentialLink).toHaveBeenCalledTimes(1);
+  expect(screen.queryByText("Password set")).not.toBeInTheDocument();
+  expect(screen.queryByText("This link can't be used")).not.toBeInTheDocument();
+});
+
 test.each([429, 503])("renders the lookup detail for %s", async (status) => {
   vi.mocked(lookupCredentialLink).mockRejectedValue(
     new ApiError(status, null, "Request failed", "Please try again later."),

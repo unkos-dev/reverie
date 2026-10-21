@@ -22,6 +22,22 @@ function canRetryLookup(error: Error | null): boolean {
   );
 }
 
+function redemptionError(error: Error): string | ReactElement {
+  if (error instanceof ApiError) return error.detail;
+  if (error instanceof TypeError) {
+    return (
+      <>
+        We couldn't confirm whether your password changed.{" "}
+        <Link to="/login" className="underline underline-offset-4">
+          Try signing in
+        </Link>{" "}
+        with the password you entered before submitting again.
+      </>
+    );
+  }
+  return error.message;
+}
+
 function LookupFailure({
   error,
   fetching,
@@ -48,7 +64,7 @@ function LookupFailure({
 
 export function Component(): ReactElement {
   const [token] = useState(() => z.string().parse(window.location.hash.slice(1)));
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<string | ReactElement | null>(null);
   const [invalid, setInvalid] = useState(false);
   const [hasRetriedLookup, setHasRetriedLookup] = useState(false);
   const { policy, ready, isError: policyError, validate } = usePasswordPolicy();
@@ -67,7 +83,7 @@ export function Component(): ReactElement {
       if (err instanceof ApiError && err.detail === "invalid or expired link") {
         setInvalid(true);
       } else {
-        setError(err instanceof ApiError ? err.detail : err.message);
+        setError(redemptionError(err));
       }
     },
   });
