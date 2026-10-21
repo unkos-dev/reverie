@@ -3,6 +3,22 @@
 Reverie manages its schema with embedded, forward-only migrations. How those migrations _run_ is deliberately separated
 from the long-lived application process so that an internet-exposed server never carries schema-management credentials.
 
+## Pre-v0.1 SQL lint transition
+
+The switch to `sqlfluff` reformats existing migrations and removes obsolete lint annotations. Their checksums change
+although the generated schema is unchanged. `reverie migrate` rejects a database retaining the previous checksums with
+`ChecksumMismatch`; the shipped Compose topology then keeps the application stopped.
+
+This transition requires recreating disposable databases before running the new image's migrations.
+**Recreation permanently deletes the database contents, including users and catalogue data.** It is not an in-place
+upgrade. Keep the previous image and database if data must be retained; restoring an old backup also restores the old
+migration checksums and does not resolve the mismatch with the new image.
+
+For local development, confirm the project, container, mounted database volume and affected consumers, then follow the
+[confirmed-volume reset procedure](../../backend/README.md#upgrade-note) and run `just db-migrate`. Other deployments
+must recreate only their confirmed database and run `reverie migrate` before starting the application. The development
+reset recipe does not target deployed databases.
+
 ## Two identities, one principle
 
 | Identity | Holds the migration credential? | Privileges |

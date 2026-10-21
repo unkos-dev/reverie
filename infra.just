@@ -5,6 +5,9 @@
 
 set shell := ["bash", "-ueo", "pipefail", "-c"]
 
+# renovate: datasource=pypi depName=sqlfluff
+sqlfluff_version := "4.4.0"
+
 # Shellcheck every tracked shell script.
 [group('infra')]
 shellcheck:
@@ -25,13 +28,10 @@ typos:
 ryl:
     git ls-files -z '*.yml' '*.yaml' | xargs -0 -r ryl check
 
-# --config is explicit because sqruff also auto-discovers `.sqlfluff`. That file
-# belongs to Codacy, and any key `.sqruff` leaves unset would otherwise be taken
-# from it.
-# Lint every non-ignored tracked SQL file against `.sqruff`, including parser failures.
+# Lint every non-ignored tracked SQL file, including parser failures.
 [group('infra')]
-sqruff:
-    git ls-files -z '*.sql' | xargs -0 -r sqruff lint --parsing-errors --config .sqruff
+sqlfluff:
+    git ls-files -z '*.sql' | { mapfile -d '' -t files; test "${#files[@]}" -gt 0; uvx --no-build sqlfluff@{{sqlfluff_version}} lint --ignore-local-config --config .sqlfluff "${files[@]}"; }
 
 # Lint GitHub Actions workflow files.
 [group('infra')]
@@ -176,7 +176,7 @@ no-plan-refs *files:
 #
 # Whole repo-lint surface (the non-JS half of CI's lint concern).
 [group('infra')]
-lint: shellcheck hadolint typos ryl sqruff actionlint prose specful filter-sarif-unfixable-os-selftest preflight-scope-selftest cargo-locked-guard backend-dev-env-selftest
+lint: shellcheck hadolint typos ryl sqlfluff actionlint prose specful filter-sarif-unfixable-os-selftest preflight-scope-selftest cargo-locked-guard backend-dev-env-selftest
 
 # The env-loader status cases also gate lint and CI; the other tests cover local tooling.
 # Everything else here covers local-only developer tooling, and that is now the

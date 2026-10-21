@@ -71,3 +71,9 @@ Related decisions: REV-ADR-0033, REV-ADR-0035.
 Reconsider when the JavaScript package managers gain per-workspace script policy, a dependency arrives that cannot work
 without its install script, the dependency-update automation can raise fixes for transitive dependencies in the Rust or
 JavaScript ecosystems, or action tag publish times become available to the release-age hold.
+
+The `sqlfluff` CLI is a named developer-tool exception to dependency locking and committed download hashes. Its release
+is pinned in the SQL lint recipe and runs through mise-pinned `uv` in an isolated environment. A separate Python
+dependency lockfile would add maintenance for a tool that does not enter the application. Transitive versions can change
+between fresh environments and are outside the repository's locked dependency audits. Source builds are disabled to
+prevent install-time build execution; local and CI lint use the same recipe.

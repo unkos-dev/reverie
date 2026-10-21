@@ -1,5 +1,5 @@
 ALTER TABLE public.ingestion_inputs
-ADD COLUMN matched_manifestation_id uuid REFERENCES public.manifestations(id) ON DELETE SET NULL;
+ADD COLUMN matched_manifestation_id uuid REFERENCES public.manifestations (id) ON DELETE SET NULL;
 
 -- noqa: disable=RF03
 CREATE OR REPLACE VIEW public.ingestion_input_classes WITH (security_invoker = TRUE) AS
@@ -19,7 +19,7 @@ LEFT JOIN LATERAL (
 INNER JOIN LATERAL (
     SELECT
         CASE i.status
-            WHEN 'rejected' THEN coalesce(i.rejection_reasons[1], 'unspecified') -- noqa: CV11
+            WHEN 'rejected' THEN coalesce(i.rejection_reasons[1], 'unspecified')
             WHEN 'not_accepted' THEN 'format_not_accepted'
             WHEN 'duplicate' THEN 'duplicate'
             WHEN 'operational_failure' THEN

@@ -13,6 +13,7 @@ shellcheck = "0.11.0"
 snyk = "v1.1308.1"
 trivy = "0.76.0"
 typos = "1.51.1"
+uv = "0.13.1"
 # OpenAPI linter for the generated spec, run by the openapi-policy CI job
 # against .vacuum.yaml.
 vacuum = "0.33.1"
@@ -48,12 +49,6 @@ version = "0.9.0"
 default-features = false
 features = ["postgres", "rustls"]
 locked = false
-
-# SQL linter for backend/migrations, run by `just infra::sqruff`. No mise
-# registry shorthand exists, so it takes the explicit GitHub backend form.
-[tools."github:quarylabs/sqruff"]
-version = "0.40.0"
-filter_bins = "sqruff"
 
 # YAML linter; reads .yamllint.yaml. Run by `just infra::ryl`.
 [tools."github:owenlamont/ryl"]

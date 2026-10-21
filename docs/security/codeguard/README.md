@@ -301,3 +301,17 @@ its responses.
 **Compensating controls:** HTTPS with platform trust, disabled redirects, five-second connect and ten-second total HTTP
 timeouts, and one shared in-flight key refresh. The timeout bounds HTTP duration through body completion, not bytes or
 parser allocations. A large provider response can consume excessive memory; that residual risk is accepted.
+
+### 10. SQLFluff tool dependencies are not locked
+
+**Override:** `codeguard-0-supply-chain-security.md`, "Policy and Governance", requires dependency lockfiles.
+
+**Reverie's position:** SQLFluff runs through `uvx` with a pinned CLI version and no repository Python dependency
+lockfile. Its transitive dependencies may change between fresh tool environments and are outside the locked dependency
+audits.
+
+**Rationale:** SQLFluff is developer tooling and is absent from the application. Maintaining a separate Python dependency
+lockfile adds work without changing the shipped dependency tree.
+
+**Compensating controls:** uv is mise-pinned and checksum-verified. The SQLFluff version is pinned in the shared local
+and CI recipe, which disables source builds. The tool environment is isolated from the application.

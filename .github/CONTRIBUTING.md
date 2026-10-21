@@ -125,8 +125,13 @@ Install the repository-pinned hook and local-check tools with [mise](https://mis
 ```sh
 mise install actionlint gitleaks hadolint just rumdl shellcheck typos vale \
   pnpm github:nextest-rs/nextest \
-  github:quarylabs/sqruff github:unkos-dev/specful github:owenlamont/ryl
+  uv github:unkos-dev/specful github:owenlamont/ryl
 ```
+
+SQL lint runs through `just infra::sqlfluff`, using a pinned `sqlfluff` release in an isolated `uv` tool environment.
+The CLI shares `.sqlfluff` with `Codacy` and excludes client-side `psql` scripts and the generated schema dump through
+`.sqlfluffignore`. PostgreSQL-valid identifier names are allowed; unnecessary identifier quotes are rejected. The tool’s
+transitive dependencies are not locked in the repository.
 
 Then install [vite-plus](https://viteplus.dev). It is a standalone binary, so an install inside the checkout does not
 provide it, and it is what provisions Node: the version comes from `devEngines.runtime` in
