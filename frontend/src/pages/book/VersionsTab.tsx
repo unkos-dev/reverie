@@ -167,12 +167,12 @@ function FieldGroup({
           </Button>
         ) : null}
       </header>
-      <dl className="space-y-2 text-sm">
+      <ul className="space-y-2 text-sm">
         <CanonicalRow canonical={canonical} />
         {rows.map((row) => (
           <PendingRow key={row.id} manifestationId={manifestationId} field={field} row={row} />
         ))}
-      </dl>
+      </ul>
 
       <AlertDialogContent isOpen={confirmOpen} onOpenChange={setConfirmOpen}>
         <AlertDialogHeader>
@@ -203,7 +203,7 @@ interface CanonicalRowProps {
 
 function CanonicalRow({ canonical }: Readonly<CanonicalRowProps>): ReactElement {
   return (
-    <div className="border-border bg-surface-1 flex items-start justify-between gap-4 rounded-sm border p-3">
+    <li className="border-border bg-surface-1 flex items-start justify-between gap-4 rounded-sm border p-3">
       <div className="min-w-0 flex-1">
         <p className="text-fg-muted text-xs uppercase tracking-wide">Current</p>
         <p className="text-fg mt-1 break-words">
@@ -211,7 +211,7 @@ function CanonicalRow({ canonical }: Readonly<CanonicalRowProps>): ReactElement 
         </p>
       </div>
       <Badge variant="default">canonical</Badge>
-    </div>
+    </li>
   );
 }
 
@@ -260,7 +260,7 @@ function PendingRow({ manifestationId, field, row }: Readonly<PendingRowProps>):
   const busy = acceptMutation.isPending || rejectMutation.isPending;
 
   return (
-    <div className="border-border flex items-start justify-between gap-4 rounded-sm border p-3">
+    <li className="border-border flex items-start justify-between gap-4 rounded-sm border p-3">
       <div className="min-w-0 flex-1">
         <p className="text-fg-muted text-xs uppercase tracking-wide">
           {row.source} · {row.match_type} · {Math.round(row.confidence_score * 100).toString()}%
@@ -288,7 +288,7 @@ function PendingRow({ manifestationId, field, row }: Readonly<PendingRowProps>):
           Reject
         </Button>
       </div>
-    </div>
+    </li>
   );
 }
 
