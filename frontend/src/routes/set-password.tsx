@@ -15,6 +15,13 @@ import { formString } from "@/lib/form";
 
 import { AuthShell } from "./auth-shell";
 
+function canRetryLookup(error: Error | null): boolean {
+  return (
+    error instanceof TypeError ||
+    (error instanceof ApiError && (error.status === 429 || error.status >= 500))
+  );
+}
+
 export function Component(): ReactElement {
   const [token] = useState(() => z.string().parse(window.location.hash.slice(1)));
   const [error, setError] = useState<string | null>(null);
@@ -93,11 +100,7 @@ export function Component(): ReactElement {
     );
   }
   if (lookup.isError || (hasRetriedLookup && lookup.isPending)) {
-    const canRetry =
-      lookup.isFetching ||
-      lookup.error instanceof TypeError ||
-      (lookup.error instanceof ApiError &&
-        (lookup.error.status === 429 || lookup.error.status >= 500));
+    const canRetry = lookup.isFetching || canRetryLookup(lookup.error);
     return (
       <AuthShell title="">
         {lookup.error ? (
