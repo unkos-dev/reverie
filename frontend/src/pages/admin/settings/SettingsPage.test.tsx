@@ -725,6 +725,9 @@ describe("accepted formats", () => {
     expect(row.queryByRole("checkbox", { name: "EPUB" })).not.toBeInTheDocument();
     expect(row.queryByText(/is the only format Reverie supports/)).not.toBeInTheDocument();
     expect(document.getElementById("help-accepted_formats")).toBeNull();
+    expect(document.getElementById("help-ingestion_enabled")).toHaveTextContent(
+      /Reverie stops starting new imports/,
+    );
     const field = document.querySelector('[data-field="accepted_formats"]');
     expect(field?.querySelector("input, button, a[href], [tabindex], [role=checkbox]")).toBeNull();
     expect(screen.queryByText(/can't be turned off/)).not.toBeInTheDocument();

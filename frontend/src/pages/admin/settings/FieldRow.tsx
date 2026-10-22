@@ -318,6 +318,7 @@ function RowFrame({ field, base, editor, label, children }: FrameProps): ReactEl
         </div>
         {field.help === undefined ? null : (
           <Text
+            id={`help-${field.key}`}
             slot="description"
             elementType="p"
             className="text-fg-muted mt-0.5 max-w-[52ch] text-sm leading-normal"
