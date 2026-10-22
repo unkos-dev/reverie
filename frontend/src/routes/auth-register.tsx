@@ -16,6 +16,13 @@
  */
 import { useMutation } from "@tanstack/react-query";
 import { useState, type ReactElement, type SyntheticEvent } from "react";
+import {
+  FieldError as AriaFieldError,
+  Form,
+  Input as AriaInput,
+  Label as AriaLabel,
+  TextField,
+} from "react-aria-components";
 import { Link, useNavigate } from "react-router";
 import { toast } from "sonner";
 
@@ -31,19 +38,19 @@ import { formString } from "@/lib/form";
 
 import { AuthShell } from "./auth-shell";
 
-/**
- * A validation error tagged with the field it belongs to, so `aria-invalid` is
- * scoped to the failing input. A server rejection is not field-specific (for
- * example a duplicate email or a disabled instance), so it stays `form` level
- * and is announced through the alert without mislabelling a specific input.
- */
-type FormError = { field: "display" | "email" | "password" | "form"; message: string };
+function validateDisplayName(value: string): string | null {
+  return displayNameField.safeParse(value).success ? null : "Enter a display name.";
+}
+
+function validateEmail(value: string): string | null {
+  return emailField.safeParse(value).success ? null : "Enter a valid email address.";
+}
 
 /** Route component for `/register`. */
 export function Component(): ReactElement {
   const { policy, ready, isError: policyError, validate } = usePasswordPolicy();
   const navigate = useNavigate();
-  const [error, setError] = useState<FormError | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   const registerMutation = useMutation({
     mutationFn: ({
@@ -62,7 +69,7 @@ export function Component(): ReactElement {
     onError: (err) => {
       const message =
         err instanceof ApiError && err.detail !== "" ? err.detail : "Could not create the account.";
-      setError({ field: "form", message });
+      setError(message);
       toast.error(message);
     },
   });
@@ -73,24 +80,9 @@ export function Component(): ReactElement {
     setError(null);
     const data = new FormData(e.currentTarget);
     const displayName = displayNameField.safeParse(formString(data, "display_name"));
-    if (!displayName.success) {
-      setError({ field: "display", message: "Enter a display name." });
-      return;
-    }
     const email = emailField.safeParse(formString(data, "email"));
-    if (!email.success) {
-      setError({ field: "email", message: "Enter a valid email address." });
-      return;
-    }
     const password = formString(data, "password");
-    const passwordError = validate(password);
-    if (passwordError !== undefined) {
-      setError({
-        field: "password",
-        message: passwordError,
-      });
-      return;
-    }
+    if (!displayName.success || !email.success || validate(password) !== undefined) return;
     registerMutation.mutate({
       email: email.data,
       displayName: displayName.data,
@@ -108,46 +100,49 @@ export function Component(): ReactElement {
         </Link>
       }
     >
-      <form onSubmit={handleSubmit} className="flex flex-col gap-4" noValidate>
-        <Field>
-          <FieldLabel htmlFor="display_name">Display name</FieldLabel>
-          <Input
-            id="display_name"
-            name="display_name"
-            type="text"
-            autoComplete="name"
-            required
-            aria-invalid={error?.field === "display" || undefined}
-          />
-        </Field>
-        <Field>
-          <FieldLabel htmlFor="email">Email</FieldLabel>
-          <Input
-            id="email"
-            name="email"
-            type="email"
-            autoComplete="email"
-            required
-            aria-invalid={error?.field === "email" || undefined}
-          />
-        </Field>
-        <Field>
-          <FieldLabel htmlFor="password">Password</FieldLabel>
-          <Input
-            id="password"
-            name="password"
-            type="password"
-            autoComplete="new-password"
-            required
-            aria-invalid={error?.field === "password" || undefined}
-          />
+      <Form onSubmit={handleSubmit} className="flex flex-col gap-4">
+        <TextField
+          name="display_name"
+          type="text"
+          autoComplete="name"
+          isRequired
+          validate={validateDisplayName}
+          render={(props) => <Field {...props} />}
+        >
+          <AriaLabel render={(props) => <FieldLabel {...props} />}>Display name</AriaLabel>
+          <AriaInput render={(props) => <Input {...props} />} />
+          <AriaFieldError className="text-destructive text-sm font-normal" />
+        </TextField>
+        <TextField
+          name="email"
+          type="email"
+          autoComplete="email"
+          isRequired
+          validate={validateEmail}
+          render={(props) => <Field {...props} />}
+        >
+          <AriaLabel render={(props) => <FieldLabel {...props} />}>Email</AriaLabel>
+          <AriaInput render={(props) => <Input {...props} />} />
+          <AriaFieldError className="text-destructive text-sm font-normal" />
+        </TextField>
+        <TextField
+          name="password"
+          type="password"
+          autoComplete="new-password"
+          isRequired
+          validate={(value) => (ready ? (validate(value) ?? null) : null)}
+          render={(props) => <Field {...props} />}
+        >
+          <AriaLabel render={(props) => <FieldLabel {...props} />}>Password</AriaLabel>
+          <AriaInput render={(props) => <Input {...props} />} />
           <PasswordPolicyHint policy={policy} failed={policyError} />
-        </Field>
-        {error ? <FieldError>{error.message}</FieldError> : null}
-        <Button type="submit" isDisabled={registerMutation.isPending || !ready}>
+          <AriaFieldError className="text-destructive text-sm font-normal" />
+        </TextField>
+        {error !== null ? <FieldError>{error}</FieldError> : null}
+        <Button type="submit" isPending={registerMutation.isPending} isDisabled={!ready}>
           Create account
         </Button>
-      </form>
+      </Form>
     </AuthShell>
   );
 }

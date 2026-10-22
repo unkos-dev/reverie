@@ -1,4 +1,5 @@
 import type { ReactElement } from "react";
+import { Text } from "react-aria-components";
 
 import type { PasswordLengthPolicy } from "@/api/auth.schemas";
 import { Button } from "@/components/ui/button";
@@ -27,9 +28,13 @@ export function PasswordPolicyHint({
   }
   return (
     <>
-      <FieldDescription role={policy === undefined && failed ? "alert" : undefined}>
+      <Text
+        slot="description"
+        role={policy === undefined && failed ? "alert" : undefined}
+        render={(props) => <FieldDescription {...props} />}
+      >
         {message}
-      </FieldDescription>
+      </Text>
       {onRetry && (failed || retrying) ? (
         <Button type="button" variant="outline" size="sm" isDisabled={retrying} onPress={onRetry}>
           Retry password policy

@@ -9,6 +9,13 @@
  */
 import { useMutation } from "@tanstack/react-query";
 import { useState, type ReactElement, type SyntheticEvent } from "react";
+import {
+  FieldError as AriaFieldError,
+  Form,
+  Input as AriaInput,
+  Label as AriaLabel,
+  TextField,
+} from "react-aria-components";
 import { Link, useNavigate } from "react-router";
 import { toast } from "sonner";
 
@@ -24,19 +31,15 @@ import { formString } from "@/lib/form";
 
 import { AuthShell } from "./auth-shell";
 
-/**
- * A validation error tagged with the field it belongs to, so `aria-invalid` is
- * scoped to the failing input. A server rejection covers more than one field
- * (wrong current password or a rejected new one), so it stays `form` level and
- * is announced through the alert without mislabelling a specific input.
- */
-type FormError = { field: "current" | "new" | "form"; message: string };
+function validateCurrentPassword(value: string): string | null {
+  return currentPasswordField.safeParse(value).success ? null : "Enter your current password.";
+}
 
 /** Route component for `/account/password`. */
 export function Component(): ReactElement {
   const { policy, ready, isError: policyError, validate } = usePasswordPolicy();
   const navigate = useNavigate();
-  const [error, setError] = useState<FormError | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   const changeMutation = useMutation({
     mutationFn: ({
@@ -55,7 +58,7 @@ export function Component(): ReactElement {
         err instanceof ApiError && err.detail !== ""
           ? err.detail
           : "Could not change the password.";
-      setError({ field: "form", message });
+      setError(message);
       toast.error(message);
     },
   });
@@ -66,19 +69,8 @@ export function Component(): ReactElement {
     setError(null);
     const data = new FormData(e.currentTarget);
     const currentPassword = currentPasswordField.safeParse(formString(data, "current_password"));
-    if (!currentPassword.success) {
-      setError({ field: "current", message: "Enter your current password." });
-      return;
-    }
     const newPassword = formString(data, "new_password");
-    const passwordError = validate(newPassword);
-    if (passwordError !== undefined) {
-      setError({
-        field: "new",
-        message: passwordError,
-      });
-      return;
-    }
+    if (!currentPassword.success || validate(newPassword) !== undefined) return;
     changeMutation.mutate({
       currentPassword: currentPassword.data,
       newPassword: newPassword,
@@ -95,35 +87,37 @@ export function Component(): ReactElement {
         </Link>
       }
     >
-      <form onSubmit={handleSubmit} className="flex flex-col gap-4" noValidate>
-        <Field>
-          <FieldLabel htmlFor="current_password">Current password</FieldLabel>
-          <Input
-            id="current_password"
-            name="current_password"
-            type="password"
-            autoComplete="current-password"
-            required
-            aria-invalid={error?.field === "current" || undefined}
-          />
-        </Field>
-        <Field>
-          <FieldLabel htmlFor="new_password">New password</FieldLabel>
-          <Input
-            id="new_password"
-            name="new_password"
-            type="password"
-            autoComplete="new-password"
-            required
-            aria-invalid={error?.field === "new" || undefined}
-          />
+      <Form onSubmit={handleSubmit} className="flex flex-col gap-4">
+        <TextField
+          name="current_password"
+          type="password"
+          autoComplete="current-password"
+          isRequired
+          validate={validateCurrentPassword}
+          render={(props) => <Field {...props} />}
+        >
+          <AriaLabel render={(props) => <FieldLabel {...props} />}>Current password</AriaLabel>
+          <AriaInput render={(props) => <Input {...props} />} />
+          <AriaFieldError className="text-destructive text-sm font-normal" />
+        </TextField>
+        <TextField
+          name="new_password"
+          type="password"
+          autoComplete="new-password"
+          isRequired
+          validate={(value) => (ready ? (validate(value) ?? null) : null)}
+          render={(props) => <Field {...props} />}
+        >
+          <AriaLabel render={(props) => <FieldLabel {...props} />}>New password</AriaLabel>
+          <AriaInput render={(props) => <Input {...props} />} />
           <PasswordPolicyHint policy={policy} failed={policyError} />
-        </Field>
-        {error ? <FieldError>{error.message}</FieldError> : null}
-        <Button type="submit" isDisabled={changeMutation.isPending || !ready}>
+          <AriaFieldError className="text-destructive text-sm font-normal" />
+        </TextField>
+        {error !== null ? <FieldError>{error}</FieldError> : null}
+        <Button type="submit" isPending={changeMutation.isPending} isDisabled={!ready}>
           Change password
         </Button>
-      </form>
+      </Form>
     </AuthShell>
   );
 }

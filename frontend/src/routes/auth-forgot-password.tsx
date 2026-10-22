@@ -11,6 +11,13 @@
  */
 import { useMutation } from "@tanstack/react-query";
 import { useState, type ReactElement, type SyntheticEvent } from "react";
+import {
+  FieldError as AriaFieldError,
+  Form,
+  Input as AriaInput,
+  Label as AriaLabel,
+  TextField,
+} from "react-aria-components";
 import { Link, useNavigate } from "react-router";
 import { toast } from "sonner";
 
@@ -28,6 +35,14 @@ import { AuthShell } from "./auth-shell";
 
 const RECOVERY_NOTICE =
   "If that account exists, a recovery PIN was written to the server. Enter it below with a new password.";
+
+function validateEmail(value: string): string | null {
+  return emailField.safeParse(value).success ? null : "Enter a valid email address.";
+}
+
+function validatePin(value: string): string | null {
+  return pinField.safeParse(value).success ? null : "Enter the recovery PIN.";
+}
 
 /** Route component for `/forgot-password`. */
 export function Component(): ReactElement {
@@ -70,10 +85,7 @@ export function Component(): ReactElement {
     setError(null);
     const data = new FormData(e.currentTarget);
     const parsed = emailField.safeParse(formString(data, "email"));
-    if (!parsed.success) {
-      setError("Enter a valid email address.");
-      return;
-    }
+    if (!parsed.success) return;
     requestMutation.mutate(parsed.data);
   }
 
@@ -83,16 +95,8 @@ export function Component(): ReactElement {
     setError(null);
     const data = new FormData(e.currentTarget);
     const pin = pinField.safeParse(formString(data, "pin"));
-    if (!pin.success) {
-      setError("Enter the recovery PIN.");
-      return;
-    }
     const newPassword = formString(data, "new_password");
-    const passwordError = validate(newPassword);
-    if (passwordError !== undefined) {
-      setError(passwordError);
-      return;
-    }
+    if (!pin.success || validate(newPassword) !== undefined) return;
     resetMutation.mutate({ pin: pin.data, newPassword: newPassword });
   }
 
@@ -103,59 +107,62 @@ export function Component(): ReactElement {
         description="Enter your email to start recovery."
         footer={<BackToSignIn />}
       >
-        <form key="request" onSubmit={handleRequest} className="flex flex-col gap-4" noValidate>
-          <Field>
-            <FieldLabel htmlFor="email">Email</FieldLabel>
-            <Input
-              id="email"
-              name="email"
-              type="email"
-              autoComplete="email"
-              required
-              aria-invalid={error !== null || undefined}
-            />
-          </Field>
+        <Form key="request" onSubmit={handleRequest} className="flex flex-col gap-4">
+          <TextField
+            name="email"
+            type="email"
+            autoComplete="email"
+            isRequired
+            validate={validateEmail}
+            render={(props) => <Field {...props} />}
+          >
+            <AriaLabel render={(props) => <FieldLabel {...props} />}>Email</AriaLabel>
+            <AriaInput render={(props) => <Input {...props} />} />
+            <AriaFieldError className="text-destructive text-sm font-normal" />
+          </TextField>
           {error !== null ? <FieldError>{error}</FieldError> : null}
-          <Button type="submit" isDisabled={requestMutation.isPending}>
+          <Button type="submit" isPending={requestMutation.isPending}>
             Send recovery PIN
           </Button>
-        </form>
+        </Form>
       </AuthShell>
     );
   }
 
   return (
     <AuthShell title="Enter recovery PIN" description={RECOVERY_NOTICE} footer={<BackToSignIn />}>
-      <form key="reset" onSubmit={handleReset} className="flex flex-col gap-4" noValidate>
-        <Field>
-          <FieldLabel htmlFor="pin">Recovery PIN</FieldLabel>
-          <Input
-            id="pin"
-            name="pin"
-            type="text"
-            inputMode="numeric"
-            autoComplete="one-time-code"
-            required
-            aria-invalid={error !== null || undefined}
-          />
-        </Field>
-        <Field>
-          <FieldLabel htmlFor="new_password">New password</FieldLabel>
-          <Input
-            id="new_password"
-            name="new_password"
-            type="password"
-            autoComplete="new-password"
-            required
-            aria-invalid={error !== null || undefined}
-          />
+      <Form key="reset" onSubmit={handleReset} className="flex flex-col gap-4">
+        <TextField
+          name="pin"
+          type="text"
+          inputMode="numeric"
+          autoComplete="one-time-code"
+          isRequired
+          validate={validatePin}
+          render={(props) => <Field {...props} />}
+        >
+          <AriaLabel render={(props) => <FieldLabel {...props} />}>Recovery PIN</AriaLabel>
+          <AriaInput render={(props) => <Input {...props} />} />
+          <AriaFieldError className="text-destructive text-sm font-normal" />
+        </TextField>
+        <TextField
+          name="new_password"
+          type="password"
+          autoComplete="new-password"
+          isRequired
+          validate={(value) => (ready ? (validate(value) ?? null) : null)}
+          render={(props) => <Field {...props} />}
+        >
+          <AriaLabel render={(props) => <FieldLabel {...props} />}>New password</AriaLabel>
+          <AriaInput render={(props) => <Input {...props} />} />
           <PasswordPolicyHint policy={policy} failed={policyError} />
-        </Field>
+          <AriaFieldError className="text-destructive text-sm font-normal" />
+        </TextField>
         {error !== null ? <FieldError>{error}</FieldError> : null}
-        <Button type="submit" isDisabled={resetMutation.isPending || !ready}>
+        <Button type="submit" isPending={resetMutation.isPending} isDisabled={!ready}>
           Reset password
         </Button>
-      </form>
+      </Form>
     </AuthShell>
   );
 }

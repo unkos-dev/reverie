@@ -55,6 +55,14 @@ function renderLogin(status: Status | null, initialUrl = "/login") {
   return { client, router };
 }
 
+const localStatus: Status = {
+  setup_required: false,
+  local_auth_enabled: true,
+  password_min_length: 15,
+  password_max_length: 256,
+  oidc_enabled: false,
+};
+
 beforeEach(() => {
   vi.clearAllMocks();
 });
@@ -114,6 +122,69 @@ describe("auth-login", () => {
 
     expect(await screen.findByRole("alert")).toHaveTextContent("Incorrect email or password.");
     expect(vi.mocked(toast.error)).toHaveBeenCalled();
+  });
+
+  test("native validation owns auth errors", async () => {
+    mockLocation();
+    renderLogin(localStatus);
+    const user = userEvent.setup();
+    const email = screen.getByLabelText("Email");
+    const password = screen.getByLabelText("Password");
+
+    await user.type(email, "not-an-email");
+    await user.click(screen.getByRole("button", { name: "Sign in" }));
+
+    expect(loginLocal).not.toHaveBeenCalled();
+    expect(email).toHaveAccessibleDescription("Enter a valid email address.");
+    expect(email).toBeInvalid();
+    expect(password).toHaveAccessibleDescription("Enter your password.");
+    expect(password).toBeInvalid();
+    expect(email).toHaveFocus();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+
+    vi.mocked(loginLocal).mockRejectedValue(
+      new ApiError(422, null, "Unprocessable", "Incorrect email or password."),
+    );
+    await user.clear(email);
+    await user.type(email, "ada@example.com");
+    await user.type(password, "wrong");
+    await user.click(screen.getByRole("button", { name: "Sign in" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("Incorrect email or password.");
+    expect(email).not.toHaveAttribute("aria-invalid");
+    expect(password).not.toHaveAttribute("aria-invalid");
+    expect(email).toHaveValue("ada@example.com");
+    expect(password).toHaveValue("wrong");
+  });
+
+  test("a missing password blocks submission and focuses the password field", async () => {
+    renderLogin(localStatus);
+    const user = userEvent.setup();
+
+    await user.type(screen.getByLabelText("Email"), "ada@example.com");
+    await user.click(screen.getByRole("button", { name: "Sign in" }));
+
+    expect(loginLocal).not.toHaveBeenCalled();
+    expect(screen.getByLabelText("Password")).toHaveFocus();
+    expect(screen.getByLabelText("Password")).toHaveAccessibleDescription("Enter your password.");
+    expect(screen.getByLabelText("Email")).not.toHaveAttribute("aria-invalid");
+  });
+
+  test("repeated click and Enter while a sign-in is pending send one request", async () => {
+    vi.mocked(loginLocal).mockReturnValue(new Promise(() => {}));
+    mockLocation();
+    renderLogin(localStatus);
+    const user = userEvent.setup();
+
+    await user.type(screen.getByLabelText("Email"), "ada@example.com");
+    await user.type(screen.getByLabelText("Password"), "hunter2hunter2");
+    await user.click(screen.getByRole("button", { name: "Sign in" }));
+    await user.click(screen.getByRole("button", { name: "Sign in" }));
+    await user.keyboard("{Enter}");
+    await user.click(screen.getByLabelText("Password"));
+    await user.keyboard("{Enter}");
+
+    expect(loginLocal).toHaveBeenCalledTimes(1);
   });
 
   test("hides the OIDC action when oidc is disabled", () => {
