@@ -55,6 +55,10 @@ files. [Application runtime](0024-application-runtime-startup-workers-and-shutdo
 it. `plaintext` is used only when selected and still allows relay authentication. Addresses parse into typed mailboxes,
 so header injection is refused. Links come only from `REVERIE_PUBLIC_URL`, never from Host or forwarded headers.
 
+Every rendered message writes its dates out in full in UTC as `{weekday} {day} {month} at {hour}:{minute} {am|pm} UTC`,
+with full weekday and month names, no leading zero on the day or hour, two-digit minutes, a 12-hour clock with lowercase
+"am" or "pm", no year, and the time zone named once. For example: "Saturday 25 October at 2:00 pm UTC".
+
 `reverie send-test-email <address>` loads only the transport, sender and support settings. It makes one submission
 bounded to 30 seconds, prints `Accepted by mail server.` and exits zero only on positive SMTP completion, and otherwise
 exits nonzero with a safe failure category. It needs no database, queue key or account.

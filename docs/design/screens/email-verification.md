@@ -51,8 +51,9 @@ the request. Try again." inline and keeps the action enabled.
 
 ## Verification email
 
-{origin} is the configured public URL, {expiry} the challenge's expiry and {support} the configured support address,
-which is also the Reply-To.
+{origin} is the configured public URL, {expiry} the challenge's expiry in the email date format of
+[authentication mail delivery](../../specs/operations/design/0029-authentication-mail-delivery.md) and {support} the
+configured support address, which is also the Reply-To.
 
 Subject: "Verify your email address for Reverie"
 
@@ -68,9 +69,6 @@ The link works once and expires on {expiry}.
 
 If you didn't ask for this, ignore this email. To report a problem, reply to this email or write to {support}.
 ```
-
-{expiry} is written out in full in UTC as `{weekday} {day} {month} at {hour}:{minute} {am|pm} UTC`, with the same rules
-as the Users screen's link emails. Proposed example, awaiting approval: "Saturday 25 October at 2:00 pm UTC".
 
 ## Confirmation page
 

@@ -33,12 +33,11 @@ Body: "It may have expired or already been used. Ask your administrator for a ne
 
 Link: "Go to sign in".
 
-On `/reset-password`, when `email_recovery_enabled` is true in setup status, the invalid state uses this proposed copy,
-awaiting approval:
+On `/reset-password`, when `email_recovery_enabled` is true in setup status, the invalid state uses this copy:
 
 Body: "It may have expired or already been used. Request a new link."
 
-Primary action: "Request a new link", to `/forgot-password`.
+Primary action: "Request a new link", to `/forgot-password`. Keep "Go to sign in" alongside it.
 
 With email recovery disabled, `/reset-password` keeps the body above. `/set-password` always uses the body above.
 

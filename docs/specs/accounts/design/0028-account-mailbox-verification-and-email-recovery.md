@@ -96,7 +96,8 @@ recovery proofs, with their pending mail, in place. Verification challenges surv
 
 **Address change.** When an administrator changes or removes an address, the transaction clears `email_verified_at`,
 deletes both proofs, cancels unsent bearer mail bound to the old address and clears its payloads. If the old address was
-verified, it receives the change notice. Notices already queued are not cancelled and keep their recipient.
+verified, it receives the address-changed notice, or the address-removed notice when the address was removed. Notices
+already queued are not cancelled and keep their recipient.
 
 **Notices** are queued for password replacement, first-password setup, a newly verified address and a change to or
 removal of a verified address, but only to an address whose control was established and only while mail is enabled. They

@@ -100,8 +100,9 @@ instead." A refusal because the link was replaced, cancelled or expired shows "T
 new link to send it." A network failure shows "Couldn't confirm the request. Try again." In every case the link and
 "Copy link" stay available. Closing the dialog stops status refresh and discards the link.
 
-Link email, with {origin} the configured public URL, {expiry} the link's expiry in the email date format below and
-{support} the configured support address, also the Reply-To. For an account without a password:
+Link email, with {origin} the configured public URL, {expiry} the link's expiry in the email date format of
+[authentication mail delivery](../../specs/operations/design/0029-authentication-mail-delivery.md) and {support} the
+configured support address, also the Reply-To. For an account without a password:
 
 Subject: "Set your Reverie password"
 
@@ -131,10 +132,6 @@ signs the account out everywhere.
 
 If you weren't expecting this, write to {support}.
 ```
-
-Email date format: {expiry} is written out in full in UTC as `{weekday} {day} {month} at {hour}:{minute} {am|pm} UTC`,
-with full weekday and month names, no leading zero on the day or hour, two-digit minutes, a 12-hour clock with lowercase
-"am" or "pm", and the time zone named once. Proposed example, awaiting approval: "Saturday 25 October at 2:00 pm UTC".
 
 ## Keyboard and accessibility
 

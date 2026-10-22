@@ -61,8 +61,10 @@ Below the text, a full-width outline button "Use a different email" returns to t
 
 ## Recovery email
 
-Only an eligible account receives this message. {origin} is the configured public URL, {expiry} the proof's expiry and
-{support} the configured support address, which is also the Reply-To.
+Only an eligible account receives this message. {origin} is the configured public URL, {expiry} the proof's expiry in
+the email date format of
+[authentication mail delivery](../../specs/operations/design/0029-authentication-mail-delivery.md) and {support} the
+configured support address, which is also the Reply-To.
 
 Subject: "Reset your Reverie password"
 
@@ -81,9 +83,6 @@ or write to {support}.
 ```
 
 The link opens the Set password screen at `/reset-password`.
-
-{expiry} is written out in full in UTC as `{weekday} {day} {month} at {hour}:{minute} {am|pm} UTC`, with the same rules
-as the Users screen's link emails. Proposed example, awaiting approval: "Saturday 25 October at 2:00 pm UTC".
 
 ## Keyboard and accessibility
 
