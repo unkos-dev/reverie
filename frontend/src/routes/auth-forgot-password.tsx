@@ -82,6 +82,7 @@ export function Component(): ReactElement {
 
   function handleRequest(e: SyntheticEvent<HTMLFormElement>): void {
     e.preventDefault();
+    if (requestMutation.isPending) return;
     setError(null);
     const data = new FormData(e.currentTarget);
     const parsed = emailField.safeParse(formString(data, "email"));

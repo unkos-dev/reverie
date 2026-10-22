@@ -185,6 +185,8 @@ describe("auth-forgot-password", () => {
     await user.click(screen.getByRole("button", { name: "Send recovery PIN" }));
     await user.click(screen.getByRole("button", { name: "Send recovery PIN" }));
     await user.keyboard("{Enter}");
+    await user.click(screen.getByLabelText("Email"));
+    await user.keyboard("{Enter}");
 
     expect(requestPasswordReset).toHaveBeenCalledTimes(1);
   });
