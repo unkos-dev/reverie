@@ -77,13 +77,14 @@ configured; copying works the same either way. Sending uses the link currently s
 The administrator enters no address. Nothing is sent when the account is created; sending happens only on activation.
 
 After activation, a status line appears 16 px beneath the link field. While the dialog is open, the page refreshes that
-delivery's status every 3 seconds and stops at Accepted, Failed or when the dialog closes.
+delivery's status every 3 seconds and stops at Accepted, Failed, Inactive or when the dialog closes.
 
 | Status | Text | Actions |
 | ------ | ---- | ------- |
 | Queued | "Sending to {email}…" | "Send email" disabled |
 | Accepted | "The mail server accepted the email for {email}. This doesn't confirm it reached the inbox." | "Send email" hidden |
 | Failed | "Sending failed: {reason}. Copy the link instead, or try again." | "Try again" replaces "Send email" |
+| Inactive | "This link is no longer active. Create a new link to send it." | "Send email" hidden |
 
 | Failure category     | {reason}                                          |
 | -------------------- | ------------------------------------------------- |
