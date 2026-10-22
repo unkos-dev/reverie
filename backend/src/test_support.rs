@@ -608,7 +608,17 @@ pub mod db {
         ingestion_pool: &PgPool,
         config: crate::config::Config,
     ) -> axum_test::TestServer {
-        server_with_reload_state(app_pool, ingestion_pool, config, None)
+        server_with_reload_state(app_pool, ingestion_pool, config, None, None)
+    }
+
+    /// Same as [`server_with_config`] with the authentication mail runtime wired in.
+    pub fn server_with_mail(
+        app_pool: &PgPool,
+        ingestion_pool: &PgPool,
+        config: crate::config::Config,
+        mail: std::sync::Arc<crate::services::mail::queue::MailRuntime>,
+    ) -> axum_test::TestServer {
+        server_with_reload_state(app_pool, ingestion_pool, config, None, Some(mail))
     }
 
     /// Same as [`server_with_real_pools`] with the live-reload task's last
@@ -618,7 +628,13 @@ pub mod db {
         ingestion_pool: &PgPool,
         at: chrono::DateTime<chrono::Utc>,
     ) -> axum_test::TestServer {
-        server_with_reload_state(app_pool, ingestion_pool, super::test_config(), Some(at))
+        server_with_reload_state(
+            app_pool,
+            ingestion_pool,
+            super::test_config(),
+            Some(at),
+            None,
+        )
     }
 
     fn server_with_reload_state(
@@ -626,6 +642,7 @@ pub mod db {
         ingestion_pool: &PgPool,
         mut config: crate::config::Config,
         last_reload: Option<chrono::DateTime<chrono::Utc>>,
+        mail: Option<std::sync::Arc<crate::services::mail::queue::MailRuntime>>,
     ) -> axum_test::TestServer {
         use crate::state::AppState;
         let (storage_config, library_files) = crate::test_support::test_storage_config(
@@ -649,7 +666,7 @@ pub mod db {
             oidc_limiter: super::test_login_limiter(),
             settings: super::test_settings(),
             last_settings_reload: std::sync::Arc::new(tokio::sync::RwLock::new(last_reload)),
-            mail: None,
+            mail,
         };
         let app = crate::build_router(state);
         axum_test::TestServer::new(app)
@@ -1584,6 +1601,16 @@ impl CapturedLogs {
             .finish()
     }
 
+    pub(crate) fn trace_subscriber(&self) -> impl tracing::Subscriber + Send + Sync + use<> {
+        let writer = self.clone();
+        tracing_subscriber::fmt()
+            .with_max_level(tracing::Level::TRACE)
+            .without_time()
+            .with_ansi(false)
+            .with_writer(move || writer.clone())
+            .finish()
+    }
+
     pub(crate) fn text(&self) -> String {
         String::from_utf8(self.0.lock().unwrap().clone()).unwrap()
     }
@@ -1865,5 +1892,190 @@ pub mod mail {
 
     pub fn runtime(port: u16) -> MailRuntime {
         runtime_with(port, key(), true)
+    }
+
+    pub const PASSWORD: &str = "lithe cobalt meadow drift";
+    pub const SUPPORT: &str = "support@example.com";
+    pub const ORIGIN: &str = "http://localhost:3000";
+
+    /// A mail runtime that submits to a relay on `port`.
+    pub fn shared_runtime(port: u16) -> Arc<MailRuntime> {
+        Arc::new(runtime(port))
+    }
+
+    /// A server with the mail runtime wired in and cookies saved.
+    pub fn server(
+        app: &PgPool,
+        ingestion: &PgPool,
+        mail: &Arc<MailRuntime>,
+    ) -> axum_test::TestServer {
+        let mut server =
+            super::db::server_with_mail(app, ingestion, super::test_config(), Arc::clone(mail));
+        server.save_cookies();
+        server
+    }
+
+    /// Sign in over the saved cookies and return the CSRF token.
+    pub async fn login(server: &axum_test::TestServer, email: &str, password: &str) -> String {
+        let response = server
+            .post("/auth/local/login")
+            .json(&serde_json::json!({"email": email, "password": password}))
+            .await;
+        assert_eq!(response.status_code(), axum::http::StatusCode::NO_CONTENT);
+        server.get("/auth/me").await.json::<serde_json::Value>()["csrf_token"]
+            .as_str()
+            .unwrap()
+            .to_owned()
+    }
+
+    pub fn csrf(token: &str) -> (axum::http::HeaderName, axum::http::HeaderValue) {
+        (
+            axum::http::HeaderName::from_static("x-csrf-token"),
+            axum::http::HeaderValue::from_str(token).unwrap(),
+        )
+    }
+
+    /// A stored job with its sealed payload opened.
+    #[derive(Debug)]
+    pub struct Stored {
+        pub id: Uuid,
+        pub purpose: String,
+        pub state: String,
+        pub recipient: String,
+        pub subject: String,
+        pub body: String,
+    }
+
+    /// Every job of `user` that still holds a payload, oldest first.
+    pub async fn messages(pool: &PgPool, user: Uuid) -> Vec<Stored> {
+        let rows = sqlx::query!(
+            "SELECT id, purpose, state, nonce, payload FROM mail_jobs \
+              WHERE user_id = $1 AND payload IS NOT NULL ORDER BY enqueued_at, id",
+            user
+        )
+        .fetch_all(pool)
+        .await
+        .unwrap();
+        rows.into_iter()
+            .map(|row| {
+                let plaintext = crate::services::mail::crypto::open(
+                    &key(),
+                    row.id,
+                    &row.purpose,
+                    row.nonce.as_deref().unwrap(),
+                    row.payload.as_deref().unwrap(),
+                )
+                .unwrap();
+                let payload: MailPayload = serde_json::from_slice(&plaintext).unwrap();
+                Stored {
+                    id: row.id,
+                    purpose: row.purpose,
+                    state: row.state,
+                    recipient: payload.recipient,
+                    subject: payload.subject,
+                    body: payload.body,
+                }
+            })
+            .collect()
+    }
+
+    /// Job count for one account, any state, optionally one purpose.
+    pub async fn job_count(pool: &PgPool, user: Uuid, purpose: Option<&str>) -> i64 {
+        sqlx::query_scalar!(
+            r#"SELECT count(*) AS "count!" FROM mail_jobs
+                WHERE user_id = $1 AND ($2::text IS NULL OR purpose = $2)"#,
+            user,
+            purpose
+        )
+        .fetch_one(pool)
+        .await
+        .unwrap()
+    }
+
+    /// Wait for the first job of `purpose` for `user`; panics after five seconds.
+    pub async fn wait_for_job(pool: &PgPool, user: Uuid, purpose: &str) -> Uuid {
+        for _ in 0..500 {
+            if let Some(id) = sqlx::query_scalar!(
+                "SELECT id FROM mail_jobs WHERE user_id = $1 AND purpose = $2 ORDER BY enqueued_at LIMIT 1",
+                user,
+                purpose
+            )
+            .fetch_optional(pool)
+            .await
+            .unwrap()
+            {
+                return id;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        }
+        panic!("no {purpose} job appeared");
+    }
+
+    /// The token after `#` in the first link of a body.
+    pub fn token_in(body: &str) -> String {
+        let fragment = body.split_once('#').unwrap().1;
+        fragment.lines().next().unwrap().trim().to_owned()
+    }
+
+    /// Mark an account's address verified without going through confirmation.
+    pub async fn verify_address(pool: &PgPool, user: Uuid) {
+        sqlx::query!(
+            "UPDATE users SET email_verified_at = now() WHERE id = $1",
+            user
+        )
+        .execute(pool)
+        .await
+        .unwrap();
+    }
+
+    /// Whether the account holds an unexpired proof of `purpose`.
+    pub async fn proof_live(pool: &PgPool, user: Uuid, purpose: &str) -> bool {
+        sqlx::query_scalar!(
+            r#"SELECT EXISTS (SELECT 1 FROM account_email_proofs
+                               WHERE user_id = $1 AND purpose = $2
+                                 AND expires_at > clock_timestamp()) AS "live!""#,
+            user,
+            purpose
+        )
+        .fetch_one(pool)
+        .await
+        .unwrap()
+    }
+
+    /// Mark a delivery accepted and old enough that the 60-second interval has passed.
+    pub async fn settle_delivery(pool: &PgPool, id: Uuid) {
+        sqlx::query!(
+            "UPDATE mail_jobs SET state = 'accepted', terminal_at = clock_timestamp(), \
+                    enqueued_at = clock_timestamp() - interval '2 minutes', \
+                    next_attempt_at = clock_timestamp() - interval '2 minutes' WHERE id = $1",
+            id
+        )
+        .execute(pool)
+        .await
+        .unwrap();
+    }
+
+    /// Wait until `user` has at least `count` jobs of `purpose`.
+    pub async fn wait_for_count(pool: &PgPool, user: Uuid, purpose: &str, count: i64) {
+        for _ in 0..500 {
+            if job_count(pool, user, Some(purpose)).await >= count {
+                return;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        }
+        panic!("fewer than {count} {purpose} jobs appeared");
+    }
+
+    /// Fail every later insert into `mail_jobs`.
+    pub async fn break_enqueue(pool: &PgPool) {
+        sqlx::raw_sql(
+            "CREATE FUNCTION fail_mail_insert() RETURNS trigger LANGUAGE plpgsql AS \
+             $$ BEGIN RAISE EXCEPTION 'mail insert blocked'; END $$; \
+             CREATE TRIGGER fail_mail_insert BEFORE INSERT ON mail_jobs \
+             FOR EACH ROW EXECUTE FUNCTION fail_mail_insert();",
+        )
+        .execute(pool)
+        .await
+        .unwrap();
     }
 }

@@ -1,7 +1,9 @@
 //! Authentication mail: payload encryption and bounded SMTP submission.
 
 pub mod crypto;
+pub mod dispatch;
 pub mod queue;
+pub mod render;
 pub mod transport;
 
 /// The safe, fixed vocabulary for why a mail operation failed. Nothing about

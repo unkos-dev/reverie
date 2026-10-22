@@ -386,6 +386,65 @@ pub async fn revoke_for_authority(
     .rows_affected())
 }
 
+/// The pending or in-flight delivery of a proof, if any.
+///
+/// # Errors
+/// Returns database errors from the lookup.
+pub async fn live_delivery(
+    conn: &mut PgConnection,
+    user_id: Uuid,
+    proof_digest: &[u8],
+) -> Result<Option<Uuid>, sqlx::Error> {
+    sqlx::query_scalar!(
+        "SELECT id FROM mail_jobs \
+          WHERE user_id = $1 AND proof_digest = $2 AND state IN ('pending', 'in_progress')",
+        user_id,
+        proof_digest,
+    )
+    .fetch_optional(conn)
+    .await
+}
+
+/// A job's state and, once failed, its safe failure category.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct JobStatus {
+    /// Lifecycle state.
+    pub state: JobState,
+    /// Why the last attempt failed, when it did.
+    pub failure_category: Option<String>,
+}
+
+/// The status of an administrator-link delivery that belongs to `user_id`.
+///
+/// # Errors
+/// Returns database errors from the lookup, or a decode error for an unknown state.
+pub async fn admin_link_status(
+    pool: &PgPool,
+    user_id: Uuid,
+    job_id: Uuid,
+) -> Result<Option<JobStatus>, sqlx::Error> {
+    let Some(row) = sqlx::query!(
+        "SELECT state, failure_category FROM mail_jobs \
+          WHERE id = $1 AND user_id = $2 AND purpose = 'admin_link'",
+        job_id,
+        user_id,
+    )
+    .fetch_optional(pool)
+    .await?
+    else {
+        return Ok(None);
+    };
+    let state = JobState::parse(&row.state)
+        .ok_or_else(|| sqlx::Error::Decode("unknown mail job state".into()))?;
+    Ok(Some(JobStatus {
+        state,
+        failure_category: match state {
+            JobState::Failed => row.failure_category,
+            _ => None,
+        },
+    }))
+}
+
 /// The outcome of an allowance check.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Admission {
@@ -516,15 +575,11 @@ pub async fn sweep_batch(
                    OR (j.payload IS NOT NULL AND j.state <> 'in_progress'
                        AND j.expires_at <= clock_timestamp())
                    OR j.terminal_at <= clock_timestamp() - interval '7 days'
-                   OR (j.payload IS NOT NULL AND j.authority_kind IS NOT NULL
-                       AND NOT ((j.authority_kind = 'credential_link' AND EXISTS (
-                                    SELECT 1 FROM credential_links l
-                                     WHERE l.user_id = j.user_id AND l.token_hash = j.proof_digest
-                                       AND l.expires_at > clock_timestamp()))
-                             OR (j.authority_kind IN ('verification', 'recovery') AND EXISTS (
+                   OR (j.payload IS NOT NULL AND j.authority_kind IN ('verification', 'recovery')
+                       AND NOT EXISTS (
                                     SELECT 1 FROM account_email_proofs p
                                      WHERE p.user_id = j.user_id AND p.token_hash = j.proof_digest
-                                       AND p.expires_at > clock_timestamp()))))
+                                       AND p.expires_at > clock_timestamp()))
            ) c
             WHERE ($1::uuid IS NULL OR user_id > $1)
             ORDER BY user_id LIMIT $2"#,
@@ -570,15 +625,11 @@ pub async fn sweep_batch(
             nonce = NULL, payload = NULL \
           WHERE j.user_id = ANY($1) AND j.payload IS NOT NULL \
             AND ((j.state <> 'in_progress' AND j.expires_at <= clock_timestamp()) \
-                 OR (j.authority_kind IS NOT NULL \
-                     AND NOT ((j.authority_kind = 'credential_link' AND EXISTS ( \
-                                  SELECT 1 FROM credential_links l \
-                                   WHERE l.user_id = j.user_id AND l.token_hash = j.proof_digest \
-                                     AND l.expires_at > clock_timestamp())) \
-                           OR (j.authority_kind IN ('verification', 'recovery') AND EXISTS ( \
+                 OR (j.authority_kind IN ('verification', 'recovery') \
+                     AND NOT EXISTS ( \
                                   SELECT 1 FROM account_email_proofs p \
                                    WHERE p.user_id = j.user_id AND p.token_hash = j.proof_digest \
-                                     AND p.expires_at > clock_timestamp())))))",
+                                     AND p.expires_at > clock_timestamp())))",
         &locked,
     )
     .execute(&mut *tx)
@@ -1521,38 +1572,6 @@ mod tests {
             "cancelled",
             "no recovery proof exists for it either"
         );
-    }
-
-    #[sqlx::test(migrations = "./migrations")]
-    async fn smtp_queue_sweep_cancels_administrator_mail_once_its_link_is_gone(pool: PgPool) {
-        let app = app_pool_for(&pool).await;
-        let user = account(&pool, ADDRESS).await;
-        let (token, _) = crate::models::credential_link::issue(&app, user)
-            .await
-            .unwrap();
-        let link = account_email_proof::digest(&token);
-        let sent = enqueue_bearer(
-            &app,
-            user,
-            MailPurpose::AdminLink,
-            &link,
-            TimeDelta::hours(72),
-            ADDRESS,
-        )
-        .await;
-        sweep_all(&app).await;
-        assert_eq!(
-            state_of(&pool, sent).await,
-            "pending",
-            "a live link keeps its mail"
-        );
-        assert!(payload_present(&pool, sent).await);
-        crate::models::credential_link::cancel(&app, user)
-            .await
-            .unwrap();
-        sweep_all(&app).await;
-        assert_eq!(state_of(&pool, sent).await, "cancelled");
-        assert!(!payload_present(&pool, sent).await);
     }
 
     #[sqlx::test(migrations = "./migrations")]

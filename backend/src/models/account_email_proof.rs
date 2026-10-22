@@ -85,10 +85,20 @@ pub async fn lock_account(
     conn: &mut PgConnection,
     user_id: Uuid,
 ) -> Result<Option<LockedAccount>, sqlx::Error> {
+    if sqlx::query_scalar!(
+        "SELECT id FROM users WHERE id = $1 FOR NO KEY UPDATE",
+        user_id,
+    )
+    .fetch_optional(&mut *conn)
+    .await?
+    .is_none()
+    {
+        return Ok(None);
+    }
     sqlx::query_as!(
         LockedAccount,
         r#"SELECT email, (disabled_at IS NOT NULL) AS "disabled!", email_verified_at
-             FROM users WHERE id = $1 FOR NO KEY UPDATE"#,
+             FROM users WHERE id = $1"#,
         user_id,
     )
     .fetch_optional(conn)
@@ -493,7 +503,12 @@ mod tests {
         let waiter = tokio::spawn(async move {
             consume_in_tx(&other, user, ProofPurpose::Recovery, &token).await
         });
-        crate::test_support::wait_for_blocked_query(&pool, "SELECT email, (disabled_at%", 1).await;
+        crate::test_support::wait_for_blocked_query(
+            &pool,
+            "SELECT id FROM users WHERE id = $1 FOR NO KEY UPDATE",
+            1,
+        )
+        .await;
         sqlx::query!(
             "UPDATE account_email_proofs SET expires_at = clock_timestamp() WHERE user_id = $1",
             user

@@ -75,6 +75,12 @@ impl MailRuntime {
         &self.key
     }
 
+    /// Whether password recovery by email is currently available.
+    #[must_use]
+    pub const fn local_auth_enabled(&self) -> bool {
+        self.local_auth_enabled
+    }
+
     /// The relay, sender and support settings.
     #[must_use]
     pub const fn transport(&self) -> &MailTransportConfig {
@@ -599,7 +605,7 @@ mod tests {
         async fn link(&self) -> (String, Vec<u8>) {
             let mut tx = self.app.begin().await.unwrap();
             lock_account(&mut tx, self.user).await.unwrap();
-            let (token, _) = credential_link::issue(&mut *tx, self.user).await.unwrap();
+            let (token, _) = credential_link::issue(&mut tx, self.user).await.unwrap();
             tx.commit().await.unwrap();
             let digest = account_email_proof::digest(&token);
             (token, digest)
@@ -761,9 +767,12 @@ mod tests {
         let cancelled = f.admin_mail(&digest).await;
         let mut tx = f.app.begin().await.unwrap();
         lock_account(&mut tx, f.user).await.unwrap();
-        credential_link::cancel(&mut *tx, f.user).await.unwrap();
+        credential_link::cancel(&mut tx, f.user).await.unwrap();
         tx.commit().await.unwrap();
-        assert!(f.step().await);
+        assert!(
+            !f.step().await,
+            "cancelling the link withdraws its mail directly"
+        );
         assert_eq!(state_of(&pool, cancelled).await, "cancelled");
         assert!(!payload_present(&pool, cancelled).await);
         assert_eq!(f.relay.messages().len(), 4);

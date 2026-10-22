@@ -404,6 +404,29 @@ pub async fn enable_account(
     .map(|_| ())
 }
 
+/// Record that Reverie verified the account's current address.
+///
+/// The only writer of `email_verified_at`. The caller holds the owning
+/// user-row lock and has consumed the challenge bound to the current address
+/// in the same transaction. Returns whether the account holds an address.
+///
+/// # Errors
+///
+/// Returns [`sqlx::Error`] from the `UPDATE`.
+pub async fn set_email_verified(
+    conn: &mut sqlx::PgConnection,
+    user_id: Uuid,
+) -> Result<bool, sqlx::Error> {
+    sqlx::query!(
+        "UPDATE users SET email_verified_at = clock_timestamp(), updated_at = now() \
+         WHERE id = $1 AND email IS NOT NULL",
+        user_id,
+    )
+    .execute(conn)
+    .await
+    .map(|result| result.rows_affected() == 1)
+}
+
 /// Fetch a user by OIDC identity `(issuer, subject)`, resolved through
 /// [`crate::models::user_identities`]. Returns `Ok(None)` if no link exists.
 ///

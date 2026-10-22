@@ -39,8 +39,12 @@ use crate::auth::middleware::CurrentUser;
 use crate::auth::scope::Scope;
 use crate::error::AppError;
 use crate::extract::{ApiJson, ApiPath};
+use crate::models::account_email_proof::{self, ProofPurpose};
+use crate::models::mail_job::{self, JobState};
 use crate::models::role::Role;
 use crate::models::user::is_addr_spec;
+use crate::services::mail::dispatch::{Outbox, Requested};
+use crate::services::mail::render::Notice;
 use crate::state::AppState;
 
 #[cfg(test)]
@@ -62,7 +66,12 @@ pub fn router() -> OpenApiRouter<AppState> {
         .routes(routes!(update_account_status))
         .routes(routes!(issue_credential_link))
         .routes(routes!(cancel_credential_link))
+        .routes(routes!(send_credential_link_email))
+        .routes(routes!(credential_link_email_status))
         .routes(routes!(change_own_password))
+        .routes(routes!(email_verification_status))
+        .routes(routes!(request_email_verification))
+        .routes(routes!(confirm_email_verification))
 }
 
 /// Enforce the configured password policy (length bounds, zxcvbn floor, HIBP
@@ -470,7 +479,7 @@ async fn create_user(
                 crate::models::user::CreateUserError::EmailExists => AppError::EmailConflict,
                 crate::models::user::CreateUserError::Db(db) => AppError::Internal(db.into()),
             })?;
-    let (token, expires_at) = crate::models::credential_link::issue(&mut *tx, user.id)
+    let (token, expires_at) = crate::models::credential_link::issue(&mut tx, user.id)
         .await
         .map_err(|e| AppError::Internal(e.into()))?;
     tx.commit()
@@ -680,7 +689,7 @@ async fn issue_credential_link(
             "the account has no email address".into(),
         ));
     }
-    let (token, expires_at) = crate::models::credential_link::issue(&mut *tx, id)
+    let (token, expires_at) = crate::models::credential_link::issue(&mut tx, id)
         .await
         .map_err(|e| AppError::Internal(e.into()))?;
     tx.commit()
@@ -718,10 +727,367 @@ async fn cancel_credential_link(
     current_user.require_admin()?;
     current_user.require_not_child()?;
     current_user.require_browser_session()?;
-    crate::models::credential_link::cancel(&state.pool, id)
+    let mut tx = state
+        .pool
+        .begin()
+        .await
+        .map_err(|e| AppError::Internal(e.into()))?;
+    crate::models::account_email_proof::lock_account(&mut tx, id)
+        .await
+        .map_err(|e| AppError::Internal(e.into()))?;
+    crate::models::credential_link::cancel(&mut tx, id)
+        .await
+        .map_err(|e| AppError::Internal(e.into()))?;
+    tx.commit()
         .await
         .map_err(|e| AppError::Internal(e.into()))?;
     Ok(StatusCode::NO_CONTENT)
+}
+
+fn outbox(state: &AppState) -> Result<Option<Outbox>, AppError> {
+    Outbox::new(state.mail.as_ref(), state.config.public_url.as_ref())
+        .map_err(|e| AppError::Internal(e.into()))
+}
+
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
+struct CredentialLinkEmailRequest {
+    /// The link token the administrator holds; it must match the account's live link.
+    #[schema(
+        min_length = 43,
+        max_length = 43,
+        pattern = "^[A-Za-z0-9_-]{42}[AEIMQUYcgkosw048]$"
+    )]
+    token: String,
+}
+
+#[derive(Debug, Serialize, utoipa::ToSchema)]
+#[serde(rename_all = "snake_case")]
+enum CredentialLinkEmailState {
+    Queued,
+    Accepted,
+    Failed,
+    Inactive,
+}
+
+#[derive(Debug, Serialize, utoipa::ToSchema)]
+struct CredentialLinkEmailStatus {
+    /// The delivery's identifier.
+    job_id: Uuid,
+    /// `queued` while waiting or in flight, `accepted` once the mail server took
+    /// it, `failed` when delivery gave up, `inactive` once the link was
+    /// replaced, cancelled or expired. Acceptance does not confirm inbox delivery.
+    status: CredentialLinkEmailState,
+    /// Safe failure category (`connection`, `tls`, `authentication`,
+    /// `temporary_refusal`, `permanent_refusal`, `timeout` or
+    /// `payload_unreadable`) while `status` is `failed`; otherwise `null`.
+    failure_category: Option<String>,
+}
+
+impl From<mail_job::JobStatus> for CredentialLinkEmailState {
+    fn from(status: mail_job::JobStatus) -> Self {
+        match status.state {
+            JobState::Pending | JobState::InProgress => Self::Queued,
+            JobState::Accepted => Self::Accepted,
+            JobState::Failed => Self::Failed,
+            JobState::Cancelled | JobState::Expired => Self::Inactive,
+        }
+    }
+}
+
+/// Email an account's live credential link to its stored address.
+#[utoipa::path(
+    post, path = "/api/v1/users/{id}/credential-links/emails", summary = "Email a credential link",
+    description = "Queues the link the caller holds for the account's stored email address. The request supplies the live link token and no address or URL; it must match the account's live link, and the account must be enabled with an address. Returns the delivery's identifier and status. Requires an administrator browser session and enabled local authentication. Acceptance by the mail server does not confirm inbox delivery.",
+    tag = "users", security(("session_cookie" = ["admin"])),
+    params(("id" = Uuid, Path, max_length = 45, description = "Target user id")),
+    request_body = CredentialLinkEmailRequest,
+    responses(
+        (status = 202, description = "Delivery queued", body = CredentialLinkEmailStatus, headers(("Cache-Control" = String, description = "no-store"))),
+        (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
+        (status = 403, description = "Administrator browser session required", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
+        (status = 404, description = "Local authentication disabled or account not found", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
+        (status = 422, description = "The link is not the account's live link, or the account is disabled or has no email address", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
+        (status = 503, description = "Email is not available on this server", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
+    )
+)]
+async fn send_credential_link_email(
+    current_user: CurrentUser,
+    State(state): State<AppState>,
+    ApiPath(id): ApiPath<Uuid>,
+    ApiJson(req): ApiJson<CredentialLinkEmailRequest>,
+) -> Result<impl IntoResponse, AppError> {
+    if !state.config.local_auth_enabled {
+        return Err(AppError::NotFound);
+    }
+    current_user.require_scope(Scope::Admin)?;
+    current_user.require_admin()?;
+    current_user.require_not_child()?;
+    current_user.require_browser_session()?;
+    let outbox = outbox(&state)?.ok_or(AppError::MailUnavailable)?;
+    let inactive = || AppError::Validation("the link is no longer active".into());
+    let mut tx = state
+        .pool
+        .begin()
+        .await
+        .map_err(|e| AppError::Internal(e.into()))?;
+    let account = account_email_proof::lock_account(&mut tx, id)
+        .await
+        .map_err(|e| AppError::Internal(e.into()))?
+        .ok_or(AppError::NotFound)?;
+    // THREAT: The recipient is the stored address and the link must still be the live one.
+    let recipient = account
+        .email
+        .as_deref()
+        .filter(|_| !account.disabled)
+        .ok_or_else(inactive)?;
+    let expires_at = crate::models::credential_link::live_expiry(&mut tx, id, &req.token)
+        .await
+        .map_err(|e| AppError::Internal(e.into()))?
+        .ok_or_else(inactive)?;
+    let has_password = crate::models::local_credentials::find_by_user_id(&mut *tx, id)
+        .await
+        .map_err(|e| AppError::Internal(e.into()))?
+        .is_some();
+    let job_id = outbox
+        .admin_link(&mut tx, id, recipient, has_password, &req.token, expires_at)
+        .await
+        .map_err(|e| AppError::Internal(e.into()))?;
+    tx.commit()
+        .await
+        .map_err(|e| AppError::Internal(e.into()))?;
+    tracing::info!(
+        action = "credential_link_email_queued",
+        admin_id = %current_user.user_id,
+        user_id = %id,
+        job_id = %job_id,
+        "credential link email queued"
+    );
+    Ok((
+        StatusCode::ACCEPTED,
+        [(header::CACHE_CONTROL, "no-store")],
+        axum::Json(CredentialLinkEmailStatus {
+            job_id,
+            status: CredentialLinkEmailState::Queued,
+            failure_category: None,
+        }),
+    ))
+}
+
+/// Report the status of one emailed credential link.
+#[utoipa::path(
+    get, path = "/api/v1/users/{id}/credential-links/emails/{job_id}", summary = "Get a link email's status",
+    description = "Returns whether the delivery is queued, accepted by the mail server, failed with a safe category, or inactive because the link was replaced, cancelled or expired. Requires an administrator browser session and enabled local authentication.",
+    tag = "users", security(("session_cookie" = ["admin"])),
+    params(
+        ("id" = Uuid, Path, max_length = 45, description = "Target user id"),
+        ("job_id" = Uuid, Path, max_length = 45, description = "Delivery identifier returned when the email was queued"),
+    ),
+    responses(
+        (status = 200, description = "Delivery status", body = CredentialLinkEmailStatus, headers(("Cache-Control" = String, description = "no-store"))),
+        (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
+        (status = 403, description = "Administrator browser session required", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
+        (status = 404, description = "Local authentication disabled, or no such delivery for this account", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
+    )
+)]
+async fn credential_link_email_status(
+    current_user: CurrentUser,
+    State(state): State<AppState>,
+    ApiPath((id, job_id)): ApiPath<(Uuid, Uuid)>,
+) -> Result<impl IntoResponse, AppError> {
+    if !state.config.local_auth_enabled {
+        return Err(AppError::NotFound);
+    }
+    current_user.require_scope(Scope::Admin)?;
+    current_user.require_admin()?;
+    current_user.require_not_child()?;
+    current_user.require_browser_session()?;
+    let status = mail_job::admin_link_status(&state.pool, id, job_id)
+        .await
+        .map_err(|e| AppError::Internal(e.into()))?
+        .ok_or(AppError::NotFound)?;
+    let failure_category = status.failure_category.clone();
+    Ok((
+        [(header::CACHE_CONTROL, "no-store")],
+        axum::Json(CredentialLinkEmailStatus {
+            job_id,
+            status: status.into(),
+            failure_category,
+        }),
+    ))
+}
+
+#[derive(Debug, Serialize, utoipa::ToSchema)]
+struct EmailVerificationStatus {
+    /// The account's current email address; `null` when none is on file.
+    email: Option<String>,
+    /// Whether Reverie has verified the current address.
+    email_verified: bool,
+    /// Whether this server can send authentication mail.
+    mail_enabled: bool,
+}
+
+/// Report the caller's address and whether it is verified.
+#[utoipa::path(
+    get, path = "/api/v1/account/email-verifications", summary = "Get your email verification status",
+    description = "Returns the caller's current email address, whether it is verified, and whether the server can send mail. Requires a browser session.",
+    tag = "users", security(("session_cookie" = ["read"])),
+    responses(
+        (status = 200, description = "Verification status", body = EmailVerificationStatus, headers(("Cache-Control" = String, description = "no-store"))),
+        (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
+        (status = 403, description = "Browser session required", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
+    )
+)]
+async fn email_verification_status(
+    current_user: CurrentUser,
+    State(state): State<AppState>,
+) -> Result<impl IntoResponse, AppError> {
+    current_user.require_scope(Scope::Read)?;
+    current_user.require_browser_session()?;
+    let row = sqlx::query!(
+        "SELECT email, email_verified_at FROM users WHERE id = $1",
+        current_user.user_id,
+    )
+    .fetch_optional(&state.pool)
+    .await
+    .map_err(|e| AppError::Internal(e.into()))?
+    .ok_or(AppError::Unauthorized)?;
+    Ok((
+        [(header::CACHE_CONTROL, "no-store")],
+        axum::Json(EmailVerificationStatus {
+            email: row.email,
+            email_verified: row.email_verified_at.is_some(),
+            mail_enabled: state.mail.is_some(),
+        }),
+    ))
+}
+
+/// Queue or reuse a mailbox verification email for the caller's address.
+#[utoipa::path(
+    post, path = "/api/v1/account/email-verifications", summary = "Request a verification email",
+    description = "Queues a verification email for the caller's current address, or reuses the pending one. A request within 60 seconds of the previous one, or while a delivery is pending, queues nothing more. Returns 422 when the account has no address or it is already verified. Requires a browser session and configured mail.",
+    tag = "users", security(("session_cookie" = ["write"])),
+    responses(
+        (status = 202, description = "Verification email queued or already pending", headers(("Cache-Control" = String, description = "no-store"))),
+        (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
+        (status = 403, description = "Browser session required", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
+        (status = 422, description = "The account has no email address, or it is already verified", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
+        (status = 503, description = "Email is not available on this server", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
+    )
+)]
+async fn request_email_verification(
+    current_user: CurrentUser,
+    State(state): State<AppState>,
+) -> Result<impl IntoResponse, AppError> {
+    current_user.require_scope(Scope::Write)?;
+    current_user.require_browser_session()?;
+    let outbox = outbox(&state)?.ok_or(AppError::MailUnavailable)?;
+    let mut tx = state
+        .pool
+        .begin()
+        .await
+        .map_err(|e| AppError::Internal(e.into()))?;
+    let account = account_email_proof::lock_account(&mut tx, current_user.user_id)
+        .await
+        .map_err(|e| AppError::Internal(e.into()))?
+        .ok_or(AppError::Unauthorized)?;
+    if account.disabled {
+        return Err(AppError::Unauthorized);
+    }
+    let address = account
+        .email
+        .as_deref()
+        .ok_or_else(|| AppError::Validation("the account has no email address".into()))?;
+    if account.email_verified_at.is_some() {
+        return Err(AppError::Validation(
+            "the email address is already verified".into(),
+        ));
+    }
+    let outcome = outbox
+        .request_proof(
+            &mut tx,
+            current_user.user_id,
+            ProofPurpose::Verification,
+            address,
+        )
+        .await
+        .map_err(|e| AppError::Internal(e.into()))?;
+    tx.commit()
+        .await
+        .map_err(|e| AppError::Internal(e.into()))?;
+    if let Requested::Queued(job_id) = outcome {
+        tracing::info!(
+            action = "email_verification_queued",
+            user_id = %current_user.user_id,
+            job_id = %job_id,
+            "email verification queued"
+        );
+    }
+    Ok((StatusCode::ACCEPTED, [(header::CACHE_CONTROL, "no-store")]))
+}
+
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
+struct EmailVerificationConfirmation {
+    /// The token from the verification email.
+    #[schema(
+        min_length = 43,
+        max_length = 43,
+        pattern = "^[A-Za-z0-9_-]{42}[AEIMQUYcgkosw048]$"
+    )]
+    token: String,
+}
+
+/// Confirm control of the caller's address with an emailed token.
+#[utoipa::path(
+    post, path = "/api/v1/account/email-verifications/confirmations", summary = "Confirm your email address",
+    description = "Consumes the verification token mailed to the caller's current address and records the address as verified. The token must belong to the signed-in account; an expired, used, replaced, foreign or outdated token returns one generic 422. Changes no password or address and signs nobody in. Requires a browser session.",
+    tag = "users", security(("session_cookie" = ["write"])),
+    request_body = EmailVerificationConfirmation,
+    responses(
+        (status = 204, description = "Address verified"),
+        (status = 401, description = "Authentication required", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
+        (status = 403, description = "Browser session required", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
+        (status = 422, description = "Invalid or expired link", body = crate::openapi::ProblemDetails, content_type = "application/problem+json"),
+    )
+)]
+async fn confirm_email_verification(
+    current_user: CurrentUser,
+    State(state): State<AppState>,
+    ApiJson(req): ApiJson<EmailVerificationConfirmation>,
+) -> Result<impl IntoResponse, AppError> {
+    current_user.require_scope(Scope::Write)?;
+    current_user.require_browser_session()?;
+    let user_id = current_user.user_id;
+    let mut tx = state
+        .pool
+        .begin()
+        .await
+        .map_err(|e| AppError::Internal(e.into()))?;
+    account_email_proof::lock_account(&mut tx, user_id)
+        .await
+        .map_err(|e| AppError::Internal(e.into()))?
+        .ok_or(AppError::Unauthorized)?;
+    // THREAT: Only this account's challenge for its current address can verify it.
+    let address =
+        account_email_proof::consume(&mut tx, user_id, ProofPurpose::Verification, &req.token)
+            .await
+            .map_err(|e| AppError::Internal(e.into()))?
+            .ok_or_else(|| AppError::Validation("invalid or expired link".into()))?;
+    crate::models::user::set_email_verified(&mut tx, user_id)
+        .await
+        .map_err(|e| AppError::Internal(e.into()))?;
+    if let Some(outbox) = outbox(&state)? {
+        outbox
+            .notice_to_address(&mut tx, user_id, Notice::AddressVerified, &address)
+            .await
+            .map_err(|e| AppError::Internal(e.into()))?;
+    }
+    tx.commit()
+        .await
+        .map_err(|e| AppError::Internal(e.into()))?;
+    Ok((
+        StatusCode::NO_CONTENT,
+        [(header::CACHE_CONTROL, "no-store")],
+    ))
 }
 
 /// Body for `POST /api/v1/account/password`.
@@ -831,14 +1197,10 @@ async fn change_own_password(
         .await
         .map_err(|e| AppError::Internal(e.into()))?;
     // THREAT: user-before-credential locking prevents inversion with recovery writers.
-    sqlx::query_scalar!(
-        "SELECT id FROM users WHERE id = $1 FOR NO KEY UPDATE",
-        user_id
-    )
-    .fetch_optional(&mut *tx)
-    .await
-    .map_err(|e| AppError::Internal(e.into()))?
-    .ok_or(AppError::Unauthorized)?;
+    let account = crate::models::account_email_proof::lock_account(&mut tx, user_id)
+        .await
+        .map_err(|e| AppError::Internal(e.into()))?
+        .ok_or(AppError::Unauthorized)?;
     let replaced = crate::models::local_credentials::replace_verified_password(
         &mut *tx,
         user_id,
@@ -856,6 +1218,12 @@ async fn change_own_password(
     crate::models::user::increment_session_version(&mut *tx, user_id)
         .await
         .map_err(|e| AppError::Internal(e.into()))?;
+    if let Some(outbox) = outbox(&state)? {
+        outbox
+            .notice_to_verified_address(&mut tx, user_id, &account, Notice::PasswordChanged)
+            .await
+            .map_err(|e| AppError::Internal(e.into()))?;
+    }
     tx.commit()
         .await
         .map_err(|e| AppError::Internal(e.into()))?;
@@ -941,6 +1309,98 @@ fn validate_patch_email(raw: &str, admin_id: Uuid, target_user_id: Uuid) -> Resu
     Ok(trimmed)
 }
 
+/// Write an admin-supplied email (`None` clears it) and report whether the
+/// address actually changed, which is what clears its verification.
+///
+/// Email is not an access-control input: login identity resolves through
+/// `user_identities` keyed on `(issuer, subject)`, not email; RLS keys on user
+/// id/role/`is_child`, and the session auth hash is `session_version` only. So
+/// changing or clearing email does not bump `session_version`. The uniqueness
+/// constraint is still enforced for the set case.
+async fn apply_email_patch(
+    tx: &mut sqlx::PgConnection,
+    id: Uuid,
+    admin_id: Uuid,
+    before: &account_email_proof::LockedAccount,
+    email: Option<&str>,
+) -> Result<bool, AppError> {
+    let Some(email) = email else {
+        sqlx::query!(
+            "UPDATE users SET email = NULL, email_verified_at = NULL, updated_at = now() \
+             WHERE id = $1",
+            id,
+        )
+        .execute(tx)
+        .await
+        .map_err(|e| AppError::Internal(e.into()))?;
+        return Ok(before.email.is_some());
+    };
+    let trimmed = validate_patch_email(email, admin_id, id)?;
+    // Check unique constraint proactively for a clear error message.
+    let conflict = sqlx::query_scalar!(
+        "SELECT id FROM users WHERE LOWER(email) = LOWER($1) AND id != $2",
+        trimmed,
+        id,
+    )
+    .fetch_optional(&mut *tx)
+    .await
+    .map_err(|e| AppError::Internal(e.into()))?;
+    if conflict.is_some() {
+        return Err(AppError::Validation("email already in use".into()));
+    }
+    let changed = !before
+        .email
+        .as_deref()
+        .is_some_and(|old| old.eq_ignore_ascii_case(trimmed));
+    sqlx::query!(
+        "UPDATE users SET email = $1, updated_at = now(), \
+                email_verified_at = CASE WHEN $3 THEN NULL ELSE email_verified_at END \
+          WHERE id = $2",
+        trimmed,
+        id,
+        changed,
+    )
+    .execute(tx)
+    .await
+    // Proactive SELECT covers the common case; translate any
+    // race-escaped unique violation to 422 rather than 500.
+    .map_err(|e| unique_violation_or_internal(e, "email already in use"))?;
+    Ok(changed)
+}
+
+/// Revoke what the account's former address authorised after an administrator
+/// changed or removed it, and tell that address when it was verified.
+async fn retire_old_address(
+    state: &AppState,
+    tx: &mut sqlx::PgConnection,
+    id: Uuid,
+    before: &account_email_proof::LockedAccount,
+    removed: bool,
+) -> Result<(), AppError> {
+    account_email_proof::cancel_all(tx, id)
+        .await
+        .map_err(|e| AppError::Internal(e.into()))?;
+    mail_job::revoke_for_authority(tx, id, mail_job::AuthorityKind::CredentialLink)
+        .await
+        .map_err(|e| AppError::Internal(e.into()))?;
+    if let (Some(old), Some(_), Some(outbox)) = (
+        before.email.as_deref(),
+        before.email_verified_at,
+        outbox(state)?,
+    ) {
+        let event = if removed {
+            Notice::AddressRemoved
+        } else {
+            Notice::AddressChanged
+        };
+        outbox
+            .notice_to_address(tx, id, event, old)
+            .await
+            .map_err(|e| AppError::Internal(e.into()))?;
+    }
+    Ok(())
+}
+
 /// `PATCH /api/v1/users/{id}` — update `display_name` / `email` (admin only).
 ///
 /// Does not bump `session_version`: neither `email` nor `display_name` gates
@@ -958,7 +1418,7 @@ fn validate_patch_email(raw: &str, admin_id: Uuid, target_user_id: Uuid) -> Resu
     patch,
     path = "/api/v1/users/{id}",
     summary = "Update a user's name or email",
-    description = "Updates the target user's `display_name` and `email` using JSON Merge Patch: an absent field is unchanged, and an explicit `null` clears `email` but is rejected for `display_name`. Neither field invalidates the target's sessions. Admin only. Returns 422 for an empty `display_name` or an `email` already in use.",
+    description = "Updates the target user's `display_name` and `email` using JSON Merge Patch: an absent field is unchanged, and an explicit `null` clears `email` but is rejected for `display_name`. Neither field invalidates the target's sessions. An actual change or removal of `email` clears its verification and mailbox proofs and withdraws queued link mail. Admin only. Returns 422 for an empty `display_name` or an `email` already in use.",
     tag = "users",
     security(("session_cookie" = ["admin"]), ("device_token_bearer" = ["admin"]), ("opds_basic" = ["admin"])),
     params(("id" = Uuid, Path, max_length = 45, description = "Target user id")),
@@ -1001,14 +1461,11 @@ async fn update_user(
         .await
         .map_err(|e| AppError::Internal(e.into()))?;
 
-    // Verify target exists.
-    let exists = sqlx::query_scalar!("SELECT id FROM users WHERE id = $1 FOR UPDATE", id,)
-        .fetch_optional(&mut *tx)
+    let before = account_email_proof::lock_account(&mut tx, id)
         .await
-        .map_err(|e| AppError::Internal(e.into()))?;
-    if exists.is_none() {
-        return Err(AppError::NotFound);
-    }
+        .map_err(|e| AppError::Internal(e.into()))?
+        .ok_or(AppError::NotFound)?;
+    let mut address_changed = false;
 
     // Apply display_name if present.
     if let Some(Some(ref name)) = req.display_name {
@@ -1022,50 +1479,19 @@ async fn update_user(
         .map_err(|e| AppError::Internal(e.into()))?;
     }
 
-    // Email is not an access-control input: login identity resolves through
-    // user_identities keyed on `(issuer, subject)`, not email; RLS keys on user
-    // id/role/`is_child`, and the session auth hash is `session_version` only.
-    // So changing or clearing email does not bump `session_version` — no active
-    // session needs invalidating. The uniqueness constraint is still enforced
-    // below for the set case.
     if let Some(ref email_opt) = req.email {
-        match email_opt {
-            None => {
-                // Clear email — no session_version bump (email gates nothing).
-                sqlx::query!(
-                    "UPDATE users SET email = NULL, updated_at = now() WHERE id = $1",
-                    id,
-                )
-                .execute(&mut *tx)
-                .await
-                .map_err(|e| AppError::Internal(e.into()))?;
-            }
-            Some(email) => {
-                let trimmed = validate_patch_email(email, current_user.user_id, id)?;
-                // Check unique constraint proactively for a clear error message.
-                let conflict = sqlx::query_scalar!(
-                    "SELECT id FROM users WHERE LOWER(email) = LOWER($1) AND id != $2",
-                    trimmed,
-                    id,
-                )
-                .fetch_optional(&mut *tx)
-                .await
-                .map_err(|e| AppError::Internal(e.into()))?;
-                if conflict.is_some() {
-                    return Err(AppError::Validation("email already in use".into()));
-                }
-                sqlx::query!(
-                    "UPDATE users SET email = $1, updated_at = now() WHERE id = $2",
-                    trimmed,
-                    id,
-                )
-                .execute(&mut *tx)
-                .await
-                // Proactive SELECT covers the common case; translate any
-                // race-escaped unique violation to 422 rather than 500.
-                .map_err(|e| unique_violation_or_internal(e, "email already in use"))?;
-            }
-        }
+        address_changed = apply_email_patch(
+            &mut tx,
+            id,
+            current_user.user_id,
+            &before,
+            email_opt.as_deref(),
+        )
+        .await?;
+    }
+
+    if address_changed {
+        retire_old_address(&state, &mut tx, id, &before, req.email == Some(None)).await?;
     }
 
     let row = sqlx::query_as!(

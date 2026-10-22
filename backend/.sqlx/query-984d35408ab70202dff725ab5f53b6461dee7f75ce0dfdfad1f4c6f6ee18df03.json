@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT email, (disabled_at IS NOT NULL) AS \"disabled!\", email_verified_at\n             FROM users WHERE id = $1 FOR NO KEY UPDATE",
+  "query": "SELECT email, email_verified_at FROM users WHERE id = $1",
   "describe": {
     "columns": [
       {
@@ -16,12 +16,6 @@
       },
       {
         "ordinal": 1,
-        "name": "disabled!",
-        "type_info": "Bool",
-        "origin": "Expression"
-      },
-      {
-        "ordinal": 2,
         "name": "email_verified_at",
         "type_info": "Timestamptz",
         "origin": {
@@ -39,9 +33,8 @@
     },
     "nullable": [
       true,
-      null,
       true
     ]
   },
-  "hash": "6055f69301c9be62c69d9acaedca88a366540a2456f4552de8e8bff9cc9d78d6"
+  "hash": "984d35408ab70202dff725ab5f53b6461dee7f75ce0dfdfad1f4c6f6ee18df03"
 }

@@ -1,0 +1,24 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT EXISTS (SELECT 1 FROM account_email_proofs\n                               WHERE user_id = $1 AND purpose = $2\n                                 AND expires_at > clock_timestamp()) AS \"live!\"",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "live!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "8f5f790b0ffe89e460beb429e43674ce5648b2cc989a64fea21f0eb6a167ba49"
+}

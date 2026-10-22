@@ -10,6 +10,223 @@
     "version": "0.1.0"
   },
   "paths": {
+    "/api/v1/account/email-verifications": {
+      "get": {
+        "tags": [
+          "users"
+        ],
+        "summary": "Get your email verification status",
+        "description": "Returns the caller's current email address, whether it is verified, and whether the server can send mail. Requires a browser session.",
+        "operationId": "email_verification_status",
+        "responses": {
+          "200": {
+            "description": "Verification status",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "no-store"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EmailVerificationStatus"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Browser session required",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session_cookie": [
+              "read"
+            ]
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "users"
+        ],
+        "summary": "Request a verification email",
+        "description": "Queues a verification email for the caller's current address, or reuses the pending one. A request within 60 seconds of the previous one, or while a delivery is pending, queues nothing more. Returns 422 when the account has no address or it is already verified. Requires a browser session and configured mail.",
+        "operationId": "request_email_verification",
+        "responses": {
+          "202": {
+            "description": "Verification email queued or already pending",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "no-store"
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Browser session required",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The account has no email address, or it is already verified",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Email is not available on this server",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session_cookie": [
+              "write"
+            ]
+          }
+        ]
+      }
+    },
+    "/api/v1/account/email-verifications/confirmations": {
+      "post": {
+        "tags": [
+          "users"
+        ],
+        "summary": "Confirm your email address",
+        "description": "Consumes the verification token mailed to the caller's current address and records the address as verified. The token must belong to the signed-in account; an expired, used, replaced, foreign or outdated token returns one generic 422. Changes no password or address and signs nobody in. Requires a browser session.",
+        "operationId": "confirm_email_verification",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EmailVerificationConfirmation"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Address verified"
+          },
+          "400": {
+            "description": "The request body is not valid JSON",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Browser session required",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "The request body is too large",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "The request body is not sent as application/json",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid or expired link",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session_cookie": [
+              "write"
+            ]
+          }
+        ]
+      }
+    },
     "/api/v1/account/password": {
       "post": {
         "tags": [
@@ -5394,7 +5611,7 @@
           "users"
         ],
         "summary": "Update a user's name or email",
-        "description": "Updates the target user's `display_name` and `email` using JSON Merge Patch: an absent field is unchanged, and an explicit `null` clears `email` but is rejected for `display_name`. Neither field invalidates the target's sessions. Admin only. Returns 422 for an empty `display_name` or an `email` already in use.",
+        "description": "Updates the target user's `display_name` and `email` using JSON Merge Patch: an absent field is unchanged, and an explicit `null` clears `email` but is rejected for `display_name`. Neither field invalidates the target's sessions. An actual change or removal of `email` clears its verification and mailbox proofs and withdraws queued link mail. Admin only. Returns 422 for an empty `display_name` or an `email` already in use.",
         "operationId": "update_user",
         "parameters": [
           {
@@ -5958,6 +6175,247 @@
         ]
       }
     },
+    "/api/v1/users/{id}/credential-links/emails": {
+      "post": {
+        "tags": [
+          "users"
+        ],
+        "summary": "Email a credential link",
+        "description": "Queues the link the caller holds for the account's stored email address. The request supplies the live link token and no address or URL; it must match the account's live link, and the account must be enabled with an address. Returns the delivery's identifier and status. Requires an administrator browser session and enabled local authentication. Acceptance by the mail server does not confirm inbox delivery.",
+        "operationId": "send_credential_link_email",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Target user id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "maxLength": 45
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CredentialLinkEmailRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "description": "Delivery queued",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "no-store"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CredentialLinkEmailStatus"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request body is not valid JSON, or a path parameter is malformed",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Administrator browser session required",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Local authentication disabled or account not found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "The request body is too large",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "The request body is not sent as application/json",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The link is not the account's live link, or the account is disabled or has no email address",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Email is not available on this server",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session_cookie": [
+              "admin"
+            ]
+          }
+        ]
+      }
+    },
+    "/api/v1/users/{id}/credential-links/emails/{job_id}": {
+      "get": {
+        "tags": [
+          "users"
+        ],
+        "summary": "Get a link email's status",
+        "description": "Returns whether the delivery is queued, accepted by the mail server, failed with a safe category, or inactive because the link was replaced, cancelled or expired. Requires an administrator browser session and enabled local authentication.",
+        "operationId": "credential_link_email_status",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Target user id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "maxLength": 45
+            }
+          },
+          {
+            "name": "job_id",
+            "in": "path",
+            "description": "Delivery identifier returned when the email was queued",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "maxLength": 45
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Delivery status",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "no-store"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CredentialLinkEmailStatus"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "A path parameter is malformed",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Administrator browser session required",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Local authentication disabled, or no such delivery for this account",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session_cookie": [
+              "admin"
+            ]
+          }
+        ]
+      }
+    },
     "/api/v1/users/{id}/role": {
       "put": {
         "tags": [
@@ -6336,7 +6794,7 @@
           "auth"
         ],
         "summary": "Look up a credential link",
-        "description": "Returns the email and password state for a valid link. Invalid, expired, used, disabled-account and no-email links share one generic refusal.",
+        "description": "Returns the email and password state for a valid administrator or host link, or an emailed password recovery link for an eligible account. Verification links never resolve. Invalid, expired, used, ineligible, disabled-account and no-email links share one generic refusal.",
         "operationId": "lookup_credential_link",
         "requestBody": {
           "content": {
@@ -6449,7 +6907,7 @@
           "auth"
         ],
         "summary": "Redeem a credential link",
-        "description": "Sets the account's password once before the link expires, invalidates earlier sessions and creates no session. Leaves login throttling and device tokens unchanged.",
+        "description": "Sets the account's password once before the link expires, using an administrator or host link or an emailed password recovery link for an eligible account. Deletes every other password-replacement link, invalidates earlier sessions and creates no session. Leaves login throttling and device tokens unchanged.",
         "operationId": "redeem_credential_link",
         "requestBody": {
           "content": {
@@ -6557,7 +7015,7 @@
           "auth"
         ],
         "summary": "Start password recovery",
-        "description": "Starts PIN-based password recovery for the given email and always returns the same generic response so it cannot be used to determine whether an account exists. No authentication is required to call it. Returns 404 if local authentication is disabled and 429 when too many requests have been made. Returns 503 when authentication processing is busy.",
+        "description": "Starts password recovery by email for the given address and always returns the same generic response so it cannot be used to determine whether an account exists or whether email is available. No authentication is required to call it. Returns 404 if local authentication is disabled and 429 when too many requests have been made.",
         "operationId": "forgot_password",
         "requestBody": {
           "content": {
@@ -6571,7 +7029,7 @@
         },
         "responses": {
           "200": {
-            "description": "Recovery started if the account exists (generic; no enumeration)"
+            "description": "Recovery email requested if the address belongs to an eligible account (generic; no enumeration)"
           },
           "400": {
             "description": "The request body is not valid JSON",
@@ -6635,16 +7093,6 @@
                 "description": "Positive delay in seconds before retrying"
               }
             },
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
-          },
-          "503": {
-            "description": "Authentication processing is busy",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -7447,7 +7895,7 @@
           "auth"
         ],
         "summary": "Get setup status",
-        "description": "Returns whether initial setup is required, which sign-in providers are enabled, and the configured minimum and maximum new-password lengths. Sign-in and password-setting forms use this state. No authentication is required to call it.",
+        "description": "Returns whether initial setup is required, which sign-in providers are enabled, whether password recovery by email is available, and the configured minimum and maximum new-password lengths. Sign-in, recovery and password-setting forms use this state. No authentication is required to call it.",
         "operationId": "setup_status",
         "responses": {
           "200": {
@@ -9847,6 +10295,55 @@
           }
         }
       },
+      "CredentialLinkEmailRequest": {
+        "type": "object",
+        "required": [
+          "token"
+        ],
+        "properties": {
+          "token": {
+            "type": "string",
+            "description": "The link token the administrator holds; it must match the account's live link.",
+            "maxLength": 43,
+            "minLength": 43,
+            "pattern": "^[A-Za-z0-9_-]{42}[AEIMQUYcgkosw048]$"
+          }
+        }
+      },
+      "CredentialLinkEmailState": {
+        "type": "string",
+        "enum": [
+          "queued",
+          "accepted",
+          "failed",
+          "inactive"
+        ]
+      },
+      "CredentialLinkEmailStatus": {
+        "type": "object",
+        "required": [
+          "job_id",
+          "status"
+        ],
+        "properties": {
+          "failure_category": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Safe failure category (`connection`, `tls`, `authentication`,\n`temporary_refusal`, `permanent_refusal`, `timeout` or\n`payload_unreadable`) while `status` is `failed`; otherwise `null`."
+          },
+          "job_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "The delivery's identifier."
+          },
+          "status": {
+            "$ref": "#/components/schemas/CredentialLinkEmailState",
+            "description": "`queued` while waiting or in flight, `accepted` once the mail server took\nit, `failed` when delivery gave up, `inactive` once the link was\nreplaced, cancelled or expired. Acceptance does not confirm inbox delivery."
+          }
+        }
+      },
       "CredentialLinkLookupRequest": {
         "type": "object",
         "required": [
@@ -10006,6 +10503,45 @@
               "$ref": "#/components/schemas/FieldChange"
             },
             "description": "Fields that would be left as pending and require human review."
+          }
+        }
+      },
+      "EmailVerificationConfirmation": {
+        "type": "object",
+        "required": [
+          "token"
+        ],
+        "properties": {
+          "token": {
+            "type": "string",
+            "description": "The token from the verification email.",
+            "maxLength": 43,
+            "minLength": 43,
+            "pattern": "^[A-Za-z0-9_-]{42}[AEIMQUYcgkosw048]$"
+          }
+        }
+      },
+      "EmailVerificationStatus": {
+        "type": "object",
+        "required": [
+          "email_verified",
+          "mail_enabled"
+        ],
+        "properties": {
+          "email": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The account's current email address; `null` when none is on file."
+          },
+          "email_verified": {
+            "type": "boolean",
+            "description": "Whether Reverie has verified the current address."
+          },
+          "mail_enabled": {
+            "type": "boolean",
+            "description": "Whether this server can send authentication mail."
           }
         }
       },
@@ -11721,10 +12257,15 @@
           "setup_required",
           "local_auth_enabled",
           "oidc_enabled",
+          "email_recovery_enabled",
           "password_min_length",
           "password_max_length"
         ],
         "properties": {
+          "email_recovery_enabled": {
+            "type": "boolean",
+            "description": "Whether password recovery by email is available: local sign-in and\nauthentication mail are both enabled."
+          },
           "local_auth_enabled": {
             "type": "boolean",
             "description": "Whether local email+password login is enabled."
