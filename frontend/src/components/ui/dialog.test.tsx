@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useState, type ReactElement } from "react";
 import { expect, test } from "vite-plus/test";
@@ -104,7 +104,8 @@ function NestedConfirmation(): ReactElement {
 test("a destructive confirmation blocks outside dismissal and cancellation preserves its parent", async () => {
   const user = userEvent.setup();
   render(<NestedConfirmation />);
-  await user.click(screen.getByRole("button", { name: "Open parent" }));
+  const opener = screen.getByRole("button", { name: "Open parent" });
+  await user.click(opener);
   const parent = await screen.findByRole("dialog", { name: "Parent" });
   const trigger = screen.getByRole("button", { name: "Delete item" });
   await user.click(trigger);
@@ -116,7 +117,18 @@ test("a destructive confirmation blocks outside dismissal and cancellation prese
   await user.click(cancel);
   await waitFor(() => expect(confirmation).not.toBeInTheDocument());
   expect(parent).toBeInTheDocument();
-  await waitFor(() => expect(trigger).toHaveFocus());
+  await waitFor(() => {
+    expect(parent.contains(document.activeElement)).toBe(true);
+  });
+  await user.tab();
+  expect(within(parent).getAllByRole("button")).toContain(document.activeElement);
+  await user.keyboard("{Escape}");
+  await waitFor(() => {
+    expect(parent).not.toBeInTheDocument();
+  });
+  await waitFor(() => {
+    expect(opener).toHaveFocus();
+  });
 });
 
 function TemporaryTrigger(): ReactElement {

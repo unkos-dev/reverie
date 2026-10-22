@@ -344,6 +344,10 @@ Search, view selection and Filters share a wrapping toolbar. Table mode adds Com
 visibility controls. Filters open in a right sheet (340px, capped at viewport width) at every Library breakpoint. The
 filter and book-detail drawers occupy the same overlay slot.
 
+Active filters use native `TagGroup` and `TagList` composition below the toolbar. Tag removal retains native adjacent or
+empty-collection focus. The empty collection stays mounted with the muted text `No active filters.` and a disabled Clear
+all button. View and table density use native single-selection `ToggleButtonGroup` controls with a required selection.
+
 Range controls constrain each endpoint by the other endpoint. Number steppers and date pickers offer only values within
 that interval, including equal endpoints. Typing remains editable: an incomplete or out-of-bounds draft stays in its
 input without changing the applied filter. On blur or Enter, a completed value stops at the nearest legal bound; the
@@ -499,8 +503,8 @@ header uses surface-2, row hover uses surface, and selected rows use accent-soft
 
 - **Density:** comfortable rows are 64px and compact rows are 44px; headers stay 42px. Comfortable rows carry a 30px by
   42px cover or typographic fallback mark.
-- **Controls:** density and view selectors use a bordered group with a soft accent fill on the selected option. Filters
-  appear as removable chips below the toolbar.
+- **Controls:** density and view selectors use a bordered native toggle group with a soft accent fill on the selected
+  option. Removable filter tags and the mounted empty state sit below the toolbar.
 - **Interaction:** the table supports cell editing, row selection, sorting and a details drawer. Pending edits appear
   muted and italic. Keyboard shortcuts have a dedicated help dialog.
 - **Paging:** the table scrolls through loaded rows and fetches more near the bottom. Loading, retry, load-more and
