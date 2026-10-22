@@ -78,8 +78,7 @@ To choose a new password, open this link:
 
 The link works once and expires on {expiry}. Using it signs the account out everywhere.
 
-If you didn't ask for this, ignore this email. This request did not change your password. To report a problem, reply to this email
-or write to {support}.
+If you didn't ask for this, ignore this email. This request did not change your password. To report a problem, reply to this email or write to {support}.
 ```
 
 The link opens the Set password screen at `/reset-password`.

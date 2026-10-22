@@ -104,8 +104,7 @@ pub fn admin_link(
                  To choose a new password, open this link:\n\
                  {origin}/reset-password#{token}\n\
                  \n\
-                 The link works once and expires on {expiry}. Your current password keeps working until the link is used. Using it\n\
-                 signs the account out everywhere.\n\
+                 The link works once and expires on {expiry}. Your current password keeps working until the link is used. Using it signs the account out everywhere.\n\
                  \n\
                  If you weren't expecting this, write to {support}."
             ),
@@ -128,8 +127,7 @@ pub fn recovery(context: &Context, email: &str, token: &str, expires_at: DateTim
              \n\
              The link works once and expires on {expiry}. Using it signs the account out everywhere.\n\
              \n\
-             If you didn't ask for this, ignore this email. This request did not change your password. To report a problem, reply to this email\n\
-             or write to {support}."
+             If you didn't ask for this, ignore this email. This request did not change your password. To report a problem, reply to this email or write to {support}."
         ),
     }
 }
@@ -265,7 +263,7 @@ mod tests {
         assert_eq!(
             reset.body,
             format!(
-                "An administrator started a password reset for the Reverie account reader@example.org at https://reverie.example.org.\n\nTo choose a new password, open this link:\nhttps://reverie.example.org/reset-password#{TOKEN}\n\nThe link works once and expires on Sunday 25 October at 2:00 pm UTC. Your current password keeps working until the link is used. Using it\nsigns the account out everywhere.\n\nIf you weren't expecting this, write to help@example.org."
+                "An administrator started a password reset for the Reverie account reader@example.org at https://reverie.example.org.\n\nTo choose a new password, open this link:\nhttps://reverie.example.org/reset-password#{TOKEN}\n\nThe link works once and expires on Sunday 25 October at 2:00 pm UTC. Your current password keeps working until the link is used. Using it signs the account out everywhere.\n\nIf you weren't expecting this, write to help@example.org."
             )
         );
     }
@@ -277,7 +275,7 @@ mod tests {
         assert_eq!(
             message.body,
             format!(
-                "Someone asked to reset the password for the Reverie account reader@example.org at https://reverie.example.org.\n\nTo choose a new password, open this link:\nhttps://reverie.example.org/reset-password#{TOKEN}\n\nThe link works once and expires on Sunday 25 October at 2:15 pm UTC. Using it signs the account out everywhere.\n\nIf you didn't ask for this, ignore this email. This request did not change your password. To report a problem, reply to this email\nor write to help@example.org."
+                "Someone asked to reset the password for the Reverie account reader@example.org at https://reverie.example.org.\n\nTo choose a new password, open this link:\nhttps://reverie.example.org/reset-password#{TOKEN}\n\nThe link works once and expires on Sunday 25 October at 2:15 pm UTC. Using it signs the account out everywhere.\n\nIf you didn't ask for this, ignore this email. This request did not change your password. To report a problem, reply to this email or write to help@example.org."
             )
         );
     }

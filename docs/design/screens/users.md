@@ -128,8 +128,7 @@ An administrator started a password reset for the Reverie account {email} at {or
 To choose a new password, open this link:
 {origin}/reset-password#{token}
 
-The link works once and expires on {expiry}. Your current password keeps working until the link is used. Using it
-signs the account out everywhere.
+The link works once and expires on {expiry}. Your current password keeps working until the link is used. Using it signs the account out everywhere.
 
 If you weren't expecting this, write to {support}.
 ```
