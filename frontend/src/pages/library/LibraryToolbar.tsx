@@ -9,10 +9,12 @@
  */
 import { LayoutGrid, SlidersHorizontal, Table2 } from "lucide-react";
 import type { ReactElement } from "react";
+import { ToggleButton, ToggleButtonGroup } from "react-aria-components";
 
 import { DENSITIES, type Density } from "@/api";
 import { QuickSearch } from "@/components/library/QuickSearch";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 import type { LibraryView } from "@/routes/library-params";
 
 import { ColumnsPopover } from "./ColumnsPopover";
@@ -57,29 +59,30 @@ export function LibraryToolbar({
       <div className="flex flex-wrap items-center gap-2">
         {view === "table" ? (
           <>
-            <div
-              role="group"
+            <ToggleButtonGroup
               aria-label="Table density"
+              selectionMode="single"
+              disallowEmptySelection
+              selectedKeys={[density]}
+              onSelectionChange={(keys) => {
+                const key = keys.values().next().value;
+                if (key === "comfortable" || key === "compact") onDensityChange(key);
+              }}
               className="border-border bg-surface-1 inline-flex items-center rounded-md border p-1"
             >
               {DENSITIES.map((option) => (
-                <Button
+                <ToggleButton
                   key={option}
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  aria-pressed={density === option}
-                  onPress={() => {
-                    onDensityChange(option);
-                  }}
-                  className={`font-mono text-[0.65rem] uppercase tracking-[0.08em] ${
-                    density === option ? "bg-accent-soft text-fg hover:bg-accent-soft" : ""
-                  }`}
+                  id={option}
+                  className={cn(
+                    buttonVariants({ variant: "ghost", size: "sm" }),
+                    "font-mono text-[0.65rem] uppercase tracking-[0.08em] data-selected:bg-accent-soft data-selected:text-fg data-selected:data-hovered:bg-accent-soft",
+                  )}
                 >
                   {DENSITY_LABELS[option]}
-                </Button>
+                </ToggleButton>
               ))}
-            </div>
+            </ToggleButtonGroup>
             <ColumnsPopover
               hiddenColumns={hiddenColumns}
               onToggleColumn={onToggleColumn}
@@ -88,38 +91,38 @@ export function LibraryToolbar({
             />
           </>
         ) : null}
-        <div
-          role="group"
+        <ToggleButtonGroup
           aria-label="View mode"
+          selectionMode="single"
+          disallowEmptySelection
+          selectedKeys={[view]}
+          onSelectionChange={(keys) => {
+            const key = keys.values().next().value;
+            if (key === "grid" || key === "table") onViewChange(key);
+          }}
           className="border-border bg-surface-1 inline-flex items-center rounded-md border p-1"
         >
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            aria-pressed={view === "grid"}
-            onPress={() => {
-              onViewChange("grid");
-            }}
-            className={view === "grid" ? "bg-accent-soft text-fg hover:bg-accent-soft" : ""}
+          <ToggleButton
+            id="grid"
+            className={cn(
+              buttonVariants({ variant: "ghost", size: "sm" }),
+              "data-selected:bg-accent-soft data-selected:text-fg data-selected:data-hovered:bg-accent-soft",
+            )}
           >
             <LayoutGrid className="size-4" aria-hidden="true" />
             <span className="sr-only">Grid</span>
-          </Button>
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            aria-pressed={view === "table"}
-            onPress={() => {
-              onViewChange("table");
-            }}
-            className={view === "table" ? "bg-accent-soft text-fg hover:bg-accent-soft" : ""}
+          </ToggleButton>
+          <ToggleButton
+            id="table"
+            className={cn(
+              buttonVariants({ variant: "ghost", size: "sm" }),
+              "data-selected:bg-accent-soft data-selected:text-fg data-selected:data-hovered:bg-accent-soft",
+            )}
           >
             <Table2 className="size-4" aria-hidden="true" />
             <span className="sr-only">Table</span>
-          </Button>
-        </div>
+          </ToggleButton>
+        </ToggleButtonGroup>
         <Button
           type="button"
           variant="outline"

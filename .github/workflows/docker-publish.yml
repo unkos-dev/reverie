@@ -66,9 +66,9 @@ jobs:
           REF_TYPE: ${{ github.ref_type }}
         run: |
           if [[ "$REF_TYPE" == "tag" ]]; then
-            echo 'matrix={"include":[{"arch":"amd64","platform":"linux/amd64","runner":"ubuntu-latest"},{"arch":"arm64","platform":"linux/arm64","runner":"ubuntu-24.04-arm"}]}' >> "$GITHUB_OUTPUT"
+            echo 'matrix={"include":[{"arch":"amd64","platform":"linux/amd64","runner":"ubuntu-latest"},{"arch":"arm64","platform":"linux/arm64","runner":"ubuntu-26.04-arm"}]}' >> "$GITHUB_OUTPUT"
           else
-            echo 'matrix={"include":[{"arch":"arm64","platform":"linux/arm64","runner":"ubuntu-24.04-arm"}]}' >> "$GITHUB_OUTPUT"
+            echo 'matrix={"include":[{"arch":"arm64","platform":"linux/arm64","runner":"ubuntu-26.04-arm"}]}' >> "$GITHUB_OUTPUT"
           fi
 
   build:

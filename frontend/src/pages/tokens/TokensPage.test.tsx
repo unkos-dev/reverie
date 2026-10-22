@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, test, vi } from "vite-plus/test";
 import { RouterProvider, createMemoryRouter, type RouteObject } from "react-router";
@@ -167,6 +167,71 @@ describe("TokensPage", () => {
       expiresInDays: 90,
     });
   });
+
+  test("native expiry retains a failed choice and restores the default on reopening", async () => {
+    const create = vi
+      .spyOn(tokensApi, "createToken")
+      .mockRejectedValue(new Error("Creation refused"));
+    renderTokensPage(ADULT_ME, []);
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole("button", { name: "New token" }));
+    const form = screen.getByLabelText("Name").closest("form");
+    if (!form) throw new Error("Create-token form missing");
+    expect(new FormData(form).get("expiry")).toBe("90");
+    await user.type(screen.getByLabelText("Name"), "reader");
+    await user.click(screen.getByRole("button", { name: /Expires/ }));
+    await user.click(await screen.findByRole("option", { name: "30 days" }));
+    expect(new FormData(form).get("expiry")).toBe("30");
+    await user.click(screen.getByRole("button", { name: "Create" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("Creation refused");
+    expect(create).toHaveBeenCalledWith({ name: "reader", scopes: ["write"], expiresInDays: 30 });
+    expect(new FormData(form).get("expiry")).toBe("30");
+    expect(screen.getByRole("button", { name: /Expires/ })).toHaveTextContent("30 days");
+    await user.click(screen.getByRole("button", { name: "Cancel" }));
+    await user.click(await screen.findByRole("button", { name: "New token" }));
+    const reopened = screen.getByLabelText("Name").closest("form");
+    if (!reopened) throw new Error("Reopened form missing");
+    expect(new FormData(reopened).get("expiry")).toBe("90");
+    expect(screen.getByRole("button", { name: /Expires/ })).toHaveTextContent("90 days");
+  });
+
+  test.each([30, 60, 365])("submits the native %s-day expiry", async (days) => {
+    const create = vi
+      .spyOn(tokensApi, "createToken")
+      .mockRejectedValue(new Error("Creation refused"));
+    renderTokensPage(ADULT_ME, []);
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole("button", { name: "New token" }));
+    await user.type(screen.getByLabelText("Name"), "reader");
+    await user.click(screen.getByRole("button", { name: /Expires/ }));
+    await user.click(await screen.findByRole("option", { name: `${String(days)} days` }));
+    await user.click(screen.getByRole("button", { name: "Create" }));
+    expect(create).toHaveBeenCalledWith({ name: "reader", scopes: ["write"], expiresInDays: days });
+    await screen.findByRole("alert");
+  });
+
+  test.each([null, "", "0", "100"])(
+    "rejects an invalid submitted expiry (%s) before mutation",
+    async (expiry) => {
+      const create = vi.spyOn(tokensApi, "createToken");
+      renderTokensPage(ADULT_ME, []);
+      const user = userEvent.setup();
+      await user.click(await screen.findByRole("button", { name: "New token" }));
+      const form = screen.getByLabelText("Name").closest("form");
+      if (!form) throw new Error("Create-token form missing");
+      const select = form.querySelector('select[name="expiry"]');
+      if (!(select instanceof HTMLSelectElement)) throw new Error("Named Select missing");
+      if (expiry === null) select.removeAttribute("name");
+      else {
+        select.add(new Option(expiry, expiry));
+        select.value = expiry;
+      }
+      await user.type(screen.getByLabelText("Name"), "reader");
+      fireEvent.submit(form);
+      expect(await screen.findByRole("alert")).toHaveTextContent("Choose a valid expiry.");
+      expect(create).not.toHaveBeenCalled();
+    },
+  );
 
   test("maps the Never expiry option to a null lifetime", async () => {
     const create = vi.spyOn(tokensApi, "createToken").mockResolvedValue({

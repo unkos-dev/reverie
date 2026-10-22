@@ -12,8 +12,16 @@ interaction defaults and keep API queries and domain state in their owning compo
 
 Vocabulary pickers supply server suggestions to the `ComboBox` collection and render hydrated selections inside
 `ComboBoxValue` separately. Selection order follows the selected keys, not server ranking. Multiple selection keeps the
-native popup lifecycle. The command palette uses virtual focus from `Autocomplete` with scrolling on its `Menu`; dialog
-and select labels belong to their native parent composition.
+native popup lifecycle. The command palette uses `MenuItem` links with native routing and closure. Arrow navigation
+retains input focus through `Autocomplete`; Tab traverses result links. Scrolling belongs to the `Menu`. Dialog and
+select labels belong to their native parent composition.
+
+Active Library filters use `TagGroup` and `TagList` for removal and focus recovery. The collection stays mounted when
+empty and shows `No active filters.`; Clear all stays mounted and disabled. View and density use nonempty single
+selection in native `ToggleButtonGroup` controls, with changes dispatched to the existing URL and preference owners.
+
+Create-user role and token expiry use named, uncontrolled Selects. Submission reads and validates their FormData values;
+failed requests retain the choices, and reopening a closed dialog restores the defaults.
 
 Selection controls compose native fields and buttons with labelled content. Use `isSelected`, `isReadOnly`, `isDisabled`
 and `isPending` for their native states. Disclosure retains filter drafts while collapsed; ingestion mounts query

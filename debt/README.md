@@ -117,6 +117,8 @@ by definition active debt, the roadmap reads the directory as-is: no status filt
 
 <!-- listed most-stale first; new entries go to the top -->
 
+- [Ubuntu 26.04 ARM runner label exception](2026-10-22-actionlint-ubuntu-26-runner.md): lifts when the pinned
+  `actionlint` recognises the label and workflow lint passes without the exception.
 - [Vacuum request bounds](2026-10-13-vacuum-request-bounds.md): lifts when all temporary bound exceptions are resolved.
 - [CodeQL Rust extraction ignores the declared Rust version](2026-10-09-codeql-rust-ignore-rust-version.md): lifts when
   a supported upstream mechanism handles a declared minimum newer than the extractor's toolchain and extraction without

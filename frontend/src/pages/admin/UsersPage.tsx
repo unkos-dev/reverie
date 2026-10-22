@@ -10,6 +10,7 @@ import { type ReactElement, type SyntheticEvent, useCallback, useState } from "r
 import { Navigate } from "react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
+import { z } from "zod";
 
 import { useAuthMe } from "@/hooks/useAuthMe";
 import { queryKeys } from "@/lib/query/keys";
@@ -60,6 +61,7 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 
 const ROLE_OPTIONS: readonly Role[] = ["admin", "adult", "child"];
+const roleField = z.enum(ROLE_OPTIONS);
 
 function errorDetail(err: unknown): string {
   if (err instanceof ApiError) return err.detail;
@@ -466,7 +468,6 @@ function LinkResultContent({
 
 function CreateUserDialog({ onCreated }: Readonly<{ onCreated: () => void }>): ReactElement {
   const [open, setOpen] = useState(false);
-  const [role, setRole] = useState<Role>("adult");
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<LinkResult | null>(null);
   const mutation = useMutation({
@@ -492,7 +493,6 @@ function CreateUserDialog({ onCreated }: Readonly<{ onCreated: () => void }>): R
     setOpen(next);
     if (!next) {
       setError(null);
-      setRole("adult");
       setResult(null);
       if (result !== null) mutation.reset();
     }
@@ -511,7 +511,12 @@ function CreateUserDialog({ onCreated }: Readonly<{ onCreated: () => void }>): R
       setError("Enter a valid email address.");
       return;
     }
-    mutation.mutate({ email: email.data, display_name: displayName.data, role });
+    const role = roleField.safeParse(data.get("role"));
+    if (!role.success) {
+      setError("Choose a valid role.");
+      return;
+    }
+    mutation.mutate({ email: email.data, display_name: displayName.data, role: role.data });
   }
   return (
     <Dialog isOpen={open} onOpenChange={handleOpenChange}>
@@ -543,14 +548,7 @@ function CreateUserDialog({ onCreated }: Readonly<{ onCreated: () => void }>): R
                 <Input id="create-email" name="email" type="email" autoComplete="off" required />
               </Field>
               <Field>
-                <Select
-                  className="flex flex-col gap-2"
-                  value={role}
-                  onChange={(value) => {
-                    if (typeof value !== "string") return;
-                    if (isRole(value)) setRole(value);
-                  }}
-                >
+                <Select className="flex flex-col gap-2" name="role" defaultValue="adult">
                   <AriaLabel className="flex w-fit gap-2 text-sm font-medium leading-snug">
                     Role
                   </AriaLabel>
