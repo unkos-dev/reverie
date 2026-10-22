@@ -29,9 +29,10 @@ three counts:
 
 ## Why this is low severity
 
-`cargo-deny` scans `backend/Cargo.lock` directly on every PR and gates on advisories and licenses. Reading the lockfile
-is strictly higher fidelity than reading an SBOM derived from it, so the Rust surface is not unscanned; it is scanned by
-a different tool, and Snyk would be a second opinion rather than the only opinion.
+`cargo-deny` scans `backend/Cargo.lock` directly. Advisory checks gate PRs that change Cargo dependency files, deny
+policy or the advisory job definition; a daily scheduled scan covers the unchanged tree. Licence, ban and source checks
+run in a separate PR job. Reading the lockfile is strictly higher fidelity than reading an SBOM derived from it, so the
+Rust surface is scanned by a different tool, and Snyk would be a second opinion rather than the only opinion.
 
 The debt is the asymmetry itself. Snyk's value in this workstream is a cross-checked baseline across the whole
 dependency surface, and one quarter of that surface cannot participate. Any comparison of Snyk against the incumbent
