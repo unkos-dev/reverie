@@ -412,12 +412,20 @@ describe("LibraryPage", () => {
   });
 
   test("keyboard choices keep view and density nonempty and exclusive", async () => {
+    const unrelated = { hidden_columns: ["subtitle"], sort_stack: "title" };
     const fetchSpy = vi
       .spyOn(globalThis, "fetch")
       .mockResolvedValue(
-        preferencesResponse(preferencesFixture({ view: "table", density: "compact" })),
+        preferencesResponse(
+          preferencesFixture({ ...unrelated, view: "table", density: "compact" }),
+        ),
       );
-    renderLibrary({ items: [bookFixture()], nextCursor: null });
+    renderLibrary({
+      items: [bookFixture()],
+      nextCursor: null,
+      preferences: preferencesFixture(unrelated),
+      cacheParams: { sort: "title" },
+    });
     const user = userEvent.setup();
     const view = await screen.findByRole("radiogroup", { name: "View mode" });
     await user.click(within(view).getByRole("radio", { name: "Grid" }));
@@ -441,7 +449,11 @@ describe("LibraryPage", () => {
     await user.keyboard(" ");
     expect(within(density).getByRole("radio", { name: "Compact" })).toBeChecked();
     await waitFor(() => {
-      expect(preferenceWrites(fetchSpy)).toEqual([{ view: "table", density: "compact" }]);
+      expect(Object.assign({}, unrelated, ...preferenceWrites(fetchSpy))).toEqual({
+        ...unrelated,
+        view: "table",
+        density: "compact",
+      });
     });
     fetchSpy.mockRestore();
   });

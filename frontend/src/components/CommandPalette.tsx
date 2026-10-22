@@ -3,7 +3,7 @@
  * React Aria owns modal focus and dismissal; application shortcuts respect the focused field.
  */
 import { useQuery } from "@tanstack/react-query";
-import { useEffect, useState, type ReactElement } from "react";
+import { useCallback, useEffect, useState, type ReactElement } from "react";
 import {
   Autocomplete,
   Button,
@@ -38,6 +38,10 @@ export function CommandPalette(): ReactElement {
     staleTime: 30_000,
   });
   const items = trimmed.length >= 2 ? (data?.items ?? []) : [];
+  const changeOpen = useCallback((next: boolean): void => {
+    setOpen(next);
+    if (!next) setQuery("");
+  }, []);
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent): void {
       const cmdK = (event.key === "k" || event.key === "K") && (event.metaKey || event.ctrlKey);
@@ -52,7 +56,7 @@ export function CommandPalette(): ReactElement {
         event.key === "/" && !event.metaKey && !event.ctrlKey && !event.altKey && !inField;
       if (!cmdK && !slash) return;
       event.preventDefault();
-      setOpen(cmdK ? !open : true);
+      changeOpen(cmdK ? !open : true);
     }
     window.addEventListener("keydown", onKeyDown);
     setCommandPaletteOpener(() => {
@@ -62,15 +66,11 @@ export function CommandPalette(): ReactElement {
       window.removeEventListener("keydown", onKeyDown);
       setCommandPaletteOpener(() => {});
     };
-  }, [open]);
+  }, [changeOpen, open]);
   useEffect(() => {
     if (isError) console.error("[CommandPalette] search query failed", error);
   }, [isError, error]);
 
-  function changeOpen(next: boolean): void {
-    setOpen(next);
-    if (!next) setQuery("");
-  }
   let status: string | null = null;
   if (trimmed.length < 2) status = "Type to search your library.";
   else if (isError) status = "Search failed. Try again in a moment.";

@@ -111,6 +111,33 @@ describe("CommandPalette — Cmd-K binding", () => {
     });
   });
 
+  test.each(["ctrlKey", "metaKey"])(
+    "%s+K closes a populated palette and reopening starts with an empty query",
+    async (modifier) => {
+      vi.spyOn(globalThis, "fetch").mockImplementation(() =>
+        Promise.resolve(jsonResponse({ items: [] })),
+      );
+      renderPalette();
+      const user = userEvent.setup();
+      act(() => {
+        fireEvent.keyDown(window, { key: "k", [modifier]: true });
+      });
+      const input = await screen.findByRole("searchbox", { name: "Search library" });
+      await user.type(input, "word");
+      expect(input).toHaveValue("word");
+      act(() => {
+        fireEvent.keyDown(window, { key: "k", [modifier]: true });
+      });
+      await waitFor(() => {
+        expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+      });
+      act(() => {
+        fireEvent.keyDown(window, { key: "k", [modifier]: true });
+      });
+      expect(await screen.findByRole("searchbox", { name: "Search library" })).toHaveValue("");
+    },
+  );
+
   test("opens on '/' when not typing in a field", async () => {
     renderPalette();
     act(() => {
