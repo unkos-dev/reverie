@@ -30,6 +30,9 @@ Body: "It may have expired or already been used. Ask your administrator for a ne
 
 Link: "Go to sign in".
 
+When `email_recovery_enabled` is true in setup status, add a second link, "Forgot password?", to `/forgot-password`. The
+body and administrator guidance stay the same.
+
 For a network failure, 429 or 5xx lookup response, show the error and a full-width "Try again" button 16 px below it.
 Activation repeats only lookup using the token retained in memory. Disable the button while lookup is pending. Keep the
 fragment cleared. Invalid or expired links have no retry button.
@@ -90,6 +93,7 @@ pending and retain entered values after a refusal. The loading skeleton has an a
 - Compare new-account and reset forms at 1920 x 1080 in both themes.
 - Confirm exact copy, form spacing, policy hint and password-manager attributes.
 - Check checking, invalid, mismatch, policy, 429, 503 and saved states.
+- Confirm the invalid state shows "Forgot password?" only when email recovery is enabled.
 - Check lookup retry, its pending disabled state and saved-state stability after reconnect.
 - Confirm the fragment clears and the page neither logs nor persists the token.
 - Check keyboard completion and explicit navigation to sign in after saving.

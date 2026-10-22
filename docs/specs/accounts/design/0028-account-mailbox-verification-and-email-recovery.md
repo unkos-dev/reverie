@@ -46,7 +46,7 @@ The [OpenAPI contract](../../../../backend/openapi.json) defines the schemas:
 - `POST /api/v1/account/email-verifications/confirmations` accepts a token, consumes the matching challenge and returns
   204.
 - `POST /auth/forgot-password` accepts an email and returns the same generic 200 for every valid request.
-- `GET /auth/setup-status` carries `email_recovery_enabled`.
+- `GET /auth/setup/status` carries `email_recovery_enabled`.
 
 The verification operations need a browser session; the two POST operations also need CSRF. Basic and device tokens
 receive 403. Unavailable mail returns a fixed 503 from the verification request. Forgot password returns 404 when local
@@ -94,8 +94,8 @@ creates no session and leaves login throttling alone.
 recovery proofs, with their pending mail, in place. Verification challenges survive every password change.
 
 **Address change.** When an administrator changes or removes an address, the transaction clears `email_verified_at`,
-deletes both proofs, cancels unsent mail bound to the old address and clears its payloads. If the old address was
-verified, it receives the change notice. Notices already queued keep their recipient.
+deletes both proofs, cancels unsent bearer mail bound to the old address and clears its payloads. If the old address was
+verified, it receives the change notice. Notices already queued are not cancelled and keep their recipient.
 
 **Notices** are queued for password replacement, first-password setup, a newly verified address and a change to or
 removal of a verified address, but only to an address whose control was established and only while mail is enabled. They

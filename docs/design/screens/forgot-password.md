@@ -53,7 +53,7 @@ its address is verified, or a message is sent.
 
 Title: "Check your email".
 
-Body: "If {email} can receive password reset email, a link is on its way. The link expires in 15 minutes."
+Body: "Check {email} for a password reset link. The email says when the link expires."
 
 Second paragraph: "No email after a few minutes? Check your spam folder, or ask your administrator for a link."
 
@@ -62,8 +62,8 @@ Below the text, a full-width outline button "Use a different email" returns to t
 
 ## Recovery email
 
-Only an eligible account receives this message. {origin} is the configured public URL and {support} the configured
-support address, which is also the Reply-To.
+Only an eligible account receives this message. {origin} is the configured public URL, {expiry} the proof's expiry time
+and {support} the configured support address, which is also the Reply-To.
 
 Subject: "Reset your Reverie password"
 
@@ -75,9 +75,9 @@ Someone asked to reset the password for the Reverie account {email} at {origin}.
 To choose a new password, open this link:
 {origin}/set-password#{token}
 
-The link works once and expires in 15 minutes. Using it signs the account out everywhere.
+The link works once and expires on {expiry} UTC. Using it signs the account out everywhere.
 
-If you didn't ask for this, ignore this email. Your password has not changed. To report a problem, reply to this email
+If you didn't ask for this, ignore this email. This request did not change your password. To report a problem, reply to this email
 or write to {support}.
 ```
 

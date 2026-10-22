@@ -82,7 +82,7 @@ delivery's status every 3 seconds and stops at Accepted, Failed or when the dial
 | ------ | ---- | ------- |
 | Queued | "Sending to {email}…" | "Send email" disabled |
 | Accepted | "The mail server accepted the email for {email}. This doesn't confirm it reached the inbox." | "Send email" hidden |
-| Failed | "The email wasn't sent: {reason}. Copy the link instead, or try again." | "Try again" replaces "Send email" |
+| Failed | "The mail server didn't confirm the email: {reason}. Copy the link instead, or try again." | "Try again" replaces "Send email" |
 
 | Failure category     | {reason}                                          |
 | -------------------- | ------------------------------------------------- |
@@ -96,8 +96,8 @@ delivery's status every 3 seconds and stops at Accepted, Failed or when the dial
 
 "Try again" sends the same link as a new delivery. A 503 response shows "Email isn't available right now. Copy the link
 instead." A refusal because the link was replaced, cancelled or expired shows "This link is no longer active. Create a
-new link to send it." A network failure shows "Couldn't send the email. Try again." In every case the link and "Copy
-link" stay available. Closing the dialog stops status refresh and discards the link.
+new link to send it." A network failure shows "Couldn't confirm the request. Try again." In every case the link and
+"Copy link" stay available. Closing the dialog stops status refresh and discards the link.
 
 Link email, with {origin} the configured public URL and {support} the configured support address, also the Reply-To. For
 a new account:
@@ -105,7 +105,7 @@ a new account:
 Subject: "Set your Reverie password"
 
 ```text
-An administrator created a Reverie account for {email} at {origin}.
+An administrator invited you to set a password for the Reverie account {email} at {origin}.
 
 To choose your password, open this link:
 {origin}/set-password#{token}

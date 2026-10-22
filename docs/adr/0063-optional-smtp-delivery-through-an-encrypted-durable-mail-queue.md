@@ -37,7 +37,7 @@ mail a prerequisite for recovery, and without storing redeemable links in clear 
 ## Decision outcome
 
 Chosen option: **Encrypted durable Postgres mail queue with generic SMTP**, because it keeps mail optional and
-restart-safe while a database disclosure reveals only encrypted data, and it works with any SMTP relay.
+restart-safe while a database disclosure reveals no queued message contents or links, and it works with any SMTP relay.
 
 Mail is configured through deployment settings and is off by default. When enabled, account transactions write mail jobs
 to Postgres under the account lock, so a notification commits or rolls back with the change that caused it. One
@@ -60,7 +60,8 @@ provider and adds a second delivery path if SMTP is also wanted.
 
 - Positive: mail outages and missing configuration leave administrator links and host recovery fully usable.
 - Positive: pending mail survives restart and stops on expiry, revocation or permanent refusal.
-- Positive: a database disclosure without the queue key reveals no token, recipient or message body.
+- Positive: a database disclosure without the queue key reveals no queued token or message body.
+- Neutral: the encryption covers mail payloads only; account email addresses stay readable in the account tables.
 - Negative: operators must back up the queue key separately; losing it loses undelivered mail and needs a documented
   manual recovery.
 - Negative: AES-GCM with a random nonce per message bounds one key to about 2^32 encryption operations. Reverie keeps no

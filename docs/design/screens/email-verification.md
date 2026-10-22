@@ -36,22 +36,23 @@ All loaded states have the title "Email address".
 | State | Condition | Body | Action |
 | ----- | --------- | ---- | ------ |
 | No address | The account has no email | "Your account has no email address. Ask your administrator to add one." | None |
-| Verified | The current address is verified | "This address receives password reset links and security notices." | None |
+| Verified | The current address is verified | "Your email address is verified." | None |
 | Mail unavailable | Unverified, mail not configured | "Email isn't set up on this server, so this address can't be verified yet." | None |
-| Not verified | Unverified, mail configured | "Verify this address to receive password reset links and security notices." | "Send verification email" |
-| Sent | A send request succeeded on this page | "A verification email was sent to {email}. Open the link in it while signed in to this account. The link expires in 24 hours." | "Send again", outline |
+| Not verified | Unverified, mail configured | "Verify that you control this email address." | "Send verification email" |
+| Sent | A send request succeeded on this page | "Verification email requested. Open the link in it while signed in to this account. The email says when the link expires." | "Send again", outline |
 
 The address row appears in every state except No address. The Sent state lasts until the person leaves the page or the
 status refetches as verified. "Send again" repeats the request; within 60 seconds of the previous send, the server
 reuses the pending message rather than sending another.
 
 Disable the action while its request is pending. A 503 response shows "Email isn't available right now. Try again
-later." inline and returns to the Not verified state. A network failure or other 5xx response shows "Could not send the
-verification email. Try again." inline and keeps the action enabled.
+later." inline and returns to the Not verified state. A network failure or other 5xx response shows "Could not confirm
+the request. Try again." inline and keeps the action enabled.
 
 ## Verification email
 
-{origin} is the configured public URL and {support} the configured support address, which is also the Reply-To.
+{origin} is the configured public URL, {expiry} the challenge's expiry time and {support} the configured support
+address, which is also the Reply-To.
 
 Subject: "Verify your email address for Reverie"
 
@@ -63,7 +64,7 @@ Someone asked to verify {email} for a Reverie account at {origin}.
 To confirm it, sign in to that account and open this link:
 {origin}/verify-email#{token}
 
-The link works once and expires in 24 hours.
+The link works once and expires on {expiry} UTC.
 
 If you didn't ask for this, ignore this email. To report a problem, reply to this email or write to {support}.
 ```
@@ -77,7 +78,7 @@ fragment token goes straight to the invalid state.
 | ----- | ----- | ---- | ------ |
 | Signed out | "Sign in to verify your email" | "Sign in to the account this email was sent to, then open the link in the email again." | Link "Go to sign in" to `/login` |
 | Ready | "Verify your email address" | "Confirm {email} as the email address for your account." | Button "Verify email" |
-| Verified | "Email address verified" | "{email} now receives password reset links and security notices." | Link "Go to email settings" to `/account/email` |
+| Verified | "Email address verified" | "Your email address is verified." | Link "Go to email settings" to `/account/email` |
 | Invalid | "This link can't be used" | "It may have expired, already been used, or belong to a different account. Send a new verification email from your email settings." | Link "Go to email settings" to `/account/email` |
 
 {email} is the signed-in account's current address. Verification happens only when the person activates "Verify email";
